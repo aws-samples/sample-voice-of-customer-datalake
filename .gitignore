@@ -1,0 +1,49 @@
+# CDK
+cdk.out/
+*.js
+*.d.ts
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Frontend
+voc-datalake/frontend/dist/
+voc-datalake/frontend/node_modules/
+
+# Lambda layers
+voc-datalake/lambda/layers/*/python/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# AWS
+.aws-sam/
+
+# Temporary files
+*.tmp
+*.bak

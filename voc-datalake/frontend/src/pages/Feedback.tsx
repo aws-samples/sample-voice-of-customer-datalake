@@ -1,0 +1,221 @@
+import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
+import { Search, Filter, SortDesc, Tag, X } from 'lucide-react'
+import { api, getDaysFromRange } from '../api/client'
+import { useConfigStore } from '../store/configStore'
+import FeedbackCard from '../components/FeedbackCard'
+
+const sources = ['all', 'trustpilot', 'google_reviews', 'twitter', 'instagram', 'facebook', 'reddit', 'tavily', 'web_scrape']
+const sentiments = ['all', 'positive', 'neutral', 'negative', 'mixed']
+const categories = ['all', 'delivery', 'customer_support', 'product_quality', 'pricing', 'website', 'app', 'billing', 'returns', 'communication', 'other']
+
+export default function Feedback() {
+  const { timeRange, config } = useConfigStore()
+  const days = getDaysFromRange(timeRange)
+  const [searchParams, setSearchParams] = useSearchParams()
+  
+  // Initialize from URL params
+  const [search, setSearch] = useState(searchParams.get('q') || '')
+  const [sourceFilter, setSourceFilter] = useState(searchParams.get('source') || 'all')
+  const [sentimentFilter, setSentimentFilter] = useState(searchParams.get('sentiment') || 'all')
+  const [categoryFilter, setCategoryFilter] = useState(searchParams.get('category') || 'all')
+  const [showUrgentOnly, setShowUrgentOnly] = useState(false)
+  const [_isSearching, _setIsSearching] = useState(false) // Reserved for future use
+
+  // Update URL when filters change
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (search) params.set('q', search)
+    if (sourceFilter !== 'all') params.set('source', sourceFilter)
+    if (sentimentFilter !== 'all') params.set('sentiment', sentimentFilter)
+    if (categoryFilter !== 'all') params.set('category', categoryFilter)
+    setSearchParams(params, { replace: true })
+  }, [search, sourceFilter, sentimentFilter, categoryFilter, setSearchParams])
+
+  // Server-side search when search term is provided
+  const { data: searchData, isLoading: searchLoading } = useQuery({
+    queryKey: ['feedback-search', search, days],
+    queryFn: () => api.searchFeedback({ q: search, days, limit: 100 }),
+    enabled: !!config.apiEndpoint && search.length >= 2,
+  })
+
+  // Regular feedback query
+  const { data, isLoading } = useQuery({
+    queryKey: ['feedback', days, sourceFilter, sentimentFilter, categoryFilter, showUrgentOnly],
+    queryFn: () => showUrgentOnly 
+      ? api.getUrgentFeedback({ days, limit: 100 })
+      : api.getFeedback({
+          days,
+          source: sourceFilter !== 'all' ? sourceFilter : undefined,
+          sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
+          category: categoryFilter !== 'all' ? categoryFilter : undefined,
+          limit: 100,
+        }),
+    enabled: !!config.apiEndpoint && search.length < 2,
+  })
+
+  // Get entities for tag cloud
+  const { data: entitiesData } = useQuery({
+    queryKey: ['entities', days],
+    queryFn: () => api.getEntities({ days, limit: 200 }),
+    enabled: !!config.apiEndpoint,
+  })
+
+  // Use search results if searching, otherwise use regular results
+  const activeData = search.length >= 2 ? searchData : data
+  const activeLoading = search.length >= 2 ? searchLoading : isLoading
+
+  const filteredItems = activeData?.items || []
+
+  const clearFilters = () => {
+    setSearch('')
+    setSourceFilter('all')
+    setSentimentFilter('all')
+    setCategoryFilter('all')
+    setShowUrgentOnly(false)
+  }
+
+  const hasActiveFilters = search || sourceFilter !== 'all' || sentimentFilter !== 'all' || categoryFilter !== 'all' || showUrgentOnly
+
+  if (!config.apiEndpoint) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-gray-500">Please configure your API endpoint in Settings</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Filters */}
+      <div className="card">
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
+            <input
+              type="text"
+              placeholder="Search feedback..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input !pl-11"
+            />
+          </div>
+
+          {/* Source filter */}
+          <div className="flex items-center gap-2">
+            <Filter size={16} className="text-gray-400" />
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              className="input w-auto"
+            >
+              {sources.map(s => (
+                <option key={s} value={s}>{s === 'all' ? 'All Sources' : s.replace('_', ' ')}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Sentiment filter */}
+          <select
+            value={sentimentFilter}
+            onChange={(e) => setSentimentFilter(e.target.value)}
+            className="input w-auto"
+          >
+            {sentiments.map(s => (
+              <option key={s} value={s}>{s === 'all' ? 'All Sentiments' : s}</option>
+            ))}
+          </select>
+
+          {/* Category filter */}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="input w-auto"
+          >
+            {categories.map(c => (
+              <option key={c} value={c}>{c === 'all' ? 'All Categories' : c.replace('_', ' ')}</option>
+            ))}
+          </select>
+
+          {/* Urgent only toggle */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showUrgentOnly}
+              onChange={(e) => setShowUrgentOnly(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700">Urgent only</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Quick Tags */}
+      {entitiesData?.entities && (
+        <div className="card">
+          <div className="flex items-center gap-2 mb-3">
+            <Tag size={16} className="text-gray-400" />
+            <span className="text-sm font-medium text-gray-700">Quick Filters</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(entitiesData.entities.keywords || {}).slice(0, 12).map(([keyword, count]) => (
+              <button
+                key={keyword}
+                onClick={() => setSearch(keyword)}
+                className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
+                  search === keyword 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {keyword} <span className="opacity-60">({count})</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Results count */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">
+          Showing {filteredItems.length} of {activeData?.count || 0} feedback items
+          {search && <span className="ml-1">for "{search}"</span>}
+        </p>
+        <div className="flex items-center gap-3">
+          {hasActiveFilters && (
+            <button 
+              onClick={clearFilters}
+              className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700"
+            >
+              <X size={14} />
+              Clear filters
+            </button>
+          )}
+          <button className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+            <SortDesc size={14} />
+            Most recent
+          </button>
+        </div>
+      </div>
+
+      {/* Feedback list */}
+      {activeLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      ) : filteredItems.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-gray-500">No feedback found matching your filters</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {filteredItems.map((item) => (
+            <FeedbackCard key={item.feedback_id} feedback={item} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,668 @@
+import { useConfigStore } from '../store/configStore'
+
+const getBaseUrl = () => {
+  const { config } = useConfigStore.getState()
+  return config.apiEndpoint || '/api'
+}
+
+// Cache for streaming URL (fetched from backend)
+let cachedStreamUrl: string | null = null
+
+async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const baseUrl = getBaseUrl().replace(/\/+$/, '')  // Remove trailing slashes
+  const response = await fetch(`${baseUrl}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  })
+  
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`)
+  }
+  
+  return response.json()
+}
+
+// Fetch streaming URL from backend config (cached)
+async function getStreamUrl(): Promise<string> {
+  if (cachedStreamUrl !== null) return cachedStreamUrl
+  
+  try {
+    const config = await fetchApi<{ chat_stream_url: string }>('/projects/config')
+    cachedStreamUrl = config.chat_stream_url || ''
+    return cachedStreamUrl
+  } catch {
+    cachedStreamUrl = ''
+    return ''
+  }
+}
+
+export interface FeedbackItem {
+  feedback_id: string
+  source_id: string
+  source_platform: string
+  source_channel: string
+  source_url?: string
+  brand_name: string
+  source_created_at: string
+  processed_at: string
+  original_text: string
+  original_language: string
+  normalized_text?: string
+  rating?: number
+  category: string
+  subcategory?: string
+  journey_stage: string
+  sentiment_label: string
+  sentiment_score: number
+  urgency: string
+  impact_area: string
+  problem_summary?: string
+  problem_root_cause_hypothesis?: string
+  direct_customer_quote?: string
+  persona_name?: string
+  persona_type?: string
+}
+
+export interface MetricsSummary {
+  period_days: number
+  total_feedback: number
+  avg_sentiment: number
+  urgent_count: number
+  daily_totals: { date: string; count: number }[]
+  daily_sentiment: { date: string; avg_sentiment: number; count: number }[]
+}
+
+export interface SentimentBreakdown {
+  period_days: number
+  total: number
+  breakdown: Record<string, number>
+  percentages: Record<string, number>
+}
+
+export interface CategoryBreakdown {
+  period_days: number
+  categories: Record<string, number>
+}
+
+export interface SourceBreakdown {
+  period_days: number
+  sources: Record<string, number>
+}
+
+export interface IntegrationStatus {
+  trustpilot: {
+    configured: boolean
+    webhook_url: string
+    last_webhook_received?: string
+    credentials_set: string[]
+  }
+  [key: string]: {
+    configured: boolean
+    webhook_url?: string
+    last_webhook_received?: string
+    credentials_set: string[]
+  }
+}
+
+export interface PipelineStep {
+  id: string
+  name: string
+  type: 'extract' | 'transform' | 'enrich' | 'filter' | 'output'
+  config: Record<string, unknown>
+  prompt?: string
+  enabled: boolean
+}
+
+export interface Pipeline {
+  id: string
+  source: string
+  name: string
+  description: string
+  steps: PipelineStep[]
+  enabled: boolean
+  lastRun?: string
+  status: 'idle' | 'running' | 'error' | 'success'
+}
+
+export interface ScraperConfig {
+  id: string
+  name: string
+  enabled: boolean
+  base_url: string
+  urls: string[]
+  frequency_minutes: number
+  extraction_method?: 'css' | 'jsonld'
+  template?: string
+  container_selector: string
+  text_selector: string
+  title_selector?: string
+  rating_selector?: string
+  rating_attribute?: string
+  date_selector?: string
+  author_selector?: string
+  link_selector?: string
+  pagination: {
+    enabled: boolean
+    param: string
+    max_pages: number
+    start: number
+  }
+  last_run?: string
+  items_found?: number
+}
+
+export interface ScraperTemplate {
+  id: string
+  name: string
+  description: string
+  icon: string
+  extraction_method: 'css' | 'jsonld'
+  url_pattern: string
+  url_placeholder: string
+  supports_pagination: boolean
+  pagination: {
+    enabled: boolean
+    param: string
+    start: number
+    max_pages: number
+  }
+  config: Partial<ScraperConfig>
+}
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  sources?: FeedbackItem[]
+  timestamp: string
+  filters?: {
+    source?: string
+    category?: string
+    sentiment?: string
+    tags?: string[]
+  }
+}
+
+export interface ChatConversation {
+  id: string
+  title: string
+  messages: ChatMessage[]
+  filters: {
+    source?: string
+    category?: string
+    sentiment?: string
+    tags?: string[]
+  }
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EntitiesResponse {
+  period_days: number
+  feedback_count: number
+  entities: {
+    keywords: Record<string, number>
+    categories: Record<string, number>
+    issues: Record<string, number>
+    personas: Record<string, number>
+    sources: Record<string, number>
+  }
+}
+
+export const api = {
+  // Feedback
+  getFeedback: (params: { days?: number; source?: string; category?: string; sentiment?: string; limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) searchParams.set(key, String(value))
+    })
+    return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback?${searchParams}`)
+  },
+  
+  getFeedbackById: (id: string) => fetchApi<FeedbackItem>(`/feedback/${id}`),
+  
+  getUrgentFeedback: (params: { days?: number; limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) searchParams.set(key, String(value))
+    })
+    return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback/urgent?${searchParams}`)
+  },
+  
+  searchFeedback: (params: { q: string; days?: number; limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) searchParams.set(key, String(value))
+    })
+    return fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
+  },
+  
+  getSimilarFeedback: (id: string, limit?: number) => {
+    const searchParams = new URLSearchParams()
+    if (limit) searchParams.set('limit', String(limit))
+    return fetchApi<{ source_feedback_id: string; count: number; items: FeedbackItem[] }>(`/feedback/${id}/similar?${searchParams}`)
+  },
+  
+  getEntities: (params: { days?: number; limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) searchParams.set(key, String(value))
+    })
+    return fetchApi<EntitiesResponse>(`/feedback/entities?${searchParams}`)
+  },
+  
+  // Metrics
+  getSummary: (days: number) => fetchApi<MetricsSummary>(`/metrics/summary?days=${days}`),
+  getSentiment: (days: number) => fetchApi<SentimentBreakdown>(`/metrics/sentiment?days=${days}`),
+  getCategories: (days: number) => fetchApi<CategoryBreakdown>(`/metrics/categories?days=${days}`),
+  getSources: (days: number) => fetchApi<SourceBreakdown>(`/metrics/sources?days=${days}`),
+  getPersonas: (days: number) => fetchApi<{ period_days: number; personas: Record<string, number> }>(`/metrics/personas?days=${days}`),
+  
+  // Chat
+  chat: (message: string, context?: string) => fetchApi<{ response: string; sources?: FeedbackItem[] }>('/chat', {
+    method: 'POST',
+    body: JSON.stringify({ message, context })
+  }),
+
+  // Chat with streaming (uses Lambda Function URL to bypass API Gateway timeout)
+  chatStream: async (message: string, context?: string, days?: number): Promise<{ response: string; sources?: FeedbackItem[]; metadata?: { total_feedback: number; days_analyzed: number; urgent_count: number } }> => {
+    const streamEndpoint = await getStreamUrl()
+    
+    if (!streamEndpoint) {
+      // Fall back to regular API if streaming not configured
+      return api.chat(message, context)
+    }
+    
+    const response = await fetch(`${streamEndpoint.replace(/\/+$/, '')}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, context, days: days || 7 })
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Stream API Error: ${response.status}`)
+    }
+    
+    return response.json()
+  },
+
+
+
+  // Data Source Schedules
+  getSourcesStatus: () => fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>('/sources/status'),
+  
+  enableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/enable`, { method: 'PUT' }),
+  
+  disableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/disable`, { method: 'PUT' }),
+
+  // Brand Settings (persisted to DynamoDB)
+  getBrandSettings: () => fetchApi<{
+    brand_name: string
+    brand_handles: string[]
+    hashtags: string[]
+    urls_to_track: string[]
+    error?: string
+  }>('/settings/brand'),
+  
+  saveBrandSettings: (settings: {
+    brand_name: string
+    brand_handles: string[]
+    hashtags: string[]
+    urls_to_track: string[]
+  }) => fetchApi<{ success: boolean; message: string; settings: typeof settings }>('/settings/brand', {
+    method: 'PUT',
+    body: JSON.stringify(settings)
+  }),
+
+  // Integrations
+  getIntegrationStatus: () => fetchApi<IntegrationStatus>('/integrations/status'),
+  
+  updateIntegrationCredentials: (source: string, credentials: Record<string, string>) => 
+    fetchApi<{ success: boolean; message: string }>(`/integrations/${source}/credentials`, {
+      method: 'PUT',
+      body: JSON.stringify(credentials)
+    }),
+  
+  testIntegration: (source: string) => 
+    fetchApi<{ success: boolean; message: string; details?: Record<string, unknown> }>(`/integrations/${source}/test`, {
+      method: 'POST'
+    }),
+
+  // Pipelines
+  getPipelines: () => fetchApi<{ pipelines: Pipeline[] }>('/pipelines'),
+  
+  getPipeline: (id: string) => fetchApi<Pipeline>(`/pipelines/${id}`),
+  
+  savePipeline: (pipeline: Pipeline) => 
+    fetchApi<{ success: boolean; pipeline: Pipeline }>('/pipelines', {
+      method: 'POST',
+      body: JSON.stringify(pipeline)
+    }),
+  
+  updatePipeline: (id: string, pipeline: Partial<Pipeline>) =>
+    fetchApi<{ success: boolean; pipeline: Pipeline }>(`/pipelines/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(pipeline)
+    }),
+  
+  deletePipeline: (id: string) =>
+    fetchApi<{ success: boolean }>(`/pipelines/${id}`, { method: 'DELETE' }),
+  
+  runPipeline: (id: string) =>
+    fetchApi<{ success: boolean; execution_id: string }>(`/pipelines/${id}/run`, { method: 'POST' }),
+  
+  getPipelineRuns: (id: string) =>
+    fetchApi<{ runs: Array<{ id: string; status: string; started_at: string; completed_at?: string; items_processed: number }> }>(`/pipelines/${id}/runs`),
+
+  // Scrapers
+  getScrapers: () => fetchApi<{ scrapers: ScraperConfig[] }>('/scrapers'),
+  
+  getScraperTemplates: () => fetchApi<{ templates: ScraperTemplate[] }>('/scrapers/templates'),
+  
+  saveScraper: (scraper: ScraperConfig) =>
+    fetchApi<{ success: boolean; scraper: ScraperConfig }>('/scrapers', {
+      method: 'POST',
+      body: JSON.stringify({ scraper })
+    }),
+  
+  deleteScraper: (id: string) =>
+    fetchApi<{ success: boolean }>(`/scrapers/${id}`, { method: 'DELETE' }),
+  
+  analyzeUrlForSelectors: (url: string) =>
+    fetchApi<{ 
+      success: boolean
+      selectors?: {
+        container_selector: string
+        text_selector: string
+        rating_selector?: string
+        rating_attribute?: string
+        author_selector?: string
+        date_selector?: string
+        title_selector?: string
+        confidence: string
+        detected_reviews_count: number
+        notes?: string
+        warnings?: string[]
+      }
+      message?: string 
+    }>('/scrapers/analyze-url', {
+      method: 'POST',
+      body: JSON.stringify({ url })
+    }),
+  
+  runScraper: (id: string) =>
+    fetchApi<{ success: boolean; execution_id: string; status: string }>(`/scrapers/${id}/run`, { method: 'POST' }),
+  
+  getScraperStatus: (id: string) =>
+    fetchApi<{
+      scraper_id: string
+      execution_id?: string
+      status: string
+      started_at?: string
+      completed_at?: string
+      pages_scraped: number
+      items_found: number
+      errors: string[]
+    }>(`/scrapers/${id}/status`),
+  
+  getScraperRuns: (id: string) =>
+    fetchApi<{ runs: Array<{ sk: string; status: string; started_at: string; completed_at?: string; pages_scraped: number; items_found: number }> }>(`/scrapers/${id}/runs`),
+
+  // Projects
+  getProjects: () => fetchApi<{ projects: Project[] }>('/projects'),
+  
+  createProject: (data: { name: string; description?: string; filters?: Record<string, unknown> }) =>
+    fetchApi<{ success: boolean; project: Project }>('/projects', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  getProject: (id: string) => fetchApi<ProjectDetail>(`/projects/${id}`),
+  
+  updateProject: (id: string, data: Partial<Project>) =>
+    fetchApi<{ success: boolean }>(`/projects/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+  
+  deleteProject: (id: string) =>
+    fetchApi<{ success: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
+  
+  generatePersonas: (projectId: string, filters?: {
+    sources?: string[]
+    categories?: string[]
+    sentiments?: string[]
+    persona_count?: number
+    custom_instructions?: string
+    days?: number
+  }) =>
+    fetchApi<{ success: boolean; personas: ProjectPersona[]; analysis?: { research: string; validation: string } }>(`/projects/${projectId}/personas/generate`, {
+      method: 'POST',
+      body: JSON.stringify(filters || {})
+    }),
+  
+  // Persona CRUD
+  createPersona: (projectId: string, persona: Omit<ProjectPersona, 'persona_id' | 'created_at'>) =>
+    fetchApi<{ success: boolean; persona: ProjectPersona }>(`/projects/${projectId}/personas`, {
+      method: 'POST',
+      body: JSON.stringify(persona)
+    }),
+  
+  updatePersona: (projectId: string, personaId: string, data: Partial<Omit<ProjectPersona, 'persona_id' | 'created_at'>>) =>
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+  
+  deletePersona: (projectId: string, personaId: string) =>
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, {
+      method: 'DELETE'
+    }),
+  
+  generatePRD: (projectId: string, data: { feature_idea: string; title?: string }) =>
+    fetchApi<{ success: boolean; document: ProjectDocument }>(`/projects/${projectId}/prd/generate`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  generatePRFAQ: (projectId: string, data: { feature_idea: string; title?: string }) =>
+    fetchApi<{ success: boolean; document: ProjectDocument }>(`/projects/${projectId}/prfaq/generate`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  projectChat: (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) =>
+    fetchApi<{ success: boolean; response: string; mentioned_personas?: string[]; selected_personas?: string[]; referenced_documents?: string[]; context?: { feedback_count: number; persona_count: number; document_count: number } }>(`/projects/${projectId}/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ 
+        message,
+        selected_personas: selectedPersonas,
+        selected_documents: selectedDocuments
+      })
+    }),
+  
+  // Streaming chat via Lambda Function URL (bypasses API Gateway 29s timeout)
+  projectChatStream: async (
+    projectId: string, 
+    message: string, 
+    selectedPersonas?: string[], 
+    selectedDocuments?: string[]
+  ): Promise<{ success: boolean; response: string; mentioned_personas?: string[]; selected_personas?: string[]; referenced_documents?: string[]; context?: { feedback_count: number; persona_count: number; document_count: number } }> => {
+    // Get streaming URL from backend config (auto-configured via CDK)
+    const streamEndpoint = await getStreamUrl()
+    
+    if (!streamEndpoint) {
+      // Fall back to regular API if streaming not configured
+      return api.projectChat(projectId, message, selectedPersonas, selectedDocuments)
+    }
+    
+    const response = await fetch(`${streamEndpoint.replace(/\/+$/, '')}/projects/${projectId}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        selected_personas: selectedPersonas,
+        selected_documents: selectedDocuments
+      })
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Stream API Error: ${response.status}`)
+    }
+    
+    return response.json()
+  },
+  
+  runResearch: (projectId: string, data: { 
+    question: string
+    title?: string
+    sources?: string[]
+    categories?: string[]
+    sentiments?: string[]
+    days?: number
+    // Optional context selection
+    selected_persona_ids?: string[]
+    selected_document_ids?: string[]
+  }) =>
+    fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/research`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  generateDocument: (projectId: string, data: {
+    doc_type: 'prd' | 'prfaq'
+    title: string
+    feature_idea: string
+    data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }
+    selected_persona_ids: string[]
+    selected_document_ids: string[]
+    feedback_sources: string[]
+    feedback_categories: string[]
+    days: number
+    customer_questions?: string[]
+  }) =>
+    fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/document`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  getJobStatus: (projectId: string, jobId: string) =>
+    fetchApi<ProjectJob>(`/projects/${projectId}/jobs/${jobId}`),
+  
+  getJobs: (projectId: string) =>
+    fetchApi<{ success: boolean; jobs: ProjectJob[] }>(`/projects/${projectId}/jobs`),
+  
+  dismissJob: (projectId: string, jobId: string) =>
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/jobs/${jobId}`, {
+      method: 'DELETE'
+    }),
+  
+  createDocument: (projectId: string, data: { title: string; content: string; document_type?: string }) =>
+    fetchApi<{ success: boolean; document: ProjectDocument }>(`/projects/${projectId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  updateDocument: (projectId: string, documentId: string, data: { title?: string; content?: string }) =>
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+  
+  deleteDocument: (projectId: string, documentId: string) =>
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, {
+      method: 'DELETE'
+    }),
+}
+
+// Project types
+export interface ProjectJob {
+  success?: boolean
+  job_id: string
+  job_type: 'research' | 'generate_personas'
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  progress: number
+  current_step?: string
+  created_at: string
+  updated_at?: string
+  completed_at?: string
+  error?: string
+  result?: {
+    document_id?: string
+    title?: string
+    personas?: ProjectPersona[]
+  }
+}
+
+export interface ProjectPersona {
+  persona_id: string
+  name: string
+  tagline: string
+  demographics: { age_range?: string; occupation?: string; tech_level?: string }
+  quote: string
+  goals: string[]
+  frustrations: string[]
+  behaviors: string[]
+  needs: string[]
+  scenario: string
+  created_at: string
+}
+
+export interface ProjectDocument {
+  document_id: string
+  document_type: 'prd' | 'prfaq' | 'research' | 'custom'
+  title: string
+  content: string
+  feature_idea?: string
+  question?: string
+  created_at: string
+  updated_at?: string
+}
+
+export interface Project {
+  project_id: string
+  name: string
+  description: string
+  status: 'active' | 'archived'
+  created_at: string
+  updated_at: string
+  persona_count: number
+  document_count: number
+  filters?: Record<string, unknown>
+}
+
+export interface ProjectDetail {
+  project: Project
+  personas: ProjectPersona[]
+  documents: ProjectDocument[]
+}
+
+export function getDaysFromRange(range: string, customRange?: { start: string; end: string } | null): number {
+  if (range === 'custom' && customRange) {
+    const start = new Date(customRange.start)
+    const end = new Date(customRange.end)
+    const diffTime = Math.abs(end.getTime() - start.getTime())
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
+  }
+  
+  switch (range) {
+    case '24h': return 1
+    case '48h': return 2
+    case '7d': return 7
+    case '30d': return 30
+    default: return 7
+  }
+}
+
+export function getDateRangeParams(range: string, customRange?: { start: string; end: string } | null): { days?: number; start_date?: string; end_date?: string } {
+  if (range === 'custom' && customRange) {
+    return {
+      start_date: customRange.start,
+      end_date: customRange.end,
+    }
+  }
+  return { days: getDaysFromRange(range) }
+}

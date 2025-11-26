@@ -1,0 +1,175 @@
+import * as cdk from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as kms from 'aws-cdk-lib/aws-kms';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import { Construct } from 'constructs';
+
+export class VocStorageStack extends cdk.Stack {
+  public readonly feedbackTable: dynamodb.Table;
+  public readonly aggregatesTable: dynamodb.Table;
+  public readonly watermarksTable: dynamodb.Table;
+  public readonly pipelinesTable: dynamodb.Table;
+  public readonly projectsTable: dynamodb.Table;
+  public readonly jobsTable: dynamodb.Table;
+  public readonly conversationsTable: dynamodb.Table;
+  public readonly kmsKey: kms.Key;
+
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+
+    // KMS Key for encryption at rest
+    this.kmsKey = new kms.Key(this, 'VocKmsKey', {
+      alias: 'voc-datalake-key',
+      description: 'KMS key for VoC Data Lake encryption',
+      enableKeyRotation: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // Main Feedback Table - stores all processed feedback
+    // PK: source_platform, SK: feedback_id
+    // GSI1: by date (for time-based queries)
+    // GSI2: by category (for issue analysis)
+    // GSI3: by urgency (for alerts)
+    this.feedbackTable = new dynamodb.Table(this, 'FeedbackTable', {
+      tableName: 'voc-feedback',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.kmsKey,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      timeToLiveAttribute: 'ttl',
+      stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+    });
+
+    // GSI1: Query by date (for dashboards and trends)
+    // pk: DATE#2024-01-15, sk: timestamp#feedback_id
+    this.feedbackTable.addGlobalSecondaryIndex({
+      indexName: 'gsi1-by-date',
+      partitionKey: { name: 'gsi1pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // GSI2: Query by category and sentiment
+    // pk: CATEGORY#delivery, sk: sentiment_score#timestamp
+    this.feedbackTable.addGlobalSecondaryIndex({
+      indexName: 'gsi2-by-category',
+      partitionKey: { name: 'gsi2pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi2sk', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // GSI3: Query urgent items
+    // pk: URGENCY#high, sk: timestamp
+    this.feedbackTable.addGlobalSecondaryIndex({
+      indexName: 'gsi3-by-urgency',
+      partitionKey: { name: 'gsi3pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi3sk', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.INCLUDE,
+      nonKeyAttributes: ['feedback_id', 'source_platform', 'problem_summary', 'direct_customer_quote', 'source_url'],
+    });
+
+
+    // Aggregates Table - stores pre-computed metrics
+    // PK: METRIC#daily_sentiment, SK: 2024-01-15
+    // PK: METRIC#category_count, SK: delivery#2024-01-15
+    this.aggregatesTable = new dynamodb.Table(this, 'AggregatesTable', {
+      tableName: 'voc-aggregates',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.kmsKey,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      timeToLiveAttribute: 'ttl',
+    });
+
+    // Watermarks Table - tracks ingestion state per source
+    this.watermarksTable = new dynamodb.Table(this, 'WatermarksTable', {
+      tableName: 'voc-watermarks',
+      partitionKey: { name: 'source', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.kmsKey,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // Pipelines Table - stores pipeline configurations
+    this.pipelinesTable = new dynamodb.Table(this, 'PipelinesTable', {
+      tableName: 'voc-pipelines',
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.kmsKey,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // Projects Table - stores projects with personas, PRDs, PR/FAQs
+    // PK: PROJECT#{project_id}, SK: META | PERSONA#{id} | PRD#{id} | PRFAQ#{id} | RESEARCH#{id}
+    this.projectsTable = new dynamodb.Table(this, 'ProjectsTable', {
+      tableName: 'voc-projects',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.kmsKey,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // GSI for listing all projects
+    this.projectsTable.addGlobalSecondaryIndex({
+      indexName: 'gsi1-by-type',
+      partitionKey: { name: 'gsi1pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // Jobs Table - tracks long-running async jobs (research, persona generation, etc.)
+    // PK: PROJECT#{project_id}, SK: JOB#{job_id}
+    // GSI1: Query jobs by status (for monitoring)
+    this.jobsTable = new dynamodb.Table(this, 'JobsTable', {
+      tableName: 'voc-jobs',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.kmsKey,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      timeToLiveAttribute: 'ttl',
+    });
+
+    // GSI1: Query jobs by status for monitoring
+    this.jobsTable.addGlobalSecondaryIndex({
+      indexName: 'gsi1-by-status',
+      partitionKey: { name: 'gsi1pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // Conversations Table - stores AI chat conversations
+    // PK: USER#default (or user ID when auth is added), SK: CONV#{conversation_id}
+    this.conversationsTable = new dynamodb.Table(this, 'ConversationsTable', {
+      tableName: 'voc-conversations',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.kmsKey,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      timeToLiveAttribute: 'ttl',
+    });
+
+    // Outputs
+    new cdk.CfnOutput(this, 'FeedbackTableName', { value: this.feedbackTable.tableName });
+    new cdk.CfnOutput(this, 'FeedbackTableArn', { value: this.feedbackTable.tableArn });
+    new cdk.CfnOutput(this, 'AggregatesTableName', { value: this.aggregatesTable.tableName });
+    new cdk.CfnOutput(this, 'WatermarksTableName', { value: this.watermarksTable.tableName });
+    new cdk.CfnOutput(this, 'KmsKeyArn', { value: this.kmsKey.keyArn });
+    new cdk.CfnOutput(this, 'PipelinesTableName', { value: this.pipelinesTable.tableName });
+    new cdk.CfnOutput(this, 'ProjectsTableName', { value: this.projectsTable.tableName });
+    new cdk.CfnOutput(this, 'JobsTableName', { value: this.jobsTable.tableName });
+    new cdk.CfnOutput(this, 'ConversationsTableName', { value: this.conversationsTable.tableName });
+  }
+}

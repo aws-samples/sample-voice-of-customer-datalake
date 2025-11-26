@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+:root {
+  --color-primary: #3b82f6;
+  --color-positive: #22c55e;
+  --color-negative: #ef4444;
+  --color-neutral: #6b7280;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900 antialiased;
+}
+
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6;
+}
+
+.btn {
+  @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200;
+}
+
+.btn-primary {
+  @apply bg-blue-600 text-white hover:bg-blue-700;
+}
+
+.btn-secondary {
+  @apply bg-gray-100 text-gray-700 hover:bg-gray-200;
+}
+
+.input {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none;
+}
+
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-positive {
+  @apply bg-green-100 text-green-800;
+}
+
+.badge-negative {
+  @apply bg-red-100 text-red-800;
+}
+
+.badge-neutral {
+  @apply bg-gray-100 text-gray-800;
+}
+
+.badge-urgent {
+  @apply bg-orange-100 text-orange-800;
+}
+
+/* Hide scrollbar for carousel */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Prose overrides for chat markdown */
+.prose-sm h1 { @apply text-lg font-bold; }
+.prose-sm h2 { @apply text-base font-semibold; }
+.prose-sm h3 { @apply text-sm font-semibold; }

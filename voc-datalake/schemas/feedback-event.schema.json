@@ -1,0 +1,188 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://voc-datalake/schemas/feedback-event.json",
+  "title": "VoC Feedback Event",
+  "description": "Normalized schema for Voice of the Customer feedback events",
+  "type": "object",
+  "required": [
+    "feedback_id",
+    "source_id",
+    "source_platform",
+    "source_channel",
+    "source_created_at",
+    "ingested_at",
+    "processed_at",
+    "original_text"
+  ],
+  "properties": {
+    "feedback_id": {
+      "type": "string",
+      "description": "Internal unique identifier (UUID)"
+    },
+    "source_id": {
+      "type": "string",
+      "description": "Original ID from the source platform"
+    },
+    "source_platform": {
+      "type": "string",
+      "enum": ["trustpilot", "google_reviews", "twitter", "instagram", "facebook", "reddit", "tavily", "web", "other"],
+      "description": "Platform where feedback originated"
+    },
+    "source_channel": {
+      "type": "string",
+      "enum": ["review", "comment", "post", "message", "thread", "tweet", "mention", "reply", "other"],
+      "description": "Type of content"
+    },
+    "source_url": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "Direct URL to the original feedback"
+    },
+    "brand_name": {
+      "type": "string",
+      "description": "Brand name this feedback relates to"
+    },
+    "brand_handles_matched": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Brand handles/keywords that matched"
+    },
+    "source_created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the feedback was created on the source platform (UTC)"
+    },
+    "ingested_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the feedback was ingested into raw zone (UTC)"
+    },
+    "processed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the feedback was processed and enriched (UTC)"
+    },
+
+    "original_text": {
+      "type": "string",
+      "description": "Original feedback text as received"
+    },
+    "original_language": {
+      "type": "string",
+      "description": "Detected language code (ISO 639-1)"
+    },
+    "normalized_text": {
+      "type": ["string", "null"],
+      "description": "Translated/cleaned text in primary language"
+    },
+    "normalized_language": {
+      "type": "string",
+      "description": "Target language code for normalization"
+    },
+    "rating": {
+      "type": ["number", "null"],
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Star rating if applicable (1-5 scale)"
+    },
+    "category": {
+      "type": "string",
+      "description": "Primary issue category",
+      "examples": ["delivery", "customer_support", "product_quality", "pricing", "website", "app"]
+    },
+    "subcategory": {
+      "type": ["string", "null"],
+      "description": "Specific subcategory",
+      "examples": ["late_delivery", "rude_agent", "broken_item", "overcharged"]
+    },
+    "journey_stage": {
+      "type": "string",
+      "enum": ["awareness", "consideration", "purchase", "delivery", "usage", "support", "retention", "advocacy", "unknown"],
+      "description": "Customer journey stage"
+    },
+    "sentiment_label": {
+      "type": "string",
+      "enum": ["positive", "neutral", "negative", "mixed"],
+      "description": "Overall sentiment classification"
+    },
+    "sentiment_score": {
+      "type": "number",
+      "minimum": -1,
+      "maximum": 1,
+      "description": "Sentiment score (-1 very negative to +1 very positive)"
+    },
+    "urgency": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Urgency level for response"
+    },
+    "impact_area": {
+      "type": "string",
+      "enum": ["product", "operations", "cx", "tech", "pricing", "brand", "legal", "other"],
+      "description": "Business area most impacted"
+    },
+    "problem_summary": {
+      "type": ["string", "null"],
+      "maxLength": 500,
+      "description": "Short human-readable summary of the issue"
+    },
+    "problem_root_cause_hypothesis": {
+      "type": ["string", "null"],
+      "maxLength": 500,
+      "description": "LLM hypothesis about root cause"
+    },
+    "direct_customer_quote": {
+      "type": ["string", "null"],
+      "maxLength": 300,
+      "description": "Verbatim excerpt that best captures the pain"
+    },
+    "persona_name": {
+      "type": ["string", "null"],
+      "description": "Inferred persona label",
+      "examples": ["Frequent Business Traveler", "Price-Sensitive Local", "First-Time Buyer"]
+    },
+    "persona_type": {
+      "type": ["string", "null"],
+      "enum": ["existing_customer", "prospect", "churn_risk", "advocate", "unknown", null],
+      "description": "Customer relationship type"
+    },
+    "persona_attributes": {
+      "type": ["object", "null"],
+      "properties": {
+        "inferred_segment": { "type": "string" },
+        "inferred_channel_preference": { "type": "string" },
+        "inferred_expectations": { "type": "array", "items": { "type": "string" } },
+        "confidence": { "type": "string", "enum": ["low", "medium", "high"] }
+      },
+      "description": "Additional persona attributes"
+    },
+    "key_phrases": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Extracted key phrases from Comprehend"
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "type": { "type": "string" }
+        }
+      },
+      "description": "Named entities extracted"
+    },
+    "llm_metadata": {
+      "type": "object",
+      "properties": {
+        "model_name": { "type": "string" },
+        "prompt_version": { "type": "string" },
+        "temperature": { "type": "number" },
+        "input_tokens": { "type": "integer" },
+        "output_tokens": { "type": "integer" },
+        "latency_ms": { "type": "integer" }
+      },
+      "description": "LLM inference metadata for tracing"
+    }
+  }
+}

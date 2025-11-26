@@ -1,0 +1,25 @@
+{
+  "name": "voc-datalake",
+  "version": "1.0.0",
+  "description": "Voice of the Customer Data Lake - AWS CDK Infrastructure",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy --all",
+    "destroy": "cdk destroy --all"
+  },
+  "keywords": ["aws", "cdk", "datalake", "voice-of-customer", "analytics"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "aws-cdk-lib": "^2.229.0",
+    "constructs": "^10.4.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

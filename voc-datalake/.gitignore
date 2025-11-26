@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.js
+*.d.ts
+!jest.config.js
+
+# CDK output
+cdk.out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lambda layers (built artifacts)
+lambda/layers/*/python/*
+!lambda/layers/*/python/.gitkeep
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Secrets (never commit)
+secrets.json
+*.pem
+*.key
