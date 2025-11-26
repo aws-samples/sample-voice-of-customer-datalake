@@ -1,6 +1,10 @@
-# Voice of the Customer (VoC) Data Lake
+# Voice of the Customer (VoC) Data Lake - CDK Infrastructure
 
-A fully serverless, near real-time AWS data lake for ingesting, processing, and analyzing customer feedback from multiple sources using DynamoDB, Lambda, and API Gateway.
+This directory contains the AWS CDK infrastructure code for the VoC Data Lake platform. For project overview and features, see the [root README](../README.md).
+
+## What's in This Directory
+
+This is the main CDK application that deploys all AWS infrastructure for the VoC Data Lake platform.
 
 ## Architecture Overview
 
@@ -263,6 +267,46 @@ voc-datalake/
     └── feedback-analysis-prompt.json
 ```
 
+## CDK Stacks
+
+The infrastructure is organized into multiple stacks for modularity:
+
+### VocStorageStack
+- **DynamoDB Tables**: feedback, aggregates, watermarks, pipelines, projects, jobs, conversations
+- **KMS Key**: Customer-managed encryption key with rotation enabled
+- **Indexes**: GSI1 (by-date), GSI2 (by-category), GSI3 (by-urgency)
+- **Streams**: Enabled on feedback table for real-time aggregation
+
+### VocIngestionStack
+- **Lambda Ingestors**: 12 data source ingestors (Trustpilot, Yelp, Google Reviews, Twitter, Instagram, Facebook, Reddit, Tavily, Apple App Store, Google Play, Huawei AppGallery, Web Scraper)
+- **EventBridge Rules**: Scheduled ingestion (1-30 min intervals)
+- **SQS Queue**: Processing queue with DLQ for failed messages
+- **Secrets Manager**: API credentials storage with rotation capability
+- **Lambda Layers**: Shared dependencies (requests, beautifulsoup4, aws-lambda-powertools)
+
+### VocProcessingStack
+- **Processor Lambda**: Bedrock/Comprehend enrichment (1024 MB, 5 min timeout)
+- **Aggregator Lambda**: DynamoDB Streams consumer for real-time metrics
+- **IAM Permissions**: Bedrock InvokeModel, Comprehend DetectSentiment, Translate TranslateText
+
+### VocAnalyticsStack
+- **API Gateway**: REST API with CORS, throttling (100 req/s, 200 burst)
+- **Metrics Lambda**: Read-only queries (/feedback/*, /metrics/*)
+- **Ops Lambda**: CRUD operations (/pipelines/*, /integrations/*, /sources/*, /scrapers/*, /chat/*, /settings/*)
+- **Projects Lambda**: Project management (/projects/*)
+- **Chat Stream Lambda**: Function URL for streaming responses (bypasses API Gateway 29s timeout)
+- **Webhook Lambda**: Trustpilot webhook receiver
+
+### VocResearchStack
+- **Step Functions**: Multi-step research workflow orchestration
+- **Research Lambda**: Individual research steps (data gathering, analysis, synthesis)
+- **IAM Permissions**: Bedrock streaming, DynamoDB read/write
+
+### VocFrontendStack
+- **S3 Bucket**: Static website hosting with versioning
+- **CloudFront Distribution**: CDN with HTTPS, custom domain support
+- **OAI**: Origin Access Identity for secure S3 access
+
 ## Cost Estimate (10K feedback/day)
 
 | Service | Estimated Cost |
@@ -271,21 +315,95 @@ voc-datalake/
 | DynamoDB | ~$10-20/month |
 | SQS | ~$1-2/month |
 | API Gateway | ~$5-10/month |
-| Bedrock (Claude Sonnect 4.5) | ~$150-200/month |
+| Bedrock (Claude Sonnet 4.5) | ~$150-200/month |
 | Comprehend | ~$30-50/month |
-| **Total** | **~$210-305/month** |
+| CloudFront | ~$5-10/month |
+| S3 | ~$1-2/month |
+| **Total** | **~$215-320/month** |
 
-## Security
+## Security Best Practices
 
-- All DynamoDB tables encrypted with customer-managed KMS key
-- API credentials stored in Secrets Manager
-- IAM roles follow least-privilege principle
-- API Gateway with throttling enabled
-- Lambda reserved concurrency to prevent runaway costs
+- **Encryption at Rest**: All DynamoDB tables use customer-managed KMS key
+- **Encryption in Transit**: TLS 1.2+ for all API calls
+- **IAM Least Privilege**: Each Lambda has minimal required permissions
+- **Secrets Management**: API credentials in Secrets Manager, never hardcoded
+- **API Throttling**: Rate limiting on API Gateway (100 req/s)
+- **Reserved Concurrency**: Lambda concurrency limits to prevent runaway costs
+- **CloudWatch Logs**: 2-week retention for all Lambda functions
+- **X-Ray Tracing**: Distributed tracing via Powertools
+
+## Monitoring & Observability
+
+### CloudWatch Dashboards
+- Lambda invocations, errors, duration
+- DynamoDB read/write capacity, throttles
+- SQS queue depth, message age
+- API Gateway requests, latency, errors
+
+### Custom Metrics (via Powertools)
+- Feedback items processed per source
+- Bedrock API latency and errors
+- Aggregation lag time
+- Urgent items detected
+
+### Alarms
+- Lambda error rate > 5%
+- DynamoDB throttling
+- SQS DLQ messages > 0
+- API Gateway 5xx errors > 1%
+
+## Useful CDK Commands
+
+```bash
+# Synthesize CloudFormation templates
+npm run build && cdk synth
+
+# Show differences between deployed and local
+cdk diff
+
+# Deploy specific stack
+cdk deploy VocStorageStack
+
+# Deploy all stacks
+cdk deploy --all
+
+# Destroy all stacks (careful!)
+cdk destroy --all
+
+# List all stacks
+cdk list
+```
+
+## Troubleshooting
+
+### Lambda Layer Issues
+If Lambda functions fail with import errors:
+```bash
+cd lambda/layers/ingestion-deps/python
+pip install -r ../requirements.txt -t . --upgrade
+```
+
+### DynamoDB Throttling
+If you see throttling errors, consider:
+- Switching to provisioned capacity for predictable workloads
+- Increasing on-demand capacity (auto-scales but has limits)
+- Adding exponential backoff in Lambda code
+
+### Bedrock Quota Limits
+If Bedrock calls fail with throttling:
+- Request quota increase in AWS Service Quotas
+- Implement exponential backoff
+- Consider batching requests
+
+### API Gateway CORS Issues
+If frontend can't call API:
+- Verify CORS configuration in analytics-stack.ts
+- Check CloudFront origin matches API Gateway URL
+- Ensure OPTIONS preflight requests are handled
 
 ## License
 
-MIT License
+Proprietary - All rights reserved
 
 
 ## Frontend Dashboard

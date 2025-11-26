@@ -95,6 +95,8 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
    - Open the CloudFront URL in your browser
    - Go to Settings and paste the API endpoint
 
+For detailed deployment instructions, troubleshooting, and CDK stack information, see [voc-datalake/README.md](voc-datalake/README.md).
+
 ### Configuration
 
 1. **Brand Settings** (Settings page)
@@ -148,34 +150,42 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 ## 📁 Project Structure
 
 ```
-voc-datalake/
-├── bin/                        # CDK app entry point
-├── lib/stacks/                 # CDK stack definitions
-│   ├── storage-stack.ts        # DynamoDB tables, KMS
-│   ├── ingestion-stack.ts      # Ingestors, EventBridge, SQS
-│   ├── processing-stack.ts     # Processor, Aggregator
-│   ├── analytics-stack.ts      # API Gateway, API Lambdas
-│   ├── research-stack.ts       # Step Functions workflows
-│   └── frontend-stack.ts       # CloudFront, S3
-├── lambda/
-│   ├── ingestors/              # Data source ingestors
-│   ├── processor/              # Bedrock/Comprehend enrichment
-│   ├── aggregator/             # Real-time metrics
-│   ├── api/                    # REST API handlers
-│   ├── webhooks/               # Webhook receivers
-│   ├── research/               # Research step functions
-│   └── layers/                 # Shared dependencies
-├── frontend/                   # React dashboard
-│   ├── src/
-│   │   ├── pages/              # Dashboard, Feedback, Projects, etc.
-│   │   ├── components/         # Reusable UI components
-│   │   ├── api/                # API client
-│   │   └── store/              # Zustand stores
-│   └── public/
-├── schemas/                    # JSON schemas
-├── prompts/                    # Bedrock prompts
-└── scripts/                    # Utility scripts
+voice-of-customer-datalake/
+├── README.md                   # This file - project overview
+├── .gitignore                  # Git ignore patterns
+├── .kiro/                      # Kiro IDE configuration
+│   └── steering/               # Project guidelines and standards
+└── voc-datalake/               # Main CDK application
+    ├── README.md               # CDK deployment guide
+    ├── bin/                    # CDK app entry point
+    ├── lib/stacks/             # CDK stack definitions
+    │   ├── storage-stack.ts    # DynamoDB tables, KMS
+    │   ├── ingestion-stack.ts  # Ingestors, EventBridge, SQS
+    │   ├── processing-stack.ts # Processor, Aggregator
+    │   ├── analytics-stack.ts  # API Gateway, API Lambdas
+    │   ├── research-stack.ts   # Step Functions workflows
+    │   └── frontend-stack.ts   # CloudFront, S3
+    ├── lambda/
+    │   ├── ingestors/          # Data source ingestors
+    │   ├── processor/          # Bedrock/Comprehend enrichment
+    │   ├── aggregator/         # Real-time metrics
+    │   ├── api/                # REST API handlers
+    │   ├── webhooks/           # Webhook receivers
+    │   ├── research/           # Research step functions
+    │   └── layers/             # Shared dependencies
+    ├── frontend/               # React dashboard
+    │   ├── src/
+    │   │   ├── pages/          # Dashboard, Feedback, Projects, etc.
+    │   │   ├── components/     # Reusable UI components
+    │   │   ├── api/            # API client
+    │   │   └── store/          # Zustand stores
+    │   └── public/
+    ├── schemas/                # JSON schemas
+    ├── prompts/                # Bedrock prompts
+    └── scripts/                # Utility scripts
 ```
+
+See [voc-datalake/README.md](voc-datalake/README.md) for detailed CDK stack information.
 
 ## 🔐 Security
 
