@@ -8,95 +8,17 @@ This is the main CDK application that deploys all AWS infrastructure for the VoC
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              INGESTION LAYER                                     │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
-│  │Trustpilot│  │  Google  │  │ Twitter  │  │   Meta   │  │  Reddit  │          │
-│  │   API    │  │ Reviews  │  │  API v2  │  │Graph API │  │Data API  │          │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘          │
-│       │             │             │             │             │                  │
-│       ▼             ▼             ▼             ▼             ▼                  │
-│  ┌─────────────────────────────────────────────────────────────────────┐        │
-│  │              Lambda Ingestors (EventBridge scheduled)                │        │
-│  └─────────────────────────────────────────────────────────────────────┘        │
-│                                    │                                             │
-│                                    ▼                                             │
-│                          ┌─────────────────┐                                     │
-│                          │   SQS Queue     │                                     │
-│                          └─────────────────┘                                     │
-│                                                                                  │
-└──────────────────────────────────────┬──────────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                             PROCESSING LAYER                                     │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────┐        │
-│  │                    Feedback Processor Lambda                         │        │
-│  │                    (Triggered by SQS)                               │        │
-│  └─────────────────────────────────────────────────────────────────────┘        │
-│                    │              │              │                                │
-│                    ▼              ▼              ▼                                │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                              │
-│  │  Amazon     │  │   Amazon    │  │   Amazon    │                              │
-│  │  Bedrock    │  │ Comprehend  │  │  Translate  │                              │
-│  │ (Claude 3)  │  │ (Sentiment) │  │ (Multi-lang)│                              │
-│  └─────────────┘  └─────────────┘  └─────────────┘                              │
-│                                                                                  │
-└──────────────────────────────────────┬──────────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              STORAGE LAYER                                       │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────┐        │
-│  │                         DynamoDB Tables                              │        │
-│  │                                                                      │        │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐      │        │
-│  │  │ voc-feedback    │  │ voc-aggregates  │  │ voc-watermarks  │      │        │
-│  │  │ (main data)     │  │ (metrics)       │  │ (state)         │      │        │
-│  │  │                 │  │                 │  │                 │      │        │
-│  │  │ GSI1: by-date   │  │                 │  │                 │      │        │
-│  │  │ GSI2: by-cat    │  │                 │  │                 │      │        │
-│  │  │ GSI3: by-urgent │  │                 │  │                 │      │        │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘      │        │
-│  │                                                                      │        │
-│  └─────────────────────────────────────────────────────────────────────┘        │
-│                          │                                                       │
-│                          ▼ DynamoDB Streams                                      │
-│              ┌─────────────────────────────┐                                     │
-│              │  Aggregation Lambda         │                                     │
-│              │  (Real-time metrics update) │                                     │
-│              └─────────────────────────────┘                                     │
-│                                                                                  │
-└──────────────────────────────────────┬──────────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                             ANALYTICS LAYER                                      │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────┐        │
-│  │                      API Gateway REST API                            │        │
-│  │                                                                      │        │
-│  │  GET /feedback          - List feedback with filters                 │        │
-│  │  GET /feedback/{id}     - Get single feedback item                   │        │
-│  │  GET /feedback/urgent   - Get urgent items                           │        │
-│  │  GET /metrics/summary   - Dashboard summary                          │        │
-│  │  GET /metrics/sentiment - Sentiment breakdown                        │        │
-│  │  GET /metrics/categories - Category breakdown                        │        │
-│  │  GET /metrics/sources   - Source breakdown                           │        │
-│  │  GET /metrics/personas  - Persona analysis                           │        │
-│  │                                                                      │        │
-│  └─────────────────────────────────────────────────────────────────────┘        │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
+For a complete architecture diagram, see the [root README](../README.md#-architecture).
+
+### Data Flow
+
+1. **Ingestion**: 12 Lambda ingestors fetch data from external APIs on EventBridge schedules (1-30 min)
+2. **Queueing**: Raw feedback sent to SQS queue for decoupling and reliability
+3. **Processing**: Processor Lambda enriches with Bedrock (Claude Sonnet 4.5), Comprehend, and Translate
+4. **Storage**: Enriched feedback stored in DynamoDB with GSIs for efficient querying
+5. **Aggregation**: DynamoDB Streams trigger Aggregator Lambda for real-time metrics
+6. **Analytics**: API Gateway + Lambda provide REST API for querying data
+7. **Presentation**: React SPA hosted on CloudFront + S3
 
 ## Features
 
