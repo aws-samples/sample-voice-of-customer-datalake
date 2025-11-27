@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import Feedback from './pages/Feedback'
 import FeedbackDetail from './pages/FeedbackDetail'
 import Categories from './pages/Categories'
+import ProblemAnalysis from './pages/ProblemAnalysis'
 import Settings from './pages/Settings'
 import Pipelines from './pages/Pipelines'
 import Scrapers from './pages/Scrapers'
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="feedback" element={<Feedback />} />
         <Route path="feedback/:id" element={<FeedbackDetail />} />
         <Route path="categories" element={<Categories />} />
+        <Route path="problems" element={<ProblemAnalysis />} />
         <Route path="chat" element={<Chat />} />
         <Route path="projects" element={<Projects />} />
         <Route path="projects/:id" element={<ProjectDetail />} />

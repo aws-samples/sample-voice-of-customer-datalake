@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Filter, SortDesc, Tag, X } from 'lucide-react'
+import { Search, Filter, SortDesc, X } from 'lucide-react'
 import { api, getDaysFromRange } from '../api/client'
 import { useConfigStore } from '../store/configStore'
 import FeedbackCard from '../components/FeedbackCard'
@@ -55,12 +55,7 @@ export default function Feedback() {
     enabled: !!config.apiEndpoint && search.length < 2,
   })
 
-  // Get entities for tag cloud
-  const { data: entitiesData } = useQuery({
-    queryKey: ['entities', days],
-    queryFn: () => api.getEntities({ days, limit: 200 }),
-    enabled: !!config.apiEndpoint,
-  })
+
 
   // Use search results if searching, otherwise use regular results
   const activeData = search.length >= 2 ? searchData : data
@@ -152,30 +147,7 @@ export default function Feedback() {
         </div>
       </div>
 
-      {/* Quick Tags */}
-      {entitiesData?.entities && (
-        <div className="card">
-          <div className="flex items-center gap-2 mb-3">
-            <Tag size={16} className="text-gray-400" />
-            <span className="text-sm font-medium text-gray-700">Quick Filters</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(entitiesData.entities.keywords || {}).slice(0, 12).map(([keyword, count]) => (
-              <button
-                key={keyword}
-                onClick={() => setSearch(keyword)}
-                className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
-                  search === keyword 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {keyword} <span className="opacity-60">({count})</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+
 
       {/* Results count */}
       <div className="flex items-center justify-between">
