@@ -117,7 +117,7 @@ export default function Dashboard() {
         <div className="card">
           <h3 className="text-lg font-semibold mb-4">Feedback Volume & Sentiment Trend</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={summary?.daily_totals || []}>
+            <LineChart data={[...(summary?.daily_totals || [])].sort((a, b) => a.date.localeCompare(b.date))}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="date" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} />

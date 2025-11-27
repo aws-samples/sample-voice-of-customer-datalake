@@ -270,7 +270,7 @@ function ScraperEditor({ scraper, template, onSave, onClose }: {
         extraction_method: template.extraction_method,
         template: template.id,
         base_url: template.url_placeholder,
-        pagination: template.pagination,
+        pagination: template.pagination ?? DEFAULT_SCRAPER.pagination,
         ...template.config,
       }
     }
