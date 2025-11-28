@@ -11,6 +11,7 @@ import { Construct } from 'constructs';
 export interface VocProcessingStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
+  projectsTable: dynamodb.Table;
   processingQueue: sqs.Queue;
   kmsKey: kms.Key;
   config: {
@@ -28,7 +29,7 @@ export class VocProcessingStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocProcessingStackProps) {
     super(scope, id, props);
 
-    const { feedbackTable, aggregatesTable, processingQueue, kmsKey, config } = props;
+    const { feedbackTable, aggregatesTable, projectsTable, processingQueue, kmsKey, config } = props;
 
     // Processing Lambda Role
     const processingRole = new iam.Role(this, 'ProcessingLambdaRole', {
@@ -65,6 +66,7 @@ export class VocProcessingStack extends cdk.Stack {
     // Grant DynamoDB and KMS permissions
     feedbackTable.grantReadWriteData(processingRole);  // Read for dedup check, Write for inserts
     aggregatesTable.grantReadWriteData(processingRole);
+    projectsTable.grantReadData(processingRole);  // Read categories config
     processingQueue.grantConsumeMessages(processingRole);
     kmsKey.grantEncryptDecrypt(processingRole);
 
@@ -88,6 +90,7 @@ export class VocProcessingStack extends cdk.Stack {
       environment: {
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
+        PROJECTS_TABLE: projectsTable.tableName,
         PRIMARY_LANGUAGE: config.primaryLanguage,
         BEDROCK_MODEL_ID: 'anthropic.claude-3-haiku-20240307-v1:0',
         POWERTOOLS_SERVICE_NAME: 'voc-processor',

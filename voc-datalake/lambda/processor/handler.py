@@ -49,13 +49,83 @@ SYSTEM_PROMPT = """You are an expert customer experience analyst. Analyze feedba
 - Use exact enum values specified
 - Keep summaries under 500 chars"""
 
+# Default categories (used if DynamoDB config not available)
+DEFAULT_CATEGORIES = "delivery|customer_support|product_quality|pricing|website|app|billing|returns|communication|other"
+
 USER_PROMPT_TEMPLATE = """Analyze this feedback and return JSON:
 
 Source: {source_platform} | Channel: {source_channel} | Rating: {rating}
 Text: {original_text}
 
+{categories_instruction}
+
 Return ONLY this JSON structure:
-{{"category":"delivery|customer_support|product_quality|pricing|website|app|billing|returns|communication|other","subcategory":"string or null","journey_stage":"awareness|consideration|purchase|delivery|usage|support|retention|advocacy|unknown","sentiment_label":"positive|neutral|negative|mixed","sentiment_score":-1.0 to 1.0,"urgency":"low|medium|high","impact_area":"product|operations|cx|tech|pricing|brand|legal|other","problem_summary":"string or null","problem_root_cause_hypothesis":"string or null","direct_customer_quote":"string or null","persona":{{"name":"string or null","type":"existing_customer|prospect|churn_risk|advocate|unknown|null","attributes":{{"inferred_segment":"string or null","confidence":"low|medium|high"}}}}}}"""
+{{"category":"<one of the categories above>","subcategory":"string or null","journey_stage":"awareness|consideration|purchase|delivery|usage|support|retention|advocacy|unknown","sentiment_label":"positive|neutral|negative|mixed","sentiment_score":-1.0 to 1.0,"urgency":"low|medium|high","impact_area":"product|operations|cx|tech|pricing|brand|legal|other","problem_summary":"string or null","problem_root_cause_hypothesis":"string or null","direct_customer_quote":"string or null","persona":{{"name":"string or null","type":"existing_customer|prospect|churn_risk|advocate|unknown|null","attributes":{{"inferred_segment":"string or null","confidence":"low|medium|high"}}}}}}"""
+
+# Cache for categories config
+_categories_cache = None
+_categories_cache_time = None
+CATEGORIES_CACHE_TTL = 300  # 5 minutes
+
+
+@tracer.capture_method
+def get_categories_config() -> dict:
+    """Fetch categories configuration from DynamoDB with caching."""
+    global _categories_cache, _categories_cache_time
+    
+    now = datetime.now(timezone.utc).timestamp()
+    
+    # Return cached if still valid
+    if _categories_cache and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
+        return _categories_cache
+    
+    try:
+        # Try to get from projects table (same as API uses)
+        projects_table_name = os.environ.get('PROJECTS_TABLE', 'voc-projects')
+        projects_table = dynamodb.Table(projects_table_name)
+        
+        response = projects_table.get_item(
+            Key={'pk': 'SETTINGS', 'sk': 'CATEGORIES'}
+        )
+        item = response.get('Item')
+        
+        if item and item.get('categories'):
+            _categories_cache = item.get('categories', [])
+            _categories_cache_time = now
+            logger.info(f"Loaded {len(_categories_cache)} categories from DynamoDB")
+            return _categories_cache
+    except Exception as e:
+        logger.warning(f"Could not fetch categories from DynamoDB: {e}")
+    
+    return None
+
+
+def build_categories_instruction() -> str:
+    """Build the categories instruction for the LLM prompt."""
+    categories_config = get_categories_config()
+    
+    if not categories_config:
+        return f"Available categories: {DEFAULT_CATEGORIES}"
+    
+    # Build detailed instruction with categories and subcategories
+    lines = ["Available categories and their subcategories:"]
+    category_names = []
+    
+    for cat in categories_config:
+        cat_name = cat.get('name', '')
+        cat_desc = cat.get('description', cat_name)
+        category_names.append(cat_name)
+        
+        subcats = cat.get('subcategories', [])
+        if subcats:
+            subcat_names = [s.get('name', '') for s in subcats]
+            lines.append(f"- {cat_name} ({cat_desc}): subcategories = {', '.join(subcat_names)}")
+        else:
+            lines.append(f"- {cat_name} ({cat_desc})")
+    
+    lines.append(f"\nUse ONLY these category values: {' | '.join(category_names)}")
+    
+    return '\n'.join(lines)
 
 processor = BatchProcessor(event_type=EventType.SQS)
 
@@ -123,11 +193,15 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
     """
     start_time = datetime.now(timezone.utc)
     
+    # Build categories instruction from DynamoDB config
+    categories_instruction = build_categories_instruction()
+    
     user_prompt = USER_PROMPT_TEMPLATE.format(
         source_platform=raw_record.get('source_platform', 'unknown'),
         source_channel=raw_record.get('source_channel', 'unknown'),
         rating=raw_record.get('rating', 'N/A'),
-        original_text=raw_record.get('text', '')[:3000]
+        original_text=raw_record.get('text', '')[:3000],
+        categories_instruction=categories_instruction
     )
     
     request_body = {

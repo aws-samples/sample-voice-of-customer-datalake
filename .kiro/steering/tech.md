@@ -11,16 +11,19 @@
 
 | Service | Purpose | Key Config |
 |---------|---------|------------|
-| **DynamoDB** | Storage, streams | On-demand billing, KMS encryption, TTL |
+| **DynamoDB** | Processed data, streams | On-demand billing, KMS encryption, TTL |
+| **S3** | Raw data lake | KMS encryption, partitioned by source/date |
 | **Lambda** | Compute | Python 3.12, reserved concurrency, Powertools |
 | **SQS** | Processing queue | DLQ, visibility timeout, batch processing |
 | **API Gateway** | REST API | Throttling, CORS, stage deployment |
 | **EventBridge** | Scheduled ingestion | Rate expressions (1-30 min) |
 | **Secrets Manager** | API credentials | Auto-rotation capable |
 | **KMS** | Encryption | Customer-managed key, key rotation |
-| **Bedrock** | LLM inference | Claude 3 Haiku (cost-effective) |
+| **Bedrock** | LLM inference | Claude Sonnet 4.5 (global inference profile) |
 | **Comprehend** | NLP | Sentiment, language detection, key phrases |
 | **Translate** | Multi-language | Auto language pair detection |
+| **Step Functions** | Long-running jobs | Research workflows, persona generation |
+| **CloudFront** | CDN | Frontend distribution |
 
 ## Data Sources
 
@@ -36,6 +39,7 @@
 | Apple App Store | RSS Feed | None | 15 min |
 | Google Play Store | API | Service Account | 15 min |
 | Huawei AppGallery | API | OAuth2 | 15 min |
+| Yelp | API | API Key | 30 min |
 | Web Scraper | HTTP | None | Configurable |
 
 ## Backend (Lambda - Python)
@@ -71,16 +75,18 @@ def lambda_handler(event, context):
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| React | 19 | UI framework |
-| Vite | 7.x | Build tool |
-| Tailwind CSS | 4 | Styling |
-| Zustand | latest | State management |
-| TanStack Query | latest | Data fetching/caching |
-| React Router | 7 | Routing |
-| Recharts | latest | Charts |
-| Lucide React | latest | Icons |
-| date-fns | latest | Date formatting |
-| clsx | latest | Conditional classes |
+| React | 19.2 | UI framework |
+| Vite | 7.2 | Build tool |
+| Tailwind CSS | 4.1 | Styling |
+| Zustand | 5.0 | State management (persisted) |
+| TanStack Query | 5.90 | Data fetching/caching |
+| React Router | 7.9 | Routing |
+| Recharts | 3.5 | Charts (Line, Bar, Pie) |
+| Lucide React | 0.554 | Icons |
+| date-fns | 4.1 | Date formatting |
+| clsx | 2.1 | Conditional classes |
+| react-markdown | 10.1 | Markdown rendering |
+| jspdf + html2canvas | - | PDF export |
 
 ### Pages
 
@@ -88,24 +94,38 @@ def lambda_handler(event, context):
 |------|-------|----------|
 | Dashboard | `/` | Charts, metrics, social feed, urgent issues |
 | Feedback | `/feedback` | Filterable list, search, pagination |
-| Categories | `/categories` | Category breakdown charts |
-| AI Chat | `/chat` | Conversational data queries |
+| Feedback Detail | `/feedback/:id` | Single item with similar feedback |
+| Categories | `/categories` | Category breakdown and management |
+| Problem Analysis | `/problems` | Problem analysis dashboard |
+| AI Chat | `/chat` | Conversational data queries with streaming |
+| Projects | `/projects` | Research projects list |
+| Project Detail | `/projects/:id` | Personas, PRDs, PR/FAQs, project chat |
 | Pipelines | `/pipelines` | Visual step builder, prompt editor |
-| Scrapers | `/scrapers` | CSS selector config, scheduling |
-| Integrations | `/integrations` | Webhook URLs, credential management |
-| Settings | `/settings` | API endpoint, brand config |
+| Scrapers | `/scrapers` | CSS/JSON-LD selector config, templates |
+| Settings | `/settings` | API endpoint, brand config, integrations |
 
 ### Code Style
 
 ```typescript
+import { useQuery } from '@tanstack/react-query'
+import { api, getDaysFromRange } from '../api/client'
+import { useConfigStore } from '../store/configStore'
 import type { FeedbackItem } from '../api/client'
 
-export default function MyComponent() {
+export default function Dashboard() {
+  const { timeRange, customDateRange, config } = useConfigStore()
+  const days = getDaysFromRange(timeRange, customDateRange)
+
   const { data, isLoading } = useQuery({
-    queryKey: ['feedback', days],
-    queryFn: () => api.getFeedback({ days }),
+    queryKey: ['summary', days],
+    queryFn: () => api.getSummary(days),
     enabled: !!config.apiEndpoint,
   })
+  
+  if (!config.apiEndpoint) return <ConfigurePrompt />
+  if (isLoading) return <Loading />
+  
+  return <div className="space-y-6">...</div>
 }
 ```
 
@@ -158,5 +178,6 @@ npm run mock   # Mock API at localhost:3001
 - **IAM**: Least-privilege per Lambda
 - **Secrets**: Never hardcode; use Secrets Manager
 - **DynamoDB**: On-demand billing, TTL for old data
+- **S3**: Raw data archival, partitioned for cost-effective querying
 - **Lambda**: Right-size memory, reserved concurrency
-- **Bedrock**: Use Claude Haiku, batch when possible
+- **Bedrock**: Use Claude Sonnet 4.5, batch when possible

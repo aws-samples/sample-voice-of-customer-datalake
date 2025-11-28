@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 
   Save, Check, AlertCircle, Loader2, Copy, ExternalLink, 
-  Eye, EyeOff, CheckCircle2, Webhook, Key, TestTube 
+  Eye, EyeOff, CheckCircle2, Webhook, Key, TestTube, Tags
 } from 'lucide-react'
 import { useConfigStore } from '../store/configStore'
 import { api } from '../api/client'
+import CategoriesManager from '../components/CategoriesManager'
 import clsx from 'clsx'
 
 // Source configuration with fields, webhooks, and setup instructions
@@ -614,6 +615,25 @@ export default function Settings() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Categories Configuration */}
+      <div className="card">
+        <div className="flex items-center gap-2 mb-4">
+          <Tags className="text-purple-600" size={20} />
+          <h2 className="text-lg font-semibold">Feedback Categories</h2>
+        </div>
+        <p className="text-sm text-gray-500 mb-4">
+          Configure categories and subcategories for feedback classification. These are used by the AI processor to categorize incoming feedback.
+        </p>
+        {!apiEndpoint ? (
+          <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
+            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+            <span>Configure the API endpoint above to manage categories.</span>
+          </div>
+        ) : (
+          <CategoriesManager />
+        )}
       </div>
 
       {/* Data Sources & Integrations */}

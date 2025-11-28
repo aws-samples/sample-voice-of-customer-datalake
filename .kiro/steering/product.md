@@ -11,7 +11,7 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
   - Web search: Tavily
   - Custom web scrapers: Configurable scrapers for any website
 - **Webhook support**: Real-time ingestion via webhooks (Trustpilot service reviews)
-- **LLM-powered analysis**: Amazon Bedrock (Claude 3 Haiku) for categorization, sentiment, persona inference, and root cause hypothesis
+- **LLM-powered analysis**: Amazon Bedrock (Claude Sonnet 4.5) for categorization, sentiment, persona inference, and root cause hypothesis
 - **Visual pipeline builder**: Configure data processing steps with custom AI prompts
 - **Multi-language support**: Auto-detection via Comprehend, translation via Amazon Translate
 - **Real-time aggregation**: DynamoDB Streams trigger instant metric updates
@@ -28,34 +28,38 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 | **Persona** | LLM-inferred customer archetype (e.g., "Price-Sensitive Shopper", "Loyal Customer") |
 | **Pipeline** | Configurable data processing workflow with extract, transform, enrich, filter, and output steps |
 | **Scraper** | Custom web scraper configuration with CSS selectors and scheduling |
+| **Raw Data** | Original ingested content stored in S3 with `s3_raw_uri` reference |
+| **Project** | Research project containing personas, PRDs, and PR/FAQs generated from feedback |
+| **Job** | Long-running async task (research, persona generation) tracked via Step Functions |
+| **Conversation** | AI chat conversation history with messages and context |
 
 
 ## Data Flow
 
 ```
-┌─────────────────┐     ┌─────────────┐     ┌─────────────────┐     ┌─────────────┐
-│  External APIs  │────▶│  Ingestor   │────▶│   SQS Queue     │────▶│  Processor  │
-│  Webhooks       │     │  Lambdas    │     │                 │     │   Lambda    │
-│  Web Scrapers   │     │             │     │                 │     │             │
-└─────────────────┘     └─────────────┘     └─────────────────┘     └──────┬──────┘
-                              │                                            │
-                              ▼                                            ▼
-                        ┌─────────────┐                           ┌─────────────┐
-                        │  DynamoDB   │                           │  DynamoDB   │
-                        │ Watermarks  │                           │  Feedback   │
-                        └─────────────┘                           └──────┬──────┘
-                                                                         │ Streams
-                                                                         ▼
-                                                                  ┌─────────────┐
-                                                                  │ Aggregator  │
-                                                                  │   Lambda    │
-                                                                  └──────┬──────┘
-                                                                         │
-                                                                         ▼
-┌─────────────────┐     ┌─────────────┐     ┌─────────────────┐  ┌─────────────┐
-│  React Frontend │◀────│ API Gateway │◀────│   API Lambda    │◀─│  DynamoDB   │
-│  (Dashboard)    │     │             │     │                 │  │ Aggregates  │
-└─────────────────┘     └─────────────┘     └─────────────────┘  └─────────────┘
+┌─────────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────────┐     ┌─────────────┐
+│  External APIs  │────▶│  Ingestor   │────▶│  S3 Raw     │────▶│   SQS Queue     │────▶│  Processor  │
+│  Webhooks       │     │  Lambdas    │     │  Data Lake  │     │ (with S3 ref)   │     │   Lambda    │
+│  Web Scrapers   │     │             │     │             │     │                 │     │             │
+└─────────────────┘     └─────────────┘     └─────────────┘     └─────────────────┘     └──────┬──────┘
+                              │                                                                │
+                              ▼                                                                ▼
+                        ┌─────────────┐                                               ┌─────────────┐
+                        │  DynamoDB   │                                               │  DynamoDB   │
+                        │ Watermarks  │                                               │  Feedback   │
+                        └─────────────┘                                               └──────┬──────┘
+                                                                                             │ Streams
+                                                                                             ▼
+                                                                                      ┌─────────────┐
+                                                                                      │ Aggregator  │
+                                                                                      │   Lambda    │
+                                                                                      └──────┬──────┘
+                                                                                             │
+                                                                                             ▼
+┌─────────────────┐     ┌─────────────┐     ┌─────────────────┐                      ┌─────────────┐
+│  React Frontend │◀────│ API Gateway │◀────│   API Lambda    │◀─────────────────────│  DynamoDB   │
+│  (Dashboard)    │     │             │     │                 │                      │ Aggregates  │
+└─────────────────┘     └─────────────┘     └─────────────────┘                      └─────────────┘
 ```
 
 ## Frontend Pages
@@ -64,20 +68,24 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 |------|------|-------------|
 | Dashboard | `/` | Overview with charts, metrics, live social feed, urgent issues |
 | Feedback | `/feedback` | Filterable list of all feedback items |
+| Feedback Detail | `/feedback/:id` | Single feedback item with full details |
 | Categories | `/categories` | Category breakdown and analysis |
+| Problem Analysis | `/problems` | Problem analysis dashboard |
 | AI Chat | `/chat` | Conversational interface for querying data |
+| Projects | `/projects` | Research projects list |
+| Project Detail | `/projects/:id` | Single project view with personas, PRDs, PR/FAQs |
 | Pipelines | `/pipelines` | Visual pipeline builder for data processing |
 | Scrapers | `/scrapers` | Configure custom web scrapers |
-| Integrations | `/integrations` | Webhook URLs and API credential management |
-| Settings | `/settings` | API endpoint, brand config, source settings |
+| Settings | `/settings` | API endpoint, brand config, integrations, credentials |
 
 ## Serverless Architecture Benefits
 
 - **Zero servers to manage**: All compute is Lambda-based
-- **Pay-per-use**: DynamoDB on-demand, Lambda per-invocation
+- **Pay-per-use**: DynamoDB on-demand, S3 storage, Lambda per-invocation
 - **Auto-scaling**: Handles traffic spikes automatically
 - **High availability**: Multi-AZ by default
 - **Security**: KMS encryption, IAM least-privilege, Secrets Manager
+- **Data Lake**: S3 raw data archival with partitioned structure for analytics
 
 ## Use Cases
 

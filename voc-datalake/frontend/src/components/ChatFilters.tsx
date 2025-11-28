@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Filter, X, ChevronDown, Tag } from 'lucide-react'
 import type { ChatFilters as ChatFiltersType } from '../store/chatStore'
+import { api } from '../api/client'
+import { useConfigStore } from '../store/configStore'
 import clsx from 'clsx'
 
 interface ChatFiltersProps {
@@ -9,7 +11,8 @@ interface ChatFiltersProps {
   availableTags?: string[]
 }
 
-const sources = [
+// Default sources as fallback
+const defaultSources = [
   { value: '', label: 'All Sources' },
   { value: 'trustpilot', label: 'Trustpilot' },
   { value: 'google_reviews', label: 'Google Reviews' },
@@ -49,6 +52,30 @@ const sentiments = [
 export default function ChatFilters({ filters, onChange, availableTags = [] }: ChatFiltersProps) {
   const [showTagInput, setShowTagInput] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [sources, setSources] = useState(defaultSources)
+  const { config } = useConfigStore()
+
+  // Fetch actual sources from API
+  useEffect(() => {
+    if (!config.apiEndpoint) return
+    
+    api.getSources(30).then(data => {
+      if (data.sources && Object.keys(data.sources).length > 0) {
+        const dynamicSources = [
+          { value: '', label: 'All Sources' },
+          ...Object.keys(data.sources)
+            .sort((a, b) => data.sources[b] - data.sources[a])
+            .map(source => ({
+              value: source,
+              label: source.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+            }))
+        ]
+        setSources(dynamicSources)
+      }
+    }).catch(() => {
+      // Keep default sources on error
+    })
+  }, [config.apiEndpoint])
 
   const hasActiveFilters = filters.source || filters.category || filters.sentiment || (filters.tags && filters.tags.length > 0)
 

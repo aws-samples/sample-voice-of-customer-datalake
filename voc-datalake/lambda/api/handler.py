@@ -2029,6 +2029,253 @@ def save_brand_settings():
         return {'success': False, 'message': str(e)}
 
 
+# Categories Configuration Endpoints
+@app.get("/settings/categories")
+@tracer.capture_method
+def get_categories_config():
+    """Get categories configuration from DynamoDB."""
+    if not projects_table:
+        return {'categories': get_default_categories()}
+    
+    try:
+        response = projects_table.get_item(
+            Key={'pk': 'SETTINGS', 'sk': 'CATEGORIES'}
+        )
+        item = response.get('Item')
+        if not item or not item.get('categories'):
+            return {'categories': get_default_categories()}
+        return {
+            'categories': item.get('categories', []),
+            'updated_at': item.get('updated_at')
+        }
+    except Exception as e:
+        logger.exception(f"Failed to get categories config: {e}")
+        return {'categories': get_default_categories(), 'error': str(e)}
+
+
+@app.put("/settings/categories")
+@tracer.capture_method
+def save_categories_config():
+    """Save categories configuration to DynamoDB."""
+    if not projects_table:
+        return {'success': False, 'message': 'Projects table not configured'}
+    
+    body = app.current_event.json_body
+    now = datetime.now(timezone.utc).isoformat()
+    
+    categories = body.get('categories', [])
+    
+    item = {
+        'pk': 'SETTINGS',
+        'sk': 'CATEGORIES',
+        'categories': categories,
+        'updated_at': now
+    }
+    
+    try:
+        projects_table.put_item(Item=item)
+        logger.info(f"Saved {len(categories)} categories")
+        return {'success': True, 'message': f'Saved {len(categories)} categories'}
+    except Exception as e:
+        logger.exception(f"Failed to save categories config: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@app.post("/settings/categories/generate")
+@tracer.capture_method
+def generate_categories():
+    """Use LLM to generate category suggestions based on company description."""
+    body = app.current_event.json_body
+    company_description = body.get('company_description', '')
+    
+    if not company_description:
+        return {'success': False, 'message': 'Company description is required'}
+    
+    try:
+        bedrock = boto3.client('bedrock-runtime')
+        
+        prompt = f"""You are an expert in customer experience and feedback categorization.
+
+Based on the following company/product description, generate a comprehensive list of feedback categories and subcategories that would be relevant for analyzing customer feedback.
+
+Company/Product Description:
+{company_description}
+
+Generate categories that cover:
+1. Product/service quality issues
+2. Customer support experiences
+3. Pricing and billing concerns
+4. User experience and usability
+5. Delivery/fulfillment (if applicable)
+6. Communication and transparency
+7. Any industry-specific categories
+
+Return ONLY valid JSON in this exact format:
+{{
+  "categories": [
+    {{
+      "id": "cat_unique_id",
+      "name": "category_name_snake_case",
+      "description": "Human readable category name",
+      "subcategories": [
+        {{
+          "id": "sub_unique_id",
+          "name": "subcategory_name_snake_case",
+          "description": "Human readable subcategory name"
+        }}
+      ]
+    }}
+  ]
+}}
+
+Generate 8-12 main categories with 3-6 subcategories each. Use snake_case for names and provide clear descriptions."""
+
+        # Use Claude Sonnet 4.5 via global cross-region inference profile
+        bedrock_response = bedrock.invoke_model(
+            modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+            contentType='application/json',
+            accept='application/json',
+            body=json.dumps({
+                'anthropic_version': 'bedrock-2023-05-31',
+                'max_tokens': 4096,
+                'temperature': 0.7,
+                'messages': [{'role': 'user', 'content': prompt}]
+            })
+        )
+        
+        result = json.loads(bedrock_response['body'].read())
+        llm_response = result['content'][0]['text']
+        
+        # Parse JSON from response
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', llm_response)
+        if json_match:
+            parsed = json.loads(json_match.group())
+            categories = parsed.get('categories', [])
+            
+            # Ensure unique IDs
+            for i, cat in enumerate(categories):
+                if not cat.get('id'):
+                    cat['id'] = f"cat_{i}_{datetime.now().strftime('%H%M%S')}"
+                for j, sub in enumerate(cat.get('subcategories', [])):
+                    if not sub.get('id'):
+                        sub['id'] = f"sub_{i}_{j}_{datetime.now().strftime('%H%M%S')}"
+            
+            return {'success': True, 'categories': categories}
+        else:
+            return {'success': False, 'message': 'Could not parse LLM response'}
+            
+    except Exception as e:
+        logger.exception(f"Failed to generate categories: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+def get_default_categories():
+    """Return default feedback categories."""
+    return [
+        {
+            'id': 'cat_delivery',
+            'name': 'delivery',
+            'description': 'Delivery & Shipping',
+            'subcategories': [
+                {'id': 'sub_late', 'name': 'late_delivery', 'description': 'Late Delivery'},
+                {'id': 'sub_damaged', 'name': 'damaged_package', 'description': 'Damaged Package'},
+                {'id': 'sub_wrong', 'name': 'wrong_item', 'description': 'Wrong Item'},
+                {'id': 'sub_missing', 'name': 'missing_item', 'description': 'Missing Item'},
+            ]
+        },
+        {
+            'id': 'cat_support',
+            'name': 'customer_support',
+            'description': 'Customer Support',
+            'subcategories': [
+                {'id': 'sub_rude', 'name': 'rude_agent', 'description': 'Rude Agent'},
+                {'id': 'sub_wait', 'name': 'long_wait', 'description': 'Long Wait Time'},
+                {'id': 'sub_unresolved', 'name': 'unresolved_issue', 'description': 'Unresolved Issue'},
+                {'id': 'sub_helpful', 'name': 'helpful_agent', 'description': 'Helpful Agent'},
+            ]
+        },
+        {
+            'id': 'cat_quality',
+            'name': 'product_quality',
+            'description': 'Product Quality',
+            'subcategories': [
+                {'id': 'sub_defective', 'name': 'defective', 'description': 'Defective Product'},
+                {'id': 'sub_not_described', 'name': 'not_as_described', 'description': 'Not As Described'},
+                {'id': 'sub_poor_materials', 'name': 'poor_materials', 'description': 'Poor Materials'},
+                {'id': 'sub_excellent', 'name': 'excellent_quality', 'description': 'Excellent Quality'},
+            ]
+        },
+        {
+            'id': 'cat_pricing',
+            'name': 'pricing',
+            'description': 'Pricing & Value',
+            'subcategories': [
+                {'id': 'sub_overcharged', 'name': 'overcharged', 'description': 'Overcharged'},
+                {'id': 'sub_hidden', 'name': 'hidden_fees', 'description': 'Hidden Fees'},
+                {'id': 'sub_value', 'name': 'good_value', 'description': 'Good Value'},
+                {'id': 'sub_expensive', 'name': 'expensive', 'description': 'Too Expensive'},
+            ]
+        },
+        {
+            'id': 'cat_website',
+            'name': 'website',
+            'description': 'Website Experience',
+            'subcategories': [
+                {'id': 'sub_navigation', 'name': 'navigation', 'description': 'Navigation Issues'},
+                {'id': 'sub_checkout', 'name': 'checkout', 'description': 'Checkout Problems'},
+                {'id': 'sub_search', 'name': 'search', 'description': 'Search Issues'},
+            ]
+        },
+        {
+            'id': 'cat_app',
+            'name': 'app',
+            'description': 'Mobile App',
+            'subcategories': [
+                {'id': 'sub_crash', 'name': 'crashes', 'description': 'App Crashes'},
+                {'id': 'sub_slow', 'name': 'slow_performance', 'description': 'Slow Performance'},
+                {'id': 'sub_bugs', 'name': 'bugs', 'description': 'Bugs & Glitches'},
+            ]
+        },
+        {
+            'id': 'cat_billing',
+            'name': 'billing',
+            'description': 'Billing & Payments',
+            'subcategories': [
+                {'id': 'sub_incorrect', 'name': 'incorrect_charge', 'description': 'Incorrect Charge'},
+                {'id': 'sub_refund', 'name': 'refund_issue', 'description': 'Refund Issue'},
+                {'id': 'sub_payment', 'name': 'payment_failed', 'description': 'Payment Failed'},
+            ]
+        },
+        {
+            'id': 'cat_returns',
+            'name': 'returns',
+            'description': 'Returns & Refunds',
+            'subcategories': [
+                {'id': 'sub_difficult', 'name': 'difficult_process', 'description': 'Difficult Process'},
+                {'id': 'sub_slow_refund', 'name': 'slow_refund', 'description': 'Slow Refund'},
+                {'id': 'sub_easy', 'name': 'easy_return', 'description': 'Easy Return'},
+            ]
+        },
+        {
+            'id': 'cat_communication',
+            'name': 'communication',
+            'description': 'Communication',
+            'subcategories': [
+                {'id': 'sub_no_updates', 'name': 'no_updates', 'description': 'No Updates'},
+                {'id': 'sub_spam', 'name': 'too_many_emails', 'description': 'Too Many Emails'},
+                {'id': 'sub_clear', 'name': 'clear_communication', 'description': 'Clear Communication'},
+            ]
+        },
+        {
+            'id': 'cat_other',
+            'name': 'other',
+            'description': 'Other',
+            'subcategories': []
+        },
+    ]
+
+
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 def lambda_handler(event: dict, context: Any) -> dict:

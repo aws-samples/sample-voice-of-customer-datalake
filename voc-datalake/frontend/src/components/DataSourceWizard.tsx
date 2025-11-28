@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, ChevronLeft, ChevronRight, Loader2, FileText } from 'lucide-react'
 import type { ProjectPersona, ProjectDocument } from '../api/client'
-import { SOURCES, CATEGORIES, SENTIMENTS } from '../constants/filters'
+import { api } from '../api/client'
+import { useConfigStore } from '../store/configStore'
+import { SOURCES as DEFAULT_SOURCES, CATEGORIES, SENTIMENTS } from '../constants/filters'
 import clsx from 'clsx'
 
 // Shared context configuration
@@ -76,6 +78,23 @@ export default function DataSourceWizard({
   hideDataSources = [],
 }: DataSourceWizardProps) {
   const [step, setStep] = useState(1)
+  const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES)
+  const { config } = useConfigStore()
+
+  // Fetch actual sources from API
+  useEffect(() => {
+    if (!config.apiEndpoint) return
+    
+    api.getSources(30).then(data => {
+      if (data.sources && Object.keys(data.sources).length > 0) {
+        // Merge API sources with defaults, sorted by count
+        const apiSources = Object.keys(data.sources).sort((a, b) => data.sources[b] - data.sources[a])
+        setSources(apiSources)
+      }
+    }).catch(() => {
+      // Keep default sources on error
+    })
+  }, [config.apiEndpoint])
 
   // Split documents into research and other
   const researchDocs = documents.filter(d => d.document_type === 'research')
@@ -235,16 +254,16 @@ export default function DataSourceWizard({
                 <h3 className="font-medium mb-3">Sources</h3>
                 <p className="text-sm text-gray-500 mb-2">Leave empty for all sources</p>
                 <div className="grid grid-cols-3 gap-2">
-                  {SOURCES.map(s => (
+                  {sources.map(s => (
                     <button
                       key={s}
                       onClick={() => onContextChange({ ...contextConfig, sources: toggleArrayItem(contextConfig.sources, s) })}
                       className={clsx(
-                        'px-3 py-2 rounded-lg border text-sm capitalize',
+                        'px-3 py-2 rounded-lg border text-sm',
                         contextConfig.sources.includes(s) ? `${colors.bgLight} ${colors.border} ${colors.text}` : 'bg-white border-gray-200'
                       )}
                     >
-                      {s.replace('_', ' ')}
+                      {s.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                     </button>
                   ))}
                 </div>

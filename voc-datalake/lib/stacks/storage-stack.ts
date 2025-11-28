@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 
@@ -13,6 +14,7 @@ export class VocStorageStack extends cdk.Stack {
   public readonly jobsTable: dynamodb.Table;
   public readonly conversationsTable: dynamodb.Table;
   public readonly kmsKey: kms.Key;
+  public readonly rawDataBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -22,6 +24,18 @@ export class VocStorageStack extends cdk.Stack {
       alias: 'voc-datalake-key',
       description: 'KMS key for VoC Data Lake encryption',
       enableKeyRotation: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // S3 Bucket for raw data lake
+    // Partitioned structure: raw/{source}/{year}/{month}/{day}/
+    this.rawDataBucket = new s3.Bucket(this, 'RawDataBucket', {
+      bucketName: `voc-raw-data-${this.account}-${this.region}`,
+      encryption: s3.BucketEncryption.KMS,
+      encryptionKey: this.kmsKey,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      versioned: false,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
@@ -171,5 +185,7 @@ export class VocStorageStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ProjectsTableName', { value: this.projectsTable.tableName });
     new cdk.CfnOutput(this, 'JobsTableName', { value: this.jobsTable.tableName });
     new cdk.CfnOutput(this, 'ConversationsTableName', { value: this.conversationsTable.tableName });
+    new cdk.CfnOutput(this, 'RawDataBucketName', { value: this.rawDataBucket.bucketName });
+    new cdk.CfnOutput(this, 'RawDataBucketArn', { value: this.rawDataBucket.bucketArn });
   }
 }

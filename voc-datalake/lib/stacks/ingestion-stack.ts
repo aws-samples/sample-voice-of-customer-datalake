@@ -7,6 +7,7 @@ import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
@@ -14,6 +15,7 @@ export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
   watermarksTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
+  rawDataBucket: s3.Bucket;
   kmsKey: kms.Key;
   config: {
     brandName: string;
@@ -31,7 +33,7 @@ export class VocIngestionStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocIngestionStackProps) {
     super(scope, id, props);
 
-    const { feedbackTable, watermarksTable, aggregatesTable, kmsKey, config } = props;
+    const { feedbackTable, watermarksTable, aggregatesTable, rawDataBucket, kmsKey, config } = props;
 
     // Secrets for API credentials
     const apiSecrets = new secretsmanager.Secret(this, 'VocApiSecrets', {
@@ -99,6 +101,7 @@ export class VocIngestionStack extends cdk.Stack {
     watermarksTable.grantReadWriteData(ingestionRole);
     aggregatesTable.grantReadWriteData(ingestionRole);  // For scraper progress tracking
     this.processingQueue.grantSendMessages(ingestionRole);
+    rawDataBucket.grantReadWrite(ingestionRole);  // For storing raw scraped data
     kmsKey.grantEncryptDecrypt(ingestionRole);
     apiSecrets.grantRead(ingestionRole);
 
@@ -106,6 +109,7 @@ export class VocIngestionStack extends cdk.Stack {
     const commonEnv = {
       WATERMARKS_TABLE: watermarksTable.tableName,
       PROCESSING_QUEUE_URL: this.processingQueue.queueUrl,
+      RAW_DATA_BUCKET: rawDataBucket.bucketName,
       SECRETS_ARN: apiSecrets.secretArn,
       BRAND_NAME: config.brandName,
       BRAND_HANDLES: JSON.stringify(config.brandHandles),

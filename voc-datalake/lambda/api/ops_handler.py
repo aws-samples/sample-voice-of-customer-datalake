@@ -527,14 +527,37 @@ def get_scraper_templates():
 @app.post("/scrapers/<scraper_id>/run")
 @tracer.capture_method
 def run_scraper(scraper_id: str):
-    """Trigger a scraper run."""
+    """Trigger a scraper run and return execution ID for tracking."""
+    execution_id = f"run_{scraper_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    
     try:
-        response = lambda_client.invoke(
+        # Store run status in DynamoDB BEFORE invoking Lambda
+        aggregates_table.put_item(Item={
+            'pk': f'SCRAPER_RUN#{scraper_id}',
+            'sk': execution_id,
+            'status': 'running',
+            'started_at': datetime.now(timezone.utc).isoformat(),
+            'pages_scraped': 0,
+            'items_found': 0,
+            'errors': []
+        })
+        
+        # Invoke webscraper Lambda with execution_id for progress tracking
+        lambda_client.invoke(
             FunctionName='voc-ingestor-webscraper',
-            InvocationType='Event',
-            Payload=json.dumps({'scraper_id': scraper_id, 'manual_trigger': True})
+            InvocationType='Event',  # Async
+            Payload=json.dumps({
+                'scraper_id': scraper_id,
+                'execution_id': execution_id,
+                'manual_run': True
+            })
         )
-        return {'success': True, 'execution_id': f"run-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}", 'status': 'started'}
+        
+        return {
+            'success': True,
+            'execution_id': execution_id,
+            'status': 'running'
+        }
     except Exception as e:
         logger.exception(f"Failed to run scraper: {e}")
         return {'success': False, 'message': str(e)}
@@ -543,7 +566,7 @@ def run_scraper(scraper_id: str):
 @app.get("/scrapers/<scraper_id>/status")
 @tracer.capture_method
 def get_scraper_status(scraper_id: str):
-    """Get scraper run status."""
+    """Get the latest run status for a scraper."""
     try:
         response = aggregates_table.query(
             KeyConditionExpression=Key('pk').eq(f'SCRAPER_RUN#{scraper_id}'),
@@ -551,9 +574,20 @@ def get_scraper_status(scraper_id: str):
             Limit=1
         )
         items = response.get('Items', [])
-        if items:
-            return items[0]
-        return {'scraper_id': scraper_id, 'status': 'never_run'}
+        if not items:
+            return {'scraper_id': scraper_id, 'status': 'never_run'}
+        
+        run = items[0]
+        return {
+            'scraper_id': scraper_id,
+            'execution_id': run.get('sk'),
+            'status': run.get('status', 'unknown'),
+            'started_at': run.get('started_at'),
+            'completed_at': run.get('completed_at'),
+            'pages_scraped': run.get('pages_scraped', 0),
+            'items_found': run.get('items_found', 0),
+            'errors': run.get('errors', [])
+        }
     except Exception as e:
         return {'scraper_id': scraper_id, 'status': 'unknown', 'error': str(e)}
 
@@ -790,6 +824,139 @@ def save_brand_settings():
         }
     except Exception as e:
         logger.exception(f"Failed to save brand settings: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+# ============================================
+# Settings Endpoints - Categories Configuration
+# ============================================
+CATEGORIES_PK = 'SETTINGS#categories'
+CATEGORIES_SK = 'config'
+
+
+@app.get("/settings/categories")
+@tracer.capture_method
+def get_categories_config():
+    """Get categories configuration from DynamoDB."""
+    if not aggregates_table:
+        return {'categories': [], 'error': 'Aggregates table not configured'}
+    
+    try:
+        response = aggregates_table.get_item(
+            Key={'pk': CATEGORIES_PK, 'sk': CATEGORIES_SK}
+        )
+        item = response.get('Item')
+        if not item:
+            return {'categories': [], 'updated_at': None}
+        return {
+            'categories': item.get('categories', []),
+            'updated_at': item.get('updated_at'),
+        }
+    except Exception as e:
+        logger.exception(f"Failed to get categories config: {e}")
+        return {'categories': [], 'error': str(e)}
+
+
+@app.put("/settings/categories")
+@tracer.capture_method
+def save_categories_config():
+    """Save categories configuration to DynamoDB."""
+    if not aggregates_table:
+        return {'success': False, 'message': 'Aggregates table not configured'}
+    
+    body = app.current_event.json_body
+    categories = body.get('categories', [])
+    
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        item = {
+            'pk': CATEGORIES_PK,
+            'sk': CATEGORIES_SK,
+            'categories': categories,
+            'updated_at': now,
+        }
+        
+        aggregates_table.put_item(Item=item)
+        logger.info(f"Saved categories config: {len(categories)} categories")
+        
+        return {
+            'success': True,
+            'message': f'Saved {len(categories)} categories',
+        }
+    except Exception as e:
+        logger.exception(f"Failed to save categories config: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@app.post("/settings/categories/generate")
+@tracer.capture_method
+def generate_categories():
+    """Use LLM to generate category suggestions based on company description."""
+    body = app.current_event.json_body
+    company_description = body.get('company_description', '')
+    
+    if not company_description:
+        return {'success': False, 'message': 'Company description is required'}
+    
+    try:
+        bedrock = boto3.client('bedrock-runtime')
+        
+        prompt = f"""Based on the following company/product description, generate a comprehensive list of feedback categories and subcategories that would be useful for analyzing customer feedback.
+
+Company Description:
+{company_description}
+
+Generate 6-10 main categories, each with 3-5 relevant subcategories. Categories should cover common customer feedback themes like product quality, service, pricing, etc., but tailored to this specific business.
+
+Return ONLY valid JSON in this exact format (no markdown, no explanation):
+{{
+  "categories": [
+    {{
+      "id": "category_id_snake_case",
+      "name": "category_id_snake_case",
+      "description": "Human Readable Category Name",
+      "subcategories": [
+        {{
+          "id": "subcategory_id_snake_case",
+          "name": "subcategory_id_snake_case",
+          "description": "Human Readable Subcategory Name"
+        }}
+      ]
+    }}
+  ]
+}}"""
+
+        bedrock_response = bedrock.invoke_model(
+            modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+            contentType='application/json',
+            accept='application/json',
+            body=json.dumps({
+                'anthropic_version': 'bedrock-2023-05-31',
+                'max_tokens': 2000,
+                'temperature': 0.3,
+                'messages': [{'role': 'user', 'content': prompt}]
+            })
+        )
+        
+        result = json.loads(bedrock_response['body'].read())
+        response_text = result['content'][0]['text']
+        
+        # Parse JSON from response
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', response_text)
+        if json_match:
+            parsed = json.loads(json_match.group())
+            categories = parsed.get('categories', [])
+            
+            logger.info(f"Generated {len(categories)} categories")
+            return {
+                'success': True,
+                'categories': categories,
+            }
+        
+        return {'success': False, 'message': 'Could not parse categories from response'}
+    except Exception as e:
+        logger.exception(f"Failed to generate categories: {e}")
         return {'success': False, 'message': str(e)}
 
 

@@ -17,11 +17,13 @@ metrics = Metrics(namespace="VoC-Ingestion")
 # AWS Clients
 dynamodb = boto3.resource('dynamodb')
 sqs = boto3.client('sqs')
+s3 = boto3.client('s3')
 secrets_client = boto3.client('secretsmanager')
 
 # Configuration
 WATERMARKS_TABLE = os.environ['WATERMARKS_TABLE']
 PROCESSING_QUEUE_URL = os.environ['PROCESSING_QUEUE_URL']
+RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
 SECRETS_ARN = os.environ['SECRETS_ARN']
 BRAND_NAME = os.environ['BRAND_NAME']
 BRAND_HANDLES = json.loads(os.environ.get('BRAND_HANDLES', '[]'))
@@ -74,10 +76,49 @@ class BaseIngestor(ABC):
         """Fetch new items from the data source. Must be implemented by subclasses."""
         pass
     
-    def normalize_item(self, item: dict) -> dict:
-        """Normalize item to common raw schema."""
+    def store_raw_to_s3(self, item: dict, raw_content: str = None) -> str | None:
+        """Store raw data to S3 with partitioned structure: raw/{source}/{year}/{month}/{day}/{id}.json"""
+        if not RAW_DATA_BUCKET:
+            logger.warning("RAW_DATA_BUCKET not configured, skipping S3 storage")
+            return None
+        
+        try:
+            now = datetime.now(timezone.utc)
+            source_platform = item.get('source_platform_override') or self.source_platform
+            item_id = item.get('id', 'unknown')
+            
+            # Build S3 key with partitioned structure
+            s3_key = f"raw/{source_platform}/{now.year}/{now.month:02d}/{now.day:02d}/{item_id}.json"
+            
+            # Prepare raw data payload
+            raw_payload = {
+                'item_id': item_id,
+                'source_platform': source_platform,
+                'ingested_at': now.isoformat(),
+                'raw_content': raw_content,
+                'raw_item': item
+            }
+            
+            s3.put_object(
+                Bucket=RAW_DATA_BUCKET,
+                Key=s3_key,
+                Body=json.dumps(raw_payload, default=str),
+                ContentType='application/json'
+            )
+            
+            logger.info(f"Stored raw data to s3://{RAW_DATA_BUCKET}/{s3_key}")
+            return f"s3://{RAW_DATA_BUCKET}/{s3_key}"
+        except Exception as e:
+            logger.error(f"Failed to store raw data to S3: {e}")
+            return None
+
+    def normalize_item(self, item: dict, raw_content: str = None) -> dict:
+        """Normalize item to common raw schema and store raw data to S3."""
         # Allow item to override source_platform (e.g., webscraper uses scraper name)
         source_platform = item.get('source_platform_override') or self.source_platform
+        
+        # Store raw data to S3 and get reference
+        s3_raw_uri = self.store_raw_to_s3(item, raw_content)
         
         return {
             'id': item.get('id', ''),
@@ -90,7 +131,8 @@ class BaseIngestor(ABC):
             'ingested_at': datetime.now(timezone.utc).isoformat(),
             'brand_name': self.brand_name,
             'brand_handles_matched': item.get('brand_handles_matched', []),
-            'raw_data': item
+            's3_raw_uri': s3_raw_uri,
+            'raw_data': item if not s3_raw_uri else None  # Only include raw_data if S3 storage failed
         }
     
     def send_to_queue(self, items: list[dict]):

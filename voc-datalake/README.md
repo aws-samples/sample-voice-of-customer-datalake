@@ -186,7 +186,7 @@ voc-datalake/
 ├── schemas/
 │   └── feedback-event.schema.json
 └── prompts/
-    └── feedback-analysis-prompt.json
+    └── 
 ```
 
 ## CDK Stacks

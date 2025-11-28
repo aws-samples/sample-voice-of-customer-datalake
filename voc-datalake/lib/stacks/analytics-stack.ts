@@ -391,6 +391,13 @@ export class VocAnalyticsStack extends cdk.Stack {
     const brandResource = settingsResource.addResource('brand');
     brandResource.addMethod('GET', opsIntegration);
     brandResource.addMethod('PUT', opsIntegration);
+    
+    // Categories configuration endpoints
+    const settingsCategoriesResource = settingsResource.addResource('categories');
+    settingsCategoriesResource.addMethod('GET', opsIntegration);
+    settingsCategoriesResource.addMethod('PUT', opsIntegration);
+    const categoriesGenerateResource = settingsCategoriesResource.addResource('generate');
+    categoriesGenerateResource.addMethod('POST', opsIntegration);
 
     // ============================================
     // Projects Lambda: /projects/*

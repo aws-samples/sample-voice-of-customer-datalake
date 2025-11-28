@@ -317,6 +317,43 @@ export const api = {
     body: JSON.stringify(settings)
   }),
 
+  // Categories Configuration
+  getCategoriesConfig: () => fetchApi<{ 
+    categories: Array<{
+      id: string
+      name: string
+      description?: string
+      subcategories: Array<{ id: string; name: string; description?: string }>
+    }>
+    updated_at?: string 
+  }>('/settings/categories'),
+  
+  saveCategoriesConfig: (config: { 
+    categories: Array<{
+      id: string
+      name: string
+      description?: string
+      subcategories: Array<{ id: string; name: string; description?: string }>
+    }> 
+  }) => fetchApi<{ success: boolean; message: string }>('/settings/categories', {
+    method: 'PUT',
+    body: JSON.stringify(config)
+  }),
+  
+  generateCategories: (companyDescription: string) => 
+    fetchApi<{ 
+      success: boolean
+      categories: Array<{
+        id: string
+        name: string
+        description?: string
+        subcategories: Array<{ id: string; name: string; description?: string }>
+      }>
+    }>('/settings/categories/generate', {
+      method: 'POST',
+      body: JSON.stringify({ company_description: companyDescription })
+    }),
+
   // Integrations
   getIntegrationStatus: () => fetchApi<IntegrationStatus>('/integrations/status'),
   

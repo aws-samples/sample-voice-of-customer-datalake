@@ -26,10 +26,10 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
 };
 
-// Stack 1: Storage (DynamoDB tables, KMS)
+// Stack 1: Storage (DynamoDB tables, KMS, S3 raw data lake)
 const storageStack = new VocStorageStack(app, 'VocStorageStack', {
   env,
-  description: 'VoC Data Lake - Storage Layer (DynamoDB, KMS)',
+  description: 'VoC Data Lake - Storage Layer (DynamoDB, KMS, S3)',
 });
 
 // Stack 2: Ingestion (Lambda ingestors, EventBridge, SQS)
@@ -39,6 +39,7 @@ const ingestionStack = new VocIngestionStack(app, 'VocIngestionStack', {
   feedbackTable: storageStack.feedbackTable,
   watermarksTable: storageStack.watermarksTable,
   aggregatesTable: storageStack.aggregatesTable,
+  rawDataBucket: storageStack.rawDataBucket,
   kmsKey: storageStack.kmsKey,
   config,
 });
@@ -50,6 +51,7 @@ const processingStack = new VocProcessingStack(app, 'VocProcessingStack', {
   description: 'VoC Data Lake - Processing Layer (Lambda, Bedrock, Comprehend)',
   feedbackTable: storageStack.feedbackTable,
   aggregatesTable: storageStack.aggregatesTable,
+  projectsTable: storageStack.projectsTable,
   processingQueue: ingestionStack.processingQueue,
   kmsKey: storageStack.kmsKey,
   config,
