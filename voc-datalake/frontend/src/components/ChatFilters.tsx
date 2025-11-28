@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Filter, X, ChevronDown, Tag } from 'lucide-react'
+import { Filter, X, ChevronDown } from 'lucide-react'
 import type { ChatFilters as ChatFiltersType } from '../store/chatStore'
 import { api } from '../api/client'
 import { useConfigStore } from '../store/configStore'
@@ -8,36 +8,22 @@ import clsx from 'clsx'
 interface ChatFiltersProps {
   filters: ChatFiltersType
   onChange: (filters: ChatFiltersType) => void
-  availableTags?: string[]
 }
 
-// Default sources as fallback
+// Default options as fallback
 const defaultSources = [
   { value: '', label: 'All Sources' },
   { value: 'trustpilot', label: 'Trustpilot' },
   { value: 'google_reviews', label: 'Google Reviews' },
   { value: 'twitter', label: 'Twitter/X' },
-  { value: 'instagram', label: 'Instagram' },
-  { value: 'facebook', label: 'Facebook' },
-  { value: 'reddit', label: 'Reddit' },
-  { value: 'tavily', label: 'Tavily' },
-  { value: 'web_scrape', label: 'Web Scraper' },
-  { value: 'appstore_apple', label: 'Apple App Store' },
-  { value: 'appstore_google', label: 'Google Play' },
-  { value: 'appstore_huawei', label: 'Huawei AppGallery' },
 ]
 
-const categories = [
+const defaultCategories = [
   { value: '', label: 'All Categories' },
   { value: 'delivery', label: 'Delivery' },
   { value: 'customer_support', label: 'Customer Support' },
   { value: 'product_quality', label: 'Product Quality' },
   { value: 'pricing', label: 'Pricing' },
-  { value: 'website', label: 'Website' },
-  { value: 'app', label: 'App' },
-  { value: 'billing', label: 'Billing' },
-  { value: 'returns', label: 'Returns' },
-  { value: 'communication', label: 'Communication' },
   { value: 'other', label: 'Other' },
 ]
 
@@ -49,16 +35,16 @@ const sentiments = [
   { value: 'mixed', label: '🤔 Mixed' },
 ]
 
-export default function ChatFilters({ filters, onChange, availableTags = [] }: ChatFiltersProps) {
-  const [showTagInput, setShowTagInput] = useState(false)
-  const [tagInput, setTagInput] = useState('')
+export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
   const [sources, setSources] = useState(defaultSources)
+  const [categories, setCategories] = useState(defaultCategories)
   const { config } = useConfigStore()
 
-  // Fetch actual sources from API
+  // Fetch actual sources and categories from API
   useEffect(() => {
     if (!config.apiEndpoint) return
     
+    // Fetch sources
     api.getSources(30).then(data => {
       if (data.sources && Object.keys(data.sources).length > 0) {
         const dynamicSources = [
@@ -72,45 +58,40 @@ export default function ChatFilters({ filters, onChange, availableTags = [] }: C
         ]
         setSources(dynamicSources)
       }
-    }).catch(() => {
-      // Keep default sources on error
-    })
+    }).catch(() => {})
+    
+    // Fetch categories
+    api.getCategories(30).then(data => {
+      if (data.categories && Object.keys(data.categories).length > 0) {
+        const dynamicCategories = [
+          { value: '', label: 'All Categories' },
+          ...Object.keys(data.categories)
+            .sort((a, b) => data.categories[b] - data.categories[a])
+            .map(cat => ({
+              value: cat,
+              label: cat.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+            }))
+        ]
+        setCategories(dynamicCategories)
+      }
+    }).catch(() => {})
   }, [config.apiEndpoint])
 
-  const hasActiveFilters = filters.source || filters.category || filters.sentiment || (filters.tags && filters.tags.length > 0)
+  const hasActiveFilters = filters.source || filters.category || filters.sentiment
 
-  const updateFilter = (key: keyof ChatFiltersType, value: string | string[] | undefined) => {
+  const updateFilter = (key: keyof ChatFiltersType, value: string | undefined) => {
     onChange({ ...filters, [key]: value || undefined })
-  }
-
-  const addTag = (tag: string) => {
-    const currentTags = filters.tags || []
-    if (!currentTags.includes(tag)) {
-      updateFilter('tags', [...currentTags, tag])
-    }
-    setTagInput('')
-    setShowTagInput(false)
-  }
-
-  const removeTag = (tag: string) => {
-    const currentTags = filters.tags || []
-    updateFilter('tags', currentTags.filter(t => t !== tag))
   }
 
   const clearFilters = () => {
     onChange({})
   }
 
-  const filteredSuggestions = availableTags
-    .filter(tag => tag.toLowerCase().includes(tagInput.toLowerCase()))
-    .filter(tag => !(filters.tags || []).includes(tag))
-    .slice(0, 5)
-
   return (
     <div className="bg-gray-50 rounded-lg p-3 mb-3">
       <div className="flex items-center gap-2 mb-2">
         <Filter size={14} className="text-gray-400" />
-        <span className="text-xs font-medium text-gray-600">Filter Context</span>
+        <span className="text-xs font-medium text-gray-600">Filter Context (max 30 reviews)</span>
         {hasActiveFilters && (
           <button
             onClick={clearFilters}
@@ -173,64 +154,6 @@ export default function ChatFilters({ filters, onChange, availableTags = [] }: C
           </select>
           <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         </div>
-
-        {/* Tags */}
-        <div className="flex items-center gap-1 flex-wrap">
-          {(filters.tags || []).map(tag => (
-            <span
-              key={tag}
-              className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-orange-50 border border-orange-200 text-orange-700 rounded"
-            >
-              <Tag size={10} />
-              {tag}
-              <button onClick={() => removeTag(tag)} className="hover:text-orange-900">
-                <X size={10} />
-              </button>
-            </span>
-          ))}
-          
-          {showTagInput ? (
-            <div className="relative">
-              <input
-                type="text"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && tagInput.trim()) {
-                    addTag(tagInput.trim())
-                  }
-                  if (e.key === 'Escape') {
-                    setShowTagInput(false)
-                    setTagInput('')
-                  }
-                }}
-                placeholder="Add tag..."
-                className="text-xs px-2 py-1 border border-gray-200 rounded w-24"
-                autoFocus
-              />
-              {filteredSuggestions.length > 0 && tagInput && (
-                <div className="absolute top-full left-0 mt-1 bg-white border rounded shadow-lg z-10 w-40">
-                  {filteredSuggestions.map(tag => (
-                    <button
-                      key={tag}
-                      onClick={() => addTag(tag)}
-                      className="block w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100"
-                    >
-                      {tag}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowTagInput(true)}
-              className="text-xs px-2 py-1 border border-dashed border-gray-300 rounded text-gray-500 hover:border-gray-400 hover:text-gray-600"
-            >
-              + Tag
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Active Filters Summary */}
@@ -240,7 +163,6 @@ export default function ChatFilters({ filters, onChange, availableTags = [] }: C
             filters.source && sources.find(s => s.value === filters.source)?.label,
             filters.category && categories.find(c => c.value === filters.category)?.label,
             filters.sentiment && sentiments.find(s => s.value === filters.sentiment)?.label.replace(/^[^\s]+\s/, ''),
-            ...(filters.tags || []),
           ].filter(Boolean).join(', ')}
         </div>
       )}

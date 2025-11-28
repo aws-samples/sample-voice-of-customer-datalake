@@ -129,32 +129,92 @@ def invoke_bedrock_llm(prompt: str) -> dict:
     return json.loads(response_body['content'][0]['text'])
 ```
 
-### Lambda Split Pattern (20KB IAM Policy Limit)
+### Lambda Domain Isolation Pattern (MANDATORY)
 
-AWS Lambda execution roles have a **20KB policy size limit**. When a single Lambda needs permissions for many resources (DynamoDB tables, S3, Secrets Manager, Bedrock, EventBridge, etc.), the policy can exceed this limit.
+> **⚠️ CRITICAL**: This pattern is MANDATORY for all API Lambda development. Never create monolithic API handlers.
 
-**Split handlers by domain** - each handler file focuses on a specific concern:
+AWS Lambda execution roles have a **20KB policy size limit**. When a single Lambda needs permissions for many resources (DynamoDB tables, S3, Secrets Manager, Bedrock, EventBridge, etc.), the policy can exceed this limit and deployment will fail.
+
+**Rules for Lambda API Development:**
+
+1. **One domain per Lambda** - Each Lambda handles a single domain (e.g., metrics, chat, projects)
+2. **Route-based isolation** - Group related routes in the same handler (e.g., `/feedback/*` and `/metrics/*` together)
+3. **Minimal permissions** - Each Lambda only gets IAM permissions for resources it actually uses
+4. **Naming convention** - Use `{domain}_handler.py` naming (e.g., `metrics_handler.py`, `chat_handler.py`)
+
+**Current API Lambda Structure:**
 
 ```
 lambda/api/
-├── handler.py              # Main API: feedback, scrapers, settings
-├── metrics_handler.py      # Metrics endpoints only
-├── projects_handler.py     # Projects, personas, documents
-├── chat_stream_handler.py  # Streaming chat (Lambda Function URL)
-└── ops_handler.py          # Source management, EventBridge rules
+├── metrics_handler.py       # /feedback/*, /metrics/* (read-only)
+├── chat_handler.py          # /chat/*, /pipelines/*
+├── integrations_handler.py  # /integrations/*, /sources/*
+├── scrapers_handler.py      # /scrapers/*
+├── settings_handler.py      # /settings/*
+├── projects_handler.py      # /projects/*
+├── chat_stream_handler.py   # Streaming chat (Lambda Function URL)
+├── s3_import_handler.py     # /s3-import/*
+└── projects.py              # Shared business logic for projects
 ```
 
-Each handler becomes a separate Lambda in CDK with only the permissions it needs:
+**Domain-to-Permission Mapping:**
+
+| Domain | Handler | AWS Permissions |
+|--------|---------|-----------------|
+| Metrics | `metrics_handler.py` | DynamoDB read (feedback, aggregates) |
+| Chat | `chat_handler.py` | DynamoDB RW (pipelines, conversations), Bedrock |
+| Integrations | `integrations_handler.py` | Secrets Manager, EventBridge |
+| Scrapers | `scrapers_handler.py` | Secrets Manager, Lambda invoke, Bedrock |
+| Settings | `settings_handler.py` | DynamoDB (aggregates), Bedrock |
+| Projects | `projects_handler.py` | DynamoDB (projects, jobs), Step Functions, Bedrock |
+| S3 Import | `s3_import_handler.py` | S3 bucket only |
+
+**When adding new API endpoints:**
+
+1. Identify which domain the endpoint belongs to
+2. Add the route to the appropriate existing handler
+3. If creating a new domain, create a new `{domain}_handler.py` file
+4. Update `analytics-stack.ts` to create the Lambda and wire API Gateway routes
+5. Grant only the minimum required permissions
+
+**Example - Adding a new endpoint to existing domain:**
 
 ```python
-# metrics_handler.py - only needs read access to aggregates table
-AGGREGATES_TABLE = os.environ['AGGREGATES_TABLE']
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
-
-@app.get("/metrics/summary")
-def get_summary():
-    # Only reads from aggregates - minimal permissions needed
+# In metrics_handler.py - adding a new metrics endpoint
+@app.get("/metrics/trends")
+@tracer.capture_method
+def get_trends():
+    # Uses same tables as other metrics endpoints
+    # No new permissions needed
     ...
+```
+
+**Example - Creating a new domain:**
+
+```python
+# New file: reports_handler.py
+"""Reports API Lambda - Handles /reports/*"""
+from aws_lambda_powertools import Logger, Tracer
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
+
+logger = Logger()
+tracer = Tracer()
+
+# Only import clients this Lambda needs
+dynamodb = boto3.resource('dynamodb')
+REPORTS_TABLE = os.environ.get('REPORTS_TABLE', '')
+
+app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+
+@app.get("/reports")
+@tracer.capture_method
+def list_reports():
+    ...
+
+@logger.inject_lambda_context
+@tracer.capture_lambda_handler
+def lambda_handler(event: dict, context: Any) -> dict:
+    return app.resolve(event, context)
 ```
 
 ### Naming Conventions
@@ -207,55 +267,108 @@ export class MyStack extends cdk.Stack {
 }
 ```
 
-### Lambda IAM Policy Size Limit (20KB)
+### CDK Lambda Domain Isolation (MANDATORY)
 
-AWS Lambda execution roles have a **20KB policy size limit**. When a Lambda needs access to many resources (multiple DynamoDB tables, S3, Secrets Manager, Bedrock, etc.), the inline policy can exceed this limit.
+> **⚠️ CRITICAL**: Always create separate Lambdas per domain. Never create monolithic API Lambdas.
 
-**Solution: Split Lambdas by concern**
+AWS Lambda execution roles have a **20KB policy size limit**. The CDK stack must create separate Lambdas for each domain with isolated permissions.
 
-Instead of one monolithic API Lambda, split into focused handlers:
-
-```typescript
-// analytics-stack.ts - Split API into multiple Lambdas by domain
-
-// Main API Lambda - feedback, metrics, scrapers
-const apiLambda = new lambda.Function(this, 'ApiLambda', { ... });
-feedbackTable.grantReadWriteData(apiLambda);
-aggregatesTable.grantReadWriteData(apiLambda);
-
-// Metrics Lambda - dedicated metrics endpoints
-const metricsLambda = new lambda.Function(this, 'MetricsLambda', { ... });
-aggregatesTable.grantReadData(metricsLambda);
-
-// Projects Lambda - projects, personas, documents
-const projectsLambda = new lambda.Function(this, 'ProjectsLambda', { ... });
-projectsTable.grantReadWriteData(projectsLambda);
-jobsTable.grantReadWriteData(projectsLambda);
-
-// Chat Stream Lambda - streaming responses (Lambda Function URL)
-const chatStreamLambda = new lambda.Function(this, 'ChatStreamLambda', { ... });
-feedbackTable.grantReadData(chatStreamLambda);
-// Bedrock permissions only
-
-// Ops Lambda - source management, settings
-const opsLambda = new lambda.Function(this, 'OpsLambda', { ... });
-// EventBridge, Secrets Manager permissions
-```
-
-**API Gateway routing to multiple Lambdas:**
+**Current Lambda Architecture in `analytics-stack.ts`:**
 
 ```typescript
-// Route different paths to different Lambdas
-api.root.addResource('feedback').addMethod('GET', new apigateway.LambdaIntegration(apiLambda));
-api.root.addResource('metrics').addMethod('GET', new apigateway.LambdaIntegration(metricsLambda));
-api.root.addResource('projects').addMethod('ANY', new apigateway.LambdaIntegration(projectsLambda));
+// 1. Metrics Lambda - read-only feedback/metrics queries
+const metricsLambda = new lambda.Function(this, 'MetricsApi', {
+  handler: 'metrics_handler.lambda_handler',
+  // ...
+});
+feedbackTable.grantReadData(metricsRole);
+aggregatesTable.grantReadData(metricsRole);
+
+// 2. Chat Lambda - chat conversations and pipelines
+const chatLambda = new lambda.Function(this, 'ChatApi', {
+  handler: 'chat_handler.lambda_handler',
+  // ...
+});
+pipelinesTable.grantReadWriteData(chatRole);
+conversationsTable.grantReadWriteData(chatRole);
+// + Bedrock permissions
+
+// 3. Integrations Lambda - credentials and source schedules
+const integrationsLambda = new lambda.Function(this, 'IntegrationsApi', {
+  handler: 'integrations_handler.lambda_handler',
+  // ...
+});
+// Secrets Manager + EventBridge permissions only
+
+// 4. Scrapers Lambda - web scraper management
+const scrapersLambda = new lambda.Function(this, 'ScrapersApi', {
+  handler: 'scrapers_handler.lambda_handler',
+  // ...
+});
+// Secrets Manager + Lambda invoke + Bedrock
+
+// 5. Settings Lambda - brand/category configuration
+const settingsLambda = new lambda.Function(this, 'SettingsApi', {
+  handler: 'settings_handler.lambda_handler',
+  // ...
+});
+aggregatesTable.grantReadWriteData(settingsRole);
+// + Bedrock for category generation
+
+// 6. Projects Lambda - research projects
+const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
+  handler: 'projects_handler.lambda_handler',
+  // ...
+});
+projectsTable.grantReadWriteData(projectsRole);
+jobsTable.grantReadWriteData(projectsRole);
+// + Step Functions + Bedrock
+
+// 7. S3 Import Lambda - file explorer
+const s3ImportLambda = new lambda.Function(this, 'S3ImportApi', {
+  handler: 's3_import_handler.lambda_handler',
+  // ...
+});
+s3ImportBucket.grantReadWrite(s3ImportRole);
+// S3 only - minimal permissions
 ```
+
+**API Gateway Route Mapping:**
+
+```typescript
+// Each domain routes to its dedicated Lambda
+const metricsIntegration = new apigateway.LambdaIntegration(metricsLambda);
+const chatIntegration = new apigateway.LambdaIntegration(chatLambda);
+const integrationsIntegration = new apigateway.LambdaIntegration(integrationsLambda);
+const scrapersIntegration = new apigateway.LambdaIntegration(scrapersLambda);
+const settingsIntegration = new apigateway.LambdaIntegration(settingsLambda);
+const projectsIntegration = new apigateway.LambdaIntegration(projectsLambda);
+
+// Route paths to appropriate Lambdas
+feedbackResource.addMethod('GET', metricsIntegration);
+metricsResource.addMethod('GET', metricsIntegration);
+chatResource.addMethod('POST', chatIntegration);
+pipelinesResource.addMethod('GET', chatIntegration);
+integrationsResource.addMethod('GET', integrationsIntegration);
+scrapersResource.addMethod('GET', scrapersIntegration);
+settingsResource.addMethod('GET', settingsIntegration);
+projectsResource.addMethod('GET', projectsIntegration);
+```
+
+**When adding a new domain:**
+
+1. Create new IAM Role with minimal permissions
+2. Create new Lambda Function with domain-specific handler
+3. Create LambdaIntegration
+4. Add API Gateway routes pointing to the new integration
+5. Grant only required table/service permissions to the role
 
 **Benefits:**
 - Each Lambda stays under 20KB policy limit
 - Faster cold starts (smaller deployment packages)
 - Independent scaling per endpoint type
-- Easier to reason about permissions
+- Easier to reason about and audit permissions
+- Isolated blast radius for errors
 
 ### React Component Structure
 

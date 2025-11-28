@@ -8,6 +8,7 @@ import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
@@ -29,11 +30,42 @@ export class VocIngestionStack extends cdk.Stack {
   public readonly ingestionLambdas: Map<string, lambda.Function> = new Map();
   public readonly processingQueue: sqs.Queue;
   public readonly secretsArn: string;
+  public readonly s3ImportBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: VocIngestionStackProps) {
     super(scope, id, props);
 
     const { feedbackTable, watermarksTable, aggregatesTable, rawDataBucket, kmsKey, config } = props;
+
+    // S3 Import Bucket - dedicated bucket for feedback file uploads
+    // Files uploaded here trigger the S3 import Lambda automatically
+    // Structure: {source_name}/{filename}.csv|json|jsonl
+    this.s3ImportBucket = new s3.Bucket(this, 'S3ImportBucket', {
+      bucketName: `voc-import-${this.account}-${this.region}`,
+      encryption: s3.BucketEncryption.KMS,
+      encryptionKey: kmsKey,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      versioned: false,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.POST, s3.HttpMethods.GET],
+          allowedOrigins: ['*'],
+          allowedHeaders: ['*'],
+          maxAge: 3000,
+        },
+      ],
+      lifecycleRules: [
+        {
+          id: 'move-processed-to-glacier',
+          prefix: 'processed/',
+          transitions: [
+            { storageClass: s3.StorageClass.GLACIER, transitionAfter: cdk.Duration.days(30) },
+          ],
+        },
+      ],
+    });
 
     // Secrets for API credentials
     const apiSecrets = new secretsmanager.Secret(this, 'VocApiSecrets', {
@@ -64,6 +96,26 @@ export class VocIngestionStack extends cdk.Stack {
           // Yelp Fusion API
           yelp_api_key: '',
           yelp_business_ids: '',
+          // YouTube Data API
+          youtube_api_key: '',
+          youtube_channel_id: '',
+          youtube_video_ids: '',
+          youtube_search_terms: '',
+          // TikTok API for Business
+          tiktok_access_token: '',
+          tiktok_refresh_token: '',
+          tiktok_client_key: '',
+          tiktok_client_secret: '',
+          tiktok_business_id: '',
+          tiktok_video_ids: '',
+          tiktok_research_enabled: 'false',
+          // LinkedIn Marketing API
+          linkedin_access_token: '',
+          linkedin_organization_id: '',
+          // S3 Import
+          s3_import_bucket: '',
+          s3_import_prefix: 'imports/',
+          s3_import_processed_prefix: 'processed/',
           // Web scraper configs (JSON array)
           webscraper_configs: '[]',
         }),
@@ -139,6 +191,10 @@ export class VocIngestionStack extends cdk.Stack {
       appstore_google: { schedule: events.Schedule.rate(cdk.Duration.minutes(15)), timeout: cdk.Duration.minutes(2) },
       appstore_huawei: { schedule: events.Schedule.rate(cdk.Duration.minutes(15)), timeout: cdk.Duration.minutes(2) },
       webscraper: { schedule: events.Schedule.rate(cdk.Duration.minutes(15)), timeout: cdk.Duration.minutes(5) },
+      youtube: { schedule: events.Schedule.rate(cdk.Duration.minutes(10)), timeout: cdk.Duration.minutes(3) },
+      tiktok: { schedule: events.Schedule.rate(cdk.Duration.minutes(10)), timeout: cdk.Duration.minutes(2) },
+      linkedin: { schedule: events.Schedule.rate(cdk.Duration.minutes(15)), timeout: cdk.Duration.minutes(2) },
+      s3_import: { schedule: events.Schedule.rate(cdk.Duration.minutes(5)), timeout: cdk.Duration.minutes(5) },
     };
 
     // Create Lambda functions for each enabled source
@@ -184,6 +240,26 @@ export class VocIngestionStack extends cdk.Stack {
       });
 
       this.ingestionLambdas.set(source, fn);
+
+      // Add S3 event notification for s3_import Lambda
+      if (source === 's3_import') {
+        this.s3ImportBucket.grantReadWrite(fn);
+        this.s3ImportBucket.addEventNotification(
+          s3.EventType.OBJECT_CREATED,
+          new s3n.LambdaDestination(fn),
+          { suffix: '.csv' }
+        );
+        this.s3ImportBucket.addEventNotification(
+          s3.EventType.OBJECT_CREATED,
+          new s3n.LambdaDestination(fn),
+          { suffix: '.json' }
+        );
+        this.s3ImportBucket.addEventNotification(
+          s3.EventType.OBJECT_CREATED,
+          new s3n.LambdaDestination(fn),
+          { suffix: '.jsonl' }
+        );
+      }
     }
 
     // Expose secrets ARN for other stacks
@@ -193,6 +269,8 @@ export class VocIngestionStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ApiSecretsArn', { value: apiSecrets.secretArn });
     new cdk.CfnOutput(this, 'ProcessingQueueUrl', { value: this.processingQueue.queueUrl });
     new cdk.CfnOutput(this, 'DLQUrl', { value: dlq.queueUrl });
+    new cdk.CfnOutput(this, 'S3ImportBucketName', { value: this.s3ImportBucket.bucketName });
+    new cdk.CfnOutput(this, 'S3ImportBucketArn', { value: this.s3ImportBucket.bucketArn });
   }
 
   private capitalize(str: string): string {

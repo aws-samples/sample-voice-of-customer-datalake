@@ -458,11 +458,40 @@ AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 
 
+def parse_context_filters(context_hint: str) -> dict:
+    """Parse filter values from context hint string."""
+    filters = {}
+    if not context_hint:
+        return filters
+    
+    # Parse "Source: xxx" pattern
+    import re
+    source_match = re.search(r'Source:\s*([^.]+)', context_hint)
+    if source_match:
+        filters['source'] = source_match.group(1).strip()
+    
+    category_match = re.search(r'Category:\s*([^.]+)', context_hint)
+    if category_match:
+        filters['category'] = category_match.group(1).strip()
+    
+    sentiment_match = re.search(r'Sentiment:\s*([^.]+)', context_hint)
+    if sentiment_match:
+        filters['sentiment'] = sentiment_match.group(1).strip()
+    
+    return filters
+
+
 def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
     """Build context for VoC AI Chat (main chat page)."""
     message = body.get('message', '')
     context_hint = body.get('context', '')
     days = body.get('days', 7)
+    
+    # Parse filters from context hint
+    parsed_filters = parse_context_filters(context_hint)
+    source_filter = parsed_filters.get('source')
+    category_filter = parsed_filters.get('category')
+    sentiment_filter = parsed_filters.get('sentiment')
     
     current_date = datetime.now(timezone.utc)
     
@@ -524,25 +553,53 @@ def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
             except Exception:
                 pass
     
-    # Get recent feedback items
+    # Get recent feedback items with filters applied
     feedback_items = []
     urgent_items = []
     
     if feedback_table:
-        for i in range(min(days, 7)):
-            date = (current_date - __import__('datetime').timedelta(days=i)).strftime('%Y-%m-%d')
+        # If source filter is set, query by source instead of date
+        if source_filter:
             try:
                 response = feedback_table.query(
-                    IndexName='gsi1-by-date',
-                    KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                    Limit=10,
+                    KeyConditionExpression=Key('pk').eq(f'SOURCE#{source_filter}'),
+                    Limit=50,
                     ScanIndexForward=False
                 )
-                feedback_items.extend(response.get('Items', []))
-                if len(feedback_items) >= 30:
-                    break
-            except Exception:
-                pass
+                items = response.get('Items', [])
+                # Apply additional filters
+                for item in items:
+                    if category_filter and item.get('category') != category_filter:
+                        continue
+                    if sentiment_filter and item.get('sentiment_label') != sentiment_filter:
+                        continue
+                    feedback_items.append(item)
+                    if len(feedback_items) >= 30:
+                        break
+            except Exception as e:
+                logger.warning(f"Failed to query by source: {e}")
+        else:
+            # Query by date and apply filters
+            for i in range(min(days, 7)):
+                date = (current_date - __import__('datetime').timedelta(days=i)).strftime('%Y-%m-%d')
+                try:
+                    response = feedback_table.query(
+                        IndexName='gsi1-by-date',
+                        KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+                        Limit=30,
+                        ScanIndexForward=False
+                    )
+                    for item in response.get('Items', []):
+                        # Apply filters
+                        if category_filter and item.get('category') != category_filter:
+                            continue
+                        if sentiment_filter and item.get('sentiment_label') != sentiment_filter:
+                            continue
+                        feedback_items.append(item)
+                    if len(feedback_items) >= 30:
+                        break
+                except Exception:
+                    pass
         
         # Get urgent items if relevant
         if 'urgent' in message.lower() or 'attention' in message.lower():
@@ -629,8 +686,18 @@ Format your responses clearly with bullet points or numbered lists when appropri
 - Category: {item.get('category', 'other')}
 """
 
-    if context_hint:
-        data_context += f"\n## Additional Context: {context_hint}\n"
+    # Show active filters
+    active_filters = []
+    if source_filter:
+        active_filters.append(f"Source: {source_filter}")
+    if category_filter:
+        active_filters.append(f"Category: {category_filter}")
+    if sentiment_filter:
+        active_filters.append(f"Sentiment: {sentiment_filter}")
+    
+    if active_filters:
+        data_context += f"\n## Active Filters: {', '.join(active_filters)}\n"
+        data_context += "Note: The feedback samples above have been filtered based on these criteria.\n"
 
     user_message = f"{data_context}\n\n---\n\nUser Question: {message}"
     

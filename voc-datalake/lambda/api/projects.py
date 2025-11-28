@@ -5,6 +5,7 @@ Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 import json
 import os
 import boto3
+from botocore.config import Config
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -16,7 +17,9 @@ tracer = Tracer()
 
 # AWS Clients
 dynamodb = boto3.resource('dynamodb')
-bedrock = boto3.client('bedrock-runtime')
+# Extended timeout for long-running LLM calls (persona generation uses 3-step chain)
+bedrock_config = Config(read_timeout=300, connect_timeout=10, retries={'max_attempts': 2})
+bedrock = boto3.client('bedrock-runtime', config=bedrock_config)
 
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
@@ -36,33 +39,79 @@ class DecimalEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def invoke_bedrock(system_prompt: str, user_message: str, max_tokens: int = 4096) -> str:
-    """Invoke Bedrock with Claude Sonnet 4.5."""
+def invoke_bedrock(system_prompt: str, user_message: str, max_tokens: int = 4096, thinking_budget: int = 0) -> str:
+    """Invoke Bedrock with Claude Sonnet 4.5.
+    
+    Args:
+        system_prompt: System instructions
+        user_message: User message
+        max_tokens: Maximum output tokens
+        thinking_budget: If > 0, enables extended thinking with this token budget
+    """
+    request_body = {
+        'anthropic_version': 'bedrock-2023-05-31',
+        'max_tokens': max_tokens,
+        'system': system_prompt,
+        'messages': [{'role': 'user', 'content': user_message}]
+    }
+    
+    # Add extended thinking if budget specified
+    if thinking_budget > 0:
+        request_body['thinking'] = {
+            'type': 'enabled',
+            'budget_tokens': thinking_budget
+        }
+    
     response = bedrock.invoke_model(
         modelId=MODEL_ID,
         contentType='application/json',
         accept='application/json',
-        body=json.dumps({
-            'anthropic_version': 'bedrock-2023-05-31',
-            'max_tokens': max_tokens,
-            'system': system_prompt,
-            'messages': [{'role': 'user', 'content': user_message}]
-        })
+        body=json.dumps(request_body)
     )
     result = json.loads(response['body'].read())
+    
+    # Handle response with thinking blocks
+    for block in result.get('content', []):
+        if block.get('type') == 'text':
+            return block.get('text', '')
+    
     return result['content'][0]['text']
 
 
-def invoke_bedrock_chain(steps: list[dict]) -> list[str]:
-    """Execute a chain of LLM calls, each building on the previous."""
+def invoke_bedrock_chain(steps: list[dict], progress_callback: callable = None) -> list[str]:
+    """Execute a chain of LLM calls, each building on the previous.
+    
+    Each step can have:
+        - system: System prompt
+        - user: User message (use {previous} to inject previous result)
+        - max_tokens: Max output tokens (default 4096)
+        - thinking_budget: Extended thinking budget (default 0 = disabled)
+        - step_name: Optional name for progress reporting
+    
+    Args:
+        steps: List of step configurations
+        progress_callback: Optional callback(progress: int, step: str) to report progress
+    """
     results = []
     context = ""
+    total_steps = len(steps)
     
     for i, step in enumerate(steps, 1):
-        logger.info(f"Executing LLM chain step {i}/{len(steps)}")
+        step_name = step.get('step_name', f'llm_step_{i}')
+        logger.info(f"Executing LLM chain step {i}/{total_steps}: {step_name}")
+        
+        # Report progress (distribute 15-75% across LLM steps)
+        if progress_callback:
+            progress = 15 + int((i - 1) / total_steps * 60)
+            try:
+                progress_callback(progress, step_name)
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
+        
         system = step.get('system', '')
         user = step.get('user', '').replace('{previous}', context)
-        result = invoke_bedrock(system, user, step.get('max_tokens', 4096))
+        thinking_budget = step.get('thinking_budget', 0)
+        result = invoke_bedrock(system, user, step.get('max_tokens', 4096), thinking_budget)
         results.append(result)
         context = result
         logger.info(f"Step {i} completed, output length: {len(result)} chars")
@@ -128,6 +177,37 @@ def create_project(body: dict) -> dict:
     return {'success': True, 'project': item}
 
 
+AVATARS_CDN_URL = os.environ.get('AVATARS_CDN_URL', '')
+
+
+def get_avatar_cdn_url(s3_uri: str) -> str | None:
+    """Convert S3 URI to CloudFront CDN URL for avatar images.
+    
+    S3 URI format: s3://bucket/avatars/{persona_id}.png
+    CDN URL format: https://{cdn_domain}/{persona_id}.png
+    """
+    if not s3_uri or not s3_uri.startswith('s3://'):
+        return None
+    
+    if not AVATARS_CDN_URL:
+        logger.warning("AVATARS_CDN_URL not configured")
+        return None
+    
+    try:
+        # Extract filename from s3://bucket/avatars/{persona_id}.png
+        # The CloudFront distribution has originPath='/avatars' so we just need the filename
+        parts = s3_uri.split('/')
+        if len(parts) < 2:
+            return None
+        filename = parts[-1]  # e.g., persona_20241128123456_0.png
+        
+        cdn_url = f"{AVATARS_CDN_URL.rstrip('/')}/{filename}"
+        return cdn_url
+    except Exception as e:
+        logger.warning(f"Failed to generate CDN URL for {s3_uri}: {e}")
+        return None
+
+
 @tracer.capture_method
 def get_project(project_id: str) -> dict:
     """Get a project with all its data."""
@@ -152,6 +232,9 @@ def get_project(project_id: str) -> dict:
         if sk == 'META':
             project = item
         elif sk.startswith('PERSONA#'):
+            # Convert S3 URI to CloudFront CDN URL for avatar
+            if item.get('avatar_url') and item['avatar_url'].startswith('s3://'):
+                item['avatar_url'] = get_avatar_cdn_url(item['avatar_url'])
             personas.append(item)
         elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('DOC#'):
             documents.append(item)
@@ -359,50 +442,215 @@ def get_feedback_statistics(items: list[dict]) -> str:
     return stats
 
 
+# =============================================================================
+# PERSONA AVATAR GENERATION
+# Uses Amazon Nova Canvas (amazon.nova-canvas-v1:0) to generate AI headshot images
+# Model is only available in us-east-1, so we create a region-specific client
+# Search: "avatar generation for personas" or "PERSONA_AVATAR"
+# =============================================================================
+
 @tracer.capture_method
-def generate_personas(project_id: str, filters: dict) -> dict:
-    """Generate user personas from feedback data using multi-step LLM chain."""
+def generate_persona_avatar(persona_data: dict, s3_bucket: str = None) -> dict:
+    """
+    [PERSONA_AVATAR] Generate an AI avatar image for a persona using Amazon Nova Canvas.
+    
+    Nova Canvas is Amazon's image generation model. It's only available in us-east-1,
+    so this function creates a region-specific Bedrock client.
+    
+    Args:
+        persona_data: Dict containing persona info (identity.age_range, identity.occupation, persona_id, name)
+        s3_bucket: Optional S3 bucket override, defaults to RAW_DATA_BUCKET env var
+        
+    Returns:
+        dict with 'avatar_url' (S3 URI or None) and 'avatar_prompt' (the prompt used)
+    """
+    import base64
+    
+    logger.info("[PERSONA_AVATAR] Starting avatar generation", extra={
+        "persona_id": persona_data.get('persona_id'),
+        "persona_name": persona_data.get('name')
+    })
+    
+    if not s3_bucket:
+        s3_bucket = os.environ.get('RAW_DATA_BUCKET', '')
+    
+    if not s3_bucket:
+        logger.warning("[PERSONA_AVATAR] No S3 bucket configured for avatar storage - RAW_DATA_BUCKET env var is empty")
+        return {'avatar_url': None, 'avatar_prompt': None}
+    
+    logger.info(f"[PERSONA_AVATAR] Using S3 bucket: {s3_bucket}")
+    
+    # Build avatar prompt from persona data
+    identity = persona_data.get('identity', {})
+    age_range = identity.get('age_range', '30-40')
+    occupation = identity.get('occupation', 'professional')
+    
+    # Extract age midpoint for prompt
+    try:
+        age_parts = age_range.replace('+', '-99').split('-')
+        age_mid = (int(age_parts[0]) + int(age_parts[1])) // 2
+    except (ValueError, IndexError):
+        age_mid = 35
+    
+    # Determine attire based on occupation
+    occupation_lower = occupation.lower()
+    if any(word in occupation_lower for word in ['executive', 'manager', 'director', 'ceo', 'cfo']):
+        attire = "business professional attire, tailored blazer"
+    elif any(word in occupation_lower for word in ['engineer', 'developer', 'tech', 'designer']):
+        attire = "smart casual attire, modern button-up shirt"
+    elif any(word in occupation_lower for word in ['parent', 'home', 'retired']):
+        attire = "casual comfortable clothing"
+    elif any(word in occupation_lower for word in ['student', 'intern']):
+        attire = "casual modern clothing"
+    else:
+        attire = "business casual attire"
+    
+    # Build a detailed, high-quality prompt for Nova Canvas
+    avatar_prompt = f"""Professional corporate headshot portrait photograph of a {age_mid} year old {occupation}, wearing {attire}, friendly and confident expression, looking directly at camera, soft studio lighting, clean neutral gray background, sharp focus on face, high-end professional photography style, photorealistic"""
+    
+    logger.info(f"[PERSONA_AVATAR] Generated prompt for {persona_data.get('name')}: {avatar_prompt[:100]}...")
+    
+    try:
+        # Nova Canvas is only available in us-east-1
+        # IAM policy must include: arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0
+        logger.info("[PERSONA_AVATAR] Creating Bedrock client for us-east-1 (Nova Canvas region)")
+        bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
+        
+        # Nova Canvas request format - must use 1024x1024 dimensions
+        # Do NOT include 'quality' or 'cfgScale' params - they cause ValidationException
+        persona_id = persona_data.get('persona_id', 'unknown')
+        request_body = {
+            "taskType": "TEXT_IMAGE",
+            "textToImageParams": {
+                "text": avatar_prompt,
+            },
+            "imageGenerationConfig": {
+                "numberOfImages": 1,
+                "width": 1024,
+                "height": 1024,
+                "seed": hash(persona_id) % 2147483647  # Consistent seed per persona
+            }
+        }
+        
+        logger.info(f"[PERSONA_AVATAR] Invoking Nova Canvas model: amazon.nova-canvas-v1:0")
+        
+        response = bedrock_runtime.invoke_model(
+            modelId='amazon.nova-canvas-v1:0',
+            body=json.dumps(request_body)
+        )
+        
+        result = json.loads(response['body'].read())
+        images = result.get('images', [])
+        
+        if not images:
+            logger.warning("[PERSONA_AVATAR] Nova Canvas returned empty images array")
+            return {'avatar_url': None, 'avatar_prompt': avatar_prompt}
+        
+        logger.info(f"[PERSONA_AVATAR] Nova Canvas generated {len(images)} image(s)")
+        
+        # Decode base64 image and upload to S3
+        image_data = base64.b64decode(images[0])
+        s3_key = f"avatars/{persona_id}.png"
+        
+        logger.info(f"[PERSONA_AVATAR] Uploading avatar to S3: s3://{s3_bucket}/{s3_key}")
+        
+        s3_client = boto3.client('s3')
+        s3_client.put_object(
+            Bucket=s3_bucket,
+            Key=s3_key,
+            Body=image_data,
+            ContentType='image/png'
+        )
+        
+        avatar_url = f"s3://{s3_bucket}/{s3_key}"
+        logger.info(f"[PERSONA_AVATAR] SUCCESS - Avatar generated for {persona_data.get('name')}: {avatar_url}")
+        
+        return {'avatar_url': avatar_url, 'avatar_prompt': avatar_prompt}
+        
+    except Exception as e:
+        error_type = type(e).__name__
+        if 'AccessDenied' in error_type or 'AccessDenied' in str(e):
+            logger.error(f"[PERSONA_AVATAR] ACCESS DENIED - Check IAM policy includes arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0", extra={"error": str(e)})
+        elif 'ValidationException' in error_type or 'ValidationException' in str(e):
+            logger.error(f"[PERSONA_AVATAR] VALIDATION ERROR - Check Nova Canvas request format (must use 1024x1024, no quality/cfgScale params)", extra={"error": str(e)})
+        else:
+            logger.error(f"[PERSONA_AVATAR] FAILED - Avatar generation error: {error_type}: {e}", extra={
+                "persona_id": persona_data.get('persona_id'),
+                "error_type": error_type,
+                "error": str(e)
+            })
+        return {'avatar_url': None, 'avatar_prompt': avatar_prompt}
+
+
+@tracer.capture_method
+def generate_personas(project_id: str, filters: dict, progress_callback: callable = None) -> dict:
+    """Generate full UX research personas from feedback data using multi-step LLM chain.
+    
+    Creates comprehensive personas with 8 sections:
+    1. Identity & Demographics
+    2. Goals & Motivations
+    3. Pain Points & Frustrations
+    4. Behaviors & Habits
+    5. Context & Environment
+    6. Representative Quotes
+    7. Scenario/User Story
+    8. Research Notes (empty, for user to fill)
+    
+    Args:
+        project_id: The project ID
+        filters: Filter parameters for feedback selection
+        progress_callback: Optional callback(progress: int, step: str) to report progress
+    """
+    def update_progress(progress: int, step: str):
+        """Update progress if callback provided."""
+        if progress_callback:
+            try:
+                progress_callback(progress, step)
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
+    
     if not projects_table:
         return {'success': False, 'message': 'Projects table not configured'}
     
     # Extract filter parameters
     persona_count = filters.get('persona_count', 3)
     custom_instructions = filters.get('custom_instructions', '')
+    generate_avatars = filters.get('generate_avatars', True)
     
-    # Get feedback data - limit to 50 items for faster processing while maintaining quality
+    update_progress(5, 'fetching_feedback')
+    
+    # Get feedback data
     feedback_items = get_feedback_context(filters, limit=50)
     if not feedback_items:
         return {'success': False, 'message': 'No feedback data found for the given filters'}
     
-    logger.info(f"Starting persona generation for project {project_id} with {len(feedback_items)} feedback items")
+    logger.info(f"Starting enhanced persona generation for project {project_id} with {len(feedback_items)} feedback items")
+    
+    update_progress(10, 'formatting_data')
     feedback_context = format_feedback_for_llm(feedback_items)
     feedback_stats = get_feedback_statistics(feedback_items)
     
-    # Truncate context if too large (keep under 30k chars for faster processing)
+    # Truncate context if too large
     if len(feedback_context) > 30000:
-        feedback_context = feedback_context[:30000] + "\n\n[... additional feedback truncated for processing ...]"
+        feedback_context = feedback_context[:30000] + "\n\n[... additional feedback truncated ...]"
     
-    # Build custom instructions section
-    custom_section = ""
-    if custom_instructions:
-        custom_section = f"\n\n## ADDITIONAL INSTRUCTIONS FROM USER:\n{custom_instructions}\n"
+    custom_section = f"\n\n## ADDITIONAL INSTRUCTIONS:\n{custom_instructions}\n" if custom_instructions else ""
     
-    # Multi-step LLM chain for persona generation
-    # Step 1: Research - Deep analysis of patterns and segments
-    research_system = """You are a senior user research expert specializing in Voice of Customer analysis.
-Your task is to identify distinct user segments from real customer feedback data.
+    # Step 1: Deep Research Analysis
+    research_system = """You are a senior UX researcher specializing in Voice of Customer analysis and persona development.
 
-APPROACH:
-- Be data-driven: cite specific reviews and quotes to support your findings
-- Look for behavioral patterns, not just demographics
-- Identify emotional drivers and underlying motivations
-- Consider the customer journey stage when analyzing feedback
-- Pay attention to urgency levels and sentiment scores"""
+Your task is to identify distinct user segments from real customer feedback. You must:
+1. Be rigorously data-driven - cite specific reviews and quotes
+2. Look for behavioral patterns, not just demographics
+3. Identify emotional drivers and underlying motivations
+4. Consider customer journey stages
+5. Pay attention to urgency levels and sentiment patterns
+6. Look for workarounds and coping mechanisms
+7. Identify tech savviness signals from language used"""
     
     research_prompt = f"""Analyze this customer feedback dataset and identify exactly {persona_count} distinct user segments.
 
 {feedback_stats}
-
 {custom_section}
 
 ## CUSTOMER FEEDBACK DATA:
@@ -410,87 +658,119 @@ APPROACH:
 
 ---
 
-For EACH of the {persona_count} segments, provide:
+For EACH of the {persona_count} segments, provide detailed analysis:
 
-1. **Segment Name**: A descriptive name for this user type
-2. **Size Estimate**: What % of the feedback represents this segment?
-3. **Defining Characteristics**: What makes this segment unique?
-4. **Common Behaviors**: How do they interact with the product/service?
-5. **Primary Goals**: What are they trying to achieve?
-6. **Key Pain Points**: What frustrates them most? (cite specific reviews)
-7. **Emotional State**: How do they feel? What drives their emotions?
-8. **Representative Quotes**: Copy 2-3 actual quotes from the feedback that exemplify this persona
-9. **Journey Stage**: Where are they in the customer journey? (awareness/consideration/purchase/usage/support/advocacy)
+1. **Segment Name**: A memorable, descriptive name
+2. **Size Estimate**: What % of feedback represents this segment?
+3. **Demographic Signals**: Age hints, occupation hints, location hints (only if evident)
+4. **Defining Characteristics**: What makes this segment unique?
+5. **Goals & Motivations**: What are they trying to achieve? Why?
+6. **Pain Points**: What frustrates them? (cite specific reviews by number)
+7. **Behaviors**: How do they interact? What tools do they mention?
+8. **Emotional State**: How do they feel? What language reveals this?
+9. **Tech Savviness**: Low/Medium/High based on language and expectations
+10. **Representative Quotes**: Copy 3-4 EXACT quotes from the feedback
+11. **Journey Stage**: awareness/consideration/purchase/usage/support/advocacy
+12. **Workarounds**: How do they currently cope with problems?
+13. **Context Clues**: When/where do they use the product? Time constraints?
 
-Be specific and ground every insight in the actual feedback data provided."""
+Be specific and ground every insight in actual feedback data."""
 
-    # Step 2: Synthesize - Create actionable persona profiles with original data access
-    refine_system = """You are a UX researcher creating detailed, actionable user personas.
-Each persona must feel like a real person - specific, memorable, and grounded in actual customer quotes.
+    # Step 2: Full Persona Synthesis with 8 Sections
+    synthesis_system = """You are a UX researcher creating comprehensive persona profiles following an 8-section template.
 
-REQUIREMENTS:
-- Use REAL quotes from the feedback data, not made-up ones
-- Make demographics specific but realistic
-- Ensure goals and frustrations are actionable for product teams
-- The scenario should be a realistic user story"""
+Each persona must:
+- Feel like a real, specific person with a name and story
+- Be grounded in actual customer quotes (use REAL quotes only)
+- Have actionable insights for product teams
+- Include realistic scenarios
+- Have appropriate confidence levels based on data support
+
+CRITICAL: Output ONLY valid JSON. No markdown, no explanation, just the JSON array."""
     
-    refine_prompt = f"""Based on the segment analysis, create exactly {persona_count} detailed persona profiles.
+    synthesis_prompt = f"""Based on the segment analysis, create exactly {persona_count} comprehensive persona profiles.
 
 ## PREVIOUS ANALYSIS:
 {{previous}}
 
-## ORIGINAL FEEDBACK DATA (for reference and quotes):
+## ORIGINAL FEEDBACK DATA (for accurate quotes):
 {feedback_context[:15000]}
-
 {custom_section}
 
 ---
 
-Create exactly {persona_count} personas. Output ONLY valid JSON in this exact format:
+Create exactly {persona_count} personas with ALL 8 SECTIONS. Output ONLY valid JSON:
 
 ```json
 [
   {{
     "name": "First Last",
-    "tagline": "One compelling sentence that captures who they are",
-    "demographics": {{
+    "tagline": "The [Descriptive Label] - one compelling sentence",
+    "confidence": "high|medium|low",
+    "feedback_count": 12,
+    
+    "identity": {{
       "age_range": "30-45",
+      "location": "Urban, US",
       "occupation": "Specific job title",
-      "tech_level": "high/medium/low",
-      "location_type": "urban/suburban/rural"
+      "income_bracket": "$100k-150k or null",
+      "education": "Bachelor's degree or null",
+      "family_status": "Married with kids or null",
+      "bio": "2-3 sentence background story that feels real and specific. Include their career path, current situation, and what drives them."
     }},
-    "quote": "An actual quote from the feedback that captures their voice",
-    "goals": [
-      "Specific goal 1",
-      "Specific goal 2",
-      "Specific goal 3"
+    
+    "goals_motivations": {{
+      "primary_goal": "Their main objective in one clear sentence",
+      "secondary_goals": ["Goal 2", "Goal 3"],
+      "success_definition": "What success looks like to them in their own words",
+      "underlying_motivations": ["Deeper emotional driver 1", "Driver 2"]
+    }},
+    
+    "pain_points": {{
+      "current_challenges": ["Challenge 1 with specific context", "Challenge 2", "Challenge 3"],
+      "blockers": ["What specifically prevents them from achieving goals"],
+      "workarounds": ["How they currently cope with the problem"],
+      "emotional_impact": "How these frustrations make them feel - be specific"
+    }},
+    
+    "behaviors": {{
+      "current_solutions": ["How they solve the problem now"],
+      "tools_used": ["Tool 1", "Tool 2", "Tool 3"],
+      "activity_frequency": "Daily|Weekly|Monthly|As needed",
+      "tech_savviness": "low|medium|high",
+      "decision_style": "Data-driven|Gut instinct|Consensus-seeking|Research-heavy"
+    }},
+    
+    "context_environment": {{
+      "usage_context": "When and where they typically engage with the product",
+      "devices": ["iPhone", "MacBook", "etc"],
+      "time_constraints": "Specific time constraints they face",
+      "social_context": "Their work/social environment and who they interact with",
+      "influencers": ["Who influences their decisions"]
+    }},
+    
+    "quotes": [
+      {{"text": "Exact quote from feedback that captures their voice", "context": "Source/situation"}},
+      {{"text": "Another real quote showing their perspective", "context": "Context"}}
     ],
-    "frustrations": [
-      "Specific frustration 1 (with context)",
-      "Specific frustration 2 (with context)",
-      "Specific frustration 3 (with context)"
-    ],
-    "behaviors": [
-      "How they use the product/service",
-      "Their communication style",
-      "Their decision-making pattern"
-    ],
-    "needs": [
-      "What they need to be satisfied",
-      "What would delight them",
-      "What would make them loyal"
-    ],
-    "scenario": "A 2-3 sentence user story describing a typical interaction",
+    
+    "scenario": {{
+      "title": "Short descriptive title for the scenario",
+      "narrative": "A 3-4 sentence story showing them in a realistic situation. Describe the trigger, their actions, their thought process, and the outcome they're seeking.",
+      "trigger": "What triggers this scenario",
+      "outcome": "What they hope to achieve"
+    }},
+    
     "supporting_evidence": ["Review #X", "Review #Y", "Review #Z"]
   }}
 ]
 ```
 
-IMPORTANT: Output ONLY the JSON array, no other text before or after."""
+IMPORTANT: Output ONLY the JSON array, no other text."""
 
-    # Step 3: Validate and enrich - Cross-reference with original data
+    # Step 3: Validation
     validate_system = """You are a critical reviewer ensuring personas are grounded in real data.
-Your job is to validate claims, add confidence ratings, and ensure the personas are actionable."""
+Validate claims, verify quotes, and ensure actionability."""
     
     validate_prompt = f"""Review and validate these personas against the original feedback data.
 
@@ -505,40 +785,41 @@ Your job is to validate claims, add confidence ratings, and ensure the personas 
 
 ---
 
-For each persona, evaluate:
-
-1. **Data Support**: Is this persona supported by multiple feedback items? (cite review numbers)
-2. **Quote Accuracy**: Are the quotes accurate or paraphrased appropriately?
-3. **Consistency**: Are there any contradictions in the persona profile?
+For each persona:
+1. **Data Support**: Is this persona supported by multiple feedback items?
+2. **Quote Accuracy**: Are quotes accurate or appropriately paraphrased?
+3. **Consistency**: Any contradictions in the profile?
 4. **Actionability**: Can product teams act on these insights?
-5. **Confidence Rating**: HIGH (5+ supporting reviews) / MEDIUM (2-4 reviews) / LOW (1 review or inferred)
+5. **Confidence**: HIGH (5+ reviews) / MEDIUM (2-4 reviews) / LOW (1 review or inferred)
 
-Provide your validation report, then output the FINAL validated personas as a JSON array with any necessary refinements."""
+Output the FINAL validated personas as a JSON array with any refinements."""
 
     try:
-        # Execute the chain with optimized token limits
-        logger.info("Starting LLM chain - Step 1: Research")
-        results = invoke_bedrock_chain([
-            {'system': research_system, 'user': research_prompt, 'max_tokens': 2500},
-            {'system': refine_system, 'user': refine_prompt, 'max_tokens': 3000},
-            {'system': validate_system, 'user': validate_prompt, 'max_tokens': 2000},
-        ])
-        logger.info("LLM chain completed successfully")
-        
-        # Parse personas from the refined output (Step 2) or validation output (Step 3)
         import re
-        personas_data = []
+        import time
+        start_time = time.time()
         
-        # Try to parse from Step 2 first, then Step 3 if needed
+        update_progress(15, 'analyzing_feedback')
+        logger.info("Starting enhanced LLM chain for persona generation")
+        results = invoke_bedrock_chain([
+            {'system': research_system, 'user': research_prompt, 'max_tokens': 4000, 'step_name': 'research_analysis'},
+            {'system': synthesis_system, 'user': synthesis_prompt, 'max_tokens': 9000, 'step_name': 'persona_synthesis'},
+            {'system': validate_system, 'user': validate_prompt, 'max_tokens': 3000, 'step_name': 'validation'},
+        ], progress_callback=lambda p, s: update_progress(p, s))
+        
+        llm_time = int((time.time() - start_time) * 1000)
+        logger.info(f"LLM chain completed in {llm_time}ms")
+        
+        # Parse personas from output
+        personas_data = []
         for result_text in [results[1], results[2]]:
-            # Look for JSON array - use greedy match to get full array
             json_match = re.search(r'\[\s*\{[\s\S]*\}\s*\]', result_text)
             if json_match:
                 try:
                     parsed = json.loads(json_match.group())
                     if isinstance(parsed, list) and len(parsed) > 0:
                         personas_data = parsed
-                        logger.info(f"Successfully parsed {len(personas_data)} personas from LLM output")
+                        logger.info(f"Parsed {len(personas_data)} personas from LLM output")
                         break
                 except json.JSONDecodeError as e:
                     logger.warning(f"JSON parse failed: {e}")
@@ -547,10 +828,18 @@ Provide your validation report, then output the FINAL validated personas as a JS
         if not personas_data:
             logger.error("Failed to parse personas from LLM output")
             return {
-                'success': False, 
+                'success': False,
                 'message': 'Failed to parse persona data from LLM response',
-                'raw_output': results[1][:2000]  # Include partial output for debugging
+                'raw_output': results[1][:2000]
             }
+        
+        update_progress(80, 'saving_personas')
+        
+        # Calculate source breakdown
+        source_breakdown = {}
+        for item in feedback_items:
+            src = item.get('source_platform', 'unknown')
+            source_breakdown[src] = source_breakdown.get(src, 0) + 1
         
         # Save personas to project
         now = datetime.now(timezone.utc).isoformat()
@@ -558,27 +847,77 @@ Provide your validation report, then output the FINAL validated personas as a JS
         
         for i, persona in enumerate(personas_data):
             persona_id = f"persona_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}"
+            
+            # Build the full persona item with all 8 sections
             item = {
                 'pk': f'PROJECT#{project_id}',
                 'sk': f'PERSONA#{persona_id}',
                 'gsi1pk': f'PROJECT#{project_id}#PERSONAS',
                 'gsi1sk': now,
                 'persona_id': persona_id,
+                
+                # Basic info
                 'name': persona.get('name', f'Persona {i+1}'),
                 'tagline': persona.get('tagline', ''),
-                'demographics': persona.get('demographics', {}),
-                'quote': persona.get('quote', ''),
-                'goals': persona.get('goals', []),
-                'frustrations': persona.get('frustrations', []),
-                'behaviors': persona.get('behaviors', []),
-                'needs': persona.get('needs', []),
-                'scenario': persona.get('scenario', ''),
+                'confidence': persona.get('confidence', 'medium'),
+                'feedback_count': persona.get('feedback_count', len(feedback_items) // persona_count),
+                
+                # Section 1: Identity & Demographics
+                'identity': persona.get('identity', {}),
+                
+                # Section 2: Goals & Motivations
+                'goals_motivations': persona.get('goals_motivations', {}),
+                
+                # Section 3: Pain Points & Frustrations
+                'pain_points': persona.get('pain_points', {}),
+                
+                # Section 4: Behaviors & Habits
+                'behaviors': persona.get('behaviors', {}),
+                
+                # Section 5: Context & Environment
+                'context_environment': persona.get('context_environment', {}),
+                
+                # Section 6: Representative Quotes
+                'quotes': persona.get('quotes', []),
+                
+                # Section 7: Scenario/User Story
+                'scenario': persona.get('scenario', {}),
+                
+                # Section 8: Research Notes (empty, for user to fill)
+                'research_notes': [],
+                
+                # Metadata
                 'supporting_evidence': persona.get('supporting_evidence', []),
+                'source_breakdown': source_breakdown,
+                'source_feedback_ids': [item.get('feedback_id', '') for item in feedback_items[:20]],
+                'avatar_url': None,
+                'avatar_prompt': None,
                 'created_at': now,
+                'updated_at': now,
+                'llm_metadata': {
+                    'model': MODEL_ID,
+                    'prompt_version': '2.0.0',
+                    'generation_time_ms': llm_time
+                },
+                
+                # Legacy fields for backward compatibility
+                'demographics': persona.get('identity', {}),
+                'quote': persona.get('quotes', [{}])[0].get('text', '') if persona.get('quotes') else '',
+                'goals': persona.get('goals_motivations', {}).get('secondary_goals', []),
+                'frustrations': persona.get('pain_points', {}).get('current_challenges', []),
+                'needs': persona.get('goals_motivations', {}).get('underlying_motivations', []),
             }
+            
+            # Generate avatar if enabled
+            if generate_avatars:
+                update_progress(85 + i * 3, f'generating_avatar_{i+1}')
+                avatar_result = generate_persona_avatar({'persona_id': persona_id, **persona})
+                item['avatar_url'] = avatar_result.get('avatar_url')
+                item['avatar_prompt'] = avatar_result.get('avatar_prompt')
+            
             projects_table.put_item(Item=item)
             saved_personas.append(item)
-            logger.info(f"Saved persona: {persona.get('name')}")
+            logger.info(f"Saved enhanced persona: {persona.get('name')}")
         
         # Update persona count
         projects_table.update_item(
@@ -593,11 +932,16 @@ Provide your validation report, then output the FINAL validated personas as a JS
             'analysis': {
                 'research': results[0],
                 'validation': results[2]
+            },
+            'metadata': {
+                'feedback_count': len(feedback_items),
+                'source_breakdown': source_breakdown,
+                'generation_time_ms': llm_time
             }
         }
         
     except Exception as e:
-        logger.exception(f"Persona generation failed: {e}")
+        logger.exception(f"Enhanced persona generation failed: {e}")
         return {'success': False, 'message': str(e)}
 
 
@@ -1255,7 +1599,7 @@ def create_persona(project_id: str, body: dict) -> dict:
 
 @tracer.capture_method
 def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
-    """Update a persona."""
+    """Update a persona with support for all 8 sections."""
     if not projects_table:
         return {'success': False, 'message': 'Projects table not configured'}
     
@@ -1265,17 +1609,47 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
     expr_values = {':now': now}
     expr_names = {}
     
-    # Update allowed fields
+    # All updatable fields including new 8-section schema
     field_mappings = {
+        # Basic info
         'name': '#name',
         'tagline': 'tagline',
+        'confidence': 'confidence',
+        
+        # Section 1: Identity
+        'identity': 'identity',
+        
+        # Section 2: Goals & Motivations
+        'goals_motivations': 'goals_motivations',
+        
+        # Section 3: Pain Points
+        'pain_points': 'pain_points',
+        
+        # Section 4: Behaviors
+        'behaviors': 'behaviors',
+        
+        # Section 5: Context & Environment
+        'context_environment': 'context_environment',
+        
+        # Section 6: Quotes
+        'quotes': 'quotes',
+        
+        # Section 7: Scenario
+        'scenario': 'scenario',
+        
+        # Section 8: Research Notes
+        'research_notes': 'research_notes',
+        
+        # Avatar
+        'avatar_url': 'avatar_url',
+        'avatar_prompt': 'avatar_prompt',
+        
+        # Legacy fields for backward compatibility
         'demographics': 'demographics',
         'quote': 'quote',
         'goals': 'goals',
         'frustrations': 'frustrations',
-        'behaviors': 'behaviors',
         'needs': 'needs',
-        'scenario': 'scenario',
     }
     
     for field, attr_name in field_mappings.items():
@@ -1301,6 +1675,180 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
     except Exception as e:
         logger.exception(f"Failed to update persona: {e}")
         return {'success': False, 'message': str(e)}
+
+
+@tracer.capture_method
+def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
+    """Add a research note to a persona."""
+    if not projects_table:
+        return {'success': False, 'message': 'Projects table not configured'}
+    
+    note_text = body.get('text', '')
+    if not note_text:
+        return {'success': False, 'message': 'Note text is required'}
+    
+    now = datetime.now(timezone.utc).isoformat()
+    note_id = f"note_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    
+    new_note = {
+        'note_id': note_id,
+        'text': note_text,
+        'author': body.get('author', 'anonymous'),
+        'created_at': now,
+        'updated_at': None,
+        'tags': body.get('tags', [])
+    }
+    
+    try:
+        # Append note to research_notes array
+        projects_table.update_item(
+            Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+            UpdateExpression='SET research_notes = list_append(if_not_exists(research_notes, :empty), :note), updated_at = :now',
+            ExpressionAttributeValues={
+                ':note': [new_note],
+                ':empty': [],
+                ':now': now
+            }
+        )
+        return {'success': True, 'note': new_note}
+    except Exception as e:
+        logger.exception(f"Failed to add persona note: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@tracer.capture_method
+def update_persona_note(project_id: str, persona_id: str, note_id: str, body: dict) -> dict:
+    """Update a research note on a persona."""
+    if not projects_table:
+        return {'success': False, 'message': 'Projects table not configured'}
+    
+    # Get current persona to find the note index
+    response = projects_table.get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'}
+    )
+    
+    item = response.get('Item')
+    if not item:
+        return {'success': False, 'message': 'Persona not found'}
+    
+    notes = item.get('research_notes', [])
+    note_index = None
+    
+    for i, note in enumerate(notes):
+        if note.get('note_id') == note_id:
+            note_index = i
+            break
+    
+    if note_index is None:
+        return {'success': False, 'message': 'Note not found'}
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    try:
+        update_expr = f'SET research_notes[{note_index}].updated_at = :now'
+        expr_values = {':now': now}
+        
+        if 'text' in body:
+            update_expr += f', research_notes[{note_index}].#text = :text'
+            expr_values[':text'] = body['text']
+        
+        if 'tags' in body:
+            update_expr += f', research_notes[{note_index}].tags = :tags'
+            expr_values[':tags'] = body['tags']
+        
+        update_expr += ', updated_at = :persona_updated'
+        expr_values[':persona_updated'] = now
+        
+        projects_table.update_item(
+            Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values,
+            ExpressionAttributeNames={'#text': 'text'} if 'text' in body else {}
+        )
+        return {'success': True}
+    except Exception as e:
+        logger.exception(f"Failed to update persona note: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@tracer.capture_method
+def delete_persona_note(project_id: str, persona_id: str, note_id: str) -> dict:
+    """Delete a research note from a persona."""
+    if not projects_table:
+        return {'success': False, 'message': 'Projects table not configured'}
+    
+    # Get current persona to find the note index
+    response = projects_table.get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'}
+    )
+    
+    item = response.get('Item')
+    if not item:
+        return {'success': False, 'message': 'Persona not found'}
+    
+    notes = item.get('research_notes', [])
+    note_index = None
+    
+    for i, note in enumerate(notes):
+        if note.get('note_id') == note_id:
+            note_index = i
+            break
+    
+    if note_index is None:
+        return {'success': False, 'message': 'Note not found'}
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    try:
+        projects_table.update_item(
+            Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+            UpdateExpression=f'REMOVE research_notes[{note_index}] SET updated_at = :now',
+            ExpressionAttributeValues={':now': now}
+        )
+        return {'success': True}
+    except Exception as e:
+        logger.exception(f"Failed to delete persona note: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@tracer.capture_method
+def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
+    """Regenerate the avatar for a persona."""
+    if not projects_table:
+        return {'success': False, 'message': 'Projects table not configured'}
+    
+    # Get persona data
+    response = projects_table.get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'}
+    )
+    
+    item = response.get('Item')
+    if not item:
+        return {'success': False, 'message': 'Persona not found'}
+    
+    # Generate new avatar
+    avatar_result = generate_persona_avatar(item)
+    
+    if not avatar_result.get('avatar_url'):
+        return {'success': False, 'message': 'Avatar generation failed'}
+    
+    # Update persona with new avatar
+    now = datetime.now(timezone.utc).isoformat()
+    projects_table.update_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+        UpdateExpression='SET avatar_url = :url, avatar_prompt = :prompt, updated_at = :now',
+        ExpressionAttributeValues={
+            ':url': avatar_result['avatar_url'],
+            ':prompt': avatar_result['avatar_prompt'],
+            ':now': now
+        }
+    )
+    
+    return {
+        'success': True,
+        'avatar_url': avatar_result['avatar_url'],
+        'avatar_prompt': avatar_result['avatar_prompt']
+    }
 
 
 @tracer.capture_method
@@ -1427,9 +1975,9 @@ Provide a final validated research report."""
 
     try:
         results = invoke_bedrock_chain([
-            {'system': analysis_system, 'user': analysis_prompt, 'max_tokens': 4000},
-            {'system': synthesis_system, 'user': synthesis_prompt, 'max_tokens': 3000},
-            {'system': validate_system, 'user': validate_prompt, 'max_tokens': 3000},
+            {'system': analysis_system, 'user': analysis_prompt, 'max_tokens': 9000, 'thinking_budget': 5000},
+            {'system': synthesis_system, 'user': synthesis_prompt, 'max_tokens': 9000},
+            {'system': validate_system, 'user': validate_prompt, 'max_tokens': 9000},
         ])
         
         # Save research - combine all results into a comprehensive report

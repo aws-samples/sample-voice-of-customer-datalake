@@ -7,6 +7,7 @@ import {
 import { useConfigStore } from '../store/configStore'
 import { api } from '../api/client'
 import CategoriesManager from '../components/CategoriesManager'
+import S3ImportExplorer from '../components/S3ImportExplorer'
 import clsx from 'clsx'
 
 // Source configuration with fields, webhooks, and setup instructions
@@ -138,6 +139,93 @@ const sourceInfo: Record<string, {
       { key: 'client_secret', label: 'Client Secret', type: 'password' },
       { key: 'app_id', label: 'App ID', type: 'text' },
     ],
+  },
+  youtube: {
+    name: 'YouTube',
+    icon: '▶️',
+    description: 'Video comments via YouTube Data API v3',
+    fields: [
+      { key: 'api_key', label: 'API Key', type: 'password' },
+      { key: 'channel_id', label: 'Channel ID (optional)', type: 'text', placeholder: 'UCxxxxxxxxxxxxxx' },
+      { key: 'video_ids', label: 'Video IDs (comma-separated)', type: 'text', placeholder: 'dQw4w9WgXcQ, abc123', multiline: true },
+      { key: 'search_terms', label: 'Search Terms (optional)', type: 'text', placeholder: 'Leave empty to use brand name' },
+    ],
+    setupInstructions: {
+      title: 'YouTube Setup',
+      color: 'blue',
+      steps: [
+        'Go to Google Cloud Console and create a project',
+        'Enable YouTube Data API v3',
+        'Create an API key in Credentials',
+        'Optionally add your channel ID to monitor all videos',
+        'Or specify individual video IDs to monitor',
+      ]
+    }
+  },
+  tiktok: {
+    name: 'TikTok',
+    icon: '🎵',
+    description: 'Video comments via TikTok API for Business',
+    fields: [
+      { key: 'access_token', label: 'Access Token', type: 'password' },
+      { key: 'refresh_token', label: 'Refresh Token', type: 'password' },
+      { key: 'client_key', label: 'Client Key', type: 'text' },
+      { key: 'client_secret', label: 'Client Secret', type: 'password' },
+      { key: 'business_id', label: 'Business ID', type: 'text' },
+      { key: 'video_ids', label: 'Video IDs (comma-separated)', type: 'text', multiline: true },
+    ],
+    setupInstructions: {
+      title: 'TikTok Setup',
+      color: 'blue',
+      steps: [
+        'Apply for TikTok for Business API access',
+        'Create an app in TikTok Developer Portal',
+        'Request Comment and Video List scopes',
+        'Complete OAuth flow to get access/refresh tokens',
+        'Note: Research API requires additional approval',
+      ]
+    }
+  },
+  linkedin: {
+    name: 'LinkedIn',
+    icon: '💼',
+    description: 'Company page comments via LinkedIn Marketing API',
+    fields: [
+      { key: 'access_token', label: 'Access Token', type: 'password' },
+      { key: 'organization_id', label: 'Organization ID', type: 'text', placeholder: 'Numeric org ID from page URL' },
+    ],
+    setupInstructions: {
+      title: 'LinkedIn Setup',
+      color: 'blue',
+      steps: [
+        'Apply for LinkedIn Marketing Developer Platform access',
+        'Create an app in LinkedIn Developer Portal',
+        'Request r_organization_social and rw_organization_admin scopes',
+        'Complete OAuth flow to get access token',
+        'Find Organization ID from your company page URL',
+      ]
+    }
+  },
+  s3_import: {
+    name: 'S3 Import',
+    icon: '📦',
+    description: 'Bulk import feedback from S3 (CSV, JSON, JSONL)',
+    fields: [
+      { key: 'bucket', label: 'S3 Bucket Name', type: 'text', placeholder: 'my-feedback-bucket' },
+      { key: 'prefix', label: 'Import Prefix', type: 'text', placeholder: 'imports/' },
+      { key: 'processed_prefix', label: 'Processed Prefix', type: 'text', placeholder: 'processed/' },
+    ],
+    setupInstructions: {
+      title: 'S3 Import Setup',
+      color: 'orange',
+      steps: [
+        'Create an S3 bucket for feedback imports',
+        'Grant the VoC Lambda role read/write access',
+        'Upload CSV/JSON/JSONL files to the import prefix',
+        'Files are moved to processed prefix after import',
+        'CSV columns: id, text, rating, created_at, source, url',
+      ]
+    }
   },
 }
 
@@ -408,6 +496,16 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
               )}>
                 {info.setupInstructions.steps.map((step, i) => <li key={i}>{step}</li>)}
               </ol>
+            </div>
+          )}
+
+          {/* S3 Import File Explorer */}
+          {sourceKey === 's3_import' && apiEndpoint && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                📁 File Explorer
+              </h4>
+              <S3ImportExplorer />
             </div>
           )}
         </div>

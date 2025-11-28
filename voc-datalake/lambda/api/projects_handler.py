@@ -14,7 +14,8 @@ from projects import (
     list_projects, create_project, get_project, update_project, delete_project,
     generate_personas, generate_prd, generate_prfaq, project_chat, run_research,
     create_document, update_document, delete_document,
-    create_persona, update_persona, delete_persona
+    create_persona, update_persona, delete_persona,
+    add_persona_note, update_persona_note, delete_persona_note, regenerate_persona_avatar
 )
 
 logger = Logger()
@@ -100,6 +101,38 @@ def api_delete_persona(project_id: str, persona_id: str):
     return delete_persona(project_id, persona_id)
 
 
+# Persona Research Notes routes
+@app.post("/projects/<project_id>/personas/<persona_id>/notes")
+@tracer.capture_method
+def api_add_persona_note(project_id: str, persona_id: str):
+    """Add a research note to a persona."""
+    body = app.current_event.json_body
+    return add_persona_note(project_id, persona_id, body)
+
+
+@app.put("/projects/<project_id>/personas/<persona_id>/notes/<note_id>")
+@tracer.capture_method
+def api_update_persona_note(project_id: str, persona_id: str, note_id: str):
+    """Update a research note."""
+    body = app.current_event.json_body
+    return update_persona_note(project_id, persona_id, note_id, body)
+
+
+@app.delete("/projects/<project_id>/personas/<persona_id>/notes/<note_id>")
+@tracer.capture_method
+def api_delete_persona_note(project_id: str, persona_id: str, note_id: str):
+    """Delete a research note."""
+    return delete_persona_note(project_id, persona_id, note_id)
+
+
+# Persona Avatar routes
+@app.post("/projects/<project_id>/personas/<persona_id>/regenerate-avatar")
+@tracer.capture_method
+def api_regenerate_persona_avatar(project_id: str, persona_id: str):
+    """Regenerate the AI avatar for a persona."""
+    return regenerate_persona_avatar(project_id, persona_id)
+
+
 @app.post("/projects/<project_id>/personas/generate")
 @tracer.capture_method
 def api_generate_personas(project_id: str):
@@ -109,7 +142,15 @@ def api_generate_personas(project_id: str):
     from datetime import datetime, timezone
     
     body = app.current_event.json_body or {}
-    filters = body.get('filters', {})
+    # Frontend sends filters at top level, not nested under 'filters' key
+    filters = {
+        'sources': body.get('sources', []),
+        'categories': body.get('categories', []),
+        'sentiments': body.get('sentiments', []),
+        'days': body.get('days', 30),
+        'persona_count': body.get('persona_count', 3),
+        'custom_instructions': body.get('custom_instructions', ''),
+    }
     
     # Create a job ID
     job_id = f"job_{uuid.uuid4().hex[:16]}"
@@ -441,9 +482,18 @@ def lambda_handler(event: dict, context: Any) -> dict:
             
             jobs_table = boto3.resource('dynamodb').Table(os.environ.get('JOBS_TABLE', ''))
             
+            def update_persona_job_progress(progress: int, step: str):
+                """Update job progress in DynamoDB."""
+                now = datetime.now(timezone.utc).isoformat()
+                jobs_table.update_item(
+                    Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
+                    UpdateExpression='SET progress = :progress, current_step = :step, updated_at = :now',
+                    ExpressionAttributeValues={':progress': progress, ':step': step, ':now': now}
+                )
+            
             try:
                 filters = event['filters']
-                result = generate_personas(project_id, filters)
+                result = generate_personas(project_id, filters, progress_callback=update_persona_job_progress)
                 
                 # Update job status in jobs table
                 jobs_table.update_item(

@@ -7,6 +7,8 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
+import * as s3 from 'aws-cdk-lib/aws-s3';
+
 export interface VocAnalyticsStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
@@ -20,6 +22,9 @@ export interface VocAnalyticsStackProps extends cdk.StackProps {
   secretsArn: string;
   brandName: string;
   researchStateMachineArn: string;
+  s3ImportBucket?: s3.Bucket;
+  rawDataBucket?: s3.Bucket;
+  avatarsCdnUrl?: string;
 }
 
 export class VocAnalyticsStack extends cdk.Stack {
@@ -28,7 +33,7 @@ export class VocAnalyticsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocAnalyticsStackProps) {
     super(scope, id, props);
 
-    const { feedbackTable, aggregatesTable, pipelinesTable, projectsTable, jobsTable, conversationsTable, kmsKey, processingQueueUrl, processingQueueArn, secretsArn, brandName, researchStateMachineArn } = props;
+    const { feedbackTable, aggregatesTable, pipelinesTable, projectsTable, jobsTable, conversationsTable, kmsKey, processingQueueUrl, processingQueueArn, secretsArn, brandName, researchStateMachineArn, s3ImportBucket, rawDataBucket, avatarsCdnUrl } = props;
 
     // Lambda Layer (shared across all API Lambdas)
     const apiLayer = new lambda.LayerVersion(this, 'ApiDepsLayer', {
@@ -74,48 +79,123 @@ export class VocAnalyticsStack extends cdk.Stack {
     });
 
     // ============================================
-    // Lambda 2: Operations API (CRUD, integrations)
-    // Handles: /pipelines/*, /integrations/*, /sources/*, /scrapers/*, /chat/*
+    // Lambda 2: Integrations API
+    // Handles: /integrations/*, /sources/*
     // ============================================
-    const opsRole = new iam.Role(this, 'OpsLambdaRole', {
+    const integrationsRole = new iam.Role(this, 'IntegrationsLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      ],
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
     });
-    feedbackTable.grantReadData(opsRole);
-    aggregatesTable.grantReadWriteData(opsRole);
-    pipelinesTable.grantReadWriteData(opsRole);
-    conversationsTable.grantReadWriteData(opsRole);
-    kmsKey.grantEncryptDecrypt(opsRole);
-
-    opsRole.addToPolicy(new iam.PolicyStatement({
+    integrationsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
       resources: [secretsArn],
     }));
-    opsRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel'],
-      resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        `arn:aws:bedrock:${this.region}::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-      ],
-    }));
-    opsRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['lambda:InvokeFunction'],
-      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-ingestor-webscraper`],
-    }));
-    opsRole.addToPolicy(new iam.PolicyStatement({
+    integrationsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['events:EnableRule', 'events:DisableRule', 'events:DescribeRule'],
       resources: [`arn:aws:events:${this.region}:${this.account}:rule/voc-ingest-*-schedule`],
     }));
 
-    const opsLambda = new lambda.Function(this, 'OpsApi', {
-      functionName: 'voc-ops-api',
+    const integrationsLambda = new lambda.Function(this, 'IntegrationsApi', {
+      functionName: 'voc-integrations-api',
       runtime: lambda.Runtime.PYTHON_3_12,
-      handler: 'ops_handler.lambda_handler',
+      handler: 'integrations_handler.lambda_handler',
       code: lambda.Code.fromAsset('lambda/api'),
-      role: opsRole,
+      role: integrationsRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: { SECRETS_ARN: secretsArn, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO' },
+      layers: [apiLayer],
+      logGroup: new logs.LogGroup(this, 'IntegrationsApiLogs', { logGroupName: '/aws/lambda/voc-integrations-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
+    });
+
+    // ============================================
+    // Lambda 3: Scrapers API
+    // Handles: /scrapers/*
+    // ============================================
+    const scrapersRole = new iam.Role(this, 'ScrapersLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
+    });
+    aggregatesTable.grantReadWriteData(scrapersRole);
+    kmsKey.grantEncryptDecrypt(scrapersRole);
+    scrapersRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
+      resources: [secretsArn],
+    }));
+    scrapersRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-ingestor-webscraper`],
+    }));
+    scrapersRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`],
+    }));
+
+    const scrapersLambda = new lambda.Function(this, 'ScrapersApi', {
+      functionName: 'voc-scrapers-api',
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'scrapers_handler.lambda_handler',
+      code: lambda.Code.fromAsset('lambda/api'),
+      role: scrapersRole,
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 512,
+      environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO' },
+      layers: [apiLayer],
+      logGroup: new logs.LogGroup(this, 'ScrapersApiLogs', { logGroupName: '/aws/lambda/voc-scrapers-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
+    });
+
+    // ============================================
+    // Lambda 4: Settings API
+    // Handles: /settings/*
+    // ============================================
+    const settingsRole = new iam.Role(this, 'SettingsLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
+    });
+    aggregatesTable.grantReadWriteData(settingsRole);
+    kmsKey.grantEncryptDecrypt(settingsRole);
+    settingsRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`],
+    }));
+
+    const settingsLambda = new lambda.Function(this, 'SettingsApi', {
+      functionName: 'voc-settings-api',
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'settings_handler.lambda_handler',
+      code: lambda.Code.fromAsset('lambda/api'),
+      role: settingsRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: { AGGREGATES_TABLE: aggregatesTable.tableName, POWERTOOLS_SERVICE_NAME: 'voc-settings-api', LOG_LEVEL: 'INFO' },
+      layers: [apiLayer],
+      logGroup: new logs.LogGroup(this, 'SettingsApiLogs', { logGroupName: '/aws/lambda/voc-settings-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
+    });
+
+    // ============================================
+    // Lambda 5: Chat API (pipelines + chat)
+    // Handles: /chat/*, /pipelines/*
+    // ============================================
+    const chatRole = new iam.Role(this, 'ChatLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
+    });
+    feedbackTable.grantReadData(chatRole);
+    aggregatesTable.grantReadWriteData(chatRole);
+    pipelinesTable.grantReadWriteData(chatRole);
+    conversationsTable.grantReadWriteData(chatRole);
+    kmsKey.grantEncryptDecrypt(chatRole);
+    chatRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`],
+    }));
+
+    const chatLambda = new lambda.Function(this, 'ChatApi', {
+      functionName: 'voc-chat-api',
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'chat_handler.lambda_handler',
+      code: lambda.Code.fromAsset('lambda/api'),
+      role: chatRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
       environment: {
@@ -123,16 +203,11 @@ export class VocAnalyticsStack extends cdk.Stack {
         AGGREGATES_TABLE: aggregatesTable.tableName,
         PIPELINES_TABLE: pipelinesTable.tableName,
         CONVERSATIONS_TABLE: conversationsTable.tableName,
-        SECRETS_ARN: secretsArn,
-        POWERTOOLS_SERVICE_NAME: 'voc-ops-api',
+        POWERTOOLS_SERVICE_NAME: 'voc-chat-api',
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: new logs.LogGroup(this, 'OpsApiLogs', {
-        logGroupName: '/aws/lambda/voc-ops-api',
-        retention: logs.RetentionDays.TWO_WEEKS,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
-      }),
+      logGroup: new logs.LogGroup(this, 'ChatApiLogs', { logGroupName: '/aws/lambda/voc-chat-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
     });
 
 
@@ -159,15 +234,23 @@ export class VocAnalyticsStack extends cdk.Stack {
     projectsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
+        // Claude Sonnet 4.5 for persona generation
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
         `arn:aws:bedrock:${this.region}::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0`,
         'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        // Amazon Nova Canvas for persona avatar generation (Lambda calls us-east-1 explicitly)
+        'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
     }));
     projectsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['lambda:InvokeFunction'],
       resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-projects-api`],
     }));
+
+    // S3 access for persona avatar storage
+    if (rawDataBucket) {
+      rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
+    }
 
     const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
       functionName: 'voc-projects-api',
@@ -183,6 +266,8 @@ export class VocAnalyticsStack extends cdk.Stack {
         AGGREGATES_TABLE: aggregatesTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
         RESEARCH_STATE_MACHINE_ARN: researchStateMachineArn,
+        RAW_DATA_BUCKET: rawDataBucket?.bucketName || '',
+        AVATARS_CDN_URL: avatarsCdnUrl || '',
         POWERTOOLS_SERVICE_NAME: 'voc-projects-api',
         LOG_LEVEL: 'INFO',
       },
@@ -314,7 +399,10 @@ export class VocAnalyticsStack extends cdk.Stack {
 
     // Lambda integrations
     const metricsIntegration = new apigateway.LambdaIntegration(metricsLambda, { proxy: true });
-    const opsIntegration = new apigateway.LambdaIntegration(opsLambda, { proxy: true });
+    const integrationsIntegration = new apigateway.LambdaIntegration(integrationsLambda, { proxy: true });
+    const scrapersIntegration = new apigateway.LambdaIntegration(scrapersLambda, { proxy: true });
+    const settingsIntegration = new apigateway.LambdaIntegration(settingsLambda, { proxy: true });
+    const chatIntegration = new apigateway.LambdaIntegration(chatLambda, { proxy: true });
     const projectsIntegration = new apigateway.LambdaIntegration(projectsLambda, { proxy: true });
     const webhookIntegration = new apigateway.LambdaIntegration(trustpilotWebhook, { proxy: true });
 
@@ -346,58 +434,115 @@ export class VocAnalyticsStack extends cdk.Stack {
     personasResource.addMethod('GET', metricsIntegration);
 
     // ============================================
-    // Ops Lambda: /chat/*, /pipelines/*, /integrations/*, /sources/*, /scrapers/*
+    // Chat Lambda: /chat/*, /pipelines/*
     // ============================================
     const chatResource = this.api.root.addResource('chat');
-    chatResource.addMethod('POST', opsIntegration);
+    chatResource.addMethod('POST', chatIntegration);
     const chatConversationsResource = chatResource.addResource('conversations');
-    chatConversationsResource.addProxy({ defaultIntegration: opsIntegration, anyMethod: true });
+    chatConversationsResource.addProxy({ defaultIntegration: chatIntegration, anyMethod: true });
 
     const pipelinesResource = this.api.root.addResource('pipelines');
-    pipelinesResource.addMethod('GET', opsIntegration);
-    pipelinesResource.addMethod('POST', opsIntegration);
+    pipelinesResource.addMethod('GET', chatIntegration);
+    pipelinesResource.addMethod('POST', chatIntegration);
     const pipelineIdResource = pipelinesResource.addResource('{pipelineId}');
-    pipelineIdResource.addMethod('GET', opsIntegration);
-    pipelineIdResource.addMethod('PUT', opsIntegration);
-    pipelineIdResource.addMethod('DELETE', opsIntegration);
+    pipelineIdResource.addMethod('GET', chatIntegration);
+    pipelineIdResource.addMethod('PUT', chatIntegration);
+    pipelineIdResource.addMethod('DELETE', chatIntegration);
     const pipelineRunResource = pipelineIdResource.addResource('run');
-    pipelineRunResource.addMethod('POST', opsIntegration);
+    pipelineRunResource.addMethod('POST', chatIntegration);
 
+    // ============================================
+    // Integrations Lambda: /integrations/*, /sources/*
+    // ============================================
     const integrationsResource = this.api.root.addResource('integrations');
     const intStatusResource = integrationsResource.addResource('status');
-    intStatusResource.addMethod('GET', opsIntegration);
+    intStatusResource.addMethod('GET', integrationsIntegration);
     const intSourceResource = integrationsResource.addResource('{source}');
     const intCredentialsResource = intSourceResource.addResource('credentials');
-    intCredentialsResource.addMethod('PUT', opsIntegration);
+    intCredentialsResource.addMethod('PUT', integrationsIntegration);
     const intTestResource = intSourceResource.addResource('test');
-    intTestResource.addMethod('POST', opsIntegration);
+    intTestResource.addMethod('POST', integrationsIntegration);
 
     const sourcesResource = this.api.root.addResource('sources');
     const srcStatusResource = sourcesResource.addResource('status');
-    srcStatusResource.addMethod('GET', opsIntegration);
+    srcStatusResource.addMethod('GET', integrationsIntegration);
     const srcSourceResource = sourcesResource.addResource('{source}');
     const srcEnableResource = srcSourceResource.addResource('enable');
-    srcEnableResource.addMethod('PUT', opsIntegration);
+    srcEnableResource.addMethod('PUT', integrationsIntegration);
     const srcDisableResource = srcSourceResource.addResource('disable');
-    srcDisableResource.addMethod('PUT', opsIntegration);
+    srcDisableResource.addMethod('PUT', integrationsIntegration);
 
+    // ============================================
+    // Scrapers Lambda: /scrapers/*
+    // ============================================
     const scrapersResource = this.api.root.addResource('scrapers');
-    scrapersResource.addMethod('GET', opsIntegration);
-    scrapersResource.addMethod('POST', opsIntegration);
-    scrapersResource.addProxy({ defaultIntegration: opsIntegration, anyMethod: true });
+    scrapersResource.addMethod('GET', scrapersIntegration);
+    scrapersResource.addMethod('POST', scrapersIntegration);
+    scrapersResource.addProxy({ defaultIntegration: scrapersIntegration, anyMethod: true });
 
-    // Settings endpoints (brand configuration)
+    // ============================================
+    // S3 Import Lambda (dedicated to avoid policy limit)
+    // ============================================
+    if (s3ImportBucket) {
+      const s3ImportRole = new iam.Role(this, 'S3ImportLambdaRole', {
+        assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+        ],
+      });
+      s3ImportBucket.grantReadWrite(s3ImportRole);
+      kmsKey.grantEncryptDecrypt(s3ImportRole);
+
+      const s3ImportLambda = new lambda.Function(this, 'S3ImportApi', {
+        functionName: 'voc-s3-import-api',
+        runtime: lambda.Runtime.PYTHON_3_12,
+        handler: 's3_import_handler.lambda_handler',
+        code: lambda.Code.fromAsset('lambda/api'),
+        role: s3ImportRole,
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 256,
+        environment: {
+          S3_IMPORT_BUCKET: s3ImportBucket.bucketName,
+          POWERTOOLS_SERVICE_NAME: 'voc-s3-import-api',
+          LOG_LEVEL: 'INFO',
+        },
+        layers: [apiLayer],
+        logGroup: new logs.LogGroup(this, 'S3ImportApiLogs', {
+          logGroupName: '/aws/lambda/voc-s3-import-api',
+          retention: logs.RetentionDays.TWO_WEEKS,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
+      });
+      const s3ImportIntegration = new apigateway.LambdaIntegration(s3ImportLambda, { proxy: true });
+
+      // S3 Import file explorer endpoints
+      const s3ImportResource = this.api.root.addResource('s3-import');
+      const s3FilesResource = s3ImportResource.addResource('files');
+      s3FilesResource.addMethod('GET', s3ImportIntegration);
+      const s3SourcesResource = s3ImportResource.addResource('sources');
+      s3SourcesResource.addMethod('GET', s3ImportIntegration);
+      s3SourcesResource.addMethod('POST', s3ImportIntegration);
+      const s3UploadResource = s3ImportResource.addResource('upload-url');
+      s3UploadResource.addMethod('POST', s3ImportIntegration);
+      const s3FileResource = s3ImportResource.addResource('file');
+      const s3FilePathResource = s3FileResource.addResource('{key}');
+      s3FilePathResource.addMethod('DELETE', s3ImportIntegration);
+    }
+
+    // ============================================
+    // Settings Lambda: /settings/*
+    // ============================================
     const settingsResource = this.api.root.addResource('settings');
     const brandResource = settingsResource.addResource('brand');
-    brandResource.addMethod('GET', opsIntegration);
-    brandResource.addMethod('PUT', opsIntegration);
+    brandResource.addMethod('GET', settingsIntegration);
+    brandResource.addMethod('PUT', settingsIntegration);
     
     // Categories configuration endpoints
     const settingsCategoriesResource = settingsResource.addResource('categories');
-    settingsCategoriesResource.addMethod('GET', opsIntegration);
-    settingsCategoriesResource.addMethod('PUT', opsIntegration);
+    settingsCategoriesResource.addMethod('GET', settingsIntegration);
+    settingsCategoriesResource.addMethod('PUT', settingsIntegration);
     const categoriesGenerateResource = settingsCategoriesResource.addResource('generate');
-    categoriesGenerateResource.addMethod('POST', opsIntegration);
+    categoriesGenerateResource.addMethod('POST', settingsIntegration);
 
     // ============================================
     // Projects Lambda: /projects/*

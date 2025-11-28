@@ -3,6 +3,8 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Construct } from 'constructs';
 
 export class VocStorageStack extends cdk.Stack {
@@ -15,6 +17,7 @@ export class VocStorageStack extends cdk.Stack {
   public readonly conversationsTable: dynamodb.Table;
   public readonly kmsKey: kms.Key;
   public readonly rawDataBucket: s3.Bucket;
+  public readonly avatarsCdnUrl: string;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -29,6 +32,7 @@ export class VocStorageStack extends cdk.Stack {
 
     // S3 Bucket for raw data lake
     // Partitioned structure: raw/{source}/{year}/{month}/{day}/
+    // Also stores persona avatars in avatars/{persona_id}.png
     this.rawDataBucket = new s3.Bucket(this, 'RawDataBucket', {
       bucketName: `voc-raw-data-${this.account}-${this.region}`,
       encryption: s3.BucketEncryption.KMS,
@@ -37,7 +41,48 @@ export class VocStorageStack extends cdk.Stack {
       enforceSSL: true,
       versioned: false,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.GET],
+          allowedOrigins: ['*'],
+          allowedHeaders: ['*'],
+          maxAge: 3600,
+        },
+      ],
     });
+
+    // Response headers policy for CORS on avatar images
+    const avatarsCorsPolicy = new cloudfront.ResponseHeadersPolicy(this, 'AvatarsCorsPolicy', {
+      responseHeadersPolicyName: 'voc-avatars-cors-policy',
+      corsBehavior: {
+        accessControlAllowOrigins: ['*'],
+        accessControlAllowMethods: ['GET', 'HEAD'],
+        accessControlAllowHeaders: ['*'],
+        accessControlMaxAge: cdk.Duration.hours(1),
+        originOverride: true,
+        accessControlAllowCredentials: false,
+      },
+    });
+
+    // CloudFront distribution for serving persona avatar images
+    // Only serves from the avatars/ prefix for security
+    const avatarsDistribution = new cloudfront.Distribution(this, 'AvatarsDistribution', {
+      defaultBehavior: {
+        origin: origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket, {
+          originPath: '/avatars',
+        }),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+        compress: true,
+        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        responseHeadersPolicy: avatarsCorsPolicy,
+      },
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      comment: 'VoC Persona Avatars CDN',
+    });
+
+    this.avatarsCdnUrl = `https://${avatarsDistribution.distributionDomainName}`;
 
     // Main Feedback Table - stores all processed feedback
     // PK: source_platform, SK: feedback_id
@@ -187,5 +232,9 @@ export class VocStorageStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ConversationsTableName', { value: this.conversationsTable.tableName });
     new cdk.CfnOutput(this, 'RawDataBucketName', { value: this.rawDataBucket.bucketName });
     new cdk.CfnOutput(this, 'RawDataBucketArn', { value: this.rawDataBucket.bucketArn });
+    new cdk.CfnOutput(this, 'AvatarsCdnUrl', { 
+      value: this.avatarsCdnUrl,
+      description: 'CloudFront URL for persona avatar images',
+    });
   }
 }

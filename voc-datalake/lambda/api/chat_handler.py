@@ -1,0 +1,377 @@
+"""
+Chat & Pipelines API Lambda - Handles /chat/*, /pipelines/*
+Manages AI chat conversations and pipeline configurations.
+"""
+import json
+import os
+from datetime import datetime, timezone, timedelta
+from decimal import Decimal
+from typing import Any
+from aws_lambda_powertools import Logger, Tracer
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
+from aws_lambda_powertools.event_handler.exceptions import NotFoundError
+from boto3.dynamodb.conditions import Key
+import boto3
+
+logger = Logger()
+tracer = Tracer()
+
+# AWS Clients
+dynamodb = boto3.resource('dynamodb')
+
+# Configuration
+FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
+AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
+PIPELINES_TABLE = os.environ.get('PIPELINES_TABLE', '')
+CONVERSATIONS_TABLE = os.environ.get('CONVERSATIONS_TABLE', '')
+
+feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
+aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+pipelines_table = dynamodb.Table(PIPELINES_TABLE) if PIPELINES_TABLE else None
+conversations_table = dynamodb.Table(CONVERSATIONS_TABLE) if CONVERSATIONS_TABLE else None
+
+cors_config = CORSConfig(
+    allow_origin="*",
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-Amz-Date", "X-Api-Key", "X-Amz-Security-Token"],
+    expose_headers=["Content-Type"],
+    max_age=300,
+    allow_credentials=False
+)
+
+app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
+
+
+# ============================================
+# Chat Endpoint
+# ============================================
+
+@app.post("/chat")
+@tracer.capture_method
+def chat():
+    """AI chat endpoint for querying feedback data using Bedrock."""
+    body = app.current_event.json_body
+    message = body.get('message', '')
+    
+    params = app.current_event.query_string_parameters or {}
+    days = int(params.get('days', 7))
+    
+    current_date = datetime.now(timezone.utc)
+    
+    # Get metrics
+    total_feedback = 0
+    for i in range(days):
+        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+        response = aggregates_table.get_item(Key={'pk': 'METRIC#daily_total', 'sk': date})
+        item = response.get('Item')
+        if item:
+            total_feedback += item.get('count', 0)
+    
+    sentiment_counts = {'positive': 0, 'negative': 0, 'neutral': 0, 'mixed': 0}
+    for sentiment in sentiment_counts.keys():
+        for i in range(days):
+            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+            response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_sentiment#{sentiment}', 'sk': date})
+            item = response.get('Item')
+            if item:
+                sentiment_counts[sentiment] += item.get('count', 0)
+    
+    category_counts = {}
+    categories = ['delivery', 'customer_support', 'product_quality', 'pricing', 
+                  'website', 'app', 'billing', 'returns', 'communication', 'other']
+    for category in categories:
+        total = 0
+        for i in range(days):
+            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+            response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_category#{category}', 'sk': date})
+            item = response.get('Item')
+            if item:
+                total += item.get('count', 0)
+        if total > 0:
+            category_counts[category] = total
+    
+    urgent_count = 0
+    for i in range(days):
+        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+        response = aggregates_table.get_item(Key={'pk': 'METRIC#urgent', 'sk': date})
+        item = response.get('Item')
+        if item:
+            urgent_count += item.get('count', 0)
+    
+    # Get recent feedback
+    feedback_items = []
+    for i in range(min(days, 7)):
+        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+        response = feedback_table.query(
+            IndexName='gsi1-by-date',
+            KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+            Limit=10,
+            ScanIndexForward=False
+        )
+        feedback_items.extend(response.get('Items', []))
+        if len(feedback_items) >= 30:
+            break
+    
+    # Build context
+    feedback_context = []
+    for item in feedback_items[:20]:
+        feedback_context.append({
+            'source': item.get('source_platform', 'unknown'),
+            'date': item.get('source_created_at', '')[:10] if item.get('source_created_at') else '',
+            'text': item.get('original_text', '')[:500],
+            'sentiment': item.get('sentiment_label', 'unknown'),
+            'sentiment_score': float(item.get('sentiment_score', 0)),
+            'category': item.get('category', 'other'),
+            'urgency': item.get('urgency', 'low'),
+            'rating': item.get('rating'),
+            'problem_summary': item.get('problem_summary', ''),
+        })
+    
+    system_prompt = """You are a Voice of the Customer (VoC) analytics assistant. You help analyze customer feedback data and provide actionable insights.
+When answering questions:
+1. Base your answers ONLY on the actual data provided
+2. Be specific with numbers and percentages
+3. Quote actual customer feedback when relevant
+4. Highlight urgent issues
+5. Provide actionable recommendations"""
+
+    data_context = f"""## Data Summary (Last {days} days)
+Total Feedback: {total_feedback}
+Urgent Issues: {urgent_count}
+
+Sentiment: Positive {sentiment_counts['positive']}, Neutral {sentiment_counts['neutral']}, Negative {sentiment_counts['negative']}, Mixed {sentiment_counts['mixed']}
+
+Top Categories: {', '.join([f"{cat}: {count}" for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True)[:5]])}
+
+## Recent Feedback:
+"""
+    for i, fb in enumerate(feedback_context[:10], 1):
+        data_context += f"\n{i}. [{fb['source']}|{fb['sentiment']}] {fb['text'][:200]}"
+
+    try:
+        bedrock = boto3.client('bedrock-runtime')
+        bedrock_response = bedrock.invoke_model(
+            modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+            contentType='application/json',
+            accept='application/json',
+            body=json.dumps({
+                'anthropic_version': 'bedrock-2023-05-31',
+                'max_tokens': 1500,
+                'system': system_prompt,
+                'messages': [{'role': 'user', 'content': f"{data_context}\n\nQuestion: {message}"}]
+            })
+        )
+        result = json.loads(bedrock_response['body'].read())
+        response_text = result['content'][0]['text']
+        
+        return {
+            'response': response_text,
+            'sources': feedback_items[:3],
+            'metadata': {'total_feedback': total_feedback, 'days_analyzed': days, 'urgent_count': urgent_count}
+        }
+    except Exception as e:
+        logger.exception(f"Bedrock call failed: {e}")
+        return {
+            'response': f"Error connecting to AI service. Summary: {total_feedback} feedback items, {urgent_count} urgent.",
+            'sources': feedback_items[:3],
+            'error': str(e)
+        }
+
+
+# ============================================
+# Chat Conversations Endpoints
+# ============================================
+
+@app.get("/chat/conversations/<proxy+>")
+@tracer.capture_method
+def get_conversations(proxy: str = ""):
+    """List or get chat conversations."""
+    if not conversations_table:
+        return {'conversations': []}
+    
+    conversation_id = proxy.strip() if proxy and proxy != '_list' else None
+    
+    if conversation_id:
+        try:
+            response = conversations_table.get_item(Key={'pk': 'USER#default', 'sk': f'CONV#{conversation_id}'})
+            item = response.get('Item')
+            if not item:
+                raise NotFoundError(f"Conversation {conversation_id} not found")
+            return {
+                'id': item.get('conversation_id'),
+                'title': item.get('title', 'New Conversation'),
+                'messages': item.get('messages', []),
+                'filters': item.get('filters', {}),
+                'createdAt': item.get('created_at'),
+                'updatedAt': item.get('updated_at'),
+            }
+        except NotFoundError:
+            raise
+    
+    response = conversations_table.query(
+        KeyConditionExpression=Key('pk').eq('USER#default'),
+        ScanIndexForward=False,
+        Limit=50
+    )
+    
+    conversations = []
+    for item in response.get('Items', []):
+        conversations.append({
+            'id': item.get('conversation_id'),
+            'title': item.get('title', 'New Conversation'),
+            'messageCount': len(item.get('messages', [])),
+            'createdAt': item.get('created_at'),
+            'updatedAt': item.get('updated_at'),
+        })
+    
+    return {'conversations': conversations}
+
+
+@app.post("/chat/conversations/<proxy+>")
+@tracer.capture_method
+def save_conversation(proxy: str = ""):
+    """Save a chat conversation."""
+    if not conversations_table:
+        return {'success': False, 'message': 'Conversations not configured'}
+    
+    body = app.current_event.json_body
+    conversation_id = body.get('id') or f"conv-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    
+    item = {
+        'pk': 'USER#default',
+        'sk': f'CONV#{conversation_id}',
+        'conversation_id': conversation_id,
+        'title': body.get('title', 'New Conversation'),
+        'messages': body.get('messages', []),
+        'filters': body.get('filters', {}),
+        'created_at': body.get('createdAt') or datetime.now(timezone.utc).isoformat(),
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    }
+    
+    conversations_table.put_item(Item=item)
+    return {'success': True, 'id': conversation_id}
+
+
+@app.delete("/chat/conversations/<proxy+>")
+@tracer.capture_method
+def delete_conversation(proxy: str):
+    """Delete a chat conversation."""
+    if not conversations_table or not proxy:
+        return {'success': False}
+    
+    conversations_table.delete_item(Key={'pk': 'USER#default', 'sk': f'CONV#{proxy}'})
+    return {'success': True}
+
+
+# ============================================
+# Pipeline Endpoints
+# ============================================
+
+@app.get("/pipelines")
+@tracer.capture_method
+def list_pipelines():
+    """List all pipelines."""
+    if not pipelines_table:
+        return {'pipelines': []}
+    response = pipelines_table.scan()
+    return {'pipelines': response.get('Items', [])}
+
+
+@app.get("/pipelines/<pipeline_id>")
+@tracer.capture_method
+def get_pipeline(pipeline_id: str):
+    """Get a single pipeline."""
+    if not pipelines_table:
+        raise NotFoundError("Pipelines not configured")
+    response = pipelines_table.get_item(Key={'id': pipeline_id})
+    item = response.get('Item')
+    if not item:
+        raise NotFoundError(f"Pipeline {pipeline_id} not found")
+    return item
+
+
+@app.post("/pipelines")
+@tracer.capture_method
+def create_pipeline():
+    """Create a new pipeline."""
+    if not pipelines_table:
+        return {'success': False, 'message': 'Pipelines not configured'}
+    
+    body = app.current_event.json_body
+    pipeline_id = body.get('id') or f"pipeline-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    
+    item = {
+        'id': pipeline_id,
+        'name': body.get('name', 'New Pipeline'),
+        'description': body.get('description', ''),
+        'source': body.get('source', 'all'),
+        'steps': body.get('steps', []),
+        'enabled': body.get('enabled', True),
+        'status': 'idle',
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    }
+    
+    pipelines_table.put_item(Item=item)
+    return {'success': True, 'pipeline': item}
+
+
+@app.put("/pipelines/<pipeline_id>")
+@tracer.capture_method
+def update_pipeline(pipeline_id: str):
+    """Update a pipeline."""
+    if not pipelines_table:
+        return {'success': False, 'message': 'Pipelines not configured'}
+    
+    body = app.current_event.json_body
+    
+    update_expr = "SET updated_at = :updated_at"
+    expr_values = {':updated_at': datetime.now(timezone.utc).isoformat()}
+    expr_names = {}
+    
+    for field in ['name', 'description', 'source', 'steps', 'enabled', 'status']:
+        if field in body:
+            update_expr += f", #{field} = :{field}"
+            expr_values[f':{field}'] = body[field]
+            expr_names[f'#{field}'] = field
+    
+    pipelines_table.update_item(
+        Key={'id': pipeline_id},
+        UpdateExpression=update_expr,
+        ExpressionAttributeValues=expr_values,
+        ExpressionAttributeNames=expr_names if expr_names else None
+    )
+    return {'success': True}
+
+
+@app.delete("/pipelines/<pipeline_id>")
+@tracer.capture_method
+def delete_pipeline(pipeline_id: str):
+    """Delete a pipeline."""
+    if pipelines_table:
+        pipelines_table.delete_item(Key={'id': pipeline_id})
+    return {'success': True}
+
+
+@app.post("/pipelines/<pipeline_id>/run")
+@tracer.capture_method
+def run_pipeline(pipeline_id: str):
+    """Trigger a pipeline run."""
+    return {'success': True, 'execution_id': f"exec-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"}
+
+
+# ============================================
+# Lambda Handler
+# ============================================
+
+@logger.inject_lambda_context
+@tracer.capture_lambda_handler
+def lambda_handler(event: dict, context: Any) -> dict:
+    """Main Lambda handler."""
+    return app.resolve(event, context)

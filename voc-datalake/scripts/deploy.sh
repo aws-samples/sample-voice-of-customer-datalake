@@ -55,6 +55,16 @@ cdk deploy --all --require-approval never \
   --context brandHandles="$BRAND_HANDLES" \
   --context primaryLanguage="$PRIMARY_LANGUAGE"
 
+# Invalidate CloudFront cache for frontend
+echo "🔄 Invalidating CloudFront cache..."
+DISTRIBUTION_ID=$(aws cloudformation describe-stacks --stack-name VocFrontendStack --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text 2>/dev/null)
+if [ -n "$DISTRIBUTION_ID" ] && [ "$DISTRIBUTION_ID" != "None" ]; then
+  aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" > /dev/null
+  echo "   ✓ Cache invalidation started for distribution $DISTRIBUTION_ID"
+else
+  echo "   ⚠ Could not find CloudFront distribution ID, skipping cache invalidation"
+fi
+
 echo ""
 echo "✅ Deployment complete!"
 echo ""

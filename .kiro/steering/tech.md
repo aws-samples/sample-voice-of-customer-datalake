@@ -52,6 +52,27 @@
 - **Scraping**: `beautifulsoup4`, `lxml`
 - **Pattern**: Base class inheritance for ingestors
 
+### API Lambda Split (20KB IAM Policy Limit)
+
+AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into focused, domain-specific Lambdas:
+
+| Lambda | Handler | Routes | Permissions |
+|--------|---------|--------|-------------|
+| `voc-metrics-api` | `metrics_handler.py` | `/feedback/*`, `/metrics/*` | DynamoDB read (feedback, aggregates) |
+| `voc-chat-api` | `chat_handler.py` | `/chat/*`, `/pipelines/*` | DynamoDB (feedback read, aggregates/pipelines/conversations RW), Bedrock |
+| `voc-integrations-api` | `integrations_handler.py` | `/integrations/*`, `/sources/*` | Secrets Manager, EventBridge |
+| `voc-scrapers-api` | `scrapers_handler.py` | `/scrapers/*` | Secrets Manager, Lambda invoke, Bedrock, DynamoDB (aggregates) |
+| `voc-settings-api` | `settings_handler.py` | `/settings/*` | DynamoDB (aggregates), Bedrock |
+| `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB (projects, jobs, feedback), Step Functions, Bedrock |
+| `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
+| `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
+| `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS |
+
+**Benefits:**
+- Each Lambda stays under 20KB policy limit
+- Faster cold starts (smaller deployment packages)
+- Independent scaling per endpoint type
+- Easier to reason about permissions
 
 ### Code Style
 

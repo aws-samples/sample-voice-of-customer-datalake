@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Send, Bot, Loader2, Sparkles, PanelLeftClose, PanelLeft } from 'lucide-react'
 import { api, getDaysFromRange } from '../api/client'
 import { useConfigStore } from '../store/configStore'
@@ -36,15 +36,7 @@ export default function Chat() {
 
   const activeConversation = getActiveConversation()
 
-  const { data: entitiesData } = useQuery({
-    queryKey: ['entities', days],
-    queryFn: () => api.getEntities({ days, limit: 100 }),
-    enabled: !!config.apiEndpoint,
-  })
 
-  const availableTags = entitiesData?.entities?.keywords 
-    ? Object.keys(entitiesData.entities.keywords) 
-    : []
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -73,7 +65,6 @@ export default function Chat() {
       if (filters.source) contextParts.push(`Source: ${filters.source}`)
       if (filters.category) contextParts.push(`Category: ${filters.category}`)
       if (filters.sentiment) contextParts.push(`Sentiment: ${filters.sentiment}`)
-      if (filters.tags?.length) contextParts.push(`Tags: ${filters.tags.join(', ')}`)
       
       const context = contextParts.join('. ')
       // Use streaming endpoint for better performance (bypasses API Gateway 29s timeout)
@@ -190,7 +181,7 @@ export default function Chat() {
         </div>
 
         <div className="p-4 border-t border-gray-100">
-          <ChatFilters filters={filters} onChange={handleFiltersChange} availableTags={availableTags} />
+          <ChatFilters filters={filters} onChange={handleFiltersChange} />
           
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input

@@ -10,9 +10,214 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import clsx from 'clsx'
 import DocumentExportMenu from '../components/DocumentExportMenu'
+import PersonaExportMenu from '../components/PersonaExportMenu'
 import DataSourceWizard, { ContextSummary, defaultContextConfig, type ContextConfig } from '../components/DataSourceWizard'
 
 type Tab = 'overview' | 'personas' | 'documents' | 'chat'
+
+// Persona Avatar Component - shows AI-generated image or fallback
+function PersonaAvatar({ persona, size = 'md' }: { persona: ProjectPersona; size?: 'sm' | 'md' | 'lg' }) {
+  const [imageError, setImageError] = useState(false)
+  
+  const sizeClasses = {
+    sm: 'w-10 h-10 text-sm',
+    md: 'w-12 h-12 text-base',
+    lg: 'w-20 h-20 text-2xl'
+  }
+  
+  // Check for avatar URL (CloudFront CDN URL)
+  const avatarUrl = persona.avatar_url
+  
+  // Fallback gradient avatar with initials
+  const FallbackAvatar = () => (
+    <div className={clsx(sizeClasses[size], 'bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold')}>
+      {persona.name.charAt(0)}
+    </div>
+  )
+  
+  if (avatarUrl && !imageError) {
+    return (
+      <div className="relative">
+        <img 
+          src={avatarUrl} 
+          alt={persona.name}
+          className={clsx(sizeClasses[size], 'rounded-full object-cover border-2 border-purple-200')}
+          onError={() => setImageError(true)}
+        />
+      </div>
+    )
+  }
+  
+  return <FallbackAvatar />
+}
+
+// Section wrapper for persona details
+function PersonaSection({ title, icon, color, children }: { 
+  title: string
+  icon: string
+  color: 'purple' | 'green' | 'red' | 'blue' | 'amber' | 'indigo' | 'teal' | 'gray' | 'emerald'
+  children: React.ReactNode 
+}) {
+  const colorClasses = {
+    purple: 'border-purple-200 bg-purple-50/50',
+    green: 'border-green-200 bg-green-50/50',
+    red: 'border-red-200 bg-red-50/50',
+    blue: 'border-blue-200 bg-blue-50/50',
+    amber: 'border-amber-200 bg-amber-50/50',
+    indigo: 'border-indigo-200 bg-indigo-50/50',
+    teal: 'border-teal-200 bg-teal-50/50',
+    gray: 'border-gray-200 bg-gray-50/50',
+    emerald: 'border-emerald-200 bg-emerald-50/50',
+  }
+  const titleColors = {
+    purple: 'text-purple-700',
+    green: 'text-green-700',
+    red: 'text-red-700',
+    blue: 'text-blue-700',
+    amber: 'text-amber-700',
+    indigo: 'text-indigo-700',
+    teal: 'text-teal-700',
+    gray: 'text-gray-700',
+    emerald: 'text-emerald-700',
+  }
+  
+  return (
+    <div className={clsx('rounded-lg border p-4', colorClasses[color])}>
+      <h4 className={clsx('font-medium mb-3 flex items-center gap-2', titleColors[color])}>
+        <span>{icon}</span> {title}
+      </h4>
+      {children}
+    </div>
+  )
+}
+
+// Research Notes Component with edit capability - prominent UX researcher notes section
+type NoteItem = string | { note_id?: string; text: string; created_at?: string }
+
+function ResearchNotes({ persona, onSave, isSaving }: { 
+  persona: ProjectPersona
+  onSave: (notes: NoteItem[]) => void
+  isSaving: boolean
+}) {
+  // Handle both string[] and object[] formats from backend
+  const rawNotes = persona.research_notes || []
+  const normalizeNotes = (notes: NoteItem[]): NoteItem[] => notes
+  
+  const [notes, setNotes] = useState<NoteItem[]>(normalizeNotes(rawNotes))
+  const [newNote, setNewNote] = useState('')
+  const [isExpanded, setIsExpanded] = useState(true)
+  
+  // Sync with persona data when it changes
+  useEffect(() => {
+    setNotes(normalizeNotes(persona.research_notes || []))
+  }, [persona])
+  
+  const getNoteText = (note: NoteItem): string => {
+    return typeof note === 'string' ? note : note.text
+  }
+  
+  const addNote = () => {
+    if (!newNote.trim()) return
+    const updated = [...notes, newNote.trim()]
+    setNotes(updated)
+    setNewNote('')
+    onSave(updated)
+  }
+  
+  const removeNote = (index: number) => {
+    const updated = notes.filter((_, i) => i !== index)
+    setNotes(updated)
+    onSave(updated)
+  }
+  
+  return (
+    <div className="space-y-4">
+      {/* Header with count badge */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500">
+            {notes.length === 0 ? 'No notes yet' : `${notes.length} note${notes.length !== 1 ? 's' : ''}`}
+          </span>
+          {notes.length > 0 && (
+            <button 
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-xs text-purple-600 hover:text-purple-700"
+            >
+              {isExpanded ? 'Collapse' : 'Expand'}
+            </button>
+          )}
+        </div>
+      </div>
+      
+      {/* Empty state with call to action */}
+      {notes.length === 0 && (
+        <div className="text-center py-6 bg-white rounded-lg border-2 border-dashed border-gray-200">
+          <div className="w-12 h-12 mx-auto mb-3 bg-purple-100 rounded-full flex items-center justify-center">
+            <FileText size={24} className="text-purple-500" />
+          </div>
+          <p className="text-gray-600 font-medium mb-1">Add Your Research Notes</p>
+          <p className="text-gray-400 text-sm mb-4">Document your observations, insights, and hypotheses about this persona</p>
+        </div>
+      )}
+      
+      {/* Notes list */}
+      {notes.length > 0 && isExpanded && (
+        <ul className="space-y-2">
+          {notes.map((note, i) => (
+            <li key={i} className="group flex items-start gap-3 text-sm text-gray-700 bg-white p-3 rounded-lg border hover:border-purple-200 transition-colors">
+              <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-xs text-purple-600 font-medium">{i + 1}</span>
+              </div>
+              <span className="flex-1 leading-relaxed">{getNoteText(note)}</span>
+              <button 
+                onClick={() => removeNote(i)} 
+                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1 transition-opacity"
+                disabled={isSaving}
+                title="Remove note"
+              >
+                <X size={16} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      
+      {/* Add note input - always visible */}
+      <div className="flex gap-2">
+        <div className="flex-1 relative">
+          <input
+            type="text"
+            value={newNote}
+            onChange={(e) => setNewNote(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addNote()}
+            placeholder="Type your research observation or insight..."
+            className="w-full px-4 py-3 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 pr-24"
+          />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+            Press Enter ↵
+          </span>
+        </div>
+        <button
+          onClick={addNote}
+          disabled={!newNote.trim() || isSaving}
+          className="px-4 py-3 bg-purple-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-purple-700 flex items-center gap-2 transition-colors"
+        >
+          {isSaving ? <Loader2 size={16} className="animate-spin" /> : (
+            <>
+              <FileText size={16} />
+              Add Note
+            </>
+          )}
+        </button>
+      </div>
+      
+      {/* Helper text */}
+      <p className="text-xs text-gray-400">
+        💡 Tip: Add observations from user interviews, usability tests, or data analysis that relate to this persona.
+      </p>
+    </div>
+  )
+}
 
 // Tool-specific configs (extend shared context)
 interface PersonaToolConfig { personaCount: number; customInstructions: string }
@@ -101,7 +306,10 @@ export default function ProjectDetail() {
       custom_instructions: personaConfig.customInstructions, 
       days: contextConfig.days 
     }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['project', id] }); resetWizard() },
+    onSuccess: () => { 
+      queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      resetWizard() 
+    },
     onError: () => setGenerating(null),
   })
   
@@ -142,6 +350,10 @@ export default function ProjectDetail() {
       selected_persona_ids: contextConfig.selectedPersonaIds,
       selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds]
     }), 
+    onSuccess: () => { 
+      queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      resetWizard() 
+    },
     onError: () => setGenerating(null) 
   })
   const chatMut = useMutation({ 
@@ -171,10 +383,13 @@ export default function ProjectDetail() {
   // Persona CRUD mutations
   const updatePersonaMut = useMutation({
     mutationFn: (data: { personaId: string; updates: Partial<ProjectPersona> }) => api.updatePersona(id!, data.personaId, data.updates),
-    onSuccess: () => { 
+    onSuccess: (_data, variables) => { 
       queryClient.invalidateQueries({ queryKey: ['project', id] })
-      setEditingPersona(null)
-      setSelectedPersona(null)
+      // Only clear selection when editing from modal (full persona edit), not for inline updates like research notes
+      if (editingPersona && editingPersona.persona_id === variables.personaId) {
+        setEditingPersona(null)
+        setSelectedPersona(null)
+      }
     }
   })
   const deletePersonaMut = useMutation({
@@ -486,7 +701,10 @@ export default function ProjectDetail() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm">
-                          {job.job_type === 'research' ? 'Research' : 'Persona Generation'}
+                          {job.job_type === 'research' ? 'Research' : 
+                           job.job_type === 'generate_prd' ? 'PRD Generation' :
+                           job.job_type === 'generate_prfaq' ? 'PR-FAQ Generation' :
+                           'Persona Generation'}
                         </span>
                         <span className={clsx(
                           'text-xs px-2 py-0.5 rounded',
@@ -572,7 +790,7 @@ export default function ProjectDetail() {
                     className={clsx('w-full text-left p-4 rounded-lg border transition-colors', selectedPersona?.persona_id === p.persona_id ? 'bg-purple-50 border-purple-300' : 'bg-white hover:border-purple-200')}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold">{p.name.charAt(0)}</div>
+                      <PersonaAvatar persona={p} size="sm" />
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium truncate">@{p.name}</h4>
                         <p className="text-xs text-gray-500 truncate">{p.tagline}</p>
@@ -583,59 +801,270 @@ export default function ProjectDetail() {
               </div>
               
               {/* Persona Detail */}
-              <div className="lg:col-span-2 bg-white rounded-xl border p-6 min-h-[500px]">
+              <div className="lg:col-span-2 bg-white rounded-xl border overflow-hidden">
                 {selectedPersona ? (
-                  <div>
-                    <div className="flex items-start justify-between mb-6">
-                      <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-2xl">{selectedPersona.name.charAt(0)}</div>
-                        <div>
-                          <h2 className="text-xl font-bold">@{selectedPersona.name}</h2>
-                          <p className="text-gray-500">{selectedPersona.tagline}</p>
+                  <div className="h-full overflow-y-auto">
+                    {/* Header with Avatar */}
+                    <div className="p-6 border-b bg-gradient-to-r from-purple-50 to-pink-50">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-4">
+                          <PersonaAvatar persona={selectedPersona} size="lg" />
+                          <div>
+                            <h2 className="text-xl font-bold text-gray-900">@{selectedPersona.name}</h2>
+                            <p className="text-gray-600">{selectedPersona.tagline}</p>
+                            {selectedPersona.confidence && (
+                              <span className={clsx('inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium',
+                                selectedPersona.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                                selectedPersona.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-gray-100 text-gray-600'
+                              )}>
+                                {selectedPersona.confidence} confidence
+                                {selectedPersona.feedback_count && ` • ${selectedPersona.feedback_count} reviews`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <PersonaExportMenu persona={selectedPersona} />
+                          <button onClick={() => setEditingPersona(selectedPersona)} className="p-2 text-purple-500 hover:bg-purple-100 rounded-lg" title="Edit"><Pencil size={18} /></button>
+                          <button onClick={() => { if (confirm('Delete this persona?')) deletePersonaMut.mutate(selectedPersona.persona_id) }} disabled={deletePersonaMut.isPending} className="p-2 text-red-500 hover:bg-red-100 rounded-lg" title="Delete">
+                            {deletePersonaMut.isPending ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setEditingPersona(selectedPersona)} className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg" title="Edit"><Pencil size={18} /></button>
-                        <button onClick={() => { if (confirm('Delete this persona?')) deletePersonaMut.mutate(selectedPersona.persona_id) }} disabled={deletePersonaMut.isPending} className="p-2 text-red-500 hover:bg-red-50 rounded-lg" title="Delete">
-                          {deletePersonaMut.isPending ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
-                        </button>
-                      </div>
                     </div>
                     
-                    {selectedPersona.quote && <blockquote className="border-l-4 border-purple-300 pl-4 italic text-gray-600 mb-6">"{selectedPersona.quote}"</blockquote>}
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {selectedPersona.goals?.length > 0 && (
-                        <div><h4 className="font-medium text-purple-700 mb-2">Goals</h4><ul className="list-disc list-inside text-gray-600 text-sm space-y-1">{selectedPersona.goals.map((g, i) => <li key={i}>{g}</li>)}</ul></div>
+                    <div className="p-6 space-y-6">
+                      {/* Section 1: Identity & Demographics */}
+                      {(selectedPersona.identity || selectedPersona.demographics) && (
+                        <PersonaSection title="Identity & Demographics" icon="👤" color="purple">
+                          <div className="space-y-3">
+                            {(selectedPersona.identity?.bio || selectedPersona.demographics?.bio) && (
+                              <p className="text-gray-700 text-sm leading-relaxed">
+                                {selectedPersona.identity?.bio || selectedPersona.demographics?.bio}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                              {Object.entries(selectedPersona.identity || selectedPersona.demographics || {}).map(([key, value]) => 
+                                value && key !== 'bio' && (
+                                  <span key={key} className="px-2 py-1 bg-purple-50 border border-purple-100 rounded text-xs text-purple-700">
+                                    {key.replace(/_/g, ' ')}: {String(value)}
+                                  </span>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        </PersonaSection>
                       )}
-                      {selectedPersona.frustrations?.length > 0 && (
-                        <div><h4 className="font-medium text-red-700 mb-2">Frustrations</h4><ul className="list-disc list-inside text-gray-600 text-sm space-y-1">{selectedPersona.frustrations.map((f, i) => <li key={i}>{f}</li>)}</ul></div>
+                      
+                      {/* Section 2: Goals & Motivations */}
+                      {(selectedPersona.goals_motivations || selectedPersona.goals?.length > 0) && (
+                        <PersonaSection title="Goals & Motivations" icon="🎯" color="green">
+                          <div className="space-y-3">
+                            {selectedPersona.goals_motivations?.primary_goal && (
+                              <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                                <p className="text-xs text-green-600 font-medium mb-1">Primary Goal</p>
+                                <p className="text-gray-700 text-sm">{selectedPersona.goals_motivations.primary_goal}</p>
+                              </div>
+                            )}
+                            {(selectedPersona.goals_motivations?.secondary_goals || selectedPersona.goals)?.length > 0 && (
+                              <div>
+                                <p className="text-xs text-gray-500 font-medium mb-2">Secondary Goals</p>
+                                <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
+                                  {(selectedPersona.goals_motivations?.secondary_goals || selectedPersona.goals || []).map((g: string, i: number) => <li key={i}>{g}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                            {(selectedPersona.goals_motivations?.underlying_motivations?.length ?? 0) > 0 && (
+                              <div>
+                                <p className="text-xs text-gray-500 font-medium mb-2">Underlying Motivations</p>
+                                <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
+                                  {selectedPersona.goals_motivations?.underlying_motivations?.map((m: string, i: number) => <li key={i}>{m}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </PersonaSection>
                       )}
-                      {selectedPersona.behaviors?.length > 0 && (
-                        <div><h4 className="font-medium text-blue-700 mb-2">Behaviors</h4><ul className="list-disc list-inside text-gray-600 text-sm space-y-1">{selectedPersona.behaviors.map((b, i) => <li key={i}>{b}</li>)}</ul></div>
+                      
+                      {/* Section 3: Pain Points & Frustrations */}
+                      {(selectedPersona.pain_points || selectedPersona.frustrations?.length > 0) && (
+                        <PersonaSection title="Pain Points & Frustrations" icon="😤" color="red">
+                          <div className="space-y-3">
+                            {(selectedPersona.pain_points?.current_challenges || selectedPersona.frustrations)?.length > 0 && (
+                              <div>
+                                <p className="text-xs text-gray-500 font-medium mb-2">Current Challenges</p>
+                                <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
+                                  {(selectedPersona.pain_points?.current_challenges || selectedPersona.frustrations || []).map((f: string, i: number) => <li key={i}>{f}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                            {(selectedPersona.pain_points?.blockers?.length ?? 0) > 0 && (
+                              <div>
+                                <p className="text-xs text-gray-500 font-medium mb-2">Blockers</p>
+                                <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
+                                  {selectedPersona.pain_points?.blockers?.map((b: string, i: number) => <li key={i}>{b}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                            {(selectedPersona.pain_points?.workarounds?.length ?? 0) > 0 && (
+                              <div>
+                                <p className="text-xs text-gray-500 font-medium mb-2">Current Workarounds</p>
+                                <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
+                                  {selectedPersona.pain_points?.workarounds?.map((w: string, i: number) => <li key={i}>{w}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </PersonaSection>
                       )}
-                      {selectedPersona.needs?.length > 0 && (
-                        <div><h4 className="font-medium text-green-700 mb-2">Needs</h4><ul className="list-disc list-inside text-gray-600 text-sm space-y-1">{selectedPersona.needs.map((n, i) => <li key={i}>{n}</li>)}</ul></div>
+                      
+                      {/* Section 4: Behaviors & Habits */}
+                      {(selectedPersona.behaviors && typeof selectedPersona.behaviors === 'object' && !Array.isArray(selectedPersona.behaviors)) ? (
+                        <PersonaSection title="Behaviors & Habits" icon="🔄" color="blue">
+                          <div className="space-y-3">
+                            {((selectedPersona.behaviors as { current_solutions?: string[] })?.current_solutions?.length ?? 0) > 0 && (
+                              <div>
+                                <p className="text-xs text-gray-500 font-medium mb-2">Current Solutions</p>
+                                <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
+                                  {(selectedPersona.behaviors as { current_solutions?: string[] })?.current_solutions?.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                              {selectedPersona.behaviors.tech_savviness && (
+                                <span className="px-2 py-1 bg-blue-50 border border-blue-100 rounded text-xs text-blue-700">
+                                  Tech: {selectedPersona.behaviors.tech_savviness}
+                                </span>
+                              )}
+                              {selectedPersona.behaviors.activity_frequency && (
+                                <span className="px-2 py-1 bg-blue-50 border border-blue-100 rounded text-xs text-blue-700">
+                                  {selectedPersona.behaviors.activity_frequency}
+                                </span>
+                              )}
+                              {selectedPersona.behaviors.decision_style && (
+                                <span className="px-2 py-1 bg-blue-50 border border-blue-100 rounded text-xs text-blue-700">
+                                  {selectedPersona.behaviors.decision_style}
+                                </span>
+                              )}
+                            </div>
+                            {((selectedPersona.behaviors as { tools_used?: string[] })?.tools_used?.length ?? 0) > 0 && (
+                              <div>
+                                <p className="text-xs text-gray-500 font-medium mb-2">Tools Used</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {(selectedPersona.behaviors as { tools_used?: string[] })?.tools_used?.map((t: string, i: number) => (
+                                    <span key={i} className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{t}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </PersonaSection>
+                      ) : selectedPersona.behaviors?.length > 0 && (
+                        <PersonaSection title="Behaviors" icon="🔄" color="blue">
+                          <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
+                            {(selectedPersona.behaviors as string[]).map((b: string, i: number) => <li key={i}>{b}</li>)}
+                          </ul>
+                        </PersonaSection>
+                      )}
+                      
+                      {/* Section 5: Context & Environment */}
+                      {selectedPersona.context_environment && (
+                        <PersonaSection title="Context & Environment" icon="🌍" color="amber">
+                          <div className="space-y-3">
+                            {selectedPersona.context_environment.usage_context && (
+                              <p className="text-gray-700 text-sm">{selectedPersona.context_environment.usage_context}</p>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                              {selectedPersona.context_environment.devices?.map((d: string, i: number) => (
+                                <span key={i} className="px-2 py-1 bg-amber-50 border border-amber-100 rounded text-xs text-amber-700">{d}</span>
+                              ))}
+                            </div>
+                            {selectedPersona.context_environment.time_constraints && (
+                              <p className="text-gray-600 text-sm"><span className="font-medium">Time constraints:</span> {selectedPersona.context_environment.time_constraints}</p>
+                            )}
+                          </div>
+                        </PersonaSection>
+                      )}
+                      
+                      {/* Section 6: Representative Quotes */}
+                      {((selectedPersona.quotes?.length ?? 0) > 0 || selectedPersona.quote) && (
+                        <PersonaSection title="Representative Quotes" icon="💬" color="indigo">
+                          <div className="space-y-3">
+                            {(selectedPersona.quotes?.length ?? 0) > 0 ? (
+                              selectedPersona.quotes?.map((q: { text: string; context?: string }, i: number) => (
+                                <blockquote key={i} className="border-l-4 border-indigo-300 pl-4 py-1">
+                                  <p className="text-gray-700 text-sm italic">"{q.text}"</p>
+                                  {q.context && <p className="text-gray-400 text-xs mt-1">— {q.context}</p>}
+                                </blockquote>
+                              ))
+                            ) : selectedPersona.quote && (
+                              <blockquote className="border-l-4 border-indigo-300 pl-4 py-1">
+                                <p className="text-gray-700 text-sm italic">"{selectedPersona.quote}"</p>
+                              </blockquote>
+                            )}
+                          </div>
+                        </PersonaSection>
+                      )}
+                      
+                      {/* Section 7: Scenario/User Story */}
+                      {selectedPersona.scenario && (
+                        <PersonaSection title="Scenario" icon="📖" color="teal">
+                          {typeof selectedPersona.scenario === 'string' ? (
+                            <p className="text-gray-700 text-sm leading-relaxed">{selectedPersona.scenario}</p>
+                          ) : (
+                            <div className="space-y-3">
+                              {selectedPersona.scenario.title && (
+                                <h5 className="font-medium text-gray-900">{selectedPersona.scenario.title}</h5>
+                              )}
+                              {selectedPersona.scenario.narrative && (
+                                <p className="text-gray-700 text-sm leading-relaxed">{selectedPersona.scenario.narrative}</p>
+                              )}
+                              {(selectedPersona.scenario.trigger || selectedPersona.scenario.outcome) && (
+                                <div className="flex gap-4 text-sm">
+                                  {selectedPersona.scenario.trigger && (
+                                    <div className="flex-1 p-2 bg-teal-50 rounded">
+                                      <p className="text-xs text-teal-600 font-medium">Trigger</p>
+                                      <p className="text-gray-600">{selectedPersona.scenario.trigger}</p>
+                                    </div>
+                                  )}
+                                  {selectedPersona.scenario.outcome && (
+                                    <div className="flex-1 p-2 bg-teal-50 rounded">
+                                      <p className="text-xs text-teal-600 font-medium">Desired Outcome</p>
+                                      <p className="text-gray-600">{selectedPersona.scenario.outcome}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </PersonaSection>
+                      )}
+                      
+                      {/* Section 8: Research Notes */}
+                      <PersonaSection title="Research Notes" icon="📝" color="gray">
+                        <ResearchNotes 
+                          persona={selectedPersona} 
+                          onSave={(notes) => updatePersonaMut.mutate({ 
+                            personaId: selectedPersona.persona_id, 
+                            updates: { research_notes: notes as ProjectPersona['research_notes'] } 
+                          })}
+                          isSaving={updatePersonaMut.isPending}
+                        />
+                      </PersonaSection>
+                      
+                      {/* Needs (legacy support) */}
+                      {selectedPersona.needs?.length > 0 && !selectedPersona.goals_motivations && (
+                        <PersonaSection title="Needs" icon="✨" color="emerald">
+                          <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
+                            {selectedPersona.needs.map((n: string, i: number) => <li key={i}>{n}</li>)}
+                          </ul>
+                        </PersonaSection>
                       )}
                     </div>
-                    
-                    {selectedPersona.scenario && (
-                      <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                        <h4 className="font-medium mb-2">Scenario</h4>
-                        <p className="text-gray-600 text-sm">{selectedPersona.scenario}</p>
-                      </div>
-                    )}
-                    
-                    {selectedPersona.demographics && Object.keys(selectedPersona.demographics).length > 0 && (
-                      <div className="mt-6 flex flex-wrap gap-2">
-                        {Object.entries(selectedPersona.demographics).map(([key, value]) => value && (
-                          <span key={key} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">{key}: {value}</span>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-full text-gray-400">Select a persona to view details</div>
+                  <div className="flex items-center justify-center h-full min-h-[500px] text-gray-400">Select a persona to view details</div>
                 )}
               </div>
             </div>
@@ -646,22 +1075,62 @@ export default function ProjectDetail() {
       {/* Persona Edit Modal */}
       {editingPersona && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+          <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Edit Persona</h2>
               <button onClick={() => setEditingPersona(null)} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
             </div>
-            <div className="p-6 space-y-4 overflow-y-auto max-h-[60vh]">
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium mb-1">Name</label><input type="text" value={editingPersona.name} onChange={e => setEditingPersona({ ...editingPersona, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
-                <div><label className="block text-sm font-medium mb-1">Tagline</label><input type="text" value={editingPersona.tagline} onChange={e => setEditingPersona({ ...editingPersona, tagline: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div className="p-6 space-y-6 overflow-y-auto max-h-[65vh]">
+              {/* Basic Info */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">👤 Basic Info</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="block text-sm font-medium mb-1">Name</label><input type="text" value={editingPersona.name} onChange={e => setEditingPersona({ ...editingPersona, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+                  <div><label className="block text-sm font-medium mb-1">Tagline</label><input type="text" value={editingPersona.tagline} onChange={e => setEditingPersona({ ...editingPersona, tagline: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+                </div>
               </div>
-              <div><label className="block text-sm font-medium mb-1">Quote</label><textarea value={editingPersona.quote} onChange={e => setEditingPersona({ ...editingPersona, quote: e.target.value })} rows={2} className="w-full px-3 py-2 border rounded-lg" /></div>
-              <div><label className="block text-sm font-medium mb-1">Goals (one per line)</label><textarea value={editingPersona.goals?.join('\n') || ''} onChange={e => setEditingPersona({ ...editingPersona, goals: e.target.value.split('\n').filter(g => g.trim()) })} rows={3} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" /></div>
-              <div><label className="block text-sm font-medium mb-1">Frustrations (one per line)</label><textarea value={editingPersona.frustrations?.join('\n') || ''} onChange={e => setEditingPersona({ ...editingPersona, frustrations: e.target.value.split('\n').filter(f => f.trim()) })} rows={3} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" /></div>
-              <div><label className="block text-sm font-medium mb-1">Behaviors (one per line)</label><textarea value={editingPersona.behaviors?.join('\n') || ''} onChange={e => setEditingPersona({ ...editingPersona, behaviors: e.target.value.split('\n').filter(b => b.trim()) })} rows={3} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" /></div>
-              <div><label className="block text-sm font-medium mb-1">Needs (one per line)</label><textarea value={editingPersona.needs?.join('\n') || ''} onChange={e => setEditingPersona({ ...editingPersona, needs: e.target.value.split('\n').filter(n => n.trim()) })} rows={3} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" /></div>
-              <div><label className="block text-sm font-medium mb-1">Scenario</label><textarea value={editingPersona.scenario} onChange={e => setEditingPersona({ ...editingPersona, scenario: e.target.value })} rows={3} className="w-full px-3 py-2 border rounded-lg" /></div>
+              
+              {/* Identity & Demographics */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">🪪 Identity & Demographics</h3>
+                <div><label className="block text-sm font-medium mb-1">Bio</label><textarea value={editingPersona.identity?.bio || editingPersona.demographics?.bio || ''} onChange={e => setEditingPersona({ ...editingPersona, identity: { ...editingPersona.identity, bio: e.target.value } })} rows={2} className="w-full px-3 py-2 border rounded-lg" placeholder="Brief background story..." /></div>
+                <div className="grid grid-cols-3 gap-3 mt-3">
+                  <div><label className="block text-xs font-medium mb-1">Age Range</label><input type="text" value={editingPersona.identity?.age_range || ''} onChange={e => setEditingPersona({ ...editingPersona, identity: { ...editingPersona.identity, age_range: e.target.value } })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="25-35" /></div>
+                  <div><label className="block text-xs font-medium mb-1">Location</label><input type="text" value={editingPersona.identity?.location || ''} onChange={e => setEditingPersona({ ...editingPersona, identity: { ...editingPersona.identity, location: e.target.value } })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="Urban, US" /></div>
+                  <div><label className="block text-xs font-medium mb-1">Occupation</label><input type="text" value={editingPersona.identity?.occupation || ''} onChange={e => setEditingPersona({ ...editingPersona, identity: { ...editingPersona.identity, occupation: e.target.value } })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="Product Manager" /></div>
+                </div>
+              </div>
+              
+              {/* Goals & Motivations */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">🎯 Goals & Motivations</h3>
+                <div><label className="block text-sm font-medium mb-1">Primary Goal</label><input type="text" value={editingPersona.goals_motivations?.primary_goal || ''} onChange={e => setEditingPersona({ ...editingPersona, goals_motivations: { ...editingPersona.goals_motivations, primary_goal: e.target.value } })} className="w-full px-3 py-2 border rounded-lg" placeholder="Main objective..." /></div>
+                <div className="mt-3"><label className="block text-sm font-medium mb-1">Secondary Goals (one per line)</label><textarea value={(editingPersona.goals_motivations?.secondary_goals || editingPersona.goals || []).join('\n')} onChange={e => setEditingPersona({ ...editingPersona, goals_motivations: { ...editingPersona.goals_motivations, secondary_goals: e.target.value.split('\n').filter(g => g.trim()) }, goals: e.target.value.split('\n').filter(g => g.trim()) })} rows={2} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" /></div>
+              </div>
+              
+              {/* Pain Points */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">😤 Pain Points & Frustrations</h3>
+                <div><label className="block text-sm font-medium mb-1">Current Challenges (one per line)</label><textarea value={(editingPersona.pain_points?.current_challenges || editingPersona.frustrations || []).join('\n')} onChange={e => setEditingPersona({ ...editingPersona, pain_points: { ...editingPersona.pain_points, current_challenges: e.target.value.split('\n').filter(f => f.trim()) }, frustrations: e.target.value.split('\n').filter(f => f.trim()) })} rows={3} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" /></div>
+                <div className="mt-3"><label className="block text-sm font-medium mb-1">Workarounds (one per line)</label><textarea value={(editingPersona.pain_points?.workarounds || []).join('\n')} onChange={e => setEditingPersona({ ...editingPersona, pain_points: { ...editingPersona.pain_points, workarounds: e.target.value.split('\n').filter(w => w.trim()) } })} rows={2} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="How they currently cope..." /></div>
+              </div>
+              
+              {/* Quotes */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">💬 Representative Quote</h3>
+                <textarea value={editingPersona.quote || (editingPersona.quotes?.[0]?.text || '')} onChange={e => setEditingPersona({ ...editingPersona, quote: e.target.value })} rows={2} className="w-full px-3 py-2 border rounded-lg" placeholder="A quote that captures their voice..." />
+              </div>
+              
+              {/* Scenario */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">📖 Scenario</h3>
+                <div><label className="block text-sm font-medium mb-1">Title</label><input type="text" value={typeof editingPersona.scenario === 'object' ? editingPersona.scenario?.title || '' : ''} onChange={e => setEditingPersona({ ...editingPersona, scenario: { ...(typeof editingPersona.scenario === 'object' ? editingPersona.scenario : {}), title: e.target.value } })} className="w-full px-3 py-2 border rounded-lg" placeholder="Scenario title..." /></div>
+                <div className="mt-3"><label className="block text-sm font-medium mb-1">Narrative</label><textarea value={typeof editingPersona.scenario === 'string' ? editingPersona.scenario : editingPersona.scenario?.narrative || ''} onChange={e => setEditingPersona({ ...editingPersona, scenario: typeof editingPersona.scenario === 'string' ? e.target.value : { ...editingPersona.scenario, narrative: e.target.value } })} rows={3} className="w-full px-3 py-2 border rounded-lg" placeholder="A story showing them in action..." /></div>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div><label className="block text-xs font-medium mb-1">Trigger</label><input type="text" value={typeof editingPersona.scenario === 'object' ? editingPersona.scenario?.trigger || '' : ''} onChange={e => setEditingPersona({ ...editingPersona, scenario: { ...(typeof editingPersona.scenario === 'object' ? editingPersona.scenario : {}), trigger: e.target.value } })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="What triggers this scenario" /></div>
+                  <div><label className="block text-xs font-medium mb-1">Desired Outcome</label><input type="text" value={typeof editingPersona.scenario === 'object' ? editingPersona.scenario?.outcome || '' : ''} onChange={e => setEditingPersona({ ...editingPersona, scenario: { ...(typeof editingPersona.scenario === 'object' ? editingPersona.scenario : {}), outcome: e.target.value } })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="What they hope to achieve" /></div>
+                </div>
+              </div>
             </div>
             <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
               <button onClick={() => setEditingPersona(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>

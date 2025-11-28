@@ -613,13 +613,40 @@ export const api = {
     fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, {
       method: 'DELETE'
     }),
+
+  // S3 Import File Explorer
+  getS3ImportSources: () => fetchApi<{ sources: S3ImportSource[]; bucket: string | null }>('/s3-import/sources'),
+  
+  createS3ImportSource: (name: string) =>
+    fetchApi<{ success: boolean; source?: S3ImportSource; message?: string }>('/s3-import/sources', {
+      method: 'POST',
+      body: JSON.stringify({ name })
+    }),
+  
+  getS3ImportFiles: (params?: { source?: string; include_processed?: boolean }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.source) searchParams.set('source', params.source)
+    if (params?.include_processed) searchParams.set('include_processed', 'true')
+    return fetchApi<{ files: S3ImportFile[]; bucket: string | null }>(`/s3-import/files?${searchParams}`)
+  },
+  
+  getS3UploadUrl: (filename: string, source: string, contentType?: string) =>
+    fetchApi<{ success: boolean; upload_url?: string; key?: string; message?: string }>('/s3-import/upload-url', {
+      method: 'POST',
+      body: JSON.stringify({ filename, source, content_type: contentType || 'application/octet-stream' })
+    }),
+  
+  deleteS3ImportFile: (key: string) =>
+    fetchApi<{ success: boolean; message?: string }>(`/s3-import/file/${encodeURIComponent(key)}`, {
+      method: 'DELETE'
+    }),
 }
 
 // Project types
 export interface ProjectJob {
   success?: boolean
   job_id: string
-  job_type: 'research' | 'generate_personas'
+  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq'
   status: 'pending' | 'running' | 'completed' | 'failed'
   progress: number
   current_step?: string
@@ -638,14 +665,68 @@ export interface ProjectPersona {
   persona_id: string
   name: string
   tagline: string
-  demographics: { age_range?: string; occupation?: string; tech_level?: string }
+  demographics: { age_range?: string; occupation?: string; tech_level?: string; bio?: string; location?: string; income_bracket?: string; education?: string; family_status?: string }
   quote: string
   goals: string[]
   frustrations: string[]
-  behaviors: string[]
+  behaviors: string[] | { current_solutions?: string[]; tools_used?: string[]; activity_frequency?: string; tech_savviness?: string; decision_style?: string }
   needs: string[]
-  scenario: string
+  // Scenario can be string (legacy) or object (new format)
+  scenario: string | { title?: string; narrative?: string; trigger?: string; outcome?: string }
   created_at: string
+  // Enhanced persona fields (8-section template)
+  confidence?: 'high' | 'medium' | 'low'
+  feedback_count?: number
+  avatar_url?: string
+  avatar_prompt?: string
+  // Section 1: Identity & Demographics
+  identity?: { 
+    age_range?: string
+    location?: string
+    occupation?: string
+    income_bracket?: string
+    education?: string
+    family_status?: string
+    bio?: string 
+  }
+  // Section 2: Goals & Motivations
+  goals_motivations?: { 
+    primary_goal?: string
+    secondary_goals?: string[]
+    success_definition?: string
+    underlying_motivations?: string[] 
+  }
+  // Section 3: Pain Points & Frustrations
+  pain_points?: { 
+    current_challenges?: string[]
+    blockers?: string[]
+    workarounds?: string[]
+    emotional_impact?: string 
+  }
+  // Section 4: Behaviors & Habits (object format)
+  behaviors_detail?: {
+    current_solutions?: string[]
+    tools_used?: string[]
+    activity_frequency?: string
+    tech_savviness?: string
+    decision_style?: string
+  }
+  // Section 5: Context & Environment
+  context_environment?: { 
+    usage_context?: string
+    devices?: string[]
+    time_constraints?: string
+    social_context?: string
+    influencers?: string[]
+  }
+  // Section 6: Representative Quotes
+  quotes?: Array<{ text: string; context?: string }>
+  // Section 7: Scenario (already defined above)
+  // Section 8: Research Notes (user-editable) - can be strings or objects
+  research_notes?: Array<string | { note_id?: string; text: string; author?: string; created_at?: string; tags?: string[] }>
+  // Metadata
+  supporting_evidence?: string[]
+  source_breakdown?: Record<string, number>
 }
 
 export interface ProjectDocument {
@@ -675,6 +756,20 @@ export interface ProjectDetail {
   project: Project
   personas: ProjectPersona[]
   documents: ProjectDocument[]
+}
+
+export interface S3ImportSource {
+  name: string
+  display_name: string
+}
+
+export interface S3ImportFile {
+  key: string
+  filename: string
+  source: string
+  size: number
+  last_modified: string
+  status: 'pending' | 'processed'
 }
 
 export function getDaysFromRange(range: string, customRange?: { start: string; end: string } | null): number {

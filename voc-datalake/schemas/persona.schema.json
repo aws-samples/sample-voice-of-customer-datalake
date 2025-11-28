@@ -1,0 +1,271 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://voc-datalake/schemas/persona.json",
+  "title": "VoC UX Research Persona",
+  "description": "Full UX research persona template with 8 sections",
+  "type": "object",
+  "required": ["persona_id", "name", "tagline"],
+  "properties": {
+    "persona_id": {
+      "type": "string",
+      "description": "Unique identifier for the persona"
+    },
+    "name": {
+      "type": "string",
+      "description": "Fictional but memorable name",
+      "examples": ["Sarah Chen", "Marcus Johnson", "Elena Rodriguez"]
+    },
+    "tagline": {
+      "type": "string",
+      "description": "One-line description capturing who they are",
+      "examples": ["The Overwhelmed Decision-Maker", "The Price-Conscious Loyalist"]
+    },
+    "avatar_url": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "S3 URL to AI-generated avatar image"
+    },
+    "avatar_prompt": {
+      "type": ["string", "null"],
+      "description": "Prompt used to generate the avatar"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Confidence level based on supporting data"
+    },
+    "feedback_count": {
+      "type": "integer",
+      "description": "Number of feedback items this persona is based on"
+    },
+    "identity": {
+      "type": "object",
+      "description": "Section 1: Identity & Demographics",
+      "properties": {
+        "age_range": {
+          "type": "string",
+          "examples": ["25-34", "35-44", "45-54"]
+        },
+        "location": {
+          "type": "string",
+          "examples": ["San Francisco, CA", "London, UK", "Remote/Global"]
+        },
+        "occupation": {
+          "type": "string",
+          "examples": ["Product Manager", "Small Business Owner", "Stay-at-home Parent"]
+        },
+        "income_bracket": {
+          "type": ["string", "null"],
+          "examples": ["$75k-100k", "$100k-150k", "N/A"]
+        },
+        "education": {
+          "type": ["string", "null"],
+          "examples": ["Bachelor's degree", "MBA", "Self-taught"]
+        },
+        "family_status": {
+          "type": ["string", "null"],
+          "examples": ["Married with kids", "Single", "Empty nester"]
+        },
+        "bio": {
+          "type": "string",
+          "description": "2-3 sentence background story",
+          "maxLength": 500
+        }
+      }
+    },
+    "goals_motivations": {
+      "type": "object",
+      "description": "Section 2: Goals & Motivations",
+      "properties": {
+        "primary_goal": {
+          "type": "string",
+          "description": "Main thing they're trying to achieve"
+        },
+        "secondary_goals": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 3
+        },
+        "success_definition": {
+          "type": "string",
+          "description": "What success looks like to them"
+        },
+        "underlying_motivations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Deeper emotional drivers"
+        }
+      }
+    },
+    "pain_points": {
+      "type": "object",
+      "description": "Section 3: Pain Points & Frustrations",
+      "properties": {
+        "current_challenges": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "What they struggle with"
+        },
+        "blockers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "What's preventing them from achieving goals"
+        },
+        "workarounds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "How they currently cope"
+        },
+        "emotional_impact": {
+          "type": "string",
+          "description": "How these frustrations make them feel"
+        }
+      }
+    },
+    "behaviors": {
+      "type": "object",
+      "description": "Section 4: Behaviors & Habits",
+      "properties": {
+        "current_solutions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "How they currently solve the problem"
+        },
+        "tools_used": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Products/tools they use"
+        },
+        "activity_frequency": {
+          "type": "string",
+          "description": "How often they engage with relevant activities",
+          "examples": ["Daily", "Weekly", "Monthly", "As needed"]
+        },
+        "tech_savviness": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Technical comfort level"
+        },
+        "decision_style": {
+          "type": "string",
+          "description": "How they make decisions",
+          "examples": ["Data-driven", "Gut instinct", "Consensus-seeking"]
+        }
+      }
+    },
+    "context_environment": {
+      "type": "object",
+      "description": "Section 5: Context & Environment",
+      "properties": {
+        "usage_context": {
+          "type": "string",
+          "description": "When/where they engage with the product",
+          "examples": ["Morning commute", "During work hours", "Evening at home"]
+        },
+        "devices": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Devices they use",
+          "examples": ["iPhone", "MacBook", "Android tablet"]
+        },
+        "time_constraints": {
+          "type": "string",
+          "description": "How much time they have",
+          "examples": ["Very limited - 5 min max", "Moderate - can dedicate 30 min", "Flexible"]
+        },
+        "social_context": {
+          "type": "string",
+          "description": "Work/social environment",
+          "examples": ["Reports to VP, manages team of 5", "Solo entrepreneur", "Part of large enterprise"]
+        },
+        "influencers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Who influences their decisions"
+        }
+      }
+    },
+    "quotes": {
+      "type": "array",
+      "description": "Section 6: Representative Quotes",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "source_feedback_id": { "type": ["string", "null"] },
+          "context": { "type": ["string", "null"] }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 5
+    },
+    "scenario": {
+      "type": "object",
+      "description": "Section 7: Scenario/User Story",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Short title for the scenario"
+        },
+        "narrative": {
+          "type": "string",
+          "description": "2-4 sentence story showing them in action",
+          "maxLength": 1000
+        },
+        "trigger": {
+          "type": "string",
+          "description": "What triggers this scenario"
+        },
+        "outcome": {
+          "type": "string",
+          "description": "Desired outcome"
+        }
+      }
+    },
+    "research_notes": {
+      "type": "array",
+      "description": "Section 8: Researcher Notes",
+      "items": {
+        "type": "object",
+        "properties": {
+          "note_id": { "type": "string" },
+          "text": { "type": "string" },
+          "author": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": ["string", "null"], "format": "date-time" },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["note_id", "text", "created_at"]
+      }
+    },
+    "source_feedback_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "IDs of feedback items this persona is based on"
+    },
+    "source_breakdown": {
+      "type": "object",
+      "description": "Breakdown of sources used",
+      "additionalProperties": { "type": "integer" }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "llm_metadata": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "prompt_version": { "type": "string" },
+        "generation_time_ms": { "type": "integer" }
+      }
+    }
+  }
+}

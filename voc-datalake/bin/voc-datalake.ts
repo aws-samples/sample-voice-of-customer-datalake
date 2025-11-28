@@ -17,7 +17,8 @@ const config = {
   primaryLanguage: app.node.tryGetContext('primaryLanguage') || 'en',
   enabledSources: app.node.tryGetContext('enabledSources') || [
     'trustpilot', 'yelp', 'google_reviews', 'twitter', 'instagram', 'facebook', 'reddit', 'tavily',
-    'appstore_apple', 'appstore_google', 'appstore_huawei', 'webscraper'
+    'appstore_apple', 'appstore_google', 'appstore_huawei', 'webscraper',
+    'youtube', 'tiktok', 'linkedin', 's3_import'
   ],
 };
 
@@ -86,6 +87,9 @@ const analyticsStack = new VocAnalyticsStack(app, 'VocAnalyticsStack', {
   secretsArn: ingestionStack.secretsArn,
   brandName: config.brandName,
   researchStateMachineArn: researchStack.researchStateMachine.stateMachineArn,
+  s3ImportBucket: ingestionStack.s3ImportBucket,
+  rawDataBucket: storageStack.rawDataBucket,
+  avatarsCdnUrl: storageStack.avatarsCdnUrl,
 });
 analyticsStack.addDependency(storageStack);
 analyticsStack.addDependency(ingestionStack);

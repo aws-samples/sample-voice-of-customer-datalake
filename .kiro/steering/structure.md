@@ -34,13 +34,16 @@ voc-datalake/
 │   ├── aggregator/handler.py     # DynamoDB Streams consumer - real-time metrics
 │   ├── research/
 │   │   └── research_step_handler.py  # Step Functions task handler
-│   ├── api/                      # Split into multiple Lambdas (20KB IAM policy limit)
-│   │   ├── handler.py            # Main API: feedback, scrapers, settings
+│   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit)
+│   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
+│   │   ├── chat_handler.py           # /chat/*, /pipelines/* (conversations, pipelines)
+│   │   ├── integrations_handler.py   # /integrations/*, /sources/* (credentials, schedules)
+│   │   ├── scrapers_handler.py       # /scrapers/* (web scraper management)
+│   │   ├── settings_handler.py       # /settings/* (brand, categories config)
+│   │   ├── projects_handler.py       # /projects/* (research projects, personas)
 │   │   ├── chat_stream_handler.py    # Streaming chat (Lambda Function URL)
-│   │   ├── metrics_handler.py        # Metrics endpoints (dedicated Lambda)
-│   │   ├── ops_handler.py            # Operations: sources, EventBridge rules
-│   │   ├── projects_handler.py       # Projects API (dedicated Lambda)
-│   │   └── projects.py               # Projects business logic
+│   │   ├── s3_import_handler.py      # /s3-import/* (file explorer)
+│   │   └── projects.py               # Projects business logic (shared)
 │   └── layers/
 │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4
 │       └── processing-deps/      # Layer: aws-lambda-powertools

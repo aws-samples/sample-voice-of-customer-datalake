@@ -15,7 +15,6 @@ export interface ChatFilters {
   source?: string
   category?: string
   sentiment?: string
-  tags?: string[]
 }
 
 export interface Conversation {
