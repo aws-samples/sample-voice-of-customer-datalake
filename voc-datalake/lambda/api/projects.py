@@ -444,21 +444,58 @@ def get_feedback_statistics(items: list[dict]) -> str:
 
 # =============================================================================
 # PERSONA AVATAR GENERATION
-# Uses Amazon Nova Canvas (amazon.nova-canvas-v1:0) to generate AI headshot images
-# Model is only available in us-east-1, so we create a region-specific client
+# Uses Claude to generate an image prompt, then Nova Canvas to create the avatar
+# Nova Canvas is only available in us-east-1, so we create a region-specific client
 # Search: "avatar generation for personas" or "PERSONA_AVATAR"
 # =============================================================================
+
+def generate_avatar_prompt_with_llm(persona_data: dict) -> str:
+    """Use Claude to generate an optimal image prompt from persona data."""
+    name = persona_data.get('name', 'Unknown')
+    tagline = persona_data.get('tagline', '')
+    identity = persona_data.get('identity', {})
+    bio = identity.get('bio', '')
+    age_range = identity.get('age_range', '')
+    occupation = identity.get('occupation', '')
+    location = identity.get('location', '')
+    
+    system_prompt = """You are an expert at writing image generation prompts for professional headshot portraits.
+Given a user persona, create a single image prompt for generating their avatar photo.
+
+Rules:
+- Infer gender from the name (e.g., Sofia = female, Carlos = male)
+- Include: gender, approximate age, ethnicity hints from name/location, occupation-appropriate attire
+- Always end with: "professional headshot, soft studio lighting, neutral background, photorealistic"
+- Keep it under 200 characters
+- Output ONLY the prompt, nothing else"""
+
+    user_msg = f"""Create an image prompt for this persona:
+Name: {name}
+Tagline: {tagline}
+Age: {age_range}
+Occupation: {occupation}
+Location: {location}
+Bio: {bio[:300] if bio else 'N/A'}"""
+
+    try:
+        result = invoke_bedrock(system_prompt, user_msg, max_tokens=200)
+        return result.strip()
+    except Exception as e:
+        logger.warning(f"[PERSONA_AVATAR] LLM prompt generation failed: {e}, using fallback")
+        # Fallback to simple prompt
+        return f"Professional headshot of a {occupation or 'professional'}, friendly expression, soft studio lighting, neutral background, photorealistic"
+
 
 @tracer.capture_method
 def generate_persona_avatar(persona_data: dict, s3_bucket: str = None) -> dict:
     """
-    [PERSONA_AVATAR] Generate an AI avatar image for a persona using Amazon Nova Canvas.
+    [PERSONA_AVATAR] Generate an AI avatar image for a persona.
     
-    Nova Canvas is Amazon's image generation model. It's only available in us-east-1,
-    so this function creates a region-specific Bedrock client.
+    Uses Claude to create an intelligent image prompt from persona data (name, bio, occupation),
+    then Nova Canvas to generate the actual image.
     
     Args:
-        persona_data: Dict containing persona info (identity.age_range, identity.occupation, persona_id, name)
+        persona_data: Dict with name, tagline, identity (bio, age_range, occupation, location)
         s3_bucket: Optional S3 bucket override, defaults to RAW_DATA_BUCKET env var
         
     Returns:
@@ -466,49 +503,24 @@ def generate_persona_avatar(persona_data: dict, s3_bucket: str = None) -> dict:
     """
     import base64
     
-    logger.info("[PERSONA_AVATAR] Starting avatar generation", extra={
-        "persona_id": persona_data.get('persona_id'),
-        "persona_name": persona_data.get('name')
+    persona_id = persona_data.get('persona_id', 'unknown')
+    persona_name = persona_data.get('name', 'Unknown')
+    
+    logger.info(f"[PERSONA_AVATAR] Starting avatar generation for {persona_name}", extra={
+        "persona_id": persona_id
     })
     
     if not s3_bucket:
         s3_bucket = os.environ.get('RAW_DATA_BUCKET', '')
     
     if not s3_bucket:
-        logger.warning("[PERSONA_AVATAR] No S3 bucket configured for avatar storage - RAW_DATA_BUCKET env var is empty")
+        logger.warning("[PERSONA_AVATAR] No S3 bucket configured - RAW_DATA_BUCKET env var is empty")
         return {'avatar_url': None, 'avatar_prompt': None}
     
-    logger.info(f"[PERSONA_AVATAR] Using S3 bucket: {s3_bucket}")
-    
-    # Build avatar prompt from persona data
-    identity = persona_data.get('identity', {})
-    age_range = identity.get('age_range', '30-40')
-    occupation = identity.get('occupation', 'professional')
-    
-    # Extract age midpoint for prompt
-    try:
-        age_parts = age_range.replace('+', '-99').split('-')
-        age_mid = (int(age_parts[0]) + int(age_parts[1])) // 2
-    except (ValueError, IndexError):
-        age_mid = 35
-    
-    # Determine attire based on occupation
-    occupation_lower = occupation.lower()
-    if any(word in occupation_lower for word in ['executive', 'manager', 'director', 'ceo', 'cfo']):
-        attire = "business professional attire, tailored blazer"
-    elif any(word in occupation_lower for word in ['engineer', 'developer', 'tech', 'designer']):
-        attire = "smart casual attire, modern button-up shirt"
-    elif any(word in occupation_lower for word in ['parent', 'home', 'retired']):
-        attire = "casual comfortable clothing"
-    elif any(word in occupation_lower for word in ['student', 'intern']):
-        attire = "casual modern clothing"
-    else:
-        attire = "business casual attire"
-    
-    # Build a detailed, high-quality prompt for Nova Canvas
-    avatar_prompt = f"""Professional corporate headshot portrait photograph of a {age_mid} year old {occupation}, wearing {attire}, friendly and confident expression, looking directly at camera, soft studio lighting, clean neutral gray background, sharp focus on face, high-end professional photography style, photorealistic"""
-    
-    logger.info(f"[PERSONA_AVATAR] Generated prompt for {persona_data.get('name')}: {avatar_prompt[:100]}...")
+    # Use Claude to generate an intelligent image prompt from persona data
+    logger.info(f"[PERSONA_AVATAR] Generating image prompt with Claude for {persona_name}")
+    avatar_prompt = generate_avatar_prompt_with_llm(persona_data)
+    logger.info(f"[PERSONA_AVATAR] Generated prompt: {avatar_prompt}")
     
     try:
         # Nova Canvas is only available in us-east-1

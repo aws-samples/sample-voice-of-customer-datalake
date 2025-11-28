@@ -299,13 +299,13 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
             <div data-pdf-section style={{ marginBottom: '24px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#16a34a', marginBottom: '12px' }}>🎯 Goals & Motivations</h2>
               {goals?.primary_goal && (
-                <div style={{ padding: '12px', backgroundColor: '#f0fdf4', borderRadius: '8px', marginBottom: '12px' }}>
+                <div data-pdf-section style={{ padding: '12px', backgroundColor: '#f0fdf4', borderRadius: '8px', marginBottom: '12px' }}>
                   <p style={{ fontSize: '12px', color: '#16a34a', fontWeight: '500', marginBottom: '4px' }}>Primary Goal</p>
                   <p style={{ color: '#374151', margin: 0 }}>{goals.primary_goal}</p>
                 </div>
               )}
               {(goals?.secondary_goals || persona.goals)?.length > 0 && (
-                <div style={{ marginBottom: '12px' }}>
+                <div data-pdf-section style={{ marginBottom: '12px' }}>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: '#6b7280', marginBottom: '8px' }}>Secondary Goals</p>
                   <ul style={{ margin: 0, paddingLeft: '20px', color: '#374151' }}>
                     {(goals?.secondary_goals || persona.goals || []).map((g, i) => <li key={i} style={{ marginBottom: '4px' }}>{g}</li>)}
@@ -313,7 +313,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
                 </div>
               )}
               {(goals?.underlying_motivations?.length ?? 0) > 0 && (
-                <div>
+                <div data-pdf-section>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: '#6b7280', marginBottom: '8px' }}>Underlying Motivations</p>
                   <ul style={{ margin: 0, paddingLeft: '20px', color: '#374151' }}>
                     {goals?.underlying_motivations?.map((m, i) => <li key={i} style={{ marginBottom: '4px' }}>{m}</li>)}
@@ -328,7 +328,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
             <div data-pdf-section style={{ marginBottom: '24px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#dc2626', marginBottom: '12px' }}>😤 Pain Points & Frustrations</h2>
               {(painPoints?.current_challenges || persona.frustrations || []).length > 0 && (
-                <div style={{ marginBottom: '12px' }}>
+                <div data-pdf-section style={{ marginBottom: '12px' }}>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: '#6b7280', marginBottom: '8px' }}>Current Challenges</p>
                   <ul style={{ margin: 0, paddingLeft: '20px', color: '#374151' }}>
                     {(painPoints?.current_challenges || persona.frustrations || []).map((f, i) => <li key={i} style={{ marginBottom: '4px' }}>{f}</li>)}
@@ -336,7 +336,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
                 </div>
               )}
               {(painPoints?.blockers?.length ?? 0) > 0 && (
-                <div style={{ marginBottom: '12px' }}>
+                <div data-pdf-section style={{ marginBottom: '12px' }}>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: '#6b7280', marginBottom: '8px' }}>Blockers</p>
                   <ul style={{ margin: 0, paddingLeft: '20px', color: '#374151' }}>
                     {painPoints?.blockers?.map((b, i) => <li key={i} style={{ marginBottom: '4px' }}>{b}</li>)}
@@ -344,7 +344,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
                 </div>
               )}
               {(painPoints?.workarounds?.length ?? 0) > 0 && (
-                <div>
+                <div data-pdf-section>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: '#6b7280', marginBottom: '8px' }}>Current Workarounds</p>
                   <ul style={{ margin: 0, paddingLeft: '20px', color: '#374151' }}>
                     {painPoints?.workarounds?.map((w, i) => <li key={i} style={{ marginBottom: '4px' }}>{w}</li>)}
@@ -365,14 +365,14 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
               ) : (
                 <div>
                   {((persona.behaviors as { current_solutions?: string[] })?.current_solutions?.length ?? 0) > 0 && (
-                    <div style={{ marginBottom: '12px' }}>
+                    <div data-pdf-section style={{ marginBottom: '12px' }}>
                       <p style={{ fontSize: '14px', fontWeight: '500', color: '#6b7280', marginBottom: '8px' }}>Current Solutions</p>
                       <ul style={{ margin: 0, paddingLeft: '20px', color: '#374151' }}>
                         {(persona.behaviors as { current_solutions?: string[] })?.current_solutions?.map((s, i) => <li key={i} style={{ marginBottom: '4px' }}>{s}</li>)}
                       </ul>
                     </div>
                   )}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                  <div data-pdf-section style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                     {persona.behaviors.tech_savviness && (
                       <span style={{ padding: '4px 10px', backgroundColor: '#dbeafe', color: '#1d4ed8', borderRadius: '6px', fontSize: '12px' }}>
                         Tech: {persona.behaviors.tech_savviness}
@@ -390,7 +390,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
                     )}
                   </div>
                   {((persona.behaviors as { tools_used?: string[] })?.tools_used?.length ?? 0) > 0 && (
-                    <div>
+                    <div data-pdf-section>
                       <p style={{ fontSize: '14px', fontWeight: '500', color: '#6b7280', marginBottom: '8px' }}>Tools Used</p>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {(persona.behaviors as { tools_used?: string[] })?.tools_used?.map((t, i) => (
@@ -429,7 +429,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
             <div data-pdf-section style={{ marginBottom: '24px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#6366f1', marginBottom: '12px' }}>💬 Representative Quotes</h2>
               {persona.quotes?.length ? persona.quotes.map((q, i) => (
-                <blockquote key={i} style={{ borderLeft: '4px solid #a5b4fc', paddingLeft: '16px', margin: '0 0 12px 0', fontStyle: 'italic', color: '#374151' }}>
+                <blockquote key={i} data-pdf-section style={{ borderLeft: '4px solid #a5b4fc', paddingLeft: '16px', margin: '0 0 12px 0', fontStyle: 'italic', color: '#374151' }}>
                   "{q.text}"
                   {q.context && <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>— {q.context}</p>}
                 </blockquote>

@@ -16,13 +16,15 @@ import DataSourceWizard, { ContextSummary, defaultContextConfig, type ContextCon
 type Tab = 'overview' | 'personas' | 'documents' | 'chat'
 
 // Persona Avatar Component - shows AI-generated image or fallback
+// Circular avatar with max 128px for large size to fit nicely in persona header
 function PersonaAvatar({ persona, size = 'md' }: { persona: ProjectPersona; size?: 'sm' | 'md' | 'lg' }) {
   const [imageError, setImageError] = useState(false)
   
+  // Size classes: sm=40px, md=48px, lg=96px (was 80px, now smaller to fit header better)
   const sizeClasses = {
-    sm: 'w-10 h-10 text-sm',
-    md: 'w-12 h-12 text-base',
-    lg: 'w-20 h-20 text-2xl'
+    sm: 'w-10 h-10 min-w-[40px] min-h-[40px] text-sm',
+    md: 'w-12 h-12 min-w-[48px] min-h-[48px] text-base',
+    lg: 'w-24 h-24 min-w-[96px] min-h-[96px] max-w-[128px] max-h-[128px] text-2xl'
   }
   
   // Check for avatar URL (CloudFront CDN URL)
@@ -30,18 +32,18 @@ function PersonaAvatar({ persona, size = 'md' }: { persona: ProjectPersona; size
   
   // Fallback gradient avatar with initials
   const FallbackAvatar = () => (
-    <div className={clsx(sizeClasses[size], 'bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold')}>
+    <div className={clsx(sizeClasses[size], 'bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0')}>
       {persona.name.charAt(0)}
     </div>
   )
   
   if (avatarUrl && !imageError) {
     return (
-      <div className="relative">
+      <div className="relative flex-shrink-0">
         <img 
           src={avatarUrl} 
           alt={persona.name}
-          className={clsx(sizeClasses[size], 'rounded-full object-cover border-2 border-purple-200')}
+          className={clsx(sizeClasses[size], 'rounded-full object-cover border-2 border-purple-200 flex-shrink-0')}
           onError={() => setImageError(true)}
         />
       </div>
@@ -287,6 +289,17 @@ export default function ProjectDetail() {
       queryClient.invalidateQueries({ queryKey: ['project', id] })
     }
   }, [jobsData, id, queryClient])
+
+  // Sync selectedPersona with latest data from query (e.g., after research_notes update)
+  useEffect(() => {
+    if (selectedPersona && data?.personas) {
+      const updatedPersona = data.personas.find((p: ProjectPersona) => p.persona_id === selectedPersona.persona_id)
+      if (updatedPersona && JSON.stringify(updatedPersona) !== JSON.stringify(selectedPersona)) {
+        setSelectedPersona(updatedPersona)
+      }
+    }
+  }, [data?.personas, selectedPersona])
+
   // Helper to reset wizard state
   const resetWizard = () => {
     setActiveWizard(null)
