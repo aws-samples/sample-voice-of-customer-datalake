@@ -2,7 +2,10 @@
 
 ## 🎬 Demo
 
+> 📥 [Download Demo Video](static/VoC%20Demo.mp4)
+
 [![Watch the demo](static/demo-thumbnail.jpg)](static/VoC%20Demo.mp4)
+
 
 ---
 
