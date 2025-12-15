@@ -1,5 +1,13 @@
 # Voice of Customer (VoC) Data Lake
 
+## 🎬 Demo
+
+https://github.com/user-attachments/assets/VoC-Demo.mp4
+
+> 📥 [Download Demo Video](static/VoC%20Demo.mp4)
+
+---
+
 A fully serverless AWS platform for ingesting, processing, and analyzing customer feedback from multiple sources using AI-powered insights with Amazon Bedrock.
 
 ## 🎯 Overview
