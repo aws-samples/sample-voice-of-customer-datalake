@@ -2,7 +2,7 @@
 
 ## 🎬 Demo
 
-[![Watch the demo](https://raw.githubusercontent.com/mundurragacl/voice-of-customer-datalake/main/static/demo-thumbnail.jpg)](https://github.com/mundurragacl/voice-of-customer-datalake/blob/main/static/VoC%20Demo.mp4)
+[![Watch the demo](static/demo-thumbnail.jpg)](static/VoC%20Demo.mp4)
 
 ---
 
