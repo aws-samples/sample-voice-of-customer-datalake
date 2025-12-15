@@ -2,9 +2,7 @@
 
 ## 🎬 Demo
 
-https://github.com/user-attachments/assets/VoC-Demo.mp4
-
-> 📥 [Download Demo Video](static/VoC%20Demo.mp4)
+https://github.com/mundurragacl/voice-of-customer-datalake/raw/main/static/VoC%20Demo.mp4
 
 ---
 
