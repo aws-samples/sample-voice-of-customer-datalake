@@ -173,6 +173,40 @@ export class VocAnalyticsStack extends cdk.Stack {
     });
 
     // ============================================
+    // Lambda: Feedback Form API (embeddable form)
+    // Handles: /feedback-form/*
+    // ============================================
+    const feedbackFormRole = new iam.Role(this, 'FeedbackFormLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
+    });
+    aggregatesTable.grantReadWriteData(feedbackFormRole);
+    kmsKey.grantEncryptDecrypt(feedbackFormRole);
+    feedbackFormRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['sqs:SendMessage'],
+      resources: [processingQueueArn],
+    }));
+
+    const feedbackFormLambda = new lambda.Function(this, 'FeedbackFormApi', {
+      functionName: 'voc-feedback-form-api',
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'feedback_form_handler.lambda_handler',
+      code: lambda.Code.fromAsset('lambda/api'),
+      role: feedbackFormRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        PROCESSING_QUEUE_URL: processingQueueUrl,
+        BRAND_NAME: brandName,
+        POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: new logs.LogGroup(this, 'FeedbackFormApiLogs', { logGroupName: '/aws/lambda/voc-feedback-form-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
+    });
+
+    // ============================================
     // Lambda 5: Chat API (pipelines + chat)
     // Handles: /chat/*, /pipelines/*
     // ============================================
@@ -222,7 +256,7 @@ export class VocAnalyticsStack extends cdk.Stack {
       ],
     });
     feedbackTable.grantReadData(projectsRole);
-    aggregatesTable.grantReadData(projectsRole);
+    aggregatesTable.grantReadWriteData(projectsRole);  // ReadWrite for prioritization scores
     projectsTable.grantReadWriteData(projectsRole);
     jobsTable.grantReadWriteData(projectsRole);
     kmsKey.grantEncryptDecrypt(projectsRole);
@@ -402,6 +436,7 @@ export class VocAnalyticsStack extends cdk.Stack {
     const integrationsIntegration = new apigateway.LambdaIntegration(integrationsLambda, { proxy: true });
     const scrapersIntegration = new apigateway.LambdaIntegration(scrapersLambda, { proxy: true });
     const settingsIntegration = new apigateway.LambdaIntegration(settingsLambda, { proxy: true });
+    const feedbackFormIntegration = new apigateway.LambdaIntegration(feedbackFormLambda, { proxy: true });
     const chatIntegration = new apigateway.LambdaIntegration(chatLambda, { proxy: true });
     const projectsIntegration = new apigateway.LambdaIntegration(projectsLambda, { proxy: true });
     const webhookIntegration = new apigateway.LambdaIntegration(trustpilotWebhook, { proxy: true });
@@ -543,6 +578,29 @@ export class VocAnalyticsStack extends cdk.Stack {
     settingsCategoriesResource.addMethod('PUT', settingsIntegration);
     const categoriesGenerateResource = settingsCategoriesResource.addResource('generate');
     categoriesGenerateResource.addMethod('POST', settingsIntegration);
+
+    // ============================================
+    // Feedback Form Lambda: /feedback-form/* (legacy single form)
+    // ============================================
+    const feedbackFormResource = this.api.root.addResource('feedback-form');
+    const feedbackFormConfigResource = feedbackFormResource.addResource('config');
+    feedbackFormConfigResource.addMethod('GET', feedbackFormIntegration);
+    feedbackFormConfigResource.addMethod('PUT', feedbackFormIntegration);
+    const feedbackFormSubmitResource = feedbackFormResource.addResource('submit');
+    feedbackFormSubmitResource.addMethod('POST', feedbackFormIntegration);
+    const feedbackFormEmbedResource = feedbackFormResource.addResource('embed');
+    feedbackFormEmbedResource.addMethod('GET', feedbackFormIntegration);
+    const feedbackFormIframeResource = feedbackFormResource.addResource('iframe');
+    feedbackFormIframeResource.addMethod('GET', feedbackFormIntegration);
+
+    // ============================================
+    // Feedback Forms Lambda: /feedback-forms/* (multiple forms)
+    // ============================================
+    const feedbackFormsResource = this.api.root.addResource('feedback-forms');
+    feedbackFormsResource.addMethod('GET', feedbackFormIntegration);  // List all forms
+    feedbackFormsResource.addMethod('POST', feedbackFormIntegration); // Create form
+    // Use proxy for dynamic form_id routes: /feedback-forms/{form_id}/*
+    feedbackFormsResource.addProxy({ defaultIntegration: feedbackFormIntegration, anyMethod: true });
 
     // ============================================
     // Projects Lambda: /projects/*

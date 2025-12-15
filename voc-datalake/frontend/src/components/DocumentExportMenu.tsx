@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Copy, Check, FileDown, MoreVertical, FileText, FileType } from 'lucide-react'
-import type { ProjectDocument } from '../api/client'
+import { Copy, Check, FileDown, MoreVertical, FileText, FileType, Sparkles } from 'lucide-react'
+import type { ProjectDocument, Project } from '../api/client'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import ReactMarkdown from 'react-markdown'
@@ -9,11 +9,13 @@ import { createRoot } from 'react-dom/client'
 
 interface DocumentExportMenuProps {
   document: ProjectDocument | null
+  project?: Project | null
 }
 
-export default function DocumentExportMenu({ document: doc }: DocumentExportMenuProps) {
+export default function DocumentExportMenu({ document: doc, project }: DocumentExportMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copiedKiro, setCopiedKiro] = useState(false)
   const [exporting, setExporting] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -35,6 +37,21 @@ export default function DocumentExportMenu({ document: doc }: DocumentExportMenu
     await navigator.clipboard.writeText(doc.content)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const copyToKiro = async () => {
+    // Build the Kiro export content: prompt + PRD
+    const kiroPrompt = project?.kiro_export_prompt || ''
+    const separator = kiroPrompt ? '\n\n---\n\n' : ''
+    const prdSection = `# ${doc.title}\n\n${doc.content}`
+    const fullContent = kiroPrompt 
+      ? `${kiroPrompt}${separator}## PRD Document\n\n${prdSection}`
+      : prdSection
+    
+    await navigator.clipboard.writeText(fullContent)
+    setCopiedKiro(true)
+    setTimeout(() => setCopiedKiro(false), 2000)
+    setIsOpen(false)
   }
 
   const downloadAsMarkdown = () => {
@@ -248,6 +265,24 @@ export default function DocumentExportMenu({ document: doc }: DocumentExportMenu
             <FileType size={16} />
             Download as TXT
           </button>
+
+          {(doc.document_type === 'prd' || doc.document_type === 'prfaq') && (
+            <>
+              <hr className="my-1 border-gray-100" />
+              <button
+                onClick={copyToKiro}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50"
+              >
+                {copiedKiro ? <Check size={16} className="text-green-500" /> : <Sparkles size={16} />}
+                {copiedKiro ? 'Copied!' : 'Copy to Kiro'}
+              </button>
+              {!project?.kiro_export_prompt && (
+                <p className="px-3 py-1 text-xs text-gray-400">
+                  Tip: Configure Kiro prompt in project settings
+                </p>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>

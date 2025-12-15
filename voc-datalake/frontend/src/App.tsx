@@ -11,6 +11,8 @@ import Scrapers from './pages/Scrapers'
 import Chat from './pages/Chat'
 import Projects from './pages/Projects'
 import ProjectDetail from './pages/ProjectDetail'
+import Prioritization from './pages/Prioritization'
+import FeedbackForms from './pages/FeedbackForms'
 
 export default function App() {
   return (
@@ -24,8 +26,10 @@ export default function App() {
         <Route path="chat" element={<Chat />} />
         <Route path="projects" element={<Projects />} />
         <Route path="projects/:id" element={<ProjectDetail />} />
+        <Route path="prioritization" element={<Prioritization />} />
         <Route path="pipelines" element={<Pipelines />} />
         <Route path="scrapers" element={<Scrapers />} />
+        <Route path="feedback-forms" element={<FeedbackForms />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

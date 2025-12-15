@@ -9,6 +9,7 @@ const routeLabels: Record<string, string> = {
   'chat': 'AI Chat',
   'pipelines': 'Pipelines',
   'scrapers': 'Web Scrapers',
+  'feedback-forms': 'Feedback Forms',
   'settings': 'Settings',
 }
 

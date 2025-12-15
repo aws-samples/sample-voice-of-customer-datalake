@@ -66,6 +66,9 @@ export class VocStorageStack extends cdk.Stack {
 
     // CloudFront distribution for serving persona avatar images
     // Only serves from the avatars/ prefix for security
+    // Note: Using OAC with KMS-encrypted S3 requires a wildcard in the key policy during initial deployment.
+    // After first deploy, you can scope down the policy using the distribution ID.
+    // See: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html
     const avatarsDistribution = new cloudfront.Distribution(this, 'AvatarsDistribution', {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket, {
@@ -81,6 +84,10 @@ export class VocStorageStack extends cdk.Stack {
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       comment: 'VoC Persona Avatars CDN',
     });
+
+    // Acknowledge the KMS wildcard warning - this is expected for initial deployment
+    // After deploying, you can manually update the KMS key policy to use the specific distribution ID
+    cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
 
     this.avatarsCdnUrl = `https://${avatarsDistribution.distributionDomainName}`;
 

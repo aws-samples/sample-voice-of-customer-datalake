@@ -69,23 +69,20 @@ CATEGORIES_CACHE_TTL = 300  # 5 minutes
 
 
 @tracer.capture_method
-def get_categories_config() -> dict:
+def get_categories_config() -> list:
     """Fetch categories configuration from DynamoDB with caching."""
     global _categories_cache, _categories_cache_time
     
     now = datetime.now(timezone.utc).timestamp()
     
     # Return cached if still valid
-    if _categories_cache and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
+    if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
         return _categories_cache
     
     try:
-        # Try to get from projects table (same as API uses)
-        projects_table_name = os.environ.get('PROJECTS_TABLE', 'voc-projects')
-        projects_table = dynamodb.Table(projects_table_name)
-        
-        response = projects_table.get_item(
-            Key={'pk': 'SETTINGS', 'sk': 'CATEGORIES'}
+        # Fetch from aggregates table (same location as settings API saves)
+        response = aggregates_table.get_item(
+            Key={'pk': 'SETTINGS#categories', 'sk': 'config'}
         )
         item = response.get('Item')
         
@@ -97,14 +94,19 @@ def get_categories_config() -> dict:
     except Exception as e:
         logger.warning(f"Could not fetch categories from DynamoDB: {e}")
     
-    return None
+    # Cache empty result to avoid repeated failed lookups
+    _categories_cache = []
+    _categories_cache_time = now
+    return []
 
 
 def build_categories_instruction() -> str:
     """Build the categories instruction for the LLM prompt."""
     categories_config = get_categories_config()
     
+    # Fallback to defaults if no categories configured
     if not categories_config:
+        logger.info("No custom categories configured, using defaults")
         return f"Available categories: {DEFAULT_CATEGORIES}"
     
     # Build detailed instruction with categories and subcategories
@@ -335,7 +337,13 @@ def process_feedback(raw_record: dict) -> dict:
     llm_result = invoke_bedrock_llm(raw_record)
     insights = llm_result.get('insights', {})
     persona = insights.get('persona', {})
-    category = insights.get('category', 'other')
+    
+    # Use preset category from feedback form if provided, otherwise use LLM result
+    preset_category = raw_record.get('preset_category', '')
+    preset_subcategory = raw_record.get('preset_subcategory', '')
+    category = preset_category if preset_category else insights.get('category', 'other')
+    subcategory_from_llm = insights.get('subcategory')
+    
     urgency = insights.get('urgency', 'low')
     sentiment_score = insights.get('sentiment_score', sentiment['score'])
     
@@ -375,7 +383,7 @@ def process_feedback(raw_record: dict) -> dict:
         'rating': raw_record.get('rating'),
         
         'category': category,
-        'subcategory': insights.get('subcategory'),
+        'subcategory': preset_subcategory if preset_subcategory else subcategory_from_llm,
         'journey_stage': insights.get('journey_stage', 'unknown'),
         'sentiment_label': insights.get('sentiment_label', sentiment['label']),
         'sentiment_score': Decimal(str(round(sentiment_score, 3))),

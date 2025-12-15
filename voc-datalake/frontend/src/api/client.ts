@@ -614,6 +614,16 @@ export const api = {
       method: 'DELETE'
     }),
 
+  // Prioritization
+  getPrioritizationScores: () => 
+    fetchApi<{ scores: Record<string, PrioritizationScore> }>('/projects/prioritization'),
+  
+  savePrioritizationScores: (scores: Record<string, PrioritizationScore>) =>
+    fetchApi<{ success: boolean }>('/projects/prioritization', {
+      method: 'PUT',
+      body: JSON.stringify({ scores })
+    }),
+
   // S3 Import File Explorer
   getS3ImportSources: () => fetchApi<{ sources: S3ImportSource[]; bucket: string | null }>('/s3-import/sources'),
   
@@ -640,6 +650,44 @@ export const api = {
     fetchApi<{ success: boolean; message?: string }>(`/s3-import/file/${encodeURIComponent(key)}`, {
       method: 'DELETE'
     }),
+
+  // Feedback Form (Embeddable) - Legacy single form
+  getFeedbackFormConfig: () => fetchApi<{ success: boolean; config: FeedbackFormConfig }>('/feedback-form/config'),
+  
+  saveFeedbackFormConfig: (config: FeedbackFormConfig) =>
+    fetchApi<{ success: boolean; message: string }>('/feedback-form/config', {
+      method: 'PUT',
+      body: JSON.stringify(config)
+    }),
+  
+  submitFeedbackForm: (data: { text: string; rating?: number; email?: string; name?: string; page_url?: string; custom_fields?: Record<string, string> }) =>
+    fetchApi<{ success: boolean; feedback_id?: string; message: string }>('/feedback-form/submit', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  getFeedbackFormEmbed: (apiEndpoint: string) =>
+    fetchApi<{ success: boolean; script_embed: string; iframe_embed: string }>(`/feedback-form/embed?api_endpoint=${encodeURIComponent(apiEndpoint)}`),
+
+  // Feedback Forms (Multiple forms management)
+  getFeedbackForms: () => fetchApi<{ success: boolean; forms: FeedbackForm[] }>('/feedback-forms'),
+  
+  getFeedbackForm: (formId: string) => fetchApi<{ success: boolean; form: FeedbackForm }>(`/feedback-forms/${formId}`),
+  
+  createFeedbackForm: (form: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>) =>
+    fetchApi<{ success: boolean; form: FeedbackForm }>('/feedback-forms', {
+      method: 'POST',
+      body: JSON.stringify(form)
+    }),
+  
+  updateFeedbackForm: (formId: string, form: Partial<FeedbackForm>) =>
+    fetchApi<{ success: boolean; form: FeedbackForm }>(`/feedback-forms/${formId}`, {
+      method: 'PUT',
+      body: JSON.stringify(form)
+    }),
+  
+  deleteFeedbackForm: (formId: string) =>
+    fetchApi<{ success: boolean }>(`/feedback-forms/${formId}`, { method: 'DELETE' }),
 }
 
 // Project types
@@ -750,12 +798,22 @@ export interface Project {
   persona_count: number
   document_count: number
   filters?: Record<string, unknown>
+  kiro_export_prompt?: string
 }
 
 export interface ProjectDetail {
   project: Project
   personas: ProjectPersona[]
   documents: ProjectDocument[]
+}
+
+export interface PrioritizationScore {
+  document_id: string
+  impact: number
+  time_to_market: number
+  confidence: number
+  strategic_fit: number
+  notes: string
 }
 
 export interface S3ImportSource {
@@ -770,6 +828,57 @@ export interface S3ImportFile {
   size: number
   last_modified: string
   status: 'pending' | 'processed'
+}
+
+export interface FeedbackFormConfig {
+  enabled: boolean
+  title: string
+  description: string
+  question: string
+  placeholder: string
+  rating_enabled: boolean
+  rating_type: 'stars' | 'numeric' | 'emoji'
+  rating_max: number
+  submit_button_text: string
+  success_message: string
+  theme: {
+    primary_color: string
+    background_color: string
+    text_color: string
+    border_radius: string
+  }
+  collect_email: boolean
+  collect_name: boolean
+  custom_fields: Array<{ id: string; label: string; type: string; required: boolean }>
+  brand_name: string
+}
+
+export interface FeedbackForm {
+  form_id: string
+  name: string
+  enabled: boolean
+  title: string
+  description: string
+  question: string
+  placeholder: string
+  rating_enabled: boolean
+  rating_type: 'stars' | 'numeric' | 'emoji'
+  rating_max: number
+  submit_button_text: string
+  success_message: string
+  theme: {
+    primary_color: string
+    background_color: string
+    text_color: string
+    border_radius: string
+  }
+  collect_email: boolean
+  collect_name: boolean
+  custom_fields: Array<{ id: string; label: string; type: string; required: boolean }>
+  category: string
+  subcategory: string
+  created_at: string
+  updated_at: string
 }
 
 export function getDaysFromRange(range: string, customRange?: { start: string; end: string } | null): number {

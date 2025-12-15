@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Users, FileText, MessageSquare, Search, Sparkles, Send, User, Bot, Loader2, X, Trash2, Pencil, Clock, CheckCircle, XCircle } from 'lucide-react'
+import { ArrowLeft, Users, FileText, MessageSquare, Search, Sparkles, Send, User, Bot, Loader2, X, Trash2, Pencil, Clock, CheckCircle, XCircle, Settings, Check } from 'lucide-react'
 import { api } from '../api/client'
-import type { ProjectPersona, ProjectDocument, ProjectJob } from '../api/client'
+import type { ProjectPersona, ProjectDocument, ProjectJob, Project } from '../api/client'
 import { useConfigStore } from '../store/configStore'
 import { format } from 'date-fns'
 import ReactMarkdown from 'react-markdown'
@@ -217,6 +217,126 @@ function ResearchNotes({ persona, onSave, isSaving }: {
       <p className="text-xs text-gray-400">
         💡 Tip: Add observations from user interviews, usability tests, or data analysis that relate to this persona.
       </p>
+    </div>
+  )
+}
+
+// Kiro Export Settings Component
+function KiroExportSettings({ project, onSave }: { project: Project; onSave: (prompt: string) => void }) {
+  const [prompt, setPrompt] = useState(project.kiro_export_prompt || '')
+  const [isEditing, setIsEditing] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    setPrompt(project.kiro_export_prompt || '')
+  }, [project.kiro_export_prompt])
+
+  const handleSave = () => {
+    onSave(prompt)
+    setIsEditing(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const defaultPrompt = `# Kiro Implementation Context
+
+## Project Overview
+Implement the following PRD for [Your Project Name].
+
+## Tech Stack
+- Frontend: React + TypeScript + Tailwind CSS
+- Backend: [Your backend stack]
+- Database: [Your database]
+
+## Coding Standards
+- Follow existing code patterns in the codebase
+- Use TypeScript strict mode
+- Write unit tests for new functionality
+- Follow the project's ESLint configuration
+
+## Implementation Notes
+- [Add specific implementation guidance here]
+- [Reference relevant files or patterns]
+- [Note any constraints or requirements]`
+
+  return (
+    <div className="bg-white rounded-xl p-6 border">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+            <Sparkles size={20} className="text-purple-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold">Kiro Export Settings</h3>
+            <p className="text-sm text-gray-500">Configure context for "Copy to Kiro" exports</p>
+          </div>
+        </div>
+        {!isEditing && (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 rounded-lg"
+          >
+            <Settings size={16} />
+            {prompt ? 'Edit' : 'Configure'}
+          </button>
+        )}
+      </div>
+
+      {isEditing ? (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Export Prompt Template
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              This context will be prepended to PRD/PR-FAQ documents when using "Copy to Kiro". 
+              Include your tech stack, coding standards, and implementation guidance.
+            </p>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder={defaultPrompt}
+              rows={12}
+              className="w-full px-3 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setPrompt(defaultPrompt)}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              Use default template
+            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setIsEditing(false); setPrompt(project.kiro_export_prompt || '') }}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              >
+                {saved ? <Check size={16} /> : <Sparkles size={16} />}
+                {saved ? 'Saved!' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : prompt ? (
+        <div className="bg-gray-50 rounded-lg p-4">
+          <pre className="text-sm text-gray-600 whitespace-pre-wrap font-mono max-h-32 overflow-y-auto">
+            {prompt.slice(0, 300)}{prompt.length > 300 ? '...' : ''}
+          </pre>
+        </div>
+      ) : (
+        <div className="text-center py-6 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+          <Sparkles size={24} className="mx-auto text-gray-400 mb-2" />
+          <p className="text-gray-500 text-sm">No Kiro export prompt configured</p>
+          <p className="text-gray-400 text-xs mt-1">Click "Configure" to add implementation context for PRD exports</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -784,6 +904,12 @@ export default function ProjectDetail() {
             <div className="bg-white rounded-xl p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"><FileText size={20} className="text-blue-600" /></div><div><h3 className="font-semibold">Generate PRD / PR-FAQ</h3><p className="text-sm text-gray-500">Create product documents from feedback</p></div></div><button onClick={() => setActiveWizard('doc')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"><FileText size={16} />Configure & Generate</button></div>
             <div className="bg-white rounded-xl p-6 border lg:col-span-2"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center"><Search size={20} className="text-amber-600" /></div><div><h3 className="font-semibold">Run Research</h3><p className="text-sm text-gray-500">Deep dive into feedback with filters</p></div></div><button onClick={() => setActiveWizard('research')} className="w-full py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 flex items-center justify-center gap-2"><Search size={16} />Configure & Run Research</button></div>
           </div>
+
+          {/* Kiro Export Settings */}
+          <KiroExportSettings project={project} onSave={(prompt) => {
+            api.updateProject(project.project_id, { kiro_export_prompt: prompt })
+              .then(() => queryClient.invalidateQueries({ queryKey: ['project', id] }))
+          }} />
         </div>
       )}
 
@@ -1170,7 +1296,7 @@ export default function ProjectDetail() {
                   <div className="flex items-start justify-between mb-4">
                     <h2 className="text-xl font-bold">{selectedDoc.title}</h2>
                     <div className="flex items-center gap-2">
-                      <DocumentExportMenu document={selectedDoc} />
+                      <DocumentExportMenu document={selectedDoc} project={project} />
                       <button 
                         onClick={() => { setEditingDoc(selectedDoc); setNewDocTitle(selectedDoc.title); setNewDocContent(selectedDoc.content) }}
                         className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"

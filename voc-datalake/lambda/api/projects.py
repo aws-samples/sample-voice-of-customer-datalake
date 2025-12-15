@@ -170,6 +170,7 @@ def create_project(body: dict) -> dict:
         'persona_count': 0,
         'document_count': 0,
         'filters': body.get('filters', {}),
+        'kiro_export_prompt': body.get('kiro_export_prompt', ''),
     }
     
     projects_table.put_item(Item=item)
@@ -259,26 +260,35 @@ def update_project(project_id: str, body: dict) -> dict:
     
     update_expr = 'SET updated_at = :now'
     expr_values = {':now': now}
+    expr_names = {}
     
     if 'name' in body:
         update_expr += ', #name = :name'
         expr_values[':name'] = body['name']
+        expr_names['#name'] = 'name'
     if 'description' in body:
         update_expr += ', description = :desc'
         expr_values[':desc'] = body['description']
     if 'status' in body:
         update_expr += ', #status = :status'
         expr_values[':status'] = body['status']
+        expr_names['#status'] = 'status'
     if 'filters' in body:
         update_expr += ', filters = :filters'
         expr_values[':filters'] = body['filters']
+    if 'kiro_export_prompt' in body:
+        update_expr += ', kiro_export_prompt = :kiro_prompt'
+        expr_values[':kiro_prompt'] = body['kiro_export_prompt']
     
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression=update_expr,
-        ExpressionAttributeValues=expr_values,
-        ExpressionAttributeNames={'#name': 'name', '#status': 'status'}
-    )
+    update_params = {
+        'Key': {'pk': f'PROJECT#{project_id}', 'sk': 'META'},
+        'UpdateExpression': update_expr,
+        'ExpressionAttributeValues': expr_values,
+    }
+    if expr_names:
+        update_params['ExpressionAttributeNames'] = expr_names
+    
+    projects_table.update_item(**update_params)
     
     return {'success': True}
 

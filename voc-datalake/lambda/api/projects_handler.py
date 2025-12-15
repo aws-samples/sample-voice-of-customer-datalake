@@ -464,6 +464,57 @@ def api_delete_job(project_id: str, job_id: str):
     return {'success': True}
 
 
+# =============================================================================
+# PRIORITIZATION ENDPOINTS
+# Store and retrieve PR/FAQ prioritization scores across all projects
+# =============================================================================
+
+@app.get("/projects/prioritization")
+@tracer.capture_method
+def api_get_prioritization_scores():
+    """Get all prioritization scores."""
+    import boto3
+    
+    aggregates_table = boto3.resource('dynamodb').Table(os.environ.get('AGGREGATES_TABLE', ''))
+    
+    try:
+        response = aggregates_table.get_item(
+            Key={'pk': 'PRIORITIZATION', 'sk': 'SCORES'}
+        )
+        item = response.get('Item', {})
+        scores = item.get('scores', {})
+        return {'scores': scores}
+    except Exception as e:
+        logger.warning(f"Failed to get prioritization scores: {e}")
+        return {'scores': {}}
+
+
+@app.put("/projects/prioritization")
+@tracer.capture_method
+def api_save_prioritization_scores():
+    """Save prioritization scores."""
+    import boto3
+    from datetime import datetime, timezone
+    
+    body = app.current_event.json_body or {}
+    scores = body.get('scores', {})
+    
+    aggregates_table = boto3.resource('dynamodb').Table(os.environ.get('AGGREGATES_TABLE', ''))
+    now = datetime.now(timezone.utc).isoformat()
+    
+    try:
+        aggregates_table.put_item(Item={
+            'pk': 'PRIORITIZATION',
+            'sk': 'SCORES',
+            'scores': scores,
+            'updated_at': now
+        })
+        return {'success': True}
+    except Exception as e:
+        logger.exception(f"Failed to save prioritization scores: {e}")
+        return {'success': False, 'message': str(e)}
+
+
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 def lambda_handler(event: dict, context: Any) -> dict:
