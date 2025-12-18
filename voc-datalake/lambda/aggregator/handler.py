@@ -70,7 +70,9 @@ def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90):
 def process_new_feedback(item: dict):
     """Update aggregates for a new feedback item."""
     date = item.get('date', datetime.now(timezone.utc).strftime('%Y-%m-%d'))
-    source = item.get('source_platform', 'unknown')
+    source_platform = item.get('source_platform', 'unknown')
+    # Use brand_name for source display (e.g., "Gucci - Trustpilot"), fallback to source_platform
+    source_display = item.get('brand_name') or source_platform
     category = item.get('category', 'other')
     sentiment_label = item.get('sentiment_label', 'neutral')
     sentiment_score = item.get('sentiment_score', Decimal('0'))
@@ -80,8 +82,8 @@ def process_new_feedback(item: dict):
     # Daily totals
     update_counter('METRIC#daily_total', date, 'count')
     
-    # Daily by source
-    update_counter(f'METRIC#daily_source#{source}', date, 'count')
+    # Daily by source (use brand_name for better display names)
+    update_counter(f'METRIC#daily_source#{source_display}', date, 'count')
     
     # Daily by category
     update_counter(f'METRIC#daily_category#{category}', date, 'count')
@@ -104,7 +106,7 @@ def process_new_feedback(item: dict):
     # Category + sentiment combo
     update_counter(f'METRIC#category_sentiment#{category}#{sentiment_label}', date, 'count')
     
-    logger.info(f"Updated aggregates for date={date}, source={source}, category={category}")
+    logger.info(f"Updated aggregates for date={date}, source={source_display}, category={category}")
 
 
 def record_handler(record: DynamoDBRecord) -> dict:

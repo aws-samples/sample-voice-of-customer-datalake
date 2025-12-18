@@ -107,7 +107,7 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 │  └────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                   │
 │  ┌────────────────────────────────────────────────────────────────────────────┐  │
-│  │  DynamoDB: voc-projects, voc-jobs, voc-pipelines, voc-conversations        │  │
+│  │  DynamoDB: voc-projects, voc-jobs, voc-conversations                       │  │
 │  └────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                   │
 └──────────────────────────────────────┬────────────────────────────────────────────┘
@@ -122,9 +122,8 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 │  │                                                                             │  │
 │  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐         │  │
 │  │  │ Metrics Lambda   │  │  Ops Lambda      │  │ Projects Lambda  │         │  │
-│  │  │ /feedback/*      │  │ /pipelines/*     │  │ /projects/*      │         │  │
-│  │  │ /metrics/*       │  │ /integrations/*  │  │ /chat (stream)   │         │  │
-│  │  │                  │  │ /sources/*       │  │                  │         │  │
+│  │  │ /feedback/*      │  │ /integrations/*  │  │ /projects/*      │         │  │
+│  │  │ /metrics/*       │  │ /sources/*       │  │ /chat (stream)   │         │  │
 │  │  │                  │  │ /scrapers/*      │  │                  │         │  │
 │  │  │                  │  │ /chat/*          │  │                  │         │  │
 │  │  │                  │  │ /settings/*      │  │                  │         │  │

@@ -194,7 +194,7 @@ voc-datalake/
 The infrastructure is organized into multiple stacks for modularity:
 
 ### VocStorageStack
-- **DynamoDB Tables**: feedback, aggregates, watermarks, pipelines, projects, jobs, conversations
+- **DynamoDB Tables**: feedback, aggregates, watermarks, projects, jobs, conversations
 - **KMS Key**: Customer-managed encryption key with rotation enabled
 - **Indexes**: GSI1 (by-date), GSI2 (by-category), GSI3 (by-urgency)
 - **Streams**: Enabled on feedback table for real-time aggregation
@@ -214,7 +214,7 @@ The infrastructure is organized into multiple stacks for modularity:
 ### VocAnalyticsStack
 - **API Gateway**: REST API with CORS, throttling (100 req/s, 200 burst)
 - **Metrics Lambda**: Read-only queries (/feedback/*, /metrics/*)
-- **Ops Lambda**: CRUD operations (/pipelines/*, /integrations/*, /sources/*, /scrapers/*, /chat/*, /settings/*)
+- **Ops Lambda**: CRUD operations (/integrations/*, /sources/*, /scrapers/*, /chat/*, /settings/*)
 - **Projects Lambda**: Project management (/projects/*)
 - **Chat Stream Lambda**: Function URL for streaming responses (bypasses API Gateway 29s timeout)
 - **Webhook Lambda**: Trustpilot webhook receiver

@@ -40,6 +40,7 @@ export default function Categories() {
   // State
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>([])
+  const [selectedSource, setSelectedSource] = useState<string | null>(null)
   const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>('all')
   const [minRating, setMinRating] = useState<number>(0)
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
@@ -63,6 +64,13 @@ export default function Categories() {
     queryFn: () => api.getEntities({ days, limit: 50 }),
     enabled: !!config.apiEndpoint,
   })
+
+  // Build dynamic sources list from entities
+  const allSources = useMemo(() => {
+    if (!entities?.entities?.sources) return []
+    return Object.keys(entities.entities.sources)
+      .sort((a, b) => (entities.entities.sources[b] || 0) - (entities.entities.sources[a] || 0))
+  }, [entities])
 
   // Determine if we should fetch feedback (categories or keywords selected)
   const shouldFetchFeedback = selectedCategories.length > 0 || selectedKeywords.length > 0
@@ -137,12 +145,14 @@ export default function Categories() {
       .map(([word, count]) => ({ word, count }))
   }, [entities])
 
-  // Filter feedback by rating, categories, and keywords
+  // Filter feedback by rating, categories, keywords, and source
   const filteredFeedback = useMemo(() => {
     if (!feedbackData?.items) return []
     return feedbackData.items.filter(item => {
       if (minRating > 0 && (!item.rating || item.rating < minRating)) return false
       if (selectedCategories.length > 1 && !selectedCategories.includes(item.category)) return false
+      // Filter by source
+      if (selectedSource && item.brand_name !== selectedSource) return false
       // Filter by keywords - check if feedback text contains any selected keyword
       if (selectedKeywords.length > 0) {
         const text = (item.original_text + ' ' + (item.problem_summary || '')).toLowerCase()
@@ -151,7 +161,7 @@ export default function Categories() {
       }
       return true
     })
-  }, [feedbackData, minRating, selectedCategories, selectedKeywords])
+  }, [feedbackData, minRating, selectedCategories, selectedKeywords, selectedSource])
 
   // Handlers
   const toggleCategory = (category: string) => {
@@ -173,11 +183,12 @@ export default function Categories() {
   const clearFilters = () => {
     setSelectedCategories([])
     setSelectedKeywords([])
+    setSelectedSource(null)
     setSentimentFilter('all')
     setMinRating(0)
   }
 
-  const hasActiveFilters = selectedCategories.length > 0 || selectedKeywords.length > 0 || sentimentFilter !== 'all' || minRating > 0
+  const hasActiveFilters = selectedCategories.length > 0 || selectedKeywords.length > 0 || selectedSource !== null || sentimentFilter !== 'all' || minRating > 0
 
   const exportData = () => {
     const dataToExport = filteredFeedback.length > 0 ? filteredFeedback : feedbackData?.items || []
@@ -409,6 +420,19 @@ export default function Categories() {
         {showFilters && (
           <div className="mb-4 p-4 bg-gray-50 rounded-lg flex flex-wrap gap-4">
             <div>
+              <label className="block text-xs text-gray-500 mb-1">Source</label>
+              <select
+                value={selectedSource || ''}
+                onChange={(e) => setSelectedSource(e.target.value || null)}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="">All Sources</option>
+                {allSources.map(source => (
+                  <option key={source} value={source}>{source}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="block text-xs text-gray-500 mb-1">Min Rating</label>
               <div className="flex gap-1">
                 {[0, 1, 2, 3, 4, 5].map(rating => (
@@ -488,8 +512,9 @@ export default function Categories() {
                 </span>
               </h2>
               <p className="text-sm text-gray-500">
-                {selectedCategories.length > 0 && `Categories: ${selectedCategories.map(c => c.replace('_', ' ')).join(', ')}`}
-                {selectedKeywords.length > 0 && `${selectedCategories.length > 0 ? ' • ' : ''}Keywords: ${selectedKeywords.join(', ')}`}
+                {selectedSource && `Source: ${selectedSource}`}
+                {selectedCategories.length > 0 && `${selectedSource ? ' • ' : ''}Categories: ${selectedCategories.map(c => c.replace('_', ' ')).join(', ')}`}
+                {selectedKeywords.length > 0 && `${selectedSource || selectedCategories.length > 0 ? ' • ' : ''}Keywords: ${selectedKeywords.join(', ')}`}
                 {sentimentFilter !== 'all' && ` • ${sentimentFilter}`}
                 {minRating > 0 && ` • ${minRating}+ stars`}
               </p>

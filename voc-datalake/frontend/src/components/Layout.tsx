@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, MessageSquare, FolderOpen, Settings, Bot, AlertTriangle, GitBranch, Globe, PanelLeftClose, PanelLeft, Briefcase, SearchX, ListOrdered, FileText } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, FolderOpen, Settings, Bot, AlertTriangle, Globe, PanelLeftClose, PanelLeft, Briefcase, SearchX, ListOrdered, FileText } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, getDaysFromRange } from '../api/client'
 import { useConfigStore } from '../store/configStore'
@@ -16,7 +16,6 @@ const navItems = [
   { to: '/chat', icon: Bot, label: 'AI Chat' },
   { to: '/projects', icon: Briefcase, label: 'Projects' },
   { to: '/prioritization', icon: ListOrdered, label: 'Prioritization' },
-  { to: '/pipelines', icon: GitBranch, label: 'Pipelines' },
   { to: '/scrapers', icon: Globe, label: 'Scrapers' },
   { to: '/feedback-forms', icon: FileText, label: 'Feedback Forms' },
   { to: '/settings', icon: Settings, label: 'Settings' },

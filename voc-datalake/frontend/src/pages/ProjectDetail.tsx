@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Users, FileText, MessageSquare, Search, Sparkles, Send, User, Bot, Loader2, X, Trash2, Pencil, Clock, CheckCircle, XCircle, Settings, Check } from 'lucide-react'
+import { ArrowLeft, Users, FileText, MessageSquare, Search, Sparkles, Send, User, Bot, Loader2, X, Trash2, Pencil, Clock, CheckCircle, XCircle, Settings, Check, Upload, Image, FileUp, Shuffle } from 'lucide-react'
 import { api } from '../api/client'
 import type { ProjectPersona, ProjectDocument, ProjectJob, Project } from '../api/client'
 import { useConfigStore } from '../store/configStore'
@@ -14,6 +14,13 @@ import PersonaExportMenu from '../components/PersonaExportMenu'
 import DataSourceWizard, { ContextSummary, defaultContextConfig, type ContextConfig } from '../components/DataSourceWizard'
 
 type Tab = 'overview' | 'personas' | 'documents' | 'chat'
+
+// Tool-specific configs (extend shared context)
+interface MergeToolConfig { 
+  outputType: 'prd' | 'prfaq' | 'custom'
+  title: string
+  instructions: string
+}
 
 // Persona Avatar Component - shows AI-generated image or fallback
 // Circular avatar with max 128px for large size to fit nicely in persona header
@@ -345,6 +352,7 @@ Implement the following PRD for [Your Project Name].
 interface PersonaToolConfig { personaCount: number; customInstructions: string }
 interface ResearchToolConfig { question: string }
 interface DocToolConfig { docType: 'prd' | 'prfaq'; title: string; featureIdea: string; customerQuestions: string[] }
+// MergeToolConfig is defined above
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -357,13 +365,14 @@ export default function ProjectDetail() {
   const [generating, setGenerating] = useState<string | null>(null)
   const [selectedDoc, setSelectedDoc] = useState<ProjectDocument | null>(null)
   // Unified wizard state
-  const [activeWizard, setActiveWizard] = useState<'persona' | 'research' | 'doc' | null>(null)
+  const [activeWizard, setActiveWizard] = useState<'persona' | 'research' | 'doc' | 'merge' | null>(null)
   const [contextConfig, setContextConfig] = useState<ContextConfig>(defaultContextConfig)
   
   // Tool-specific state
   const [personaConfig, setPersonaConfig] = useState<PersonaToolConfig>({ personaCount: 3, customInstructions: '' })
   const [researchConfig, setResearchConfig] = useState<ResearchToolConfig>({ question: '' })
   const [docConfig, setDocConfig] = useState<DocToolConfig>({ docType: 'prd', title: '', featureIdea: '', customerQuestions: ['', '', '', '', ''] })
+  const [mergeConfig, setMergeConfig] = useState<MergeToolConfig>({ outputType: 'prfaq', title: '', instructions: '' })
   const [showDocModal, setShowDocModal] = useState(false)
   const [editingDoc, setEditingDoc] = useState<ProjectDocument | null>(null)
   const [newDocTitle, setNewDocTitle] = useState('')
@@ -372,6 +381,13 @@ export default function ProjectDetail() {
   // Persona editing state
   const [selectedPersona, setSelectedPersona] = useState<ProjectPersona | null>(null)
   const [editingPersona, setEditingPersona] = useState<ProjectPersona | null>(null)
+  
+  // Persona import state
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importType, setImportType] = useState<'pdf' | 'image' | 'text'>('text')
+  const [importContent, setImportContent] = useState('')
+  const [importMediaType, setImportMediaType] = useState('')
+  const [importFileName, setImportFileName] = useState('')
   
   // Mention autocomplete state
   const [showMentionMenu, setShowMentionMenu] = useState(false)
@@ -427,6 +443,7 @@ export default function ProjectDetail() {
     setPersonaConfig({ personaCount: 3, customInstructions: '' })
     setResearchConfig({ question: '' })
     setDocConfig({ docType: 'prd', title: '', featureIdea: '', customerQuestions: ['', '', '', '', ''] })
+    setMergeConfig({ outputType: 'prfaq', title: '', instructions: '' })
     setGenerating(null)
   }
 
@@ -472,6 +489,25 @@ export default function ProjectDetail() {
   })
   
   const dismissJobMut = useMutation({ mutationFn: (jobId: string) => api.dismissJob(id!, jobId), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['project-jobs', id] }) })
+  
+  const mergeMut = useMutation({
+    mutationFn: () => api.mergeDocuments(id!, {
+      output_type: mergeConfig.outputType,
+      title: mergeConfig.title,
+      instructions: mergeConfig.instructions,
+      selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
+      selected_persona_ids: contextConfig.selectedPersonaIds,
+      use_feedback: contextConfig.useFeedback,
+      feedback_sources: contextConfig.sources,
+      feedback_categories: contextConfig.categories,
+      days: contextConfig.days,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      resetWizard()
+    },
+    onError: () => setGenerating(null)
+  })
   
   const resMut = useMutation({ 
     mutationFn: () => api.runResearch(id!, { 
@@ -532,6 +568,22 @@ export default function ProjectDetail() {
       setSelectedPersona(null)
     }
   })
+  
+  const importPersonaMut = useMutation({
+    mutationFn: (data: { input_type: 'pdf' | 'image' | 'text'; content: string; media_type?: string }) => 
+      api.importPersona(id!, data),
+    onSuccess: (result) => { 
+      queryClient.invalidateQueries({ queryKey: ['project', id] })
+      setShowImportModal(false)
+      setImportContent('')
+      setImportFileName('')
+      setImportMediaType('')
+      if (result.persona) {
+        setSelectedPersona(result.persona)
+      }
+    }
+  })
+  
   const sendChat = () => { 
     if (!chatInput.trim() || chatMut.isPending) return
     
@@ -796,6 +848,76 @@ export default function ProjectDetail() {
         />
       )}
 
+      {/* Remix Documents Wizard */}
+      {activeWizard === 'merge' && (
+        <DataSourceWizard
+          title="Remix Documents"
+          accentColor="green"
+          icon={<div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><Shuffle size={20} className="text-green-600" /></div>}
+          personas={personas}
+          documents={documents}
+          contextConfig={contextConfig}
+          onContextChange={setContextConfig}
+          hideDataSources={['feedback']}
+          combineDocuments
+          renderFinalStep={() => (
+            <div className="space-y-6">
+              {/* Output Type Selection */}
+              <div>
+                <h3 className="font-medium mb-3">Output Document Type</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <button onClick={() => setMergeConfig(c => ({ ...c, outputType: 'prfaq' }))} className={clsx('p-4 rounded-lg border text-left', mergeConfig.outputType === 'prfaq' ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200 hover:border-green-200')}>
+                    <div className="font-medium">PR-FAQ</div>
+                    <div className="text-xs text-gray-500">Press Release & FAQ</div>
+                  </button>
+                  <button onClick={() => setMergeConfig(c => ({ ...c, outputType: 'prd' }))} className={clsx('p-4 rounded-lg border text-left', mergeConfig.outputType === 'prd' ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200 hover:border-blue-200')}>
+                    <div className="font-medium">PRD</div>
+                    <div className="text-xs text-gray-500">Requirements Doc</div>
+                  </button>
+                  <button onClick={() => setMergeConfig(c => ({ ...c, outputType: 'custom' }))} className={clsx('p-4 rounded-lg border text-left', mergeConfig.outputType === 'custom' ? 'bg-purple-50 border-purple-300' : 'bg-white border-gray-200 hover:border-purple-200')}>
+                    <div className="font-medium">Custom</div>
+                    <div className="text-xs text-gray-500">Free-form document</div>
+                  </button>
+                </div>
+              </div>
+              
+              {/* Title */}
+              <div>
+                <h3 className="font-medium mb-3">New Document Title</h3>
+                <input type="text" value={mergeConfig.title} onChange={e => setMergeConfig(c => ({ ...c, title: e.target.value }))} placeholder="e.g., Virtual Concierge PRD v2" className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              
+              {/* Instructions */}
+              <div>
+                <h3 className="font-medium mb-3">Remix Instructions</h3>
+                <p className="text-sm text-gray-500 mb-2">Tell the AI how to combine and revise the selected documents</p>
+                <textarea 
+                  value={mergeConfig.instructions} 
+                  onChange={e => setMergeConfig(c => ({ ...c, instructions: e.target.value }))} 
+                  placeholder="Describe how to remix the documents..."
+                  rows={4} 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                />
+              </div>
+              
+              <ContextSummary config={contextConfig} personas={personas} documents={documents} />
+              
+              {/* Validation warning */}
+              {(contextConfig.selectedDocumentIds.length + contextConfig.selectedResearchIds.length) < 2 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
+                  ⚠️ Select at least 2 documents to remix. Go back to the selection step to choose documents.
+                </div>
+              )}
+            </div>
+          )}
+          finalStepValid={!!mergeConfig.title.trim() && !!mergeConfig.instructions.trim() && (contextConfig.selectedDocumentIds.length + contextConfig.selectedResearchIds.length) >= 2}
+          onClose={resetWizard}
+          onSubmit={() => { setGenerating('merge'); mergeMut.mutate() }}
+          isSubmitting={generating === 'merge'}
+          submitLabel={<><Shuffle size={16} />Remix Documents</>}
+        />
+      )}
+
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* Running Jobs Section */}
@@ -837,7 +959,8 @@ export default function ProjectDetail() {
                           {job.job_type === 'research' ? 'Research' : 
                            job.job_type === 'generate_prd' ? 'PRD Generation' :
                            job.job_type === 'generate_prfaq' ? 'PR-FAQ Generation' :
-                           'Persona Generation'}
+                           job.job_type === 'generate_personas' ? 'Persona Generation' :
+                           'Document Merge'}
                         </span>
                         <span className={clsx(
                           'text-xs px-2 py-0.5 rounded',
@@ -902,7 +1025,8 @@ export default function ProjectDetail() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-xl p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center"><Users size={20} className="text-purple-600" /></div><div><h3 className="font-semibold">Generate Personas</h3><p className="text-sm text-gray-500">Create user personas from feedback</p></div></div><button onClick={() => setActiveWizard('persona')} className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2"><Sparkles size={16} />Configure & Generate</button></div>
             <div className="bg-white rounded-xl p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"><FileText size={20} className="text-blue-600" /></div><div><h3 className="font-semibold">Generate PRD / PR-FAQ</h3><p className="text-sm text-gray-500">Create product documents from feedback</p></div></div><button onClick={() => setActiveWizard('doc')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"><FileText size={16} />Configure & Generate</button></div>
-            <div className="bg-white rounded-xl p-6 border lg:col-span-2"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center"><Search size={20} className="text-amber-600" /></div><div><h3 className="font-semibold">Run Research</h3><p className="text-sm text-gray-500">Deep dive into feedback with filters</p></div></div><button onClick={() => setActiveWizard('research')} className="w-full py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 flex items-center justify-center gap-2"><Search size={16} />Configure & Run Research</button></div>
+            <div className="bg-white rounded-xl p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center"><Search size={20} className="text-amber-600" /></div><div><h3 className="font-semibold">Run Research</h3><p className="text-sm text-gray-500">Deep dive into feedback with filters</p></div></div><button onClick={() => setActiveWizard('research')} className="w-full py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 flex items-center justify-center gap-2"><Search size={16} />Configure & Run Research</button></div>
+            <div className="bg-white rounded-xl p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><Shuffle size={20} className="text-green-600" /></div><div><h3 className="font-semibold">Remix Documents</h3><p className="text-sm text-gray-500">Combine and revise documents into new versions</p></div></div><button onClick={() => { setContextConfig({ ...defaultContextConfig, useFeedback: false, useDocuments: true, useResearch: true }); setMergeConfig(c => ({ ...c, instructions: 'Create an improved version of the document that:\n1. Incorporates insights from the research findings\n2. Addresses any gaps or concerns identified\n3. Strengthens the customer benefit narrative\n4. Maintains consistency with the original vision' })); setActiveWizard('merge') }} disabled={documents.length < 2} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"><Shuffle size={16} />Select & Remix</button>{documents.length < 2 && <p className="text-xs text-gray-400 mt-2 text-center">Need at least 2 documents</p>}</div>
           </div>
 
           {/* Kiro Export Settings */}
@@ -915,7 +1039,10 @@ export default function ProjectDetail() {
 
       {activeTab === 'personas' && (
         <div className="space-y-4">
-          <div className="flex justify-end"><button onClick={() => setActiveWizard('persona')} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"><Sparkles size={16} />Generate Personas</button></div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50"><Upload size={16} />Import Persona</button>
+            <button onClick={() => setActiveWizard('persona')} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"><Sparkles size={16} />Generate Personas</button>
+          </div>
           {personas.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-xl border"><Users size={48} className="mx-auto text-gray-300 mb-4" /><h3 className="text-lg font-medium mb-2">No personas yet</h3><p className="text-gray-500 mb-4">Generate personas from feedback</p><button onClick={() => setActiveWizard('persona')} className="px-4 py-2 bg-purple-600 text-white rounded-lg"><Sparkles size={16} className="inline mr-2" />Generate</button></div>
           ) : (
@@ -1362,6 +1489,114 @@ export default function ProjectDetail() {
                   {createDocMut.isPending ? <><Loader2 size={16} className="animate-spin" />Creating...</> : <><FileText size={16} />Create</>}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Persona Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">Import Persona</h2>
+              <button onClick={() => { setShowImportModal(false); setImportContent(''); setImportFileName(''); setImportMediaType('') }} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+            </div>
+            <div className="p-6 space-y-6">
+              {/* Import Type Selection */}
+              <div>
+                <h3 className="font-medium mb-3">Import From</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <button onClick={() => { setImportType('pdf'); setImportContent(''); setImportFileName('') }} className={clsx('p-4 rounded-lg border text-center', importType === 'pdf' ? 'bg-purple-50 border-purple-300' : 'bg-white border-gray-200 hover:border-purple-200')}>
+                    <FileUp size={24} className="mx-auto mb-2 text-purple-500" />
+                    <div className="font-medium">PDF</div>
+                    <div className="text-xs text-gray-500">Upload document</div>
+                  </button>
+                  <button onClick={() => { setImportType('image'); setImportContent(''); setImportFileName('') }} className={clsx('p-4 rounded-lg border text-center', importType === 'image' ? 'bg-purple-50 border-purple-300' : 'bg-white border-gray-200 hover:border-purple-200')}>
+                    <Image size={24} className="mx-auto mb-2 text-purple-500" />
+                    <div className="font-medium">Image</div>
+                    <div className="text-xs text-gray-500">Screenshot or card</div>
+                  </button>
+                  <button onClick={() => { setImportType('text'); setImportContent(''); setImportFileName('') }} className={clsx('p-4 rounded-lg border text-center', importType === 'text' ? 'bg-purple-50 border-purple-300' : 'bg-white border-gray-200 hover:border-purple-200')}>
+                    <FileText size={24} className="mx-auto mb-2 text-purple-500" />
+                    <div className="font-medium">Text</div>
+                    <div className="text-xs text-gray-500">Paste content</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* File Upload for PDF/Image */}
+              {(importType === 'pdf' || importType === 'image') && (
+                <div>
+                  <h3 className="font-medium mb-3">Upload {importType === 'pdf' ? 'PDF Document' : 'Image'}</h3>
+                  <label className="block">
+                    <div className={clsx('border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors', importFileName ? 'border-purple-300 bg-purple-50' : 'border-gray-300 hover:border-purple-300')}>
+                      {importFileName ? (
+                        <div>
+                          <CheckCircle size={32} className="mx-auto mb-2 text-purple-500" />
+                          <p className="font-medium text-purple-700">{importFileName}</p>
+                          <p className="text-sm text-gray-500 mt-1">Click to change file</p>
+                        </div>
+                      ) : (
+                        <div>
+                          <Upload size={32} className="mx-auto mb-2 text-gray-400" />
+                          <p className="text-gray-600">Click to upload or drag and drop</p>
+                          <p className="text-sm text-gray-400 mt-1">{importType === 'pdf' ? 'PDF files only' : 'PNG, JPG, GIF, WebP'}</p>
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      accept={importType === 'pdf' ? '.pdf,application/pdf' : 'image/png,image/jpeg,image/gif,image/webp'}
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          setImportFileName(file.name)
+                          setImportMediaType(file.type)
+                          const reader = new FileReader()
+                          reader.onload = () => {
+                            const base64 = (reader.result as string).split(',')[1]
+                            setImportContent(base64)
+                          }
+                          reader.readAsDataURL(file)
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
+
+              {/* Text Input */}
+              {importType === 'text' && (
+                <div>
+                  <h3 className="font-medium mb-3">Paste Persona Content</h3>
+                  <textarea
+                    value={importContent}
+                    onChange={(e) => setImportContent(e.target.value)}
+                    placeholder="Paste your persona description, user research notes, or any text describing the persona..."
+                    rows={10}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  />
+                </div>
+              )}
+
+              {/* Info */}
+              <div className="bg-purple-50 rounded-lg p-4 text-sm">
+                <p className="text-purple-700">
+                  <strong>AI-Powered Import:</strong> Claude will extract persona information from your {importType === 'pdf' ? 'PDF document' : importType === 'image' ? 'image' : 'text'} and create a structured persona with an AI-generated avatar.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
+              <button onClick={() => { setShowImportModal(false); setImportContent(''); setImportFileName(''); setImportMediaType('') }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+              <button
+                onClick={() => importPersonaMut.mutate({ input_type: importType, content: importContent, media_type: importMediaType })}
+                disabled={!importContent || importPersonaMut.isPending}
+                className="flex items-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50 hover:bg-purple-700"
+              >
+                {importPersonaMut.isPending ? <><Loader2 size={16} className="animate-spin" />Importing...</> : <><Upload size={16} />Import Persona</>}
+              </button>
             </div>
           </div>
         </div>

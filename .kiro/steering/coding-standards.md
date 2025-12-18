@@ -147,7 +147,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. When a single Lamb
 ```
 lambda/api/
 ├── metrics_handler.py       # /feedback/*, /metrics/* (read-only)
-├── chat_handler.py          # /chat/*, /pipelines/*
+├── chat_handler.py          # /chat/*
 ├── integrations_handler.py  # /integrations/*, /sources/*
 ├── scrapers_handler.py      # /scrapers/*
 ├── settings_handler.py      # /settings/*
@@ -162,7 +162,7 @@ lambda/api/
 | Domain | Handler | AWS Permissions |
 |--------|---------|-----------------|
 | Metrics | `metrics_handler.py` | DynamoDB read (feedback, aggregates) |
-| Chat | `chat_handler.py` | DynamoDB RW (pipelines, conversations), Bedrock |
+| Chat | `chat_handler.py` | DynamoDB RW (conversations), Bedrock |
 | Integrations | `integrations_handler.py` | Secrets Manager, EventBridge |
 | Scrapers | `scrapers_handler.py` | Secrets Manager, Lambda invoke, Bedrock |
 | Settings | `settings_handler.py` | DynamoDB (aggregates), Bedrock |
@@ -284,12 +284,11 @@ const metricsLambda = new lambda.Function(this, 'MetricsApi', {
 feedbackTable.grantReadData(metricsRole);
 aggregatesTable.grantReadData(metricsRole);
 
-// 2. Chat Lambda - chat conversations and pipelines
+// 2. Chat Lambda - chat conversations
 const chatLambda = new lambda.Function(this, 'ChatApi', {
   handler: 'chat_handler.lambda_handler',
   // ...
 });
-pipelinesTable.grantReadWriteData(chatRole);
 conversationsTable.grantReadWriteData(chatRole);
 // + Bedrock permissions
 
@@ -348,7 +347,6 @@ const projectsIntegration = new apigateway.LambdaIntegration(projectsLambda);
 feedbackResource.addMethod('GET', metricsIntegration);
 metricsResource.addMethod('GET', metricsIntegration);
 chatResource.addMethod('POST', chatIntegration);
-pipelinesResource.addMethod('GET', chatIntegration);
 integrationsResource.addMethod('GET', integrationsIntegration);
 scrapersResource.addMethod('GET', scrapersIntegration);
 settingsResource.addMethod('GET', settingsIntegration);

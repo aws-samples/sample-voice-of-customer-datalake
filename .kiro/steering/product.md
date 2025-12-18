@@ -26,7 +26,6 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 | **Watermark** | Tracks ingestion state per source for incremental fetching (stored in DynamoDB) |
 | **Aggregates** | Pre-computed metrics updated in real-time (daily totals, sentiment averages, category counts) |
 | **Persona** | LLM-inferred customer archetype (e.g., "Price-Sensitive Shopper", "Loyal Customer") |
-| **Pipeline** | Configurable data processing workflow with extract, transform, enrich, filter, and output steps |
 | **Scraper** | Custom web scraper configuration with CSS selectors and scheduling |
 | **Raw Data** | Original ingested content stored in S3 with `s3_raw_uri` reference |
 | **Project** | Research project containing personas, PRDs, and PR/FAQs generated from feedback |

@@ -1620,6 +1620,341 @@ def create_persona(project_id: str, body: dict) -> dict:
 
 
 @tracer.capture_method
+def import_persona(project_id: str, body: dict) -> dict:
+    """Import a persona from PDF, image, or text using Claude's multimodal capabilities.
+    
+    Extracts persona data from the input and creates a new persona with avatar generation.
+    
+    Args:
+        project_id: The project ID
+        body: Dict with:
+            - input_type: 'pdf' | 'image' | 'text'
+            - content: base64 encoded file (for pdf/image) or plain text
+            - media_type: MIME type for files (e.g., 'application/pdf', 'image/png')
+    """
+    if not projects_table:
+        return {'success': False, 'message': 'Projects table not configured'}
+    
+    input_type = body.get('input_type', 'text')
+    content = body.get('content', '')
+    media_type = body.get('media_type', '')
+    
+    if not content:
+        return {'success': False, 'message': 'No content provided'}
+    
+    logger.info(f"[IMPORT_PERSONA] Starting import from {input_type} for project {project_id}")
+    
+    # Build the multimodal message for Claude
+    system_prompt = """You are a UX researcher expert at extracting persona information from documents and images.
+
+Extract persona data from the provided input and output a structured JSON object.
+If information is not available, use reasonable defaults or null.
+
+CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
+
+    user_content = []
+    
+    if input_type == 'pdf':
+        # Claude supports PDF via document block
+        user_content.append({
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": content
+            }
+        })
+        user_content.append({
+            "type": "text",
+            "text": """Extract the persona information from this PDF document.
+
+Output a JSON object with this exact structure:
+```json
+{
+    "name": "Full Name",
+    "tagline": "One sentence describing this persona",
+    "confidence": "high",
+    "identity": {
+        "age_range": "30-45",
+        "location": "City, Country",
+        "occupation": "Job Title",
+        "income_bracket": "$50k-100k or null",
+        "education": "Degree or null",
+        "family_status": "Status or null",
+        "bio": "2-3 sentence background story"
+    },
+    "goals_motivations": {
+        "primary_goal": "Main objective",
+        "secondary_goals": ["Goal 2", "Goal 3"],
+        "success_definition": "What success looks like",
+        "underlying_motivations": ["Motivation 1", "Motivation 2"]
+    },
+    "pain_points": {
+        "current_challenges": ["Challenge 1", "Challenge 2"],
+        "blockers": ["Blocker 1"],
+        "workarounds": ["Workaround 1"],
+        "emotional_impact": "How frustrations affect them"
+    },
+    "behaviors": {
+        "current_solutions": ["Solution 1"],
+        "tools_used": ["Tool 1", "Tool 2"],
+        "activity_frequency": "Daily|Weekly|Monthly",
+        "tech_savviness": "low|medium|high",
+        "decision_style": "Data-driven|Gut instinct|Research-heavy"
+    },
+    "context_environment": {
+        "usage_context": "When and where they use the product",
+        "devices": ["Device 1", "Device 2"],
+        "time_constraints": "Time constraints",
+        "social_context": "Work/social environment",
+        "influencers": ["Influencer 1"]
+    },
+    "quotes": [
+        {"text": "Quote from the persona", "context": "Context"}
+    ],
+    "scenario": {
+        "title": "Scenario title",
+        "narrative": "3-4 sentence user story",
+        "trigger": "What triggers this scenario",
+        "outcome": "Desired outcome"
+    }
+}
+```
+
+Output ONLY the JSON object."""
+        })
+    
+    elif input_type == 'image':
+        # Claude supports images directly
+        user_content.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": media_type or "image/png",
+                "data": content
+            }
+        })
+        user_content.append({
+            "type": "text",
+            "text": """Extract the persona information from this image.
+
+This may be a persona card, infographic, or screenshot of a persona document.
+Extract all visible information and structure it.
+
+Output a JSON object with this exact structure:
+```json
+{
+    "name": "Full Name",
+    "tagline": "One sentence describing this persona",
+    "confidence": "high",
+    "identity": {
+        "age_range": "30-45",
+        "location": "City, Country",
+        "occupation": "Job Title",
+        "income_bracket": "$50k-100k or null",
+        "education": "Degree or null",
+        "family_status": "Status or null",
+        "bio": "2-3 sentence background story"
+    },
+    "goals_motivations": {
+        "primary_goal": "Main objective",
+        "secondary_goals": ["Goal 2", "Goal 3"],
+        "success_definition": "What success looks like",
+        "underlying_motivations": ["Motivation 1", "Motivation 2"]
+    },
+    "pain_points": {
+        "current_challenges": ["Challenge 1", "Challenge 2"],
+        "blockers": ["Blocker 1"],
+        "workarounds": ["Workaround 1"],
+        "emotional_impact": "How frustrations affect them"
+    },
+    "behaviors": {
+        "current_solutions": ["Solution 1"],
+        "tools_used": ["Tool 1", "Tool 2"],
+        "activity_frequency": "Daily|Weekly|Monthly",
+        "tech_savviness": "low|medium|high",
+        "decision_style": "Data-driven|Gut instinct|Research-heavy"
+    },
+    "context_environment": {
+        "usage_context": "When and where they use the product",
+        "devices": ["Device 1", "Device 2"],
+        "time_constraints": "Time constraints",
+        "social_context": "Work/social environment",
+        "influencers": ["Influencer 1"]
+    },
+    "quotes": [
+        {"text": "Quote from the persona", "context": "Context"}
+    ],
+    "scenario": {
+        "title": "Scenario title",
+        "narrative": "3-4 sentence user story",
+        "trigger": "What triggers this scenario",
+        "outcome": "Desired outcome"
+    }
+}
+```
+
+Output ONLY the JSON object."""
+        })
+    
+    else:  # text
+        user_content.append({
+            "type": "text",
+            "text": f"""Extract the persona information from this text:
+
+---
+{content}
+---
+
+Output a JSON object with this exact structure:
+```json
+{{
+    "name": "Full Name",
+    "tagline": "One sentence describing this persona",
+    "confidence": "high",
+    "identity": {{
+        "age_range": "30-45",
+        "location": "City, Country",
+        "occupation": "Job Title",
+        "income_bracket": "$50k-100k or null",
+        "education": "Degree or null",
+        "family_status": "Status or null",
+        "bio": "2-3 sentence background story"
+    }},
+    "goals_motivations": {{
+        "primary_goal": "Main objective",
+        "secondary_goals": ["Goal 2", "Goal 3"],
+        "success_definition": "What success looks like",
+        "underlying_motivations": ["Motivation 1", "Motivation 2"]
+    }},
+    "pain_points": {{
+        "current_challenges": ["Challenge 1", "Challenge 2"],
+        "blockers": ["Blocker 1"],
+        "workarounds": ["Workaround 1"],
+        "emotional_impact": "How frustrations affect them"
+    }},
+    "behaviors": {{
+        "current_solutions": ["Solution 1"],
+        "tools_used": ["Tool 1", "Tool 2"],
+        "activity_frequency": "Daily|Weekly|Monthly",
+        "tech_savviness": "low|medium|high",
+        "decision_style": "Data-driven|Gut instinct|Research-heavy"
+    }},
+    "context_environment": {{
+        "usage_context": "When and where they use the product",
+        "devices": ["Device 1", "Device 2"],
+        "time_constraints": "Time constraints",
+        "social_context": "Work/social environment",
+        "influencers": ["Influencer 1"]
+    }},
+    "quotes": [
+        {{"text": "Quote from the persona", "context": "Context"}}
+    ],
+    "scenario": {{
+        "title": "Scenario title",
+        "narrative": "3-4 sentence user story",
+        "trigger": "What triggers this scenario",
+        "outcome": "Desired outcome"
+    }}
+}}
+```
+
+Output ONLY the JSON object."""
+        })
+    
+    try:
+        # Call Claude with multimodal content
+        request_body = {
+            'anthropic_version': 'bedrock-2023-05-31',
+            'max_tokens': 4096,
+            'system': system_prompt,
+            'messages': [{'role': 'user', 'content': user_content}]
+        }
+        
+        response = bedrock.invoke_model(
+            modelId=MODEL_ID,
+            body=json.dumps(request_body),
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        result = json.loads(response['body'].read())
+        response_text = result['content'][0]['text']
+        
+        # Parse JSON from response (handle markdown code blocks)
+        json_text = response_text
+        if '```json' in json_text:
+            json_text = json_text.split('```json')[1].split('```')[0]
+        elif '```' in json_text:
+            json_text = json_text.split('```')[1].split('```')[0]
+        
+        persona_data = json.loads(json_text.strip())
+        logger.info(f"[IMPORT_PERSONA] Extracted persona: {persona_data.get('name', 'Unknown')}")
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"[IMPORT_PERSONA] Failed to parse JSON: {e}")
+        return {'success': False, 'message': f'Failed to parse persona data: {str(e)}'}
+    except Exception as e:
+        logger.exception(f"[IMPORT_PERSONA] Claude extraction failed: {e}")
+        return {'success': False, 'message': f'Failed to extract persona: {str(e)}'}
+    
+    # Create the persona in DynamoDB
+    now = datetime.now(timezone.utc).isoformat()
+    persona_id = f"persona_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    
+    item = {
+        'pk': f'PROJECT#{project_id}',
+        'sk': f'PERSONA#{persona_id}',
+        'gsi1pk': f'PROJECT#{project_id}#PERSONAS',
+        'gsi1sk': now,
+        'persona_id': persona_id,
+        'name': persona_data.get('name', 'Imported Persona'),
+        'tagline': persona_data.get('tagline', ''),
+        'confidence': persona_data.get('confidence', 'medium'),
+        'identity': persona_data.get('identity', {}),
+        'goals_motivations': persona_data.get('goals_motivations', {}),
+        'pain_points': persona_data.get('pain_points', {}),
+        'behaviors': persona_data.get('behaviors', {}),
+        'context_environment': persona_data.get('context_environment', {}),
+        'quotes': persona_data.get('quotes', []),
+        'scenario': persona_data.get('scenario', {}),
+        'research_notes': [],
+        'imported_from': input_type,
+        'created_at': now,
+        'updated_at': now,
+    }
+    
+    # Generate avatar using existing flow
+    logger.info(f"[IMPORT_PERSONA] Generating avatar for {item['name']}")
+    s3_bucket = os.environ.get('RAW_DATA_BUCKET', '')
+    
+    avatar_data = {'persona_id': persona_id, **item}
+    avatar_result = generate_persona_avatar(avatar_data, s3_bucket)
+    
+    if avatar_result.get('avatar_url'):
+        item['avatar_url'] = avatar_result['avatar_url']
+        item['avatar_prompt'] = avatar_result.get('avatar_prompt', '')
+        logger.info(f"[IMPORT_PERSONA] Avatar generated: {avatar_result['avatar_url']}")
+    
+    # Save to DynamoDB
+    projects_table.put_item(Item=item)
+    
+    # Update persona count
+    projects_table.update_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
+        UpdateExpression='SET persona_count = persona_count + :one, updated_at = :now',
+        ExpressionAttributeValues={':one': 1, ':now': now}
+    )
+    
+    # Convert S3 URI to CDN URL for response
+    if item.get('avatar_url') and item['avatar_url'].startswith('s3://'):
+        item['avatar_url'] = get_avatar_cdn_url(item['avatar_url'])
+    
+    logger.info(f"[IMPORT_PERSONA] Successfully imported persona: {item['name']}")
+    return {'success': True, 'persona': item}
+
+
+@tracer.capture_method
 def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
     """Update a persona with support for all 8 sections."""
     if not projects_table:
@@ -1631,56 +1966,39 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
     expr_values = {':now': now}
     expr_names = {}
     
-    # All updatable fields including new 8-section schema
-    field_mappings = {
+    # All updatable fields - use expression attribute names for ALL fields
+    # to avoid DynamoDB reserved keyword issues (identity, name, etc.)
+    updatable_fields = [
         # Basic info
-        'name': '#name',
-        'tagline': 'tagline',
-        'confidence': 'confidence',
-        
+        'name', 'tagline', 'confidence',
         # Section 1: Identity
-        'identity': 'identity',
-        
+        'identity',
         # Section 2: Goals & Motivations
-        'goals_motivations': 'goals_motivations',
-        
+        'goals_motivations',
         # Section 3: Pain Points
-        'pain_points': 'pain_points',
-        
+        'pain_points',
         # Section 4: Behaviors
-        'behaviors': 'behaviors',
-        
+        'behaviors',
         # Section 5: Context & Environment
-        'context_environment': 'context_environment',
-        
+        'context_environment',
         # Section 6: Quotes
-        'quotes': 'quotes',
-        
+        'quotes',
         # Section 7: Scenario
-        'scenario': 'scenario',
-        
+        'scenario',
         # Section 8: Research Notes
-        'research_notes': 'research_notes',
-        
+        'research_notes',
         # Avatar
-        'avatar_url': 'avatar_url',
-        'avatar_prompt': 'avatar_prompt',
-        
+        'avatar_url', 'avatar_prompt',
         # Legacy fields for backward compatibility
-        'demographics': 'demographics',
-        'quote': 'quote',
-        'goals': 'goals',
-        'frustrations': 'frustrations',
-        'needs': 'needs',
-    }
+        'demographics', 'quote', 'goals', 'frustrations', 'needs',
+    ]
     
-    for field, attr_name in field_mappings.items():
+    for field in updatable_fields:
         if field in body:
-            if attr_name.startswith('#'):
-                update_expr += f', {attr_name} = :{field}'
-                expr_names[attr_name] = field
-            else:
-                update_expr += f', {attr_name} = :{field}'
+            # Use expression attribute names for ALL fields to avoid reserved keyword issues
+            attr_name = f'#{field}'
+            update_expr += f', {attr_name} = :{field}'
+            expr_names[attr_name] = field
             expr_values[f':{field}'] = body[field]
     
     update_params = {

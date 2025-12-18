@@ -36,7 +36,7 @@ voc-datalake/
 │   │   └── research_step_handler.py  # Step Functions task handler
 │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit)
 │   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
-│   │   ├── chat_handler.py           # /chat/*, /pipelines/* (conversations, pipelines)
+│   │   ├── chat_handler.py           # /chat/* (conversations)
 │   │   ├── integrations_handler.py   # /integrations/*, /sources/* (credentials, schedules)
 │   │   ├── scrapers_handler.py       # /scrapers/* (web scraper management)
 │   │   ├── settings_handler.py       # /settings/* (brand, categories config)
@@ -110,7 +110,6 @@ voc-datalake/
 | `voc-feedback` | `SOURCE#{platform}` | `FEEDBACK#{id}` | Processed feedback with GSIs for date, category, urgency |
 | `voc-aggregates` | `METRIC#{type}` | `{date}` | Pre-computed metrics |
 | `voc-watermarks` | `{source}` | - | Ingestion state tracking |
-| `voc-pipelines` | `{id}` | - | Pipeline configurations |
 | `voc-projects` | `PROJECT#{id}` | `META\|PERSONA#{id}\|PRD#{id}\|PRFAQ#{id}` | Projects with personas, PRDs, PR/FAQs |
 | `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | Long-running async jobs (research, persona generation) |
 | `voc-conversations` | `USER#{id}` | `CONV#{id}` | AI chat conversation history |
@@ -128,11 +127,6 @@ voc-datalake/
 | GET | `/metrics/sources` | Source breakdown |
 | GET | `/metrics/personas` | Persona breakdown |
 | POST | `/chat` | AI chat endpoint |
-| GET | `/pipelines` | List pipelines |
-| POST | `/pipelines` | Create pipeline |
-| PUT | `/pipelines/{id}` | Update pipeline |
-| DELETE | `/pipelines/{id}` | Delete pipeline |
-| POST | `/pipelines/{id}/run` | Trigger pipeline |
 | GET | `/integrations/status` | Integration status |
 | PUT | `/integrations/{source}/credentials` | Update credentials |
 | POST | `/integrations/{source}/test` | Test integration |
@@ -160,7 +154,7 @@ VocStorageStack (DynamoDB tables, S3 raw data bucket, KMS)
        │
        ├──▶ VocAnalyticsStack (API Gateway, API Lambda, Webhooks)
        │           │
-       │           └── Depends on: processingQueue, secretsArn, pipelinesTable, researchStateMachine
+       │           └── Depends on: processingQueue, secretsArn, researchStateMachine
        │
        └──▶ VocFrontendStack (S3, CloudFront)
                     │

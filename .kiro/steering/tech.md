@@ -59,7 +59,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | Lambda | Handler | Routes | Permissions |
 |--------|---------|--------|-------------|
 | `voc-metrics-api` | `metrics_handler.py` | `/feedback/*`, `/metrics/*` | DynamoDB read (feedback, aggregates) |
-| `voc-chat-api` | `chat_handler.py` | `/chat/*`, `/pipelines/*` | DynamoDB (feedback read, aggregates/pipelines/conversations RW), Bedrock |
+| `voc-chat-api` | `chat_handler.py` | `/chat/*` | DynamoDB (feedback read, aggregates/conversations RW), Bedrock |
 | `voc-integrations-api` | `integrations_handler.py` | `/integrations/*`, `/sources/*` | Secrets Manager, EventBridge |
 | `voc-scrapers-api` | `scrapers_handler.py` | `/scrapers/*` | Secrets Manager, Lambda invoke, Bedrock, DynamoDB (aggregates) |
 | `voc-settings-api` | `settings_handler.py` | `/settings/*` | DynamoDB (aggregates), Bedrock |

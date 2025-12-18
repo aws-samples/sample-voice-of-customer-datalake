@@ -1,6 +1,6 @@
 """
-Chat & Pipelines API Lambda - Handles /chat/*, /pipelines/*
-Manages AI chat conversations and pipeline configurations.
+Chat API Lambda - Handles /chat/*
+Manages AI chat conversations.
 """
 import json
 import os
@@ -22,12 +22,10 @@ dynamodb = boto3.resource('dynamodb')
 # Configuration
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
-PIPELINES_TABLE = os.environ.get('PIPELINES_TABLE', '')
 CONVERSATIONS_TABLE = os.environ.get('CONVERSATIONS_TABLE', '')
 
 feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
-pipelines_table = dynamodb.Table(PIPELINES_TABLE) if PIPELINES_TABLE else None
 conversations_table = dynamodb.Table(CONVERSATIONS_TABLE) if CONVERSATIONS_TABLE else None
 
 cors_config = CORSConfig(
@@ -268,102 +266,6 @@ def delete_conversation(proxy: str):
     conversations_table.delete_item(Key={'pk': 'USER#default', 'sk': f'CONV#{proxy}'})
     return {'success': True}
 
-
-# ============================================
-# Pipeline Endpoints
-# ============================================
-
-@app.get("/pipelines")
-@tracer.capture_method
-def list_pipelines():
-    """List all pipelines."""
-    if not pipelines_table:
-        return {'pipelines': []}
-    response = pipelines_table.scan()
-    return {'pipelines': response.get('Items', [])}
-
-
-@app.get("/pipelines/<pipeline_id>")
-@tracer.capture_method
-def get_pipeline(pipeline_id: str):
-    """Get a single pipeline."""
-    if not pipelines_table:
-        raise NotFoundError("Pipelines not configured")
-    response = pipelines_table.get_item(Key={'id': pipeline_id})
-    item = response.get('Item')
-    if not item:
-        raise NotFoundError(f"Pipeline {pipeline_id} not found")
-    return item
-
-
-@app.post("/pipelines")
-@tracer.capture_method
-def create_pipeline():
-    """Create a new pipeline."""
-    if not pipelines_table:
-        return {'success': False, 'message': 'Pipelines not configured'}
-    
-    body = app.current_event.json_body
-    pipeline_id = body.get('id') or f"pipeline-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
-    
-    item = {
-        'id': pipeline_id,
-        'name': body.get('name', 'New Pipeline'),
-        'description': body.get('description', ''),
-        'source': body.get('source', 'all'),
-        'steps': body.get('steps', []),
-        'enabled': body.get('enabled', True),
-        'status': 'idle',
-        'created_at': datetime.now(timezone.utc).isoformat(),
-        'updated_at': datetime.now(timezone.utc).isoformat(),
-    }
-    
-    pipelines_table.put_item(Item=item)
-    return {'success': True, 'pipeline': item}
-
-
-@app.put("/pipelines/<pipeline_id>")
-@tracer.capture_method
-def update_pipeline(pipeline_id: str):
-    """Update a pipeline."""
-    if not pipelines_table:
-        return {'success': False, 'message': 'Pipelines not configured'}
-    
-    body = app.current_event.json_body
-    
-    update_expr = "SET updated_at = :updated_at"
-    expr_values = {':updated_at': datetime.now(timezone.utc).isoformat()}
-    expr_names = {}
-    
-    for field in ['name', 'description', 'source', 'steps', 'enabled', 'status']:
-        if field in body:
-            update_expr += f", #{field} = :{field}"
-            expr_values[f':{field}'] = body[field]
-            expr_names[f'#{field}'] = field
-    
-    pipelines_table.update_item(
-        Key={'id': pipeline_id},
-        UpdateExpression=update_expr,
-        ExpressionAttributeValues=expr_values,
-        ExpressionAttributeNames=expr_names if expr_names else None
-    )
-    return {'success': True}
-
-
-@app.delete("/pipelines/<pipeline_id>")
-@tracer.capture_method
-def delete_pipeline(pipeline_id: str):
-    """Delete a pipeline."""
-    if pipelines_table:
-        pipelines_table.delete_item(Key={'id': pipeline_id})
-    return {'success': True}
-
-
-@app.post("/pipelines/<pipeline_id>/run")
-@tracer.capture_method
-def run_pipeline(pipeline_id: str):
-    """Trigger a pipeline run."""
-    return {'success': True, 'execution_id': f"exec-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"}
 
 
 # ============================================

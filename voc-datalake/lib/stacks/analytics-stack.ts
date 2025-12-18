@@ -12,7 +12,6 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 export interface VocAnalyticsStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
-  pipelinesTable: dynamodb.Table;
   projectsTable: dynamodb.Table;
   jobsTable: dynamodb.Table;
   conversationsTable: dynamodb.Table;
@@ -33,7 +32,7 @@ export class VocAnalyticsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocAnalyticsStackProps) {
     super(scope, id, props);
 
-    const { feedbackTable, aggregatesTable, pipelinesTable, projectsTable, jobsTable, conversationsTable, kmsKey, processingQueueUrl, processingQueueArn, secretsArn, brandName, researchStateMachineArn, s3ImportBucket, rawDataBucket, avatarsCdnUrl } = props;
+    const { feedbackTable, aggregatesTable, projectsTable, jobsTable, conversationsTable, kmsKey, processingQueueUrl, processingQueueArn, secretsArn, brandName, researchStateMachineArn, s3ImportBucket, rawDataBucket, avatarsCdnUrl } = props;
 
     // Lambda Layer (shared across all API Lambdas)
     const apiLayer = new lambda.LayerVersion(this, 'ApiDepsLayer', {
@@ -207,8 +206,8 @@ export class VocAnalyticsStack extends cdk.Stack {
     });
 
     // ============================================
-    // Lambda 5: Chat API (pipelines + chat)
-    // Handles: /chat/*, /pipelines/*
+    // Lambda 5: Chat API
+    // Handles: /chat/*
     // ============================================
     const chatRole = new iam.Role(this, 'ChatLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
@@ -216,7 +215,6 @@ export class VocAnalyticsStack extends cdk.Stack {
     });
     feedbackTable.grantReadData(chatRole);
     aggregatesTable.grantReadWriteData(chatRole);
-    pipelinesTable.grantReadWriteData(chatRole);
     conversationsTable.grantReadWriteData(chatRole);
     kmsKey.grantEncryptDecrypt(chatRole);
     chatRole.addToPolicy(new iam.PolicyStatement({
@@ -235,7 +233,6 @@ export class VocAnalyticsStack extends cdk.Stack {
       environment: {
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
-        PIPELINES_TABLE: pipelinesTable.tableName,
         CONVERSATIONS_TABLE: conversationsTable.tableName,
         POWERTOOLS_SERVICE_NAME: 'voc-chat-api',
         LOG_LEVEL: 'INFO',
@@ -469,22 +466,12 @@ export class VocAnalyticsStack extends cdk.Stack {
     personasResource.addMethod('GET', metricsIntegration);
 
     // ============================================
-    // Chat Lambda: /chat/*, /pipelines/*
+    // Chat Lambda: /chat/*
     // ============================================
     const chatResource = this.api.root.addResource('chat');
     chatResource.addMethod('POST', chatIntegration);
     const chatConversationsResource = chatResource.addResource('conversations');
     chatConversationsResource.addProxy({ defaultIntegration: chatIntegration, anyMethod: true });
-
-    const pipelinesResource = this.api.root.addResource('pipelines');
-    pipelinesResource.addMethod('GET', chatIntegration);
-    pipelinesResource.addMethod('POST', chatIntegration);
-    const pipelineIdResource = pipelinesResource.addResource('{pipelineId}');
-    pipelineIdResource.addMethod('GET', chatIntegration);
-    pipelineIdResource.addMethod('PUT', chatIntegration);
-    pipelineIdResource.addMethod('DELETE', chatIntegration);
-    const pipelineRunResource = pipelineIdResource.addResource('run');
-    pipelineRunResource.addMethod('POST', chatIntegration);
 
     // ============================================
     // Integrations Lambda: /integrations/*, /sources/*

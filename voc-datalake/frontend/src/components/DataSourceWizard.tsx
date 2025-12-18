@@ -59,6 +59,8 @@ interface DataSourceWizardProps {
   submitLabel: React.ReactNode
   // Optional: hide certain data source options
   hideDataSources?: ('feedback' | 'personas' | 'documents' | 'research')[]
+  // Optional: combine documents and research into single selection list
+  combineDocuments?: boolean
 }
 
 export default function DataSourceWizard({
@@ -76,6 +78,7 @@ export default function DataSourceWizard({
   isSubmitting,
   submitLabel,
   hideDataSources = [],
+  combineDocuments = false,
 }: DataSourceWizardProps) {
   const [step, setStep] = useState(1)
   const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES)
@@ -104,8 +107,9 @@ export default function DataSourceWizard({
   const needsFeedbackFilters = contextConfig.useFeedback
   const needsItemSelection = 
     (contextConfig.usePersonas && personas.length > 0) || 
-    (contextConfig.useDocuments && otherDocs.length > 0) ||
-    (contextConfig.useResearch && researchDocs.length > 0)
+    (combineDocuments && (contextConfig.useDocuments || contextConfig.useResearch) && documents.length > 0) ||
+    (!combineDocuments && contextConfig.useDocuments && otherDocs.length > 0) ||
+    (!combineDocuments && contextConfig.useResearch && researchDocs.length > 0)
   
   const totalSteps = 1 + (needsFeedbackFilters ? 1 : 0) + (needsItemSelection ? 1 : 0) + 1 // data sources + filters? + selection? + final
 
@@ -213,7 +217,30 @@ export default function DataSourceWizard({
                     </label>
                   )}
                   
-                  {showDocuments && (
+                  {/* Combined documents option for merge wizard */}
+                  {combineDocuments && documents.length > 0 && (
+                    <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-gray-50">
+                      <input
+                        type="checkbox"
+                        checked={contextConfig.useDocuments || contextConfig.useResearch}
+                        onChange={e => onContextChange({ 
+                          ...contextConfig, 
+                          useDocuments: e.target.checked, 
+                          useResearch: e.target.checked,
+                          selectedDocumentIds: e.target.checked ? contextConfig.selectedDocumentIds : [],
+                          selectedResearchIds: e.target.checked ? contextConfig.selectedResearchIds : []
+                        })}
+                        className="w-4 h-4"
+                      />
+                      <div>
+                        <div className="font-medium">Documents ({documents.length})</div>
+                        <div className="text-sm text-gray-500">Select documents to merge</div>
+                      </div>
+                    </label>
+                  )}
+
+                  {/* Separate document options (default behavior) */}
+                  {!combineDocuments && showDocuments && (
                     <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-gray-50">
                       <input
                         type="checkbox"
@@ -228,7 +255,7 @@ export default function DataSourceWizard({
                     </label>
                   )}
                   
-                  {showResearch && (
+                  {!combineDocuments && showResearch && (
                     <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-gray-50">
                       <input
                         type="checkbox"
@@ -360,7 +387,71 @@ export default function DataSourceWizard({
                 </div>
               )}
 
-              {contextConfig.useDocuments && otherDocs.length > 0 && (
+              {/* Combined document selection (for merge wizard) */}
+              {combineDocuments && (contextConfig.useDocuments || contextConfig.useResearch) && documents.length > 0 && (
+                <div>
+                  <h3 className="font-medium mb-3">Select Documents</h3>
+                  <p className="text-sm text-gray-500 mb-3">Select documents to merge</p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {documents.map(d => {
+                      const isResearch = d.document_type === 'research'
+                      const isSelected = isResearch 
+                        ? contextConfig.selectedResearchIds.includes(d.document_id)
+                        : contextConfig.selectedDocumentIds.includes(d.document_id)
+                      
+                      const handleChange = (checked: boolean) => {
+                        if (isResearch) {
+                          onContextChange({
+                            ...contextConfig,
+                            selectedResearchIds: checked
+                              ? [...contextConfig.selectedResearchIds, d.document_id]
+                              : contextConfig.selectedResearchIds.filter(id => id !== d.document_id)
+                          })
+                        } else {
+                          onContextChange({
+                            ...contextConfig,
+                            selectedDocumentIds: checked
+                              ? [...contextConfig.selectedDocumentIds, d.document_id]
+                              : contextConfig.selectedDocumentIds.filter(id => id !== d.document_id)
+                          })
+                        }
+                      }
+                      
+                      return (
+                        <label key={d.document_id} className="flex items-center gap-3 p-2 rounded-lg border cursor-pointer hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={e => handleChange(e.target.checked)}
+                            className="w-4 h-4"
+                          />
+                          <div className={clsx(
+                            'w-8 h-8 rounded-lg flex items-center justify-center',
+                            d.document_type === 'prd' ? 'bg-blue-100' 
+                              : d.document_type === 'prfaq' ? 'bg-green-100' 
+                              : d.document_type === 'research' ? 'bg-amber-100'
+                              : 'bg-purple-100'
+                          )}>
+                            <FileText size={16} className={clsx(
+                              d.document_type === 'prd' ? 'text-blue-600' 
+                                : d.document_type === 'prfaq' ? 'text-green-600' 
+                                : d.document_type === 'research' ? 'text-amber-600'
+                                : 'text-purple-600'
+                            )} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate">{d.title}</div>
+                            <div className="text-xs text-gray-500">{d.document_type.toUpperCase()}</div>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Separate document selection (default behavior) */}
+              {!combineDocuments && contextConfig.useDocuments && otherDocs.length > 0 && (
                 <div>
                   <h3 className="font-medium mb-3">Select Documents</h3>
                   <p className="text-sm text-gray-500 mb-3">Leave empty to use all documents</p>
@@ -396,7 +487,7 @@ export default function DataSourceWizard({
                 </div>
               )}
 
-              {contextConfig.useResearch && researchDocs.length > 0 && (
+              {!combineDocuments && contextConfig.useResearch && researchDocs.length > 0 && (
                 <div>
                   <h3 className="font-medium mb-3">Select Research Documents</h3>
                   <p className="text-sm text-gray-500 mb-3">Leave empty to use all research</p>

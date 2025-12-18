@@ -7,7 +7,6 @@ const routeLabels: Record<string, string> = {
   'feedback': 'Feedback',
   'categories': 'Categories',
   'chat': 'AI Chat',
-  'pipelines': 'Pipelines',
   'scrapers': 'Web Scrapers',
   'feedback-forms': 'Feedback Forms',
   'settings': 'Settings',

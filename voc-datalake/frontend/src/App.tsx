@@ -6,7 +6,6 @@ import FeedbackDetail from './pages/FeedbackDetail'
 import Categories from './pages/Categories'
 import ProblemAnalysis from './pages/ProblemAnalysis'
 import Settings from './pages/Settings'
-import Pipelines from './pages/Pipelines'
 import Scrapers from './pages/Scrapers'
 import Chat from './pages/Chat'
 import Projects from './pages/Projects'
@@ -27,7 +26,6 @@ export default function App() {
         <Route path="projects" element={<Projects />} />
         <Route path="projects/:id" element={<ProjectDetail />} />
         <Route path="prioritization" element={<Prioritization />} />
-        <Route path="pipelines" element={<Pipelines />} />
         <Route path="scrapers" element={<Scrapers />} />
         <Route path="feedback-forms" element={<FeedbackForms />} />
         <Route path="settings" element={<Settings />} />

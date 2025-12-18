@@ -262,12 +262,21 @@ def get_similar_feedback(feedback_id: str):
     params = app.current_event.query_string_parameters or {}
     limit = min(int(params.get('limit', 8)), 50)
     
-    # Get source item
+    # Get source item (with pagination like get_feedback)
     source_item = None
-    response = feedback_table.scan(FilterExpression=Attr('feedback_id').eq(feedback_id))
-    items = response.get('Items', [])
-    if items:
-        source_item = items[0]
+    last_key = None
+    while True:
+        scan_params = {'FilterExpression': Attr('feedback_id').eq(feedback_id)}
+        if last_key:
+            scan_params['ExclusiveStartKey'] = last_key
+        response = feedback_table.scan(**scan_params)
+        items = response.get('Items', [])
+        if items:
+            source_item = items[0]
+            break
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            break
     
     if not source_item:
         raise NotFoundError(f"Feedback {feedback_id} not found")

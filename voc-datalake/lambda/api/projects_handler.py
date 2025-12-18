@@ -14,7 +14,7 @@ from projects import (
     list_projects, create_project, get_project, update_project, delete_project,
     generate_personas, generate_prd, generate_prfaq, project_chat, run_research,
     create_document, update_document, delete_document,
-    create_persona, update_persona, delete_persona,
+    create_persona, update_persona, delete_persona, import_persona,
     add_persona_note, update_persona_note, delete_persona_note, regenerate_persona_avatar
 )
 
@@ -86,6 +86,14 @@ def api_delete_project(project_id: str):
 def api_create_persona(project_id: str):
     body = app.current_event.json_body
     return create_persona(project_id, body)
+
+
+@app.post("/projects/<project_id>/personas/import")
+@tracer.capture_method
+def api_import_persona(project_id: str):
+    """Import a persona from PDF, image, or text."""
+    body = app.current_event.json_body
+    return import_persona(project_id, body)
 
 
 @app.put("/projects/<project_id>/personas/<persona_id>")
@@ -373,6 +381,63 @@ def api_generate_document(project_id: str):
 def api_create_document(project_id: str):
     body = app.current_event.json_body
     return create_document(project_id, body)
+
+
+@app.post("/projects/<project_id>/documents/merge")
+@tracer.capture_method
+def api_merge_documents(project_id: str):
+    """Merge multiple documents into a new document using AI."""
+    import boto3
+    import uuid
+    from datetime import datetime, timezone
+    
+    body = app.current_event.json_body or {}
+    
+    output_type = body.get('output_type', 'custom')
+    
+    # Create a job ID
+    job_id = f"job_{uuid.uuid4().hex[:16]}"
+    now = datetime.now(timezone.utc).isoformat()
+    ttl = int((datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp())
+    
+    # Store job status in Jobs table
+    jobs_table = boto3.resource('dynamodb').Table(os.environ.get('JOBS_TABLE', ''))
+    jobs_table.put_item(Item={
+        'pk': f'PROJECT#{project_id}',
+        'sk': f'JOB#{job_id}',
+        'gsi1pk': 'STATUS#pending',
+        'gsi1sk': now,
+        'job_id': job_id,
+        'project_id': project_id,
+        'job_type': 'merge_documents',
+        'status': 'pending',
+        'progress': 0,
+        'current_step': 'queued',
+        'created_at': now,
+        'updated_at': now,
+        'ttl': ttl,
+        'merge_config': body
+    })
+    
+    # Invoke Lambda asynchronously
+    lambda_client = boto3.client('lambda')
+    lambda_client.invoke(
+        FunctionName=os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'voc-projects-api'),
+        InvocationType='Event',
+        Payload=json.dumps({
+            'job_type': 'merge_documents',
+            'project_id': project_id,
+            'job_id': job_id,
+            'merge_config': body
+        })
+    )
+    
+    return {
+        'success': True,
+        'job_id': job_id,
+        'status': 'pending',
+        'message': f'Document merge started. Output type: {output_type.upper()}'
+    }
 
 
 @app.put("/projects/<project_id>/documents/<document_id>")
@@ -855,6 +920,233 @@ Generate 10 questions and answers for INTERNAL stakeholders:
             except Exception as e:
                 logger.exception(f"Document generation failed: {e}")
                 update_doc_job_status('failed', 0, 'error', error=str(e))
+                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': str(e)})}
+        
+        # Handle merge documents job
+        if job_type == 'merge_documents':
+            project_id = event['project_id']
+            job_id = event['job_id']
+            merge_config = event['merge_config']
+            
+            import boto3
+            from datetime import datetime, timezone
+            from boto3.dynamodb.conditions import Key
+            from botocore.config import Config
+            
+            dynamodb = boto3.resource('dynamodb')
+            jobs_table = dynamodb.Table(os.environ.get('JOBS_TABLE', ''))
+            projects_table = dynamodb.Table(os.environ.get('PROJECTS_TABLE', ''))
+            feedback_table = dynamodb.Table(os.environ.get('FEEDBACK_TABLE', ''))
+            
+            def update_merge_job_status(status, progress, step, error=None, result=None):
+                now = datetime.now(timezone.utc).isoformat()
+                update_expr = 'SET #status = :status, progress = :progress, current_step = :step, updated_at = :now'
+                expr_values = {':status': status, ':progress': progress, ':step': step, ':now': now}
+                expr_names = {'#status': 'status'}
+                if error:
+                    update_expr += ', #error = :error, completed_at = :now, #ttl = :ttl'
+                    expr_values[':error'] = error
+                    expr_names['#error'] = 'error'
+                    expr_names['#ttl'] = 'ttl'
+                    expr_values[':ttl'] = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
+                if result:
+                    update_expr += ', #result = :result, completed_at = :now, #ttl = :ttl'
+                    expr_values[':result'] = result
+                    expr_names['#result'] = 'result'
+                    expr_names['#ttl'] = 'ttl'
+                    expr_values[':ttl'] = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
+                jobs_table.update_item(
+                    Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
+                    UpdateExpression=update_expr,
+                    ExpressionAttributeValues=expr_values,
+                    ExpressionAttributeNames=expr_names
+                )
+            
+            try:
+                update_merge_job_status('running', 10, 'gathering_documents')
+                
+                output_type = merge_config.get('output_type', 'custom')
+                title = merge_config.get('title', 'Merged Document')
+                instructions = merge_config.get('instructions', '')
+                selected_doc_ids = merge_config.get('selected_document_ids', [])
+                selected_persona_ids = merge_config.get('selected_persona_ids', [])
+                use_feedback = merge_config.get('use_feedback', False)
+                
+                # Fetch selected documents
+                resp = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
+                all_items = resp.get('Items', [])
+                
+                # Get documents
+                docs = [i for i in all_items if i.get('sk', '').startswith(('RESEARCH#', 'PRD#', 'PRFAQ#', 'DOC#'))]
+                selected_docs = [d for d in docs if d.get('document_id') in selected_doc_ids]
+                
+                if len(selected_docs) < 2:
+                    raise ValueError("At least 2 documents are required for merging")
+                
+                update_merge_job_status('running', 20, 'preparing_context')
+                
+                # Build document context
+                doc_context = "## SOURCE DOCUMENTS TO MERGE\n\n"
+                for i, doc in enumerate(selected_docs, 1):
+                    doc_context += f"### Document {i}: {doc.get('title', 'Untitled')} ({doc.get('document_type', 'unknown').upper()})\n\n"
+                    doc_context += doc.get('content', '')[:8000]
+                    doc_context += "\n\n---\n\n"
+                
+                context_parts = [doc_context]
+                
+                # Add persona context if selected
+                if selected_persona_ids:
+                    update_merge_job_status('running', 30, 'fetching_personas')
+                    personas = [i for i in all_items if i.get('sk', '').startswith('PERSONA#')]
+                    selected_personas = [p for p in personas if p.get('persona_id') in selected_persona_ids]
+                    if selected_personas:
+                        persona_text = "## USER PERSONAS FOR CONTEXT\n\n"
+                        for p in selected_personas:
+                            persona_text += f"**{p.get('name')}**: {p.get('tagline', '')}\n"
+                            persona_text += f"- Goals: {', '.join(p.get('goals', [])[:3])}\n"
+                            persona_text += f"- Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n\n"
+                        context_parts.append(persona_text)
+                
+                # Add feedback context if selected
+                if use_feedback:
+                    update_merge_job_status('running', 40, 'fetching_feedback')
+                    feedback_sources = merge_config.get('feedback_sources', [])
+                    feedback_categories = merge_config.get('feedback_categories', [])
+                    days = merge_config.get('days', 30)
+                    
+                    feedback_items = []
+                    from datetime import timedelta as td
+                    current_date = datetime.now(timezone.utc)
+                    
+                    if feedback_sources:
+                        for source in feedback_sources[:3]:
+                            resp = feedback_table.query(
+                                KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
+                                Limit=15, ScanIndexForward=False
+                            )
+                            feedback_items.extend(resp.get('Items', []))
+                    else:
+                        for i in range(min(days, 14)):
+                            date = (current_date - td(days=i)).strftime('%Y-%m-%d')
+                            resp = feedback_table.query(
+                                IndexName='gsi1-by-date',
+                                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+                                Limit=20 - len(feedback_items), ScanIndexForward=False
+                            )
+                            feedback_items.extend(resp.get('Items', []))
+                            if len(feedback_items) >= 20:
+                                break
+                    
+                    if feedback_categories:
+                        feedback_items = [f for f in feedback_items if f.get('category') in feedback_categories]
+                    
+                    if feedback_items:
+                        feedback_text = "## ADDITIONAL CUSTOMER FEEDBACK\n\n"
+                        for i, item in enumerate(feedback_items[:20], 1):
+                            feedback_text += f"**Review {i}** ({item.get('source_platform', 'unknown')}, {item.get('sentiment_label', 'unknown')}): {item.get('original_text', '')[:250]}\n\n"
+                        context_parts.append(feedback_text)
+                
+                update_merge_job_status('running', 50, 'generating_merged_document')
+                
+                context = '\n\n'.join(context_parts)
+                
+                # Build system prompt based on output type
+                if output_type == 'prd':
+                    system_prompt = """You are a senior product manager creating a revised Product Requirements Document (PRD).
+Your task is to merge and revise the provided source documents according to the user's instructions.
+Create a comprehensive PRD that includes: Problem Statement, Goals & Success Metrics, User Stories, Requirements (functional & non-functional), Out of Scope, Timeline, and Risks.
+Incorporate feedback and improvements from all source documents."""
+                elif output_type == 'prfaq':
+                    system_prompt = """You are creating a revised Amazon-style Working Backwards PR-FAQ document.
+Your task is to merge and revise the provided source documents according to the user's instructions.
+
+CRITICAL GUIDELINES:
+- Write in "Oprah-speak" NOT "Geek-speak"
+- Keep it simple: 3-4 sentences for most paragraphs
+- This is NOT a spec - it's a customer-focused announcement
+- Incorporate feedback and improvements from all source documents
+
+The output MUST include:
+1. PRESS RELEASE (with all 9 sections: Heading, Sub-heading, Summary, Problem, Solution, Spokesperson Quote, How to Get Started, Customer Quote, Closing)
+2. CUSTOMER FAQ (10 questions customers would ask)
+3. INTERNAL FAQ (10 questions for stakeholders)"""
+                else:  # custom
+                    system_prompt = """You are a skilled document editor and synthesizer.
+Your task is to merge and revise the provided source documents according to the user's instructions.
+Create a well-structured document that incorporates the best elements from all sources.
+Follow the user's specific instructions carefully."""
+                
+                user_prompt = f"""## MERGE INSTRUCTIONS
+{instructions}
+
+## OUTPUT DOCUMENT TITLE
+{title}
+
+{context}
+
+---
+
+Based on the source documents above and the merge instructions, create a new {output_type.upper() if output_type != 'custom' else 'document'}.
+Incorporate all relevant feedback, address concerns, and improve upon the original documents.
+Output the complete merged document in markdown format."""
+                
+                update_merge_job_status('running', 60, 'calling_ai')
+                
+                bedrock_config = Config(read_timeout=300, connect_timeout=10, retries={'max_attempts': 2})
+                bedrock = boto3.client('bedrock-runtime', config=bedrock_config)
+                
+                max_tokens = 8000 if output_type == 'prfaq' else 6000
+                
+                response = bedrock.invoke_model(
+                    modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+                    contentType='application/json',
+                    accept='application/json',
+                    body=json.dumps({
+                        'anthropic_version': 'bedrock-2023-05-31',
+                        'max_tokens': max_tokens,
+                        'system': system_prompt,
+                        'messages': [{'role': 'user', 'content': user_prompt}]
+                    })
+                )
+                result_body = json.loads(response['body'].read())
+                content = result_body['content'][0]['text']
+                
+                update_merge_job_status('running', 90, 'saving_document')
+                
+                # Save merged document
+                now = datetime.now(timezone.utc).isoformat()
+                doc_type_prefix = output_type if output_type in ['prd', 'prfaq'] else 'doc'
+                doc_id = f"{doc_type_prefix}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                sk_prefix = doc_type_prefix.upper()
+                
+                projects_table.put_item(Item={
+                    'pk': f'PROJECT#{project_id}',
+                    'sk': f'{sk_prefix}#{doc_id}',
+                    'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
+                    'gsi1sk': now,
+                    'document_id': doc_id,
+                    'document_type': output_type if output_type in ['prd', 'prfaq'] else 'custom',
+                    'title': title,
+                    'content': content,
+                    'job_id': job_id,
+                    'source_documents': selected_doc_ids,
+                    'merge_instructions': instructions,
+                    'created_at': now,
+                })
+                
+                projects_table.update_item(
+                    Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
+                    UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
+                    ExpressionAttributeValues={':one': 1, ':now': now}
+                )
+                
+                update_merge_job_status('completed', 100, 'complete', result={'document_id': doc_id, 'title': title})
+                
+                return {'statusCode': 200, 'body': json.dumps({'success': True, 'document_id': doc_id})}
+                
+            except Exception as e:
+                logger.exception(f"Document merge failed: {e}")
+                update_merge_job_status('failed', 0, 'error', error=str(e))
                 return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': str(e)})}
         
         # Normal API Gateway request

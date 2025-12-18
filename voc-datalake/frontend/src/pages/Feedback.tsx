@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Search, Filter, SortDesc, X } from 'lucide-react'
@@ -6,9 +6,8 @@ import { api, getDaysFromRange } from '../api/client'
 import { useConfigStore } from '../store/configStore'
 import FeedbackCard from '../components/FeedbackCard'
 
-const sources = ['all', 'trustpilot', 'google_reviews', 'twitter', 'instagram', 'facebook', 'reddit', 'tavily', 'web_scrape']
 const sentiments = ['all', 'positive', 'neutral', 'negative', 'mixed']
-const categories = ['all', 'delivery', 'customer_support', 'product_quality', 'pricing', 'website', 'app', 'billing', 'returns', 'communication', 'other']
+const defaultCategories = ['all', 'delivery', 'customer_support', 'product_quality', 'pricing', 'website', 'app', 'billing', 'returns', 'communication', 'other']
 
 export default function Feedback() {
   const { timeRange, config } = useConfigStore()
@@ -22,6 +21,29 @@ export default function Feedback() {
   const [categoryFilter, setCategoryFilter] = useState(searchParams.get('category') || 'all')
   const [showUrgentOnly, setShowUrgentOnly] = useState(false)
   const [_isSearching, _setIsSearching] = useState(false) // Reserved for future use
+
+  // Fetch dynamic sources and categories from entities API
+  const { data: entitiesData } = useQuery({
+    queryKey: ['entities', days],
+    queryFn: () => api.getEntities({ days, limit: 100 }),
+    enabled: !!config.apiEndpoint,
+  })
+
+  // Build dynamic sources list from entities
+  const sources = useMemo(() => {
+    if (!entitiesData?.entities?.sources) return ['all']
+    const sourceNames = Object.keys(entitiesData.entities.sources)
+      .sort((a, b) => (entitiesData.entities.sources[b] || 0) - (entitiesData.entities.sources[a] || 0))
+    return ['all', ...sourceNames]
+  }, [entitiesData])
+
+  // Build dynamic categories list from entities
+  const categories = useMemo(() => {
+    if (!entitiesData?.entities?.categories) return defaultCategories
+    const categoryNames = Object.keys(entitiesData.entities.categories)
+      .sort((a, b) => (entitiesData.entities.categories[b] || 0) - (entitiesData.entities.categories[a] || 0))
+    return ['all', ...categoryNames]
+  }, [entitiesData])
 
   // Update URL when filters change
   useEffect(() => {
@@ -107,7 +129,7 @@ export default function Feedback() {
               className="input w-auto"
             >
               {sources.map(s => (
-                <option key={s} value={s}>{s === 'all' ? 'All Sources' : s.replace('_', ' ')}</option>
+                <option key={s} value={s}>{s === 'all' ? 'All Sources' : s}</option>
               ))}
             </select>
           </div>

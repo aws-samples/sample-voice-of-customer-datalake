@@ -77,7 +77,6 @@ const analyticsStack = new VocAnalyticsStack(app, 'VocAnalyticsStack', {
   description: 'VoC Data Lake - Analytics API (API Gateway, Lambda, Webhooks)',
   feedbackTable: storageStack.feedbackTable,
   aggregatesTable: storageStack.aggregatesTable,
-  pipelinesTable: storageStack.pipelinesTable,
   projectsTable: storageStack.projectsTable,
   jobsTable: storageStack.jobsTable,
   conversationsTable: storageStack.conversationsTable,

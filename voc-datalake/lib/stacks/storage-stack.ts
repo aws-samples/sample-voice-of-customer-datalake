@@ -11,7 +11,6 @@ export class VocStorageStack extends cdk.Stack {
   public readonly feedbackTable: dynamodb.Table;
   public readonly aggregatesTable: dynamodb.Table;
   public readonly watermarksTable: dynamodb.Table;
-  public readonly pipelinesTable: dynamodb.Table;
   public readonly projectsTable: dynamodb.Table;
   public readonly jobsTable: dynamodb.Table;
   public readonly conversationsTable: dynamodb.Table;
@@ -162,16 +161,6 @@ export class VocStorageStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
-    // Pipelines Table - stores pipeline configurations
-    this.pipelinesTable = new dynamodb.Table(this, 'PipelinesTable', {
-      tableName: 'voc-pipelines',
-      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
-      encryptionKey: this.kmsKey,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-    });
-
     // Projects Table - stores projects with personas, PRDs, PR/FAQs
     // PK: PROJECT#{project_id}, SK: META | PERSONA#{id} | PRD#{id} | PRFAQ#{id} | RESEARCH#{id}
     this.projectsTable = new dynamodb.Table(this, 'ProjectsTable', {
@@ -233,7 +222,6 @@ export class VocStorageStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'AggregatesTableName', { value: this.aggregatesTable.tableName });
     new cdk.CfnOutput(this, 'WatermarksTableName', { value: this.watermarksTable.tableName });
     new cdk.CfnOutput(this, 'KmsKeyArn', { value: this.kmsKey.keyArn });
-    new cdk.CfnOutput(this, 'PipelinesTableName', { value: this.pipelinesTable.tableName });
     new cdk.CfnOutput(this, 'ProjectsTableName', { value: this.projectsTable.tableName });
     new cdk.CfnOutput(this, 'JobsTableName', { value: this.jobsTable.tableName });
     new cdk.CfnOutput(this, 'ConversationsTableName', { value: this.conversationsTable.tableName });

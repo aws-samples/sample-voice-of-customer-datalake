@@ -347,10 +347,14 @@ def process_feedback(raw_record: dict) -> dict:
     urgency = insights.get('urgency', 'low')
     sentiment_score = insights.get('sentiment_score', sentiment['score'])
     
+    # Use brand_name for source display (e.g., "Gucci - Trustpilot"), fallback to source_platform
+    brand_name = raw_record.get('brand_name', '')
+    source_display = brand_name if brand_name else source_platform
+    
     # Build DynamoDB item with GSI keys
     item = {
-        # Primary key
-        'pk': f"SOURCE#{source_platform}",
+        # Primary key - use brand_name for better source filtering
+        'pk': f"SOURCE#{source_display}",
         'sk': f"FEEDBACK#{feedback_id}",
         
         # GSI1: Query by date
@@ -371,7 +375,7 @@ def process_feedback(raw_record: dict) -> dict:
         'source_platform': source_platform,
         'source_channel': raw_record.get('source_channel', 'unknown'),
         'source_url': raw_record.get('url'),
-        'brand_name': raw_record.get('brand_name', ''),
+        'brand_name': source_display,
         'source_created_at': raw_record.get('created_at'),
         'ingested_at': raw_record.get('ingested_at'),
         'processed_at': now_iso,

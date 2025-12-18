@@ -107,26 +107,6 @@ export interface IntegrationStatus {
   }
 }
 
-export interface PipelineStep {
-  id: string
-  name: string
-  type: 'extract' | 'transform' | 'enrich' | 'filter' | 'output'
-  config: Record<string, unknown>
-  prompt?: string
-  enabled: boolean
-}
-
-export interface Pipeline {
-  id: string
-  source: string
-  name: string
-  description: string
-  steps: PipelineStep[]
-  enabled: boolean
-  lastRun?: string
-  status: 'idle' | 'running' | 'error' | 'success'
-}
-
 export interface ScraperConfig {
   id: string
   name: string
@@ -368,32 +348,6 @@ export const api = {
       method: 'POST'
     }),
 
-  // Pipelines
-  getPipelines: () => fetchApi<{ pipelines: Pipeline[] }>('/pipelines'),
-  
-  getPipeline: (id: string) => fetchApi<Pipeline>(`/pipelines/${id}`),
-  
-  savePipeline: (pipeline: Pipeline) => 
-    fetchApi<{ success: boolean; pipeline: Pipeline }>('/pipelines', {
-      method: 'POST',
-      body: JSON.stringify(pipeline)
-    }),
-  
-  updatePipeline: (id: string, pipeline: Partial<Pipeline>) =>
-    fetchApi<{ success: boolean; pipeline: Pipeline }>(`/pipelines/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(pipeline)
-    }),
-  
-  deletePipeline: (id: string) =>
-    fetchApi<{ success: boolean }>(`/pipelines/${id}`, { method: 'DELETE' }),
-  
-  runPipeline: (id: string) =>
-    fetchApi<{ success: boolean; execution_id: string }>(`/pipelines/${id}/run`, { method: 'POST' }),
-  
-  getPipelineRuns: (id: string) =>
-    fetchApi<{ runs: Array<{ id: string; status: string; started_at: string; completed_at?: string; items_processed: number }> }>(`/pipelines/${id}/runs`),
-
   // Scrapers
   getScrapers: () => fetchApi<{ scrapers: ScraperConfig[] }>('/scrapers'),
   
@@ -499,6 +453,12 @@ export const api = {
       method: 'DELETE'
     }),
   
+  importPersona: (projectId: string, data: { input_type: 'pdf' | 'image' | 'text'; content: string; media_type?: string }) =>
+    fetchApi<{ success: boolean; persona: ProjectPersona }>(`/projects/${projectId}/personas/import`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
   generatePRD: (projectId: string, data: { feature_idea: string; title?: string }) =>
     fetchApi<{ success: boolean; document: ProjectDocument }>(`/projects/${projectId}/prd/generate`, {
       method: 'POST',
@@ -582,6 +542,22 @@ export const api = {
     customer_questions?: string[]
   }) =>
     fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/document`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  mergeDocuments: (projectId: string, data: {
+    output_type: 'prd' | 'prfaq' | 'custom'
+    title: string
+    instructions: string
+    selected_document_ids: string[]
+    selected_persona_ids?: string[]
+    use_feedback?: boolean
+    feedback_sources?: string[]
+    feedback_categories?: string[]
+    days?: number
+  }) =>
+    fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/documents/merge`, {
       method: 'POST',
       body: JSON.stringify(data)
     }),
@@ -694,7 +670,7 @@ export const api = {
 export interface ProjectJob {
   success?: boolean
   job_id: string
-  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq'
+  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'merge_documents'
   status: 'pending' | 'running' | 'completed' | 'failed'
   progress: number
   current_step?: string
