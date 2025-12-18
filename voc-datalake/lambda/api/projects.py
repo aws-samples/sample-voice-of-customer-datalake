@@ -4,6 +4,7 @@ Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 """
 import json
 import os
+import re
 import boto3
 from botocore.config import Config
 from datetime import datetime, timezone
@@ -871,6 +872,10 @@ Output the FINAL validated personas as a JSON array with any refinements."""
             persona_id = f"persona_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}"
             
             # Build the full persona item with all 8 sections
+            # Fix names that may be missing spaces (e.g., "VeronicaChen" -> "Veronica Chen")
+            raw_name = persona.get('name', f'Persona {i+1}')
+            fixed_name = re.sub(r'([a-z])([A-Z])', r'\1 \2', raw_name)
+            
             item = {
                 'pk': f'PROJECT#{project_id}',
                 'sk': f'PERSONA#{persona_id}',
@@ -879,7 +884,7 @@ Output the FINAL validated personas as a JSON array with any refinements."""
                 'persona_id': persona_id,
                 
                 # Basic info
-                'name': persona.get('name', f'Persona {i+1}'),
+                'name': fixed_name,
                 'tagline': persona.get('tagline', ''),
                 'confidence': persona.get('confidence', 'medium'),
                 'feedback_count': persona.get('feedback_count', len(feedback_items) // persona_count),
@@ -1902,13 +1907,17 @@ Output ONLY the JSON object."""
     now = datetime.now(timezone.utc).isoformat()
     persona_id = f"persona_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     
+    # Fix names that may be missing spaces (e.g., "VeronicaChen" -> "Veronica Chen")
+    raw_name = persona_data.get('name', 'Imported Persona')
+    fixed_name = re.sub(r'([a-z])([A-Z])', r'\1 \2', raw_name)
+    
     item = {
         'pk': f'PROJECT#{project_id}',
         'sk': f'PERSONA#{persona_id}',
         'gsi1pk': f'PROJECT#{project_id}#PERSONAS',
         'gsi1sk': now,
         'persona_id': persona_id,
-        'name': persona_data.get('name', 'Imported Persona'),
+        'name': fixed_name,
         'tagline': persona_data.get('tagline', ''),
         'confidence': persona_data.get('confidence', 'medium'),
         'identity': persona_data.get('identity', {}),
@@ -1959,6 +1968,10 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
     """Update a persona with support for all 8 sections."""
     if not projects_table:
         return {'success': False, 'message': 'Projects table not configured'}
+    
+    # Fix names that may be missing spaces (e.g., "VeronicaChen" -> "Veronica Chen")
+    if 'name' in body and body['name']:
+        body['name'] = re.sub(r'([a-z])([A-Z])', r'\1 \2', body['name'])
     
     now = datetime.now(timezone.utc).isoformat()
     

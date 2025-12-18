@@ -8,6 +8,7 @@ import { api } from '../api/client'
 import type { ScraperConfig, ScraperTemplate } from '../api/client'
 import { useConfigStore } from '../store/configStore'
 import clsx from 'clsx'
+import ConfirmModal from '../components/ConfirmModal'
 
 const DEFAULT_SCRAPER: Omit<ScraperConfig, 'id'> = {
   name: 'New Scraper',
@@ -681,6 +682,7 @@ export default function Scrapers() {
   const [editingScraper, setEditingScraper] = useState<ScraperConfig | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
+  const [deleteScraperId, setDeleteScraperId] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState<ScraperTemplate | null>(null)
 
   const { data, isLoading, refetch } = useQuery({
@@ -722,8 +724,7 @@ export default function Scrapers() {
   }
 
   const handleDeleteScraper = (id: string) => {
-    if (!confirm('Delete this scraper?')) return
-    deleteMutation.mutate(id)
+    setDeleteScraperId(id)
   }
 
   const handleRunScraper = (id: string) => {
@@ -816,6 +817,21 @@ export default function Scrapers() {
           onClose={() => { setEditingScraper(null); setIsCreating(false); setSelectedTemplate(null) }}
         />
       )}
+
+      <ConfirmModal
+        isOpen={deleteScraperId !== null}
+        title="Delete Scraper"
+        message="Are you sure you want to delete this scraper? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        isLoading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteScraperId) {
+            deleteMutation.mutate(deleteScraperId, { onSettled: () => setDeleteScraperId(null) })
+          }
+        }}
+        onCancel={() => setDeleteScraperId(null)}
+      />
     </div>
   )
 }

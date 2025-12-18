@@ -12,6 +12,7 @@ import clsx from 'clsx'
 import DocumentExportMenu from '../components/DocumentExportMenu'
 import PersonaExportMenu from '../components/PersonaExportMenu'
 import DataSourceWizard, { ContextSummary, defaultContextConfig, type ContextConfig } from '../components/DataSourceWizard'
+import ConfirmModal from '../components/ConfirmModal'
 
 type Tab = 'overview' | 'personas' | 'documents' | 'chat'
 
@@ -350,7 +351,7 @@ Implement the following PRD for [Your Project Name].
 
 // Tool-specific configs (extend shared context)
 interface PersonaToolConfig { personaCount: number; customInstructions: string }
-interface ResearchToolConfig { question: string }
+interface ResearchToolConfig { question: string; title: string }
 interface DocToolConfig { docType: 'prd' | 'prfaq'; title: string; featureIdea: string; customerQuestions: string[] }
 // MergeToolConfig is defined above
 
@@ -370,7 +371,7 @@ export default function ProjectDetail() {
   
   // Tool-specific state
   const [personaConfig, setPersonaConfig] = useState<PersonaToolConfig>({ personaCount: 3, customInstructions: '' })
-  const [researchConfig, setResearchConfig] = useState<ResearchToolConfig>({ question: '' })
+  const [researchConfig, setResearchConfig] = useState<ResearchToolConfig>({ question: '', title: '' })
   const [docConfig, setDocConfig] = useState<DocToolConfig>({ docType: 'prd', title: '', featureIdea: '', customerQuestions: ['', '', '', '', ''] })
   const [mergeConfig, setMergeConfig] = useState<MergeToolConfig>({ outputType: 'prfaq', title: '', instructions: '' })
   const [showDocModal, setShowDocModal] = useState(false)
@@ -398,6 +399,9 @@ export default function ProjectDetail() {
   // Selected pills for context
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([])
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([])
+  
+  // Confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{ type: 'persona' | 'document' | null; id: string | null }>({ type: null, id: null })
 
   const { data, isLoading } = useQuery({ queryKey: ['project', id], queryFn: () => api.getProject(id!), enabled: !!config.apiEndpoint && !!id })
   
@@ -441,7 +445,7 @@ export default function ProjectDetail() {
     setActiveWizard(null)
     setContextConfig(defaultContextConfig)
     setPersonaConfig({ personaCount: 3, customInstructions: '' })
-    setResearchConfig({ question: '' })
+    setResearchConfig({ question: '', title: '' })
     setDocConfig({ docType: 'prd', title: '', featureIdea: '', customerQuestions: ['', '', '', '', ''] })
     setMergeConfig({ outputType: 'prfaq', title: '', instructions: '' })
     setGenerating(null)
@@ -511,7 +515,8 @@ export default function ProjectDetail() {
   
   const resMut = useMutation({ 
     mutationFn: () => api.runResearch(id!, { 
-      question: researchConfig.question, 
+      question: researchConfig.question,
+      title: researchConfig.title || researchConfig.question.slice(0, 100),
       sources: contextConfig.sources, 
       categories: contextConfig.categories, 
       sentiments: contextConfig.sentiments, 
@@ -572,15 +577,14 @@ export default function ProjectDetail() {
   const importPersonaMut = useMutation({
     mutationFn: (data: { input_type: 'pdf' | 'image' | 'text'; content: string; media_type?: string }) => 
       api.importPersona(id!, data),
-    onSuccess: (result) => { 
-      queryClient.invalidateQueries({ queryKey: ['project', id] })
+    onSuccess: () => { 
+      // Close modal immediately - job runs in background
       setShowImportModal(false)
       setImportContent('')
       setImportFileName('')
       setImportMediaType('')
-      if (result.persona) {
-        setSelectedPersona(result.persona)
-      }
+      // Refresh jobs list to show the new import job
+      queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
     }
   })
   
@@ -764,6 +768,11 @@ export default function ProjectDetail() {
           onContextChange={setContextConfig}
           renderFinalStep={() => (
             <div className="space-y-6">
+              <div>
+                <h3 className="font-medium mb-3">Research Title</h3>
+                <input type="text" value={researchConfig.title} onChange={e => setResearchConfig(c => ({ ...c, title: e.target.value }))} placeholder="e.g., Delivery Pain Points Analysis" className="w-full px-3 py-2 border rounded-lg" />
+                <p className="text-xs text-gray-500 mt-1">Optional - defaults to the research question if left empty</p>
+              </div>
               <div>
                 <h3 className="font-medium mb-3">Research Question</h3>
                 <textarea value={researchConfig.question} onChange={e => setResearchConfig(c => ({ ...c, question: e.target.value }))} placeholder="e.g., What are the main pain points customers experience with delivery delays? What improvements do they suggest?" rows={4} className="w-full px-3 py-2 border rounded-lg" />
@@ -960,6 +969,7 @@ export default function ProjectDetail() {
                            job.job_type === 'generate_prd' ? 'PRD Generation' :
                            job.job_type === 'generate_prfaq' ? 'PR-FAQ Generation' :
                            job.job_type === 'generate_personas' ? 'Persona Generation' :
+                           job.job_type === 'import_persona' ? 'Persona Import' :
                            'Document Merge'}
                         </span>
                         <span className={clsx(
@@ -992,9 +1002,9 @@ export default function ProjectDetail() {
                           </div>
                         </div>
                       )}
-                      {job.status === 'completed' && job.result?.document_id && (
+                      {job.status === 'completed' && (job.result?.document_id || job.result?.persona_id) && (
                         <p className="text-xs text-gray-500 mt-1">
-                          Created: {job.result.title || job.result.document_id}
+                          Created: {job.result.title || job.result.document_id || job.result.persona_id}
                         </p>
                       )}
                       {job.status === 'failed' && job.error && (
@@ -1093,7 +1103,7 @@ export default function ProjectDetail() {
                         <div className="flex items-center gap-1">
                           <PersonaExportMenu persona={selectedPersona} />
                           <button onClick={() => setEditingPersona(selectedPersona)} className="p-2 text-purple-500 hover:bg-purple-100 rounded-lg" title="Edit"><Pencil size={18} /></button>
-                          <button onClick={() => { if (confirm('Delete this persona?')) deletePersonaMut.mutate(selectedPersona.persona_id) }} disabled={deletePersonaMut.isPending} className="p-2 text-red-500 hover:bg-red-100 rounded-lg" title="Delete">
+                          <button onClick={() => setConfirmModal({ type: 'persona', id: selectedPersona.persona_id })} disabled={deletePersonaMut.isPending} className="p-2 text-red-500 hover:bg-red-100 rounded-lg" title="Delete">
                             {deletePersonaMut.isPending ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
                           </button>
                         </div>
@@ -1432,7 +1442,7 @@ export default function ProjectDetail() {
                         <Pencil size={18} />
                       </button>
                       <button 
-                        onClick={() => { if (confirm('Delete this document?')) deleteDocMut.mutate(selectedDoc.document_id) }}
+                        onClick={() => setConfirmModal({ type: 'document', id: selectedDoc.document_id })}
                         disabled={deleteDocMut.isPending}
                         className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
                         title="Delete document"
@@ -1746,6 +1756,26 @@ export default function ProjectDetail() {
           </div>
         </div>
       )}
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.type !== null}
+        title={confirmModal.type === 'persona' ? 'Delete Persona' : 'Delete Document'}
+        message={confirmModal.type === 'persona' 
+          ? 'Are you sure you want to delete this persona? This action cannot be undone.'
+          : 'Are you sure you want to delete this document? This action cannot be undone.'}
+        confirmLabel="Delete"
+        variant="danger"
+        isLoading={confirmModal.type === 'persona' ? deletePersonaMut.isPending : deleteDocMut.isPending}
+        onConfirm={() => {
+          if (confirmModal.type === 'persona' && confirmModal.id) {
+            deletePersonaMut.mutate(confirmModal.id, { onSettled: () => setConfirmModal({ type: null, id: null }) })
+          } else if (confirmModal.type === 'document' && confirmModal.id) {
+            deleteDocMut.mutate(confirmModal.id, { onSettled: () => setConfirmModal({ type: null, id: null }) })
+          }
+        }}
+        onCancel={() => setConfirmModal({ type: null, id: null })}
+      />
     </div>
   )
 }

@@ -99,8 +99,35 @@ def delete_scraper(scraper_id: str):
 def get_templates():
     """Get available scraper templates."""
     templates = [
-        {'id': 'trustpilot_jsonld', 'name': 'Trustpilot (JSON-LD)', 'description': 'Extract reviews using JSON-LD.', 'icon': '⭐', 'extraction_method': 'jsonld', 'url_pattern': 'https://www.trustpilot.com/review/{company_domain}', 'supports_pagination': True, 'config': {'extraction_method': 'jsonld', 'template': 'trustpilot'}},
-        {'id': 'custom_css', 'name': 'Custom (CSS Selectors)', 'description': 'Create a custom scraper with CSS selectors.', 'icon': '🔧', 'extraction_method': 'css', 'url_pattern': '', 'supports_pagination': True, 'config': {'extraction_method': 'css', 'container_selector': '.review', 'text_selector': '.review-text'}},
+        {
+            'id': 'trustpilot_jsonld',
+            'name': 'Trustpilot (JSON-LD)',
+            'description': 'Extract reviews using JSON-LD.',
+            'icon': '⭐',
+            'extraction_method': 'jsonld',
+            'url_pattern': 'https://www.trustpilot.com/review/{company_domain}',
+            'supports_pagination': True,
+            'config': {
+                'extraction_method': 'jsonld',
+                'template': 'trustpilot',
+                'pagination': {'enabled': True, 'param': 'page', 'max_pages': 10, 'start': 1}
+            }
+        },
+        {
+            'id': 'custom_css',
+            'name': 'Custom (CSS Selectors)',
+            'description': 'Create a custom scraper with CSS selectors.',
+            'icon': '🔧',
+            'extraction_method': 'css',
+            'url_pattern': '',
+            'supports_pagination': True,
+            'config': {
+                'extraction_method': 'css',
+                'container_selector': '.review',
+                'text_selector': '.review-text',
+                'pagination': {'enabled': False, 'param': 'page', 'max_pages': 10, 'start': 1}
+            }
+        },
     ]
     return {'templates': templates}
 

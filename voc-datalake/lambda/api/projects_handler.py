@@ -91,9 +91,65 @@ def api_create_persona(project_id: str):
 @app.post("/projects/<project_id>/personas/import")
 @tracer.capture_method
 def api_import_persona(project_id: str):
-    """Import a persona from PDF, image, or text."""
-    body = app.current_event.json_body
-    return import_persona(project_id, body)
+    """Import a persona from PDF, image, or text - runs as background job."""
+    import boto3
+    import uuid
+    from datetime import datetime, timezone
+    
+    body = app.current_event.json_body or {}
+    
+    # Create a job ID
+    job_id = f"job_{uuid.uuid4().hex[:16]}"
+    now = datetime.now(timezone.utc).isoformat()
+    # TTL: 30 minutes for running jobs, extended to 7 days when completed
+    ttl = int((datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp())
+    
+    # Store job status in Jobs table
+    jobs_table = boto3.resource('dynamodb').Table(os.environ.get('JOBS_TABLE', ''))
+    jobs_table.put_item(Item={
+        'pk': f'PROJECT#{project_id}',
+        'sk': f'JOB#{job_id}',
+        'gsi1pk': 'STATUS#running',
+        'gsi1sk': now,
+        'job_id': job_id,
+        'project_id': project_id,
+        'job_type': 'import_persona',
+        'status': 'running',
+        'progress': 0,
+        'current_step': 'starting',
+        'created_at': now,
+        'updated_at': now,
+        'ttl': ttl,
+        'import_config': {
+            'input_type': body.get('input_type', 'text'),
+            'content': body.get('content', ''),
+            'media_type': body.get('media_type', '')
+        }
+    })
+    
+    # Invoke Lambda asynchronously
+    lambda_client = boto3.client('lambda')
+    lambda_client.invoke(
+        FunctionName=os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'voc-projects-api'),
+        InvocationType='Event',  # Async invocation
+        Payload=json.dumps({
+            'job_type': 'import_persona',
+            'project_id': project_id,
+            'job_id': job_id,
+            'import_config': {
+                'input_type': body.get('input_type', 'text'),
+                'content': body.get('content', ''),
+                'media_type': body.get('media_type', '')
+            }
+        })
+    )
+    
+    return {
+        'success': True,
+        'job_id': job_id,
+        'status': 'running',
+        'message': 'Persona import started. Check Background Jobs for progress.'
+    }
 
 
 @app.put("/projects/<project_id>/personas/<persona_id>")
@@ -1147,6 +1203,183 @@ Output the complete merged document in markdown format."""
             except Exception as e:
                 logger.exception(f"Document merge failed: {e}")
                 update_merge_job_status('failed', 0, 'error', error=str(e))
+                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': str(e)})}
+        
+        # Handle import persona job
+        if job_type == 'import_persona':
+            project_id = event['project_id']
+            job_id = event['job_id']
+            import_config = event['import_config']
+            
+            import boto3
+            from datetime import datetime, timezone
+            from botocore.config import Config
+            
+            dynamodb = boto3.resource('dynamodb')
+            jobs_table = dynamodb.Table(os.environ.get('JOBS_TABLE', ''))
+            projects_table = dynamodb.Table(os.environ.get('PROJECTS_TABLE', ''))
+            
+            def update_import_job_status(status, progress, step, error=None, result=None):
+                now = datetime.now(timezone.utc).isoformat()
+                update_expr = 'SET #status = :status, progress = :progress, current_step = :step, updated_at = :now'
+                expr_values = {':status': status, ':progress': progress, ':step': step, ':now': now}
+                expr_names = {'#status': 'status'}
+                if error:
+                    update_expr += ', #error = :error, completed_at = :now, #ttl = :ttl'
+                    expr_values[':error'] = error
+                    expr_names['#error'] = 'error'
+                    expr_names['#ttl'] = 'ttl'
+                    expr_values[':ttl'] = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
+                if result:
+                    update_expr += ', #result = :result, completed_at = :now, #ttl = :ttl'
+                    expr_values[':result'] = result
+                    expr_names['#result'] = 'result'
+                    expr_names['#ttl'] = 'ttl'
+                    expr_values[':ttl'] = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
+                jobs_table.update_item(
+                    Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
+                    UpdateExpression=update_expr,
+                    ExpressionAttributeValues=expr_values,
+                    ExpressionAttributeNames=expr_names
+                )
+            
+            try:
+                update_import_job_status('running', 10, 'extracting_persona')
+                
+                input_type = import_config.get('input_type', 'text')
+                content = import_config.get('content', '')
+                media_type = import_config.get('media_type', '')
+                
+                logger.info(f"[IMPORT_PERSONA_JOB] Starting import from {input_type} for project {project_id}")
+                
+                # Build the multimodal message for Claude
+                system_prompt = """You are a UX researcher expert at extracting persona information from documents and images.
+Extract persona data from the provided input and output a structured JSON object.
+If information is not available, use reasonable defaults or null.
+CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
+
+                user_content = []
+                json_schema = """{
+    "name": "Full Name",
+    "tagline": "One sentence describing this persona",
+    "confidence": "high",
+    "identity": {"age_range": "30-45", "location": "City, Country", "occupation": "Job Title", "income_bracket": "$50k-100k or null", "education": "Degree or null", "family_status": "Status or null", "bio": "2-3 sentence background story"},
+    "goals_motivations": {"primary_goal": "Main objective", "secondary_goals": ["Goal 2", "Goal 3"], "success_definition": "What success looks like", "underlying_motivations": ["Motivation 1", "Motivation 2"]},
+    "pain_points": {"current_challenges": ["Challenge 1", "Challenge 2"], "blockers": ["Blocker 1"], "workarounds": ["Workaround 1"], "emotional_impact": "How frustrations affect them"},
+    "behaviors": {"current_solutions": ["Solution 1"], "tools_used": ["Tool 1", "Tool 2"], "activity_frequency": "Daily|Weekly|Monthly", "tech_savviness": "low|medium|high", "decision_style": "Data-driven|Gut instinct|Research-heavy"},
+    "context_environment": {"usage_context": "When and where they use the product", "devices": ["Device 1", "Device 2"], "time_constraints": "Time constraints", "social_context": "Work/social environment", "influencers": ["Influencer 1"]},
+    "quotes": [{"text": "Quote from the persona", "context": "Context"}],
+    "scenario": {"title": "Scenario title", "narrative": "3-4 sentence user story", "trigger": "What triggers this scenario", "outcome": "Desired outcome"}
+}"""
+                
+                if input_type == 'pdf':
+                    user_content.append({"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": content}})
+                    user_content.append({"type": "text", "text": f"Extract the persona information from this PDF document.\n\nOutput a JSON object with this structure:\n```json\n{json_schema}\n```\n\nOutput ONLY the JSON object."})
+                elif input_type == 'image':
+                    user_content.append({"type": "image", "source": {"type": "base64", "media_type": media_type or "image/png", "data": content}})
+                    user_content.append({"type": "text", "text": f"Extract the persona information from this image.\n\nOutput a JSON object with this structure:\n```json\n{json_schema}\n```\n\nOutput ONLY the JSON object."})
+                else:  # text
+                    user_content.append({"type": "text", "text": f"Extract the persona information from this text:\n\n---\n{content}\n---\n\nOutput a JSON object with this structure:\n```json\n{json_schema}\n```\n\nOutput ONLY the JSON object."})
+                
+                update_import_job_status('running', 30, 'calling_ai')
+                
+                bedrock_config = Config(read_timeout=300, connect_timeout=10, retries={'max_attempts': 2})
+                bedrock = boto3.client('bedrock-runtime', config=bedrock_config)
+                
+                response = bedrock.invoke_model(
+                    modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+                    contentType='application/json',
+                    accept='application/json',
+                    body=json.dumps({
+                        'anthropic_version': 'bedrock-2023-05-31',
+                        'max_tokens': 4096,
+                        'system': system_prompt,
+                        'messages': [{'role': 'user', 'content': user_content}]
+                    })
+                )
+                
+                result_body = json.loads(response['body'].read())
+                response_text = result_body['content'][0]['text']
+                
+                # Parse JSON from response
+                json_text = response_text
+                if '```json' in json_text:
+                    json_text = json_text.split('```json')[1].split('```')[0]
+                elif '```' in json_text:
+                    json_text = json_text.split('```')[1].split('```')[0]
+                
+                persona_data = json.loads(json_text.strip())
+                logger.info(f"[IMPORT_PERSONA_JOB] Extracted persona: {persona_data.get('name', 'Unknown')}")
+                
+                update_import_job_status('running', 60, 'generating_avatar')
+                
+                # Create the persona in DynamoDB
+                now = datetime.now(timezone.utc).isoformat()
+                persona_id = f"persona_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                
+                item = {
+                    'pk': f'PROJECT#{project_id}',
+                    'sk': f'PERSONA#{persona_id}',
+                    'gsi1pk': f'PROJECT#{project_id}#PERSONAS',
+                    'gsi1sk': now,
+                    'persona_id': persona_id,
+                    'name': persona_data.get('name', 'Imported Persona'),
+                    'tagline': persona_data.get('tagline', ''),
+                    'confidence': persona_data.get('confidence', 'medium'),
+                    'identity': persona_data.get('identity', {}),
+                    'goals_motivations': persona_data.get('goals_motivations', {}),
+                    'pain_points': persona_data.get('pain_points', {}),
+                    'behaviors': persona_data.get('behaviors', {}),
+                    'context_environment': persona_data.get('context_environment', {}),
+                    'quotes': persona_data.get('quotes', []),
+                    'scenario': persona_data.get('scenario', {}),
+                    'research_notes': [],
+                    'imported_from': input_type,
+                    'created_at': now,
+                    'updated_at': now,
+                }
+                
+                # Generate avatar using existing flow
+                from projects import generate_persona_avatar, get_avatar_cdn_url
+                s3_bucket = os.environ.get('RAW_DATA_BUCKET', '')
+                
+                avatar_data = {'persona_id': persona_id, **item}
+                avatar_result = generate_persona_avatar(avatar_data, s3_bucket)
+                
+                if avatar_result.get('avatar_url'):
+                    item['avatar_url'] = avatar_result['avatar_url']
+                    item['avatar_prompt'] = avatar_result.get('avatar_prompt', '')
+                    logger.info(f"[IMPORT_PERSONA_JOB] Avatar generated: {avatar_result['avatar_url']}")
+                
+                update_import_job_status('running', 90, 'saving_persona')
+                
+                # Save to DynamoDB
+                projects_table.put_item(Item=item)
+                
+                # Update persona count
+                projects_table.update_item(
+                    Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
+                    UpdateExpression='SET persona_count = persona_count + :one, updated_at = :now',
+                    ExpressionAttributeValues={':one': 1, ':now': now}
+                )
+                
+                # Convert S3 URI to CDN URL for result
+                persona_name = item.get('name', 'Imported Persona')
+                if item.get('avatar_url') and item['avatar_url'].startswith('s3://'):
+                    item['avatar_url'] = get_avatar_cdn_url(item['avatar_url'])
+                
+                update_import_job_status('completed', 100, 'complete', result={'persona_id': persona_id, 'title': f'Imported: {persona_name}'})
+                
+                logger.info(f"[IMPORT_PERSONA_JOB] Successfully imported persona: {persona_name}")
+                return {'statusCode': 200, 'body': json.dumps({'success': True, 'persona_id': persona_id})}
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"[IMPORT_PERSONA_JOB] Failed to parse JSON: {e}")
+                update_import_job_status('failed', 0, 'error', error=f'Failed to parse persona data: {str(e)}')
+                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': str(e)})}
+            except Exception as e:
+                logger.exception(f"[IMPORT_PERSONA_JOB] Import failed: {e}")
+                update_import_job_status('failed', 0, 'error', error=str(e))
                 return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': str(e)})}
         
         # Normal API Gateway request

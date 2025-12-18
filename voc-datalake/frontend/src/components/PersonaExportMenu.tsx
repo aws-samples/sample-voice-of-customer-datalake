@@ -443,16 +443,16 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
           
           {/* Scenario */}
           {persona.scenario && (
-            <div data-pdf-section style={{ marginBottom: '24px' }}>
+            <div data-pdf-section style={{ marginBottom: '24px', pageBreakInside: 'avoid' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#0d9488', marginBottom: '12px' }}>📖 Scenario</h2>
               {typeof persona.scenario === 'string' ? (
-                <p style={{ color: '#374151', lineHeight: '1.6' }}>{persona.scenario}</p>
+                <p data-pdf-section style={{ color: '#374151', lineHeight: '1.6' }}>{persona.scenario}</p>
               ) : (
                 <div>
-                  {persona.scenario.title && <h3 style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>{persona.scenario.title}</h3>}
-                  {persona.scenario.narrative && <p style={{ color: '#374151', lineHeight: '1.6', marginBottom: '12px' }}>{persona.scenario.narrative}</p>}
+                  {persona.scenario.title && <h3 data-pdf-section style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>{persona.scenario.title}</h3>}
+                  {persona.scenario.narrative && <p data-pdf-section style={{ color: '#374151', lineHeight: '1.6', marginBottom: '12px' }}>{persona.scenario.narrative}</p>}
                   {(persona.scenario.trigger || persona.scenario.outcome) && (
-                    <div style={{ display: 'flex', gap: '16px' }}>
+                    <div data-pdf-section style={{ display: 'flex', gap: '16px', pageBreakInside: 'avoid' }}>
                       {persona.scenario.trigger && (
                         <div style={{ flex: 1, padding: '12px', backgroundColor: '#f0fdfa', borderRadius: '8px' }}>
                           <p style={{ fontSize: '12px', color: '#0d9488', fontWeight: '500', marginBottom: '4px' }}>Trigger</p>
@@ -500,10 +500,15 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
       })
 
       // Get all section elements to find safe page break points
+      // Store both offset and height for each section
       const sections = container.querySelectorAll('[data-pdf-section]')
-      const sectionOffsets: number[] = []
+      const sectionBounds: { top: number; bottom: number }[] = []
       sections.forEach((section) => {
-        sectionOffsets.push((section as HTMLElement).offsetTop)
+        const el = section as HTMLElement
+        sectionBounds.push({
+          top: el.offsetTop,
+          bottom: el.offsetTop + el.offsetHeight
+        })
       })
 
       const canvas = await html2canvas(container, {
@@ -539,21 +544,62 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
         if (idealEndY >= canvas.height) {
           endY = canvas.height
         } else {
-          // Look for a section boundary near the ideal end point
-          // Search within 20% of page height for a good break
-          const searchStart = idealEndY - (pageHeightPx * 0.2)
-          const searchEnd = idealEndY
+          // Scale section bounds to canvas coordinates
+          const scaledBounds = sectionBounds.map(b => ({
+            top: b.top * scale,
+            bottom: b.bottom * scale
+          }))
           
+          // Find the best break point - prefer section tops that are:
+          // 1. After current position
+          // 2. Before or at the ideal end
+          // 3. Closest to the ideal end without going over
           let bestBreak = idealEndY
-          const scaledOffsets = sectionOffsets.map(offset => offset * scale)
+          let foundGoodBreak = false
           
-          for (const offset of scaledOffsets) {
-            if (offset > searchStart && offset <= searchEnd && offset > currentY) {
-              bestBreak = offset
+          // Search within 35% of page height for a good break (increased from 20%)
+          const searchStart = idealEndY - (pageHeightPx * 0.35)
+          
+          // First pass: find section tops that would make good break points
+          for (const bounds of scaledBounds) {
+            // A section top is a good break if it's within our search range
+            if (bounds.top > currentY + 50 && bounds.top >= searchStart && bounds.top <= idealEndY) {
+              // Check if breaking here would cut through another section
+              const wouldCutSection = scaledBounds.some(b => 
+                b.top < bounds.top && b.bottom > bounds.top && b.bottom <= idealEndY + 20
+              )
+              
+              if (!wouldCutSection) {
+                bestBreak = bounds.top
+                foundGoodBreak = true
+              }
             }
           }
           
-          // If we found a section boundary, use it; otherwise use ideal end
+          // If no good break found, look for any section boundary
+          if (!foundGoodBreak) {
+            // Find the last section that ends before idealEndY
+            for (const bounds of scaledBounds) {
+              if (bounds.bottom > currentY + 50 && bounds.bottom <= idealEndY) {
+                bestBreak = bounds.bottom
+                foundGoodBreak = true
+              }
+            }
+          }
+          
+          // If still no good break, check if we're cutting through a section
+          // and if so, break before that section starts
+          if (!foundGoodBreak) {
+            for (const bounds of scaledBounds) {
+              if (bounds.top < idealEndY && bounds.bottom > idealEndY && bounds.top > currentY + 50) {
+                // We would cut this section - break before it instead
+                bestBreak = bounds.top
+                foundGoodBreak = true
+                break
+              }
+            }
+          }
+          
           endY = bestBreak
         }
         

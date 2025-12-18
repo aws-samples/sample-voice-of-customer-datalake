@@ -46,39 +46,47 @@ export default function Categories() {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [showFilters, setShowFilters] = useState(false)
 
-  // Queries
+  // Queries - pass source filter to all data queries
   const { data: categories, isLoading: categoriesLoading } = useQuery({
-    queryKey: ['categories', days],
-    queryFn: () => api.getCategories(days),
+    queryKey: ['categories', days, selectedSource],
+    queryFn: () => api.getCategories(days, selectedSource || undefined),
     enabled: !!config.apiEndpoint,
   })
 
   const { data: sentiment, isLoading: sentimentLoading } = useQuery({
-    queryKey: ['sentiment', days],
-    queryFn: () => api.getSentiment(days),
+    queryKey: ['sentiment', days, selectedSource],
+    queryFn: () => api.getSentiment(days, selectedSource || undefined),
     enabled: !!config.apiEndpoint,
   })
 
   const { data: entities } = useQuery({
-    queryKey: ['entities', days],
+    queryKey: ['entities', days, selectedSource],
+    queryFn: () => api.getEntities({ days, limit: 50, source: selectedSource || undefined }),
+    enabled: !!config.apiEndpoint,
+  })
+
+  // Fetch all sources (without source filter) for the dropdown
+  const { data: allEntities } = useQuery({
+    queryKey: ['entities-all-sources', days],
     queryFn: () => api.getEntities({ days, limit: 50 }),
     enabled: !!config.apiEndpoint,
   })
 
-  // Build dynamic sources list from entities
+  // Build dynamic sources list from all entities (not filtered by source)
   const allSources = useMemo(() => {
-    if (!entities?.entities?.sources) return []
-    return Object.keys(entities.entities.sources)
-      .sort((a, b) => (entities.entities.sources[b] || 0) - (entities.entities.sources[a] || 0))
-  }, [entities])
+    if (!allEntities?.entities?.sources) return []
+    return Object.keys(allEntities.entities.sources)
+      .sort((a, b) => (allEntities.entities.sources[b] || 0) - (allEntities.entities.sources[a] || 0))
+  }, [allEntities])
 
   // Determine if we should fetch feedback (categories or keywords selected)
   const shouldFetchFeedback = selectedCategories.length > 0 || selectedKeywords.length > 0
 
   const { data: feedbackData, isLoading: feedbackLoading } = useQuery({
-    queryKey: ['feedback', days, selectedCategories, sentimentFilter, selectedKeywords],
+    queryKey: ['feedback', days, selectedCategories, sentimentFilter, selectedKeywords, selectedSource],
     queryFn: () => api.getFeedback({ 
       days, 
+      source: selectedSource || undefined,
       category: selectedCategories.length === 1 ? selectedCategories[0] : undefined,
       sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
       limit: 100 
@@ -236,6 +244,38 @@ export default function Categories() {
 
   return (
     <div className="space-y-6">
+      {/* Global Source Filter */}
+      <div className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 shadow-sm">
+        <div className="flex items-center gap-2">
+          <Filter size={18} className="text-gray-500" />
+          <span className="text-sm font-medium text-gray-700">Filter by Source:</span>
+        </div>
+        <select
+          value={selectedSource || ''}
+          onChange={(e) => setSelectedSource(e.target.value || null)}
+          className="px-4 py-2 border border-gray-300 rounded-lg text-sm bg-white min-w-[200px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        >
+          <option value="">All Sources</option>
+          {allSources.map(source => (
+            <option key={source} value={source}>{source}</option>
+          ))}
+        </select>
+        {selectedSource && (
+          <button
+            onClick={() => setSelectedSource(null)}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X size={14} />
+            Clear
+          </button>
+        )}
+        {selectedSource && (
+          <span className="text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+            Showing data for: {selectedSource}
+          </span>
+        )}
+      </div>
+
       {/* Key Insights Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl p-4 border border-red-200">
@@ -419,19 +459,6 @@ export default function Categories() {
         {/* Advanced Filters */}
         {showFilters && (
           <div className="mb-4 p-4 bg-gray-50 rounded-lg flex flex-wrap gap-4">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Source</label>
-              <select
-                value={selectedSource || ''}
-                onChange={(e) => setSelectedSource(e.target.value || null)}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="">All Sources</option>
-                {allSources.map(source => (
-                  <option key={source} value={source}>{source}</option>
-                ))}
-              </select>
-            </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Min Rating</label>
               <div className="flex gap-1">

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, MessageSquare, FolderOpen, Settings, Bot, AlertTriangle, Globe, PanelLeftClose, PanelLeft, Briefcase, SearchX, ListOrdered, FileText } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, FolderOpen, Settings, Bot, Globe, PanelLeftClose, PanelLeft, Briefcase, SearchX, ListOrdered, FileText } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, getDaysFromRange } from '../api/client'
 import { useConfigStore } from '../store/configStore'
@@ -84,18 +84,7 @@ export default function Layout() {
           ))}
         </nav>
         
-        {/* Urgent alerts */}
-        {!sidebarCollapsed && urgentData && urgentData.count > 0 && (
-          <div className="p-4 border-t border-gray-800">
-            <div className="flex items-center gap-2 text-orange-400 mb-2">
-              <AlertTriangle size={16} />
-              <span className="text-sm font-medium">Urgent Issues</span>
-            </div>
-            <p className="text-gray-400 text-xs">
-              {urgentData.count} items need attention
-            </p>
-          </div>
-        )}
+
       </aside>
 
       {/* Main content */}

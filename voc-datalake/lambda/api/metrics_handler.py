@@ -70,14 +70,21 @@ def list_feedback():
     
     items = []
     current_date = datetime.now(timezone.utc)
+    cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
     
     if source:
+        # Query by source, then filter by category/sentiment/date in memory
         response = feedback_table.query(
             KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
-            Limit=limit,
+            Limit=500,  # Fetch more to allow filtering
             ScanIndexForward=False
         )
         items = response.get('Items', [])
+        # Filter by date range
+        items = [i for i in items if i.get('date', '') >= cutoff_date]
+        # Filter by category if specified
+        if category:
+            items = [i for i in items if i.get('category') == category]
     elif category:
         response = feedback_table.query(
             IndexName='gsi2-by-category',
@@ -140,8 +147,48 @@ def get_entities():
     params = app.current_event.query_string_parameters or {}
     days = int(params.get('days', 7))
     limit = min(int(params.get('limit', 100)), 200)
+    source = params.get('source')
     
     current_date = datetime.now(timezone.utc)
+    cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+    
+    # If source filter is provided, query feedback table directly
+    if source:
+        response = feedback_table.query(
+            KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
+            Limit=1000,
+            ScanIndexForward=False
+        )
+        
+        category_counts = {}
+        issues = {}
+        feedback_count = 0
+        
+        for item in response.get('Items', []):
+            item_date = item.get('date', '')
+            if item_date >= cutoff_date:
+                feedback_count += 1
+                category = item.get('category', 'other')
+                category_counts[category] = category_counts.get(category, 0) + 1
+                
+                problem = item.get('problem_summary', '')
+                if problem and len(problem) > 5:
+                    problem_key = problem[:100].lower().strip()
+                    issues[problem_key] = issues.get(problem_key, 0) + 1
+        
+        sorted_issues = dict(sorted(issues.items(), key=lambda x: x[1], reverse=True)[:20])
+        
+        return {
+            'period_days': days,
+            'feedback_count': feedback_count,
+            'entities': {
+                'keywords': {},
+                'categories': dict(sorted(category_counts.items(), key=lambda x: x[1], reverse=True)),
+                'issues': sorted_issues,
+                'personas': {},
+                'sources': {source: feedback_count} if feedback_count > 0 else {},
+            }
+        }
     
     # Get categories from aggregates
     categories_list = ['delivery', 'customer_support', 'product_quality', 'pricing', 
@@ -356,20 +403,37 @@ def get_sentiment_metrics():
     """Get sentiment breakdown."""
     params = app.current_event.query_string_parameters or {}
     days = int(params.get('days', 30))
+    source = params.get('source')
     
     sentiments = ['positive', 'neutral', 'negative', 'mixed']
-    result = {}
+    result = {s: 0 for s in sentiments}
     current_date = datetime.now(timezone.utc)
     
-    for sentiment in sentiments:
-        total = 0
-        for i in range(days):
-            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_sentiment#{sentiment}', 'sk': date})
-            item = response.get('Item')
-            if item:
-                total += int(item.get('count', 0))
-        result[sentiment] = total
+    if source:
+        # Query feedback table directly for source-specific data
+        response = feedback_table.query(
+            KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
+            Limit=1000,
+            ScanIndexForward=False
+        )
+        cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+        for item in response.get('Items', []):
+            item_date = item.get('date', '')
+            if item_date >= cutoff_date:
+                sentiment = item.get('sentiment_label', 'neutral')
+                if sentiment in result:
+                    result[sentiment] += 1
+    else:
+        # Use pre-aggregated data
+        for sentiment in sentiments:
+            total = 0
+            for i in range(days):
+                date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+                response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_sentiment#{sentiment}', 'sk': date})
+                item = response.get('Item')
+                if item:
+                    total += int(item.get('count', 0))
+            result[sentiment] = total
     
     total = sum(result.values())
     return {
@@ -386,22 +450,38 @@ def get_category_metrics():
     """Get category breakdown."""
     params = app.current_event.query_string_parameters or {}
     days = int(params.get('days', 30))
+    source = params.get('source')
     
     categories = ['delivery', 'customer_support', 'product_quality', 'pricing', 
                   'website', 'app', 'billing', 'returns', 'communication', 'other']
     result = {}
     current_date = datetime.now(timezone.utc)
     
-    for category in categories:
-        total = 0
-        for i in range(days):
-            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_category#{category}', 'sk': date})
-            item = response.get('Item')
-            if item:
-                total += item.get('count', 0)
-        if total > 0:
-            result[category] = total
+    if source:
+        # Query feedback table directly for source-specific data
+        response = feedback_table.query(
+            KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
+            Limit=1000,
+            ScanIndexForward=False
+        )
+        cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+        for item in response.get('Items', []):
+            item_date = item.get('date', '')
+            if item_date >= cutoff_date:
+                category = item.get('category', 'other')
+                result[category] = result.get(category, 0) + 1
+    else:
+        # Use pre-aggregated data
+        for category in categories:
+            total = 0
+            for i in range(days):
+                date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+                response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_category#{category}', 'sk': date})
+                item = response.get('Item')
+                if item:
+                    total += item.get('count', 0)
+            if total > 0:
+                result[category] = total
     
     return {
         'period_days': days,

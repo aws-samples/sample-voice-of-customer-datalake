@@ -226,20 +226,36 @@ export const api = {
     return fetchApi<{ source_feedback_id: string; count: number; items: FeedbackItem[] }>(`/feedback/${id}/similar?${searchParams}`)
   },
   
-  getEntities: (params: { days?: number; limit?: number }) => {
+  getEntities: (params: { days?: number; limit?: number; source?: string }) => {
     const searchParams = new URLSearchParams()
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) searchParams.set(key, String(value))
+      if (value !== undefined && value !== null) searchParams.set(key, String(value))
     })
     return fetchApi<EntitiesResponse>(`/feedback/entities?${searchParams}`)
   },
   
   // Metrics
-  getSummary: (days: number) => fetchApi<MetricsSummary>(`/metrics/summary?days=${days}`),
-  getSentiment: (days: number) => fetchApi<SentimentBreakdown>(`/metrics/sentiment?days=${days}`),
-  getCategories: (days: number) => fetchApi<CategoryBreakdown>(`/metrics/categories?days=${days}`),
+  getSummary: (days: number, source?: string) => {
+    const params = new URLSearchParams({ days: String(days) })
+    if (source) params.set('source', source)
+    return fetchApi<MetricsSummary>(`/metrics/summary?${params}`)
+  },
+  getSentiment: (days: number, source?: string) => {
+    const params = new URLSearchParams({ days: String(days) })
+    if (source) params.set('source', source)
+    return fetchApi<SentimentBreakdown>(`/metrics/sentiment?${params}`)
+  },
+  getCategories: (days: number, source?: string) => {
+    const params = new URLSearchParams({ days: String(days) })
+    if (source) params.set('source', source)
+    return fetchApi<CategoryBreakdown>(`/metrics/categories?${params}`)
+  },
   getSources: (days: number) => fetchApi<SourceBreakdown>(`/metrics/sources?days=${days}`),
-  getPersonas: (days: number) => fetchApi<{ period_days: number; personas: Record<string, number> }>(`/metrics/personas?days=${days}`),
+  getPersonas: (days: number, source?: string) => {
+    const params = new URLSearchParams({ days: String(days) })
+    if (source) params.set('source', source)
+    return fetchApi<{ period_days: number; personas: Record<string, number> }>(`/metrics/personas?${params}`)
+  },
   
   // Chat
   chat: (message: string, context?: string) => fetchApi<{ response: string; sources?: FeedbackItem[] }>('/chat', {
@@ -454,7 +470,7 @@ export const api = {
     }),
   
   importPersona: (projectId: string, data: { input_type: 'pdf' | 'image' | 'text'; content: string; media_type?: string }) =>
-    fetchApi<{ success: boolean; persona: ProjectPersona }>(`/projects/${projectId}/personas/import`, {
+    fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/personas/import`, {
       method: 'POST',
       body: JSON.stringify(data)
     }),
@@ -670,7 +686,7 @@ export const api = {
 export interface ProjectJob {
   success?: boolean
   job_id: string
-  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'merge_documents'
+  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'merge_documents' | 'import_persona'
   status: 'pending' | 'running' | 'completed' | 'failed'
   progress: number
   current_step?: string
@@ -680,6 +696,7 @@ export interface ProjectJob {
   error?: string
   result?: {
     document_id?: string
+    persona_id?: string
     title?: string
     personas?: ProjectPersona[]
   }

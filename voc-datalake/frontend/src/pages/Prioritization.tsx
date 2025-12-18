@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useBlocker } from 'react-router-dom'
 import { ArrowUpDown, FileText, Sparkles, ChevronDown, ChevronUp, ExternalLink, Save, RotateCcw } from 'lucide-react'
 import { api } from '../api/client'
 import type { Project, ProjectDocument, PrioritizationScore } from '../api/client'
@@ -7,6 +8,7 @@ import { useConfigStore } from '../store/configStore'
 import { format } from 'date-fns'
 import clsx from 'clsx'
 import ReactMarkdown from 'react-markdown'
+import ConfirmModal from '../components/ConfirmModal'
 
 interface PRFAQWithProject extends ProjectDocument {
   project_id: string
@@ -185,6 +187,9 @@ export default function Prioritization() {
       queryClient.invalidateQueries({ queryKey: ['prioritization-scores'] })
     },
   })
+
+  // Block navigation when there are unsaved changes
+  const blocker = useBlocker(hasChanges)
 
   const updateScore = (docId: string, field: keyof PrioritizationScore, value: number | string) => {
     setScores(prev => {
@@ -494,6 +499,18 @@ export default function Prioritization() {
           })}
         </div>
       )}
+
+      {/* Unsaved Changes Modal */}
+      <ConfirmModal
+        isOpen={blocker.state === 'blocked'}
+        title="Unsaved Changes"
+        message="You have unsaved prioritization scores. Do you want to discard your changes and leave this page?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Stay on Page"
+        variant="warning"
+        onConfirm={() => blocker.proceed?.()}
+        onCancel={() => blocker.reset?.()}
+      />
     </div>
   )
 }

@@ -123,6 +123,7 @@ class WebScraperIngestor(BaseIngestor):
         
         # Find all JSON-LD scripts
         scripts = soup.find_all('script', type='application/ld+json')
+        logger.info(f"Found {len(scripts)} JSON-LD scripts on {url}")
         
         for script in scripts:
             try:
@@ -131,11 +132,19 @@ class WebScraperIngestor(BaseIngestor):
                 # Handle @graph structure (common in Trustpilot)
                 if isinstance(data, dict) and '@graph' in data:
                     items = data['@graph']
+                    logger.info(f"Found @graph with {len(items)} items")
+                # Handle 'review' array inside parent object (common in reviews.io, LocalBusiness schema)
+                elif isinstance(data, dict) and 'review' in data:
+                    items = data['review']
+                    logger.info(f"Found 'review' array with {len(items)} items")
                 elif isinstance(data, list):
                     items = data
+                    logger.info(f"Found list with {len(items)} items")
                 else:
                     items = [data]
+                    logger.info(f"Single item, @type: {data.get('@type', 'unknown')}")
                 
+                reviews_found = 0
                 for item in items:
                     # Look for Review type
                     item_type = item.get('@type', '')
@@ -145,7 +154,10 @@ class WebScraperIngestor(BaseIngestor):
                     # Extract review data based on template
                     review_data = self._extract_from_jsonld_item(item, config, url, template)
                     if review_data:
+                        reviews_found += 1
                         yield review_data
+                
+                logger.info(f"Extracted {reviews_found} reviews from JSON-LD")
                         
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse JSON-LD: {e}")
@@ -191,14 +203,20 @@ class WebScraperIngestor(BaseIngestor):
             date_published = item.get('datePublished', '')
             if date_published:
                 try:
-                    # Parse the UTC date
                     from zoneinfo import ZoneInfo
-                    dt = datetime.fromisoformat(date_published.replace('Z', '+00:00'))
+                    # Handle different date formats
+                    # Reviews.io: "2025-12-06 09:21:55" (space separator)
+                    # Trustpilot: "2025-12-06T09:21:55Z" (ISO format)
+                    date_str = date_published.replace(' ', 'T').replace('Z', '+00:00')
+                    if '+' not in date_str and 'T' in date_str:
+                        date_str += '+00:00'  # Assume UTC if no timezone
+                    dt = datetime.fromisoformat(date_str)
                     # Convert to CET
                     cet = ZoneInfo('Europe/Berlin')
                     dt_cet = dt.astimezone(cet)
                     created_at = dt_cet.isoformat()
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Date parse failed for '{date_published}': {e}")
                     created_at = date_published
             else:
                 created_at = datetime.now(timezone.utc).isoformat()
@@ -238,7 +256,11 @@ class WebScraperIngestor(BaseIngestor):
         try:
             response = requests.get(url, headers=self.headers, timeout=30)
             response.raise_for_status()
+            logger.info(f"Fetched {url}, status={response.status_code}, content_length={len(response.text)}")
             soup = BeautifulSoup(response.text, 'html.parser')
+            # Log page title for debugging
+            title = soup.find('title')
+            logger.info(f"Page title: {title.get_text() if title else 'No title'}")
         except requests.RequestException as e:
             logger.warning(f"Failed to fetch {url}: {e}")
             return

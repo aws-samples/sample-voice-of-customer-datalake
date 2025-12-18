@@ -5,6 +5,7 @@ import {
   Check, AlertCircle, GripVertical
 } from 'lucide-react'
 import { api } from '../api/client'
+import ConfirmModal from './ConfirmModal'
 
 export interface Category {
   id: string
@@ -28,6 +29,7 @@ export default function CategoriesManager() {
   const queryClient = useQueryClient()
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [companyDescription, setCompanyDescription] = useState('')
+  const [deleteCategoryId, setDeleteCategoryId] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [editingCategory, setEditingCategory] = useState<string | null>(null)
   const [editingSubcategory, setEditingSubcategory] = useState<string | null>(null)
@@ -84,8 +86,14 @@ export default function CategoriesManager() {
   }
 
   const handleDeleteCategory = (categoryId: string) => {
-    if (!confirm('Delete this category and all its subcategories?')) return
-    saveMutation.mutate(categories.filter(c => c.id !== categoryId))
+    setDeleteCategoryId(categoryId)
+  }
+  
+  const confirmDeleteCategory = () => {
+    if (deleteCategoryId) {
+      saveMutation.mutate(categories.filter(c => c.id !== deleteCategoryId))
+      setDeleteCategoryId(null)
+    }
   }
 
   const handleUpdateCategory = (categoryId: string, updates: Partial<Category>) => {
@@ -359,6 +367,17 @@ export default function CategoriesManager() {
           Categories saved successfully
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={deleteCategoryId !== null}
+        title="Delete Category"
+        message="Are you sure you want to delete this category and all its subcategories? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        isLoading={saveMutation.isPending}
+        onConfirm={confirmDeleteCategory}
+        onCancel={() => setDeleteCategoryId(null)}
+      />
     </div>
   )
 }

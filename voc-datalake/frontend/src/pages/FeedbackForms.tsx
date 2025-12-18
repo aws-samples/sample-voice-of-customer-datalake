@@ -2,32 +2,316 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 
   Plus, Trash2, Copy, Check, Loader2, Eye, Code, Palette, Settings2, 
-  ExternalLink, ToggleLeft, ToggleRight, Edit2, Save, X
+  ExternalLink, ToggleLeft, ToggleRight, Edit2, Save, X, ArrowRight,
+  Gauge, Star, MessageSquare, ClipboardList, ThumbsUp, FileText, User, Mail
 } from 'lucide-react'
 import { api } from '../api/client'
 import type { FeedbackForm } from '../api/client'
 import { useConfigStore } from '../store/configStore'
 import clsx from 'clsx'
+import ConfirmModal from '../components/ConfirmModal'
 
-const defaultFormConfig: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> = {
-  name: 'New Feedback Form',
-  enabled: false,
-  title: 'Share Your Feedback',
-  description: 'We value your opinion. Please share your experience with us.',
-  question: 'How was your experience?',
-  placeholder: 'Tell us about your experience...',
-  rating_enabled: true,
-  rating_type: 'stars',
-  rating_max: 5,
-  submit_button_text: 'Submit Feedback',
-  success_message: 'Thank you for your feedback!',
-  theme: { primary_color: '#3B82F6', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
-  collect_email: false,
-  collect_name: false,
-  custom_fields: [],
-  category: '',
-  subcategory: '',
+// Form templates for common CX research types
+type FormTemplate = {
+  id: string
+  name: string
+  description: string
+  icon: React.ElementType
+  color: string
+  config: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>
 }
+
+const formTemplates: FormTemplate[] = [
+  {
+    id: 'nps',
+    name: 'NPS Survey',
+    description: 'Net Promoter Score - measure customer loyalty with the classic 0-10 scale',
+    icon: Gauge,
+    color: 'bg-purple-500',
+    config: {
+      name: 'NPS Survey',
+      enabled: false,
+      title: 'How likely are you to recommend us?',
+      description: 'On a scale of 0-10, how likely are you to recommend our product/service to a friend or colleague?',
+      question: 'What is the primary reason for your score?',
+      placeholder: 'Tell us more about your experience...',
+      rating_enabled: true,
+      rating_type: 'numeric',
+      rating_max: 10,
+      submit_button_text: 'Submit',
+      success_message: 'Thank you for your feedback! Your response helps us improve.',
+      theme: { primary_color: '#8B5CF6', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '12px' },
+      collect_email: false,
+      collect_name: false,
+      custom_fields: [],
+      category: '',
+      subcategory: '',
+    }
+  },
+  {
+    id: 'csat',
+    name: 'CSAT Survey',
+    description: 'Customer Satisfaction - quick satisfaction rating after interactions',
+    icon: ThumbsUp,
+    color: 'bg-green-500',
+    config: {
+      name: 'CSAT Survey',
+      enabled: false,
+      title: 'How satisfied are you?',
+      description: 'Please rate your satisfaction with your recent experience.',
+      question: 'What could we do better?',
+      placeholder: 'Share any additional feedback...',
+      rating_enabled: true,
+      rating_type: 'emoji',
+      rating_max: 5,
+      submit_button_text: 'Submit Feedback',
+      success_message: 'Thanks for rating your experience!',
+      theme: { primary_color: '#22C55E', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
+      collect_email: false,
+      collect_name: false,
+      custom_fields: [],
+      category: '',
+      subcategory: '',
+    }
+  },
+  {
+    id: 'product-feedback',
+    name: 'Product Feedback',
+    description: 'Collect detailed product feedback with star ratings',
+    icon: Star,
+    color: 'bg-yellow-500',
+    config: {
+      name: 'Product Feedback',
+      enabled: false,
+      title: 'Share Your Product Feedback',
+      description: 'Help us improve by sharing your thoughts on our product.',
+      question: 'What do you think about our product?',
+      placeholder: 'Tell us what you like, dislike, or would like to see improved...',
+      rating_enabled: true,
+      rating_type: 'stars',
+      rating_max: 5,
+      submit_button_text: 'Submit Feedback',
+      success_message: 'Thank you! Your feedback helps us build better products.',
+      theme: { primary_color: '#EAB308', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
+      collect_email: false,
+      collect_name: false,
+      custom_fields: [],
+      category: '',
+      subcategory: '',
+    }
+  },
+  {
+    id: 'general-feedback',
+    name: 'General Feedback',
+    description: 'Open-ended feedback form for any purpose',
+    icon: MessageSquare,
+    color: 'bg-blue-500',
+    config: {
+      name: 'General Feedback',
+      enabled: false,
+      title: 'We\'d Love Your Feedback',
+      description: 'Your opinion matters to us. Share your thoughts, suggestions, or concerns.',
+      question: 'What would you like to tell us?',
+      placeholder: 'Type your feedback here...',
+      rating_enabled: false,
+      rating_type: 'stars',
+      rating_max: 5,
+      submit_button_text: 'Send Feedback',
+      success_message: 'Thank you for sharing your thoughts with us!',
+      theme: { primary_color: '#3B82F6', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
+      collect_email: false,
+      collect_name: false,
+      custom_fields: [],
+      category: '',
+      subcategory: '',
+    }
+  },
+  {
+    id: 'experience-survey',
+    name: 'Experience Survey',
+    description: 'Multi-question survey about customer experience',
+    icon: ClipboardList,
+    color: 'bg-indigo-500',
+    config: {
+      name: 'Experience Survey',
+      enabled: false,
+      title: 'Tell Us About Your Experience',
+      description: 'Help us understand your journey with us better.',
+      question: 'How would you describe your overall experience?',
+      placeholder: 'Share details about what went well and what could be improved...',
+      rating_enabled: true,
+      rating_type: 'stars',
+      rating_max: 5,
+      submit_button_text: 'Complete Survey',
+      success_message: 'Survey completed! Thank you for your valuable input.',
+      theme: { primary_color: '#6366F1', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '10px' },
+      collect_email: false,
+      collect_name: false,
+      custom_fields: [],
+      category: '',
+      subcategory: '',
+    }
+  },
+  {
+    id: 'blank',
+    name: 'Blank Form',
+    description: 'Start from scratch with a blank template',
+    icon: FileText,
+    color: 'bg-gray-500',
+    config: {
+      name: 'New Feedback Form',
+      enabled: false,
+      title: 'Share Your Feedback',
+      description: 'We value your opinion. Please share your experience with us.',
+      question: 'How was your experience?',
+      placeholder: 'Tell us about your experience...',
+      rating_enabled: true,
+      rating_type: 'stars',
+      rating_max: 5,
+      submit_button_text: 'Submit Feedback',
+      success_message: 'Thank you for your feedback!',
+      theme: { primary_color: '#3B82F6', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
+      collect_email: false,
+      collect_name: false,
+      custom_fields: [],
+      category: '',
+      subcategory: '',
+    }
+  },
+]
+
+const defaultFormConfig: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> = formTemplates.find(t => t.id === 'blank')!.config
+
+
+// Template Wizard Component
+function TemplateWizard({ onSelect, onCancel }: {
+  onSelect: (config: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>) => void
+  onCancel: () => void
+}) {
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
+  const [collectPII, setCollectPII] = useState<'none' | 'name' | 'email' | 'both'>('none')
+
+  const handleContinue = () => {
+    const template = formTemplates.find(t => t.id === selectedTemplate)
+    if (!template) return
+
+    const config = { ...template.config }
+    
+    // Apply PII settings
+    if (collectPII === 'name' || collectPII === 'both') {
+      config.collect_name = true
+    }
+    if (collectPII === 'email' || collectPII === 'both') {
+      config.collect_email = true
+    }
+
+    onSelect(config)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <h2 className="text-lg font-semibold">Create New Form</h2>
+            <p className="text-sm text-gray-500">Choose a template to get started</p>
+          </div>
+          <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Template Grid */}
+        <div className="flex-1 overflow-auto p-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+            {formTemplates.map((template) => {
+              const Icon = template.icon
+              const isSelected = selectedTemplate === template.id
+              return (
+                <button
+                  key={template.id}
+                  onClick={() => setSelectedTemplate(template.id)}
+                  className={clsx(
+                    'p-4 rounded-xl border-2 text-left transition-all hover:shadow-md',
+                    isSelected 
+                      ? 'border-blue-500 bg-blue-50 shadow-md' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  )}
+                >
+                  <div className={clsx('w-10 h-10 rounded-lg flex items-center justify-center mb-3', template.color)}>
+                    <Icon size={20} className="text-white" />
+                  </div>
+                  <h3 className="font-medium text-gray-900 mb-1">{template.name}</h3>
+                  <p className="text-xs text-gray-500 line-clamp-2">{template.description}</p>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* PII Options */}
+          {selectedTemplate && (
+            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+              <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                <User size={16} />
+                Contact Information Collection
+              </h4>
+              <p className="text-sm text-gray-600 mb-4">
+                Choose what personal information to collect from respondents.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {[
+                  { id: 'none', label: 'Anonymous', desc: 'No PII collected', icon: null },
+                  { id: 'name', label: 'Name Only', desc: 'Collect name', icon: User },
+                  { id: 'email', label: 'Email Only', desc: 'Collect email', icon: Mail },
+                  { id: 'both', label: 'Name & Email', desc: 'Full contact info', icon: User },
+                ].map((option) => (
+                  <button
+                    key={option.id}
+                    onClick={() => setCollectPII(option.id as typeof collectPII)}
+                    className={clsx(
+                      'p-3 rounded-lg border-2 text-left transition-all',
+                      collectPII === option.id
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    )}
+                  >
+                    <p className="font-medium text-sm text-gray-900">{option.label}</p>
+                    <p className="text-xs text-gray-500">{option.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-4 border-t bg-gray-50">
+          <p className="text-sm text-gray-500">
+            {selectedTemplate 
+              ? `Selected: ${formTemplates.find(t => t.id === selectedTemplate)?.name}`
+              : 'Select a template to continue'
+            }
+          </p>
+          <div className="flex gap-3">
+            <button onClick={onCancel} className="btn btn-secondary">
+              Cancel
+            </button>
+            <button
+              onClick={handleContinue}
+              disabled={!selectedTemplate}
+              className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Continue
+              <ArrowRight size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: {
   form: FeedbackForm
@@ -183,15 +467,17 @@ function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: {
 }
 
 
-function FormEditor({ form, categories, onSave, onCancel }: {
+function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSaving }: {
   form: FeedbackForm | null
+  initialConfig?: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> | null
   categories: Array<{ id: string; name: string; subcategories: Array<{ id: string; name: string }> }>
   onSave: (form: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> & { form_id?: string }) => void
   onCancel: () => void
+  isSaving?: boolean
 }) {
   const [activeTab, setActiveTab] = useState<'settings' | 'theme' | 'category'>('settings')
   const [formData, setFormData] = useState<Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> & { form_id?: string }>(
-    form ? { ...form } : { ...defaultFormConfig }
+    form ? { ...form } : initialConfig ? { ...initialConfig } : { ...defaultFormConfig }
   )
 
   const selectedCategory = categories.find(c => c.id === formData.category)
@@ -503,15 +789,16 @@ function FormEditor({ form, categories, onSave, onCancel }: {
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 p-4 border-t bg-gray-50">
-          <button onClick={onCancel} className="btn btn-secondary">
+          <button onClick={onCancel} className="btn btn-secondary" disabled={isSaving}>
             Cancel
           </button>
           <button
             onClick={() => onSave(formData)}
-            className="btn btn-primary flex items-center gap-2"
+            disabled={isSaving}
+            className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Save size={16} />
-            {form ? 'Save Changes' : 'Create Form'}
+            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            {isSaving ? (form ? 'Saving...' : 'Creating...') : (form ? 'Save Changes' : 'Create Form')}
           </button>
         </div>
       </div>
@@ -524,7 +811,9 @@ export default function FeedbackForms() {
   const queryClient = useQueryClient()
   const { config } = useConfigStore()
   const [editingForm, setEditingForm] = useState<FeedbackForm | null>(null)
-  const [isCreating, setIsCreating] = useState(false)
+  const [showWizard, setShowWizard] = useState(false)
+  const [templateConfig, setTemplateConfig] = useState<Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> | null>(null)
+  const [deleteFormId, setDeleteFormId] = useState<string | null>(null)
 
   const { data: formsData, isLoading } = useQuery({
     queryKey: ['feedback-forms'],
@@ -544,7 +833,7 @@ export default function FeedbackForms() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['feedback-forms'] })
       setEditingForm(null)
-      setIsCreating(false)
+      setTemplateConfig(null)
     },
   })
 
@@ -564,9 +853,7 @@ export default function FeedbackForms() {
   })
 
   const handleDelete = (formId: string) => {
-    if (confirm('Are you sure you want to delete this form? This cannot be undone.')) {
-      deleteMutation.mutate(formId)
-    }
+    setDeleteFormId(formId)
   }
 
   const apiEndpoint = config.apiEndpoint?.replace(/\/+$/, '') || ''
@@ -592,7 +879,7 @@ export default function FeedbackForms() {
           <p className="text-gray-500">Create embeddable forms to collect customer feedback</p>
         </div>
         <button
-          onClick={() => setIsCreating(true)}
+          onClick={() => setShowWizard(true)}
           className="btn btn-primary flex items-center gap-2"
         >
           <Plus size={18} />
@@ -637,7 +924,7 @@ export default function FeedbackForms() {
           <h3 className="text-lg font-medium text-gray-900 mb-2">No feedback forms yet</h3>
           <p className="text-gray-500 mb-4">Create your first form to start collecting customer feedback.</p>
           <button
-            onClick={() => setIsCreating(true)}
+            onClick={() => setShowWizard(true)}
             className="btn btn-primary inline-flex items-center gap-2"
           >
             <Plus size={18} />
@@ -646,18 +933,46 @@ export default function FeedbackForms() {
         </div>
       )}
 
+      {/* Template Wizard */}
+      {showWizard && (
+        <TemplateWizard
+          onSelect={(config) => {
+            setTemplateConfig(config)
+            setShowWizard(false)
+          }}
+          onCancel={() => setShowWizard(false)}
+        />
+      )}
+
       {/* Editor modal */}
-      {(isCreating || editingForm) && (
+      {(templateConfig || editingForm) && (
         <FormEditor
           form={editingForm}
+          initialConfig={templateConfig}
           categories={categories}
           onSave={(form) => saveMutation.mutate(form)}
           onCancel={() => {
             setEditingForm(null)
-            setIsCreating(false)
+            setTemplateConfig(null)
           }}
+          isSaving={saveMutation.isPending}
         />
       )}
+
+      <ConfirmModal
+        isOpen={deleteFormId !== null}
+        title="Delete Form"
+        message="Are you sure you want to delete this form? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        isLoading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteFormId) {
+            deleteMutation.mutate(deleteFormId, { onSettled: () => setDeleteFormId(null) })
+          }
+        }}
+        onCancel={() => setDeleteFormId(null)}
+      />
     </div>
   )
 }

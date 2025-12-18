@@ -9,6 +9,7 @@ import { api } from '../api/client'
 import CategoriesManager from '../components/CategoriesManager'
 import S3ImportExplorer from '../components/S3ImportExplorer'
 import clsx from 'clsx'
+import ConfirmModal from '../components/ConfirmModal'
 
 // Source configuration with fields, webhooks, and setup instructions
 const sourceInfo: Record<string, { 
@@ -520,6 +521,7 @@ export default function Settings() {
   const { config, setConfig } = useConfigStore()
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
   
   // Local state for form
   const [apiEndpoint, setApiEndpoint] = useState(config.apiEndpoint)
@@ -768,18 +770,26 @@ export default function Settings() {
             <p className="text-sm text-gray-500">Clear all configuration and start fresh</p>
           </div>
           <button
-            onClick={() => {
-              if (confirm('Are you sure? This will clear all your settings.')) {
-                localStorage.removeItem('voc-config')
-                window.location.reload()
-              }
-            }}
+            onClick={() => setShowResetConfirm(true)}
             className="btn bg-red-100 text-red-700 hover:bg-red-200"
           >
             Reset
           </button>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={showResetConfirm}
+        title="Reset All Settings"
+        message="Are you sure you want to reset all settings? This will clear your API endpoint, brand configuration, and all local preferences."
+        confirmLabel="Reset"
+        variant="danger"
+        onConfirm={() => {
+          localStorage.removeItem('voc-config')
+          window.location.reload()
+        }}
+        onCancel={() => setShowResetConfirm(false)}
+      />
     </div>
   )
 }

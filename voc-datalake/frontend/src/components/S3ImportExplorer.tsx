@@ -23,6 +23,7 @@ export default function S3ImportExplorer() {
   const [showNewSource, setShowNewSource] = useState(false)
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set())
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const { data: sourcesData } = useQuery({
     queryKey: ['s3-import-sources'],
@@ -57,7 +58,8 @@ export default function S3ImportExplorer() {
     
     for (const file of Array.from(files)) {
       if (!file.name.match(/\.(csv|json|jsonl)$/i)) {
-        alert(`Unsupported file type: ${file.name}. Only CSV, JSON, and JSONL files are supported.`)
+        setUploadError(`Unsupported file type: ${file.name}. Only CSV, JSON, and JSONL files are supported.`)
+        setTimeout(() => setUploadError(null), 5000)
         continue
       }
       
@@ -81,7 +83,8 @@ export default function S3ImportExplorer() {
         queryClient.invalidateQueries({ queryKey: ['s3-import-files'] })
       } catch (err) {
         console.error('Upload failed:', err)
-        alert(`Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+        setUploadError(`Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+        setTimeout(() => setUploadError(null), 5000)
       } finally {
         setUploadingFiles(prev => {
           const next = new Set(prev)
@@ -192,6 +195,11 @@ export default function S3ImportExplorer() {
           <div className="flex items-center justify-center gap-2 text-green-600">
             <CheckCircle2 size={20} />
             <span>Uploaded {uploadSuccess}</span>
+          </div>
+        ) : uploadError ? (
+          <div className="flex items-center justify-center gap-2 text-red-600">
+            <AlertCircle size={20} />
+            <span className="text-sm">{uploadError}</span>
           </div>
         ) : (
           <>

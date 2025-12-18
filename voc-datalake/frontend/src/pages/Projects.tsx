@@ -6,6 +6,7 @@ import { api } from '../api/client'
 import type { Project } from '../api/client'
 import { useConfigStore } from '../store/configStore'
 import { format } from 'date-fns'
+import ConfirmModal from '../components/ConfirmModal'
 
 export default function Projects() {
   const { config } = useConfigStore()
@@ -13,6 +14,7 @@ export default function Projects() {
   const queryClient = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
   const [newProject, setNewProject] = useState({ name: '', description: '' })
+  const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['projects'],
@@ -156,9 +158,7 @@ export default function Projects() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    if (confirm('Delete this project?')) {
-                      deleteMutation.mutate(project.project_id)
-                    }
+                    setDeleteProjectId(project.project_id)
                   }}
                   className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
@@ -192,6 +192,21 @@ export default function Projects() {
           ))}
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={deleteProjectId !== null}
+        title="Delete Project"
+        message="Are you sure you want to delete this project? All personas and documents will be permanently deleted."
+        confirmLabel="Delete"
+        variant="danger"
+        isLoading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteProjectId) {
+            deleteMutation.mutate(deleteProjectId, { onSettled: () => setDeleteProjectId(null) })
+          }
+        }}
+        onCancel={() => setDeleteProjectId(null)}
+      />
     </div>
   )
 }
