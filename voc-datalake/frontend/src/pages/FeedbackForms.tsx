@@ -195,14 +195,14 @@ function TemplateWizard({ onSelect, onCancel }: {
     const template = formTemplates.find(t => t.id === selectedTemplate)
     if (!template) return
 
-    const config = { ...template.config }
-    
-    // Apply PII settings
-    if (collectPII === 'name' || collectPII === 'both') {
-      config.collect_name = true
-    }
-    if (collectPII === 'email' || collectPII === 'both') {
-      config.collect_email = true
+    // Deep copy the config to avoid mutation issues
+    const config = {
+      ...template.config,
+      theme: { ...template.config.theme },
+      custom_fields: [...template.config.custom_fields],
+      // Explicitly set PII fields based on selection
+      collect_name: collectPII === 'name' || collectPII === 'both',
+      collect_email: collectPII === 'email' || collectPII === 'both',
     }
 
     onSelect(config)
