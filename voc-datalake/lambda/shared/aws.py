@@ -25,10 +25,17 @@ def get_dynamodb_resource():
 
 
 def get_s3_client():
-    """Get shared S3 client with connection reuse."""
+    """Get shared S3 client with connection reuse.
+    
+    Configured with Signature Version 4 for KMS-encrypted bucket compatibility.
+    """
     global _s3_client
     if _s3_client is None:
-        _s3_client = boto3.client("s3")
+        from botocore.config import Config
+        _s3_client = boto3.client(
+            "s3",
+            config=Config(signature_version="s3v4")
+        )
     return _s3_client
 
 

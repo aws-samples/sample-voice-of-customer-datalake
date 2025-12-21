@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Database, HardDrive, FolderOpen, FileJson, ChevronRight, ChevronDown,
   Eye, X, Loader2, RefreshCw, Search, Filter, ArrowLeft, Pencil, Trash2,
-  Save, Plus, Link2, AlertTriangle, Image, FileText,
+  Save, Plus, Link2, AlertTriangle, Image, FileText, Download,
 } from 'lucide-react'
 import { api, getDaysFromRange } from '../api/client'
 import type { FeedbackItem } from '../api/client'
@@ -139,6 +139,38 @@ export default function DataExplorer() {
     })
   }
 
+  const downloadS3File = async (fullKey: string, filename: string) => {
+    try {
+      const preview = await api.getDataExplorerS3Preview(fullKey)
+      let blob: Blob
+      let downloadFilename = filename
+
+      if (preview.isPresignedUrl && typeof preview.content === 'string') {
+        // For binary files, fetch from presigned URL
+        const response = await fetch(preview.content)
+        blob = await response.blob()
+      } else {
+        // For text/JSON files, create blob from content
+        const content = typeof preview.content === 'string' 
+          ? preview.content 
+          : JSON.stringify(preview.content, null, 2)
+        blob = new Blob([content], { type: preview.contentType || 'application/json' })
+      }
+
+      // Trigger download
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = downloadFilename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Download failed:', error)
+    }
+  }
+
   const openFeedbackEditor = (item: FeedbackItem, mode: 'view' | 'edit') => {
     const itemWithS3 = item as FeedbackItem & { s3_raw_uri?: string }
     setEditModal({
@@ -219,7 +251,7 @@ export default function DataExplorer() {
           <S3Browser path={s3Path} data={s3Data} loading={s3Loading}
             onNavigateToFolder={navigateToFolder} onNavigateUp={navigateUp} onNavigateToBreadcrumb={navigateToBreadcrumb}
             onView={(k) => openS3Editor(k, 'view')} onEdit={(k) => openS3Editor(k, 'edit')}
-            onDelete={(k) => setDeleteConfirm({ type: 's3', key: k })} />
+            onDelete={(k) => setDeleteConfirm({ type: 's3', key: k })} onDownload={downloadS3File} />
         )}
         {viewMode === 'dynamodb-processed' && (
           <ProcessedFeedbackView data={feedbackData} loading={feedbackLoading} searchQuery={searchQuery}
@@ -250,10 +282,10 @@ export default function DataExplorer() {
   )
 }
 
-function S3Browser({ path, data, loading, onNavigateToFolder, onNavigateUp, onNavigateToBreadcrumb, onView, onEdit, onDelete }: {
+function S3Browser({ path, data, loading, onNavigateToFolder, onNavigateUp, onNavigateToBreadcrumb, onView, onEdit, onDelete, onDownload }: {
   path: string[]; data: { objects: S3Object[]; bucket: string; prefix: string } | undefined; loading: boolean
   onNavigateToFolder: (folder: string) => void; onNavigateUp: () => void; onNavigateToBreadcrumb: (index: number) => void
-  onView: (key: string) => void; onEdit: (key: string) => void; onDelete: (key: string) => void
+  onView: (key: string) => void; onEdit: (key: string) => void; onDelete: (key: string) => void; onDownload: (key: string, filename: string) => void
 }) {
   if (loading) return <div className="p-8 text-center"><Loader2 className="mx-auto animate-spin text-gray-400" size={32} /></div>
   const objects = data?.objects || []
@@ -304,6 +336,7 @@ function S3Browser({ path, data, loading, onNavigateToFolder, onNavigateUp, onNa
               {!obj.isFolder && (
                 <div className="flex items-center gap-1">
                   <button onClick={() => onView(obj.fullKey || obj.key)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="View"><Eye size={16} /></button>
+                  <button onClick={() => onDownload(obj.fullKey || obj.key, obj.key)} className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="Download"><Download size={16} /></button>
                   {isEditableFile(obj.key) && (
                     <button onClick={() => onEdit(obj.fullKey || obj.key)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title="Edit"><Pencil size={16} /></button>
                   )}
