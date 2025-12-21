@@ -354,15 +354,15 @@ function ScraperEditor({ scraper, template, onSave, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-4 border-b flex items-center justify-between">
-          <h3 className="font-semibold text-lg">{scraper ? 'Edit Scraper' : 'New Scraper'}</h3>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-3 sm:p-4 border-b flex items-center justify-between">
+          <h3 className="font-semibold text-base sm:text-lg">{scraper ? 'Edit Scraper' : 'New Scraper'}</h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
         </div>
 
-        <div className="p-4 space-y-4 overflow-y-auto flex-1">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="p-3 sm:p-4 space-y-4 overflow-y-auto flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Scraper Name</label>
               <input
@@ -389,7 +389,7 @@ function ScraperEditor({ scraper, template, onSave, onClose }: {
 
           <div>
             <label className="block text-sm font-medium mb-1">Website URL</label>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="url"
                 value={config.base_url}
@@ -400,7 +400,7 @@ function ScraperEditor({ scraper, template, onSave, onClose }: {
               <button
                 onClick={handleAutoDetect}
                 disabled={isAnalyzing || !config.base_url}
-                className="btn btn-secondary flex items-center gap-2 whitespace-nowrap"
+                className="btn btn-secondary flex items-center justify-center gap-2 whitespace-nowrap text-sm"
               >
                 {isAnalyzing ? (
                   <><Loader2 size={16} className="animate-spin" /> Analyzing...</>
@@ -455,7 +455,7 @@ function ScraperEditor({ scraper, template, onSave, onClose }: {
           </div>
 
           {/* Pagination */}
-          <div className="border rounded-lg p-4">
+          <div className="border rounded-lg p-3 sm:p-4">
             <div className="flex items-center gap-2 mb-3">
               <label className="flex items-center gap-2">
                 <input
@@ -467,19 +467,19 @@ function ScraperEditor({ scraper, template, onSave, onClose }: {
                   })}
                   className="rounded"
                 />
-                <span className="font-medium">Enable Pagination</span>
+                <span className="font-medium text-sm">Enable Pagination</span>
               </label>
               <div className="group relative">
                 <Info size={14} className="text-gray-400 cursor-help" />
-                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-72 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-10">
+                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 sm:w-72 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-10">
                   Automatically scrapes multiple pages by appending ?page=2, ?page=3, etc. to the base URL. Set "Max Pages" to control how many pages to scrape.
                 </div>
               </div>
             </div>
             {config.pagination.enabled && (
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Page Parameter</label>
+                  <label className="block text-xs text-gray-500 mb-1">Page Param</label>
                   <input
                     type="text"
                     value={config.pagination.param}
@@ -492,7 +492,7 @@ function ScraperEditor({ scraper, template, onSave, onClose }: {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Start Page</label>
+                  <label className="block text-xs text-gray-500 mb-1">Start</label>
                   <input
                     type="number"
                     value={config.pagination.start}
@@ -548,11 +548,11 @@ function ScraperEditor({ scraper, template, onSave, onClose }: {
           )}
 
           {showAdvanced && config.extraction_method !== 'jsonld' && (
-            <div className="border rounded-lg p-4 space-y-3 bg-gray-50">
+            <div className="border rounded-lg p-3 sm:p-4 space-y-3 bg-gray-50">
               <p className="text-sm text-gray-600 mb-3">
                 These selectors were {analyzeResult?.success ? 'auto-detected' : 'set to defaults'}. Adjust if needed.
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Review Container *</label>
                   <input
@@ -618,9 +618,9 @@ function ScraperEditor({ scraper, template, onSave, onClose }: {
           )}
         </div>
 
-        <div className="p-4 border-t flex justify-end gap-2">
-          <button onClick={onClose} className="btn btn-secondary">Cancel</button>
-          <button onClick={handleSave} className="btn btn-primary flex items-center gap-2">
+        <div className="p-3 sm:p-4 border-t flex flex-col-reverse sm:flex-row justify-end gap-2">
+          <button onClick={onClose} className="btn btn-secondary text-sm">Cancel</button>
+          <button onClick={handleSave} className="btn btn-primary flex items-center justify-center gap-2 text-sm">
             <Save size={16} /> Save Scraper
           </button>
         </div>
@@ -642,33 +642,33 @@ function TemplateSelector({ onSelect, onClose }: {
   const templates = data?.templates || []
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-4 border-b flex items-center justify-between">
-          <h3 className="font-semibold text-lg">Choose a Template</h3>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-3 sm:p-4 border-b flex items-center justify-between">
+          <h3 className="font-semibold text-base sm:text-lg">Choose a Template</h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
         </div>
 
-        <div className="p-4 overflow-y-auto flex-1">
+        <div className="p-3 sm:p-4 overflow-y-auto flex-1">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="animate-spin h-8 w-8 text-blue-500" />
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               {templates.map(template => (
                 <button
                   key={template.id}
                   onClick={() => onSelect(template)}
                   className={clsx(
-                    'p-4 border-2 rounded-lg text-left transition-all hover:border-blue-400 hover:bg-blue-50',
+                    'p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-blue-400 hover:bg-blue-50',
                     template.extraction_method === 'jsonld' ? 'border-green-200 bg-green-50/30' : 'border-gray-200'
                   )}
                 >
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-2xl">{template.icon}</span>
-                    <div>
-                      <h4 className="font-semibold">{template.name}</h4>
+                  <div className="flex items-center gap-2 sm:gap-3 mb-2">
+                    <span className="text-xl sm:text-2xl">{template.icon}</span>
+                    <div className="min-w-0">
+                      <h4 className="font-semibold text-sm sm:text-base truncate">{template.name}</h4>
                       {template.extraction_method === 'jsonld' && (
                         <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit">
                           <FileJson size={12} /> JSON-LD
@@ -676,15 +676,15 @@ function TemplateSelector({ onSelect, onClose }: {
                       )}
                     </div>
                   </div>
-                  <p className="text-sm text-gray-600">{template.description}</p>
+                  <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">{template.description}</p>
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        <div className="p-4 border-t bg-gray-50">
-          <p className="text-sm text-gray-600">
+        <div className="p-3 sm:p-4 border-t bg-gray-50">
+          <p className="text-xs sm:text-sm text-gray-600">
             <span className="font-medium text-green-700">💡 Tip:</span> JSON-LD templates are more reliable as they extract structured data that websites provide for search engines.
           </p>
         </div>
@@ -762,19 +762,19 @@ export default function Scrapers() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Web Scrapers</h1>
-          <p className="text-gray-500">Configure custom scrapers to extract feedback from any website</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Web Scrapers</h1>
+          <p className="text-sm text-gray-500">Configure custom scrapers to extract feedback from any website</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => refetch()} className="btn btn-secondary flex items-center gap-2">
+          <button onClick={() => refetch()} className="btn btn-secondary flex items-center justify-center gap-2 text-sm flex-1 sm:flex-none">
             <RefreshCw size={16} /> Refresh
           </button>
           <button
             onClick={() => setShowTemplates(true)}
-            className="btn btn-primary flex items-center gap-2"
+            className="btn btn-primary flex items-center justify-center gap-2 text-sm flex-1 sm:flex-none"
           >
             <Plus size={16} /> New Scraper
           </button>

@@ -169,18 +169,22 @@ export default function DataSourceWizard({
     arr.includes(item) ? arr.filter(x => x !== item) : [...arr, item]
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 sm:p-6">
       <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b">
-          <div className="flex items-center gap-3">
-            {icon}
-            <div>
-              <h2 className="text-lg font-semibold">{title}</h2>
-              <p className="text-sm text-gray-500">Step {step} of {totalSteps}</p>
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="flex-shrink-0">{icon}</div>
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-semibold truncate">{title}</h2>
+              <p className="text-xs sm:text-sm text-gray-500">Step {step} of {totalSteps}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button 
+            onClick={onClose} 
+            className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0"
+            aria-label="Close wizard"
+          >
             <X size={20} />
           </button>
         </div>
@@ -191,13 +195,13 @@ export default function DataSourceWizard({
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[60vh]">
+        <div className="p-4 sm:p-6 overflow-y-auto max-h-[60vh]">
           {/* Step: Data Sources */}
           {stepContent === 'dataSources' && (
             <div className="space-y-4">
               <div>
-                <h3 className="font-medium mb-3">Data Sources</h3>
-                <p className="text-sm text-gray-500 mb-4">Select what data to use for generating the document</p>
+                <h3 className="font-medium mb-2 sm:mb-3">Data Sources</h3>
+                <p className="text-sm text-gray-500 mb-3 sm:mb-4">Select what data to use for generating the document</p>
                 <div className="space-y-2">
                   {showFeedback && (
                     <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-gray-50">
@@ -288,17 +292,17 @@ export default function DataSourceWizard({
 
           {/* Step: Feedback Filters */}
           {stepContent === 'feedbackFilters' && (
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               <div>
-                <h3 className="font-medium mb-3">Sources</h3>
+                <h3 className="font-medium mb-2 sm:mb-3">Sources</h3>
                 <p className="text-sm text-gray-500 mb-2">Leave empty for all sources</p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {sources.map(s => (
                     <button
                       key={s}
                       onClick={() => onContextChange({ ...contextConfig, sources: toggleArrayItem(contextConfig.sources, s) })}
                       className={clsx(
-                        'px-3 py-2 rounded-lg border text-sm',
+                        'px-2 sm:px-3 py-2 rounded-lg border text-xs sm:text-sm truncate',
                         contextConfig.sources.includes(s) ? `${colors.bgLight} ${colors.border} ${colors.text}` : 'bg-white border-gray-200'
                       )}
                     >
@@ -309,14 +313,14 @@ export default function DataSourceWizard({
               </div>
 
               <div>
-                <h3 className="font-medium mb-3">Categories</h3>
-                <div className="grid grid-cols-3 gap-2">
+                <h3 className="font-medium mb-2 sm:mb-3">Categories</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {CATEGORIES.map(c => (
                     <button
                       key={c}
                       onClick={() => onContextChange({ ...contextConfig, categories: toggleArrayItem(contextConfig.categories, c) })}
                       className={clsx(
-                        'px-3 py-2 rounded-lg border text-sm capitalize',
+                        'px-2 sm:px-3 py-2 rounded-lg border text-xs sm:text-sm capitalize truncate',
                         contextConfig.categories.includes(c) ? `${colors.bgLight} ${colors.border} ${colors.text}` : 'bg-white border-gray-200'
                       )}
                     >
@@ -327,14 +331,14 @@ export default function DataSourceWizard({
               </div>
 
               <div>
-                <h3 className="font-medium mb-3">Sentiments</h3>
-                <div className="flex gap-2">
+                <h3 className="font-medium mb-2 sm:mb-3">Sentiments</h3>
+                <div className="flex flex-col sm:flex-row gap-2">
                   {SENTIMENTS.map(s => (
                     <button
                       key={s}
                       onClick={() => onContextChange({ ...contextConfig, sentiments: toggleArrayItem(contextConfig.sentiments, s) })}
                       className={clsx(
-                        'px-4 py-2 rounded-lg border text-sm flex-1 capitalize',
+                        'px-3 sm:px-4 py-2 rounded-lg border text-sm flex-1 capitalize',
                         contextConfig.sentiments.includes(s)
                           ? s === 'positive' ? 'bg-green-100 border-green-300 text-green-700'
                           : s === 'negative' ? 'bg-red-100 border-red-300 text-red-700'
@@ -349,11 +353,11 @@ export default function DataSourceWizard({
               </div>
 
               <div>
-                <h3 className="font-medium mb-3">Time Range</h3>
+                <h3 className="font-medium mb-2 sm:mb-3">Time Range</h3>
                 <select
                   value={contextConfig.days}
                   onChange={e => onContextChange({ ...contextConfig, days: +e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="w-full px-3 py-2.5 sm:py-2 border rounded-lg text-sm sm:text-base"
                 >
                   <option value={7}>Last 7 days</option>
                   <option value={14}>Last 14 days</option>
@@ -367,14 +371,14 @@ export default function DataSourceWizard({
 
           {/* Step: Item Selection */}
           {stepContent === 'itemSelection' && (
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               {contextConfig.usePersonas && personas.length > 0 && (
                 <div>
-                  <h3 className="font-medium mb-3">Select Personas</h3>
-                  <p className="text-sm text-gray-500 mb-3">Leave empty to use all personas</p>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                  <h3 className="font-medium mb-2 sm:mb-3">Select Personas</h3>
+                  <p className="text-sm text-gray-500 mb-2 sm:mb-3">Leave empty to use all personas</p>
+                  <div className="space-y-2 max-h-40 sm:max-h-48 overflow-y-auto">
                     {personas.map(p => (
-                      <label key={p.persona_id} className="flex items-center gap-3 p-2 rounded-lg border cursor-pointer hover:bg-gray-50">
+                      <label key={p.persona_id} className="flex items-center gap-2 sm:gap-3 p-2 rounded-lg border cursor-pointer hover:bg-gray-50 active:bg-gray-100">
                         <input
                           type="checkbox"
                           checked={contextConfig.selectedPersonaIds.includes(p.persona_id)}
@@ -384,9 +388,9 @@ export default function DataSourceWizard({
                               ? [...contextConfig.selectedPersonaIds, p.persona_id]
                               : contextConfig.selectedPersonaIds.filter(id => id !== p.persona_id)
                           })}
-                          className="w-4 h-4"
+                          className="w-4 h-4 flex-shrink-0"
                         />
-                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm flex-shrink-0">
                           {p.name.charAt(0)}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -402,9 +406,9 @@ export default function DataSourceWizard({
               {/* Combined document selection (for merge wizard) */}
               {combineDocuments && (contextConfig.useDocuments || contextConfig.useResearch) && documents.length > 0 && (
                 <div>
-                  <h3 className="font-medium mb-3">Select Documents</h3>
-                  <p className="text-sm text-gray-500 mb-3">Select documents to merge</p>
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                  <h3 className="font-medium mb-2 sm:mb-3">Select Documents</h3>
+                  <p className="text-sm text-gray-500 mb-2 sm:mb-3">Select documents to merge</p>
+                  <div className="space-y-2 max-h-56 sm:max-h-64 overflow-y-auto">
                     {documents.map(d => {
                       const isResearch = d.document_type === 'research'
                       const isSelected = isResearch 
@@ -430,21 +434,21 @@ export default function DataSourceWizard({
                       }
                       
                       return (
-                        <label key={d.document_id} className="flex items-center gap-3 p-2 rounded-lg border cursor-pointer hover:bg-gray-50">
+                        <label key={d.document_id} className="flex items-center gap-2 sm:gap-3 p-2 rounded-lg border cursor-pointer hover:bg-gray-50 active:bg-gray-100">
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={e => handleChange(e.target.checked)}
-                            className="w-4 h-4"
+                            className="w-4 h-4 flex-shrink-0"
                           />
                           <div className={clsx(
-                            'w-8 h-8 rounded-lg flex items-center justify-center',
+                            'w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center flex-shrink-0',
                             d.document_type === 'prd' ? 'bg-blue-100' 
                               : d.document_type === 'prfaq' ? 'bg-green-100' 
                               : d.document_type === 'research' ? 'bg-amber-100'
                               : 'bg-purple-100'
                           )}>
-                            <FileText size={16} className={clsx(
+                            <FileText size={14} className={clsx(
                               d.document_type === 'prd' ? 'text-blue-600' 
                                 : d.document_type === 'prfaq' ? 'text-green-600' 
                                 : d.document_type === 'research' ? 'text-amber-600'
@@ -465,11 +469,11 @@ export default function DataSourceWizard({
               {/* Separate document selection (default behavior) */}
               {!combineDocuments && contextConfig.useDocuments && otherDocs.length > 0 && (
                 <div>
-                  <h3 className="font-medium mb-3">Select Documents</h3>
-                  <p className="text-sm text-gray-500 mb-3">Leave empty to use all documents</p>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                  <h3 className="font-medium mb-2 sm:mb-3">Select Documents</h3>
+                  <p className="text-sm text-gray-500 mb-2 sm:mb-3">Leave empty to use all documents</p>
+                  <div className="space-y-2 max-h-40 sm:max-h-48 overflow-y-auto">
                     {otherDocs.map(d => (
-                      <label key={d.document_id} className="flex items-center gap-3 p-2 rounded-lg border cursor-pointer hover:bg-gray-50">
+                      <label key={d.document_id} className="flex items-center gap-2 sm:gap-3 p-2 rounded-lg border cursor-pointer hover:bg-gray-50 active:bg-gray-100">
                         <input
                           type="checkbox"
                           checked={contextConfig.selectedDocumentIds.includes(d.document_id)}
@@ -479,13 +483,13 @@ export default function DataSourceWizard({
                               ? [...contextConfig.selectedDocumentIds, d.document_id]
                               : contextConfig.selectedDocumentIds.filter(id => id !== d.document_id)
                           })}
-                          className="w-4 h-4"
+                          className="w-4 h-4 flex-shrink-0"
                         />
                         <div className={clsx(
-                          'w-8 h-8 rounded-lg flex items-center justify-center',
+                          'w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center flex-shrink-0',
                           d.document_type === 'prd' ? 'bg-blue-100' : d.document_type === 'prfaq' ? 'bg-green-100' : 'bg-purple-100'
                         )}>
-                          <FileText size={16} className={clsx(
+                          <FileText size={14} className={clsx(
                             d.document_type === 'prd' ? 'text-blue-600' : d.document_type === 'prfaq' ? 'text-green-600' : 'text-purple-600'
                           )} />
                         </div>
@@ -501,11 +505,11 @@ export default function DataSourceWizard({
 
               {!combineDocuments && contextConfig.useResearch && researchDocs.length > 0 && (
                 <div>
-                  <h3 className="font-medium mb-3">Select Research Documents</h3>
-                  <p className="text-sm text-gray-500 mb-3">Leave empty to use all research</p>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                  <h3 className="font-medium mb-2 sm:mb-3">Select Research Documents</h3>
+                  <p className="text-sm text-gray-500 mb-2 sm:mb-3">Leave empty to use all research</p>
+                  <div className="space-y-2 max-h-40 sm:max-h-48 overflow-y-auto">
                     {researchDocs.map(d => (
-                      <label key={d.document_id} className="flex items-center gap-3 p-2 rounded-lg border cursor-pointer hover:bg-gray-50">
+                      <label key={d.document_id} className="flex items-center gap-2 sm:gap-3 p-2 rounded-lg border cursor-pointer hover:bg-gray-50 active:bg-gray-100">
                         <input
                           type="checkbox"
                           checked={contextConfig.selectedResearchIds.includes(d.document_id)}
@@ -515,10 +519,10 @@ export default function DataSourceWizard({
                               ? [...contextConfig.selectedResearchIds, d.document_id]
                               : contextConfig.selectedResearchIds.filter(id => id !== d.document_id)
                           })}
-                          className="w-4 h-4"
+                          className="w-4 h-4 flex-shrink-0"
                         />
-                        <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
-                          <FileText size={16} className="text-amber-600" />
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <FileText size={14} className="text-amber-600" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate">{d.title}</div>
@@ -537,30 +541,32 @@ export default function DataSourceWizard({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-between p-4 border-t bg-gray-50">
+        <div className="flex justify-between p-3 sm:p-4 border-t bg-gray-50 gap-2">
           <button
             onClick={() => setStep(s => Math.max(1, s - 1))}
             disabled={step === 1}
-            className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
+            className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-lg disabled:opacity-50 text-sm sm:text-base"
           >
-            <ChevronLeft size={16} />Back
+            <ChevronLeft size={16} className="flex-shrink-0" />
+            <span className="hidden sm:inline">Back</span>
           </button>
           
           {step < totalSteps ? (
             <button
               onClick={() => setStep(s => s + 1)}
-              className={clsx('flex items-center gap-2 px-4 py-2 text-white rounded-lg', colors.bg, colors.hover)}
+              className={clsx('flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-white rounded-lg text-sm sm:text-base', colors.bg, colors.hover)}
             >
-              Next<ChevronRight size={16} />
+              <span>Next</span>
+              <ChevronRight size={16} className="flex-shrink-0" />
             </button>
           ) : (
             <button
               onClick={onSubmit}
               disabled={!finalStepValid || isSubmitting}
-              className={clsx('flex items-center gap-2 px-6 py-2 text-white rounded-lg disabled:opacity-50', colors.bg, colors.hover)}
+              className={clsx('flex items-center gap-1 sm:gap-2 px-4 sm:px-6 py-2 text-white rounded-lg disabled:opacity-50 text-sm sm:text-base', colors.bg, colors.hover)}
             >
               {isSubmitting ? (
-                <><Loader2 size={16} className="animate-spin" />Processing...</>
+                <><Loader2 size={16} className="animate-spin flex-shrink-0" /><span className="truncate">Processing...</span></>
               ) : (
                 submitLabel
               )}

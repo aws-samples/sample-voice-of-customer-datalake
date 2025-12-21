@@ -131,41 +131,57 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-11rem)] bg-white rounded-xl border border-gray-200 overflow-hidden w-full max-w-full">
-      {showSidebar && <ChatSidebar />}
+    <div className="flex h-[calc(100vh-11rem)] sm:h-[calc(100vh-11rem)] bg-white rounded-xl border border-gray-200 overflow-hidden w-full max-w-full">
+      {/* Mobile sidebar overlay */}
+      {showSidebar && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+            onClick={() => setShowSidebar(false)}
+          />
+          <div className="fixed inset-y-0 left-0 z-50 md:relative md:z-auto">
+            <ChatSidebar onClose={() => setShowSidebar(false)} />
+          </div>
+        </>
+      )}
+      
+      {/* Desktop sidebar */}
+      <div className="hidden md:block">
+        {showSidebar && <ChatSidebar />}
+      </div>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-gray-100 bg-white">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => setShowSidebar(!showSidebar)}
-              className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+              className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded flex-shrink-0"
               title={showSidebar ? 'Hide history' : 'Show history'}
             >
               {showSidebar ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
             </button>
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Bot size={20} className="text-blue-600" />
+            <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
+              <Bot size={18} className="text-blue-600 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h2 className="text-base font-semibold">VoC AI Assistant</h2>
-              <p className="text-xs text-gray-500">Ask questions about your customer feedback data</p>
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-base font-semibold truncate">VoC AI Assistant</h2>
+              <p className="text-xs text-gray-500 hidden sm:block">Ask questions about your customer feedback data</p>
             </div>
           </div>
           <ChatExportMenu conversation={activeConversation} />
         </div>
 
-        <div className="flex-1 overflow-auto overflow-x-hidden bg-gray-50/50 p-4 space-y-4">
+        <div className="flex-1 overflow-auto overflow-x-hidden bg-gray-50/50 p-3 sm:p-4 space-y-3 sm:space-y-4">
           {!activeConversation || activeConversation.messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center">
-              <Sparkles size={48} className="text-gray-300 mb-4" />
-              <p className="text-gray-500 mb-6">Start a conversation about your customer feedback</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-2xl">
+            <div className="h-full flex flex-col items-center justify-center px-2">
+              <Sparkles size={40} className="text-gray-300 mb-4 sm:w-12 sm:h-12" />
+              <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base text-center">Start a conversation about your customer feedback</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl">
                 {suggestedQuestions.map((question, index) => (
                   <button
                     key={index}
                     onClick={() => handleSuggestedQuestion(question)}
-                    className="text-left p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-sm text-gray-700"
+                    className="text-left p-2.5 sm:p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-xs sm:text-sm text-gray-700"
                   >
                     {question}
                   </button>
@@ -179,12 +195,12 @@ export default function Chat() {
               ))}
               
               {chatMutation.isPending && (
-                <div className="flex gap-3">
-                  <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <Bot size={18} className="text-blue-600" />
+                <div className="flex gap-2 sm:gap-3">
+                  <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                    <Bot size={16} className="text-blue-600 sm:w-[18px] sm:h-[18px]" />
                   </div>
-                  <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <Loader2 className="animate-spin text-gray-400" size={20} />
+                  <div className="bg-white border border-gray-200 rounded-lg p-3 sm:p-4">
+                    <Loader2 className="animate-spin text-gray-400" size={18} />
                   </div>
                 </div>
               )}
@@ -194,7 +210,7 @@ export default function Chat() {
           )}
         </div>
 
-        <div className="p-4 border-t border-gray-100">
+        <div className="p-3 sm:p-4 border-t border-gray-100">
           <ChatFilters filters={filters} onChange={handleFiltersChange} />
           
           <form onSubmit={handleSubmit} className="flex gap-2">
@@ -202,17 +218,17 @@ export default function Chat() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about your customer feedback..."
-              className="input flex-1"
+              placeholder="Ask about your feedback..."
+              className="input flex-1 text-sm sm:text-base"
               disabled={chatMutation.isPending}
             />
             <button
               type="submit"
               disabled={!input.trim() || chatMutation.isPending}
-              className="btn btn-primary flex items-center gap-2"
+              className="btn btn-primary flex items-center gap-1 sm:gap-2 px-3 sm:px-4"
             >
-              <Send size={18} />
-              Send
+              <Send size={16} className="sm:w-[18px] sm:h-[18px]" />
+              <span className="hidden sm:inline">Send</span>
             </button>
           </form>
         </div>

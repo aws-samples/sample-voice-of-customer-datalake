@@ -99,29 +99,29 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
   }
 
   return (
-    <div className="bg-gray-50 rounded-lg p-3 mb-3">
+    <div className="bg-gray-50 rounded-lg p-2.5 sm:p-3 mb-3">
       <div className="flex items-center gap-2 mb-2">
-        <Filter size={14} className="text-gray-400" />
-        <span className="text-xs font-medium text-gray-600">Filter Context (max 30 reviews)</span>
+        <Filter size={14} className="text-gray-400 flex-shrink-0" />
+        <span className="text-xs font-medium text-gray-600 truncate">Filter Context (max 30 reviews)</span>
         {hasActiveFilters && (
           <button
             onClick={clearFilters}
-            className="ml-auto text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
+            className="ml-auto text-xs text-red-500 hover:text-red-600 flex items-center gap-1 flex-shrink-0"
           >
             <X size={12} />
-            Clear
+            <span className="hidden sm:inline">Clear</span>
           </button>
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
         {/* Source Filter */}
         <div className="relative">
           <select
             value={filters.source || ''}
             onChange={(e) => updateFilter('source', e.target.value)}
             className={clsx(
-              'text-xs px-2 py-1.5 pr-6 rounded border appearance-none cursor-pointer',
+              'w-full sm:w-auto text-xs px-2 py-2 sm:py-1.5 pr-6 rounded border appearance-none cursor-pointer',
               filters.source ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-gray-200'
             )}
           >
@@ -138,7 +138,7 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
             value={filters.category || ''}
             onChange={(e) => updateFilter('category', e.target.value)}
             className={clsx(
-              'text-xs px-2 py-1.5 pr-6 rounded border appearance-none cursor-pointer',
+              'w-full sm:w-auto text-xs px-2 py-2 sm:py-1.5 pr-6 rounded border appearance-none cursor-pointer',
               filters.category ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-white border-gray-200'
             )}
           >
@@ -155,7 +155,7 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
             value={filters.sentiment || ''}
             onChange={(e) => updateFilter('sentiment', e.target.value)}
             className={clsx(
-              'text-xs px-2 py-1.5 pr-6 rounded border appearance-none cursor-pointer',
+              'w-full sm:w-auto text-xs px-2 py-2 sm:py-1.5 pr-6 rounded border appearance-none cursor-pointer',
               filters.sentiment ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200'
             )}
           >
@@ -169,7 +169,7 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
 
       {/* Active Filters Summary */}
       {hasActiveFilters && (
-        <div className="mt-2 text-xs text-gray-500">
+        <div className="mt-2 text-xs text-gray-500 truncate">
           Focusing on: {[
             filters.source && sources.find(s => s.value === filters.source)?.label,
             filters.category && categories.find(c => c.value === filters.category)?.label,

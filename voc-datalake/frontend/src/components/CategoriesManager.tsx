@@ -158,12 +158,12 @@ export default function CategoriesManager() {
   return (
     <div className="space-y-6">
       {/* AI Generation Section */}
-      <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-4 border border-purple-200">
-        <div className="flex items-start gap-3">
-          <div className="p-2 bg-purple-100 rounded-lg">
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-3 sm:p-4 border border-purple-200">
+        <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+          <div className="p-2 bg-purple-100 rounded-lg w-fit">
             <Sparkles className="text-purple-600" size={20} />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h4 className="font-semibold text-gray-900 mb-1">AI Category Suggestions</h4>
             <p className="text-sm text-gray-600 mb-3">
               Describe your company, industry, or product to get AI-suggested categories tailored to your business.
@@ -172,12 +172,12 @@ export default function CategoriesManager() {
               value={companyDescription}
               onChange={(e) => setCompanyDescription(e.target.value)}
               placeholder="e.g., We are an airline company offering domestic and international flights. Our customers care about punctuality, comfort, baggage handling, customer service, and in-flight experience..."
-              className="input min-h-[80px] text-sm mb-3"
+              className="input min-h-[80px] text-sm mb-3 w-full"
             />
             <button
               onClick={handleGenerate}
               disabled={isGenerating || !companyDescription.trim()}
-              className="btn btn-primary flex items-center gap-2"
+              className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
             >
               {isGenerating ? (
                 <>
@@ -218,11 +218,11 @@ export default function CategoriesManager() {
             {categories.map((category) => (
               <div key={category.id} className="border border-gray-200 rounded-lg overflow-hidden">
                 {/* Category Header */}
-                <div className="flex items-center gap-2 p-3 bg-gray-50 hover:bg-gray-100">
-                  <GripVertical size={16} className="text-gray-400 cursor-grab" />
+                <div className="flex flex-wrap items-center gap-2 p-2 sm:p-3 bg-gray-50 hover:bg-gray-100">
+                  <GripVertical size={16} className="text-gray-400 cursor-grab hidden sm:block" />
                   <button
                     onClick={() => toggleExpanded(category.id)}
-                    className="p-1 hover:bg-gray-200 rounded"
+                    className="p-1 hover:bg-gray-200 rounded flex-shrink-0"
                   >
                     {expandedCategories.has(category.id) ? (
                       <ChevronDown size={16} />
@@ -248,27 +248,27 @@ export default function CategoriesManager() {
                         }
                         if (e.key === 'Escape') setEditingCategory(null)
                       }}
-                      className="flex-1 px-2 py-1 border border-blue-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 min-w-0 px-2 py-1 border border-blue-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       autoFocus
                     />
                   ) : (
                     <span 
-                      className="flex-1 font-medium text-gray-900 cursor-pointer hover:text-blue-600"
+                      className="flex-1 min-w-0 font-medium text-gray-900 cursor-pointer hover:text-blue-600 truncate"
                       onClick={() => setEditingCategory(category.id)}
                     >
                       {category.description || category.name}
                     </span>
                   )}
                   
-                  <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded">
+                  <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded hidden sm:inline">
                     {category.name}
                   </span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-gray-400 flex-shrink-0">
                     {category.subcategories.length} sub
                   </span>
                   <button
                     onClick={() => handleDeleteCategory(category.id)}
-                    className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                    className="p-1.5 sm:p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded flex-shrink-0"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -276,10 +276,10 @@ export default function CategoriesManager() {
 
                 {/* Subcategories */}
                 {expandedCategories.has(category.id) && (
-                  <div className="p-3 pl-10 space-y-2 bg-white">
+                  <div className="p-2 sm:p-3 pl-4 sm:pl-10 space-y-2 bg-white">
                     {category.subcategories.map((sub) => (
                       <div key={sub.id} className="flex items-center gap-2 text-sm">
-                        <span className="w-2 h-2 bg-gray-300 rounded-full" />
+                        <span className="w-2 h-2 bg-gray-300 rounded-full flex-shrink-0" />
                         {editingSubcategory === sub.id ? (
                           <input
                             type="text"
@@ -295,21 +295,21 @@ export default function CategoriesManager() {
                               saveMutation.mutate(updated)
                               setEditingSubcategory(null)
                             }}
-                            className="flex-1 px-2 py-1 border border-blue-300 rounded text-sm"
+                            className="flex-1 min-w-0 px-2 py-1 border border-blue-300 rounded text-sm"
                             autoFocus
                           />
                         ) : (
                           <span 
-                            className="flex-1 text-gray-700 cursor-pointer hover:text-blue-600"
+                            className="flex-1 min-w-0 text-gray-700 cursor-pointer hover:text-blue-600 truncate"
                             onClick={() => setEditingSubcategory(sub.id)}
                           >
                             {sub.description || sub.name}
                           </span>
                         )}
-                        <span className="text-xs text-gray-400">{sub.name}</span>
+                        <span className="text-xs text-gray-400 hidden sm:inline flex-shrink-0">{sub.name}</span>
                         <button
                           onClick={() => handleDeleteSubcategory(category.id, sub.id)}
-                          className="p-1 text-gray-400 hover:text-red-600 rounded"
+                          className="p-1.5 sm:p-1 text-gray-400 hover:text-red-600 rounded flex-shrink-0"
                         >
                           <Trash2 size={12} />
                         </button>
@@ -323,7 +323,7 @@ export default function CategoriesManager() {
                         value={newSubcategoryName[category.id] || ''}
                         onChange={(e) => setNewSubcategoryName(prev => ({ ...prev, [category.id]: e.target.value }))}
                         placeholder="Add subcategory..."
-                        className="flex-1 px-2 py-1 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="flex-1 min-w-0 px-2 py-1.5 sm:py-1 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleAddSubcategory(category.id)
                         }}
@@ -331,7 +331,7 @@ export default function CategoriesManager() {
                       <button
                         onClick={() => handleAddSubcategory(category.id)}
                         disabled={!newSubcategoryName[category.id]?.trim()}
-                        className="p-1 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
+                        className="p-1.5 sm:p-1 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50 flex-shrink-0"
                       >
                         <Plus size={16} />
                       </button>
@@ -344,7 +344,7 @@ export default function CategoriesManager() {
         )}
 
         {/* Add New Category */}
-        <div className="flex items-center gap-2 mt-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-4">
           <input
             type="text"
             value={newCategoryName}
@@ -358,7 +358,7 @@ export default function CategoriesManager() {
           <button
             onClick={handleAddCategory}
             disabled={!newCategoryName.trim() || saveMutation.isPending}
-            className="btn btn-primary flex items-center gap-2"
+            className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
           >
             <Plus size={16} />
             Add Category

@@ -321,24 +321,24 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between p-4 hover:bg-gray-50"
+        className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 hover:bg-gray-50 gap-2 sm:gap-3"
       >
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{info.icon}</span>
-          <div className="text-left">
-            <span className="font-medium">{info.name}</span>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <span className="text-xl sm:text-2xl">{info.icon}</span>
+          <div className="text-left min-w-0">
+            <span className="font-medium text-sm sm:text-base">{info.name}</span>
             {info.description && (
-              <p className="text-xs text-gray-500">{info.description}</p>
+              <p className="text-xs text-gray-500 line-clamp-1">{info.description}</p>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 ml-auto sm:ml-0">
           {sourceStatus?.configured && (
             <span className="text-xs text-green-600 flex items-center gap-1">
-              <CheckCircle2 size={14} /> Connected
+              <CheckCircle2 size={14} /> <span className="hidden xs:inline">Connected</span>
             </span>
           )}
-          <label className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <label className="flex items-center gap-1.5 sm:gap-2" onClick={(e) => e.stopPropagation()}>
             {serverStatus.loading ? (
               <Loader2 size={16} className="animate-spin text-blue-600" />
             ) : (
@@ -350,10 +350,10 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
               />
             )}
-            <span className="text-sm text-gray-600">Enabled</span>
+            <span className="text-xs sm:text-sm text-gray-600">Enabled</span>
           </label>
           <span className={clsx(
-            'w-2 h-2 rounded-full',
+            'w-2 h-2 rounded-full flex-shrink-0',
             serverStatus.enabled ? 'bg-green-500' : 'bg-gray-300'
           )} />
         </div>
@@ -361,17 +361,17 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="border-t border-gray-200 p-4 bg-gray-50 space-y-6">
+        <div className="border-t border-gray-200 p-3 sm:p-4 bg-gray-50 space-y-4 sm:space-y-6">
           {/* Webhooks */}
           {info.webhooks && info.webhooks.length > 0 && (
             <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <h4 className="text-sm font-semibold text-gray-700 mb-2 sm:mb-3 flex items-center gap-2">
                 <Webhook size={16} /> Webhook Endpoints
               </h4>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {info.webhooks.map((webhook, idx) => (
-                  <div key={idx} className="bg-white rounded-lg p-3 border border-gray-200">
-                    <div className="flex items-center justify-between mb-2">
+                  <div key={idx} className="bg-white rounded-lg p-2 sm:p-3 border border-gray-200">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 mb-2">
                       <span className="text-sm font-medium text-gray-700">{webhook.name}</span>
                       {webhook.docUrl && (
                         <a href={webhook.docUrl} target="_blank" rel="noopener noreferrer" 
@@ -381,18 +381,18 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 bg-gray-50 border border-gray-200 rounded px-3 py-2 text-sm font-mono text-gray-800 truncate">
+                      <code className="flex-1 bg-gray-50 border border-gray-200 rounded px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-mono text-gray-800 truncate min-w-0">
                         {webhookBaseUrl}{sourceKey}
                       </code>
                       <button
                         onClick={() => copyToClipboard(`${webhookBaseUrl}${sourceKey}`, `webhook-${idx}`)}
-                        className="btn btn-secondary p-2"
+                        className="btn btn-secondary p-1.5 sm:p-2 flex-shrink-0"
                         title="Copy URL"
                       >
-                        {copiedUrl === `webhook-${idx}` ? <Check size={16} className="text-green-600" /> : <Copy size={16} />}
+                        {copiedUrl === `webhook-${idx}` ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">Events: {webhook.events}</p>
+                    <p className="text-xs text-gray-500 mt-2 break-words">Events: {webhook.events}</p>
                   </div>
                 ))}
               </div>
@@ -402,10 +402,10 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
           {/* Credentials */}
           {info.fields.length > 0 && (
             <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <h4 className="text-sm font-semibold text-gray-700 mb-2 sm:mb-3 flex items-center gap-2">
                 <Key size={16} /> API Credentials
               </h4>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {info.fields.map(field => (
                   <div key={field.key}>
                     <label className="block text-xs text-gray-500 mb-1">{field.label}</label>
@@ -430,12 +430,12 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
 
                 {/* Current status */}
                 {sourceStatus?.credentials_set && (
-                  <div className="p-3 bg-white rounded-lg border border-gray-200">
+                  <div className="p-2 sm:p-3 bg-white rounded-lg border border-gray-200">
                     <p className="text-xs font-medium text-gray-700 mb-2">Configured in Secrets Manager:</p>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
                       {info.fields.map(field => (
                         <span key={field.key} className={clsx(
-                          'px-2 py-1 rounded text-xs',
+                          'px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-xs',
                           sourceStatus.credentials_set?.includes(field.key)
                             ? 'bg-green-100 text-green-700'
                             : 'bg-gray-200 text-gray-500'
@@ -447,10 +447,10 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setShowSecrets(!showSecrets)}
-                    className="btn btn-secondary flex items-center gap-2 text-sm"
+                    className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
                   >
                     {showSecrets ? <EyeOff size={14} /> : <Eye size={14} />}
                     {showSecrets ? 'Hide' : 'Show'}
@@ -459,7 +459,7 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
                     onClick={() => updateCredentialsMutation.mutate(credentials)}
                     disabled={updateCredentialsMutation.isPending || Object.keys(credentials).length === 0}
                     className={clsx(
-                      'btn flex items-center gap-2 text-sm',
+                      'btn flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2',
                       saveSuccess ? 'bg-green-600 text-white' : 'btn-primary'
                     )}
                   >
@@ -470,12 +470,13 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
                     ) : (
                       <Save size={14} />
                     )}
-                    {saveSuccess ? 'Saved!' : 'Save to Secrets Manager'}
+                    <span className="hidden xs:inline">{saveSuccess ? 'Saved!' : 'Save to Secrets Manager'}</span>
+                    <span className="xs:hidden">{saveSuccess ? 'Saved!' : 'Save'}</span>
                   </button>
                   <button
                     onClick={() => testMutation.mutate()}
                     disabled={testMutation.isPending || !sourceStatus?.configured}
-                    className="btn btn-secondary flex items-center gap-2 text-sm"
+                    className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
                   >
                     {testMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
                     Test
@@ -484,10 +485,10 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
 
                 {testMutation.data && (
                   <div className={clsx(
-                    'p-3 rounded-lg text-sm',
+                    'p-2 sm:p-3 rounded-lg text-xs sm:text-sm',
                     testMutation.data.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
                   )}>
-                    {testMutation.data.success ? <CheckCircle2 size={14} className="inline mr-2" /> : <AlertCircle size={14} className="inline mr-2" />}
+                    {testMutation.data.success ? <CheckCircle2 size={14} className="inline mr-1.5 sm:mr-2" /> : <AlertCircle size={14} className="inline mr-1.5 sm:mr-2" />}
                     {testMutation.data.message}
                   </div>
                 )}
@@ -498,7 +499,7 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
           {/* Setup instructions */}
           {info.setupInstructions && (
             <div className={clsx(
-              'p-3 rounded-lg text-sm',
+              'p-2 sm:p-3 rounded-lg text-xs sm:text-sm',
               info.setupInstructions.color === 'blue' ? 'bg-blue-50 border border-blue-200' :
               info.setupInstructions.color === 'orange' ? 'bg-orange-50 border border-orange-200' :
               'bg-gray-50 border border-gray-200'
@@ -521,7 +522,7 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
           {/* S3 Import File Explorer */}
           {sourceKey === 's3_import' && apiEndpoint && (
             <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <h4 className="text-sm font-semibold text-gray-700 mb-2 sm:mb-3 flex items-center gap-2">
                 📁 File Explorer
               </h4>
               <S3ImportExplorer />
@@ -613,18 +614,18 @@ export default function Settings() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <p className="text-gray-500">Configure your VoC platform, data sources, and integrations</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Settings</h1>
+          <p className="text-sm sm:text-base text-gray-500">Configure your VoC platform, data sources, and integrations</p>
         </div>
         <button
           onClick={handleSave}
           disabled={saving}
           className={clsx(
-            'btn flex items-center gap-2',
+            'btn flex items-center justify-center gap-2 w-full sm:w-auto',
             saved ? 'bg-green-600 text-white' : 'btn-primary',
             saving && 'opacity-75 cursor-not-allowed'
           )}
@@ -799,14 +800,14 @@ export default function Settings() {
       {/* Danger zone */}
       <div className="card border-red-200">
         <h2 className="text-lg font-semibold text-red-600 mb-4">Danger Zone</h2>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <p className="font-medium text-gray-900">Reset all settings</p>
             <p className="text-sm text-gray-500">Clear all configuration and start fresh</p>
           </div>
           <button
             onClick={() => setShowResetConfirm(true)}
-            className="btn bg-red-100 text-red-700 hover:bg-red-200"
+            className="btn bg-red-100 text-red-700 hover:bg-red-200 w-full sm:w-auto"
           >
             Reset
           </button>

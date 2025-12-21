@@ -191,57 +191,57 @@ export default function DataExplorer() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Data Explorer</h1>
-          <p className="text-gray-500">Browse, edit, and sync raw S3 data and processed DynamoDB records</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Data Explorer</h1>
+          <p className="text-sm text-gray-500">Browse, edit, and sync raw S3 data and processed DynamoDB records</p>
         </div>
         {viewMode === 's3-raw' && (
-          <button onClick={openS3Creator} className="btn btn-primary flex items-center gap-2">
+          <button onClick={openS3Creator} className="btn btn-primary flex items-center justify-center gap-2 text-sm">
             <Plus size={18} /> New File
           </button>
         )}
       </div>
 
-      <div className="flex items-center gap-4 border-b border-gray-200">
+      <div className="flex items-center gap-2 sm:gap-4 border-b border-gray-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {[
-          { id: 's3-raw', icon: HardDrive, label: 'S3 Raw Data' },
-          { id: 'dynamodb-processed', icon: Database, label: 'Processed Feedback' },
-          { id: 'dynamodb-categories', icon: FolderOpen, label: 'Categories' },
-        ].map(({ id, icon: Icon, label }) => (
+          { id: 's3-raw', icon: HardDrive, label: 'S3 Raw Data', shortLabel: 'S3' },
+          { id: 'dynamodb-processed', icon: Database, label: 'Processed Feedback', shortLabel: 'Feedback' },
+          { id: 'dynamodb-categories', icon: FolderOpen, label: 'Categories', shortLabel: 'Categories' },
+        ].map(({ id, icon: Icon, label, shortLabel }) => (
           <button
             key={id}
             onClick={() => setViewMode(id as ViewMode)}
             className={clsx(
-              'flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition-colors',
+              'flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 border-b-2 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap',
               viewMode === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
             )}
           >
-            <Icon size={18} /> {label}
+            <Icon size={16} /> <span className="hidden sm:inline">{label}</span><span className="sm:hidden">{shortLabel}</span>
           </button>
         ))}
       </div>
 
-      <div className="flex items-center gap-4 flex-wrap">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
         {viewMode !== 's3-raw' && (
           <>
             <div className="flex items-center gap-2">
-              <Filter size={16} className="text-gray-400" />
-              <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="input py-1.5 text-sm min-w-[150px]">
+              <Filter size={16} className="text-gray-400 flex-shrink-0" />
+              <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="input py-1.5 text-sm flex-1 sm:min-w-[150px]">
                 <option value="">All Sources</option>
                 {sourcesData?.sources && Object.keys(sourcesData.sources).map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             {viewMode === 'dynamodb-processed' && (
-              <div className="flex items-center gap-2 flex-1 max-w-md">
-                <Search size={16} className="text-gray-400" />
-                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="input py-1.5 text-sm flex-1" />
+              <div className="flex items-center gap-2 flex-1">
+                <Search size={16} className="text-gray-400 flex-shrink-0" />
+                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="input py-1.5 text-sm flex-1 sm:max-w-md" />
               </div>
             )}
           </>
         )}
-        <button onClick={() => viewMode === 's3-raw' ? refetchS3() : viewMode === 'dynamodb-processed' ? refetchFeedback() : refetchCategories()} className="btn btn-secondary py-1.5 text-sm flex items-center gap-1 ml-auto">
+        <button onClick={() => viewMode === 's3-raw' ? refetchS3() : viewMode === 'dynamodb-processed' ? refetchFeedback() : refetchCategories()} className="btn btn-secondary py-1.5 text-sm flex items-center justify-center gap-1 sm:ml-auto">
           <RefreshCw size={14} /> Refresh
         </button>
       </div>
@@ -459,11 +459,11 @@ function EditModal({ mode, type, data, key, feedbackId, s3RawUri, contentType, i
     
     if (fileType === 'image') {
       return (
-        <div className="flex items-center justify-center p-4 bg-gray-100 rounded-lg min-h-[400px]">
+        <div className="flex items-center justify-center p-4 bg-gray-100 rounded-lg min-h-[300px] sm:min-h-[400px]">
           <img 
             src={mediaUrl} 
             alt={key || 'Preview'} 
-            className="max-w-full max-h-[60vh] object-contain rounded shadow-lg"
+            className="max-w-full max-h-[50vh] sm:max-h-[60vh] object-contain rounded shadow-lg"
             onError={(e) => {
               const target = e.target as HTMLImageElement
               target.style.display = 'none'
@@ -476,7 +476,7 @@ function EditModal({ mode, type, data, key, feedbackId, s3RawUri, contentType, i
     
     if (fileType === 'pdf') {
       return (
-        <div className="w-full h-[60vh] bg-gray-100 rounded-lg overflow-hidden">
+        <div className="w-full h-[50vh] sm:h-[60vh] bg-gray-100 rounded-lg overflow-hidden">
           <iframe 
             src={mediaUrl} 
             className="w-full h-full border-0"
@@ -490,48 +490,48 @@ function EditModal({ mode, type, data, key, feedbackId, s3RawUri, contentType, i
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <div className="flex items-center gap-2">
-            {type === 's3' ? <FileJson size={20} className="text-blue-500" /> : <Database size={20} className="text-green-500" />}
-            <span className="font-medium">{title}</span>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-b">
+          <div className="flex items-center gap-2 min-w-0">
+            {type === 's3' ? <FileJson size={18} className="text-blue-500 flex-shrink-0" /> : <Database size={18} className="text-green-500 flex-shrink-0" />}
+            <span className="font-medium text-sm sm:text-base truncate">{title}</span>
             {fileType !== 'text' && (
-              <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600 uppercase">{fileType}</span>
+              <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600 uppercase flex-shrink-0">{fileType}</span>
             )}
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X size={20} /></button>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded flex-shrink-0"><X size={20} /></button>
         </div>
-        <div className="px-4 py-2 bg-gray-50 border-b text-xs text-gray-600 flex items-center gap-4">
-          {type === 's3' && key && <span>Key: <code className="bg-gray-200 px-1 rounded">{key}</code></span>}
-          {type === 'dynamodb' && feedbackId && <span>ID: <code className="bg-gray-200 px-1 rounded">{feedbackId}</code></span>}
-          {s3RawUri && <span className="flex items-center gap-1"><Link2 size={12} /> S3: <code className="bg-gray-200 px-1 rounded text-xs">{s3RawUri}</code></span>}
-          {contentType && <span>Type: <code className="bg-gray-200 px-1 rounded">{contentType}</code></span>}
+        <div className="px-3 sm:px-4 py-2 bg-gray-50 border-b text-xs text-gray-600 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 overflow-x-auto">
+          {type === 's3' && key && <span className="truncate">Key: <code className="bg-gray-200 px-1 rounded">{key}</code></span>}
+          {type === 'dynamodb' && feedbackId && <span className="truncate">ID: <code className="bg-gray-200 px-1 rounded">{feedbackId}</code></span>}
+          {s3RawUri && <span className="flex items-center gap-1 truncate"><Link2 size={12} className="flex-shrink-0" /> S3: <code className="bg-gray-200 px-1 rounded text-xs truncate">{s3RawUri}</code></span>}
+          {contentType && <span className="truncate">Type: <code className="bg-gray-200 px-1 rounded">{contentType}</code></span>}
         </div>
-        <div className="flex-1 overflow-auto p-4">
+        <div className="flex-1 overflow-auto p-3 sm:p-4">
           {isMediaFile ? (
             renderMediaContent()
           ) : (
             <>
               <textarea value={content} onChange={(e) => { setContent(e.target.value); validateJson(e.target.value) }} readOnly={isReadOnly}
-                className={clsx('w-full h-full min-h-[400px] font-mono text-xs p-4 rounded-lg border resize-none', isReadOnly ? 'bg-gray-50 text-gray-700' : 'bg-white', jsonError ? 'border-red-300' : 'border-gray-200')} spellCheck={false} />
+                className={clsx('w-full h-full min-h-[300px] sm:min-h-[400px] font-mono text-xs p-3 sm:p-4 rounded-lg border resize-none', isReadOnly ? 'bg-gray-50 text-gray-700' : 'bg-white', jsonError ? 'border-red-300' : 'border-gray-200')} spellCheck={false} />
               {jsonError && <p className="text-xs text-red-600 mt-2 flex items-center gap-1"><AlertTriangle size={14} /> Invalid JSON: {jsonError}</p>}
             </>
           )}
         </div>
-        <div className="px-4 py-3 border-t bg-gray-50 flex items-center justify-between">
+        <div className="px-3 sm:px-4 py-3 border-t bg-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             {!isReadOnly && !isMediaFile && (
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-xs sm:text-sm">
                 <input type="checkbox" checked={syncEnabled} onChange={(e) => setSyncEnabled(e.target.checked)} className="rounded border-gray-300 text-blue-600" />
-                <span className="text-gray-700">{type === 's3' ? 'Also update DynamoDB (reprocess)' : 'Also update S3 raw data'}</span>
+                <span className="text-gray-700">{type === 's3' ? 'Also update DynamoDB' : 'Also update S3'}</span>
               </label>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 justify-end">
             {error && <span className="text-xs text-red-600">{error}</span>}
-            <button onClick={onClose} className="btn btn-secondary">{isMediaFile ? 'Close' : 'Cancel'}</button>
-            {!isReadOnly && !isMediaFile && <button onClick={handleSave} disabled={saving || !!jsonError} className="btn btn-primary flex items-center gap-2">{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{mode === 'create' ? 'Create' : 'Save'}</button>}
+            <button onClick={onClose} className="btn btn-secondary text-sm">{isMediaFile ? 'Close' : 'Cancel'}</button>
+            {!isReadOnly && !isMediaFile && <button onClick={handleSave} disabled={saving || !!jsonError} className="btn btn-primary flex items-center gap-2 text-sm">{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{mode === 'create' ? 'Create' : 'Save'}</button>}
           </div>
         </div>
       </div>

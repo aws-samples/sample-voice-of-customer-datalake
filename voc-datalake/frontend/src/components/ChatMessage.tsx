@@ -37,24 +37,24 @@ export default function ChatMessage({ message }: ChatMessageProps) {
   }
 
   return (
-    <div className={clsx('flex gap-3 w-full max-w-full', message.role === 'user' ? 'justify-end' : '')}>
+    <div className={clsx('flex gap-2 sm:gap-3 w-full max-w-full', message.role === 'user' ? 'justify-end' : '')}>
       {message.role === 'assistant' && (
-        <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-          <Bot size={18} className="text-blue-600" />
+        <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 bg-blue-100 rounded-full flex items-center justify-center">
+          <Bot size={16} className="text-blue-600 sm:w-[18px] sm:h-[18px]" />
         </div>
       )}
       
-      <div className={clsx('max-w-[75%] min-w-0 overflow-hidden', message.role === 'user' ? 'order-first' : '')}>
+      <div className={clsx('max-w-[85%] sm:max-w-[75%] min-w-0 overflow-hidden', message.role === 'user' ? 'order-first' : '')}>
         <div
           className={clsx(
-            'rounded-lg p-4 group relative overflow-hidden break-words',
+            'rounded-lg p-3 sm:p-4 group relative overflow-hidden break-words',
             message.role === 'user'
               ? 'bg-blue-600 text-white'
               : 'bg-white border border-gray-200'
           )}
         >
           {message.role === 'assistant' ? (
-            <div className="prose prose-sm max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:my-2 prose-ul:my-2 prose-li:my-0.5 overflow-x-auto overflow-y-hidden break-words [&>*]:max-w-full">
+            <div className="prose prose-sm max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:my-2 prose-ul:my-2 prose-li:my-0.5 overflow-x-auto overflow-y-hidden break-words [&>*]:max-w-full text-sm sm:text-base">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -101,7 +101,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
               </ReactMarkdown>
             </div>
           ) : (
-            <p className="whitespace-pre-wrap">{message.content}</p>
+            <p className="whitespace-pre-wrap text-sm sm:text-base">{message.content}</p>
           )}
 
           {/* Copy button */}
@@ -132,8 +132,8 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       </div>
 
       {message.role === 'user' && (
-        <div className="flex-shrink-0 w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-          <User size={18} className="text-gray-600" />
+        <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 bg-gray-200 rounded-full flex items-center justify-center">
+          <User size={16} className="text-gray-600 sm:w-[18px] sm:h-[18px]" />
         </div>
       )}
     </div>

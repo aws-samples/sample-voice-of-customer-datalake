@@ -57,8 +57,8 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4 sm:p-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <UserPlus size={20} className="text-blue-600" />
           Add New User
@@ -129,20 +129,20 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
           
           {error && (
             <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">
-              <AlertCircle size={16} />
-              {error}
+              <AlertCircle size={16} className="flex-shrink-0" />
+              <span>{error}</span>
             </div>
           )}
         </div>
         
-        <div className="flex justify-end gap-3 mt-6">
-          <button onClick={onClose} className="btn btn-secondary">
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-6">
+          <button onClick={onClose} className="btn btn-secondary w-full sm:w-auto">
             Cancel
           </button>
           <button
             onClick={() => createMutation.mutate()}
             disabled={!email || createMutation.isPending}
-            className="btn btn-primary flex items-center gap-2"
+            className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
           >
             {createMutation.isPending ? (
               <Loader2 size={16} className="animate-spin" />
@@ -276,7 +276,7 @@ export default function UserAdmin() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Users className="text-blue-600" size={20} />
           <h3 className="font-semibold">User Management</h3>
@@ -284,7 +284,7 @@ export default function UserAdmin() {
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="btn btn-primary flex items-center gap-2"
+          className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
         >
           <UserPlus size={16} />
           Add User
@@ -299,8 +299,8 @@ export default function UserAdmin() {
         </div>
       )}
 
-      {/* Users table */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
+      {/* Users table - desktop */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden hidden md:block">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -385,6 +385,81 @@ export default function UserAdmin() {
           <div className="text-center py-8 text-gray-500">
             No users found. Add your first user above.
           </div>
+        )}
+      </div>
+
+      {/* Users cards - mobile */}
+      <div className="md:hidden space-y-3">
+        {users.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 border border-gray-200 rounded-lg">
+            No users found. Add your first user above.
+          </div>
+        ) : (
+          users.map((user) => (
+            <div key={user.username} className="border border-gray-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900 truncate">{user.email}</p>
+                  {user.name && <p className="text-sm text-gray-500">{user.name}</p>}
+                </div>
+                {getStatusBadge(user)}
+              </div>
+              
+              <div className="flex items-center justify-between gap-2">
+                <select
+                  value={user.groups.includes('admins') ? 'admins' : 'viewers'}
+                  onChange={(e) => updateGroupMutation.mutate({
+                    username: user.username,
+                    group: e.target.value as 'admins' | 'viewers'
+                  })}
+                  disabled={updateGroupMutation.isPending}
+                  className={clsx(
+                    'text-sm border rounded px-2 py-1.5',
+                    user.groups.includes('admins') 
+                      ? 'border-purple-300 bg-purple-50 text-purple-700'
+                      : 'border-gray-300 bg-white text-gray-700'
+                  )}
+                >
+                  <option value="viewers">Viewer</option>
+                  <option value="admins">Admin</option>
+                </select>
+                
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setConfirmAction({ type: 'reset', user })}
+                    className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                    title="Reset password"
+                  >
+                    <Key size={18} />
+                  </button>
+                  {user.enabled ? (
+                    <button
+                      onClick={() => setConfirmAction({ type: 'disable', user })}
+                      className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded"
+                      title="Disable user"
+                    >
+                      <UserX size={18} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmAction({ type: 'enable', user })}
+                      className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded"
+                      title="Enable user"
+                    >
+                      <UserCheck size={18} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setConfirmAction({ type: 'delete', user })}
+                    className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+                    title="Delete user"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
         )}
       </div>
 

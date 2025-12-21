@@ -343,55 +343,56 @@ export default function ProblemAnalysis() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-2 text-gray-600 mb-1">
-            <TrendingUp size={16} />
-            <span className="text-sm">Categories</span>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4">
+        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
+            <TrendingUp size={14} className="sm:w-4 sm:h-4" />
+            <span className="text-xs sm:text-sm">Categories</span>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{groupedData.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900">{groupedData.length}</p>
         </div>
-        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-2 text-gray-600 mb-1">
-            <Layers size={16} />
-            <span className="text-sm">Subcategories</span>
+        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
+            <Layers size={14} className="sm:w-4 sm:h-4" />
+            <span className="text-xs sm:text-sm">Subcategories</span>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{totalSubcategories}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalSubcategories}</p>
         </div>
-        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-2 text-gray-600 mb-1">
-            <AlertTriangle size={16} />
-            <span className="text-sm">Problem Groups</span>
+        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
+            <AlertTriangle size={14} className="sm:w-4 sm:h-4" />
+            <span className="text-xs sm:text-sm truncate">Problems</span>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{totalProblems}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalProblems}</p>
         </div>
-        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-2 text-gray-600 mb-1">
-            <MessageSquare size={16} />
-            <span className="text-sm">Feedback Items</span>
+        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
+            <MessageSquare size={14} className="sm:w-4 sm:h-4" />
+            <span className="text-xs sm:text-sm">Feedback</span>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{totalFeedback}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalFeedback}</p>
         </div>
-        <div className="bg-white rounded-xl p-4 border border-red-200 shadow-sm bg-red-50">
-          <div className="flex items-center gap-2 text-red-600 mb-1">
-            <AlertTriangle size={16} />
-            <span className="text-sm">Urgent Issues</span>
+        <div className="bg-white rounded-xl p-3 sm:p-4 border border-red-200 shadow-sm bg-red-50 col-span-2 sm:col-span-1">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-red-600 mb-1">
+            <AlertTriangle size={14} className="sm:w-4 sm:h-4" />
+            <span className="text-xs sm:text-sm">Urgent</span>
           </div>
-          <p className="text-2xl font-bold text-red-700">{totalUrgent}</p>
+          <p className="text-xl sm:text-2xl font-bold text-red-700">{totalUrgent}</p>
         </div>
       </div>
 
       {/* Filters & Controls */}
       <div className="card">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Filter size={18} className="text-gray-500" />
+        <div className="flex flex-col gap-3 sm:gap-4">
+          {/* Filter Row */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <Filter size={16} className="text-gray-500 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
             <select
               value={selectedSource || ''}
               onChange={(e) => setSelectedSource(e.target.value || null)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+              className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
             >
               <option value="">All Sources</option>
               {allSources.map(source => (
@@ -401,7 +402,7 @@ export default function ProblemAnalysis() {
             <select
               value={selectedCategory || ''}
               onChange={(e) => { setSelectedCategory(e.target.value || null); setSelectedSubcategory(null) }}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+              className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
             >
               <option value="">All Categories</option>
               {allCategories.map(cat => (
@@ -411,88 +412,98 @@ export default function ProblemAnalysis() {
             <select
               value={selectedSubcategory || ''}
               onChange={(e) => setSelectedSubcategory(e.target.value || null)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+              className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
             >
               <option value="">All Subcategories</option>
               {allSubcategories.map(sub => (
                 <option key={sub} value={sub}>{sub.replace('_', ' ')}</option>
               ))}
             </select>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={showUrgentOnly}
-                onChange={(e) => setShowUrgentOnly(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <span>Urgent only</span>
-            </label>
-            {(selectedSource || selectedCategory || selectedSubcategory || showUrgentOnly) && (
-              <button
-                onClick={() => { setSelectedSource(null); setSelectedCategory(null); setSelectedSubcategory(null); setShowUrgentOnly(false) }}
-                className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
-              >
-                <X size={14} />
-                Clear
-              </button>
-            )}
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-500">Similarity:</span>
-              <select
-                value={similarityThreshold}
-                onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
-                className="px-2 py-1 border border-gray-300 rounded text-sm"
-                title="Higher = stricter matching, fewer merged groups"
-              >
-                <option value={0.2}>Low (20%)</option>
-                <option value={0.4}>Medium (40%)</option>
-                <option value={0.6}>High (60%)</option>
-                <option value={1.0}>Off (exact)</option>
-              </select>
+          
+          {/* Controls Row */}
+          <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <label className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+                <input
+                  type="checkbox"
+                  checked={showUrgentOnly}
+                  onChange={(e) => setShowUrgentOnly(e.target.checked)}
+                  className="rounded border-gray-300 w-3.5 h-3.5 sm:w-4 sm:h-4"
+                />
+                <span>Urgent only</span>
+              </label>
+              {(selectedSource || selectedCategory || selectedSubcategory || showUrgentOnly) && (
+                <button
+                  onClick={() => { setSelectedSource(null); setSelectedCategory(null); setSelectedSubcategory(null); setShowUrgentOnly(false) }}
+                  className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 active:scale-95"
+                >
+                  <X size={12} className="sm:w-[14px] sm:h-[14px]" />
+                  Clear
+                </button>
+              )}
             </div>
-            <button onClick={expandAll} className="btn btn-secondary text-sm">
-              Expand All
-            </button>
-            <button onClick={collapseAll} className="btn btn-secondary text-sm">
-              Collapse All
-            </button>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+                <span className="text-gray-500 hidden xs:inline">Similarity:</span>
+                <select
+                  value={similarityThreshold}
+                  onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
+                  className="px-2 py-1 border border-gray-300 rounded text-xs sm:text-sm"
+                  title="Higher = stricter matching, fewer merged groups"
+                >
+                  <option value={0.2}>Low</option>
+                  <option value={0.4}>Med</option>
+                  <option value={0.6}>High</option>
+                  <option value={1.0}>Off</option>
+                </select>
+              </div>
+              <div className="flex gap-1.5 sm:gap-2">
+                <button onClick={expandAll} className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95">
+                  <span className="hidden xs:inline">Expand All</span>
+                  <span className="xs:hidden">Expand</span>
+                </button>
+                <button onClick={collapseAll} className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95">
+                  <span className="hidden xs:inline">Collapse All</span>
+                  <span className="xs:hidden">Collapse</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Problem Tree */}
       {groupedData.length === 0 ? (
-        <div className="card text-center py-12">
-          <AlertTriangle size={48} className="mx-auto text-gray-300 mb-4" />
-          <p className="text-gray-500">No problem analysis data found for the selected period</p>
-          <p className="text-sm text-gray-400 mt-1">Try expanding the time range or adjusting filters</p>
+        <div className="card text-center py-8 sm:py-12">
+          <AlertTriangle size={36} className="mx-auto text-gray-300 mb-3 sm:mb-4 sm:w-12 sm:h-12" />
+          <p className="text-gray-500 text-sm sm:text-base">No problem analysis data found for the selected period</p>
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">Try expanding the time range or adjusting filters</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           {groupedData.map((categoryGroup) => (
             <div key={categoryGroup.category} className="card p-0 overflow-hidden">
               {/* Category Header */}
               <button
                 onClick={() => toggleCategory(categoryGroup.category)}
-                className="w-full px-6 py-4 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+                className="w-full px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between bg-gray-50 hover:bg-gray-100 active:bg-gray-200 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                   {expandedCategories.has(categoryGroup.category) ? (
-                    <ChevronDown size={20} className="text-gray-500" />
+                    <ChevronDown size={18} className="text-gray-500 flex-shrink-0 sm:w-5 sm:h-5" />
                   ) : (
-                    <ChevronRight size={20} className="text-gray-500" />
+                    <ChevronRight size={18} className="text-gray-500 flex-shrink-0 sm:w-5 sm:h-5" />
                   )}
-                  <span className="font-semibold text-gray-900 capitalize">
+                  <span className="font-semibold text-gray-900 capitalize text-sm sm:text-base truncate">
                     {categoryGroup.category.replace(/_/g, ' ')}
                   </span>
-                  <span className="text-sm text-gray-500">
-                    {categoryGroup.subcategories.length} subcategories • {categoryGroup.totalItems} reviews
+                  <span className="text-xs sm:text-sm text-gray-500 hidden xs:inline whitespace-nowrap">
+                    {categoryGroup.subcategories.length} sub • {categoryGroup.totalItems} reviews
                   </span>
                   {categoryGroup.urgentCount > 0 && (
-                    <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
-                      {categoryGroup.urgentCount} urgent
+                    <span className="px-1.5 sm:px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full flex-shrink-0">
+                      {categoryGroup.urgentCount}
                     </span>
                   )}
                 </div>
@@ -510,24 +521,24 @@ export default function ProblemAnalysis() {
                         {/* Subcategory Header */}
                         <button
                           onClick={() => toggleSubcategory(subcategoryKey)}
-                          className="w-full px-6 py-3 pl-10 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                          className="w-full px-3 sm:px-6 py-2.5 sm:py-3 pl-6 sm:pl-10 flex items-center justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                             {isSubcategoryExpanded ? (
-                              <ChevronDown size={18} className="text-gray-400" />
+                              <ChevronDown size={16} className="text-gray-400 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
                             ) : (
-                              <ChevronRight size={18} className="text-gray-400" />
+                              <ChevronRight size={16} className="text-gray-400 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
                             )}
-                            <Layers size={14} className="text-blue-500" />
-                            <span className="font-medium text-gray-700 capitalize">
+                            <Layers size={12} className="text-blue-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
+                            <span className="font-medium text-gray-700 capitalize text-xs sm:text-sm truncate">
                               {subcategoryGroup.subcategory.replace(/_/g, ' ')}
                             </span>
-                            <span className="text-sm text-gray-500">
+                            <span className="text-xs text-gray-500 hidden xs:inline whitespace-nowrap">
                               {subcategoryGroup.problems.length} problems • {subcategoryGroup.totalItems} reviews
                             </span>
                             {subcategoryGroup.urgentCount > 0 && (
-                              <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
-                                {subcategoryGroup.urgentCount} urgent
+                              <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full flex-shrink-0">
+                                {subcategoryGroup.urgentCount}
                               </span>
                             )}
                           </div>
@@ -545,44 +556,44 @@ export default function ProblemAnalysis() {
                                   {/* Problem Header */}
                                   <button
                                     onClick={() => toggleProblem(problemKey)}
-                                    className="w-full px-6 py-3 pl-16 flex items-start justify-between hover:bg-gray-50 transition-colors text-left"
+                                    className="w-full px-3 sm:px-6 py-2.5 sm:py-3 pl-10 sm:pl-16 flex flex-col sm:flex-row sm:items-start justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors text-left gap-2"
                                   >
-                                    <div className="flex items-start gap-3 flex-1">
+                                    <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
                                       {isExpanded ? (
-                                        <ChevronDown size={18} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                                        <ChevronDown size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
                                       ) : (
-                                        <ChevronRight size={18} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                                        <ChevronRight size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
                                       )}
                                       <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                          <AlertTriangle size={14} className="text-orange-500 flex-shrink-0" />
-                                          <span className="font-medium text-gray-800">{problemGroup.problem}</span>
+                                        <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
+                                          <AlertTriangle size={12} className="text-orange-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
+                                          <span className="font-medium text-gray-800 text-xs sm:text-sm">{problemGroup.problem}</span>
                                           {problemGroup.similarProblems.length > 0 && (
-                                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full" title={problemGroup.similarProblems.join(', ')}>
-                                              +{problemGroup.similarProblems.length} similar
+                                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full" title={problemGroup.similarProblems.join(', ')}>
+                                              +{problemGroup.similarProblems.length}
                                             </span>
                                           )}
                                         </div>
                                         {problemGroup.rootCause && (
-                                          <div className="flex items-start gap-2 text-sm text-gray-600">
-                                            <Lightbulb size={14} className="text-yellow-500 mt-0.5 flex-shrink-0" />
+                                          <div className="flex items-start gap-1.5 sm:gap-2 text-xs text-gray-600">
+                                            <Lightbulb size={12} className="text-yellow-500 mt-0.5 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
                                             <span className="line-clamp-2">{problemGroup.rootCause}</span>
                                           </div>
                                         )}
                                         {problemGroup.similarProblems.length > 0 && isExpanded && (
                                           <div className="mt-2 text-xs text-gray-500">
-                                            <span className="font-medium">Similar issues merged:</span>{' '}
-                                            {problemGroup.similarProblems.slice(0, 3).join(' • ')}
-                                            {problemGroup.similarProblems.length > 3 && ` (+${problemGroup.similarProblems.length - 3} more)`}
+                                            <span className="font-medium">Similar:</span>{' '}
+                                            {problemGroup.similarProblems.slice(0, 2).join(' • ')}
+                                            {problemGroup.similarProblems.length > 2 && ` (+${problemGroup.similarProblems.length - 2})`}
                                           </div>
                                         )}
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-3 ml-4 flex-shrink-0">
-                                      <span className="text-sm text-gray-500">{problemGroup.items.length} reviews</span>
+                                    <div className="flex items-center gap-2 sm:gap-3 ml-6 sm:ml-4 flex-shrink-0">
+                                      <span className="text-xs text-gray-500">{problemGroup.items.length}</span>
                                       {problemGroup.urgentCount > 0 && (
-                                        <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
-                                          {problemGroup.urgentCount} urgent
+                                        <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
+                                          {problemGroup.urgentCount}
                                         </span>
                                       )}
                                       <SentimentBadge 
@@ -594,36 +605,36 @@ export default function ProblemAnalysis() {
 
                                   {/* Feedback Items */}
                                   {isExpanded && (
-                                    <div className="px-6 pb-4 pl-24 space-y-3">
+                                    <div className="px-3 sm:px-6 pb-3 sm:pb-4 pl-12 sm:pl-24 space-y-2 sm:space-y-3">
                                       {problemGroup.items.map((item) => (
                                         <Link
                                           key={item.feedback_id}
                                           to={`/feedback/${item.feedback_id}`}
-                                          className="block p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-100"
+                                          className="block p-3 sm:p-4 bg-gray-50 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors border border-gray-100"
                                         >
-                                          <div className="flex items-start justify-between mb-2">
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-sm font-medium text-gray-700 capitalize">
+                                          <div className="flex items-start justify-between mb-1.5 sm:mb-2 gap-2">
+                                            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                              <span className="text-xs font-medium text-gray-700 capitalize">
                                                 {item.source_platform.replace(/_/g, ' ')}
                                               </span>
                                               {item.urgency === 'high' && (
-                                                <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded">
+                                                <span className="px-1 py-0.5 bg-red-100 text-red-700 text-xs rounded">
                                                   Urgent
                                                 </span>
                                               )}
                                             </div>
                                             <SentimentBadge sentiment={item.sentiment_label} score={item.sentiment_score} />
                                           </div>
-                                          <p className="text-sm text-gray-600 line-clamp-3">{item.original_text}</p>
+                                          <p className="text-xs sm:text-sm text-gray-600 line-clamp-3">{item.original_text}</p>
                                           {item.problem_summary && item.problem_summary !== problemGroup.problem && (
-                                            <p className="text-xs text-gray-400 mt-1 italic">
+                                            <p className="text-xs text-gray-400 mt-1 italic line-clamp-1">
                                               Original: {item.problem_summary}
                                             </p>
                                           )}
-                                          <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                                          <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-1.5 sm:mt-2 text-xs text-gray-400">
                                             <span>{new Date(item.source_created_at).toLocaleDateString()}</span>
                                             {item.rating && <span>★ {item.rating}/5</span>}
-                                            {item.persona_name && <span>{item.persona_name}</span>}
+                                            {item.persona_name && <span className="hidden xs:inline">{item.persona_name}</span>}
                                           </div>
                                         </Link>
                                       ))}

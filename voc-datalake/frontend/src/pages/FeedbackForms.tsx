@@ -222,22 +222,22 @@ function TemplateWizard({ onSelect, onCancel }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b">
-          <div>
-            <h2 className="text-lg font-semibold">Create New Form</h2>
-            <p className="text-sm text-gray-500">Choose a template to get started</p>
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base sm:text-lg font-semibold">Create New Form</h2>
+            <p className="text-xs sm:text-sm text-gray-500">Choose a template to get started</p>
           </div>
-          <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0 ml-2">
             <X size={20} />
           </button>
         </div>
 
         {/* Template Grid */}
-        <div className="flex-1 overflow-auto p-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+        <div className="flex-1 overflow-auto p-3 sm:p-4">
+          <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 mb-6">
             {formTemplates.map((template) => {
               const Icon = template.icon
               const isSelected = selectedTemplate === template.id
@@ -246,16 +246,17 @@ function TemplateWizard({ onSelect, onCancel }: {
                   key={template.id}
                   onClick={() => setSelectedTemplate(template.id)}
                   className={clsx(
-                    'p-4 rounded-xl border-2 text-left transition-all hover:shadow-md',
+                    'p-3 sm:p-4 rounded-xl border-2 text-left transition-all hover:shadow-md',
                     isSelected 
                       ? 'border-blue-500 bg-blue-50 shadow-md' 
                       : 'border-gray-200 hover:border-gray-300'
                   )}
                 >
-                  <div className={clsx('w-10 h-10 rounded-lg flex items-center justify-center mb-3', template.color)}>
-                    <Icon size={20} className="text-white" />
+                  <div className={clsx('w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center mb-2 sm:mb-3', template.color)}>
+                    <Icon size={18} className="text-white sm:hidden" />
+                    <Icon size={20} className="text-white hidden sm:block" />
                   </div>
-                  <h3 className="font-medium text-gray-900 mb-1">{template.name}</h3>
+                  <h3 className="font-medium text-gray-900 mb-1 text-sm sm:text-base">{template.name}</h3>
                   <p className="text-xs text-gray-500 line-clamp-2">{template.description}</p>
                 </button>
               )
@@ -264,15 +265,15 @@ function TemplateWizard({ onSelect, onCancel }: {
 
           {/* PII Options */}
           {selectedTemplate && (
-            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-              <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+            <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
+              <h4 className="font-medium text-gray-900 mb-2 sm:mb-3 flex items-center gap-2 text-sm sm:text-base">
                 <User size={16} />
                 Contact Information Collection
               </h4>
-              <p className="text-sm text-gray-600 mb-4">
+              <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4">
                 Choose what personal information to collect from respondents.
               </p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
                 {[
                   { id: 'none', label: 'Anonymous', desc: 'No PII collected', icon: null },
                   { id: 'name', label: 'Name Only', desc: 'Collect name', icon: User },
@@ -283,14 +284,14 @@ function TemplateWizard({ onSelect, onCancel }: {
                     key={option.id}
                     onClick={() => setCollectPII(option.id as typeof collectPII)}
                     className={clsx(
-                      'p-3 rounded-lg border-2 text-left transition-all',
+                      'p-2 sm:p-3 rounded-lg border-2 text-left transition-all',
                       collectPII === option.id
                         ? 'border-blue-500 bg-blue-50'
                         : 'border-gray-200 hover:border-gray-300'
                     )}
                   >
-                    <p className="font-medium text-sm text-gray-900">{option.label}</p>
-                    <p className="text-xs text-gray-500">{option.desc}</p>
+                    <p className="font-medium text-xs sm:text-sm text-gray-900">{option.label}</p>
+                    <p className="text-xs text-gray-500 hidden sm:block">{option.desc}</p>
                   </button>
                 ))}
               </div>
@@ -299,21 +300,21 @@ function TemplateWizard({ onSelect, onCancel }: {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t bg-gray-50">
-          <p className="text-sm text-gray-500">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 sm:p-4 border-t bg-gray-50">
+          <p className="text-xs sm:text-sm text-gray-500 text-center sm:text-left">
             {selectedTemplate 
               ? `Selected: ${formTemplates.find(t => t.id === selectedTemplate)?.name}`
               : 'Select a template to continue'
             }
           </p>
-          <div className="flex gap-3">
-            <button onClick={onCancel} className="btn btn-secondary">
+          <div className="flex gap-2 sm:gap-3">
+            <button onClick={onCancel} className="btn btn-secondary flex-1 sm:flex-none">
               Cancel
             </button>
             <button
               onClick={handleContinue}
               disabled={!selectedTemplate}
-              className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
             >
               Continue
               <ArrowRight size={16} />
@@ -351,10 +352,10 @@ function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: {
 
   return (
     <div className="card">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h3 className="font-semibold text-lg">{form.name}</h3>
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <h3 className="font-semibold text-base sm:text-lg">{form.name}</h3>
             <span className={clsx(
               'px-2 py-0.5 rounded text-xs font-medium',
               form.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
@@ -362,7 +363,7 @@ function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: {
               {form.enabled ? 'Active' : 'Disabled'}
             </span>
           </div>
-          <p className="text-sm text-gray-500 mt-1">{form.title}</p>
+          <p className="text-sm text-gray-500 mt-1 line-clamp-2">{form.title}</p>
           {form.category && (
             <p className="text-xs text-blue-600 mt-2">
               Category: <span className="font-medium">{form.category}</span>
@@ -370,7 +371,7 @@ function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
           <button
             onClick={() => onToggle(form.form_id, !form.enabled)}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -400,7 +401,7 @@ function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: {
       </div>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-3 gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
         <div>
           <p className="text-xs text-gray-500">Rating Type</p>
           <p className="font-medium text-sm">
@@ -416,8 +417,8 @@ function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: {
         <div>
           <p className="text-xs text-gray-500">Theme</p>
           <div className="flex items-center gap-1">
-            <div className="w-4 h-4 rounded" style={{ backgroundColor: form.theme.primary_color }} />
-            <span className="text-sm font-mono">{form.theme.primary_color}</span>
+            <div className="w-4 h-4 rounded flex-shrink-0" style={{ backgroundColor: form.theme.primary_color }} />
+            <span className="text-sm font-mono truncate">{form.theme.primary_color}</span>
           </div>
         </div>
       </div>
@@ -496,44 +497,45 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
   const selectedCategory = categories.find(c => c.id === formData.category)
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b">
+          <h2 className="text-base sm:text-lg font-semibold truncate pr-2">
             {form ? 'Edit Feedback Form' : 'Create New Feedback Form'}
           </h2>
-          <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0">
             <X size={20} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 px-4 pt-4 border-b border-gray-200">
+        <div className="flex gap-1 sm:gap-2 px-3 sm:px-4 pt-3 sm:pt-4 border-b border-gray-200 overflow-x-auto">
           {[
-            { id: 'settings', label: 'Form Settings', icon: Settings2 },
-            { id: 'category', label: 'Category Routing', icon: Settings2 },
-            { id: 'theme', label: 'Theme', icon: Palette },
+            { id: 'settings', label: 'Form Settings', shortLabel: 'Settings', icon: Settings2 },
+            { id: 'category', label: 'Category Routing', shortLabel: 'Category', icon: Settings2 },
+            { id: 'theme', label: 'Theme', shortLabel: 'Theme', icon: Palette },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as typeof activeTab)}
               className={clsx(
-                'flex items-center gap-2 px-4 py-2 border-b-2 -mb-px transition-colors',
+                'flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap text-sm',
                 activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
               )}
             >
               <tab.icon size={16} />
-              {tab.label}
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.shortLabel}</span>
             </button>
           ))}
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-4">
+        <div className="flex-1 overflow-auto p-3 sm:p-4">
           {activeTab === 'settings' && (
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+              <div className="space-y-3 sm:space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Form Name (Internal)</label>
                   <input
@@ -580,7 +582,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                   />
                 </div>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Submit Button Text</label>
                   <input
@@ -599,7 +601,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                     className="input"
                   />
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -621,7 +623,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                     </select>
                   )}
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -646,16 +648,16 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
           )}
 
           {activeTab === 'category' && (
-            <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-medium text-blue-900 mb-2">Category Routing</h4>
-                <p className="text-sm text-blue-800">
+            <div className="space-y-4 sm:space-y-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+                <h4 className="font-medium text-blue-900 mb-2 text-sm sm:text-base">Category Routing</h4>
+                <p className="text-xs sm:text-sm text-blue-800">
                   Assign a category to this form. All feedback submitted through this form will be automatically 
                   tagged with the selected category, making it easy to filter and analyze feedback by source.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                   <select
@@ -690,11 +692,11 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
               </div>
 
               {formData.category && (
-                <div className="p-4 bg-gray-50 rounded-lg">
+                <div className="p-3 sm:p-4 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-700">
                     <strong>Preview:</strong> Feedback from this form will be tagged as:
                   </p>
-                  <p className="mt-2 font-mono text-sm bg-white px-3 py-2 rounded border inline-block">
+                  <p className="mt-2 font-mono text-xs sm:text-sm bg-white px-3 py-2 rounded border inline-block break-all">
                     category: "{formData.category}"
                     {formData.subcategory && <>, subcategory: "{formData.subcategory}"</>}
                   </p>
@@ -704,8 +706,8 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
           )}
 
           {activeTab === 'theme' && (
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+              <div className="space-y-3 sm:space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Primary Color</label>
                   <div className="flex items-center gap-2">
@@ -713,13 +715,13 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                       type="color"
                       value={formData.theme.primary_color}
                       onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, primary_color: e.target.value } })}
-                      className="w-10 h-10 rounded border cursor-pointer"
+                      className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
                     />
                     <input
                       type="text"
                       value={formData.theme.primary_color}
                       onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, primary_color: e.target.value } })}
-                      className="input flex-1"
+                      className="input flex-1 min-w-0"
                     />
                   </div>
                 </div>
@@ -730,13 +732,13 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                       type="color"
                       value={formData.theme.background_color}
                       onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, background_color: e.target.value } })}
-                      className="w-10 h-10 rounded border cursor-pointer"
+                      className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
                     />
                     <input
                       type="text"
                       value={formData.theme.background_color}
                       onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, background_color: e.target.value } })}
-                      className="input flex-1"
+                      className="input flex-1 min-w-0"
                     />
                   </div>
                 </div>
@@ -747,13 +749,13 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                       type="color"
                       value={formData.theme.text_color}
                       onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, text_color: e.target.value } })}
-                      className="w-10 h-10 rounded border cursor-pointer"
+                      className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
                     />
                     <input
                       type="text"
                       value={formData.theme.text_color}
                       onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, text_color: e.target.value } })}
-                      className="input flex-1"
+                      className="input flex-1 min-w-0"
                     />
                   </div>
                 </div>
@@ -777,18 +779,18 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                     backgroundColor: formData.theme.background_color,
                     color: formData.theme.text_color,
                     borderRadius: formData.theme.border_radius,
-                    minHeight: '280px',
+                    minHeight: '240px',
                   }}
                 >
                   <div 
                     className="absolute top-0 left-0 h-1 transition-all"
                     style={{ backgroundColor: formData.theme.primary_color, width: '33%' }}
                   />
-                  <div className="flex flex-col items-center justify-center text-center p-6 h-full min-h-[280px]">
-                    <h3 className="text-xl font-bold mb-2">{formData.title}</h3>
-                    <p className="text-sm mb-4 opacity-70 max-w-xs">{formData.description}</p>
+                  <div className="flex flex-col items-center justify-center text-center p-4 sm:p-6 h-full min-h-[240px]">
+                    <h3 className="text-lg sm:text-xl font-bold mb-2 line-clamp-2">{formData.title}</h3>
+                    <p className="text-xs sm:text-sm mb-4 opacity-70 max-w-xs line-clamp-2">{formData.description}</p>
                     <button
-                      className="px-5 py-2 text-white font-medium text-sm"
+                      className="px-4 sm:px-5 py-2 text-white font-medium text-sm"
                       style={{ backgroundColor: formData.theme.primary_color, borderRadius: formData.theme.border_radius }}
                     >
                       Start →
@@ -801,14 +803,14 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 p-4 border-t bg-gray-50">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 p-3 sm:p-4 border-t bg-gray-50">
           <button onClick={onCancel} className="btn btn-secondary" disabled={isSaving}>
             Cancel
           </button>
           <button
             onClick={() => onSave(formData)}
             disabled={isSaving}
-            className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             {isSaving ? (form ? 'Saving...' : 'Creating...') : (form ? 'Save Changes' : 'Create Form')}
@@ -884,16 +886,16 @@ export default function FeedbackForms() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Feedback Forms</h1>
-          <p className="text-gray-500">Create embeddable forms to collect customer feedback</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Feedback Forms</h1>
+          <p className="text-sm sm:text-base text-gray-500">Create embeddable forms to collect customer feedback</p>
         </div>
         <button
           onClick={() => setShowWizard(true)}
-          className="btn btn-primary flex items-center gap-2"
+          className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
         >
           <Plus size={18} />
           Create Form

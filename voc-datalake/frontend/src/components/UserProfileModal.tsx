@@ -86,24 +86,24 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <User size={20} className="text-blue-600" />
             My Profile
           </h3>
           <button
             onClick={handleClose}
-            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+            className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200">
+        <div className="flex border-b border-gray-200 flex-shrink-0">
           <button
             onClick={() => setActiveTab('profile')}
             className={clsx(
@@ -128,13 +128,13 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
           </button>
         </div>
 
-        {/* Content - fixed height to prevent layout shift between tabs */}
-        <div className="p-6 min-h-[480px]">
+        {/* Content - scrollable */}
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1">
           {activeTab === 'profile' ? (
             <div className="space-y-4">
               {/* Avatar placeholder */}
               <div className="flex justify-center">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xl sm:text-2xl font-bold">
                   {user.name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || 'U'}
                 </div>
               </div>
@@ -144,18 +144,18 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
                 {user.name && (
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Name</label>
-                    <p className="text-gray-900 font-medium">{user.name}</p>
+                    <p className="text-gray-900 font-medium truncate">{user.name}</p>
                   </div>
                 )}
 
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Email</label>
-                  <p className="text-gray-900 font-medium">{user.email}</p>
+                  <p className="text-gray-900 font-medium truncate">{user.email}</p>
                 </div>
 
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Username</label>
-                  <p className="text-gray-900">{user.username}</p>
+                  <p className="text-gray-900 truncate">{user.username}</p>
                 </div>
 
                 <div>
@@ -163,12 +163,12 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
                   <div className="flex items-center gap-2">
                     {isAdmin ? (
                       <>
-                        <Shield size={16} className="text-purple-600" />
+                        <Shield size={16} className="text-purple-600 flex-shrink-0" />
                         <span className="text-purple-700 font-medium">Administrator</span>
                       </>
                     ) : (
                       <>
-                        <Eye size={16} className="text-gray-500" />
+                        <Eye size={16} className="text-gray-500 flex-shrink-0" />
                         <span className="text-gray-700">Viewer</span>
                       </>
                     )}
@@ -257,15 +257,15 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
               </label>
 
               {passwordError && (
-                <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">
-                  <AlertCircle size={16} />
-                  {passwordError}
+                <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+                  <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                  <span>{passwordError}</span>
                 </div>
               )}
 
               {passwordSuccess && (
                 <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded-lg">
-                  <CheckCircle2 size={16} />
+                  <CheckCircle2 size={16} className="flex-shrink-0" />
                   Password changed successfully!
                 </div>
               )}
@@ -273,7 +273,7 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
               <button
                 onClick={handleChangePassword}
                 disabled={isChanging || !currentPassword || !newPassword || !confirmPassword}
-                className="btn btn-primary w-full flex items-center justify-center gap-2"
+                className="btn btn-primary w-full flex items-center justify-center gap-2 py-2.5"
               >
                 {isChanging ? (
                   <Loader2 size={16} className="animate-spin" />

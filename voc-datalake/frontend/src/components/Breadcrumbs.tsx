@@ -3,6 +3,7 @@
  *
  * Displays hierarchical navigation path based on current route.
  * Hidden on home page.
+ * Mobile-responsive with truncation and horizontal scroll.
  *
  * @module components/Breadcrumbs
  */
@@ -44,29 +45,41 @@ export default function Breadcrumbs() {
   ]
 
   return (
-    <nav className="flex items-center gap-2 text-sm text-gray-600">
+    <nav 
+      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-600 overflow-x-auto scrollbar-hide"
+      aria-label="Breadcrumb"
+    >
       {breadcrumbs.map((crumb, index) => {
         const isLast = index === breadcrumbs.length - 1
         
         return (
-          <div key={crumb.path} className="flex items-center gap-2">
-            {index > 0 && <ChevronRight size={14} className="text-gray-400" />}
+          <div key={crumb.path} className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+            {index > 0 && (
+              <ChevronRight 
+                size={14} 
+                className="text-gray-400 flex-shrink-0" 
+                aria-hidden="true" 
+              />
+            )}
             
             {isLast ? (
-              <span className="text-gray-900 font-medium flex items-center gap-1.5">
-                {crumb.isHome && <Home size={14} />}
-                {crumb.label}
+              <span 
+                className="text-gray-900 font-medium flex items-center gap-1 sm:gap-1.5 max-w-[120px] sm:max-w-none truncate"
+                aria-current="page"
+              >
+                {crumb.isHome && <Home size={14} className="flex-shrink-0" aria-hidden="true" />}
+                <span className="truncate">{crumb.label}</span>
               </span>
             ) : (
               <Link
                 to={crumb.path}
                 className={clsx(
-                  'hover:text-blue-600 transition-colors flex items-center gap-1.5',
+                  'hover:text-blue-600 active:text-blue-700 transition-colors flex items-center gap-1 sm:gap-1.5 py-1',
                   crumb.isHome && 'text-gray-500'
                 )}
               >
-                {crumb.isHome && <Home size={14} />}
-                {crumb.label}
+                {crumb.isHome && <Home size={14} className="flex-shrink-0" aria-hidden="true" />}
+                <span className="hidden sm:inline">{crumb.label}</span>
               </Link>
             )}
           </div>

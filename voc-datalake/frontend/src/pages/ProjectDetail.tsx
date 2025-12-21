@@ -737,7 +737,7 @@ export default function ProjectDetail() {
         <button onClick={() => navigate('/projects')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft size={20} /></button>
         <div><h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>{project.description && <p className="text-gray-500">{project.description}</p>}</div>
       </div>
-      <div className="border-b border-gray-200"><nav className="flex gap-6">{tabs.map(t => <button key={t.id} onClick={() => setActiveTab(t.id)} className={clsx('flex items-center gap-2 py-3 border-b-2 text-sm font-medium', activeTab === t.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700')}><t.icon size={16} />{t.label}</button>)}</nav></div>
+      <div className="border-b border-gray-200 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto"><nav className="flex gap-4 sm:gap-6 min-w-max">{tabs.map(t => <button key={t.id} onClick={() => setActiveTab(t.id)} className={clsx('flex items-center gap-1.5 sm:gap-2 py-3 border-b-2 text-xs sm:text-sm font-medium whitespace-nowrap', activeTab === t.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700')}><t.icon size={16} /><span className="hidden xs:inline sm:inline">{t.label}</span><span className="xs:hidden sm:hidden">{t.id === 'overview' ? 'Overview' : t.id === 'personas' ? `(${personas.length})` : t.id === 'documents' ? `(${documents.length})` : 'Chat'}</span></button>)}</nav></div>
 
       {/* Persona Wizard */}
       {activeWizard === 'persona' && (
@@ -1046,11 +1046,11 @@ export default function ProjectDetail() {
           )}
           
           {/* Action Cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center"><Users size={20} className="text-purple-600" /></div><div><h3 className="font-semibold">Generate Personas</h3><p className="text-sm text-gray-500">Create user personas from feedback</p></div></div><button onClick={() => setActiveWizard('persona')} className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2"><Sparkles size={16} />Configure & Generate</button></div>
-            <div className="bg-white rounded-xl p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"><FileText size={20} className="text-blue-600" /></div><div><h3 className="font-semibold">Generate PRD / PR-FAQ</h3><p className="text-sm text-gray-500">Create product documents from feedback</p></div></div><button onClick={() => setActiveWizard('doc')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"><FileText size={16} />Configure & Generate</button></div>
-            <div className="bg-white rounded-xl p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center"><Search size={20} className="text-amber-600" /></div><div><h3 className="font-semibold">Run Research</h3><p className="text-sm text-gray-500">Deep dive into feedback with filters</p></div></div><button onClick={() => setActiveWizard('research')} className="w-full py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 flex items-center justify-center gap-2"><Search size={16} />Configure & Run Research</button></div>
-            <div className="bg-white rounded-xl p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><Shuffle size={20} className="text-green-600" /></div><div><h3 className="font-semibold">Remix Documents</h3><p className="text-sm text-gray-500">Combine and revise documents into new versions</p></div></div><button onClick={() => { setContextConfig({ ...defaultContextConfig, useFeedback: false, useDocuments: true, useResearch: true }); setMergeConfig(c => ({ ...c, instructions: 'Create an improved version of the document that:\n1. Incorporates insights from the research findings\n2. Addresses any gaps or concerns identified\n3. Strengthens the customer benefit narrative\n4. Maintains consistency with the original vision' })); setActiveWizard('merge') }} disabled={documents.length < 2} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"><Shuffle size={16} />Select & Remix</button>{documents.length < 2 && <p className="text-xs text-gray-400 mt-2 text-center">Need at least 2 documents</p>}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+            <div className="bg-white rounded-xl p-4 sm:p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0"><Users size={20} className="text-purple-600" /></div><div className="min-w-0"><h3 className="font-semibold text-sm sm:text-base">Generate Personas</h3><p className="text-xs sm:text-sm text-gray-500">Create user personas from feedback</p></div></div><button onClick={() => setActiveWizard('persona')} className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2 text-sm"><Sparkles size={16} /><span className="hidden sm:inline">Configure & </span>Generate</button></div>
+            <div className="bg-white rounded-xl p-4 sm:p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0"><FileText size={20} className="text-blue-600" /></div><div className="min-w-0"><h3 className="font-semibold text-sm sm:text-base">Generate PRD / PR-FAQ</h3><p className="text-xs sm:text-sm text-gray-500">Create product documents from feedback</p></div></div><button onClick={() => setActiveWizard('doc')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 text-sm"><FileText size={16} /><span className="hidden sm:inline">Configure & </span>Generate</button></div>
+            <div className="bg-white rounded-xl p-4 sm:p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0"><Search size={20} className="text-amber-600" /></div><div className="min-w-0"><h3 className="font-semibold text-sm sm:text-base">Run Research</h3><p className="text-xs sm:text-sm text-gray-500">Deep dive into feedback with filters</p></div></div><button onClick={() => setActiveWizard('research')} className="w-full py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 flex items-center justify-center gap-2 text-sm"><Search size={16} /><span className="hidden sm:inline">Configure & </span>Run Research</button></div>
+            <div className="bg-white rounded-xl p-4 sm:p-6 border"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0"><Shuffle size={20} className="text-green-600" /></div><div className="min-w-0"><h3 className="font-semibold text-sm sm:text-base">Remix Documents</h3><p className="text-xs sm:text-sm text-gray-500">Combine and revise documents into new versions</p></div></div><button onClick={() => { setContextConfig({ ...defaultContextConfig, useFeedback: false, useDocuments: true, useResearch: true }); setMergeConfig(c => ({ ...c, instructions: 'Create an improved version of the document that:\n1. Incorporates insights from the research findings\n2. Addresses any gaps or concerns identified\n3. Strengthens the customer benefit narrative\n4. Maintains consistency with the original vision' })); setActiveWizard('merge') }} disabled={documents.length < 2} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"><Shuffle size={16} />Select & Remix</button>{documents.length < 2 && <p className="text-xs text-gray-400 mt-2 text-center">Need at least 2 documents</p>}</div>
           </div>
 
           {/* Kiro Export Settings */}
@@ -1063,26 +1063,26 @@ export default function ProjectDetail() {
 
       {activeTab === 'personas' && (
         <div className="space-y-4">
-          <div className="flex justify-end gap-2">
-            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50"><Upload size={16} />Import Persona</button>
-            <button onClick={() => setActiveWizard('persona')} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"><Sparkles size={16} />Generate Personas</button>
+          <div className="flex flex-col sm:flex-row justify-end gap-2">
+            <button onClick={() => setShowImportModal(true)} className="flex items-center justify-center gap-2 px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50 text-sm"><Upload size={16} />Import Persona</button>
+            <button onClick={() => setActiveWizard('persona')} className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"><Sparkles size={16} />Generate Personas</button>
           </div>
           {personas.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-xl border"><Users size={48} className="mx-auto text-gray-300 mb-4" /><h3 className="text-lg font-medium mb-2">No personas yet</h3><p className="text-gray-500 mb-4">Generate personas from feedback</p><button onClick={() => setActiveWizard('persona')} className="px-4 py-2 bg-purple-600 text-white rounded-lg"><Sparkles size={16} className="inline mr-2" />Generate</button></div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Persona List */}
-              <div className="space-y-3">
+            <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 lg:gap-6">
+              {/* Persona List - horizontal scroll on mobile, vertical on desktop */}
+              <div className="flex lg:flex-col gap-3 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0">
                 {personas.map((p: ProjectPersona) => (
                   <button 
                     key={p.persona_id} 
                     onClick={() => setSelectedPersona(p)}
-                    className={clsx('w-full text-left p-4 rounded-lg border transition-colors', selectedPersona?.persona_id === p.persona_id ? 'bg-purple-50 border-purple-300' : 'bg-white hover:border-purple-200')}
+                    className={clsx('flex-shrink-0 w-48 lg:w-full text-left p-3 lg:p-4 rounded-lg border transition-colors', selectedPersona?.persona_id === p.persona_id ? 'bg-purple-50 border-purple-300' : 'bg-white hover:border-purple-200')}
                   >
                     <div className="flex items-center gap-3">
                       <PersonaAvatar persona={p} size="sm" />
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-medium truncate">@{p.name}</h4>
+                        <h4 className="font-medium truncate text-sm lg:text-base">@{p.name}</h4>
                         <p className="text-xs text-gray-500 truncate">{p.tagline}</p>
                       </div>
                     </div>
@@ -1095,13 +1095,13 @@ export default function ProjectDetail() {
                 {selectedPersona ? (
                   <div className="h-full overflow-y-auto">
                     {/* Header with Avatar */}
-                    <div className="p-6 border-b bg-gradient-to-r from-purple-50 to-pink-50">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-4">
+                    <div className="p-4 sm:p-6 border-b bg-gradient-to-r from-purple-50 to-pink-50">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                        <div className="flex items-center gap-3 sm:gap-4">
                           <PersonaAvatar persona={selectedPersona} size="lg" />
-                          <div>
-                            <h2 className="text-xl font-bold text-gray-900">@{selectedPersona.name}</h2>
-                            <p className="text-gray-600">{selectedPersona.tagline}</p>
+                          <div className="min-w-0">
+                            <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">@{selectedPersona.name}</h2>
+                            <p className="text-gray-600 text-sm sm:text-base line-clamp-2">{selectedPersona.tagline}</p>
                             {selectedPersona.confidence && (
                               <span className={clsx('inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium',
                                 selectedPersona.confidence === 'high' ? 'bg-green-100 text-green-700' :
@@ -1114,7 +1114,7 @@ export default function ProjectDetail() {
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 self-end sm:self-start">
                           <PersonaExportMenu persona={selectedPersona} />
                           <button onClick={() => setEditingPersona(selectedPersona)} className="p-2 text-purple-500 hover:bg-purple-100 rounded-lg" title="Edit"><Pencil size={18} /></button>
                           <button onClick={() => setConfirmModal({ type: 'persona', id: selectedPersona.persona_id })} disabled={deletePersonaMut.isPending} className="p-2 text-red-500 hover:bg-red-100 rounded-lg" title="Delete">
@@ -1364,17 +1364,17 @@ export default function ProjectDetail() {
       
       {/* Persona Edit Modal */}
       {editingPersona && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Edit Persona</h2>
               <button onClick={() => setEditingPersona(null)} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
             </div>
-            <div className="p-6 space-y-6 overflow-y-auto max-h-[65vh]">
+            <div className="p-4 sm:p-6 space-y-6 overflow-y-auto max-h-[65vh]">
               {/* Basic Info */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">👤 Basic Info</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><label className="block text-sm font-medium mb-1">Name</label><input type="text" value={editingPersona.name} onChange={e => setEditingPersona({ ...editingPersona, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
                   <div><label className="block text-sm font-medium mb-1">Tagline</label><input type="text" value={editingPersona.tagline} onChange={e => setEditingPersona({ ...editingPersona, tagline: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
                 </div>
@@ -1384,7 +1384,7 @@ export default function ProjectDetail() {
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">🪪 Identity & Demographics</h3>
                 <div><label className="block text-sm font-medium mb-1">Bio</label><textarea value={editingPersona.identity?.bio || editingPersona.demographics?.bio || ''} onChange={e => setEditingPersona({ ...editingPersona, identity: { ...editingPersona.identity, bio: e.target.value } })} rows={2} className="w-full px-3 py-2 border rounded-lg" placeholder="Brief background story..." /></div>
-                <div className="grid grid-cols-3 gap-3 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                   <div><label className="block text-xs font-medium mb-1">Age Range</label><input type="text" value={editingPersona.identity?.age_range || ''} onChange={e => setEditingPersona({ ...editingPersona, identity: { ...editingPersona.identity, age_range: e.target.value } })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="25-35" /></div>
                   <div><label className="block text-xs font-medium mb-1">Location</label><input type="text" value={editingPersona.identity?.location || ''} onChange={e => setEditingPersona({ ...editingPersona, identity: { ...editingPersona.identity, location: e.target.value } })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="Urban, US" /></div>
                   <div><label className="block text-xs font-medium mb-1">Occupation</label><input type="text" value={editingPersona.identity?.occupation || ''} onChange={e => setEditingPersona({ ...editingPersona, identity: { ...editingPersona.identity, occupation: e.target.value } })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="Product Manager" /></div>
@@ -1416,15 +1416,15 @@ export default function ProjectDetail() {
                 <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">📖 Scenario</h3>
                 <div><label className="block text-sm font-medium mb-1">Title</label><input type="text" value={typeof editingPersona.scenario === 'object' ? editingPersona.scenario?.title || '' : ''} onChange={e => setEditingPersona({ ...editingPersona, scenario: { ...(typeof editingPersona.scenario === 'object' ? editingPersona.scenario : {}), title: e.target.value } })} className="w-full px-3 py-2 border rounded-lg" placeholder="Scenario title..." /></div>
                 <div className="mt-3"><label className="block text-sm font-medium mb-1">Narrative</label><textarea value={typeof editingPersona.scenario === 'string' ? editingPersona.scenario : editingPersona.scenario?.narrative || ''} onChange={e => setEditingPersona({ ...editingPersona, scenario: typeof editingPersona.scenario === 'string' ? e.target.value : { ...editingPersona.scenario, narrative: e.target.value } })} rows={3} className="w-full px-3 py-2 border rounded-lg" placeholder="A story showing them in action..." /></div>
-                <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                   <div><label className="block text-xs font-medium mb-1">Trigger</label><input type="text" value={typeof editingPersona.scenario === 'object' ? editingPersona.scenario?.trigger || '' : ''} onChange={e => setEditingPersona({ ...editingPersona, scenario: { ...(typeof editingPersona.scenario === 'object' ? editingPersona.scenario : {}), trigger: e.target.value } })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="What triggers this scenario" /></div>
                   <div><label className="block text-xs font-medium mb-1">Desired Outcome</label><input type="text" value={typeof editingPersona.scenario === 'object' ? editingPersona.scenario?.outcome || '' : ''} onChange={e => setEditingPersona({ ...editingPersona, scenario: { ...(typeof editingPersona.scenario === 'object' ? editingPersona.scenario : {}), outcome: e.target.value } })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="What they hope to achieve" /></div>
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 p-4 border-t bg-gray-50">
               <button onClick={() => setEditingPersona(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-              <button onClick={() => updatePersonaMut.mutate({ personaId: editingPersona.persona_id, updates: editingPersona })} disabled={updatePersonaMut.isPending} className="flex items-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50">
+              <button onClick={() => updatePersonaMut.mutate({ personaId: editingPersona.persona_id, updates: editingPersona })} disabled={updatePersonaMut.isPending} className="flex items-center justify-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50">
                 {updatePersonaMut.isPending ? <><Loader2 size={16} className="animate-spin" />Saving...</> : <><Pencil size={16} />Save Changes</>}
               </button>
             </div>
@@ -1435,13 +1435,14 @@ export default function ProjectDetail() {
       {activeTab === 'documents' && (
         <div className="space-y-4">
           <div className="flex justify-end">
-            <button onClick={() => setShowDocModal(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <button onClick={() => setShowDocModal(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
               <FileText size={16} />New Document
             </button>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="space-y-3">{documents.length === 0 ? <div className="text-center py-8 bg-white rounded-xl border"><FileText size={32} className="mx-auto text-gray-300 mb-2" /><p className="text-gray-500">No documents</p></div> : documents.map((d: ProjectDocument) => <button key={d.document_id} onClick={() => setSelectedDoc(d)} className={clsx('w-full text-left p-4 rounded-lg border', selectedDoc?.document_id === d.document_id ? 'bg-blue-50 border-blue-300' : 'bg-white hover:border-blue-200')}><div className="flex items-center gap-2 mb-1"><span className={clsx('text-xs font-medium px-2 py-0.5 rounded', d.document_type === 'prd' ? 'bg-blue-100 text-blue-700' : d.document_type === 'prfaq' ? 'bg-green-100 text-green-700' : d.document_type === 'custom' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700')}>{d.document_type.toUpperCase()}</span><span className="text-xs text-gray-400">{format(new Date(d.created_at), 'MMM d')}</span></div><h4 className="font-medium line-clamp-2">{d.title}</h4></button>)}</div>
-            <div className="lg:col-span-2 bg-white rounded-xl border p-6 min-h-[500px] overflow-hidden">
+          <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 lg:gap-6">
+            {/* Document List - horizontal scroll on mobile */}
+            <div className="flex lg:flex-col gap-3 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0">{documents.length === 0 ? <div className="text-center py-8 bg-white rounded-xl border flex-shrink-0 w-full"><FileText size={32} className="mx-auto text-gray-300 mb-2" /><p className="text-gray-500">No documents</p></div> : documents.map((d: ProjectDocument) => <button key={d.document_id} onClick={() => setSelectedDoc(d)} className={clsx('flex-shrink-0 w-56 lg:w-full text-left p-3 lg:p-4 rounded-lg border', selectedDoc?.document_id === d.document_id ? 'bg-blue-50 border-blue-300' : 'bg-white hover:border-blue-200')}><div className="flex items-center gap-2 mb-1"><span className={clsx('text-xs font-medium px-2 py-0.5 rounded', d.document_type === 'prd' ? 'bg-blue-100 text-blue-700' : d.document_type === 'prfaq' ? 'bg-green-100 text-green-700' : d.document_type === 'custom' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700')}>{d.document_type.toUpperCase()}</span><span className="text-xs text-gray-400">{format(new Date(d.created_at), 'MMM d')}</span></div><h4 className="font-medium line-clamp-2 text-sm lg:text-base">{d.title}</h4></button>)}</div>
+            <div className="lg:col-span-2 bg-white rounded-xl border p-4 sm:p-6 min-h-[400px] lg:min-h-[500px] overflow-hidden">
               {selectedDoc ? (
                 <div className="h-full flex flex-col">
                   <div className="flex items-start justify-between mb-4">
@@ -1627,10 +1628,10 @@ export default function ProjectDetail() {
       )}
 
       {activeTab === 'chat' && (
-        <div className="bg-white rounded-xl border h-[600px] flex flex-col">
-          <div className="p-4 border-b">
-            <h3 className="font-semibold">Project AI Chat</h3>
-            <p className="text-sm text-gray-500">
+        <div className="bg-white rounded-xl border h-[calc(100vh-280px)] sm:h-[600px] flex flex-col">
+          <div className="p-3 sm:p-4 border-b">
+            <h3 className="font-semibold text-sm sm:text-base">Project AI Chat</h3>
+            <p className="text-xs sm:text-sm text-gray-500">
               Type <span className="font-mono bg-purple-100 text-purple-700 px-1 rounded">@</span> for personas or <span className="font-mono bg-blue-100 text-blue-700 px-1 rounded">#</span> for documents
             </p>
           </div>

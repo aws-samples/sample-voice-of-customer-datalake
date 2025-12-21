@@ -116,12 +116,12 @@ export default function Feedback() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Filters */}
-      <div className="card">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* Search */}
-          <div className="relative flex-1 min-w-[200px]">
+      <div className="card !p-4 sm:!p-6">
+        <div className="flex flex-col gap-3 sm:gap-4">
+          {/* Search - full width on mobile */}
+          <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
             <input
               type="text"
@@ -132,61 +132,64 @@ export default function Feedback() {
             />
           </div>
 
-          {/* Source filter */}
-          <div className="flex items-center gap-2">
-            <Filter size={16} className="text-gray-400" />
+          {/* Filter row - scrollable on mobile */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+            {/* Source filter */}
+            <div className="flex items-center gap-2 min-w-0">
+              <Filter size={16} className="text-gray-400 flex-shrink-0 hidden sm:block" />
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                className="input w-full sm:w-auto text-sm"
+              >
+                {sources.map(s => (
+                  <option key={s} value={s}>{s === 'all' ? 'All Sources' : s}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Sentiment filter */}
             <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className="input w-auto"
+              value={sentimentFilter}
+              onChange={(e) => setSentimentFilter(e.target.value)}
+              className="input w-full sm:w-auto text-sm flex-1 sm:flex-none"
             >
-              {sources.map(s => (
-                <option key={s} value={s}>{s === 'all' ? 'All Sources' : s}</option>
+              {sentiments.map(s => (
+                <option key={s} value={s}>{s === 'all' ? 'All Sentiments' : s}</option>
               ))}
             </select>
+
+            {/* Category filter */}
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="input w-full sm:w-auto text-sm flex-1 sm:flex-none"
+            >
+              {categories.map(c => (
+                <option key={c} value={c}>{c === 'all' ? 'All Categories' : c.replace('_', ' ')}</option>
+              ))}
+            </select>
+
+            {/* Urgent only toggle */}
+            <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={showUrgentOnly}
+                onChange={(e) => setShowUrgentOnly(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">Urgent only</span>
+            </label>
           </div>
-
-          {/* Sentiment filter */}
-          <select
-            value={sentimentFilter}
-            onChange={(e) => setSentimentFilter(e.target.value)}
-            className="input w-auto"
-          >
-            {sentiments.map(s => (
-              <option key={s} value={s}>{s === 'all' ? 'All Sentiments' : s}</option>
-            ))}
-          </select>
-
-          {/* Category filter */}
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="input w-auto"
-          >
-            {categories.map(c => (
-              <option key={c} value={c}>{c === 'all' ? 'All Categories' : c.replace('_', ' ')}</option>
-            ))}
-          </select>
-
-          {/* Urgent only toggle */}
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showUrgentOnly}
-              onChange={(e) => setShowUrgentOnly(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-700">Urgent only</span>
-          </label>
         </div>
       </div>
 
 
 
       {/* Results count */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <p className="text-sm text-gray-500">
-          Showing {filteredItems.length} of {activeData?.count || 0} feedback items
+          Showing {filteredItems.length} of {activeData?.count || 0} items
           {search && <span className="ml-1">for "{search}"</span>}
         </p>
         <div className="flex items-center gap-3">
@@ -216,7 +219,7 @@ export default function Feedback() {
           <p className="text-gray-500">No feedback found matching your filters</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
           {filteredItems.map((item) => (
             <FeedbackCard key={item.feedback_id} feedback={item} />
           ))}

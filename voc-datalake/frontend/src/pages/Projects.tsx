@@ -62,15 +62,15 @@ export default function Projects() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
-          <p className="text-gray-500 mt-1">Create projects to build personas, PRDs, and PR/FAQs from customer feedback</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Projects</h1>
+          <p className="text-sm sm:text-base text-gray-500 mt-1">Create projects to build personas, PRDs, and PR/FAQs from feedback</p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 w-full sm:w-auto"
         >
           <Plus size={18} />
           New Project
@@ -79,8 +79,8 @@ export default function Projects() {
 
       {/* Create Modal */}
       {showCreate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-xl sm:rounded-xl p-4 sm:p-6 w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold mb-4">Create New Project</h2>
             <div className="space-y-4">
               <div>
@@ -104,17 +104,17 @@ export default function Projects() {
                 />
               </div>
             </div>
-            <div className="flex justify-end gap-3 mt-6">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-6">
               <button
                 onClick={() => setShowCreate(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                className="w-full sm:w-auto px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreate}
                 disabled={!newProject.name.trim() || createMutation.isPending}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 {createMutation.isPending ? 'Creating...' : 'Create Project'}
               </button>
@@ -125,9 +125,9 @@ export default function Projects() {
 
       {/* Projects Grid */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-white rounded-xl p-6 border border-gray-200 animate-pulse">
+            <div key={i} className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 animate-pulse">
               <div className="h-6 bg-gray-200 rounded w-3/4 mb-2" />
               <div className="h-4 bg-gray-100 rounded w-full mb-4" />
               <div className="h-4 bg-gray-100 rounded w-1/2" />
@@ -135,10 +135,10 @@ export default function Projects() {
           ))}
         </div>
       ) : data?.projects.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
-          <Briefcase size={48} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
-          <p className="text-gray-500 mb-4">Create your first project to start building personas and documents</p>
+        <div className="text-center py-12 sm:py-16 bg-white rounded-xl border border-gray-200">
+          <Briefcase size={40} className="mx-auto text-gray-300 mb-4 sm:w-12 sm:h-12" />
+          <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
+          <p className="text-sm sm:text-base text-gray-500 mb-4 px-4">Create your first project to start building personas and documents</p>
           <button
             onClick={() => setShowCreate(true)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -148,19 +148,19 @@ export default function Projects() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {data?.projects.map((project: Project) => (
             <div
               key={project.project_id}
-              className="bg-white rounded-xl p-6 border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all group"
+              className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all group"
             >
               <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Briefcase size={20} className="text-blue-600" />
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Briefcase size={18} className="text-blue-600 sm:w-5 sm:h-5" />
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{project.name}</h3>
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{project.name}</h3>
                     <p className="text-xs text-gray-500">
                       {format(new Date(project.created_at), 'MMM d, yyyy')}
                     </p>
@@ -171,17 +171,17 @@ export default function Projects() {
                     e.stopPropagation()
                     setDeleteProjectId(project.project_id)
                   }}
-                  className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="p-1.5 text-gray-400 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                 >
                   <Trash2 size={16} />
                 </button>
               </div>
               
               {project.description && (
-                <p className="text-sm text-gray-600 mb-4 line-clamp-2">{project.description}</p>
+                <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4 line-clamp-2">{project.description}</p>
               )}
               
-              <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
+              <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm text-gray-500 mb-3 sm:mb-4">
                 <span className="flex items-center gap-1">
                   <Users size={14} />
                   {project.persona_count} personas
@@ -194,7 +194,7 @@ export default function Projects() {
               
               <button
                 onClick={() => navigate(`/projects/${project.project_id}`)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-50 text-gray-700 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-50 text-gray-700 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors text-sm"
               >
                 Open Project
                 <ArrowRight size={16} />

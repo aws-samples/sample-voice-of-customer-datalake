@@ -245,61 +245,60 @@ export default function Prioritization() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">PR/FAQ Prioritization</h1>
-          <p className="text-gray-500 mt-1">
-            Score and prioritize PR/FAQs across all projects using Impact & Time to Market framework
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">PR/FAQ Prioritization</h1>
+          <p className="text-sm sm:text-base text-gray-500 mt-1">
+            Score and prioritize PR/FAQs across all projects
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {hasChanges && (
             <button
               onClick={() => {
                 setScores(savedScores?.scores || {})
                 setHasChanges(false)
               }}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm"
             >
               <RotateCcw size={16} />
-              Reset
+              <span className="hidden sm:inline">Reset</span>
             </button>
           )}
           <button
             onClick={() => saveMutation.mutate()}
             disabled={!hasChanges || saveMutation.isPending}
             className={clsx(
-              'flex items-center gap-2 px-4 py-2 rounded-lg font-medium',
+              'flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium text-sm',
               hasChanges 
                 ? 'bg-blue-600 text-white hover:bg-blue-700' 
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             )}
           >
             <Save size={16} />
-            {saveMutation.isPending ? 'Saving...' : 'Save Scores'}
+            <span className="hidden sm:inline">{saveMutation.isPending ? 'Saving...' : 'Save Scores'}</span>
+            <span className="sm:hidden">{saveMutation.isPending ? '...' : 'Save'}</span>
           </button>
         </div>
       </div>
 
       {/* Framework Info */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 sm:p-4 border border-blue-100">
         <div className="flex items-start gap-3">
-          <Sparkles className="text-blue-600 mt-0.5" size={20} />
+          <Sparkles className="text-blue-600 mt-0.5 flex-shrink-0" size={20} />
           <div>
-            <h3 className="font-medium text-blue-900">Prioritization Framework</h3>
-            <p className="text-sm text-blue-700 mt-1">
-              Score each PR/FAQ on four dimensions: <strong>Impact</strong> (business value), 
-              <strong> Time to Market</strong> (delivery speed), <strong>Strategic Fit</strong> (alignment with goals), 
-              and <strong>Confidence</strong> (certainty in estimates). Priority score is calculated automatically.
+            <h3 className="font-medium text-blue-900 text-sm sm:text-base">Prioritization Framework</h3>
+            <p className="text-xs sm:text-sm text-blue-700 mt-1">
+              Score each PR/FAQ on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.
             </p>
           </div>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white rounded-lg border p-4">
           <div className="text-2xl font-bold text-gray-900">{allPRFAQs.length}</div>
           <div className="text-sm text-gray-500">Total PR/FAQs</div>
@@ -331,23 +330,24 @@ export default function Prioritization() {
       </div>
 
       {/* Sort Controls */}
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-gray-500">Sort by:</span>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-gray-500 w-full sm:w-auto">Sort by:</span>
         {[
-          { field: 'priority_score' as SortField, label: 'Priority Score' },
-          { field: 'impact' as SortField, label: 'Impact' },
-          { field: 'time_to_market' as SortField, label: 'Time to Market' },
-          { field: 'created_at' as SortField, label: 'Date Created' },
-        ].map(({ field, label }) => (
+          { field: 'priority_score' as SortField, label: 'Priority', fullLabel: 'Priority Score' },
+          { field: 'impact' as SortField, label: 'Impact', fullLabel: 'Impact' },
+          { field: 'time_to_market' as SortField, label: 'TTM', fullLabel: 'Time to Market' },
+          { field: 'created_at' as SortField, label: 'Date', fullLabel: 'Date Created' },
+        ].map(({ field, label, fullLabel }) => (
           <button
             key={field}
             onClick={() => toggleSort(field)}
             className={clsx(
-              'px-3 py-1.5 rounded-lg flex items-center gap-1',
+              'px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs sm:text-sm',
               sortField === field ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             )}
           >
-            {label}
+            <span className="sm:hidden">{label}</span>
+            <span className="hidden sm:inline">{fullLabel}</span>
             {sortField === field && (
               <ArrowUpDown size={14} className={sortDirection === 'desc' ? 'rotate-180' : ''} />
             )}
@@ -386,54 +386,57 @@ export default function Prioritization() {
               <div key={prfaq.document_id} className="bg-white rounded-lg border shadow-sm">
                 {/* Header Row */}
                 <div 
-                  className="p-4 flex items-center gap-4 cursor-pointer hover:bg-gray-50"
+                  className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 cursor-pointer hover:bg-gray-50"
                   onClick={() => setExpandedId(isExpanded ? null : prfaq.document_id)}
                 >
-                  <div className="text-gray-400 font-mono text-sm w-6">#{index + 1}</div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-medium text-gray-900 truncate">{prfaq.title}</h3>
-                      <span className={clsx('text-xs px-2 py-0.5 rounded-full', priority.color)}>
-                        {priority.label}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
-                      <span>{prfaq.project_name}</span>
-                      <span>•</span>
-                      <span>{format(new Date(prfaq.created_at), 'MMM d, yyyy')}</span>
+                  <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                    <div className="text-gray-400 font-mono text-sm w-6 hidden sm:block">#{index + 1}</div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-medium text-gray-900 truncate text-sm sm:text-base">{prfaq.title}</h3>
+                        <span className={clsx('text-xs px-2 py-0.5 rounded-full whitespace-nowrap', priority.color)}>
+                          {priority.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 sm:gap-3 mt-1 text-xs sm:text-sm text-gray-500">
+                        <span className="truncate">{prfaq.project_name}</span>
+                        <span>•</span>
+                        <span className="whitespace-nowrap">{format(new Date(prfaq.created_at), 'MMM d, yyyy')}</span>
+                      </div>
                     </div>
                   </div>
 
                   {/* Quick Scores */}
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
                     <div className="text-center">
-                      <div className={clsx('text-lg font-bold', score.impact > 0 ? 'text-blue-600' : 'text-gray-300')}>
+                      <div className={clsx('text-base sm:text-lg font-bold', score.impact > 0 ? 'text-blue-600' : 'text-gray-300')}>
                         {score.impact || '-'}
                       </div>
                       <div className="text-xs text-gray-400">Impact</div>
                     </div>
                     <div className="text-center">
-                      <div className={clsx('text-lg font-bold', score.time_to_market !== 3 || score.impact > 0 ? 'text-purple-600' : 'text-gray-300')}>
+                      <div className={clsx('text-base sm:text-lg font-bold', score.time_to_market !== 3 || score.impact > 0 ? 'text-purple-600' : 'text-gray-300')}>
                         {score.impact > 0 ? score.time_to_market : '-'}
                       </div>
                       <div className="text-xs text-gray-400">TTM</div>
                     </div>
-                    <div className="text-center px-3 py-1 bg-gray-50 rounded-lg">
-                      <div className={clsx('text-xl font-bold', priorityScore > 0 ? 'text-green-600' : 'text-gray-300')}>
+                    <div className="text-center px-2 sm:px-3 py-1 bg-gray-50 rounded-lg">
+                      <div className={clsx('text-lg sm:text-xl font-bold', priorityScore > 0 ? 'text-green-600' : 'text-gray-300')}>
                         {priorityScore > 0 ? priorityScore.toFixed(1) : '-'}
                       </div>
                       <div className="text-xs text-gray-400">Score</div>
                     </div>
+                    <div className="sm:ml-2">
+                      {isExpanded ? <ChevronUp size={20} className="text-gray-400" /> : <ChevronDown size={20} className="text-gray-400" />}
+                    </div>
                   </div>
-
-                  {isExpanded ? <ChevronUp size={20} className="text-gray-400" /> : <ChevronDown size={20} className="text-gray-400" />}
                 </div>
 
                 {/* Expanded Content */}
                 {isExpanded && (
-                  <div className="border-t px-4 py-4 bg-gray-50">
-                    <div className="grid grid-cols-2 gap-6">
+                  <div className="border-t px-3 sm:px-4 py-4 bg-gray-50">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                       {/* Scoring Panel */}
                       <div className="space-y-4">
                         <h4 className="font-medium text-gray-900">Prioritization Scores</h4>
@@ -495,10 +498,12 @@ export default function Prioritization() {
                             href={`/projects/${prfaq.project_id}`}
                             className="text-sm text-blue-600 hover:underline flex items-center gap-1"
                           >
-                            View Full Document <ExternalLink size={14} />
+                            <span className="hidden sm:inline">View Full Document</span>
+                            <span className="sm:hidden">View</span>
+                            <ExternalLink size={14} />
                           </a>
                         </div>
-                        <div className="bg-white rounded-lg border p-4 max-h-64 overflow-y-auto prose prose-sm">
+                        <div className="bg-white rounded-lg border p-3 sm:p-4 max-h-48 sm:max-h-64 overflow-y-auto prose prose-sm">
                           <ReactMarkdown>
                             {prfaq.content?.slice(0, 1500) + (prfaq.content?.length > 1500 ? '...' : '')}
                           </ReactMarkdown>

@@ -238,45 +238,56 @@ export default function DocumentExportMenu({ document: doc, project }: DocumentE
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
         title="Download options"
+        aria-label="Download options"
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
       >
         <MoreVertical size={18} />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 w-52 py-1">
+        <div 
+          className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 w-52 max-w-[calc(100vw-2rem)] py-1"
+          role="menu"
+          aria-orientation="vertical"
+        >
           <button
             onClick={copyContent}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+            role="menuitem"
           >
-            {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
-            {copied ? 'Copied!' : 'Copy'}
+            {copied ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Copy size={16} className="flex-shrink-0" />}
+            <span className="truncate">{copied ? 'Copied!' : 'Copy'}</span>
           </button>
 
           <hr className="my-1 border-gray-100" />
 
           <button
             onClick={downloadAsMarkdown}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+            role="menuitem"
           >
-            <FileText size={16} />
-            Download as Markdown
+            <FileText size={16} className="flex-shrink-0" />
+            <span className="truncate">Download as Markdown</span>
           </button>
 
           <button
             onClick={downloadAsPDF}
             disabled={exporting}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50"
+            role="menuitem"
           >
-            <FileDown size={16} />
-            {exporting ? 'Generating PDF...' : 'Download as PDF'}
+            <FileDown size={16} className="flex-shrink-0" />
+            <span className="truncate">{exporting ? 'Generating PDF...' : 'Download as PDF'}</span>
           </button>
 
           <button
             onClick={downloadAsTxt}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+            role="menuitem"
           >
-            <FileType size={16} />
-            Download as TXT
+            <FileType size={16} className="flex-shrink-0" />
+            <span className="truncate">Download as TXT</span>
           </button>
 
           {(doc.document_type === 'prd' || doc.document_type === 'prfaq') && (
@@ -284,10 +295,11 @@ export default function DocumentExportMenu({ document: doc, project }: DocumentE
               <hr className="my-1 border-gray-100" />
               <button
                 onClick={copyToKiro}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50"
+                className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-purple-700 hover:bg-purple-50 active:bg-purple-100"
+                role="menuitem"
               >
-                {copiedKiro ? <Check size={16} className="text-green-500" /> : <Sparkles size={16} />}
-                {copiedKiro ? 'Copied!' : 'Copy to Kiro'}
+                {copiedKiro ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Sparkles size={16} className="flex-shrink-0" />}
+                <span className="truncate">{copiedKiro ? 'Copied!' : 'Copy to Kiro'}</span>
               </button>
               {!project?.kiro_export_prompt && (
                 <p className="px-3 py-1 text-xs text-gray-400">

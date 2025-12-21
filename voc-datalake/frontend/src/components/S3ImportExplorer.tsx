@@ -128,23 +128,23 @@ export default function S3ImportExplorer() {
   return (
     <div className="space-y-4">
       {/* Header with bucket info */}
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-500">
-          Bucket: <code className="bg-gray-100 px-2 py-0.5 rounded">{bucket}</code>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="text-sm text-gray-500 truncate">
+          Bucket: <code className="bg-gray-100 px-2 py-0.5 rounded text-xs">{bucket}</code>
         </div>
-        <button onClick={() => refetchFiles()} className="btn btn-secondary text-sm flex items-center gap-1">
+        <button onClick={() => refetchFiles()} className="btn btn-secondary text-sm flex items-center justify-center gap-1 w-full sm:w-auto">
           <RefreshCw size={14} /> Refresh
         </button>
       </div>
 
       {/* Source selector and creator */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <FolderOpen size={18} className="text-gray-400" />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <FolderOpen size={18} className="text-gray-400 flex-shrink-0" />
           <select
             value={selectedSource}
             onChange={(e) => setSelectedSource(e.target.value)}
-            className="input py-1.5 text-sm min-w-[150px]"
+            className="input py-2 sm:py-1.5 text-sm flex-1 sm:min-w-[150px]"
           >
             <option value="">All Sources</option>
             {sources.map((s: S3ImportSource) => (
@@ -154,28 +154,30 @@ export default function S3ImportExplorer() {
         </div>
         
         {showNewSource ? (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
             <input
               type="text"
               value={newSourceName}
               onChange={(e) => setNewSourceName(e.target.value)}
               placeholder="Source name..."
-              className="input py-1.5 text-sm w-40"
+              className="input py-2 sm:py-1.5 text-sm flex-1 sm:w-40"
               autoFocus
             />
-            <button
-              onClick={() => newSourceName && createSourceMutation.mutate(newSourceName)}
-              disabled={!newSourceName || createSourceMutation.isPending}
-              className="btn btn-primary py-1.5 text-sm"
-            >
-              {createSourceMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : 'Create'}
-            </button>
-            <button onClick={() => setShowNewSource(false)} className="btn btn-secondary py-1.5 text-sm">
-              Cancel
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => newSourceName && createSourceMutation.mutate(newSourceName)}
+                disabled={!newSourceName || createSourceMutation.isPending}
+                className="btn btn-primary py-2 sm:py-1.5 text-sm flex-1 sm:flex-none"
+              >
+                {createSourceMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : 'Create'}
+              </button>
+              <button onClick={() => setShowNewSource(false)} className="btn btn-secondary py-2 sm:py-1.5 text-sm flex-1 sm:flex-none">
+                Cancel
+              </button>
+            </div>
           </div>
         ) : (
-          <button onClick={() => setShowNewSource(true)} className="btn btn-secondary py-1.5 text-sm flex items-center gap-1">
+          <button onClick={() => setShowNewSource(true)} className="btn btn-secondary py-2 sm:py-1.5 text-sm flex items-center justify-center gap-1 w-full sm:w-auto">
             <FolderPlus size={14} /> New Source
           </button>
         )}
@@ -184,7 +186,7 @@ export default function S3ImportExplorer() {
       {/* Upload area */}
       <div
         className={clsx(
-          'border-2 border-dashed rounded-lg p-6 text-center transition-colors',
+          'border-2 border-dashed rounded-lg p-4 sm:p-6 text-center transition-colors',
           'hover:border-blue-400 hover:bg-blue-50/50 cursor-pointer',
           uploadingFiles.size > 0 ? 'border-blue-400 bg-blue-50' : 'border-gray-300'
         )}
@@ -204,22 +206,22 @@ export default function S3ImportExplorer() {
         {uploadingFiles.size > 0 ? (
           <div className="flex items-center justify-center gap-2 text-blue-600">
             <Loader2 size={20} className="animate-spin" />
-            <span>Uploading {uploadingFiles.size} file(s)...</span>
+            <span className="text-sm sm:text-base">Uploading {uploadingFiles.size} file(s)...</span>
           </div>
         ) : uploadSuccess ? (
           <div className="flex items-center justify-center gap-2 text-green-600">
             <CheckCircle2 size={20} />
-            <span>Uploaded {uploadSuccess}</span>
+            <span className="text-sm sm:text-base">Uploaded {uploadSuccess}</span>
           </div>
         ) : uploadError ? (
           <div className="flex items-center justify-center gap-2 text-red-600">
             <AlertCircle size={20} />
-            <span className="text-sm">{uploadError}</span>
+            <span className="text-xs sm:text-sm">{uploadError}</span>
           </div>
         ) : (
           <>
             <Upload size={24} className="mx-auto mb-2 text-gray-400" />
-            <p className="text-gray-600">Drop files here or click to upload</p>
+            <p className="text-gray-600 text-sm sm:text-base">Drop files here or click to upload</p>
             <p className="text-xs text-gray-400 mt-1">Supports CSV, JSON, JSONL</p>
             {selectedSource && (
               <p className="text-xs text-blue-600 mt-1">Uploading to: {selectedSource}</p>
@@ -246,19 +248,19 @@ export default function S3ImportExplorer() {
         ) : (
           <div className="divide-y">
             {files.map((file: S3ImportFile) => (
-              <div key={file.key} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileText size={18} className={file.status === 'processed' ? 'text-green-500' : 'text-blue-500'} />
-                  <div className="min-w-0">
+              <div key={file.key} className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-4 py-3 hover:bg-gray-50 gap-2">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  <FileText size={18} className={clsx('flex-shrink-0', file.status === 'processed' ? 'text-green-500' : 'text-blue-500')} />
+                  <div className="min-w-0 flex-1">
                     <p className="font-medium text-sm truncate">{file.filename}</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500 truncate">
                       {file.source} • {formatFileSize(file.size)} • {format(new Date(file.last_modified), 'MMM d, yyyy HH:mm')}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 justify-end sm:justify-start ml-6 sm:ml-0">
                   <span className={clsx(
-                    'text-xs px-2 py-0.5 rounded',
+                    'text-xs px-2 py-0.5 rounded whitespace-nowrap',
                     file.status === 'processed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                   )}>
                     {file.status === 'processed' ? 'Processed' : 'Pending'}
@@ -266,7 +268,7 @@ export default function S3ImportExplorer() {
                   <button
                     onClick={() => deleteFileMutation.mutate(file.key)}
                     disabled={deleteFileMutation.isPending}
-                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+                    className="p-2 sm:p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
                     title="Delete file"
                   >
                     <Trash2 size={16} />

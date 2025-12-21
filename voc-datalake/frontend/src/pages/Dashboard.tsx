@@ -93,9 +93,9 @@ export default function Dashboard() {
       .map(([name, value]) => ({ name: name.replace('_', ' '), value })) : []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <MetricCard
           title="Total Feedback"
           value={summary?.total_feedback.toLocaleString() || 0}
@@ -124,102 +124,111 @@ export default function Dashboard() {
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Trend Chart */}
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Feedback Volume & Sentiment Trend</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={[...(summary?.daily_totals || [])].sort((a, b) => a.date.localeCompare(b.date))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="card !p-4 sm:!p-6">
+          <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Feedback Volume & Sentiment Trend</h3>
+          <div className="h-[200px] sm:h-[300px] -mx-2 sm:mx-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={[...(summary?.daily_totals || [])].sort((a, b) => a.date.localeCompare(b.date))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 10 }} width={35} />
+                <Tooltip />
+                <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         {/* Sentiment Pie */}
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Sentiment Distribution</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={sentimentPieData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={100}
-                paddingAngle={2}
-                dataKey="value"
-                label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-              >
-                {sentimentPieData.map((_, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+        <div className="card !p-4 sm:!p-6">
+          <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Sentiment Distribution</h3>
+          <div className="h-[200px] sm:h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={sentimentPieData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius="40%"
+                  outerRadius="70%"
+                  paddingAngle={2}
+                  dataKey="value"
+                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                  labelLine={{ strokeWidth: 1 }}
+                >
+                  {sentimentPieData.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
       {/* Categories and Sources */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Top Categories */}
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Top Issue Categories</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={categoryBarData} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis type="number" tick={{ fontSize: 12 }} />
-              <YAxis dataKey="name" type="category" tick={{ fontSize: 12 }} width={100} />
-              <Tooltip />
-              <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="card !p-4 sm:!p-6">
+          <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Top Issue Categories</h3>
+          <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={categoryBarData} layout="vertical" margin={{ left: 0, right: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis type="number" tick={{ fontSize: 10 }} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={80} />
+                <Tooltip />
+                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         {/* Sources */}
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Feedback by Source</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={sourceBarData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="card !p-4 sm:!p-6">
+          <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Feedback by Source</h3>
+          <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sourceBarData} margin={{ left: 0, right: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={60} />
+                <YAxis tick={{ fontSize: 10 }} width={35} />
+                <Tooltip />
+                <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
       {/* Social Feed and Urgent Issues */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Social Media Feed */}
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Zap className="text-blue-500" size={20} />
+        <div className="card !p-4 sm:!p-6">
+          <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
+            <Zap className="text-blue-500 flex-shrink-0" size={20} />
             Live Social Feed
           </h3>
           <SocialFeed limit={8} showFilters={true} />
         </div>
 
         {/* Urgent Feedback */}
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <AlertTriangle className="text-orange-500" size={20} />
-            Urgent Issues ({urgentFeedback?.count || 0})
+        <div className="card !p-4 sm:!p-6">
+          <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
+            <AlertTriangle className="text-orange-500 flex-shrink-0" size={20} />
+            <span>Urgent Issues ({urgentFeedback?.count || 0})</span>
           </h3>
           {urgentFeedback && urgentFeedback.items.length > 0 ? (
-            <div className="space-y-3 max-h-[600px] overflow-y-auto">
+            <div className="space-y-3 max-h-[400px] sm:max-h-[600px] overflow-y-auto">
               {urgentFeedback.items.slice(0, 6).map((item) => (
                 <FeedbackCard key={item.feedback_id} feedback={item} compact />
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-6 sm:py-8 text-gray-500">
               No urgent issues - great job! 🎉
             </div>
           )}

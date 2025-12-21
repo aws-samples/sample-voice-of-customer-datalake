@@ -119,8 +119,8 @@ export default function FeedbackFormConfig() {
   return (
     <div className="space-y-6">
       {/* Header with enable toggle */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4">
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -128,7 +128,7 @@ export default function FeedbackFormConfig() {
               onChange={(e) => setFormConfig({ ...formConfig, enabled: e.target.checked })}
               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
-            <span className="font-medium">Enable Feedback Form</span>
+            <span className="font-medium text-sm sm:text-base">Enable Feedback Form</span>
           </label>
           <span className={clsx('px-2 py-1 rounded text-xs', formConfig.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600')}>
             {formConfig.enabled ? 'Active' : 'Disabled'}
@@ -137,7 +137,7 @@ export default function FeedbackFormConfig() {
         <button
           onClick={() => saveMutation.mutate(formConfig)}
           disabled={saveMutation.isPending}
-          className={clsx('btn flex items-center gap-2', saved ? 'bg-green-600 text-white' : 'btn-primary')}
+          className={clsx('btn flex items-center justify-center gap-2 w-full sm:w-auto', saved ? 'bg-green-600 text-white' : 'btn-primary')}
         >
           {saveMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : saved ? <Check size={16} /> : <Save size={16} />}
           {saved ? 'Saved!' : 'Save'}
@@ -145,29 +145,30 @@ export default function FeedbackFormConfig() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-200">
+      <div className="flex gap-1 sm:gap-2 border-b border-gray-200 overflow-x-auto">
         {[
-          { id: 'settings', label: 'Form Settings', icon: Settings2 },
-          { id: 'theme', label: 'Theme', icon: Palette },
-          { id: 'embed', label: 'Embed Code', icon: Code },
+          { id: 'settings', label: 'Form Settings', shortLabel: 'Settings', icon: Settings2 },
+          { id: 'theme', label: 'Theme', shortLabel: 'Theme', icon: Palette },
+          { id: 'embed', label: 'Embed Code', shortLabel: 'Embed', icon: Code },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
             className={clsx(
-              'flex items-center gap-2 px-4 py-2 border-b-2 -mb-px transition-colors',
+              'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap text-sm sm:text-base',
               activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
             )}
           >
             <tab.icon size={16} />
-            {tab.label}
+            <span className="hidden sm:inline">{tab.label}</span>
+            <span className="sm:hidden">{tab.shortLabel}</span>
           </button>
         ))}
       </div>
 
       {/* Settings Tab */}
       {activeTab === 'settings' && (
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Form Title</label>
@@ -224,7 +225,7 @@ export default function FeedbackFormConfig() {
                 className="input"
               />
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -238,7 +239,7 @@ export default function FeedbackFormConfig() {
                 <select
                   value={formConfig.rating_type}
                   onChange={(e) => setFormConfig({ ...formConfig, rating_type: e.target.value as FormConfig['rating_type'] })}
-                  className="input w-auto"
+                  className="input w-full sm:w-auto"
                 >
                   <option value="stars">Stars ⭐</option>
                   <option value="numeric">Numeric (1-10)</option>
@@ -246,7 +247,7 @@ export default function FeedbackFormConfig() {
                 </select>
               )}
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -272,8 +273,8 @@ export default function FeedbackFormConfig() {
 
       {/* Theme Tab */}
       {activeTab === 'theme' && (
-        <div className="grid grid-cols-2 gap-6">
-          <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+          <div className="space-y-4 order-2 md:order-1">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Primary Color</label>
               <div className="flex items-center gap-2">
@@ -281,13 +282,13 @@ export default function FeedbackFormConfig() {
                   type="color"
                   value={formConfig.theme.primary_color}
                   onChange={(e) => setFormConfig({ ...formConfig, theme: { ...formConfig.theme, primary_color: e.target.value } })}
-                  className="w-10 h-10 rounded border cursor-pointer"
+                  className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
                 />
                 <input
                   type="text"
                   value={formConfig.theme.primary_color}
                   onChange={(e) => setFormConfig({ ...formConfig, theme: { ...formConfig.theme, primary_color: e.target.value } })}
-                  className="input flex-1"
+                  className="input flex-1 min-w-0"
                 />
               </div>
             </div>
@@ -298,13 +299,13 @@ export default function FeedbackFormConfig() {
                   type="color"
                   value={formConfig.theme.background_color}
                   onChange={(e) => setFormConfig({ ...formConfig, theme: { ...formConfig.theme, background_color: e.target.value } })}
-                  className="w-10 h-10 rounded border cursor-pointer"
+                  className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
                 />
                 <input
                   type="text"
                   value={formConfig.theme.background_color}
                   onChange={(e) => setFormConfig({ ...formConfig, theme: { ...formConfig.theme, background_color: e.target.value } })}
-                  className="input flex-1"
+                  className="input flex-1 min-w-0"
                 />
               </div>
             </div>
@@ -315,13 +316,13 @@ export default function FeedbackFormConfig() {
                   type="color"
                   value={formConfig.theme.text_color}
                   onChange={(e) => setFormConfig({ ...formConfig, theme: { ...formConfig.theme, text_color: e.target.value } })}
-                  className="w-10 h-10 rounded border cursor-pointer"
+                  className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
                 />
                 <input
                   type="text"
                   value={formConfig.theme.text_color}
                   onChange={(e) => setFormConfig({ ...formConfig, theme: { ...formConfig.theme, text_color: e.target.value } })}
-                  className="input flex-1"
+                  className="input flex-1 min-w-0"
                 />
               </div>
             </div>
@@ -337,7 +338,7 @@ export default function FeedbackFormConfig() {
             </div>
           </div>
           {/* Typeform-style Preview */}
-          <div>
+          <div className="order-1 md:order-2">
             <label className="block text-sm font-medium text-gray-700 mb-2">Preview (Typeform-style)</label>
             <div
               className="relative overflow-hidden border"
@@ -345,7 +346,7 @@ export default function FeedbackFormConfig() {
                 backgroundColor: formConfig.theme.background_color,
                 color: formConfig.theme.text_color,
                 borderRadius: formConfig.theme.border_radius,
-                minHeight: '320px',
+                minHeight: '280px',
               }}
             >
               {/* Progress bar */}
@@ -355,19 +356,19 @@ export default function FeedbackFormConfig() {
               />
               
               {/* Centered content */}
-              <div className="flex flex-col items-center justify-center text-center p-8 h-full min-h-[320px]">
-                <h3 className="text-2xl font-bold mb-3">{formConfig.title}</h3>
-                <p className="text-sm mb-6 opacity-70 max-w-xs">{formConfig.description}</p>
+              <div className="flex flex-col items-center justify-center text-center p-4 sm:p-8 h-full min-h-[280px]">
+                <h3 className="text-xl sm:text-2xl font-bold mb-2 sm:mb-3">{formConfig.title}</h3>
+                <p className="text-xs sm:text-sm mb-4 sm:mb-6 opacity-70 max-w-xs">{formConfig.description}</p>
                 <button
-                  className="px-6 py-3 text-white font-medium flex items-center gap-2"
+                  className="px-4 sm:px-6 py-2 sm:py-3 text-white font-medium flex items-center gap-2 text-sm sm:text-base"
                   style={{ backgroundColor: formConfig.theme.primary_color, borderRadius: formConfig.theme.border_radius }}
                 >
                   Start →
                 </button>
               </div>
               
-              {/* Navigation hint */}
-              <div className="absolute bottom-4 right-4 flex gap-2">
+              {/* Navigation hint - hidden on mobile */}
+              <div className="absolute bottom-4 right-4 hidden sm:flex gap-2">
                 <div className="w-8 h-8 border border-gray-300 rounded flex items-center justify-center text-gray-400">↑</div>
                 <div 
                   className="w-8 h-8 rounded flex items-center justify-center text-white"
@@ -392,34 +393,34 @@ export default function FeedbackFormConfig() {
           )}
           
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
               <label className="block text-sm font-medium text-gray-700">Script Embed (Recommended)</label>
               <button
                 onClick={() => copyToClipboard(scriptEmbed, 'script')}
-                className="btn btn-secondary text-xs flex items-center gap-1"
+                className="btn btn-secondary text-xs flex items-center justify-center gap-1 w-full sm:w-auto"
               >
                 {copied === 'script' ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
                 {copied === 'script' ? 'Copied!' : 'Copy'}
               </button>
             </div>
-            <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-xs overflow-x-auto">
+            <pre className="bg-gray-900 text-gray-100 p-3 sm:p-4 rounded-lg text-xs overflow-x-auto">
               <code>{scriptEmbed}</code>
             </pre>
             <p className="text-xs text-gray-500 mt-1">Paste this code where you want the form to appear.</p>
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
               <label className="block text-sm font-medium text-gray-700">iFrame Embed (Alternative)</label>
               <button
                 onClick={() => copyToClipboard(iframeEmbed, 'iframe')}
-                className="btn btn-secondary text-xs flex items-center gap-1"
+                className="btn btn-secondary text-xs flex items-center justify-center gap-1 w-full sm:w-auto"
               >
                 {copied === 'iframe' ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
                 {copied === 'iframe' ? 'Copied!' : 'Copy'}
               </button>
             </div>
-            <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-xs overflow-x-auto">
+            <pre className="bg-gray-900 text-gray-100 p-3 sm:p-4 rounded-lg text-xs overflow-x-auto">
               <code>{iframeEmbed}</code>
             </pre>
             <p className="text-xs text-gray-500 mt-1">Use this if you prefer iframe isolation.</p>
