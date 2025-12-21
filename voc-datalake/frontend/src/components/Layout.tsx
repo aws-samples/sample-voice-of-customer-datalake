@@ -6,6 +6,7 @@
  * - Time range selector in header
  * - Breadcrumb navigation
  * - User menu with logout (when authenticated)
+ * - User profile modal
  * - Urgent feedback count badge
  *
  * @module components/Layout
@@ -13,7 +14,21 @@
 
 import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, MessageSquare, FolderOpen, Settings, Bot, Globe, PanelLeftClose, PanelLeft, Briefcase, SearchX, ListOrdered, FileText, LogOut, User } from 'lucide-react'
+import {
+  LayoutDashboard,
+  MessageSquare,
+  FolderOpen,
+  Settings,
+  Bot,
+  Globe,
+  PanelLeftClose,
+  PanelLeft,
+  Briefcase,
+  SearchX,
+  ListOrdered,
+  FileText,
+  LogOut,
+} from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, getDaysFromRange } from '../api/client'
 import { useConfigStore } from '../store/configStore'
@@ -21,6 +36,7 @@ import { useAuthStore } from '../store/authStore'
 import { authService } from '../services/auth'
 import TimeRangeSelector from './TimeRangeSelector'
 import Breadcrumbs from './Breadcrumbs'
+import UserProfileModal from './UserProfileModal'
 import clsx from 'clsx'
 
 const navItems = [
@@ -42,7 +58,8 @@ export default function Layout() {
   const { user, isAuthenticated } = useAuthStore()
   const days = getDaysFromRange(timeRange)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  
+  const [showProfileModal, setShowProfileModal] = useState(false)
+
   const { data: urgentData } = useQuery({
     queryKey: ['urgent', days],
     queryFn: () => api.getUrgentFeedback({ days, limit: 10 }),
@@ -55,13 +72,21 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen flex">
-      {/* Sidebar */}
-      <aside className={clsx(
-        'bg-gray-900 text-white flex flex-col flex-shrink-0 transition-[width] duration-200',
-        sidebarCollapsed ? 'w-16' : 'w-64'
-      )}>
-        <div className={clsx('p-4 flex items-center', sidebarCollapsed ? 'justify-center' : 'justify-between')}>
+    <div className="h-screen flex overflow-hidden">
+      {/* Sidebar - fixed height, doesn't scroll */}
+      <aside
+        className={clsx(
+          'bg-gray-900 text-white flex flex-col flex-shrink-0 h-screen transition-[width] duration-200',
+          sidebarCollapsed ? 'w-16' : 'w-64'
+        )}
+      >
+        {/* Header - fixed at top */}
+        <div
+          className={clsx(
+            'p-4 flex items-center flex-shrink-0',
+            sidebarCollapsed ? 'justify-center' : 'justify-between'
+          )}
+        >
           {!sidebarCollapsed && (
             <div>
               <h1 className="text-lg font-bold">VoC Analytics</h1>
@@ -76,8 +101,9 @@ export default function Layout() {
             {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
           </button>
         </div>
-        
-        <nav className={clsx('flex-1', sidebarCollapsed ? 'px-2' : 'px-4')}>
+
+        {/* Navigation - scrollable if needed */}
+        <nav className={clsx('flex-1 overflow-y-auto', sidebarCollapsed ? 'px-2' : 'px-4')}>
           {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
@@ -105,15 +131,32 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        
-        {/* User info and logout */}
+
+        {/* User info and logout - sticky at bottom */}
         {isAuthenticated && user && (
-          <div className={clsx('border-t border-gray-700 p-4', sidebarCollapsed && 'px-2')}>
+          <div className={clsx('border-t border-gray-700 p-4 flex-shrink-0', sidebarCollapsed && 'px-2')}>
             {!sidebarCollapsed && (
-              <div className="flex items-center gap-2 mb-3 text-sm">
-                <User size={16} className="text-gray-400" />
+              <button
+                onClick={() => setShowProfileModal(true)}
+                className="flex items-center gap-2 mb-3 text-sm w-full text-left hover:bg-gray-800 rounded-lg px-2 py-1.5 -mx-2 transition-colors"
+                title="View profile"
+              >
+                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                  {user.email?.charAt(0).toUpperCase() || 'U'}
+                </div>
                 <span className="text-gray-300 truncate">{user.email || user.username}</span>
-              </div>
+              </button>
+            )}
+            {sidebarCollapsed && (
+              <button
+                onClick={() => setShowProfileModal(true)}
+                className="flex items-center justify-center w-full py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors mb-2"
+                title="View profile"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+                  {user.email?.charAt(0).toUpperCase() || 'U'}
+                </div>
+              </button>
             )}
             <button
               onClick={handleLogout}
@@ -128,11 +171,10 @@ export default function Layout() {
             </button>
           </div>
         )}
-
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      {/* Main content - scrollable */}
+      <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Header */}
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
           <div className="flex items-center justify-between mb-3">
@@ -150,6 +192,9 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+
+      {/* User Profile Modal */}
+      <UserProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
     </div>
   )
 }

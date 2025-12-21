@@ -3,7 +3,6 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
-import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 
 export interface VocFrontendStackProps extends cdk.StackProps {
@@ -33,69 +32,8 @@ export class VocFrontendStack extends cdk.Stack {
       autoDeleteObjects: true,
     });
 
-    // ============================================
-    // WAF WebACL for CloudFront (CLOUDFRONT scope)
-    // Protects against common web attacks
-    // ============================================
-    const cloudfrontWaf = new wafv2.CfnWebACL(this, 'CloudFrontWaf', {
-      scope: 'CLOUDFRONT',
-      defaultAction: { allow: {} },
-      visibilityConfig: {
-        cloudWatchMetricsEnabled: true,
-        metricName: 'VocCloudFrontWaf',
-        sampledRequestsEnabled: true,
-      },
-      rules: [
-        {
-          name: 'AWSManagedRulesCommonRuleSet',
-          priority: 1,
-          overrideAction: { none: {} },
-          statement: {
-            managedRuleGroupStatement: {
-              vendorName: 'AWS',
-              name: 'AWSManagedRulesCommonRuleSet',
-            },
-          },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: 'CloudFrontCommonRuleSet',
-            sampledRequestsEnabled: true,
-          },
-        },
-        {
-          name: 'AWSManagedRulesKnownBadInputsRuleSet',
-          priority: 2,
-          overrideAction: { none: {} },
-          statement: {
-            managedRuleGroupStatement: {
-              vendorName: 'AWS',
-              name: 'AWSManagedRulesKnownBadInputsRuleSet',
-            },
-          },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: 'CloudFrontKnownBadInputs',
-            sampledRequestsEnabled: true,
-          },
-        },
-        {
-          name: 'RateLimitRule',
-          priority: 3,
-          action: { block: {} },
-          statement: {
-            rateBasedStatement: {
-              limit: 2000,
-              aggregateKeyType: 'IP',
-            },
-          },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: 'CloudFrontRateLimit',
-            sampledRequestsEnabled: true,
-          },
-        },
-      ],
-    });
+    // Note: WAF for CloudFront requires deployment in us-east-1
+    // For production, create a separate cross-region WAF stack
 
     // CloudFront distribution with S3BucketOrigin (non-deprecated)
     const distribution = new cloudfront.Distribution(this, 'Distribution', {
@@ -123,7 +61,6 @@ export class VocFrontendStack extends cdk.Stack {
         },
       ],
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-      webAclId: cloudfrontWaf.attrArn,
     });
 
     // Create .env file content for the frontend build

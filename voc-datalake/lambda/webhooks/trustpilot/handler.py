@@ -4,19 +4,17 @@ Handles service-review-created, service-review-updated, and service-review-delet
 """
 import json
 import os
-import boto3
 from datetime import datetime, timezone
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer, Metrics
-
-logger = Logger()
-tracer = Tracer()
-metrics = Metrics()
-
-# AWS Clients
-sqs = boto3.client('sqs')
-dynamodb = boto3.resource('dynamodb')
 from boto3.dynamodb.conditions import Key, Attr
+
+# Shared module imports
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_dynamodb_resource, get_sqs_client
+
+# AWS Clients (using shared module for connection reuse)
+sqs = get_sqs_client()
+dynamodb = get_dynamodb_resource()
 
 # Configuration
 PROCESSING_QUEUE_URL = os.environ['PROCESSING_QUEUE_URL']

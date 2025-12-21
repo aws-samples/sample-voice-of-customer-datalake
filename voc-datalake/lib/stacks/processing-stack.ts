@@ -12,6 +12,7 @@ export interface VocProcessingStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
   projectsTable: dynamodb.Table;
+  idempotencyTable: dynamodb.Table;
   processingQueue: sqs.Queue;
   kmsKey: kms.Key;
   config: {
@@ -29,7 +30,7 @@ export class VocProcessingStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocProcessingStackProps) {
     super(scope, id, props);
 
-    const { feedbackTable, aggregatesTable, projectsTable, processingQueue, kmsKey, config } = props;
+    const { feedbackTable, aggregatesTable, projectsTable, idempotencyTable, processingQueue, kmsKey, config } = props;
 
     // Processing Lambda Role
     const processingRole = new iam.Role(this, 'ProcessingLambdaRole', {
@@ -67,6 +68,7 @@ export class VocProcessingStack extends cdk.Stack {
     feedbackTable.grantReadWriteData(processingRole);  // Read for dedup check, Write for inserts
     aggregatesTable.grantReadWriteData(processingRole);
     projectsTable.grantReadData(processingRole);  // Read categories config
+    idempotencyTable.grantReadWriteData(processingRole);  // Idempotency tracking
     processingQueue.grantConsumeMessages(processingRole);
     kmsKey.grantEncryptDecrypt(processingRole);
 
@@ -75,13 +77,15 @@ export class VocProcessingStack extends cdk.Stack {
     const processingLayer = new lambda.LayerVersion(this, 'ProcessingDepsLayer', {
       code: lambda.Code.fromAsset('lambda/layers/processing-deps'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
-      description: 'Dependencies for processing lambda',
+      compatibleArchitectures: [lambda.Architecture.ARM_64],
+      description: 'Dependencies for processing lambda (ARM64/Graviton)',
     });
 
     // Main Processing Lambda
     this.processingLambda = new lambda.Function(this, 'FeedbackProcessor', {
       functionName: 'voc-feedback-processor',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: lambda.Code.fromAsset('lambda/processor'),
       role: processingRole,
@@ -91,9 +95,11 @@ export class VocProcessingStack extends cdk.Stack {
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
         PROJECTS_TABLE: projectsTable.tableName,
+        IDEMPOTENCY_TABLE: idempotencyTable.tableName,
         PRIMARY_LANGUAGE: config.primaryLanguage,
         BEDROCK_MODEL_ID: 'global.anthropic.claude-haiku-4-5-20250514-v1:0',
         POWERTOOLS_SERVICE_NAME: 'voc-processor',
+        POWERTOOLS_IDEMPOTENCY_DISABLED: '0',  // Enable idempotency
         LOG_LEVEL: 'INFO',
       },
       layers: [processingLayer],
@@ -115,6 +121,7 @@ export class VocProcessingStack extends cdk.Stack {
     this.aggregationLambda = new lambda.Function(this, 'AggregationProcessor', {
       functionName: 'voc-aggregation-processor',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: lambda.Code.fromAsset('lambda/aggregator'),
       role: processingRole,

@@ -9,6 +9,7 @@
  * - Categories configuration
  * - S3 import file explorer
  * - Integration testing
+ * - User administration (admin only)
  *
  * @module pages/Settings
  */
@@ -17,12 +18,14 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 
   Save, Check, AlertCircle, Loader2, Copy, ExternalLink, 
-  Eye, EyeOff, CheckCircle2, Webhook, Key, TestTube, Tags
+  Eye, EyeOff, CheckCircle2, Webhook, Key, TestTube, Tags, Users
 } from 'lucide-react'
 import { useConfigStore } from '../store/configStore'
+import { useIsAdmin } from '../store/authStore'
 import { api } from '../api/client'
 import CategoriesManager from '../components/CategoriesManager'
 import S3ImportExplorer from '../components/S3ImportExplorer'
+import UserAdmin from '../components/UserAdmin'
 import clsx from 'clsx'
 import ConfirmModal from '../components/ConfirmModal'
 
@@ -534,6 +537,7 @@ function SourceCard({ sourceKey, info, apiEndpoint }: {
 export default function Settings() {
   const queryClient = useQueryClient()
   const { config, setConfig } = useConfigStore()
+  const isAdmin = useIsAdmin()
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
@@ -614,7 +618,7 @@ export default function Settings() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <p className="text-gray-500">Configure your VoC data lake, data sources, and integrations</p>
+          <p className="text-gray-500">Configure your VoC platform, data sources, and integrations</p>
         </div>
         <button
           onClick={handleSave}
@@ -777,6 +781,20 @@ export default function Settings() {
           ))}
         </div>
       </div>
+
+      {/* User Administration (admin only) */}
+      {isAdmin && apiEndpoint && (
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <Users className="text-blue-600" size={20} />
+            <h2 className="text-lg font-semibold">User Administration</h2>
+          </div>
+          <p className="text-sm text-gray-500 mb-4">
+            Manage users who can access the VoC dashboard. Add new users, change roles, or reset passwords.
+          </p>
+          <UserAdmin />
+        </div>
+      )}
 
       {/* Danger zone */}
       <div className="card border-red-200">

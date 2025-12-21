@@ -62,6 +62,7 @@ const processingStack = new VocProcessingStack(app, 'VocProcessingStack', {
   feedbackTable: storageStack.feedbackTable,
   aggregatesTable: storageStack.aggregatesTable,
   projectsTable: storageStack.projectsTable,
+  idempotencyTable: storageStack.idempotencyTable,
   processingQueue: ingestionStack.processingQueue,
   kmsKey: storageStack.kmsKey,
   config,

@@ -20,6 +20,8 @@ export interface User {
   username: string
   /** User's email address */
   email: string
+  /** User's display name (fullname attribute) */
+  name?: string
   /** Cognito user groups for authorization */
   groups: string[]
 }
@@ -97,3 +99,12 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 )
+
+/**
+ * Helper hook to check if current user is an admin.
+ * @returns true if user is in the 'admins' group
+ */
+export const useIsAdmin = (): boolean => {
+  const user = useAuthStore((state) => state.user)
+  return user?.groups?.includes('admins') ?? false
+}

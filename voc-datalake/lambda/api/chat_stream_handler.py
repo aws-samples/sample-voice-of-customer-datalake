@@ -9,7 +9,7 @@ import os
 import re
 import hmac
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from boto3.dynamodb.conditions import Key, Attr
 
@@ -601,7 +601,6 @@ def parse_context_filters(context_hint: str) -> dict:
         return filters
     
     # Parse "Source: xxx" pattern
-    import re
     source_match = re.search(r'Source:\s*([^.]+)', context_hint)
     if source_match:
         filters['source'] = source_match.group(1).strip()
@@ -640,7 +639,7 @@ def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
     if aggregates_table:
         # Get daily totals
         for i in range(days):
-            date = (current_date - __import__('datetime').timedelta(days=i)).strftime('%Y-%m-%d')
+            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
             try:
                 response = aggregates_table.get_item(Key={'pk': 'METRIC#daily_total', 'sk': date})
                 item = response.get('Item')
@@ -652,7 +651,7 @@ def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
         # Get sentiment breakdown
         for sentiment in sentiment_counts.keys():
             for i in range(days):
-                date = (current_date - __import__('datetime').timedelta(days=i)).strftime('%Y-%m-%d')
+                date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
                 try:
                     response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_sentiment#{sentiment}', 'sk': date})
                     item = response.get('Item')
@@ -667,7 +666,7 @@ def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
         for category in categories:
             total = 0
             for i in range(days):
-                date = (current_date - __import__('datetime').timedelta(days=i)).strftime('%Y-%m-%d')
+                date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
                 try:
                     response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_category#{category}', 'sk': date})
                     item = response.get('Item')
@@ -680,7 +679,7 @@ def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
         
         # Get urgent count
         for i in range(days):
-            date = (current_date - __import__('datetime').timedelta(days=i)).strftime('%Y-%m-%d')
+            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
             try:
                 response = aggregates_table.get_item(Key={'pk': 'METRIC#urgent', 'sk': date})
                 item = response.get('Item')
@@ -717,7 +716,7 @@ def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
         else:
             # Query by date and apply filters
             for i in range(min(days, 7)):
-                date = (current_date - __import__('datetime').timedelta(days=i)).strftime('%Y-%m-%d')
+                date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
                 try:
                     response = feedback_table.query(
                         IndexName='gsi1-by-date',

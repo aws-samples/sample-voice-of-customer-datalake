@@ -147,7 +147,7 @@ export default function Login() {
             <MessageSquare className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">VoC Analytics</h1>
-          <p className="text-gray-500 mt-1">Voice of the Customer Data Lake</p>
+          <p className="text-gray-500 mt-1">Voice of the Customer Analytics</p>
         </div>
 
         {/* Login Card */}

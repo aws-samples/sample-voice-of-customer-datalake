@@ -746,6 +746,41 @@ export const api = {
   
   deleteFeedbackForm: (formId: string) =>
     fetchApi<{ success: boolean }>(`/feedback-forms/${formId}`, { method: 'DELETE' }),
+
+  // User Administration (admin only)
+  getUsers: () => fetchApi<{ success: boolean; users: CognitoUser[]; message?: string }>('/users'),
+  
+  createUser: (data: { email: string; name?: string; group: 'admins' | 'viewers' }) =>
+    fetchApi<{ success: boolean; message: string; user?: CognitoUser }>('/users', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  updateUserGroup: (username: string, group: 'admins' | 'viewers') =>
+    fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}/group`, {
+      method: 'PUT',
+      body: JSON.stringify({ group })
+    }),
+  
+  resetUserPassword: (username: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}/reset-password`, {
+      method: 'POST'
+    }),
+  
+  enableUser: (username: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}/enable`, {
+      method: 'PUT'
+    }),
+  
+  disableUser: (username: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}/disable`, {
+      method: 'PUT'
+    }),
+  
+  deleteUser: (username: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}`, {
+      method: 'DELETE'
+    }),
 }
 
 // Project types
@@ -938,6 +973,18 @@ export interface FeedbackForm {
   subcategory: string
   created_at: string
   updated_at: string
+}
+
+// User Administration types
+export interface CognitoUser {
+  username: string
+  email: string
+  name: string
+  status: string
+  enabled: boolean
+  groups: string[]
+  created_at: string | null
+  last_modified: string | null
 }
 
 export function getDaysFromRange(range: string, customRange?: { start: string; end: string } | null): number {

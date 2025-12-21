@@ -27,7 +27,8 @@ export class VocResearchStack extends cdk.Stack {
     const researchLayer = new lambda.LayerVersion(this, 'ResearchDepsLayer', {
       code: lambda.Code.fromAsset('lambda/layers/processing-deps'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
-      description: 'Dependencies for research lambdas',
+      compatibleArchitectures: [lambda.Architecture.ARM_64],
+      description: 'Dependencies for research lambdas (ARM64/Graviton)',
     });
 
     // Research Lambda Role
@@ -55,6 +56,7 @@ export class VocResearchStack extends cdk.Stack {
     const researchStepLambda = new lambda.Function(this, 'ResearchStepLambda', {
       functionName: 'voc-research-step',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'research_step_handler.lambda_handler',
       code: lambda.Code.fromAsset('lambda/research'),
       role: researchRole,

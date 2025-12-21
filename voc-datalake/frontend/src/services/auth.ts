@@ -64,13 +64,14 @@ const parseJwt = (token: string): Record<string, unknown> => {
 /**
  * Extracts user information from a Cognito ID token.
  * @param idToken - The JWT ID token from Cognito
- * @returns User object with username, email, and groups
+ * @returns User object with username, email, name, and groups
  */
 const extractUser = (idToken: string): User => {
   const payload = parseJwt(idToken)
   return {
     username: (payload['cognito:username'] as string) || '',
     email: (payload['email'] as string) || '',
+    name: (payload['name'] as string) || undefined,
     groups: (payload['cognito:groups'] as string[]) || [],
   }
 }
@@ -341,6 +342,48 @@ export const authService = {
         onSuccess: () => resolve(),
         onFailure: (err) => reject(err),
       })
+    })
+  },
+
+  /**
+   * Changes the current user's password.
+   *
+   * @param oldPassword - Current password
+   * @param newPassword - New password to set
+   * @returns Promise resolving when password is changed
+   * @throws Error if change fails (e.g., incorrect current password)
+   */
+  changePassword: (oldPassword: string, newPassword: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const userPool = getUserPool()
+      if (!userPool) {
+        reject(new Error('Cognito not configured'))
+        return
+      }
+
+      const cognitoUser = userPool.getCurrentUser()
+      if (!cognitoUser) {
+        reject(new Error('No current user'))
+        return
+      }
+
+      // Need to get session first
+      cognitoUser.getSession(
+        (err: Error | null, session: CognitoUserSession | null) => {
+          if (err || !session) {
+            reject(err || new Error('No session'))
+            return
+          }
+
+          cognitoUser.changePassword(oldPassword, newPassword, (err) => {
+            if (err) {
+              reject(err)
+              return
+            }
+            resolve()
+          })
+        }
+      )
     })
   },
 }

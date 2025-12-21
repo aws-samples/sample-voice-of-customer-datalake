@@ -39,10 +39,13 @@ export class VocIngestionStack extends cdk.Stack {
 
     const { feedbackTable, watermarksTable, aggregatesTable, rawDataBucket, accessLogsBucket, kmsKey, config } = props;
 
-    // CORS allowed origins - restrict to CloudFront domain if provided
-    const corsAllowedOrigins = props.frontendDomain 
-      ? [`https://${props.frontendDomain}`]
-      : ['http://localhost:5173', 'http://localhost:3000'];  // Dev only - update after first deploy
+    // CORS allowed origins - always include CloudFront domain + localhost for dev
+    // frontendDomain should be set in cdk.context.json or passed via --context
+    const frontendDomain = props.frontendDomain || this.node.tryGetContext('frontendDomain');
+    
+    const corsAllowedOrigins = frontendDomain 
+      ? [`https://${frontendDomain}`, 'http://localhost:5173', 'http://localhost:3000']
+      : ['http://localhost:5173', 'http://localhost:3000'];  // Dev only - set frontendDomain in cdk.context.json
 
     // S3 Import Bucket - dedicated bucket for feedback file uploads
     // Files uploaded here trigger the S3 import Lambda automatically
@@ -184,7 +187,8 @@ export class VocIngestionStack extends cdk.Stack {
     const dependenciesLayer = new lambda.LayerVersion(this, 'IngestionDepsLayer', {
       code: lambda.Code.fromAsset('lambda/layers/ingestion-deps'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
-      description: 'Common dependencies for ingestion lambdas',
+      compatibleArchitectures: [lambda.Architecture.ARM_64],
+      description: 'Common dependencies for ingestion lambdas (ARM64/Graviton)',
     });
 
     // Source configurations
@@ -225,6 +229,7 @@ export class VocIngestionStack extends cdk.Stack {
       const fn = new lambda.Function(this, `Ingestor${this.capitalize(source)}`, {
         functionName: `voc-ingestor-${source}`,
         runtime: lambda.Runtime.PYTHON_3_12,
+        architecture: lambda.Architecture.ARM_64,
         handler: 'handler.lambda_handler',
         code: lambda.Code.fromAsset(`lambda/ingestors/${source}`, {
           exclude: ['**/__pycache__', '*.pyc'],

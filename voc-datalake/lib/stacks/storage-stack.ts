@@ -18,6 +18,7 @@ export class VocStorageStack extends cdk.Stack {
   public readonly projectsTable: dynamodb.Table;
   public readonly jobsTable: dynamodb.Table;
   public readonly conversationsTable: dynamodb.Table;
+  public readonly idempotencyTable: dynamodb.Table;
   public readonly kmsKey: kms.Key;
   public readonly rawDataBucket: s3.Bucket;
   public readonly accessLogsBucket: s3.Bucket;
@@ -26,10 +27,13 @@ export class VocStorageStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: VocStorageStackProps) {
     super(scope, id, props);
 
-    // CORS allowed origins - restrict to CloudFront domain if provided
-    const corsAllowedOrigins = props?.frontendDomain 
-      ? [`https://${props.frontendDomain}`]
-      : ['http://localhost:5173', 'http://localhost:3000'];  // Dev only - update after first deploy
+    // CORS allowed origins - always include CloudFront domain + localhost for dev
+    // frontendDomain should be set in cdk.context.json or passed via --context
+    const frontendDomain = props?.frontendDomain || this.node.tryGetContext('frontendDomain');
+    
+    const corsAllowedOrigins = frontendDomain 
+      ? [`https://${frontendDomain}`, 'http://localhost:5173', 'http://localhost:3000']
+      : ['http://localhost:5173', 'http://localhost:3000'];  // Dev only - set frontendDomain in cdk.context.json
 
     // KMS Key for encryption at rest
     this.kmsKey = new kms.Key(this, 'VocKmsKey', {
@@ -127,7 +131,7 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       timeToLiveAttribute: 'ttl',
       stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
@@ -180,7 +184,7 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       timeToLiveAttribute: 'ttl',
     });
@@ -201,7 +205,7 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
@@ -214,7 +218,7 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
@@ -236,7 +240,7 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       timeToLiveAttribute: 'ttl',
     });
@@ -258,9 +262,22 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       timeToLiveAttribute: 'ttl',
+    });
+
+    // Idempotency Table - used by Lambda Powertools to prevent duplicate processing
+    // Required schema: id (PK), expiration (TTL), status, data
+    // See: https://docs.powertools.aws.dev/lambda/python/latest/utilities/idempotency/
+    this.idempotencyTable = new dynamodb.Table(this, 'IdempotencyTable', {
+      tableName: 'voc-idempotency',
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.kmsKey,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,  // OK to lose on stack deletion
+      timeToLiveAttribute: 'expiration',
     });
 
     // Outputs
@@ -272,6 +289,7 @@ export class VocStorageStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ProjectsTableName', { value: this.projectsTable.tableName });
     new cdk.CfnOutput(this, 'JobsTableName', { value: this.jobsTable.tableName });
     new cdk.CfnOutput(this, 'ConversationsTableName', { value: this.conversationsTable.tableName });
+    new cdk.CfnOutput(this, 'IdempotencyTableName', { value: this.idempotencyTable.tableName });
     new cdk.CfnOutput(this, 'RawDataBucketName', { value: this.rawDataBucket.bucketName });
     new cdk.CfnOutput(this, 'RawDataBucketArn', { value: this.rawDataBucket.bucketArn });
     new cdk.CfnOutput(this, 'AccessLogsBucketName', { value: this.accessLogsBucket.bucketName });

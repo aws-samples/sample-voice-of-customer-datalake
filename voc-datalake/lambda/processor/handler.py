@@ -1,6 +1,8 @@
 """
 VoC Feedback Processor Lambda
 Processes raw feedback from SQS, enriches with LLM insights, writes to DynamoDB.
+
+Uses Powertools Idempotency to prevent duplicate processing on SQS retries.
 """
 import json
 import os
@@ -18,6 +20,12 @@ from botocore.exceptions import ClientError
 # Shared module imports
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.idempotency import (
+    get_persistence_layer,
+    get_idempotency_config,
+    idempotent_function,
+    IdempotencyAlreadyInProgressError,
+)
 import boto3
 
 # Retry configuration for Bedrock
@@ -34,6 +42,7 @@ translate = boto3.client('translate')
 # Configuration
 FEEDBACK_TABLE = os.environ['FEEDBACK_TABLE']
 AGGREGATES_TABLE = os.environ['AGGREGATES_TABLE']
+IDEMPOTENCY_TABLE = os.environ.get('IDEMPOTENCY_TABLE', '')
 PRIMARY_LANGUAGE = os.environ.get('PRIMARY_LANGUAGE', 'en')
 # Processor uses Haiku for cost efficiency (processes many items)
 PROCESSOR_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'global.anthropic.claude-haiku-4-5-20250514-v1:0')
@@ -41,6 +50,20 @@ PROMPT_VERSION = '1.0.0'
 
 feedback_table = dynamodb.Table(FEEDBACK_TABLE)
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
+
+# Idempotency configuration - prevents duplicate processing on SQS retries
+# Records are tracked for 1 hour (3600 seconds) to handle delayed retries
+if IDEMPOTENCY_TABLE:
+    persistence_layer = get_persistence_layer(IDEMPOTENCY_TABLE)
+    idempotency_config = get_idempotency_config(
+        expires_after_seconds=3600,  # 1 hour
+        use_local_cache=True,
+        local_cache_max_items=256,
+    )
+else:
+    persistence_layer = None
+    idempotency_config = None
+    logger.warning("IDEMPOTENCY_TABLE not configured - duplicate protection disabled")
 
 # LLM Prompts
 SYSTEM_PROMPT = """You are an expert customer experience analyst. Analyze feedback and return ONLY valid JSON:
@@ -312,8 +335,13 @@ def check_duplicate(source_platform: str, feedback_id: str) -> bool:
 
 
 @tracer.capture_method
-def process_feedback(raw_record: dict) -> dict:
-    """Process a single feedback record."""
+def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
+    """
+    Process a single feedback record with idempotency protection.
+    
+    The idempotency_key is derived from source_platform + source_id to ensure
+    the same feedback item is never processed twice, even across SQS retries.
+    """
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
     date_str = now.strftime('%Y-%m-%d')
@@ -325,6 +353,7 @@ def process_feedback(raw_record: dict) -> dict:
     feedback_id = generate_deterministic_id(source_platform, source_id)
     
     # Check for duplicate before expensive LLM processing
+    # This is a secondary check - idempotency decorator is the primary protection
     if check_duplicate(source_platform, feedback_id):
         logger.info(f"Skipping duplicate feedback: {source_platform}/{source_id}")
         metrics.add_metric(name="DuplicatesSkipped", unit="Count", value=1)
@@ -421,7 +450,10 @@ def write_to_dynamodb(item: dict):
 
 def record_handler(record: SQSRecord) -> dict:
     """
-    Process a single SQS record.
+    Process a single SQS record with idempotency protection.
+    
+    Uses the message body's source_platform + id as the idempotency key to ensure
+    the same feedback is never processed twice, even on SQS retries.
     
     If Bedrock is throttled after retries, raises exception to keep message in queue.
     SQS visibility timeout will make it available for retry later.
@@ -430,10 +462,20 @@ def record_handler(record: SQSRecord) -> dict:
     source_platform = raw_record.get('source_platform', 'unknown')
     source_id = raw_record.get('id', 'unknown')
     
+    # Create idempotency key from source + id
+    idempotency_key = f"{source_platform}:{source_id}"
+    
     logger.info(f"Processing feedback from {source_platform}/{source_id}")
     
     try:
-        processed_item = process_feedback(raw_record)
+        # Use idempotent wrapper if configured
+        if persistence_layer and idempotency_config:
+            processed_item = _process_feedback_idempotent(
+                raw_record=raw_record,
+                idempotency_key=idempotency_key
+            )
+        else:
+            processed_item = process_feedback(raw_record)
         
         # Skip if duplicate was detected
         if processed_item is None:
@@ -450,12 +492,36 @@ def record_handler(record: SQSRecord) -> dict:
             metrics.add_metric(name="FeedbackProcessedWithLLM", unit="Count", value=1)
         
         return {"status": "success", "feedback_id": processed_item['feedback_id']}
+    
+    except IdempotencyAlreadyInProgressError:
+        # Another Lambda is processing this same record - skip
+        logger.info(f"Idempotency: {idempotency_key} already in progress, skipping")
+        metrics.add_metric(name="IdempotencySkipped", unit="Count", value=1)
+        return {"status": "skipped", "reason": "idempotency_in_progress"}
         
     except BedrockThrottlingError as e:
         # Re-raise to fail this record - SQS will retry after visibility timeout
         logger.warning(f"Bedrock throttled for {source_platform}, message will be retried by SQS")
         metrics.add_metric(name="BedrockThrottleRetry", unit="Count", value=1)
         raise
+
+
+def _process_feedback_idempotent(raw_record: dict, idempotency_key: str) -> dict:
+    """
+    Wrapper to apply idempotency decorator dynamically.
+    
+    The @idempotent_function decorator ensures this function's result is cached
+    and returned on subsequent calls with the same idempotency_key.
+    """
+    @idempotent_function(
+        data_keyword_argument="idempotency_key",
+        persistence_store=persistence_layer,
+        config=idempotency_config,
+    )
+    def _inner(raw_record: dict, idempotency_key: str) -> dict:
+        return process_feedback(raw_record, idempotency_key)
+    
+    return _inner(raw_record=raw_record, idempotency_key=idempotency_key)
 
 
 @logger.inject_lambda_context

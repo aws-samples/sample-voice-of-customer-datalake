@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 
 export interface VocAuthStackProps extends cdk.StackProps {
@@ -31,6 +32,74 @@ export class VocAuthStack extends cdk.Stack {
       logoutUrls.push(`https://${frontendDomain}`);
     }
 
+    // Custom Message Lambda Trigger - customizes email content for different scenarios
+    const customMessageLambda = new lambda.Function(this, 'CustomMessageLambda', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'index.handler',
+      code: lambda.Code.fromInline(`
+import json
+
+def handler(event, context):
+    brand_name = "${brandName}"
+    trigger_source = event.get('triggerSource', '')
+    
+    # Admin-initiated password reset
+    if trigger_source == 'CustomMessage_AdminCreateUser':
+        event['response']['emailSubject'] = f'{brand_name} - Welcome! Set up your account'
+        event['response']['emailMessage'] = f'''Hello {event['request']['usernameParameter']},
+
+You have been invited to {brand_name}.
+
+Your temporary password is: {event['request']['codeParameter']}
+
+Please sign in and change your password.
+
+Best regards,
+The {brand_name} Team'''
+    
+    # Forgot password / admin reset password
+    elif trigger_source == 'CustomMessage_ForgotPassword':
+        event['response']['emailSubject'] = f'{brand_name} - Reset your password'
+        event['response']['emailMessage'] = f'''Hello,
+
+We received a request to reset your password for {brand_name}.
+
+Your password reset code is: {event['request']['codeParameter']}
+
+If you did not request this, please ignore this email.
+
+Best regards,
+The {brand_name} Team'''
+    
+    # Email verification
+    elif trigger_source == 'CustomMessage_VerifyUserAttribute':
+        event['response']['emailSubject'] = f'{brand_name} - Verify your email'
+        event['response']['emailMessage'] = f'''Hello,
+
+Your verification code for {brand_name} is: {event['request']['codeParameter']}
+
+This code expires in 24 hours.
+
+Best regards,
+The {brand_name} Team'''
+    
+    # Resend confirmation code
+    elif trigger_source == 'CustomMessage_ResendCode':
+        event['response']['emailSubject'] = f'{brand_name} - Your verification code'
+        event['response']['emailMessage'] = f'''Hello,
+
+Your verification code for {brand_name} is: {event['request']['codeParameter']}
+
+Best regards,
+The {brand_name} Team'''
+    
+    return event
+`),
+      timeout: cdk.Duration.seconds(10),
+      description: 'Customizes Cognito email messages for different scenarios',
+    });
+
     // Cognito User Pool
     this.userPool = new cognito.UserPool(this, 'VocUserPool', {
       userPoolName: 'voc-user-pool',
@@ -61,6 +130,19 @@ export class VocAuthStack extends cdk.Stack {
       },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
       removalPolicy: cdk.RemovalPolicy.DESTROY, // Change to RETAIN for production
+      // Custom email messages
+      userVerification: {
+        emailSubject: `${brandName} - Verify your email`,
+        emailBody: `Welcome to ${brandName}!\n\nYour verification code is {####}\n\nThis code expires in 24 hours.`,
+        emailStyle: cognito.VerificationEmailStyle.CODE,
+      },
+      userInvitation: {
+        emailSubject: `${brandName} - You've been invited`,
+        emailBody: `Hello {username},\n\nYou have been invited to ${brandName}.\n\nYour temporary password is: {####}\n\nPlease sign in and change your password.`,
+      },
+      lambdaTriggers: {
+        customMessage: customMessageLambda,
+      },
     });
 
     // User Pool Client for frontend

@@ -10,6 +10,7 @@ import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as path from 'path';
 
 export interface VocAnalyticsStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -38,21 +39,37 @@ export class VocAnalyticsStack extends cdk.Stack {
 
     const { feedbackTable, aggregatesTable, projectsTable, jobsTable, conversationsTable, kmsKey, processingQueueUrl, processingQueueArn, secretsArn, brandName, researchStateMachineArn, s3ImportBucket, rawDataBucket, avatarsCdnUrl } = props;
 
-    // CORS allowed origins - restrict to CloudFront domain if provided
-    const corsAllowedOrigins = props.frontendDomain 
-      ? [`https://${props.frontendDomain}`]
-      : ['http://localhost:5173', 'http://localhost:3000'];  // Dev only - update after first deploy
+    // CORS allowed origins - always include CloudFront domain + localhost for dev
+    // frontendDomain should be set in cdk.context.json or passed via --context
+    const frontendDomain = props.frontendDomain || this.node.tryGetContext('frontendDomain');
+    
+    const corsAllowedOrigins = frontendDomain 
+      ? [`https://${frontendDomain}`, 'http://localhost:5173', 'http://localhost:3000']
+      : ['http://localhost:5173', 'http://localhost:3000'];  // Dev only - set frontendDomain in cdk.context.json
 
     // Single allowed origin for Lambda CORS config (Powertools only supports single origin)
-    const allowedOrigin = props.frontendDomain 
-      ? `https://${props.frontendDomain}`
+    // Prefer CloudFront domain, fallback to localhost for dev
+    const allowedOrigin = frontendDomain 
+      ? `https://${frontendDomain}`
       : 'http://localhost:5173';  // Dev only
 
-    // Lambda Layer (shared across all API Lambdas)
+    // Lambda Layer (shared across all API Lambdas) - ARM64 compatible
     const apiLayer = new lambda.LayerVersion(this, 'ApiDepsLayer', {
       code: lambda.Code.fromAsset('lambda/layers/processing-deps'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
-      description: 'Dependencies for API lambdas',
+      compatibleArchitectures: [lambda.Architecture.ARM_64],
+      description: 'Dependencies for API lambdas (ARM64/Graviton)',
+    });
+
+    // Bundled Lambda code that includes both api/ and shared/ modules
+    const apiCodeWithShared = lambda.Code.fromAsset('lambda', {
+      bundling: {
+        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        command: [
+          'bash', '-c',
+          'cp -r /asset-input/api/* /asset-output/ && cp -r /asset-input/shared /asset-output/',
+        ],
+      },
     });
 
     // ============================================
@@ -72,8 +89,9 @@ export class VocAnalyticsStack extends cdk.Stack {
     const metricsLambda = new lambda.Function(this, 'MetricsApi', {
       functionName: 'voc-metrics-api',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'metrics_handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/api'),
+      code: apiCodeWithShared,
       role: metricsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
@@ -112,8 +130,9 @@ export class VocAnalyticsStack extends cdk.Stack {
     const integrationsLambda = new lambda.Function(this, 'IntegrationsApi', {
       functionName: 'voc-integrations-api',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'integrations_handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/api'),
+      code: apiCodeWithShared,
       role: integrationsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -150,8 +169,9 @@ export class VocAnalyticsStack extends cdk.Stack {
     const scrapersLambda = new lambda.Function(this, 'ScrapersApi', {
       functionName: 'voc-scrapers-api',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'scrapers_handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/api'),
+      code: apiCodeWithShared,
       role: scrapersRole,
       timeout: cdk.Duration.seconds(60),
       memorySize: 512,
@@ -180,14 +200,58 @@ export class VocAnalyticsStack extends cdk.Stack {
     const settingsLambda = new lambda.Function(this, 'SettingsApi', {
       functionName: 'voc-settings-api',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'settings_handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/api'),
+      code: apiCodeWithShared,
       role: settingsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-settings-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
       logGroup: new logs.LogGroup(this, 'SettingsApiLogs', { logGroupName: '/aws/lambda/voc-settings-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
+    });
+
+    // ============================================
+    // Lambda: Users API (Cognito user administration)
+    // Handles: /users/*
+    // ============================================
+    const usersRole = new iam.Role(this, 'UsersLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
+    });
+    // Cognito admin permissions for user management
+    usersRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'cognito-idp:ListUsers',
+        'cognito-idp:AdminListGroupsForUser',
+        'cognito-idp:AdminCreateUser',
+        'cognito-idp:AdminAddUserToGroup',
+        'cognito-idp:AdminRemoveUserFromGroup',
+        'cognito-idp:AdminResetUserPassword',
+        'cognito-idp:AdminEnableUser',
+        'cognito-idp:AdminDisableUser',
+        'cognito-idp:AdminDeleteUser',
+      ],
+      resources: [props.userPool.userPoolArn],
+    }));
+
+    const usersLambda = new lambda.Function(this, 'UsersApi', {
+      functionName: 'voc-users-api',
+      runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'users_handler.lambda_handler',
+      code: apiCodeWithShared,
+      role: usersRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        USER_POOL_ID: props.userPool.userPoolId,
+        ALLOWED_ORIGIN: allowedOrigin,
+        POWERTOOLS_SERVICE_NAME: 'voc-users-api',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: new logs.LogGroup(this, 'UsersApiLogs', { logGroupName: '/aws/lambda/voc-users-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
     });
 
     // ============================================
@@ -208,8 +272,9 @@ export class VocAnalyticsStack extends cdk.Stack {
     const feedbackFormLambda = new lambda.Function(this, 'FeedbackFormApi', {
       functionName: 'voc-feedback-form-api',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'feedback_form_handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/api'),
+      code: apiCodeWithShared,
       role: feedbackFormRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -246,8 +311,9 @@ export class VocAnalyticsStack extends cdk.Stack {
     const chatLambda = new lambda.Function(this, 'ChatApi', {
       functionName: 'voc-chat-api',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'chat_handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/api'),
+      code: apiCodeWithShared,
       role: chatRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
@@ -306,8 +372,9 @@ export class VocAnalyticsStack extends cdk.Stack {
     const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
       functionName: 'voc-projects-api',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'projects_handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/api'),
+      code: apiCodeWithShared,
       role: projectsRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 1024,
@@ -349,14 +416,17 @@ export class VocAnalyticsStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        // Global inference profile routes to foundation models - need wildcard for all regions
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       ],
     }));
 
     const chatStreamLambda = new lambda.Function(this, 'ChatStreamApi', {
       functionName: 'voc-chat-stream',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'chat_stream_handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/api'),
+      code: apiCodeWithShared,
       role: chatStreamRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 1024,
@@ -412,6 +482,7 @@ export class VocAnalyticsStack extends cdk.Stack {
     const trustpilotWebhook = new lambda.Function(this, 'TrustpilotWebhook', {
       functionName: 'voc-webhook-trustpilot',
       runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: lambda.Code.fromAsset('lambda/webhooks/trustpilot'),
       role: webhookRole,
@@ -454,6 +525,28 @@ export class VocAnalyticsStack extends cdk.Stack {
     });
 
     // ============================================
+    // Gateway Responses for CORS on errors
+    // Required for Cognito authorizer errors to include CORS headers
+    // ============================================
+    this.api.addGatewayResponse('Default4XX', {
+      type: apigateway.ResponseType.DEFAULT_4XX,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': "'*'",
+        'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Amz-Security-Token'",
+        'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'",
+      },
+    });
+
+    this.api.addGatewayResponse('Default5XX', {
+      type: apigateway.ResponseType.DEFAULT_5XX,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': "'*'",
+        'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Amz-Security-Token'",
+        'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'",
+      },
+    });
+
+    // ============================================
     // Cognito Authorizer for API Gateway
     // ============================================
     const cognitoAuthorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'VocCognitoAuthorizer', {
@@ -473,6 +566,7 @@ export class VocAnalyticsStack extends cdk.Stack {
     const integrationsIntegration = new apigateway.LambdaIntegration(integrationsLambda, { proxy: true });
     const scrapersIntegration = new apigateway.LambdaIntegration(scrapersLambda, { proxy: true });
     const settingsIntegration = new apigateway.LambdaIntegration(settingsLambda, { proxy: true });
+    const usersIntegration = new apigateway.LambdaIntegration(usersLambda, { proxy: true });
     const feedbackFormIntegration = new apigateway.LambdaIntegration(feedbackFormLambda, { proxy: true });
     const chatIntegration = new apigateway.LambdaIntegration(chatLambda, { proxy: true });
     const projectsIntegration = new apigateway.LambdaIntegration(projectsLambda, { proxy: true });
@@ -558,8 +652,9 @@ export class VocAnalyticsStack extends cdk.Stack {
       const s3ImportLambda = new lambda.Function(this, 'S3ImportApi', {
         functionName: 'voc-s3-import-api',
         runtime: lambda.Runtime.PYTHON_3_12,
+        architecture: lambda.Architecture.ARM_64,
         handler: 's3_import_handler.lambda_handler',
-        code: lambda.Code.fromAsset('lambda/api'),
+        code: apiCodeWithShared,
         role: s3ImportRole,
         timeout: cdk.Duration.seconds(30),
         memorySize: 256,
@@ -606,6 +701,14 @@ export class VocAnalyticsStack extends cdk.Stack {
     settingsCategoriesResource.addMethod('PUT', settingsIntegration, authMethodOptions);
     const categoriesGenerateResource = settingsCategoriesResource.addResource('generate');
     categoriesGenerateResource.addMethod('POST', settingsIntegration, authMethodOptions);
+
+    // ============================================
+    // Users Lambda: /users/* (admin only)
+    // ============================================
+    const usersResource = this.api.root.addResource('users');
+    usersResource.addMethod('GET', usersIntegration, authMethodOptions);
+    usersResource.addMethod('POST', usersIntegration, authMethodOptions);
+    usersResource.addProxy({ defaultIntegration: usersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // ============================================
     // Feedback Form Lambda: /feedback-form/* (legacy single form)

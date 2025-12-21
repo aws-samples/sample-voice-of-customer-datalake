@@ -15,6 +15,14 @@ from shared.aws import (
     invoke_bedrock,
     BEDROCK_MODEL_ID,
 )
+from shared.idempotency import (
+    get_idempotency_config,
+    get_persistence_layer,
+    idempotent,
+    idempotent_function,
+    IdempotencyAlreadyInProgressError,
+    IdempotencyItemAlreadyExistsError,
+)
 
 __all__ = [
     # Logging
@@ -39,4 +47,11 @@ __all__ = [
     "clear_secret_cache",
     "invoke_bedrock",
     "BEDROCK_MODEL_ID",
+    # Idempotency
+    "get_idempotency_config",
+    "get_persistence_layer",
+    "idempotent",
+    "idempotent_function",
+    "IdempotencyAlreadyInProgressError",
+    "IdempotencyItemAlreadyExistsError",
 ]

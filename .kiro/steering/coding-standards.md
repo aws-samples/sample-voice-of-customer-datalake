@@ -615,3 +615,81 @@ POST /projects/{id}/chat          # Project-scoped chat
 2. **Integration Tests**: Test Lambda handlers with mocked AWS services
 3. **E2E Tests**: Test full flow with deployed infrastructure
 4. **Local Development**: Use mock server for frontend development
+
+## Deployment & Validation
+
+### Lambda Layer Building
+
+Lambda layers with native dependencies (pydantic, etc.) must be built using Docker for Linux ARM64 compatibility:
+
+```bash
+# Build layers using Docker (ARM64/Graviton)
+./scripts/build-layers.sh
+```
+
+All Lambdas use ARM64 (Graviton) architecture for better price/performance.
+
+### Post-Deployment API Validation
+
+**ALWAYS validate API endpoints after deployment** using the test script:
+
+```bash
+# Run full API validation (includes streaming API)
+./scripts/test-api.sh
+
+# Or with custom endpoints
+./scripts/test-api.sh "https://your-api.execute-api.us-west-2.amazonaws.com/v1" "https://your-stream.lambda-url.us-west-2.on.aws"
+```
+
+### Bash Scripting - Special Character Escaping
+
+> **⚠️ IMPORTANT**: When using passwords or strings containing `!` in bash, use **single quotes** to prevent history expansion.
+
+```bash
+# ❌ WRONG - bash will try to expand !2025 as history reference
+PASSWORD="DeployTest!2025"
+
+# ✅ CORRECT - single quotes prevent expansion
+PASSWORD='DeployTest!2025'
+
+# ✅ CORRECT - for AWS CLI auth-parameters with special chars
+aws cognito-idp initiate-auth \
+  --auth-parameters 'USERNAME=user,PASSWORD=Pass!word123'
+```
+
+### Manual Streaming API Test
+
+The streaming chat API uses a Lambda Function URL to bypass API Gateway's 29-second timeout:
+
+```bash
+# Get Cognito token (use single quotes for password with !)
+TOKEN=$(aws cognito-idp initiate-auth \
+  --client-id "3vgjagck9p2mp5tbc4cldne6tl" \
+  --auth-flow USER_PASSWORD_AUTH \
+  --auth-parameters 'USERNAME=deployment-test,PASSWORD=DeployTest!2025' \
+  --query 'AuthenticationResult.IdToken' \
+  --output text)
+
+# Test streaming API
+STREAM_URL="https://lxmrq2m3sl32zpflkh2ch234ou0wvwpp.lambda-url.us-west-2.on.aws"
+curl -X POST "$STREAM_URL/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"message":"hello"}'
+```
+
+### Deployment Checklist
+
+1. Build Lambda layers with Docker: `./scripts/build-layers.sh`
+2. Deploy stacks: `npx cdk deploy --all --context frontendDomain=<domain>`
+3. Validate API endpoints: `./scripts/test-api.sh <api_url> "Bearer <token>"`
+4. Check Lambda logs if any endpoint fails: `aws logs tail /aws/lambda/<function-name> --since 5m`
+
+### Common Deployment Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `No module named 'pydantic_core._pydantic_core'` | Layer built for wrong architecture | Rebuild with `./scripts/build-layers.sh` (uses ARM64) |
+| `No module named 'shared'` | Lambda code bundling issue | Check `apiCodeWithShared` bundling in analytics-stack.ts |
+| 502 errors | Lambda import/runtime error | Check CloudWatch logs for specific error |
+| CORS errors on 4XX/5XX | Missing gateway responses | Ensure `addGatewayResponse` for DEFAULT_4XX/5XX |

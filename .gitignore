@@ -11,23 +11,12 @@ __pycache__/
 *.so
 .Python
 .venv/
-venv/
-ENV/
-env/
-
-# Frontend
-voc-datalake/frontend/dist/
-voc-datalake/frontend/node_modules/
 
 # Lambda layers
 voc-datalake/lambda/layers/*/python/
 
 # IDE
 .vscode/
-.idea/
-*.swp
-*.swo
-*~
 
 # OS
 .DS_Store

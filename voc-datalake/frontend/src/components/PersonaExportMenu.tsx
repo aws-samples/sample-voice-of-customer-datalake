@@ -498,7 +498,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
           <div data-pdf-section>
           <hr style={{ border: 'none', borderTop: '1px solid #e5e7eb', marginTop: '32px', marginBottom: '16px' }} />
           <p style={{ fontSize: '11px', color: '#9ca3af', textAlign: 'center' }}>
-            Generated on {new Date().toLocaleDateString()} • VoC Data Lake
+            Generated on {new Date().toLocaleDateString()} • VoC Analytics
           </p>
           </div>
         </div>
