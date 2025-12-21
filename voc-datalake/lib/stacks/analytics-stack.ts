@@ -163,6 +163,8 @@ export class VocAnalyticsStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        // Global inference profile routes to foundation models - need wildcard for all regions
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       ],
     }));
 
@@ -194,6 +196,8 @@ export class VocAnalyticsStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        // Global inference profile routes to foundation models - need wildcard for all regions
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       ],
     }));
 
@@ -305,6 +309,8 @@ export class VocAnalyticsStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        // Global inference profile routes to foundation models - need wildcard for all regions
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       ],
     }));
 
@@ -355,6 +361,8 @@ export class VocAnalyticsStack extends cdk.Stack {
       resources: [
         // Claude Sonnet 4.5 for persona generation (global inference profile)
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        // Global inference profile routes to foundation models - need wildcard for all regions
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
         // Amazon Nova Canvas for persona avatar generation (Lambda calls us-east-1 explicitly)
         'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
@@ -400,6 +408,20 @@ export class VocAnalyticsStack extends cdk.Stack {
 
     // ============================================
     // Lambda 4: Chat Stream (Function URL for streaming)
+    // 
+    // Security: Uses authType: NONE with robust custom JWT validation.
+    // This approach was chosen over IAM auth (SigV4) because:
+    // 1. Frontend uses Cognito User Pool (not Identity Pool)
+    // 2. SigV4 would require adding Identity Pool + AWS SDK to frontend
+    // 3. JWT validation provides equivalent security when properly implemented
+    //
+    // The Lambda handler implements full cryptographic verification:
+    // - RS256 signature verification using Cognito JWKS
+    // - Token issuer, expiration, and type validation
+    // - JWKS caching with TTL for performance
+    //
+    // See: chat_stream_handler.py validate_cognito_token()
+    // Ref: https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-tokens-verifying-a-jwt.html
     // ============================================
     const chatStreamRole = new iam.Role(this, 'ChatStreamLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
@@ -447,7 +469,9 @@ export class VocAnalyticsStack extends cdk.Stack {
     });
 
     const chatStreamUrl = chatStreamLambda.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.NONE,  // Custom auth via Cognito JWT validation in handler
+      // Security: Custom Cognito JWT validation in handler (see security comment above)
+      // Full RS256 signature verification using JWKS - equivalent to AWS-managed auth
+      authType: lambda.FunctionUrlAuthType.NONE,
       cors: {
         allowedOrigins: corsAllowedOrigins,
         allowedMethods: [lambda.HttpMethod.POST],

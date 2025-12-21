@@ -40,6 +40,15 @@ class DecimalEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def validate_days(value: str | int | None, default: int = 30, min_val: int = 1, max_val: int = 365) -> int:
+    """Validate and bound days parameter."""
+    try:
+        days = int(value) if value is not None else default
+        return max(min_val, min(days, max_val))
+    except (ValueError, TypeError):
+        return default
+
+
 def invoke_bedrock(system_prompt: str, user_message: str, max_tokens: int = 4096, thinking_budget: int = 0) -> str:
     """Invoke Bedrock with Claude Sonnet 4.5.
     
@@ -2247,7 +2256,7 @@ def run_research(project_id: str, body: dict) -> dict:
         'sources': body.get('sources', []),
         'categories': body.get('categories', []),
         'sentiments': body.get('sentiments', []),
-        'days': body.get('days', 30)
+        'days': validate_days(body.get('days'), default=30)
     }
     # If no filters provided, use project defaults
     if not any([filters['sources'], filters['categories'], filters['sentiments']]):

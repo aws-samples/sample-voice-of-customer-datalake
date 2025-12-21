@@ -313,10 +313,31 @@ class BedrockThrottlingError(Exception):
     pass
 
 
-def generate_deterministic_id(source_platform: str, source_id: str) -> str:
-    """Generate a deterministic feedback ID based on source to prevent duplicates."""
+def generate_deterministic_id(source_platform: str, source_id: str, text: str = '', created_at: str = '', url: str = '') -> str:
+    """
+    Generate a deterministic feedback ID based on source to prevent duplicates.
+    
+    Priority for ID generation:
+    1. source_platform + source_id (if source_id exists) - most reliable
+    2. source_platform + created_at + text_hash + url (fallback for scraped content)
+    
+    This ensures the same review scraped on different days is deduplicated
+    based on its actual content and original date, not the scrape date.
+    """
     import hashlib
-    content = f"{source_platform}:{source_id}"
+    
+    if source_id:
+        # Primary: use source-provided ID (most reliable)
+        content = f"{source_platform}:{source_id}"
+    else:
+        # Fallback: generate ID from content signature
+        # Use text hash (first 500 chars to handle minor variations)
+        text_hash = hashlib.md5(text[:500].encode()).hexdigest()[:16] if text else ''
+        # Include created_at (review date) to differentiate reviews with similar text
+        # Include URL for additional uniqueness
+        content = f"{source_platform}:{created_at}:{text_hash}:{url}"
+        logger.info(f"Generated fallback ID for {source_platform} (no source_id): text_hash={text_hash}")
+    
     return hashlib.sha256(content.encode()).hexdigest()[:32]
 
 
@@ -350,7 +371,10 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
     source_id = raw_record.get('id', '')
     
     # Generate deterministic ID based on source to prevent duplicates
-    feedback_id = generate_deterministic_id(source_platform, source_id)
+    original_text = raw_record.get('text', '')
+    created_at_raw = raw_record.get('created_at', '')
+    url = raw_record.get('url', '')
+    feedback_id = generate_deterministic_id(source_platform, source_id, original_text, created_at_raw, url)
     
     # Check for duplicate before expensive LLM processing
     # This is a secondary check - idempotency decorator is the primary protection
@@ -359,7 +383,6 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
         metrics.add_metric(name="DuplicatesSkipped", unit="Count", value=1)
         return None
     
-    original_text = raw_record.get('text', '')
     original_language = detect_language(original_text)
     normalized_text = translate_text(original_text, original_language, PRIMARY_LANGUAGE)
     sentiment = get_comprehend_sentiment(normalized_text, PRIMARY_LANGUAGE)

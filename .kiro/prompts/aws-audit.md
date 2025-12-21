@@ -24,6 +24,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | Translate | Multi-language support | Auto language pair detection |
 | Step Functions | Research workflows, persona generation | Execution role scoping |
 | CloudFront | CDN for React dashboard | OAC for S3 |
+| Cognito | User authentication | User pools, identity pools |
 
 ### Lambda API Split Architecture (20KB IAM Policy Limit)
 | Lambda | Handler | Routes | Permissions |
@@ -36,6 +37,8 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB, Step Functions, Bedrock |
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
 | `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
+| `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*` | DynamoDB, SQS |
+| `voc-users-api` | `users_handler.py` | `/users/*` | Cognito, DynamoDB |
 | `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS |
 
 ### DynamoDB Tables
@@ -48,8 +51,8 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | Async job tracking |
 | `voc-conversations` | `USER#{id}` | `CONV#{id}` | Chat history |
 
-### Data Sources (12+)
-Trustpilot, Google Reviews, Twitter/X, Instagram, Facebook, Reddit, Tavily, Apple App Store, Google Play Store, Huawei AppGallery, Yelp, Web Scraper
+### Data Sources (17+)
+Trustpilot, Google Reviews, Twitter/X, Instagram, Facebook, Reddit, Tavily, Apple App Store, Google Play Store, Huawei AppGallery, Yelp, Web Scraper, LinkedIn, TikTok, YouTube, S3 Import
 
 ## Audit Process
 
@@ -62,17 +65,44 @@ voc-datalake/
 │   ├── ingestion-stack.ts        # Ingestors, EventBridge, SQS, Secrets
 │   ├── processing-stack.ts       # Processor, Bedrock/Comprehend
 │   ├── analytics-stack.ts        # API Gateway, Split API Lambdas
+│   ├── auth-stack.ts             # Cognito User Pool, Identity Pool
 │   ├── research-stack.ts         # Step Functions
 │   └── frontend-stack.ts         # S3 + CloudFront
 ├── lambda/
-│   ├── ingestors/                # 12+ source ingestors
+│   ├── ingestors/                # 17+ source ingestors
 │   │   ├── base_ingestor.py      # Abstract base class
-│   │   └── {source}/handler.py   # Per-source handlers
+│   │   ├── trustpilot/           # Trustpilot reviews
+│   │   ├── google_reviews/       # Google Reviews
+│   │   ├── twitter/              # Twitter/X
+│   │   ├── instagram/            # Instagram
+│   │   ├── facebook/             # Facebook
+│   │   ├── reddit/               # Reddit
+│   │   ├── tavily/               # Tavily web search
+│   │   ├── appstore_apple/       # Apple App Store
+│   │   ├── appstore_google/      # Google Play Store
+│   │   ├── appstore_huawei/      # Huawei AppGallery
+│   │   ├── yelp/                 # Yelp reviews
+│   │   ├── webscraper/           # Custom web scraper
+│   │   ├── linkedin/             # LinkedIn
+│   │   ├── tiktok/               # TikTok
+│   │   ├── youtube/              # YouTube
+│   │   └── s3_import/            # S3 file import
 │   ├── webhooks/trustpilot/      # Webhook receiver
 │   ├── processor/handler.py      # SQS consumer
 │   ├── aggregator/handler.py     # DynamoDB Streams consumer
 │   ├── research/                 # Step Functions tasks
-│   ├── api/                      # Split API handlers (8 files)
+│   ├── api/                      # Split API handlers (11 files)
+│   │   ├── metrics_handler.py    # /feedback/*, /metrics/*
+│   │   ├── chat_handler.py       # /chat/*
+│   │   ├── chat_stream_handler.py # Streaming chat (Function URL)
+│   │   ├── integrations_handler.py # /integrations/*, /sources/*
+│   │   ├── scrapers_handler.py   # /scrapers/*
+│   │   ├── settings_handler.py   # /settings/*
+│   │   ├── projects_handler.py   # /projects/*
+│   │   ├── s3_import_handler.py  # /s3-import/*
+│   │   ├── feedback_form_handler.py # /feedback-form/*
+│   │   ├── users_handler.py      # /users/*
+│   │   └── projects.py           # Shared business logic
 │   └── layers/                   # Lambda layers
 └── frontend/                     # React dashboard
 ```
@@ -84,15 +114,16 @@ voc-datalake/
 - `lib/stacks/ingestion-stack.ts` - Ingestors, EventBridge schedules, SQS, Secrets
 - `lib/stacks/processing-stack.ts` - Processor Lambda, Bedrock/Comprehend
 - `lib/stacks/analytics-stack.ts` - API Gateway, Split API Lambdas, IAM roles
+- `lib/stacks/auth-stack.ts` - Cognito User Pool, Identity Pool, authentication
 - `lib/stacks/research-stack.ts` - Step Functions state machine
 - `lib/stacks/frontend-stack.ts` - CloudFront, S3 web hosting
 
 **Priority 2 - Backend (Lambda Functions):**
-- `lambda/api/*.py` - All 8 API handlers (check IAM policy isolation)
+- `lambda/api/*.py` - All 11 API handlers (check IAM policy isolation)
 - `lambda/processor/handler.py` - SQS batch processing, Bedrock invocation
 - `lambda/aggregator/handler.py` - DynamoDB Streams processing
 - `lambda/ingestors/base_ingestor.py` - Base class patterns
-- `lambda/ingestors/*/handler.py` - Source-specific ingestors
+- `lambda/ingestors/*/handler.py` - Source-specific ingestors (17+ sources)
 - `lambda/webhooks/trustpilot/handler.py` - Webhook validation
 - `lambda/research/*.py` - Step Functions task handlers
 
@@ -145,7 +176,8 @@ anthropic\.claude-3
 ## Evaluation Checklist
 
 ### Security (AWS Security Pillar)
-- [ ] API Gateway authentication (API keys, Cognito, or Lambda authorizers)
+- [ ] API Gateway authentication (Cognito authorizer configured)
+- [ ] Cognito User Pool security (MFA, password policy, token expiration)
 - [ ] IAM least privilege per Lambda (no wildcards, 20KB policy limit respected)
 - [ ] Secrets in Secrets Manager (not hardcoded)
 - [ ] KMS customer-managed key for encryption at rest
@@ -155,6 +187,7 @@ anthropic\.claude-3
 - [ ] No sensitive data in CloudWatch logs
 - [ ] S3 bucket policies (BlockPublicAccess)
 - [ ] Bedrock model ARN scoped to global inference profile
+- [ ] Cognito identity pool role trust policies
 
 ### Reliability (AWS Reliability Pillar)
 - [ ] SQS Dead Letter Queue configured

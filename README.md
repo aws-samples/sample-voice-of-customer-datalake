@@ -6,7 +6,6 @@
 
 [![Watch the demo](static/demo-thumbnail.jpg)](static/VoC%20Demo.mp4)
 
-
 ---
 
 A fully serverless AWS platform for ingesting, processing, and analyzing customer feedback from multiple sources using AI-powered insights with Amazon Bedrock.
@@ -17,15 +16,18 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 
 ## ✨ Key Features
 
-- **Multi-Source Ingestion**: Trustpilot, Google Reviews, Twitter/X, Instagram, Facebook, Reddit, Tavily, Apple App Store, Google Play Store, Huawei AppGallery, Yelp, and custom web scrapers
+- **Multi-Source Ingestion**: Trustpilot, Google Reviews, Yelp, Twitter/X, Instagram, Facebook, Reddit, LinkedIn, TikTok, YouTube, Tavily, Apple App Store, Google Play Store, Huawei AppGallery, and custom web scrapers
 - **Real-Time Processing**: Event-driven architecture with SQS queues and DynamoDB Streams
 - **AI-Powered Analysis**: Amazon Bedrock for sentiment, categorization, urgency detection, persona inference, and root cause analysis
 - **Multi-Language Support**: Auto-detection via Amazon Comprehend, translation via Amazon Translate
 - **Visual Dashboard**: React-based UI with real-time metrics, charts, and social feed
-- **Project Management**: Create projects, generate personas, PRDs, PR/FAQs from customer feedback
+- **Secure Authentication**: Amazon Cognito with admin/viewer role-based access
+- **Project Management**: Create projects, generate personas with AI avatars, PRDs, PR/FAQs from customer feedback
 - **Research Workflows**: Step Functions orchestration for complex multi-step analysis
 - **Webhook Support**: Real-time ingestion via API Gateway webhooks
 - **Custom Scrapers**: Visual scraper builder with AI-powered CSS selector detection
+- **Embeddable Feedback Forms**: Collect feedback directly from customers via configurable forms
+- **API Protection**: WAF with rate limiting, SQL injection, and XSS protection
 
 ## 🏗️ Architecture
 
@@ -40,14 +42,14 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ │
 │       │            │            │            │            │            │        │
 │  ┌────┴─────┐ ┌────┴─────┐ ┌────┴─────┐ ┌────┴─────┐ ┌────┴─────┐ ┌────┴─────┐ │
-│  │ App Store│ │  Tavily  │ │   Web    │ │Trustpilot│ │ Projects │ │ Research │ │
-│  │   APIs   │ │   API    │ │ Scrapers │ │ Webhook  │ │   API    │ │   Step   │ │
+│  │ App Store│ │  Tavily  │ │   Web    │ │Trustpilot│ │ Feedback │ │ LinkedIn │ │
+│  │   APIs   │ │   API    │ │ Scrapers │ │ Webhook  │ │  Forms   │ │ TikTok   │ │
 │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ │
 │       │            │            │            │            │            │        │
 │       └────────────┴────────────┴────────────┴────────────┴────────────┘        │
 │                                      │                                           │
 │                    ┌─────────────────┴─────────────────┐                         │
-│                    │  12 Lambda Ingestors              │                         │
+│                    │  17 Lambda Ingestors              │                         │
 │                    │  (EventBridge Scheduled 1-30min)  │                         │
 │                    └─────────────────┬─────────────────┘                         │
 │                                      │                                           │
@@ -110,6 +112,10 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 │  │  DynamoDB: voc-projects, voc-jobs, voc-conversations                       │  │
 │  └────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                   │
+│  ┌────────────────────────────────────────────────────────────────────────────┐  │
+│  │  S3: voc-raw-data (Raw data lake + persona avatars)                        │  │
+│  └────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                   │
 └──────────────────────────────────────┬────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -118,16 +124,19 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                   │
 │  ┌────────────────────────────────────────────────────────────────────────────┐  │
-│  │  API Gateway REST API (CORS enabled, throttled 100 req/s)                  │  │
+│  │  API Gateway REST API (Cognito auth, WAF protected, throttled 100 req/s)   │  │
 │  │                                                                             │  │
-│  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐         │  │
-│  │  │ Metrics Lambda   │  │  Ops Lambda      │  │ Projects Lambda  │         │  │
-│  │  │ /feedback/*      │  │ /integrations/*  │  │ /projects/*      │         │  │
-│  │  │ /metrics/*       │  │ /sources/*       │  │ /chat (stream)   │         │  │
-│  │  │                  │  │ /scrapers/*      │  │                  │         │  │
-│  │  │                  │  │ /chat/*          │  │                  │         │  │
-│  │  │                  │  │ /settings/*      │  │                  │         │  │
-│  │  └──────────────────┘  └──────────────────┘  └──────────────────┘         │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐       │  │
+│  │  │ Metrics API  │ │  Chat API    │ │ Projects API │ │  Users API   │       │  │
+│  │  │ /feedback/*  │ │ /chat/*      │ │ /projects/*  │ │ /users/*     │       │  │
+│  │  │ /metrics/*   │ │              │ │              │ │              │       │  │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘       │  │
+│  │                                                                             │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐       │  │
+│  │  │Integrations  │ │ Scrapers API │ │ Settings API │ │Feedback Forms│       │  │
+│  │  │/integrations │ │ /scrapers/*  │ │ /settings/*  │ │/feedback-form│       │  │
+│  │  │/sources/*    │ │              │ │              │ │              │       │  │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘       │  │
 │  └────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                   │
 │  ┌────────────────────────────────────────────────────────────────────────────┐  │
@@ -151,12 +160,13 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 │  └────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                   │
 │  ┌────────────────────────────────────────────────────────────────────────────┐  │
-│  │  React Dashboard (Zustand + TanStack Query)                                │  │
+│  │  React Dashboard (Zustand + TanStack Query + Cognito Auth)                 │  │
+│  │  - Login: Cognito authentication                                           │  │
 │  │  - Dashboard: Metrics, charts, social feed                                 │  │
 │  │  - Feedback: Filterable list, search, detail view                          │  │
 │  │  - Projects: Personas, PRDs, PR/FAQs, research                             │  │
-│  │  - Chat: AI-powered conversational analytics                               │  │
-│  │  - Settings: Brand config, integrations, scrapers                          │  │
+│  │  - Chat: AI-powered conversational analytics with streaming                │  │
+│  │  - Settings: Brand config, integrations, user admin                        │  │
 │  └────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                   │
 └───────────────────────────────────────────────────────────────────────────────────┘
@@ -164,6 +174,8 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │                          SUPPORTING SERVICES                                      │
 ├──────────────────────────────────────────────────────────────────────────────────┤
+│  • Cognito User Pool: Authentication with admin/viewer groups                    │
+│  • WAF: API protection (rate limiting, SQL injection, XSS)                       │
 │  • Secrets Manager: API credentials (auto-rotation capable)                      │
 │  • KMS: Customer-managed key for encryption at rest                              │
 │  • CloudWatch Logs: 2-week retention for all Lambdas                             │
@@ -180,6 +192,7 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 - AWS CLI configured
 - Node.js 18+ and npm
 - Python 3.12+
+- Docker (for building Lambda layers)
 - AWS CDK CLI (`npm install -g aws-cdk`)
 
 ### Deployment
@@ -190,22 +203,18 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
    cd voice-of-customer-datalake
    ```
 
-2. **Install Lambda layer dependencies**
+2. **Build Lambda layers (requires Docker)**
    ```bash
-   cd voc-datalake/lambda/layers/ingestion-deps/python
-   pip install -r ../requirements.txt -t .
-   cd ../../../processing-deps/python
-   pip install -r ../requirements.txt -t .
-   cd ../../../../..
+   cd voc-datalake
+   ./scripts/build-layers.sh
    ```
 
 3. **Build and deploy CDK stacks**
    ```bash
-   cd voc-datalake
    npm install
    npm run build
    npx cdk bootstrap  # First time only
-   npx cdk deploy --all
+   npx cdk deploy --all --context frontendDomain=your-domain.cloudfront.net
    ```
 
 4. **Deploy frontend**
@@ -216,12 +225,21 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
    # Frontend is automatically deployed via CDK FrontendStack
    ```
 
-5. **Configure API endpoint**
-   - Copy the API Gateway URL from CDK outputs
-   - Open the CloudFront URL in your browser
-   - Go to Settings and paste the API endpoint
+5. **Create initial admin user**
+   ```bash
+   aws cognito-idp admin-create-user \
+     --user-pool-id <user-pool-id> \
+     --username admin@example.com \
+     --user-attributes Name=email,Value=admin@example.com \
+     --temporary-password 'TempPass123!'
+   
+   aws cognito-idp admin-add-user-to-group \
+     --user-pool-id <user-pool-id> \
+     --username admin@example.com \
+     --group-name admins
+   ```
 
-For detailed deployment instructions, troubleshooting, and CDK stack information, see [voc-datalake/README.md](voc-datalake/README.md).
+For detailed deployment instructions, see [voc-datalake/README.md](voc-datalake/README.md).
 
 ### Configuration
 
@@ -238,6 +256,9 @@ For detailed deployment instructions, troubleshooting, and CDK stack information
    - Twitter/X: Bearer Token
    - Meta (Instagram/Facebook): Access Token
    - Reddit: Client ID, Secret
+   - LinkedIn: Access Token
+   - TikTok: Access Token
+   - YouTube: API Key
    - Tavily: API Key
    - App Stores: App IDs, Service Accounts
 
@@ -250,8 +271,10 @@ For detailed deployment instructions, troubleshooting, and CDK stack information
 ### Infrastructure
 - **AWS CDK**: Infrastructure as Code (TypeScript)
 - **DynamoDB**: Serverless NoSQL database with on-demand billing
-- **Lambda**: Python 3.12 with Powertools for observability
-- **API Gateway**: REST API with CORS support
+- **Lambda**: Python 3.12 with ARM64 (Graviton) and Powertools
+- **API Gateway**: REST API with Cognito authentication
+- **Cognito**: User authentication with admin/viewer groups
+- **WAF**: API protection with managed rules
 - **EventBridge**: Scheduled ingestion (1-30 min intervals)
 - **SQS**: Processing queue with DLQ
 - **Step Functions**: Research workflow orchestration
@@ -272,60 +295,70 @@ For detailed deployment instructions, troubleshooting, and CDK stack information
 - **TanStack Query**: Data fetching/caching
 - **React Router 7**: Routing
 - **Recharts**: Charts and visualizations
+- **amazon-cognito-identity-js**: Authentication
 
 ## 📁 Project Structure
 
 ```
 voice-of-customer-datalake/
 ├── README.md                   # This file - project overview
-├── .gitignore                  # Git ignore patterns
-├── .kiro/                      # Kiro IDE configuration
-│   └── steering/               # Project guidelines and standards
+├── .gitignore
+├── .kiro/steering/             # Project guidelines and standards
 └── voc-datalake/               # Main CDK application
     ├── README.md               # CDK deployment guide
     ├── bin/                    # CDK app entry point
     ├── lib/stacks/             # CDK stack definitions
-    │   ├── storage-stack.ts    # DynamoDB tables, KMS
+    │   ├── storage-stack.ts    # DynamoDB tables, S3, KMS
+    │   ├── auth-stack.ts       # Cognito User Pool
     │   ├── ingestion-stack.ts  # Ingestors, EventBridge, SQS
     │   ├── processing-stack.ts # Processor, Aggregator
-    │   ├── analytics-stack.ts  # API Gateway, API Lambdas
+    │   ├── analytics-stack.ts  # API Gateway, API Lambdas, WAF
     │   ├── research-stack.ts   # Step Functions workflows
     │   └── frontend-stack.ts   # CloudFront, S3
     ├── lambda/
-    │   ├── ingestors/          # Data source ingestors
+    │   ├── ingestors/          # 17 data source ingestors
     │   ├── processor/          # Bedrock/Comprehend enrichment
     │   ├── aggregator/         # Real-time metrics
-    │   ├── api/                # REST API handlers
+    │   ├── api/                # 11 domain-specific API handlers
     │   ├── webhooks/           # Webhook receivers
     │   ├── research/           # Research step functions
-    │   └── layers/             # Shared dependencies
+    │   ├── shared/             # Shared utilities
+    │   └── layers/             # Lambda layers
     ├── frontend/               # React dashboard
     │   ├── src/
-    │   │   ├── pages/          # Dashboard, Feedback, Projects, etc.
-    │   │   ├── components/     # Reusable UI components
+    │   │   ├── pages/          # 13 pages
+    │   │   ├── components/     # 22 components
     │   │   ├── api/            # API client
-    │   │   └── store/          # Zustand stores
+    │   │   ├── services/       # Auth service
+    │   │   ├── store/          # Zustand stores
+    │   │   └── config.ts       # Runtime configuration
     │   └── public/
     ├── schemas/                # JSON schemas
     ├── prompts/                # Bedrock prompts
+    ├── docs/                   # Documentation
+    │   └── default-scrapers.md # Default scraper configurations
     └── scripts/                # Utility scripts
+        ├── build-layers.sh     # Build Lambda layers (Docker)
+        ├── deploy.sh           # Full deployment
+        ├── deploy-frontend.sh  # Frontend only
+        ├── test-api.sh         # API validation
+        └── *.py                # Data management scripts
 ```
-
-See [voc-datalake/README.md](voc-datalake/README.md) for detailed CDK stack information.
 
 ## 🔐 Security
 
-- **Encryption**: KMS encryption at rest for all DynamoDB tables
-- **IAM**: Least-privilege roles for all Lambda functions
+- **Authentication**: Cognito User Pool with admin/viewer groups
+- **API Protection**: WAF with rate limiting, SQL injection, XSS protection
+- **Encryption**: KMS encryption at rest for all DynamoDB tables and S3
+- **IAM**: Least-privilege roles for all Lambda functions (domain-isolated)
 - **Secrets**: API credentials stored in Secrets Manager
 - **CORS**: Configured for CloudFront origin only
-- **VPC**: Optional VPC deployment for enhanced security
 
 ## 💰 Cost Optimization
 
 - **DynamoDB**: On-demand billing, TTL for old data
-- **Lambda**: Right-sized memory (256-1024 MB), reserved concurrency
-- **Bedrock**: Claude Haiku for cost-effective inference
+- **Lambda**: ARM64 (Graviton) for better price/performance, right-sized memory
+- **Bedrock**: Claude Sonnet 4.5 for cost-effective inference
 - **CloudFront**: Edge caching for frontend assets
 - **EventBridge**: Configurable schedules to control ingestion frequency
 
@@ -334,7 +367,7 @@ See [voc-datalake/README.md](voc-datalake/README.md) for detailed CDK stack info
 - **CloudWatch Logs**: All Lambda functions with 2-week retention
 - **X-Ray Tracing**: Distributed tracing via Powertools
 - **Custom Metrics**: Lambda Powertools metrics for business KPIs
-- **DynamoDB Metrics**: Read/write capacity, throttling
+- **WAF Metrics**: Request counts, blocked requests
 
 ## 🛠️ Development
 
@@ -347,18 +380,6 @@ npm run dev  # http://localhost:5173
 
 # Mock API server
 npm run mock  # http://localhost:3001
-```
-
-### Testing
-
-```bash
-# Run CDK tests
-cd voc-datalake
-npm test
-
-# Frontend tests
-cd frontend
-npm test
 ```
 
 ### Adding a New Data Source
@@ -385,12 +406,11 @@ npm test
 | POST | `/projects` | Create project |
 | POST | `/projects/{id}/personas/generate` | Generate personas |
 | POST | `/projects/{id}/research` | Run research workflow |
+| GET | `/users` | List users (admin) |
+| POST | `/users` | Create user (admin) |
 | GET | `/settings/brand` | Get brand configuration |
 | PUT | `/settings/brand` | Save brand configuration |
-
-## 🤝 Contributing
-
-This is a private repository. For access or questions, contact the repository owner.
+| POST | `/feedback-form/submit` | Submit feedback (public) |
 
 ## 📄 License
 

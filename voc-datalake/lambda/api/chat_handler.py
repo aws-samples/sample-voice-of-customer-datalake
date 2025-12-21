@@ -59,6 +59,15 @@ class DecimalEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def validate_days(value: str | int | None, default: int = 7, min_val: int = 1, max_val: int = 365) -> int:
+    """Validate and bound days parameter."""
+    try:
+        days = int(value) if value is not None else default
+        return max(min_val, min(days, max_val))
+    except (ValueError, TypeError):
+        return default
+
+
 # ============================================
 # Chat Endpoint
 # ============================================
@@ -71,7 +80,7 @@ def chat():
     message = body.get('message', '')
     
     params = app.current_event.query_string_parameters or {}
-    days = int(params.get('days', 7))
+    days = validate_days(params.get('days'), default=7)
     
     current_date = datetime.now(timezone.utc)
     

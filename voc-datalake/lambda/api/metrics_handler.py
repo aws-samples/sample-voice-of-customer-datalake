@@ -58,6 +58,24 @@ class DecimalEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def validate_days(value: str | int | None, default: int = 7, min_val: int = 1, max_val: int = 365) -> int:
+    """Validate and bound days parameter."""
+    try:
+        days = int(value) if value is not None else default
+        return max(min_val, min(days, max_val))
+    except (ValueError, TypeError):
+        return default
+
+
+def validate_limit(value: str | int | None, default: int = 50, min_val: int = 1, max_val: int = 100) -> int:
+    """Validate and bound limit parameter."""
+    try:
+        limit = int(value) if value is not None else default
+        return max(min_val, min(limit, max_val))
+    except (ValueError, TypeError):
+        return default
+
+
 def get_date_range(days: int = 30) -> tuple[str, str]:
     end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
@@ -74,11 +92,11 @@ def list_feedback():
     """List feedback with optional filters."""
     params = app.current_event.query_string_parameters or {}
     
-    days = int(params.get('days', 7))
+    days = validate_days(params.get('days'), default=7)
     source = params.get('source')
     category = params.get('category')
     sentiment = params.get('sentiment')
-    limit = min(int(params.get('limit', 50)), 100)
+    limit = validate_limit(params.get('limit'), default=50, max_val=100)
     
     items = []
     current_date = datetime.now(timezone.utc)
@@ -129,7 +147,7 @@ def list_feedback():
 def get_urgent_feedback():
     """Get high-urgency feedback items."""
     params = app.current_event.query_string_parameters or {}
-    limit = min(int(params.get('limit', 50)), 100)
+    limit = validate_limit(params.get('limit'), default=50, max_val=100)
     
     response = feedback_table.query(
         IndexName='gsi3-by-urgency',
@@ -157,8 +175,8 @@ def get_urgent_feedback():
 def get_entities():
     """Get entity extraction for chat filters."""
     params = app.current_event.query_string_parameters or {}
-    days = int(params.get('days', 7))
-    limit = min(int(params.get('limit', 100)), 200)
+    days = validate_days(params.get('days'), default=7)
+    limit = validate_limit(params.get('limit'), default=100, max_val=200)
     source = params.get('source')
     
     current_date = datetime.now(timezone.utc)
@@ -312,7 +330,7 @@ def get_feedback(feedback_id: str):
 def get_similar_feedback(feedback_id: str):
     """Get feedback items similar to the given one."""
     params = app.current_event.query_string_parameters or {}
-    limit = min(int(params.get('limit', 8)), 50)
+    limit = validate_limit(params.get('limit'), default=8, max_val=50)
     
     # Use GSI4 to query by feedback_id instead of scanning
     response = feedback_table.query(
@@ -354,7 +372,7 @@ def get_similar_feedback(feedback_id: str):
 def get_summary():
     """Get dashboard summary metrics."""
     params = app.current_event.query_string_parameters or {}
-    days = int(params.get('days', 30))
+    days = validate_days(params.get('days'), default=30)
     
     current_date = datetime.now(timezone.utc)
     
@@ -401,7 +419,7 @@ def get_summary():
 def get_sentiment_metrics():
     """Get sentiment breakdown."""
     params = app.current_event.query_string_parameters or {}
-    days = int(params.get('days', 30))
+    days = validate_days(params.get('days'), default=30)
     source = params.get('source')
     
     sentiments = ['positive', 'neutral', 'negative', 'mixed']
@@ -448,7 +466,7 @@ def get_sentiment_metrics():
 def get_category_metrics():
     """Get category breakdown."""
     params = app.current_event.query_string_parameters or {}
-    days = int(params.get('days', 30))
+    days = validate_days(params.get('days'), default=30)
     source = params.get('source')
     
     categories = ['delivery', 'customer_support', 'product_quality', 'pricing', 
@@ -493,7 +511,7 @@ def get_category_metrics():
 def get_source_metrics():
     """Get source platform breakdown."""
     params = app.current_event.query_string_parameters or {}
-    days = int(params.get('days', 30))
+    days = validate_days(params.get('days'), default=30)
     
     # Use GSI to query by metric_type instead of scanning
     response = aggregates_table.query(
@@ -522,7 +540,7 @@ def get_source_metrics():
 def get_persona_metrics():
     """Get persona breakdown."""
     params = app.current_event.query_string_parameters or {}
-    days = int(params.get('days', 30))
+    days = validate_days(params.get('days'), default=30)
     
     # Use GSI to query by metric_type instead of scanning
     response = aggregates_table.query(

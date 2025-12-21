@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "name": "Code Quality Analyzer",
+  "description": "Analyzes modified source code files for potential improvements including code smells, design patterns, and best practices. Provides suggestions for improving readability, maintainability, and performance while preserving existing functionality.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.ts",
+      "*.tsx",
+      "*.py",
+      "*.js",
+      "*.jsx"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review the code changes I just made and analyze for potential improvements. Look for:\n\n1. **Code Smells**: Long methods, duplicate code, magic numbers, dead code, overly complex conditionals\n2. **Design Patterns**: Opportunities to apply appropriate patterns, or misuse of existing patterns\n3. **Best Practices**: Naming conventions, error handling, type safety, documentation\n4. **Readability**: Code clarity, function/variable naming, code organization\n5. **Maintainability**: Single responsibility, coupling, cohesion, testability\n6. **Performance**: Unnecessary computations, memory leaks, inefficient algorithms\n\nProvide specific, actionable suggestions while ensuring the existing functionality is preserved. Prioritize the most impactful improvements."
+  }
+}

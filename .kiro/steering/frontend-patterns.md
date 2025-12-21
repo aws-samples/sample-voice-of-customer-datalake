@@ -26,6 +26,7 @@ import clsx from 'clsx'
 import FeedbackCard from '../components/FeedbackCard'
 import { api, getDaysFromRange } from '../api/client'
 import { useConfigStore } from '../store/configStore'
+import { useAuthStore } from '../store/authStore'
 
 import type { FeedbackItem } from '../api/client'
 ```
@@ -57,11 +58,12 @@ export default function MyComponent({ feedback, showActions = true, onSelect }: 
   // 1. Hooks (state, queries, effects)
   const [isOpen, setIsOpen] = useState(false)
   const { config } = useConfigStore()
+  const { isAuthenticated } = useAuthStore()
   
   const { data, isLoading, error } = useQuery({
     queryKey: ['feedback', feedback.feedback_id],
     queryFn: () => api.getFeedbackById(feedback.feedback_id),
-    enabled: !!config.apiEndpoint,
+    enabled: isAuthenticated && !!config.apiEndpoint,
   })
   
   // 2. Event handlers
@@ -193,6 +195,18 @@ if (!config.apiEndpoint) {
       <Link to="/settings" className="btn btn-primary">Go to Settings</Link>
     </div>
   )
+}
+```
+
+### Authentication Check
+```tsx
+import { Navigate } from 'react-router-dom'
+import { useAuthStore } from '../store/authStore'
+
+const { isAuthenticated } = useAuthStore()
+
+if (!isAuthenticated) {
+  return <Navigate to="/login" replace />
 }
 ```
 

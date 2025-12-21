@@ -142,32 +142,38 @@ AWS Lambda execution roles have a **20KB policy size limit**. When a single Lamb
 3. **Minimal permissions** - Each Lambda only gets IAM permissions for resources it actually uses
 4. **Naming convention** - Use `{domain}_handler.py` naming (e.g., `metrics_handler.py`, `chat_handler.py`)
 
-**Current API Lambda Structure:**
+**Current API Lambda Structure (11 handlers):**
 
 ```
 lambda/api/
 ├── metrics_handler.py       # /feedback/*, /metrics/* (read-only)
 ├── chat_handler.py          # /chat/*
+├── chat_stream_handler.py   # Streaming chat (Lambda Function URL)
 ├── integrations_handler.py  # /integrations/*, /sources/*
 ├── scrapers_handler.py      # /scrapers/*
 ├── settings_handler.py      # /settings/*
 ├── projects_handler.py      # /projects/*
-├── chat_stream_handler.py   # Streaming chat (Lambda Function URL)
+├── users_handler.py         # /users/* (Cognito admin)
+├── feedback_form_handler.py # /feedback-form/*, /feedback-forms/*
 ├── s3_import_handler.py     # /s3-import/*
 └── projects.py              # Shared business logic for projects
 ```
 
-**Domain-to-Permission Mapping:**
+**Domain-to-Permission Mapping (11 handlers):**
 
 | Domain | Handler | AWS Permissions |
 |--------|---------|-----------------|
 | Metrics | `metrics_handler.py` | DynamoDB read (feedback, aggregates) |
 | Chat | `chat_handler.py` | DynamoDB RW (conversations), Bedrock |
+| Chat Stream | `chat_stream_handler.py` | DynamoDB read, Bedrock streaming |
 | Integrations | `integrations_handler.py` | Secrets Manager, EventBridge |
 | Scrapers | `scrapers_handler.py` | Secrets Manager, Lambda invoke, Bedrock |
 | Settings | `settings_handler.py` | DynamoDB (aggregates), Bedrock |
-| Projects | `projects_handler.py` | DynamoDB (projects, jobs), Step Functions, Bedrock |
+| Projects | `projects_handler.py` | DynamoDB (projects, jobs), Step Functions, Bedrock, S3 |
+| Users | `users_handler.py` | Cognito admin |
+| Feedback Forms | `feedback_form_handler.py` | DynamoDB (aggregates), SQS |
 | S3 Import | `s3_import_handler.py` | S3 bucket only |
+| Webhook | `webhooks/trustpilot/handler.py` | DynamoDB, SQS, Secrets Manager |
 
 **When adding new API endpoints:**
 
@@ -321,9 +327,24 @@ const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
 });
 projectsTable.grantReadWriteData(projectsRole);
 jobsTable.grantReadWriteData(projectsRole);
-// + Step Functions + Bedrock
+// + Step Functions + Bedrock + S3 (avatars)
 
-// 7. S3 Import Lambda - file explorer
+// 7. Users Lambda - Cognito user administration
+const usersLambda = new lambda.Function(this, 'UsersApi', {
+  handler: 'users_handler.lambda_handler',
+  // ...
+});
+// Cognito admin permissions only
+
+// 8. Feedback Form Lambda - embeddable forms
+const feedbackFormLambda = new lambda.Function(this, 'FeedbackFormApi', {
+  handler: 'feedback_form_handler.lambda_handler',
+  // ...
+});
+aggregatesTable.grantReadWriteData(feedbackFormRole);
+// + SQS for processing queue
+
+// 9. S3 Import Lambda - file explorer
 const s3ImportLambda = new lambda.Function(this, 'S3ImportApi', {
   handler: 's3_import_handler.lambda_handler',
   // ...
@@ -342,15 +363,20 @@ const integrationsIntegration = new apigateway.LambdaIntegration(integrationsLam
 const scrapersIntegration = new apigateway.LambdaIntegration(scrapersLambda);
 const settingsIntegration = new apigateway.LambdaIntegration(settingsLambda);
 const projectsIntegration = new apigateway.LambdaIntegration(projectsLambda);
+const usersIntegration = new apigateway.LambdaIntegration(usersLambda);
+const feedbackFormIntegration = new apigateway.LambdaIntegration(feedbackFormLambda);
 
-// Route paths to appropriate Lambdas
-feedbackResource.addMethod('GET', metricsIntegration);
-metricsResource.addMethod('GET', metricsIntegration);
-chatResource.addMethod('POST', chatIntegration);
-integrationsResource.addMethod('GET', integrationsIntegration);
-scrapersResource.addMethod('GET', scrapersIntegration);
-settingsResource.addMethod('GET', settingsIntegration);
-projectsResource.addMethod('GET', projectsIntegration);
+// Route paths to appropriate Lambdas (with Cognito auth)
+feedbackResource.addMethod('GET', metricsIntegration, authMethodOptions);
+metricsResource.addMethod('GET', metricsIntegration, authMethodOptions);
+chatResource.addMethod('POST', chatIntegration, authMethodOptions);
+integrationsResource.addMethod('GET', integrationsIntegration, authMethodOptions);
+scrapersResource.addMethod('GET', scrapersIntegration, authMethodOptions);
+settingsResource.addMethod('GET', settingsIntegration, authMethodOptions);
+projectsResource.addMethod('GET', projectsIntegration, authMethodOptions);
+usersResource.addMethod('GET', usersIntegration, authMethodOptions);
+// Feedback form public endpoints (no auth for form submission)
+feedbackFormSubmitResource.addMethod('POST', feedbackFormIntegration);
 ```
 
 **When adding a new domain:**

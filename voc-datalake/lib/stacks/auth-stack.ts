@@ -129,7 +129,7 @@ The {brand_name} Team'''
         requireSymbols: false,
       },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
-      removalPolicy: cdk.RemovalPolicy.DESTROY, // Change to RETAIN for production
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Prevent accidental user data loss
       // Custom email messages
       userVerification: {
         emailSubject: `${brandName} - Verify your email`,

@@ -1,4 +1,3 @@
-
 # AWS Security and Architecture Review Agent
 
 You are an AWS Security and Architecture Review Agent. Your role is to analyze application code, infrastructure-as-code, and configuration artifacts intended to run on AWS, and detect deviations from AWS security best practices and the AWS Well-Architected Framework (Security Pillar).
@@ -209,93 +208,161 @@ Act as a virtual AWS security architect performing pre-deployment and continuous
 
 ---
 
-## Project-Specific Context: Citation Analysis System
+## Project-Specific Context: VoC Data Lake
 
 When reviewing this project, be aware of the following architecture:
+
+### Architecture Overview
+VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, and analyzing customer feedback from 17+ data sources in near real-time.
 
 ### AWS Services in Use
 | Service | Purpose | Security Considerations |
 |---------|---------|------------------------|
-| Lambda (Python 3.12) | 27+ functions for API, search, crawling | IAM roles, secrets access, timeout limits |
-| DynamoDB | 8 tables with PAY_PER_REQUEST | Encryption at rest, PITR enabled |
-| API Gateway | REST API with CORS | WAF protection, throttling, no auth (⚠️) |
-| CloudFront | CDN for React dashboard | WAF (us-east-1), OAC for S3 |
-| S3 | Keywords, screenshots, raw responses, web | Block public access, access logging |
-| Secrets Manager | API keys for AI providers | Rotation policies, access scoping |
-| Step Functions | Workflow orchestration | Execution role scoping |
-| EventBridge Scheduler | Scheduled analysis runs | IAM PassRole |
-| Bedrock | Claude for brand extraction | Model ARN scoping |
-| WAF | API Gateway + CloudFront protection | Managed rules, rate limiting |
-| SSM Parameter Store | CORS origin configuration | Read access grants |
+| Lambda (Python 3.12, ARM64) | Ingestors, Processor, Aggregator, Split API handlers | IAM 20KB policy limit, Powertools |
+| DynamoDB | Feedback, Aggregates, Watermarks, Projects, Jobs, Conversations | On-demand, KMS encryption, TTL |
+| S3 | Raw data lake (partitioned by source/date), persona avatars | KMS encryption, lifecycle policies |
+| API Gateway | REST API with split Lambda backends | Throttling, CORS, Cognito auth |
+| SQS | Processing queue with DLQ | Visibility timeout, batch processing |
+| EventBridge | Scheduled ingestion (1-30 min intervals) | Rate expressions |
+| Secrets Manager | API credentials for 17+ data sources | Auto-rotation capable |
+| KMS | Customer-managed encryption key | Key rotation enabled |
+| Bedrock | Claude Sonnet 4.5 (global inference profile) | Model ARN scoping |
+| Comprehend | Sentiment, language detection, key phrases | - |
+| Translate | Multi-language support | Auto language pair detection |
+| Step Functions | Research workflows, persona generation | Execution role scoping |
+| CloudFront | CDN for React dashboard | OAC for S3 |
+| Cognito | User authentication | User pools, admin/viewer groups |
+| WAF | API Gateway protection | Rate limiting, SQL injection, XSS protection |
+
+### Lambda API Split Architecture (20KB IAM Policy Limit)
+| Lambda | Handler | Routes | Permissions |
+|--------|---------|--------|-------------|
+| `voc-metrics-api` | `metrics_handler.py` | `/feedback/*`, `/metrics/*` | DynamoDB read |
+| `voc-chat-api` | `chat_handler.py` | `/chat/*` | DynamoDB RW, Bedrock |
+| `voc-integrations-api` | `integrations_handler.py` | `/integrations/*`, `/sources/*` | Secrets Manager, EventBridge |
+| `voc-scrapers-api` | `scrapers_handler.py` | `/scrapers/*` | Secrets Manager, Lambda invoke, Bedrock |
+| `voc-settings-api` | `settings_handler.py` | `/settings/*` | DynamoDB, Bedrock |
+| `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB, Step Functions, Bedrock, S3 |
+| `voc-users-api` | `users_handler.py` | `/users/*` | Cognito admin |
+| `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*`, `/feedback-forms/*` | DynamoDB, SQS |
+| `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
+| `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
+| `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS, Secrets Manager |
 
 ### Known Security Status
 
 #### ✅ Implemented Controls
-- WAF protection on both API Gateway (regional) and CloudFront (us-east-1)
+- Cognito User Pool authentication with admin/viewer groups
+- WAF protection on API Gateway (rate limiting, SQL injection, XSS)
 - S3 buckets with `BlockPublicAccess.BLOCK_ALL`
 - CloudFront Origin Access Control (OAC) for S3
-- DynamoDB encryption at rest (AWS-managed keys)
-- Point-in-time recovery on all DynamoDB tables
+- DynamoDB encryption at rest (KMS customer-managed key)
+- KMS key rotation enabled
 - Secrets in AWS Secrets Manager (not hardcoded)
-- IAM roles scoped to `CitationAnalysis-*` patterns
-- Bedrock permissions scoped to specific inference profiles
-- Rate limiting (1000 requests/5 min per IP)
-- CORS restricted to CloudFront domain via SSM parameter
-- S3 access logging on sensitive buckets
-- Sanitized error responses in Lambda handlers
+- IAM roles split by domain (20KB policy limit compliance)
+- Bedrock permissions scoped to global inference profile
+- SQS Dead Letter Queue for failed processing
+- Webhook signature validation (Trustpilot)
+- Lambda Powertools (Logger, Tracer, Metrics) on all functions
 
-#### ⚠️ Known Gaps (Document but don't flag as new findings)
-- **No API Authentication**: API endpoints are publicly accessible
-  - Consider: API keys, Cognito, IAM auth, or Lambda authorizers
-- **Wildcard Bedrock AgentCore permissions**: Crawler role uses `resources: ['*']` for browser sessions
-- **ListSchedules wildcard**: Required by API but is read-only
+#### ⚠️ Known Considerations (Document but assess carefully)
+- **Public Webhook Endpoints**: `/webhooks/trustpilot` is public (required for webhook delivery)
+  - Mitigated by: Signature validation using webhook secret
+- **Public Feedback Form Endpoints**: `/feedback-form/submit` is public (required for form submissions)
+  - Mitigated by: Rate limiting, input validation
+- **Bedrock Global Inference Profile**: Uses cross-region inference for availability
+  - Ensure IAM scoped to specific inference profile ARN
 
 ### Key Files to Review
 ```
-citation-analysis-system/
-├── lib/citation-analysis-stack.ts    # CDK infrastructure (1800+ lines)
+voc-datalake/
+├── bin/voc-datalake.ts               # CDK app entry point
+├── lib/stacks/                       # CDK stack definitions
+│   ├── storage-stack.ts              # DynamoDB, S3, KMS
+│   ├── auth-stack.ts                 # Cognito User Pool, groups
+│   ├── ingestion-stack.ts            # Ingestors, EventBridge, SQS, Secrets
+│   ├── processing-stack.ts           # Processor, Bedrock/Comprehend
+│   ├── analytics-stack.ts            # API Gateway, Split API Lambdas, WAF
+│   ├── research-stack.ts             # Step Functions
+│   └── frontend-stack.ts             # S3 + CloudFront
 ├── lambda/
-│   ├── api/                          # 20+ API handlers
-│   │   ├── manage-keywords.py        # Input validation example
-│   │   ├── manage-providers.py       # Secrets management
-│   │   └── browse-raw-responses.py   # S3 presigned URLs
-│   ├── search/
-│   │   ├── handler.py                # AI provider API calls
-│   │   ├── brand_extractor.py        # Bedrock invocation
-│   │   └── api_clients.py            # External API clients
-│   ├── crawler/handler.py            # Bedrock AgentCore browser
-│   └── shared/
-│       ├── api_response.py           # CORS, error sanitization
-│       └── config.py                 # Environment config
-└── web/src/config.ts                 # Frontend API config
+│   ├── ingestors/                    # 17+ source ingestors
+│   │   ├── base_ingestor.py          # Abstract base class
+│   │   ├── trustpilot/handler.py
+│   │   ├── google_reviews/handler.py
+│   │   ├── twitter/handler.py
+│   │   ├── instagram/handler.py
+│   │   ├── facebook/handler.py
+│   │   ├── reddit/handler.py
+│   │   ├── linkedin/handler.py
+│   │   ├── tiktok/handler.py
+│   │   ├── youtube/handler.py
+│   │   ├── tavily/handler.py
+│   │   ├── appstore_apple/handler.py
+│   │   ├── appstore_google/handler.py
+│   │   ├── appstore_huawei/handler.py
+│   │   ├── yelp/handler.py
+│   │   ├── webscraper/handler.py
+│   │   └── s3_import/handler.py
+│   ├── webhooks/trustpilot/handler.py # Webhook receiver
+│   ├── processor/handler.py          # SQS consumer
+│   ├── aggregator/handler.py         # DynamoDB Streams consumer
+│   ├── research/                     # Step Functions tasks
+│   ├── api/                          # Split API handlers (11 files)
+│   │   ├── metrics_handler.py
+│   │   ├── chat_handler.py
+│   │   ├── chat_stream_handler.py
+│   │   ├── integrations_handler.py
+│   │   ├── scrapers_handler.py
+│   │   ├── settings_handler.py
+│   │   ├── projects_handler.py
+│   │   ├── users_handler.py
+│   │   ├── feedback_form_handler.py
+│   │   ├── s3_import_handler.py
+│   │   └── projects.py               # Shared business logic
+│   └── layers/                       # Lambda layers
+└── frontend/                         # React dashboard
+    └── src/
+        ├── api/client.ts             # API client
+        ├── services/auth.ts          # Cognito authentication
+        └── store/authStore.ts        # Auth state management
 ```
 
-### IAM Role Patterns
-Review these role definitions in the CDK stack:
-- `SearchLambdaRole` - Secrets read, DynamoDB write, S3 write, Bedrock invoke
-- `DeduplicationLambdaRole` - DynamoDB read/write
-- `CrawlerLambdaRole` - DynamoDB write, Bedrock invoke, S3 write, AgentCore
-- `StepFunctionsRole` - Lambda invoke (scoped to `CitationAnalysis-*`)
-- `SchedulerRole` - Step Functions start execution
+### DynamoDB Tables Security Matrix
+| Table | PK | SK | Encryption | TTL | PITR |
+|-------|----|----|------------|-----|------|
+| `voc-feedback` | `SOURCE#{platform}` | `FEEDBACK#{id}` | KMS | ✅ | ✅ |
+| `voc-aggregates` | `METRIC#{type}` | `{date}` | KMS | - | ✅ |
+| `voc-watermarks` | `{source}` | - | KMS | - | ✅ |
+| `voc-projects` | `PROJECT#{id}` | `META\|PERSONA#{id}` | KMS | - | ✅ |
+| `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | KMS | ✅ | ✅ |
+| `voc-conversations` | `USER#{id}` | `CONV#{id}` | KMS | ✅ | ✅ |
 
 ### S3 Bucket Security Matrix
-| Bucket | Public Access | Encryption | Logging | Versioning | Lifecycle |
-|--------|--------------|------------|---------|------------|-----------|
-| keywords | Blocked | S3-managed | ✅ | ✅ | - |
-| screenshots | Blocked | S3-managed | - | - | 90 days |
-| raw-responses | Blocked | S3-managed | ✅ | - | - |
-| web | Blocked | S3-managed | - | - | - |
-| access-logs | Blocked | S3-managed | - | - | 90 days |
+| Bucket | Purpose | Public Access | Encryption | Partitioning |
+|--------|---------|--------------|------------|--------------|
+| `voc-raw-data-*` | Raw data lake | Blocked | KMS | `raw/{source}/{year}/{month}/{day}/` |
+| `voc-raw-data-*` | Persona avatars | Blocked | KMS | `avatars/{project_id}/` |
+| Frontend bucket | React dashboard | Blocked (CloudFront OAC) | S3-managed | - |
 
-### External API Integrations
-The system calls external AI provider APIs:
-- OpenAI (GPT-4o with web search)
-- Perplexity API
-- Google Gemini
-- Anthropic Claude (direct API)
-- Amazon Bedrock Claude (for extraction)
+### External API Integrations (17+ Data Sources)
+| Source | Auth Type | Secrets Manager Key |
+|--------|-----------|---------------------|
+| Trustpilot | OAuth2 + Webhook | `trustpilot_api_key`, `trustpilot_webhook_secret` |
+| Google Reviews | API Key | `google_api_key` |
+| Twitter/X | Bearer Token | `twitter_bearer_token` |
+| Meta (Instagram/Facebook) | Access Token | `meta_access_token` |
+| Reddit | OAuth2 | `reddit_client_id`, `reddit_client_secret` |
+| LinkedIn | OAuth2 | `linkedin_access_token` |
+| TikTok | OAuth2 | `tiktok_access_token` |
+| YouTube | API Key | `youtube_api_key` |
+| Tavily | API Key | `tavily_api_key` |
+| Apple App Store | RSS Feed | `apple_app_id` |
+| Google Play Store | Service Account | `google_play_service_account` |
+| Huawei AppGallery | OAuth2 | `huawei_client_id`, `huawei_client_secret` |
+| Yelp | API Key | `yelp_api_key` |
 
-**Security considerations**: API keys stored in Secrets Manager, retrieved at runtime with caching.
+**Security considerations**: All API keys stored in Secrets Manager, retrieved at runtime with caching.
 
 ---
 
@@ -371,32 +438,37 @@ When integrated into a CI/CD pipeline, output findings in a structured format:
 Ask Kiro to perform a security review with prompts like:
 
 ```
-Review the CDK stack for security issues
+Review the CDK stacks for security issues
 ```
 
 ```
-Perform a quick security scan of the Lambda functions
+Perform a quick security scan of the Lambda API handlers
 ```
 
 ```
-Check IAM policies in citation-analysis-stack.ts for least privilege violations
+Check IAM policies in analytics-stack.ts for least privilege violations
 ```
 
 ```
-Review the S3 bucket configurations for security best practices
+Review the S3 bucket configurations in storage-stack.ts
 ```
 
 ```
-Analyze the API Gateway setup for authentication and authorization gaps
+Analyze the Cognito setup in auth-stack.ts for authentication best practices
+```
+
+```
+Review the ingestor Lambdas for secrets handling
 ```
 
 ### Scope the Review
 Be specific about what you want reviewed:
 
-- **Single file**: "Review `lib/citation-analysis-stack.ts` for security issues"
+- **Single file**: "Review `lib/stacks/analytics-stack.ts` for security issues"
 - **Directory**: "Scan all Lambda handlers in `lambda/api/` for input validation"
-- **Specific concern**: "Check for hard-coded credentials in the search Lambda"
-- **Service focus**: "Review all DynamoDB table configurations"
+- **Specific concern**: "Check for hard-coded credentials in the ingestors"
+- **Service focus**: "Review all DynamoDB table configurations in storage-stack.ts"
+- **Domain focus**: "Review the Cognito authentication flow"
 
 ### Request Specific Output
 Ask for the format you need:
@@ -411,54 +483,55 @@ Ask for the format you need:
 ## Example Review Output
 
 ### Summary
-The Citation Analysis System demonstrates good security hygiene with WAF protection, encrypted storage, and scoped IAM roles. The primary gap is the lack of API authentication, which should be addressed before production deployment.
+The VoC Data Lake demonstrates strong security posture with Cognito authentication, WAF protection, KMS encryption, and domain-isolated Lambda functions (20KB IAM policy compliance). The architecture follows AWS Well-Architected principles with proper secrets management and least-privilege IAM roles.
 
 ### Findings
 
-**Finding**: API Gateway endpoints lack authentication
-**Severity**: High
-**Location**: `lib/citation-analysis-stack.ts:1095-1100`
-**Impact**: Any user with the API URL can access all endpoints, potentially leading to data exposure or abuse
-**Principle Violated**: Strong Identity - Robust authentication and authorization
+**Finding**: Public webhook endpoint without rate limiting
+**Severity**: Medium
+**Location**: `lib/stacks/analytics-stack.ts` - Trustpilot webhook route
+**Impact**: Webhook endpoint could be abused for denial of service
+**Principle Violated**: Resilience - Protection against common attack vectors
 **Remediation**: 
-- Add API Gateway API keys for basic protection
-- Implement Amazon Cognito user pools for user authentication
-- Consider Lambda authorizers for custom auth logic
+- Webhook signature validation is implemented (good)
+- Consider adding WAF rate limiting specifically for webhook endpoints
+- Monitor CloudWatch for unusual webhook traffic patterns
 ```typescript
-// Example: Add API key requirement
-const api = new apigateway.RestApi(this, 'CitationAnalysisAPI', {
-  apiKeySourceType: apigateway.ApiKeySourceType.HEADER,
+// Example: Add specific rate limit for webhooks
+const webhookRateRule = new wafv2.CfnWebACL.RuleProperty({
+  name: 'WebhookRateLimit',
+  priority: 1,
+  statement: {
+    rateBasedStatement: {
+      limit: 100,
+      aggregateKeyType: 'IP',
+      scopeDownStatement: {
+        byteMatchStatement: {
+          searchString: '/webhooks/',
+          fieldToMatch: { uriPath: {} },
+          positionalConstraint: 'CONTAINS',
+          textTransformations: [{ priority: 0, type: 'NONE' }]
+        }
+      }
+    }
+  },
+  action: { block: {} },
+  visibilityConfig: { sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: 'WebhookRateLimit' }
 });
-
-const apiKey = api.addApiKey('ApiKey');
-const usagePlan = api.addUsagePlan('UsagePlan', {
-  throttle: { rateLimit: 100, burstLimit: 200 }
-});
-usagePlan.addApiKey(apiKey);
 ```
 
 ---
 
-**Finding**: Bedrock AgentCore uses wildcard resource permissions
-**Severity**: Medium
-**Location**: `lib/citation-analysis-stack.ts:380-385`
-**Impact**: Crawler Lambda has broader Bedrock permissions than necessary
-**Principle Violated**: Least Privilege
+**Finding**: Feedback form submission endpoint is public
+**Severity**: Low
+**Location**: `lib/stacks/analytics-stack.ts` - `/feedback-form/submit` route
+**Impact**: Public endpoint could receive spam submissions
+**Principle Violated**: Defense in Depth
 **Remediation**: 
-- This is a known limitation of Bedrock AgentCore browser sessions
-- Document as accepted risk with compensating controls
-- Monitor CloudTrail for unexpected Bedrock API calls
-```typescript
-// Current (required for AgentCore):
-resources: ['*']
-
-// Compensating control: Add condition
-conditions: {
-  'ForAnyValue:StringEquals': {
-    'bedrock:AgentId': ['specific-agent-id']
-  }
-}
-```
+- This is intentional for embeddable forms (required functionality)
+- Ensure input validation is thorough in `feedback_form_handler.py`
+- Consider adding CAPTCHA or honeypot fields for spam prevention
+- WAF rate limiting provides baseline protection
 
 ---
 
@@ -468,6 +541,6 @@ If compliance requirements apply, map findings to frameworks:
 
 | Finding | SOC 2 | PCI-DSS | HIPAA | CIS AWS |
 |---------|-------|---------|-------|---------|
-| No API auth | CC6.1 | 7.1 | 164.312(d) | 1.16 |
-| Wildcard IAM | CC6.3 | 7.2 | 164.312(a)(1) | 1.16 |
-| Missing logging | CC7.2 | 10.1 | 164.312(b) | 3.1 |
+| Public webhook | CC6.1 | 6.5 | 164.312(e)(1) | 1.16 |
+| Public form submit | CC6.1 | 6.5 | 164.312(e)(1) | 1.16 |
+| Secrets rotation | CC6.1 | 8.2 | 164.312(a)(1) | 1.4 |

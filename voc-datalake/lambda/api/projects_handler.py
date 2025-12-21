@@ -67,6 +67,24 @@ class DecimalEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def validate_days(value: str | int | None, default: int = 30, min_val: int = 1, max_val: int = 365) -> int:
+    """Validate and bound days parameter."""
+    try:
+        days = int(value) if value is not None else default
+        return max(min_val, min(days, max_val))
+    except (ValueError, TypeError):
+        return default
+
+
+def validate_persona_count(value: str | int | None, default: int = 3, min_val: int = 1, max_val: int = 10) -> int:
+    """Validate and bound persona_count parameter."""
+    try:
+        count = int(value) if value is not None else default
+        return max(min_val, min(count, max_val))
+    except (ValueError, TypeError):
+        return default
+
+
 @app.get("/projects/config")
 @tracer.capture_method
 def api_get_config():
@@ -239,8 +257,8 @@ def api_generate_personas(project_id: str):
         'sources': body.get('sources', []),
         'categories': body.get('categories', []),
         'sentiments': body.get('sentiments', []),
-        'days': body.get('days', 30),
-        'persona_count': body.get('persona_count', 3),
+        'days': validate_days(body.get('days'), default=30),
+        'persona_count': validate_persona_count(body.get('persona_count'), default=3),
         'custom_instructions': body.get('custom_instructions', ''),
     }
     
@@ -334,7 +352,7 @@ def api_run_research(project_id: str):
         'sources': body.get('sources', []),
         'categories': body.get('categories', []),
         'sentiments': body.get('sentiments', []),
-        'days': body.get('days', 30),
+        'days': validate_days(body.get('days'), default=30),
         'selected_persona_ids': body.get('selected_persona_ids', []),
         'selected_document_ids': body.get('selected_document_ids', []),
         'filters': body

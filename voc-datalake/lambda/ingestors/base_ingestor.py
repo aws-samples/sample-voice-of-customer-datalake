@@ -83,8 +83,39 @@ class BaseIngestor(ABC):
         """Fetch new items from the data source. Must be implemented by subclasses."""
         pass
 
+    def _generate_deterministic_id(self, item: dict) -> str:
+        """
+        Generate a deterministic ID for S3 filename to prevent duplicates.
+        
+        Uses the same logic as processor deduplication:
+        1. source_id if available (most reliable)
+        2. hash of created_at + text + url (fallback for scraped content)
+        """
+        import hashlib
+        
+        source_id = item.get("id", "")
+        if source_id:
+            # Sanitize source_id for use as filename (remove special chars)
+            safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(source_id))
+            return safe_id[:64]  # Limit length
+        
+        # Fallback: generate from content signature
+        text = item.get("text", "")
+        created_at = item.get("created_at", "")
+        url = item.get("url", "")
+        
+        text_hash = hashlib.md5(text[:500].encode()).hexdigest()[:16] if text else ""
+        content = f"{created_at}:{text_hash}:{url}"
+        return hashlib.sha256(content.encode()).hexdigest()[:32]
+
     def store_raw_to_s3(self, item: dict, raw_content: str = None) -> str | None:
-        """Store raw data to S3 with partitioned structure: raw/{source}/{year}/{month}/{day}/{id}.json"""
+        """Store raw data to S3 with partitioned structure: raw/{source}/{year}/{month}/{day}/{id}.json
+        
+        Uses the review's created_at date for partitioning (not scrape date) to ensure
+        the same review scraped on different days lands in the same S3 path.
+        
+        Filename is deterministic based on source_id or content hash to prevent duplicates.
+        """
         if not RAW_DATA_BUCKET:
             logger.warning("RAW_DATA_BUCKET not configured, skipping S3 storage")
             return None
@@ -94,16 +125,38 @@ class BaseIngestor(ABC):
             source_platform = (
                 item.get("source_platform_override") or self.source_platform
             )
-            item_id = item.get("id", "unknown")
+            
+            # Generate deterministic filename to prevent duplicates
+            item_id = self._generate_deterministic_id(item)
 
-            # Build S3 key with partitioned structure
-            s3_key = f"raw/{source_platform}/{now.year}/{now.month:02d}/{now.day:02d}/{item_id}.json"
+            # Use review's created_at date for partitioning, fallback to ingestion time
+            created_at = item.get("created_at")
+            if created_at:
+                try:
+                    # Handle various date formats
+                    if isinstance(created_at, str):
+                        # Normalize ISO format variations
+                        date_str = created_at.replace('Z', '+00:00').replace(' ', 'T')
+                        if 'T' in date_str and '+' not in date_str and '-' not in date_str.split('T')[1]:
+                            date_str += '+00:00'
+                        partition_date = datetime.fromisoformat(date_str)
+                    else:
+                        partition_date = now
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"Could not parse created_at '{created_at}': {e}, using current time")
+                    partition_date = now
+            else:
+                partition_date = now
+
+            # Build S3 key with partitioned structure based on review date
+            s3_key = f"raw/{source_platform}/{partition_date.year}/{partition_date.month:02d}/{partition_date.day:02d}/{item_id}.json"
 
             # Prepare raw data payload
             raw_payload = {
                 "item_id": item_id,
                 "source_platform": source_platform,
                 "ingested_at": now.isoformat(),
+                "partition_date": partition_date.strftime('%Y-%m-%d'),
                 "raw_content": raw_content,
                 "raw_item": item,
             }
