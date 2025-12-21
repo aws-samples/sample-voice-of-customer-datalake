@@ -709,6 +709,43 @@ export const api = {
       method: 'DELETE'
     }),
 
+  // Data Explorer - S3 Raw Data Browser
+  getDataExplorerS3: (prefix?: string) => {
+    const params = new URLSearchParams()
+    if (prefix) params.set('prefix', prefix)
+    return fetchApi<{ 
+      objects: Array<{ key: string; fullKey?: string; size: number; lastModified: string; isFolder: boolean }>
+      bucket: string
+      prefix: string 
+    }>(`/data-explorer/s3?${params}`)
+  },
+  
+  getDataExplorerS3Preview: (key: string) =>
+    fetchApi<{ content: unknown; size: number; contentType: string; key: string; isPresignedUrl?: boolean }>(`/data-explorer/s3/preview?key=${encodeURIComponent(key)}`),
+
+  saveDataExplorerS3: (key: string, content: string, syncToDynamo?: boolean) =>
+    fetchApi<{ success: boolean; message?: string; synced?: boolean }>('/data-explorer/s3', {
+      method: 'PUT',
+      body: JSON.stringify({ key, content, sync_to_dynamo: syncToDynamo })
+    }),
+
+  deleteDataExplorerS3: (key: string) =>
+    fetchApi<{ success: boolean; message?: string }>(`/data-explorer/s3?key=${encodeURIComponent(key)}`, {
+      method: 'DELETE'
+    }),
+
+  // Data Explorer - DynamoDB Feedback CRUD
+  saveDataExplorerFeedback: (feedbackId: string, data: Partial<FeedbackItem>, syncToS3?: boolean) =>
+    fetchApi<{ success: boolean; message?: string; synced?: boolean }>('/data-explorer/feedback', {
+      method: 'PUT',
+      body: JSON.stringify({ feedback_id: feedbackId, data, sync_to_s3: syncToS3 })
+    }),
+
+  deleteDataExplorerFeedback: (feedbackId: string) =>
+    fetchApi<{ success: boolean; message?: string }>(`/data-explorer/feedback?feedback_id=${encodeURIComponent(feedbackId)}`, {
+      method: 'DELETE'
+    }),
+
   // Feedback Form (Embeddable) - Legacy single form
   getFeedbackFormConfig: () => fetchApi<{ success: boolean; config: FeedbackFormConfig }>('/feedback-form/config'),
   

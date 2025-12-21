@@ -56,6 +56,7 @@ voc-datalake/
 │   │   ├── users_handler.py          # /users/* (Cognito user administration)
 │   │   ├── feedback_form_handler.py  # /feedback-form/*, /feedback-forms/* (embeddable forms)
 │   │   ├── s3_import_handler.py      # /s3-import/* (file explorer)
+│   │   ├── data_explorer_handler.py  # /data-explorer/* (S3 raw data browser)
 │   │   └── projects.py               # Projects business logic (shared)
 │   └── layers/
 │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4
@@ -96,6 +97,7 @@ voc-datalake/
 │   │   │   ├── ProblemAnalysis.tsx # Problem analysis dashboard
 │   │   │   ├── Prioritization.tsx # Issue prioritization
 │   │   │   ├── Chat.tsx          # AI chat interface
+│   │   │   ├── DataExplorer.tsx  # S3 raw data and DynamoDB browser
 │   │   │   ├── Scrapers.tsx      # Web scraper configuration
 │   │   │   ├── FeedbackForms.tsx # Feedback form management
 │   │   │   ├── Settings.tsx      # Configuration and integrations
@@ -250,6 +252,17 @@ voc-datalake/
 | POST | `/s3-import/sources` | Create import source |
 | POST | `/s3-import/upload-url` | Get presigned upload URL |
 | DELETE | `/s3-import/file/{key}` | Delete file |
+
+### Data Explorer (data_explorer_handler.py)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/data-explorer/s3` | Browse S3 raw data bucket with folder navigation |
+| GET | `/data-explorer/s3/preview` | Preview JSON file content from S3 |
+| PUT | `/data-explorer/s3` | Create or update S3 file (with optional DynamoDB sync) |
+| DELETE | `/data-explorer/s3` | Delete S3 file |
+| PUT | `/data-explorer/feedback` | Update DynamoDB feedback record (with optional S3 sync) |
+| DELETE | `/data-explorer/feedback` | Delete DynamoDB feedback record |
+| GET | `/data-explorer/stats` | Get data lake statistics |
 
 ## Adding a New Data Source
 

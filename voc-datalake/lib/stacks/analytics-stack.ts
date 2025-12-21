@@ -712,6 +712,74 @@ export class VocAnalyticsStack extends cdk.Stack {
     }
 
     // ============================================
+    // Data Explorer Lambda: /data-explorer/*
+    // Full CRUD for S3 raw data and DynamoDB feedback
+    // ============================================
+    if (rawDataBucket) {
+      const dataExplorerRole = new iam.Role(this, 'DataExplorerLambdaRole', {
+        assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+        ],
+      });
+      // S3: full read/write for CRUD
+      rawDataBucket.grantReadWrite(dataExplorerRole);
+      // DynamoDB: read/write for feedback CRUD
+      feedbackTable.grantReadWriteData(dataExplorerRole);
+      // KMS for encryption
+      kmsKey.grantEncryptDecrypt(dataExplorerRole);
+      // SQS for sync to processing queue
+      dataExplorerRole.addToPolicy(new iam.PolicyStatement({
+        actions: ['sqs:SendMessage'],
+        resources: [processingQueueArn],
+      }));
+
+      const dataExplorerLambda = new lambda.Function(this, 'DataExplorerApi', {
+        functionName: 'voc-data-explorer-api',
+        runtime: lambda.Runtime.PYTHON_3_12,
+        architecture: lambda.Architecture.ARM_64,
+        handler: 'data_explorer_handler.lambda_handler',
+        code: apiCodeWithShared,
+        role: dataExplorerRole,
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 256,
+        environment: {
+          RAW_DATA_BUCKET: rawDataBucket.bucketName,
+          FEEDBACK_TABLE: feedbackTable.tableName,
+          PROCESSING_QUEUE_URL: processingQueueUrl,
+          ALLOWED_ORIGIN: allowedOrigin,
+          POWERTOOLS_SERVICE_NAME: 'voc-data-explorer-api',
+          LOG_LEVEL: 'INFO',
+        },
+        layers: [apiLayer],
+        logGroup: new logs.LogGroup(this, 'DataExplorerApiLogs', {
+          logGroupName: '/aws/lambda/voc-data-explorer-api',
+          retention: logs.RetentionDays.TWO_WEEKS,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
+      });
+      const dataExplorerIntegration = new apigateway.LambdaIntegration(dataExplorerLambda, { proxy: true });
+
+      // Data Explorer endpoints - S3 CRUD
+      const dataExplorerResource = this.api.root.addResource('data-explorer');
+      const dataExplorerS3Resource = dataExplorerResource.addResource('s3');
+      dataExplorerS3Resource.addMethod('GET', dataExplorerIntegration, authMethodOptions);    // List/browse
+      dataExplorerS3Resource.addMethod('PUT', dataExplorerIntegration, authMethodOptions);    // Create/update
+      dataExplorerS3Resource.addMethod('DELETE', dataExplorerIntegration, authMethodOptions); // Delete
+      const dataExplorerS3PreviewResource = dataExplorerS3Resource.addResource('preview');
+      dataExplorerS3PreviewResource.addMethod('GET', dataExplorerIntegration, authMethodOptions);
+      
+      // Data Explorer endpoints - DynamoDB Feedback CRUD
+      const dataExplorerFeedbackResource = dataExplorerResource.addResource('feedback');
+      dataExplorerFeedbackResource.addMethod('PUT', dataExplorerIntegration, authMethodOptions);    // Update
+      dataExplorerFeedbackResource.addMethod('DELETE', dataExplorerIntegration, authMethodOptions); // Delete
+      
+      // Stats endpoint
+      const dataExplorerStatsResource = dataExplorerResource.addResource('stats');
+      dataExplorerStatsResource.addMethod('GET', dataExplorerIntegration, authMethodOptions);
+    }
+
+    // ============================================
     // Settings Lambda: /settings/*
     // ============================================
     const settingsResource = this.api.root.addResource('settings');

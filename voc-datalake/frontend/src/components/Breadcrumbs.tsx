@@ -19,6 +19,10 @@ const routeLabels: Record<string, string> = {
   'scrapers': 'Web Scrapers',
   'feedback-forms': 'Feedback Forms',
   'settings': 'Settings',
+  'data-explorer': 'Data Explorer',
+  'projects': 'Projects',
+  'prioritization': 'Prioritization',
+  'problems': 'Problem Analysis',
 }
 
 export default function Breadcrumbs() {

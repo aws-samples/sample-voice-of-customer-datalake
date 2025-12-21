@@ -50,6 +50,42 @@ cors_config = CORSConfig(
 
 app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
 
+# Default categories fallback
+DEFAULT_CATEGORIES = ['delivery', 'customer_support', 'product_quality', 'pricing', 
+                      'website', 'app', 'billing', 'returns', 'communication', 'other']
+
+# Cache for configured categories
+_categories_cache = None
+_categories_cache_time = None
+CATEGORIES_CACHE_TTL = 300  # 5 minutes
+
+
+def get_configured_categories() -> list:
+    """Fetch configured categories from DynamoDB settings with caching."""
+    global _categories_cache, _categories_cache_time
+    
+    now = datetime.now(timezone.utc).timestamp()
+    
+    # Return cached if still valid
+    if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
+        return _categories_cache
+    
+    try:
+        response = aggregates_table.get_item(Key={'pk': 'SETTINGS#categories', 'sk': 'config'})
+        item = response.get('Item')
+        if item and item.get('categories'):
+            _categories_cache = [cat.get('name') for cat in item.get('categories', []) if cat.get('name')]
+            _categories_cache_time = now
+            logger.info(f"Loaded {len(_categories_cache)} categories from settings")
+            return _categories_cache
+    except Exception as e:
+        logger.warning(f"Could not fetch categories from settings: {e}")
+    
+    # Fallback to defaults
+    _categories_cache = DEFAULT_CATEGORIES
+    _categories_cache_time = now
+    return _categories_cache
+
 
 class DecimalEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -220,9 +256,8 @@ def get_entities():
             }
         }
     
-    # Get categories from aggregates
-    categories_list = ['delivery', 'customer_support', 'product_quality', 'pricing', 
-                       'website', 'app', 'billing', 'returns', 'communication', 'other']
+    # Get categories from aggregates (use configured categories)
+    categories_list = get_configured_categories()
     category_counts = {}
     for category in categories_list:
         total = 0
@@ -469,8 +504,21 @@ def get_category_metrics():
     days = validate_days(params.get('days'), default=30)
     source = params.get('source')
     
-    categories = ['delivery', 'customer_support', 'product_quality', 'pricing', 
-                  'website', 'app', 'billing', 'returns', 'communication', 'other']
+    # Fetch configured categories from settings (dynamic, not hardcoded)
+    categories = []
+    try:
+        response = aggregates_table.get_item(Key={'pk': 'SETTINGS#categories', 'sk': 'config'})
+        item = response.get('Item')
+        if item and item.get('categories'):
+            categories = [cat.get('name') for cat in item.get('categories', []) if cat.get('name')]
+            logger.info(f"Loaded {len(categories)} categories from settings: {categories}")
+    except Exception as e:
+        logger.warning(f"Could not fetch categories from settings: {e}")
+    
+    # Fallback to defaults if no categories configured
+    if not categories:
+        categories = DEFAULT_CATEGORIES
+    
     result = {}
     current_date = datetime.now(timezone.utc)
     

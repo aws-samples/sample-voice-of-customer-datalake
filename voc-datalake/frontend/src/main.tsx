@@ -20,6 +20,7 @@ const Projects = lazy(() => import('./pages/Projects'))
 const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
 const Prioritization = lazy(() => import('./pages/Prioritization'))
 const FeedbackForms = lazy(() => import('./pages/FeedbackForms'))
+const DataExplorer = lazy(() => import('./pages/DataExplorer'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -59,6 +60,7 @@ const router = createBrowserRouter([
       { path: 'projects', element: <Suspense fallback={<PageLoader />}><Projects /></Suspense> },
       { path: 'projects/:id', element: <Suspense fallback={<PageLoader />}><ProjectDetail /></Suspense> },
       { path: 'prioritization', element: <Suspense fallback={<PageLoader />}><Prioritization /></Suspense> },
+      { path: 'data-explorer', element: <Suspense fallback={<PageLoader />}><DataExplorer /></Suspense> },
       { path: 'scrapers', element: <Suspense fallback={<PageLoader />}><Scrapers /></Suspense> },
       { path: 'feedback-forms', element: <Suspense fallback={<PageLoader />}><FeedbackForms /></Suspense> },
       { path: 'settings', element: <Suspense fallback={<PageLoader />}><Settings /></Suspense> },

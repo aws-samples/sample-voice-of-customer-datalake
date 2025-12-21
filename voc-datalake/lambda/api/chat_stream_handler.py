@@ -53,6 +53,43 @@ JWKS_CACHE_TTL_SECONDS = 3600  # 1 hour cache for JWKS
 # Clock skew tolerance for token expiration (5 minutes)
 CLOCK_SKEW_SECONDS = 300
 
+# Default categories fallback
+DEFAULT_CATEGORIES = ['delivery', 'customer_support', 'product_quality', 'pricing', 
+                      'website', 'app', 'billing', 'returns', 'communication', 'other']
+
+# Cache for configured categories
+_categories_cache = None
+_categories_cache_time = None
+CATEGORIES_CACHE_TTL = 300  # 5 minutes
+
+
+def get_configured_categories() -> list:
+    """Fetch configured categories from DynamoDB settings with caching."""
+    global _categories_cache, _categories_cache_time
+    
+    aggregates_table = dynamodb.Table(os.environ.get('AGGREGATES_TABLE', 'voc-aggregates'))
+    now = datetime.now(timezone.utc).timestamp()
+    
+    # Return cached if still valid
+    if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
+        return _categories_cache
+    
+    try:
+        response = aggregates_table.get_item(Key={'pk': 'SETTINGS#categories', 'sk': 'config'})
+        item = response.get('Item')
+        if item and item.get('categories'):
+            _categories_cache = [cat.get('name') for cat in item.get('categories', []) if cat.get('name')]
+            _categories_cache_time = now
+            logger.info(f"Loaded {len(_categories_cache)} categories from settings")
+            return _categories_cache
+    except Exception as e:
+        logger.warning(f"Could not fetch categories from settings: {e}")
+    
+    # Fallback to defaults
+    _categories_cache = DEFAULT_CATEGORIES
+    _categories_cache_time = now
+    return _categories_cache
+
 
 def get_cognito_jwks() -> dict | None:
     """
@@ -863,8 +900,7 @@ def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
                     pass
         
         # Get category breakdown
-        categories = ['delivery', 'customer_support', 'product_quality', 'pricing', 
-                      'website', 'app', 'billing', 'returns', 'communication', 'other']
+        categories = get_configured_categories()
         for category in categories:
             total = 0
             for i in range(days):

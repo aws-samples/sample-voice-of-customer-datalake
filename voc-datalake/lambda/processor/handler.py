@@ -45,7 +45,7 @@ AGGREGATES_TABLE = os.environ['AGGREGATES_TABLE']
 IDEMPOTENCY_TABLE = os.environ.get('IDEMPOTENCY_TABLE', '')
 PRIMARY_LANGUAGE = os.environ.get('PRIMARY_LANGUAGE', 'en')
 # Processor uses Haiku for cost efficiency (processes many items)
-PROCESSOR_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'global.anthropic.claude-haiku-4-5-20250514-v1:0')
+PROCESSOR_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'global.anthropic.claude-haiku-4-5-20251001-v1:0')
 PROMPT_VERSION = '1.0.0'
 
 feedback_table = dynamodb.Table(FEEDBACK_TABLE)
@@ -100,26 +100,32 @@ def get_categories_config() -> list:
     
     # Return cached if still valid
     if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
+        logger.debug(f"Using cached categories: {len(_categories_cache)} items")
         return _categories_cache
     
     try:
         # Fetch from aggregates table (same location as settings API saves)
+        logger.info(f"Fetching categories from DynamoDB table: {AGGREGATES_TABLE}")
         response = aggregates_table.get_item(
             Key={'pk': 'SETTINGS#categories', 'sk': 'config'}
         )
         item = response.get('Item')
+        logger.info(f"DynamoDB response item keys: {list(item.keys()) if item else 'None'}")
         
         if item and item.get('categories'):
             _categories_cache = item.get('categories', [])
             _categories_cache_time = now
-            logger.info(f"Loaded {len(_categories_cache)} categories from DynamoDB")
+            logger.info(f"Loaded {len(_categories_cache)} categories from DynamoDB: {[c.get('name') for c in _categories_cache]}")
             return _categories_cache
+        else:
+            logger.warning(f"No categories found in DynamoDB item. Item: {item}")
     except Exception as e:
-        logger.warning(f"Could not fetch categories from DynamoDB: {e}")
+        logger.exception(f"Could not fetch categories from DynamoDB: {e}")
     
     # Cache empty result to avoid repeated failed lookups
     _categories_cache = []
     _categories_cache_time = now
+    logger.warning("Returning empty categories - will use defaults")
     return []
 
 
@@ -130,7 +136,8 @@ def build_categories_instruction() -> str:
     # Fallback to defaults if no categories configured
     if not categories_config:
         logger.info("No custom categories configured, using defaults")
-        return f"Available categories: {DEFAULT_CATEGORIES}"
+        default_cats = DEFAULT_CATEGORIES.split('|')
+        return f"Available categories (you MUST use ONLY one of these exact values): {' | '.join(default_cats)}\n\nIMPORTANT: The category field MUST be one of: {', '.join(default_cats)}. Do NOT use any other category value."
     
     # Build detailed instruction with categories and subcategories
     lines = ["Available categories and their subcategories:"]
@@ -148,9 +155,12 @@ def build_categories_instruction() -> str:
         else:
             lines.append(f"- {cat_name} ({cat_desc})")
     
-    lines.append(f"\nUse ONLY these category values: {' | '.join(category_names)}")
+    lines.append(f"\nIMPORTANT: The category field MUST be one of these exact values: {' | '.join(category_names)}")
+    lines.append("Do NOT use 'other' unless it is explicitly listed above. Do NOT invent new categories.")
     
-    return '\n'.join(lines)
+    instruction = '\n'.join(lines)
+    logger.info(f"Built categories instruction with {len(category_names)} categories: {category_names}")
+    return instruction
 
 processor = BatchProcessor(event_type=EventType.SQS)
 
@@ -250,6 +260,30 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
             
             response_body = json.loads(response['body'].read())
             content = response_body.get('content', [{}])[0].get('text', '{}')
+            logger.debug(f"Bedrock raw response: {content[:500]}")
+            
+            # Strip markdown code block wrapper if present (LLM often wraps JSON in ```json ... ```)
+            content = content.strip()
+            if content.startswith('```'):
+                # Remove opening ```json or ```
+                first_newline = content.find('\n')
+                if first_newline != -1:
+                    content = content[first_newline + 1:]
+                # Remove closing ``` (may have trailing whitespace/newlines)
+                content = content.strip()
+                if content.endswith('```'):
+                    content = content[:-3].strip()
+            
+            # Additional fallback: find JSON object boundaries
+            if not content.startswith('{'):
+                # Try to extract JSON from content
+                json_start = content.find('{')
+                json_end = content.rfind('}')
+                if json_start != -1 and json_end != -1:
+                    content = content[json_start:json_end + 1]
+                    logger.info(f"Extracted JSON from position {json_start} to {json_end}")
+            
+            logger.debug(f"Content after markdown strip (first 200 chars): {content[:200]}")
             llm_result = json.loads(content)
             latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
             
@@ -289,7 +323,7 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
                 break
                 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Bedrock response: {e}")
+            logger.error(f"Failed to parse Bedrock response: {e}. Raw content (first 1000 chars): {content[:1000] if 'content' in dir() else 'N/A'}")
             last_exception = e
             break
             

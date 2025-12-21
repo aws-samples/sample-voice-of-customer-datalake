@@ -23,7 +23,22 @@ import { useConfigStore } from '../store/configStore'
 import FeedbackCard from '../components/FeedbackCard'
 import clsx from 'clsx'
 
+/**
+ * Color mapping for feedback categories.
+ * Each category is assigned a distinct color for visual differentiation in charts and badges.
+ * @constant
+ */
 const categoryColors: Record<string, string> = {
+  // Airline/travel categories
+  flight_operations: '#ef4444',
+  in_flight_experience: '#f97316',
+  customer_service: '#eab308',
+  baggage_handling: '#22c55e',
+  booking_and_check_in: '#3b82f6',
+  pricing_and_fees: '#8b5cf6',
+  loyalty_program: '#ec4899',
+  airport_facilities: '#14b8a6',
+  // Legacy/default categories
   delivery: '#ef4444',
   customer_support: '#f97316',
   product_quality: '#eab308',
@@ -36,6 +51,11 @@ const categoryColors: Record<string, string> = {
   other: '#6b7280',
 }
 
+/**
+ * Color mapping for sentiment labels.
+ * Used in sentiment gauge and badges throughout the page.
+ * @constant
+ */
 const sentimentColors = {
   positive: '#22c55e',
   neutral: '#6b7280', 
@@ -43,9 +63,31 @@ const sentimentColors = {
   mixed: '#eab308',
 }
 
+/**
+ * Display mode for feedback items.
+ * @typedef {'grid' | 'list'} ViewMode
+ */
 type ViewMode = 'grid' | 'list'
+
+/**
+ * Filter options for sentiment-based filtering.
+ * @typedef {'all' | 'positive' | 'negative' | 'neutral' | 'mixed'} SentimentFilter
+ */
 type SentimentFilter = 'all' | 'positive' | 'negative' | 'neutral' | 'mixed'
 
+/**
+ * Categories analysis page component.
+ *
+ * Provides comprehensive category breakdown and filtering capabilities for feedback analysis.
+ * Includes sentiment gauge visualization, trending keywords word cloud, and filterable
+ * feedback list with grid/list view options.
+ *
+ * @returns {JSX.Element} The rendered Categories page
+ *
+ * @example
+ * // Used in router configuration
+ * <Route path="/categories" element={<Categories />} />
+ */
 export default function Categories() {
   const { timeRange, config } = useConfigStore()
   const days = getDaysFromRange(timeRange)
