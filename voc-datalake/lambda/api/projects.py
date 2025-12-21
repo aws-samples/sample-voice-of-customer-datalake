@@ -10,14 +10,14 @@ from botocore.config import Config
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer
 from boto3.dynamodb.conditions import Key, Attr
 
-logger = Logger()
-tracer = Tracer()
+# Shared module imports
+from shared.logging import logger, tracer
+from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
 
-# AWS Clients
-dynamodb = boto3.resource('dynamodb')
+# AWS Clients (using shared module for connection reuse)
+dynamodb = get_dynamodb_resource()
 # Extended timeout for long-running LLM calls (persona generation uses 3-step chain)
 bedrock_config = Config(read_timeout=300, connect_timeout=10, retries={'max_attempts': 2})
 bedrock = boto3.client('bedrock-runtime', config=bedrock_config)
@@ -30,7 +30,7 @@ projects_table = dynamodb.Table(PROJECTS_TABLE) if PROJECTS_TABLE else None
 feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 
-MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+MODEL_ID = BEDROCK_MODEL_ID
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -969,7 +969,7 @@ Output the FINAL validated personas as a JSON array with any refinements."""
         
     except Exception as e:
         logger.exception(f"Enhanced persona generation failed: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to generate personas. Please try again.'}
 
 
 @tracer.capture_method
@@ -1104,7 +1104,7 @@ Format as a professional document in Markdown."""
         
     except Exception as e:
         logger.exception(f"PRD generation failed: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to generate PRD. Please try again.'}
 
 
 @tracer.capture_method
@@ -1281,7 +1281,7 @@ Format as Q&A pairs."""
         
     except Exception as e:
         logger.exception(f"PR/FAQ generation failed: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to generate PR/FAQ. Please try again.'}
 
 
 @tracer.capture_method
@@ -1458,7 +1458,7 @@ You MUST use the document content provided above to answer their question.
         
     except Exception as e:
         logger.exception(f"Project chat failed: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to process chat request. Please try again.'}
 
 
 @tracer.capture_method
@@ -1898,10 +1898,10 @@ Output ONLY the JSON object."""
         
     except json.JSONDecodeError as e:
         logger.error(f"[IMPORT_PERSONA] Failed to parse JSON: {e}")
-        return {'success': False, 'message': f'Failed to parse persona data: {str(e)}'}
+        return {'success': False, 'message': 'Failed to parse persona data from the provided input'}
     except Exception as e:
         logger.exception(f"[IMPORT_PERSONA] Claude extraction failed: {e}")
-        return {'success': False, 'message': f'Failed to extract persona: {str(e)}'}
+        return {'success': False, 'message': 'Failed to extract persona from the provided input'}
     
     # Create the persona in DynamoDB
     now = datetime.now(timezone.utc).isoformat()
@@ -2027,7 +2027,7 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to update persona: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to update persona'}
 
 
 @tracer.capture_method
@@ -2066,7 +2066,7 @@ def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
         return {'success': True, 'note': new_note}
     except Exception as e:
         logger.exception(f"Failed to add persona note: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to add note'}
 
 
 @tracer.capture_method
@@ -2121,7 +2121,7 @@ def update_persona_note(project_id: str, persona_id: str, note_id: str, body: di
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to update persona note: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to update note'}
 
 
 @tracer.capture_method
@@ -2161,7 +2161,7 @@ def delete_persona_note(project_id: str, persona_id: str, note_id: str) -> dict:
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to delete persona note: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to delete note'}
 
 
 @tracer.capture_method
@@ -2226,7 +2226,7 @@ def delete_persona(project_id: str, persona_id: str) -> dict:
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to delete persona: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to delete persona'}
 
 
 @tracer.capture_method
@@ -2397,4 +2397,4 @@ Provide a final validated research report."""
         
     except Exception as e:
         logger.exception(f"Research failed: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to run research. Please try again.'}

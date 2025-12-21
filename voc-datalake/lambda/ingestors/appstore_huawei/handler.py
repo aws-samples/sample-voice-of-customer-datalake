@@ -2,14 +2,14 @@
 Huawei AppGallery Ingestor - Fetches app reviews from Huawei AppGallery Connect API.
 Requires AppGallery Connect API credentials.
 """
-import requests
 from datetime import datetime, timezone, timedelta
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class AppStoreHuaweiIngestor(BaseIngestor):
@@ -30,8 +30,9 @@ class AppStoreHuaweiIngestor(BaseIngestor):
             return self.access_token
 
         try:
-            response = requests.post(
+            response = fetch_with_retry(
                 f"{self.BASE_URL}/oauth2/v1/token",
+                method='POST',
                 json={
                     'grant_type': 'client_credentials',
                     'client_id': self.client_id,
@@ -83,7 +84,7 @@ class AppStoreHuaweiIngestor(BaseIngestor):
             }
 
             try:
-                response = requests.get(url, headers=headers, params=params, timeout=30)
+                response = fetch_with_retry(url, headers=headers, params=params, timeout=30)
                 response.raise_for_status()
                 data = response.json()
             except requests.RequestException as e:

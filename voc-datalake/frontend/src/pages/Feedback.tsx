@@ -1,3 +1,15 @@
+/**
+ * @fileoverview Feedback list page with filtering and search.
+ *
+ * Features:
+ * - Full-text search across feedback items
+ * - Filter by source, sentiment, category, urgency
+ * - URL-synced filter state for shareable links
+ * - Dynamic filter options from entities API
+ *
+ * @module pages/Feedback
+ */
+
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'

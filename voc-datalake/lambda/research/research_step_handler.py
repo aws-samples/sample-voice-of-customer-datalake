@@ -9,17 +9,16 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any
 import boto3
-from aws_lambda_powertools import Logger, Tracer, Metrics
+from botocore.config import Config
 from boto3.dynamodb.conditions import Key
 
-logger = Logger()
-tracer = Tracer()
-metrics = Metrics(namespace='VocResearch')
+# Shared module imports
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
 
-# AWS Clients
-dynamodb = boto3.resource('dynamodb')
+# AWS Clients (using shared module for connection reuse)
+dynamodb = get_dynamodb_resource()
 # Bedrock client with extended timeout for long-running LLM calls
-from botocore.config import Config
 bedrock_config = Config(read_timeout=300, connect_timeout=10, retries={'max_attempts': 2})
 bedrock = boto3.client('bedrock-runtime', config=bedrock_config)
 
@@ -31,7 +30,7 @@ feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
 projects_table = dynamodb.Table(PROJECTS_TABLE) if PROJECTS_TABLE else None
 jobs_table = dynamodb.Table(JOBS_TABLE) if JOBS_TABLE else None
 
-MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+MODEL_ID = BEDROCK_MODEL_ID
 
 
 class DecimalEncoder(json.JSONEncoder):

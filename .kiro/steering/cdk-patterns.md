@@ -161,10 +161,10 @@ api.root.addResource('items').addMethod('GET', integration);
 Use least-privilege with specific actions:
 
 ```typescript
-// ✅ Good - specific actions
+// ✅ Good - specific actions with global inference profiles
 role.addToPolicy(new iam.PolicyStatement({
   actions: ['bedrock:InvokeModel'],
-  resources: [`arn:aws:bedrock:${cdk.Aws.REGION}::foundation-model/anthropic.claude-3-haiku*`],
+  resources: [`arn:aws:bedrock:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`],
 }));
 
 // ❌ Bad - too permissive

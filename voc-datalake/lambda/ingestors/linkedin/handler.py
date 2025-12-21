@@ -2,14 +2,14 @@
 LinkedIn Ingestor - Fetches company page comments and mentions using LinkedIn API.
 Note: LinkedIn API is restricted - requires approved Marketing Developer Platform access.
 """
-import requests
 from datetime import datetime, timezone
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class LinkedInIngestor(BaseIngestor):
@@ -36,7 +36,7 @@ class LinkedInIngestor(BaseIngestor):
         
         post_urns = []
         try:
-            response = requests.get(
+            response = fetch_with_retry(
                 f"{self.BASE_URL}/shares",
                 headers=self._get_headers(),
                 params={
@@ -63,7 +63,7 @@ class LinkedInIngestor(BaseIngestor):
         
         while True:
             try:
-                response = requests.get(
+                response = fetch_with_retry(
                     f"{self.BASE_URL}/socialActions/{post_urn}/comments",
                     headers=self._get_headers(),
                     params={'start': start, 'count': 50}
@@ -119,7 +119,7 @@ class LinkedInIngestor(BaseIngestor):
         # Note: LinkedIn Content Search API requires special partnership access
         # This searches organization mentions via the UGC API
         try:
-            response = requests.get(
+            response = fetch_with_retry(
                 f"{self.BASE_URL}/organizationalEntityShareStatistics",
                 headers=self._get_headers(),
                 params={

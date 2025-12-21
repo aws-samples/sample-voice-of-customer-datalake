@@ -1,14 +1,14 @@
 """
 Google Reviews Ingestor - Fetches reviews from Google Business Profile API.
 """
-import requests
 from datetime import datetime, timezone, timedelta
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class GoogleReviewsIngestor(BaseIngestor):
@@ -46,7 +46,7 @@ class GoogleReviewsIngestor(BaseIngestor):
                     params['pageToken'] = page_token
                 
                 try:
-                    response = requests.get(url, headers=headers, params=params)
+                    response = fetch_with_retry(url, headers=headers, params=params)
                     response.raise_for_status()
                     data = response.json()
                 except requests.RequestException as e:

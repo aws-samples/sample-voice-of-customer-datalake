@@ -1,3 +1,15 @@
+/**
+ * @fileoverview Live social feed component for dashboard.
+ *
+ * Displays recent feedback items in a scrollable feed:
+ * - Source icons and color coding
+ * - Sentiment indicators
+ * - Rating stars
+ * - Links to source URLs
+ *
+ * @module components/SocialFeed
+ */
+
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Star, ExternalLink } from 'lucide-react'

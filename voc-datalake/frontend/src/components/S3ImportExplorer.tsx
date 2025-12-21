@@ -1,3 +1,16 @@
+/**
+ * @fileoverview S3 import file explorer component.
+ *
+ * Features:
+ * - Browse S3 import bucket by source
+ * - Create new import sources
+ * - Upload CSV, JSON, JSONL files via presigned URLs
+ * - View file status (pending/processed)
+ * - Delete files
+ *
+ * @module components/S3ImportExplorer
+ */
+
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 
@@ -82,7 +95,9 @@ export default function S3ImportExplorer() {
         setTimeout(() => setUploadSuccess(null), 3000)
         queryClient.invalidateQueries({ queryKey: ['s3-import-files'] })
       } catch (err) {
-        console.error('Upload failed:', err)
+        if (import.meta.env.DEV) {
+          console.error('Upload failed:', err)
+        }
         setUploadError(`Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`)
         setTimeout(() => setUploadError(null), 5000)
       } finally {

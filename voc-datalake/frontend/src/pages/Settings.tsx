@@ -1,3 +1,18 @@
+/**
+ * @fileoverview Settings page for API configuration and integrations.
+ *
+ * Features:
+ * - API endpoint configuration
+ * - Brand settings (name, handles, hashtags)
+ * - Data source credentials management
+ * - Webhook URLs for real-time ingestion
+ * - Categories configuration
+ * - S3 import file explorer
+ * - Integration testing
+ *
+ * @module pages/Settings
+ */
+
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 
@@ -581,7 +596,9 @@ export default function Settings() {
         })
         queryClient.invalidateQueries({ queryKey: ['brand-settings'] })
       } catch (err) {
-        console.error('Failed to save brand settings to backend:', err)
+        if (import.meta.env.DEV) {
+          console.error('Failed to save brand settings to backend:', err)
+        }
       } finally {
         setSaving(false)
       }

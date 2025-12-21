@@ -1,3 +1,15 @@
+/**
+ * @fileoverview Sentiment badge component.
+ *
+ * Displays sentiment label with color coding:
+ * - positive: green
+ * - negative: red
+ * - neutral: gray
+ * - mixed: yellow
+ *
+ * @module components/SentimentBadge
+ */
+
 import clsx from 'clsx'
 
 interface SentimentBadgeProps {

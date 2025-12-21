@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Time range selector dropdown component.
+ *
+ * Features:
+ * - Preset ranges: 24h, 48h, 7d, 30d
+ * - Custom date range picker
+ * - Persists selection to config store
+ *
+ * @module components/TimeRangeSelector
+ */
+
 import { useState, useRef, useEffect } from 'react'
 import { useConfigStore } from '../store/configStore'
 import { Calendar, X } from 'lucide-react'

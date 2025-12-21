@@ -1,3 +1,16 @@
+/**
+ * @fileoverview Feedback form configuration component (legacy single form).
+ *
+ * Configure embeddable feedback form:
+ * - Form title, description, question
+ * - Rating type (stars, numeric, emoji)
+ * - Theme customization
+ * - Custom fields
+ * - Generate embed code
+ *
+ * @module components/FeedbackFormConfig
+ */
+
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Save, Copy, Check, Loader2, Eye, Code, Palette, Settings2 } from 'lucide-react'

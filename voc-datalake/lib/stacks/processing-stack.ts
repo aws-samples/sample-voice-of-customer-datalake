@@ -39,13 +39,13 @@ export class VocProcessingStack extends cdk.Stack {
       ],
     });
 
-    // Bedrock permissions
+    // Bedrock permissions - use global inference profiles for cross-region availability
     processingRole.addToPolicy(new iam.PolicyStatement({
       sid: 'BedrockInvoke',
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        `arn:aws:bedrock:${cdk.Aws.REGION}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0`,
-        `arn:aws:bedrock:${cdk.Aws.REGION}::foundation-model/amazon.titan-text-lite-v1`,
+        `arn:aws:bedrock:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        `arn:aws:bedrock:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:inference-profile/global.anthropic.claude-haiku-4-5-20250514-v1:0`,
       ],
     }));
 
@@ -92,7 +92,7 @@ export class VocProcessingStack extends cdk.Stack {
         AGGREGATES_TABLE: aggregatesTable.tableName,
         PROJECTS_TABLE: projectsTable.tableName,
         PRIMARY_LANGUAGE: config.primaryLanguage,
-        BEDROCK_MODEL_ID: 'anthropic.claude-3-haiku-20240307-v1:0',
+        BEDROCK_MODEL_ID: 'global.anthropic.claude-haiku-4-5-20250514-v1:0',
         POWERTOOLS_SERVICE_NAME: 'voc-processor',
         LOG_LEVEL: 'INFO',
       },

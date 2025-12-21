@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Document export menu component.
+ *
+ * Export options for PRDs, PR/FAQs, and research documents:
+ * - Copy as Markdown
+ * - Copy as Kiro prompt (with project context)
+ * - Download as PDF
+ *
+ * @module components/DocumentExportMenu
+ */
+
 import { useState, useRef, useEffect } from 'react'
 import { Copy, Check, FileDown, MoreVertical, FileText, FileType, Sparkles } from 'lucide-react'
 import type { ProjectDocument, Project } from '../api/client'
@@ -212,7 +223,9 @@ export default function DocumentExportMenu({ document: doc, project }: DocumentE
       window.document.body.removeChild(iframe)
       pdf.save(`${sanitizeFilename(doc.title)}.pdf`)
     } catch (error) {
-      console.error('PDF export failed:', error)
+      if (import.meta.env.DEV) {
+        console.error('PDF export failed:', error)
+      }
     } finally {
       setExporting(false)
       setIsOpen(false)

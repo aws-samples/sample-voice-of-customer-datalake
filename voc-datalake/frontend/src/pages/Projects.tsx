@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Research projects list page.
+ *
+ * Features:
+ * - Create, view, and delete research projects
+ * - Project cards showing persona and document counts
+ * - Navigation to project detail view
+ *
+ * @module pages/Projects
+ */
+
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'

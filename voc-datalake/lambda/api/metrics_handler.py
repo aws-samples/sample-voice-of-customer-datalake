@@ -3,37 +3,49 @@ VoC Metrics API Lambda
 Handles read-only queries: /feedback/*, /metrics/*
 Split from main handler to reduce Lambda resource policy size.
 """
+
 import json
 import os
+import sys
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer
+
+# Add shared module to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_dynamodb_resource
+
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
-from boto3.dynamodb.conditions import Key, Attr
-import boto3
-
-logger = Logger()
-tracer = Tracer()
+from boto3.dynamodb.conditions import Key
 
 # AWS Clients
-dynamodb = boto3.resource('dynamodb')
+dynamodb = get_dynamodb_resource()
 
 # Configuration
-FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
-AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
+FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
+AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
 
 feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 
-# Configure CORS
+# Configure CORS - restrict to CloudFront domain in production
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
 cors_config = CORSConfig(
-    allow_origin="*",
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-Amz-Date", "X-Api-Key", "X-Amz-Security-Token"],
+    allow_origin=ALLOWED_ORIGIN,
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-Amz-Date",
+        "X-Api-Key",
+        "X-Amz-Security-Token",
+    ],
     expose_headers=["Content-Type"],
     max_age=300,
-    allow_credentials=False
+    allow_credentials=False,
 )
 
 app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
@@ -207,9 +219,10 @@ def get_entities():
         if total > 0:
             category_counts[category] = total
     
-    # Get sources from aggregates
-    source_response = aggregates_table.scan(
-        FilterExpression=Attr('pk').begins_with('METRIC#daily_source#')
+    # Get sources from aggregates using GSI
+    source_response = aggregates_table.query(
+        IndexName='gsi1-by-metric-type',
+        KeyConditionExpression=Key('metric_type').eq('source')
     )
     source_totals = {}
     date_range = set((current_date - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days))
@@ -219,14 +232,16 @@ def get_entities():
             count = int(item.get('count', 0))
             source_totals[source] = source_totals.get(source, 0) + count
     
-    # Get personas from aggregates
-    persona_response = aggregates_table.scan(
-        FilterExpression=Attr('pk').begins_with('METRIC#persona#')
+    # Get personas from aggregates using GSI
+    persona_response = aggregates_table.query(
+        IndexName='gsi1-by-metric-type',
+        KeyConditionExpression=Key('metric_type').eq('persona')
     )
     persona_counts = {}
     for item in persona_response.get('Items', []):
-        persona_name = item['pk'].replace('METRIC#persona#', '')
-        persona_counts[persona_name] = persona_counts.get(persona_name, 0) + int(item.get('count', 0))
+        if item.get('sk') in date_range:
+            persona_name = item['pk'].replace('METRIC#persona#', '')
+            persona_counts[persona_name] = persona_counts.get(persona_name, 0) + int(item.get('count', 0))
     
     # Get feedback count
     feedback_count = 0
@@ -278,24 +293,14 @@ def get_entities():
 @tracer.capture_method
 def get_feedback(feedback_id: str):
     """Get a single feedback item by ID."""
-    items = []
-    last_key = None
+    # Use GSI4 to query by feedback_id instead of scanning
+    response = feedback_table.query(
+        IndexName='gsi4-by-feedback-id',
+        KeyConditionExpression=Key('feedback_id').eq(feedback_id),
+        Limit=1
+    )
     
-    while True:
-        scan_params = {'FilterExpression': Attr('feedback_id').eq(feedback_id)}
-        if last_key:
-            scan_params['ExclusiveStartKey'] = last_key
-        
-        response = feedback_table.scan(**scan_params)
-        items.extend(response.get('Items', []))
-        
-        if items:
-            break
-        
-        last_key = response.get('LastEvaluatedKey')
-        if not last_key:
-            break
-    
+    items = response.get('Items', [])
     if not items:
         raise NotFoundError(f"Feedback {feedback_id} not found")
     
@@ -309,24 +314,18 @@ def get_similar_feedback(feedback_id: str):
     params = app.current_event.query_string_parameters or {}
     limit = min(int(params.get('limit', 8)), 50)
     
-    # Get source item (with pagination like get_feedback)
-    source_item = None
-    last_key = None
-    while True:
-        scan_params = {'FilterExpression': Attr('feedback_id').eq(feedback_id)}
-        if last_key:
-            scan_params['ExclusiveStartKey'] = last_key
-        response = feedback_table.scan(**scan_params)
-        items = response.get('Items', [])
-        if items:
-            source_item = items[0]
-            break
-        last_key = response.get('LastEvaluatedKey')
-        if not last_key:
-            break
+    # Use GSI4 to query by feedback_id instead of scanning
+    response = feedback_table.query(
+        IndexName='gsi4-by-feedback-id',
+        KeyConditionExpression=Key('feedback_id').eq(feedback_id),
+        Limit=1
+    )
     
-    if not source_item:
+    items = response.get('Items', [])
+    if not items:
         raise NotFoundError(f"Feedback {feedback_id} not found")
+    
+    source_item = items[0]
     
     # Find similar by category
     category = source_item.get('category', 'other')
@@ -496,7 +495,11 @@ def get_source_metrics():
     params = app.current_event.query_string_parameters or {}
     days = int(params.get('days', 30))
     
-    response = aggregates_table.scan(FilterExpression=Attr('pk').begins_with('METRIC#daily_source#'))
+    # Use GSI to query by metric_type instead of scanning
+    response = aggregates_table.query(
+        IndexName='gsi1-by-metric-type',
+        KeyConditionExpression=Key('metric_type').eq('source')
+    )
     
     source_totals = {}
     current_date = datetime.now(timezone.utc)
@@ -521,12 +524,20 @@ def get_persona_metrics():
     params = app.current_event.query_string_parameters or {}
     days = int(params.get('days', 30))
     
-    response = aggregates_table.scan(FilterExpression=Attr('pk').begins_with('METRIC#persona#'))
+    # Use GSI to query by metric_type instead of scanning
+    response = aggregates_table.query(
+        IndexName='gsi1-by-metric-type',
+        KeyConditionExpression=Key('metric_type').eq('persona')
+    )
     
     personas = {}
+    current_date = datetime.now(timezone.utc)
+    date_range = set((current_date - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days))
+    
     for item in response.get('Items', []):
-        persona_name = item['pk'].replace('METRIC#persona#', '')
-        personas[persona_name] = personas.get(persona_name, 0) + item.get('count', 0)
+        if item.get('sk') in date_range:
+            persona_name = item['pk'].replace('METRIC#persona#', '')
+            personas[persona_name] = personas.get(persona_name, 0) + int(item.get('count', 0))
     
     return {
         'period_days': days,
@@ -540,6 +551,7 @@ def get_persona_metrics():
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler."""
     return app.resolve(event, context)

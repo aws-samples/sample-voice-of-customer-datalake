@@ -1,3 +1,15 @@
+/**
+ * @fileoverview Chat conversation sidebar component.
+ *
+ * Features:
+ * - List of saved conversations
+ * - Create new conversation
+ * - Rename and delete conversations
+ * - Clear all conversations
+ *
+ * @module components/ChatSidebar
+ */
+
 import { useState } from 'react'
 import { Plus, MessageSquare, Trash2, Edit2, Check, X, History } from 'lucide-react'
 import { format, isValid } from 'date-fns'

@@ -1,14 +1,14 @@
 """
 YouTube Ingestor - Fetches video comments using YouTube Data API v3.
 """
-import requests
 from datetime import datetime, timezone
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class YouTubeIngestor(BaseIngestor):
@@ -31,7 +31,7 @@ class YouTubeIngestor(BaseIngestor):
         video_ids = []
         try:
             # Get uploads playlist
-            response = requests.get(
+            response = fetch_with_retry(
                 f"{self.BASE_URL}/channels",
                 params={
                     'key': self.api_key,
@@ -45,7 +45,7 @@ class YouTubeIngestor(BaseIngestor):
             uploads_playlist = data['items'][0]['contentDetails']['relatedPlaylists']['uploads']
             
             # Get recent videos from uploads playlist
-            response = requests.get(
+            response = fetch_with_retry(
                 f"{self.BASE_URL}/playlistItems",
                 params={
                     'key': self.api_key,
@@ -76,7 +76,7 @@ class YouTubeIngestor(BaseIngestor):
         
         video_ids = []
         try:
-            response = requests.get(
+            response = fetch_with_retry(
                 f"{self.BASE_URL}/search",
                 params={
                     'key': self.api_key,
@@ -117,7 +117,7 @@ class YouTubeIngestor(BaseIngestor):
                 if page_token:
                     params['pageToken'] = page_token
                 
-                response = requests.get(f"{self.BASE_URL}/commentThreads", params=params)
+                response = fetch_with_retry(f"{self.BASE_URL}/commentThreads", params=params)
                 
                 if response.status_code == 403:
                     logger.warning(f"Comments disabled for video {video_id}")

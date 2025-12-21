@@ -1,3 +1,16 @@
+/**
+ * @fileoverview Problem analysis page with hierarchical grouping.
+ *
+ * Features:
+ * - Groups feedback by category > subcategory > problem
+ * - Merges similar problems using text similarity
+ * - Shows root cause hypotheses from AI analysis
+ * - Urgency indicators and sentiment averages
+ * - Expandable tree view for drill-down
+ *
+ * @module pages/ProblemAnalysis
+ */
+
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'

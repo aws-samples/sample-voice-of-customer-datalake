@@ -2,27 +2,33 @@
 S3 Import API Lambda - File explorer for S3 import bucket.
 Dedicated Lambda to avoid 20KB IAM policy limit on OpsApi.
 """
+
 import json
 import os
 import re
+import sys
 import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer
+
+# Add shared module to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_s3_client
+
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
-import boto3
 
-logger = Logger()
-tracer = Tracer()
+s3_client = get_s3_client()
+S3_IMPORT_BUCKET = os.environ.get("S3_IMPORT_BUCKET", "")
 
-s3_client = boto3.client('s3')
-S3_IMPORT_BUCKET = os.environ.get('S3_IMPORT_BUCKET', '')
-
+# Configure CORS - restrict to CloudFront domain in production
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
 cors_config = CORSConfig(
-    allow_origin="*",
+    allow_origin=ALLOWED_ORIGIN,
     allow_headers=["Content-Type", "Authorization"],
     max_age=300,
-    allow_credentials=False
+    allow_credentials=False,
 )
 
 app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
@@ -45,7 +51,7 @@ def list_sources():
         return {'sources': sources, 'bucket': S3_IMPORT_BUCKET}
     except Exception as e:
         logger.exception(f"Failed to list S3 sources: {e}")
-        return {'sources': [], 'error': str(e)}
+        return {'sources': [], 'error': 'Failed to list sources'}
 
 
 @app.post("/s3-import/sources")
@@ -68,7 +74,7 @@ def create_source():
         return {'success': True, 'source': {'name': safe_name, 'display_name': f"S3 - {safe_name}"}}
     except Exception as e:
         logger.exception(f"Failed to create source folder: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to create source folder'}
 
 
 @app.get("/s3-import/files")
@@ -108,7 +114,7 @@ def list_files():
         return {'files': files, 'bucket': S3_IMPORT_BUCKET}
     except Exception as e:
         logger.exception(f"Failed to list S3 files: {e}")
-        return {'files': [], 'error': str(e)}
+        return {'files': [], 'error': 'Failed to list files'}
 
 
 @app.post("/s3-import/upload-url")
@@ -142,7 +148,7 @@ def get_upload_url():
         return {'success': True, 'upload_url': url, 'key': key, 'bucket': S3_IMPORT_BUCKET, 'expires_in': 3600}
     except Exception as e:
         logger.exception(f"Failed to generate upload URL: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to generate upload URL'}
 
 
 @app.delete("/s3-import/file/<key>")
@@ -159,10 +165,11 @@ def delete_file(key: str):
         return {'success': True, 'deleted_key': decoded_key}
     except Exception as e:
         logger.exception(f"Failed to delete file: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to delete file'}
 
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

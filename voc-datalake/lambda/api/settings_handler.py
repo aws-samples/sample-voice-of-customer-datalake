@@ -2,27 +2,36 @@
 Settings API Lambda - Handles /settings/*
 Manages brand configuration and categories.
 """
+
 import json
 import os
+import re
+import sys
 from datetime import datetime, timezone
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer
+
+# Add shared module to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
-import boto3
 
-logger = Logger()
-tracer = Tracer()
-
-dynamodb = boto3.resource('dynamodb')
-AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
+dynamodb = get_dynamodb_resource()
+AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 
-SETTINGS_PK = 'SETTINGS#brand'
-SETTINGS_SK = 'config'
-CATEGORIES_PK = 'SETTINGS#categories'
-CATEGORIES_SK = 'config'
+SETTINGS_PK = "SETTINGS#brand"
+SETTINGS_SK = "config"
+CATEGORIES_PK = "SETTINGS#categories"
+CATEGORIES_SK = "config"
 
-cors_config = CORSConfig(allow_origin="*", allow_headers=["Content-Type", "Authorization"], max_age=300)
+# Configure CORS - restrict to CloudFront domain in production
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
+cors_config = CORSConfig(
+    allow_origin=ALLOWED_ORIGIN, allow_headers=["Content-Type", "Authorization"], max_age=300
+)
 app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
 
 
@@ -41,7 +50,7 @@ def get_brand_settings():
                 'hashtags': item.get('hashtags', []), 'urls_to_track': item.get('urls_to_track', [])}
     except Exception as e:
         logger.exception(f"Failed to get brand settings: {e}")
-        return {'error': str(e)}
+        return {'error': 'Failed to retrieve brand settings'}
 
 
 @app.put("/settings/brand")
@@ -59,7 +68,7 @@ def save_brand_settings():
         return {'success': True, 'message': 'Brand settings saved', 'settings': {k: item[k] for k in ['brand_name', 'brand_handles', 'hashtags', 'urls_to_track']}}
     except Exception as e:
         logger.exception(f"Failed to save brand settings: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to save brand settings'}
 
 
 @app.get("/settings/categories")
@@ -76,7 +85,7 @@ def get_categories_config():
         return {'categories': item.get('categories', []), 'updated_at': item.get('updated_at')}
     except Exception as e:
         logger.exception(f"Failed to get categories config: {e}")
-        return {'categories': [], 'error': str(e)}
+        return {'categories': [], 'error': 'Failed to retrieve categories'}
 
 
 @app.put("/settings/categories")
@@ -93,7 +102,7 @@ def save_categories_config():
         return {'success': True, 'message': f'Saved {len(categories)} categories'}
     except Exception as e:
         logger.exception(f"Failed to save categories config: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to save categories'}
 
 
 @app.post("/settings/categories/generate")
@@ -106,7 +115,7 @@ def generate_categories():
         return {'success': False, 'message': 'Company description is required'}
     
     try:
-        bedrock = boto3.client('bedrock-runtime')
+        bedrock = get_bedrock_client()
         prompt = f"""Based on the following company/product description, generate a comprehensive list of feedback categories and subcategories.
 
 Company Description:
@@ -128,24 +137,33 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
   ]
 }}"""
 
-        bedrock_response = bedrock.invoke_model(modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0', contentType='application/json', accept='application/json',
-            body=json.dumps({'anthropic_version': 'bedrock-2023-05-31', 'max_tokens': 2000, 'temperature': 0.3, 'messages': [{'role': 'user', 'content': prompt}]}))
+        bedrock_response = bedrock.invoke_model(
+            modelId=BEDROCK_MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 2000,
+                "temperature": 0.3,
+                "messages": [{"role": "user", "content": prompt}],
+            }),
+        )
         
-        result = json.loads(bedrock_response['body'].read())
-        response_text = result['content'][0]['text']
-        
-        import re
-        json_match = re.search(r'\{[\s\S]*\}', response_text)
+        result = json.loads(bedrock_response["body"].read())
+        response_text = result["content"][0]["text"]
+
+        json_match = re.search(r"\{[\s\S]*\}", response_text)
         if json_match:
             parsed = json.loads(json_match.group())
-            return {'success': True, 'categories': parsed.get('categories', [])}
-        return {'success': False, 'message': 'Could not parse categories from response'}
+            return {"success": True, "categories": parsed.get("categories", [])}
+        return {"success": False, "message": "Could not parse categories from response"}
     except Exception as e:
         logger.exception(f"Failed to generate categories: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to generate categories'}
 
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

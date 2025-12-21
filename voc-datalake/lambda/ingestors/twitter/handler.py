@@ -1,14 +1,14 @@
 """
 Twitter/X Ingestor - Fetches brand mentions using Twitter API v2 Recent Search.
 """
-import requests
 from datetime import datetime, timezone, timedelta
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class TwitterIngestor(BaseIngestor):
@@ -58,7 +58,7 @@ class TwitterIngestor(BaseIngestor):
                 params['next_token'] = next_token
             
             try:
-                response = requests.get(url, headers=headers, params=params)
+                response = fetch_with_retry(url, headers=headers, params=params)
                 if response.status_code == 429:
                     logger.warning("Twitter rate limit reached")
                     break

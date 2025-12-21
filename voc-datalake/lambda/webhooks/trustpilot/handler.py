@@ -156,7 +156,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
                 results.append(result)
             except Exception as e:
                 logger.exception(f"Error handling {event_name}: {e}")
-                results.append({'status': 'error', 'event': event_name, 'error': str(e)})
+                results.append({'status': 'error', 'event': event_name, 'error': 'Failed to process event'})
         else:
             logger.warning(f"Unknown event type: {event_name}")
             results.append({'status': 'skipped', 'event': event_name})

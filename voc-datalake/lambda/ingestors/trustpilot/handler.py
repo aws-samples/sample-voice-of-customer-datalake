@@ -9,7 +9,7 @@ import os
 
 # Add parent directory to path for base_ingestor import
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
 
 
 class TrustpilotIngestor(BaseIngestor):
@@ -29,8 +29,9 @@ class TrustpilotIngestor(BaseIngestor):
         if self.access_token:
             return self.access_token
         
-        response = requests.post(
-            f"{self.BASE_URL}/oauth/oauth-business-users-for-applications/accesstoken",
+        response = fetch_with_retry(
+            url=f"{self.BASE_URL}/oauth/oauth-business-users-for-applications/accesstoken",
+            method='POST',
             data={
                 'grant_type': 'client_credentials',
                 'client_id': self.api_key,
@@ -64,7 +65,7 @@ class TrustpilotIngestor(BaseIngestor):
             url = f"{self.BASE_URL}/business-units/{self.business_unit_id}/reviews"
             params = {'perPage': 100, 'page': page, 'orderBy': 'createdat.desc'}
             
-            response = requests.get(url, headers=headers, params=params)
+            response = fetch_with_retry(url, headers=headers, params=params)
             response.raise_for_status()
             data = response.json()
             

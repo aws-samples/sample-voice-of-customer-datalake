@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Confirmation modal component.
+ *
+ * Reusable modal for confirming destructive actions:
+ * - Danger, warning, and info variants
+ * - Loading state support
+ * - Customizable labels
+ *
+ * @module components/ConfirmModal
+ */
+
 import { Loader2, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
 

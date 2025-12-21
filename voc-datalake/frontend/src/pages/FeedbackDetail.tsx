@@ -1,3 +1,15 @@
+/**
+ * @fileoverview Feedback detail page showing single feedback item.
+ *
+ * Features:
+ * - Full feedback details with metadata
+ * - Suggested response templates by category
+ * - Similar feedback items tab
+ * - Copy-to-clipboard for responses
+ *
+ * @module pages/FeedbackDetail
+ */
+
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ExternalLink, Copy, Check, MessageCircle, Star, Clock, Globe, Users, Tag, TrendingUp } from 'lucide-react'

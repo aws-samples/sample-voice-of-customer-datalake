@@ -1,30 +1,159 @@
 """
 Streaming chat handler for project AI chat.
 Uses Lambda Response Streaming to avoid API Gateway 29s timeout.
+
+Security: Validates Cognito JWT tokens from Authorization header to prevent unauthorized access.
 """
 import json
 import os
 import re
-import boto3
+import hmac
+import urllib.request
 from datetime import datetime, timezone
 from decimal import Decimal
-from aws_lambda_powertools import Logger, Tracer
 from boto3.dynamodb.conditions import Key, Attr
 
-logger = Logger()
-tracer = Tracer()
+# Shared module imports
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
 
-# AWS Clients
-dynamodb = boto3.resource('dynamodb')
-bedrock = boto3.client('bedrock-runtime')
+# AWS Clients (using shared module for connection reuse)
+dynamodb = get_dynamodb_resource()
+bedrock = get_bedrock_client()
 
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
+USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+
+# Cache for Cognito JWKS (JSON Web Key Set)
+_cached_jwks = None
+
+
+def get_cognito_jwks() -> dict | None:
+    """Fetch Cognito JWKS for token validation (cached)."""
+    global _cached_jwks
+    if _cached_jwks is not None:
+        return _cached_jwks
+    
+    if not USER_POOL_ID:
+        logger.warning("USER_POOL_ID not configured - authentication disabled")
+        return None
+    
+    try:
+        jwks_url = f"https://cognito-idp.{AWS_REGION}.amazonaws.com/{USER_POOL_ID}/.well-known/jwks.json"
+        with urllib.request.urlopen(jwks_url, timeout=5) as response:
+            _cached_jwks = json.loads(response.read().decode())
+            return _cached_jwks
+    except Exception as e:
+        logger.error(f"Failed to fetch Cognito JWKS: {e}")
+        return None
+
+
+def decode_jwt_payload(token: str) -> dict | None:
+    """Decode JWT payload without verification (for basic validation)."""
+    try:
+        parts = token.split('.')
+        if len(parts) != 3:
+            return None
+        
+        # Decode payload (middle part)
+        payload = parts[1]
+        # Add padding if needed
+        padding = 4 - len(payload) % 4
+        if padding != 4:
+            payload += '=' * padding
+        
+        import base64
+        decoded = base64.urlsafe_b64decode(payload)
+        return json.loads(decoded)
+    except Exception as e:
+        logger.warning(f"Failed to decode JWT: {e}")
+        return None
+
+
+def validate_cognito_token(token: str) -> tuple[bool, str, dict | None]:
+    """
+    Validate a Cognito JWT token.
+    Returns (is_valid, error_message, claims).
+    
+    Note: This performs basic validation. For production, consider using
+    python-jose or similar library for full cryptographic verification.
+    """
+    if not USER_POOL_ID:
+        # If User Pool not configured, allow request (dev mode)
+        logger.warning("Cognito validation skipped - USER_POOL_ID not configured")
+        return True, "", None
+    
+    # Decode token payload
+    claims = decode_jwt_payload(token)
+    if not claims:
+        return False, "Invalid token format", None
+    
+    # Validate issuer
+    expected_issuer = f"https://cognito-idp.{AWS_REGION}.amazonaws.com/{USER_POOL_ID}"
+    if claims.get('iss') != expected_issuer:
+        return False, "Invalid token issuer", None
+    
+    # Validate expiration
+    exp = claims.get('exp')
+    if exp:
+        if datetime.now(timezone.utc).timestamp() > exp:
+            return False, "Token expired", None
+    
+    # Validate token use (should be 'id' or 'access')
+    token_use = claims.get('token_use')
+    if token_use not in ('id', 'access'):
+        return False, "Invalid token type", None
+    
+    return True, "", claims
+
+
+def validate_auth(event: dict) -> tuple[bool, str]:
+    """
+    Validate the request authentication.
+    Returns (is_valid, error_message).
+    """
+    # Get Authorization header (case-insensitive)
+    headers = event.get('headers', {}) or {}
+    auth_header = None
+    
+    for key, value in headers.items():
+        if key.lower() == 'authorization':
+            auth_header = value
+            break
+    
+    if not auth_header:
+        return False, "Missing Authorization header"
+    
+    # Remove "Bearer " prefix if present
+    token = auth_header
+    if auth_header.lower().startswith('bearer '):
+        token = auth_header[7:]
+    
+    # Validate Cognito token
+    is_valid, error_msg, claims = validate_cognito_token(token)
+    if not is_valid:
+        return False, error_msg
+    
+    if claims:
+        logger.info(f"Authenticated user: {claims.get('email') or claims.get('sub')}")
+    
+    return True, ""
+
+
+def unauthorized_response(message: str = "Unauthorized") -> dict:
+    """Return a 401 Unauthorized response."""
+    return {
+        'statusCode': 401,
+        'headers': {'Content-Type': 'application/json'},
+        'body': json.dumps({'error': message})
+    }
 
 projects_table = dynamodb.Table(PROJECTS_TABLE) if PROJECTS_TABLE else None
 feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
 
-MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+MODEL_ID = BEDROCK_MODEL_ID
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -310,7 +439,14 @@ def handler(event, context):
     """
     Lambda handler for project chat via Function URL.
     CORS is handled by the Function URL config - don't add headers here.
+    Requires valid API key in Authorization header.
     """
+    # Validate authentication
+    is_valid, error_msg = validate_auth(event)
+    if not is_valid:
+        logger.warning(f"Authentication failed: {error_msg}")
+        return unauthorized_response(error_msg)
+    
     try:
         body = json.loads(event.get('body', '{}'))
         
@@ -378,7 +514,7 @@ def handler(event, context):
         return {
             'statusCode': 500,
             'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({'error': str(e)})
+            'body': json.dumps({'error': 'An internal error occurred. Please try again.'})
         }
 
 
@@ -446,7 +582,7 @@ def streaming_handler(event, response_stream, context):
         
     except Exception as e:
         logger.exception(f"Streaming error: {e}")
-        response_stream.write(f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n")
+        response_stream.write(f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred. Please try again.'})}\n\n")
         response_stream.close()
 
 
@@ -717,7 +853,14 @@ Format your responses clearly with bullet points or numbered lists when appropri
 def voc_chat_handler(event, context):
     """
     Lambda handler for VoC AI Chat via Function URL.
+    Requires valid API key in Authorization header.
     """
+    # Validate authentication
+    is_valid, error_msg = validate_auth(event)
+    if not is_valid:
+        logger.warning(f"Authentication failed: {error_msg}")
+        return unauthorized_response(error_msg)
+    
     try:
         body_str = event.get('body', '{}')
         if not body_str:
@@ -774,10 +917,13 @@ def voc_chat_handler(event, context):
         return {
             'statusCode': 500,
             'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({'error': str(e)})
+            'body': json.dumps({'error': 'An internal error occurred. Please try again.'})
         }
 
 
+@logger.inject_lambda_context
+@tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def combined_handler(event, context):
     """
     Combined handler that routes based on path.

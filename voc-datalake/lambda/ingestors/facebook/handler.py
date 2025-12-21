@@ -1,14 +1,14 @@
 """
 Facebook Ingestor - Fetches page reviews and comments using Meta Graph API.
 """
-import requests
 from datetime import datetime, timezone, timedelta
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class FacebookIngestor(BaseIngestor):
@@ -40,7 +40,7 @@ class FacebookIngestor(BaseIngestor):
         
         while url:
             try:
-                response = requests.get(url, params=params_with_fields)
+                response = fetch_with_retry(url, params=params_with_fields)
                 response.raise_for_status()
                 data = response.json()
             except requests.RequestException as e:
@@ -83,7 +83,7 @@ class FacebookIngestor(BaseIngestor):
         posts_params = {**params, 'fields': 'id,created_time', 'limit': 25, 'since': int(since.timestamp())}
         
         try:
-            response = requests.get(posts_url, params=posts_params)
+            response = fetch_with_retry(posts_url, params=posts_params)
             response.raise_for_status()
             posts_data = response.json()
         except requests.RequestException as e:
@@ -98,7 +98,7 @@ class FacebookIngestor(BaseIngestor):
             comments_params = {**params, 'fields': 'id,created_time,from,message', 'limit': 100}
             
             try:
-                response = requests.get(comments_url, params=comments_params)
+                response = fetch_with_retry(comments_url, params=comments_params)
                 response.raise_for_status()
                 comments_data = response.json()
             except requests.RequestException:

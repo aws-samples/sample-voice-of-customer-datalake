@@ -1,3 +1,15 @@
+/**
+ * @fileoverview Dashboard page - main overview of VoC analytics.
+ *
+ * Displays key metrics, charts, and urgent feedback items:
+ * - Total feedback count, average sentiment, urgent issues
+ * - Sentiment trend line chart over time
+ * - Category and source distribution pie/bar charts
+ * - Live social feed and urgent feedback cards
+ *
+ * @module pages/Dashboard
+ */
+
 import { useQuery } from '@tanstack/react-query'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
 import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap } from 'lucide-react'

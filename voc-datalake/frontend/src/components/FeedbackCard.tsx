@@ -1,3 +1,16 @@
+/**
+ * @fileoverview Feedback item card component.
+ *
+ * Displays a single feedback item with:
+ * - Source icon and platform name
+ * - Sentiment badge and rating
+ * - Category and urgency indicators
+ * - Truncated text with link to detail view
+ * - Compact mode for list views
+ *
+ * @module components/FeedbackCard
+ */
+
 import { Link } from 'react-router-dom'
 import { ExternalLink, Copy, MessageCircle, Star, AlertTriangle } from 'lucide-react'
 import { format, isValid, parseISO } from 'date-fns'

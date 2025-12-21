@@ -1,3 +1,13 @@
+/**
+ * @fileoverview Persona export menu component.
+ *
+ * Export options for customer personas:
+ * - Copy as Markdown
+ * - Download as PDF with formatted sections
+ *
+ * @module components/PersonaExportMenu
+ */
+
 import { useState, useRef, useEffect } from 'react'
 import { Copy, Check, FileDown, MoreVertical, FileText, FileType } from 'lucide-react'
 import type { ProjectPersona } from '../api/client'
@@ -629,7 +639,9 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
       window.document.body.removeChild(iframe)
       pdf.save(`${sanitizeFilename(persona.name)}_persona.pdf`)
     } catch (error) {
-      console.error('PDF export failed:', error)
+      if (import.meta.env.DEV) {
+        console.error('PDF export failed:', error)
+      }
     } finally {
       setExporting(false)
       setIsOpen(false)

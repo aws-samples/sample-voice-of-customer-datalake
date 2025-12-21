@@ -2,14 +2,14 @@
 Google Play Store Ingestor - Fetches app reviews from Google Play Developer API.
 Requires Google Play Developer API credentials with access to reviews.
 """
-import requests
 from datetime import datetime, timezone, timedelta
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class AppStoreGoogleIngestor(BaseIngestor):
@@ -30,8 +30,6 @@ class AppStoreGoogleIngestor(BaseIngestor):
 
         import json
         import time
-        import hashlib
-        import base64
 
         try:
             sa_info = json.loads(self.service_account_json)
@@ -54,8 +52,9 @@ class AppStoreGoogleIngestor(BaseIngestor):
             }
             signed_jwt = jwt.encode(payload, sa_info['private_key'], algorithm='RS256')
 
-            response = requests.post(
+            response = fetch_with_retry(
                 'https://oauth2.googleapis.com/token',
+                method='POST',
                 data={
                     'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
                     'assertion': signed_jwt
@@ -101,7 +100,7 @@ class AppStoreGoogleIngestor(BaseIngestor):
                 params['token'] = next_page_token
 
             try:
-                response = requests.get(url, headers=headers, params=params, timeout=30)
+                response = fetch_with_retry(url, headers=headers, params=params, timeout=30)
                 response.raise_for_status()
                 data = response.json()
             except requests.RequestException as e:

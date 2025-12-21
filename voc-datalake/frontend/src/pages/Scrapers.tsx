@@ -1,3 +1,17 @@
+/**
+ * @fileoverview Web scraper configuration page.
+ *
+ * Features:
+ * - Create and manage custom web scrapers
+ * - CSS selector and JSON-LD extraction methods
+ * - AI-powered selector analysis
+ * - Scraper templates for common sites
+ * - Manual and scheduled scraper runs
+ * - Run status monitoring
+ *
+ * @module pages/Scrapers
+ */
+
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -64,7 +78,9 @@ function ScraperRunStatus({ scraperId, onComplete }: { scraperId: string; onComp
           onComplete?.()
         }
       } catch (e) {
-        console.error('Failed to get status:', e)
+        if (import.meta.env.DEV) {
+          console.error('Failed to get status:', e)
+        }
       }
     }
 
@@ -136,7 +152,9 @@ function ScraperCard({ scraper, onEdit, onDelete, onRun }: {
           setLastRunInfo(result)
         }
       } catch (e) {
-        console.error('Failed to get last run:', e)
+        if (import.meta.env.DEV) {
+          console.error('Failed to get last run:', e)
+        }
       }
     }
     fetchLastRun()

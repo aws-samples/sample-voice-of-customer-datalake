@@ -1,14 +1,14 @@
 """
 Reddit Ingestor - Fetches brand mentions from Reddit Data API.
 """
-import requests
 from datetime import datetime, timezone, timedelta
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class RedditIngestor(BaseIngestor):
@@ -32,7 +32,13 @@ class RedditIngestor(BaseIngestor):
         headers = {'User-Agent': 'VoC-DataLake/1.0'}
         data = {'grant_type': 'client_credentials'}
         
-        response = requests.post(self.AUTH_URL, auth=auth, headers=headers, data=data)
+        response = fetch_with_retry(
+            self.AUTH_URL, 
+            method='POST',
+            headers=headers, 
+            data=data,
+            auth=auth
+        )
         response.raise_for_status()
         self.access_token = response.json()['access_token']
         return self.access_token
@@ -63,7 +69,7 @@ class RedditIngestor(BaseIngestor):
                     params['after'] = after
                 
                 try:
-                    response = requests.get(url, headers=headers, params=params)
+                    response = fetch_with_retry(url, headers=headers, params=params)
                     if response.status_code == 429:
                         break
                     response.raise_for_status()

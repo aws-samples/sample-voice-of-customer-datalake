@@ -2,14 +2,14 @@
 TikTok Ingestor - Fetches comments and mentions using TikTok API for Business.
 Note: TikTok's API is restricted - requires approved business account access.
 """
-import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class TikTokIngestor(BaseIngestor):
@@ -41,8 +41,9 @@ class TikTokIngestor(BaseIngestor):
                 return  # Token still valid
         
         try:
-            response = requests.post(
+            response = fetch_with_retry(
                 "https://open.tiktokapis.com/v2/oauth/token/",
+                method='POST',
                 data={
                     'client_key': client_key,
                     'client_secret': client_secret,
@@ -55,7 +56,6 @@ class TikTokIngestor(BaseIngestor):
             
             self.access_token = data.get('access_token', self.access_token)
             # Store new expiry (tokens last 24 hours, refresh 1 hour early)
-            from datetime import timedelta
             new_expiry = datetime.now(timezone.utc) + timedelta(hours=23)
             self.set_watermark('token_expiry', new_expiry.isoformat())
             
@@ -77,8 +77,9 @@ class TikTokIngestor(BaseIngestor):
         
         video_ids = []
         try:
-            response = requests.post(
+            response = fetch_with_retry(
                 f"{self.BASE_URL}/business/video/list/",
+                method='POST',
                 headers=self._get_headers(),
                 json={
                     'business_id': self.business_id,
@@ -104,8 +105,9 @@ class TikTokIngestor(BaseIngestor):
         
         while True:
             try:
-                response = requests.post(
+                response = fetch_with_retry(
                     f"{self.BASE_URL}/business/comment/list/",
+                    method='POST',
                     headers=self._get_headers(),
                     json={
                         'business_id': self.business_id,
@@ -178,8 +180,9 @@ class TikTokIngestor(BaseIngestor):
             for handle in self.brand_handles[:3]:  # Limit handles
                 query += f' OR "{handle}"'
             
-            response = requests.post(
+            response = fetch_with_retry(
                 f"{self.BASE_URL}/research/video/query/",
+                method='POST',
                 headers=self._get_headers(),
                 json={
                     'query': {'and': [{'operation': 'IN', 'field_name': 'keyword', 'field_values': [self.brand_name] + self.brand_handles}]},

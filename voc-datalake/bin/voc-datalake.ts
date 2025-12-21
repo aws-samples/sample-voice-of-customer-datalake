@@ -7,6 +7,7 @@ import { VocProcessingStack } from '../lib/stacks/processing-stack';
 import { VocAnalyticsStack } from '../lib/stacks/analytics-stack';
 import { VocResearchStack } from '../lib/stacks/research-stack';
 import { VocFrontendStack } from '../lib/stacks/frontend-stack';
+import { VocAuthStack } from '../lib/stacks/auth-stack';
 
 const app = new cdk.App();
 
@@ -22,6 +23,11 @@ const config = {
   ],
 };
 
+// CloudFront domain for CORS - set this after first deployment
+// Example: 'd1234567890.cloudfront.net'
+// Pass via: cdk deploy --context frontendDomain=d1234567890.cloudfront.net
+const frontendDomain = app.node.tryGetContext('frontendDomain') as string | undefined;
+
 const env = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
   region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
@@ -31,6 +37,7 @@ const env = {
 const storageStack = new VocStorageStack(app, 'VocStorageStack', {
   env,
   description: 'VoC Data Lake - Storage Layer (DynamoDB, KMS, S3)',
+  frontendDomain,
 });
 
 // Stack 2: Ingestion (Lambda ingestors, EventBridge, SQS)
@@ -41,8 +48,10 @@ const ingestionStack = new VocIngestionStack(app, 'VocIngestionStack', {
   watermarksTable: storageStack.watermarksTable,
   aggregatesTable: storageStack.aggregatesTable,
   rawDataBucket: storageStack.rawDataBucket,
+  accessLogsBucket: storageStack.accessLogsBucket,
   kmsKey: storageStack.kmsKey,
   config,
+  frontendDomain,
 });
 ingestionStack.addDependency(storageStack);
 
@@ -71,7 +80,15 @@ const researchStack = new VocResearchStack(app, 'VocResearchStack', {
 });
 researchStack.addDependency(storageStack);
 
-// Stack 5: Analytics (API Gateway, Lambda, Webhooks)
+// Stack 5: Auth (Cognito User Pool)
+const authStack = new VocAuthStack(app, 'VocAuthStack', {
+  env,
+  description: 'VoC Data Lake - Authentication (Cognito)',
+  brandName: config.brandName,
+  frontendDomain,
+});
+
+// Stack 6: Analytics (API Gateway, Lambda, Webhooks)
 const analyticsStack = new VocAnalyticsStack(app, 'VocAnalyticsStack', {
   env,
   description: 'VoC Data Lake - Analytics API (API Gateway, Lambda, Webhooks)',
@@ -89,17 +106,24 @@ const analyticsStack = new VocAnalyticsStack(app, 'VocAnalyticsStack', {
   s3ImportBucket: ingestionStack.s3ImportBucket,
   rawDataBucket: storageStack.rawDataBucket,
   avatarsCdnUrl: storageStack.avatarsCdnUrl,
+  frontendDomain,
+  userPool: authStack.userPool,
 });
 analyticsStack.addDependency(storageStack);
 analyticsStack.addDependency(ingestionStack);
 analyticsStack.addDependency(researchStack);
+analyticsStack.addDependency(authStack);
 
-// Stack 6: Frontend (S3, CloudFront)
+// Stack 7: Frontend (S3, CloudFront)
 const frontendStack = new VocFrontendStack(app, 'VocFrontendStack', {
   env,
   description: 'VoC Data Lake - Frontend (S3, CloudFront)',
   apiEndpoint: analyticsStack.api.url,
+  userPoolId: authStack.userPool.userPoolId,
+  userPoolClientId: authStack.userPoolClient.userPoolClientId,
+  cognitoRegion: env.region || 'us-east-1',
 });
 frontendStack.addDependency(analyticsStack);
+frontendStack.addDependency(authStack);
 
 app.synth();

@@ -2,38 +2,51 @@
 Chat API Lambda - Handles /chat/*
 Manages AI chat conversations.
 """
+
 import json
 import os
+import sys
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer
+
+# Add shared module to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Key
-import boto3
-
-logger = Logger()
-tracer = Tracer()
 
 # AWS Clients
-dynamodb = boto3.resource('dynamodb')
+dynamodb = get_dynamodb_resource()
 
 # Configuration
-FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
-AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
-CONVERSATIONS_TABLE = os.environ.get('CONVERSATIONS_TABLE', '')
+FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
+AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
+CONVERSATIONS_TABLE = os.environ.get("CONVERSATIONS_TABLE", "")
 
 feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 conversations_table = dynamodb.Table(CONVERSATIONS_TABLE) if CONVERSATIONS_TABLE else None
 
+# Configure CORS - restrict to CloudFront domain in production
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
 cors_config = CORSConfig(
-    allow_origin="*",
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-Amz-Date", "X-Api-Key", "X-Amz-Security-Token"],
+    allow_origin=ALLOWED_ORIGIN,
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-Amz-Date",
+        "X-Api-Key",
+        "X-Amz-Security-Token",
+    ],
     expose_headers=["Content-Type"],
     max_age=300,
-    allow_credentials=False
+    allow_credentials=False,
 )
 
 app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
@@ -153,9 +166,9 @@ Top Categories: {', '.join([f"{cat}: {count}" for cat, count in sorted(category_
         data_context += f"\n{i}. [{fb['source']}|{fb['sentiment']}] {fb['text'][:200]}"
 
     try:
-        bedrock = boto3.client('bedrock-runtime')
+        bedrock = get_bedrock_client()
         bedrock_response = bedrock.invoke_model(
-            modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+            modelId=BEDROCK_MODEL_ID,
             contentType='application/json',
             accept='application/json',
             body=json.dumps({
@@ -178,7 +191,7 @@ Top Categories: {', '.join([f"{cat}: {count}" for cat, count in sorted(category_
         return {
             'response': f"Error connecting to AI service. Summary: {total_feedback} feedback items, {urgent_count} urgent.",
             'sources': feedback_items[:3],
-            'error': str(e)
+            'error': 'AI service temporarily unavailable'
         }
 
 
@@ -274,6 +287,7 @@ def delete_conversation(proxy: str):
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler."""
     return app.resolve(event, context)

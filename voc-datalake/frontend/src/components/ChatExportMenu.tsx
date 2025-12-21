@@ -1,3 +1,13 @@
+/**
+ * @fileoverview Chat conversation export menu component.
+ *
+ * Export options:
+ * - Copy as Markdown
+ * - Download as PDF (rendered with html2canvas)
+ *
+ * @module components/ChatExportMenu
+ */
+
 import { useState, useRef, useEffect } from 'react'
 import { Download, Share2, FileText, Copy, Check, FileDown, MoreVertical } from 'lucide-react'
 import type { Conversation } from '../store/chatStore'
@@ -302,7 +312,9 @@ export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
 
       pdf.save(`${conversation.title.replace(/[^a-z0-9]/gi, '_')}.pdf`)
     } catch (error) {
-      console.error('PDF export failed:', error)
+      if (import.meta.env.DEV) {
+        console.error('PDF export failed:', error)
+      }
     } finally {
       setExporting(false)
       setIsOpen(false)

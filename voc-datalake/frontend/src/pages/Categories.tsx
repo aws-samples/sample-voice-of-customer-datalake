@@ -1,3 +1,16 @@
+/**
+ * @fileoverview Categories analysis page with breakdown and filtering.
+ *
+ * Features:
+ * - Category distribution pie chart
+ * - Multi-select category and keyword filtering
+ * - Sentiment and rating filters
+ * - Grid/list view toggle for feedback items
+ * - Source-specific filtering
+ *
+ * @module pages/Categories
+ */
+
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'

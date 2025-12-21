@@ -1,7 +1,6 @@
 """
 Tavily Ingestor - Fetches brand mentions from web search using Tavily API.
 """
-import requests
 import hashlib
 from datetime import datetime, timezone
 from typing import Generator
@@ -9,7 +8,8 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class TavilyIngestor(BaseIngestor):
@@ -43,8 +43,9 @@ class TavilyIngestor(BaseIngestor):
         
         for query in self.search_queries:
             try:
-                response = requests.post(
+                response = fetch_with_retry(
                     f"{self.BASE_URL}/search",
+                    method='POST',
                     json={
                         'api_key': self.api_key,
                         'query': query,

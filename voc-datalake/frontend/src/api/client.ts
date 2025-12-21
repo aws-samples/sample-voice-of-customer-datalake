@@ -1,8 +1,19 @@
 import { useConfigStore } from '../store/configStore'
+import { authService } from '../services/auth'
 
 const getBaseUrl = () => {
   const { config } = useConfigStore.getState()
   return config.apiEndpoint || '/api'
+}
+
+// Get auth token for API requests (for streaming endpoints)
+const getAuthToken = async (): Promise<string | null> => {
+  if (!authService.isConfigured()) return null
+  try {
+    return await authService.getAccessToken()
+  } catch {
+    return null
+  }
 }
 
 // Cache for streaming URL (fetched from backend)
@@ -10,15 +21,50 @@ let cachedStreamUrl: string | null = null
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const baseUrl = getBaseUrl().replace(/\/+$/, '')  // Remove trailing slashes
+  
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...options?.headers as Record<string, string>,
+  }
+  
+  // Add Authorization header with Cognito ID token if authenticated
+  if (authService.isConfigured()) {
+    const idToken = authService.getIdToken()
+    if (idToken) {
+      headers['Authorization'] = idToken
+    }
+  }
+  
   const response = await fetch(`${baseUrl}${endpoint}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   })
   
   if (!response.ok) {
+    if (response.status === 401) {
+      // Token expired or invalid - try to refresh
+      try {
+        await authService.refreshSession()
+        // Retry the request with new token
+        const newIdToken = authService.getIdToken()
+        if (newIdToken) {
+          headers['Authorization'] = newIdToken
+        }
+        const retryResponse = await fetch(`${baseUrl}${endpoint}`, {
+          ...options,
+          headers,
+        })
+        if (!retryResponse.ok) {
+          throw new Error(`API Error: ${retryResponse.status}`)
+        }
+        return retryResponse.json()
+      } catch {
+        // Refresh failed - redirect to login
+        authService.signOut()
+        window.location.href = '/login'
+        throw new Error('Session expired. Please login again.')
+      }
+    }
     throw new Error(`API Error: ${response.status}`)
   }
   
@@ -272,13 +318,23 @@ export const api = {
       return api.chat(message, context)
     }
     
+    // Get auth token for streaming endpoint
+    const authToken = await getAuthToken()
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`
+    }
+    
     const response = await fetch(`${streamEndpoint.replace(/\/+$/, '')}/chat/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ message, context, days: days || 7 })
     })
     
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Stream API Error: 401 Unauthorized - Please sign in again')
+      }
       throw new Error(`Stream API Error: ${response.status}`)
     }
     
@@ -512,9 +568,16 @@ export const api = {
       return api.projectChat(projectId, message, selectedPersonas, selectedDocuments)
     }
     
+    // Get auth token for streaming endpoint
+    const authToken = await getAuthToken()
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`
+    }
+    
     const response = await fetch(`${streamEndpoint.replace(/\/+$/, '')}/projects/${projectId}/chat/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         message,
         selected_personas: selectedPersonas,
@@ -523,6 +586,9 @@ export const api = {
     })
     
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Stream API Error: 401 Unauthorized - Please sign in again')
+      }
       throw new Error(`Stream API Error: ${response.status}`)
     }
     

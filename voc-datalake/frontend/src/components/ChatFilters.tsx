@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Chat filter controls component.
+ *
+ * Provides filter dropdowns for scoping chat queries:
+ * - Source filter (Trustpilot, Twitter, etc.)
+ * - Category filter
+ * - Sentiment filter
+ *
+ * @module components/ChatFilters
+ */
+
 import { useState, useEffect } from 'react'
 import { Filter, X, ChevronDown } from 'lucide-react'
 import type { ChatFilters as ChatFiltersType } from '../store/chatStore'

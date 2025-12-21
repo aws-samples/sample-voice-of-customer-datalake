@@ -2,14 +2,14 @@
 Apple App Store Ingestor - Fetches app reviews from Apple App Store RSS feed.
 Uses the public RSS feed which doesn't require authentication.
 """
-import requests
 from datetime import datetime, timezone, timedelta
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class AppStoreAppleIngestor(BaseIngestor):
@@ -32,7 +32,7 @@ class AppStoreAppleIngestor(BaseIngestor):
         url = f"https://itunes.apple.com/{country}/rss/customerreviews/id={self.app_id}/sortBy=mostRecent/json"
         
         try:
-            response = requests.get(url, timeout=30)
+            response = fetch_with_retry(url, timeout=30)
             response.raise_for_status()
             data = response.json()
 

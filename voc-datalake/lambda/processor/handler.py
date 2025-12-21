@@ -7,28 +7,27 @@ import os
 import uuid
 import random
 import time
-import boto3
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer, Metrics
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
 from aws_lambda_powertools.utilities.batch.exceptions import BatchProcessingError
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
 from botocore.exceptions import ClientError
 
-logger = Logger()
-tracer = Tracer()
-metrics = Metrics(namespace="VoC-Processor")
+# Shared module imports
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_dynamodb_resource, get_bedrock_client
+import boto3
 
 # Retry configuration for Bedrock
 BEDROCK_MAX_RETRIES = 5
 BEDROCK_BASE_DELAY = 1.0  # seconds
 BEDROCK_MAX_DELAY = 30.0  # seconds
 
-# AWS Clients
-dynamodb = boto3.resource('dynamodb')
-bedrock_runtime = boto3.client('bedrock-runtime')
+# AWS Clients (using shared module for connection reuse)
+dynamodb = get_dynamodb_resource()
+bedrock_runtime = get_bedrock_client()
 comprehend = boto3.client('comprehend')
 translate = boto3.client('translate')
 
@@ -36,7 +35,8 @@ translate = boto3.client('translate')
 FEEDBACK_TABLE = os.environ['FEEDBACK_TABLE']
 AGGREGATES_TABLE = os.environ['AGGREGATES_TABLE']
 PRIMARY_LANGUAGE = os.environ.get('PRIMARY_LANGUAGE', 'en')
-BEDROCK_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0')
+# Processor uses Haiku for cost efficiency (processes many items)
+PROCESSOR_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'global.anthropic.claude-haiku-4-5-20250514-v1:0')
 PROMPT_VERSION = '1.0.0'
 
 feedback_table = dynamodb.Table(FEEDBACK_TABLE)
@@ -219,7 +219,7 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
     for attempt in range(BEDROCK_MAX_RETRIES):
         try:
             response = bedrock_runtime.invoke_model(
-                modelId=BEDROCK_MODEL_ID,
+                modelId=PROCESSOR_MODEL_ID,
                 body=json.dumps(request_body),
                 contentType='application/json',
                 accept='application/json'
@@ -236,7 +236,7 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
             return {
                 'insights': llm_result,
                 'metadata': {
-                    'model_name': BEDROCK_MODEL_ID,
+                    'model_name': PROCESSOR_MODEL_ID,
                     'prompt_version': PROMPT_VERSION,
                     'latency_ms': latency_ms,
                     'retry_attempts': attempt

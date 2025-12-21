@@ -1,9 +1,24 @@
+/**
+ * @fileoverview Main application layout with sidebar navigation.
+ *
+ * Features:
+ * - Collapsible sidebar with navigation links
+ * - Time range selector in header
+ * - Breadcrumb navigation
+ * - User menu with logout (when authenticated)
+ * - Urgent feedback count badge
+ *
+ * @module components/Layout
+ */
+
 import { useState } from 'react'
-import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, MessageSquare, FolderOpen, Settings, Bot, Globe, PanelLeftClose, PanelLeft, Briefcase, SearchX, ListOrdered, FileText } from 'lucide-react'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { LayoutDashboard, MessageSquare, FolderOpen, Settings, Bot, Globe, PanelLeftClose, PanelLeft, Briefcase, SearchX, ListOrdered, FileText, LogOut, User } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, getDaysFromRange } from '../api/client'
 import { useConfigStore } from '../store/configStore'
+import { useAuthStore } from '../store/authStore'
+import { authService } from '../services/auth'
 import TimeRangeSelector from './TimeRangeSelector'
 import Breadcrumbs from './Breadcrumbs'
 import clsx from 'clsx'
@@ -22,7 +37,9 @@ const navItems = [
 ]
 
 export default function Layout() {
+  const navigate = useNavigate()
   const { timeRange, config } = useConfigStore()
+  const { user, isAuthenticated } = useAuthStore()
   const days = getDaysFromRange(timeRange)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   
@@ -31,6 +48,11 @@ export default function Layout() {
     queryFn: () => api.getUrgentFeedback({ days, limit: 10 }),
     enabled: !!config.apiEndpoint,
   })
+
+  const handleLogout = () => {
+    authService.signOut()
+    navigate('/login')
+  }
 
   return (
     <div className="min-h-screen flex">
@@ -84,6 +106,28 @@ export default function Layout() {
           ))}
         </nav>
         
+        {/* User info and logout */}
+        {isAuthenticated && user && (
+          <div className={clsx('border-t border-gray-700 p-4', sidebarCollapsed && 'px-2')}>
+            {!sidebarCollapsed && (
+              <div className="flex items-center gap-2 mb-3 text-sm">
+                <User size={16} className="text-gray-400" />
+                <span className="text-gray-300 truncate">{user.email || user.username}</span>
+              </div>
+            )}
+            <button
+              onClick={handleLogout}
+              title="Sign out"
+              className={clsx(
+                'flex items-center gap-2 w-full py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors',
+                sidebarCollapsed ? 'justify-center px-2' : 'px-4'
+              )}
+            >
+              <LogOut size={18} />
+              {!sidebarCollapsed && <span>Sign out</span>}
+            </button>
+          </div>
+        )}
 
       </aside>
 

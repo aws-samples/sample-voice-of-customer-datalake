@@ -3,14 +3,14 @@ Yelp Fusion API Ingestor - Fetches business reviews via official Yelp API.
 Uses the Yelp Fusion API which requires an API key from https://www.yelp.com/developers
 """
 import os
-import requests
 from datetime import datetime, timezone
 from typing import Generator
 import sys
 
 # Add parent directory to path for base_ingestor import
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class YelpIngestor(BaseIngestor):
@@ -39,7 +39,7 @@ class YelpIngestor(BaseIngestor):
         url = f"{self.YELP_API_BASE}/businesses/{business_id}/reviews"
         
         try:
-            response = requests.get(url, headers=self.headers, timeout=30)
+            response = fetch_with_retry(url, headers=self.headers, timeout=30)
             response.raise_for_status()
             data = response.json()
             return data.get('reviews', [])
@@ -60,7 +60,7 @@ class YelpIngestor(BaseIngestor):
         url = f"{self.YELP_API_BASE}/businesses/{business_id}"
         
         try:
-            response = requests.get(url, headers=self.headers, timeout=30)
+            response = fetch_with_retry(url, headers=self.headers, timeout=30)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:

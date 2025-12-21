@@ -1,3 +1,15 @@
+/**
+ * @fileoverview Categories configuration manager component.
+ *
+ * Features:
+ * - Add, edit, delete categories and subcategories
+ * - AI-powered category generation from company description
+ * - Expandable tree view
+ * - Persist to backend
+ *
+ * @module components/CategoriesManager
+ */
+
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 

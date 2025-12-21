@@ -3,7 +3,6 @@ Web Scraper Ingestor - Configurable scraper for extracting feedback from website
 Supports multiple scraper configurations with custom selectors and frequencies.
 """
 import os
-import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from typing import Generator
@@ -11,7 +10,8 @@ from urllib.parse import urljoin, urlparse
 import hashlib
 import json
 import re
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class WebScraperIngestor(BaseIngestor):
@@ -254,7 +254,7 @@ class WebScraperIngestor(BaseIngestor):
     def _scrape_page(self, config: dict, url: str) -> Generator[dict, None, None]:
         """Scrape a single page based on configuration."""
         try:
-            response = requests.get(url, headers=self.headers, timeout=30)
+            response = fetch_with_retry(url, headers=self.headers, timeout=30)
             response.raise_for_status()
             logger.info(f"Fetched {url}, status={response.status_code}, content_length={len(response.text)}")
             soup = BeautifulSoup(response.text, 'html.parser')

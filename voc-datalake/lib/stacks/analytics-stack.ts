@@ -5,6 +5,8 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -24,6 +26,8 @@ export interface VocAnalyticsStackProps extends cdk.StackProps {
   s3ImportBucket?: s3.Bucket;
   rawDataBucket?: s3.Bucket;
   avatarsCdnUrl?: string;
+  frontendDomain?: string;  // CloudFront domain for CORS (e.g., 'd1234567890.cloudfront.net')
+  userPool: cognito.UserPool;  // Cognito User Pool for authentication
 }
 
 export class VocAnalyticsStack extends cdk.Stack {
@@ -33,6 +37,16 @@ export class VocAnalyticsStack extends cdk.Stack {
     super(scope, id, props);
 
     const { feedbackTable, aggregatesTable, projectsTable, jobsTable, conversationsTable, kmsKey, processingQueueUrl, processingQueueArn, secretsArn, brandName, researchStateMachineArn, s3ImportBucket, rawDataBucket, avatarsCdnUrl } = props;
+
+    // CORS allowed origins - restrict to CloudFront domain if provided
+    const corsAllowedOrigins = props.frontendDomain 
+      ? [`https://${props.frontendDomain}`]
+      : ['http://localhost:5173', 'http://localhost:3000'];  // Dev only - update after first deploy
+
+    // Single allowed origin for Lambda CORS config (Powertools only supports single origin)
+    const allowedOrigin = props.frontendDomain 
+      ? `https://${props.frontendDomain}`
+      : 'http://localhost:5173';  // Dev only
 
     // Lambda Layer (shared across all API Lambdas)
     const apiLayer = new lambda.LayerVersion(this, 'ApiDepsLayer', {
@@ -66,6 +80,7 @@ export class VocAnalyticsStack extends cdk.Stack {
       environment: {
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
+        ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-metrics-api',
         LOG_LEVEL: 'INFO',
       },
@@ -102,7 +117,7 @@ export class VocAnalyticsStack extends cdk.Stack {
       role: integrationsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      environment: { SECRETS_ARN: secretsArn, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO' },
+      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
       logGroup: new logs.LogGroup(this, 'IntegrationsApiLogs', { logGroupName: '/aws/lambda/voc-integrations-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
     });
@@ -129,7 +144,6 @@ export class VocAnalyticsStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       ],
     }));
 
@@ -141,7 +155,7 @@ export class VocAnalyticsStack extends cdk.Stack {
       role: scrapersRole,
       timeout: cdk.Duration.seconds(60),
       memorySize: 512,
-      environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO' },
+      environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
       logGroup: new logs.LogGroup(this, 'ScrapersApiLogs', { logGroupName: '/aws/lambda/voc-scrapers-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
     });
@@ -160,7 +174,6 @@ export class VocAnalyticsStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       ],
     }));
 
@@ -172,7 +185,7 @@ export class VocAnalyticsStack extends cdk.Stack {
       role: settingsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      environment: { AGGREGATES_TABLE: aggregatesTable.tableName, POWERTOOLS_SERVICE_NAME: 'voc-settings-api', LOG_LEVEL: 'INFO' },
+      environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-settings-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
       logGroup: new logs.LogGroup(this, 'SettingsApiLogs', { logGroupName: '/aws/lambda/voc-settings-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
     });
@@ -227,7 +240,6 @@ export class VocAnalyticsStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       ],
     }));
 
@@ -243,6 +255,7 @@ export class VocAnalyticsStack extends cdk.Stack {
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
         CONVERSATIONS_TABLE: conversationsTable.tableName,
+        ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-chat-api',
         LOG_LEVEL: 'INFO',
       },
@@ -274,10 +287,8 @@ export class VocAnalyticsStack extends cdk.Stack {
     projectsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        // Claude Sonnet 4.5 for persona generation
+        // Claude Sonnet 4.5 for persona generation (global inference profile)
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        `arn:aws:bedrock:${this.region}::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
         // Amazon Nova Canvas for persona avatar generation (Lambda calls us-east-1 explicitly)
         'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
@@ -308,6 +319,7 @@ export class VocAnalyticsStack extends cdk.Stack {
         RESEARCH_STATE_MACHINE_ARN: researchStateMachineArn,
         RAW_DATA_BUCKET: rawDataBucket?.bucketName || '',
         AVATARS_CDN_URL: avatarsCdnUrl || '',
+        ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-projects-api',
         LOG_LEVEL: 'INFO',
       },
@@ -337,8 +349,6 @@ export class VocAnalyticsStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        `arn:aws:bedrock:${this.region}::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       ],
     }));
 
@@ -354,6 +364,7 @@ export class VocAnalyticsStack extends cdk.Stack {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
+        USER_POOL_ID: props.userPool.userPoolId,  // For Cognito JWT validation
         POWERTOOLS_SERVICE_NAME: 'voc-chat-stream',
         LOG_LEVEL: 'INFO',
       },
@@ -366,11 +377,11 @@ export class VocAnalyticsStack extends cdk.Stack {
     });
 
     const chatStreamUrl = chatStreamLambda.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.NONE,
+      authType: lambda.FunctionUrlAuthType.NONE,  // Custom auth via Cognito JWT validation in handler
       cors: {
-        allowedOrigins: ['*'],
+        allowedOrigins: corsAllowedOrigins,
         allowedMethods: [lambda.HttpMethod.POST],
-        allowedHeaders: ['Content-Type'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
       },
     });
 
@@ -392,6 +403,11 @@ export class VocAnalyticsStack extends cdk.Stack {
       actions: ['sqs:SendMessage'],
       resources: [processingQueueArn],
     }));
+    // Grant read access to secrets for webhook signature validation
+    webhookRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['secretsmanager:GetSecretValue'],
+      resources: [secretsArn],
+    }));
 
     const trustpilotWebhook = new lambda.Function(this, 'TrustpilotWebhook', {
       functionName: 'voc-webhook-trustpilot',
@@ -404,6 +420,7 @@ export class VocAnalyticsStack extends cdk.Stack {
       environment: {
         PROCESSING_QUEUE_URL: processingQueueUrl,
         FEEDBACK_TABLE: feedbackTable.tableName,
+        SECRETS_ARN: secretsArn,
         BRAND_NAME: brandName,
         POWERTOOLS_SERVICE_NAME: 'voc-webhook-trustpilot',
         LOG_LEVEL: 'INFO',
@@ -417,8 +434,7 @@ export class VocAnalyticsStack extends cdk.Stack {
     });
 
     // ============================================
-    // REST API with optimized endpoint structure
-    // Using proxies to minimize Lambda permissions
+    // REST API with Cognito authentication
     // ============================================
     this.api = new apigateway.RestApi(this, 'VocAnalyticsApi', {
       restApiName: 'voc-analytics-api',
@@ -432,10 +448,25 @@ export class VocAnalyticsStack extends cdk.Stack {
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Amz-Date', 'X-Api-Key', 'X-Amz-Security-Token'],
+        allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Amz-Date', 'X-Amz-Security-Token'],
         exposeHeaders: ['Content-Type'],
       },
     });
+
+    // ============================================
+    // Cognito Authorizer for API Gateway
+    // ============================================
+    const cognitoAuthorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'VocCognitoAuthorizer', {
+      cognitoUserPools: [props.userPool],
+      authorizerName: 'voc-cognito-authorizer',
+      identitySource: 'method.request.header.Authorization',
+    });
+
+    // Default method options requiring Cognito auth
+    const authMethodOptions: apigateway.MethodOptions = {
+      authorizer: cognitoAuthorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    };
 
     // Lambda integrations
     const metricsIntegration = new apigateway.LambdaIntegration(metricsLambda, { proxy: true });
@@ -452,64 +483,64 @@ export class VocAnalyticsStack extends cdk.Stack {
     // Keep existing structure but route to new Lambda
     // ============================================
     const feedbackResource = this.api.root.addResource('feedback');
-    feedbackResource.addMethod('GET', metricsIntegration);
+    feedbackResource.addMethod('GET', metricsIntegration, authMethodOptions);
     const feedbackIdResource = feedbackResource.addResource('{id}');
-    feedbackIdResource.addMethod('GET', metricsIntegration);
+    feedbackIdResource.addMethod('GET', metricsIntegration, authMethodOptions);
     const feedbackIdSimilarResource = feedbackIdResource.addResource('similar');
-    feedbackIdSimilarResource.addMethod('GET', metricsIntegration);
+    feedbackIdSimilarResource.addMethod('GET', metricsIntegration, authMethodOptions);
     const urgentResource = feedbackResource.addResource('urgent');
-    urgentResource.addMethod('GET', metricsIntegration);
+    urgentResource.addMethod('GET', metricsIntegration, authMethodOptions);
     const entitiesResource = feedbackResource.addResource('entities');
-    entitiesResource.addMethod('GET', metricsIntegration);
+    entitiesResource.addMethod('GET', metricsIntegration, authMethodOptions);
 
     const metricsResource = this.api.root.addResource('metrics');
     const summaryResource = metricsResource.addResource('summary');
-    summaryResource.addMethod('GET', metricsIntegration);
+    summaryResource.addMethod('GET', metricsIntegration, authMethodOptions);
     const sentimentResource = metricsResource.addResource('sentiment');
-    sentimentResource.addMethod('GET', metricsIntegration);
+    sentimentResource.addMethod('GET', metricsIntegration, authMethodOptions);
     const categoriesResource = metricsResource.addResource('categories');
-    categoriesResource.addMethod('GET', metricsIntegration);
+    categoriesResource.addMethod('GET', metricsIntegration, authMethodOptions);
     const metricSourcesResource = metricsResource.addResource('sources');
-    metricSourcesResource.addMethod('GET', metricsIntegration);
+    metricSourcesResource.addMethod('GET', metricsIntegration, authMethodOptions);
     const personasResource = metricsResource.addResource('personas');
-    personasResource.addMethod('GET', metricsIntegration);
+    personasResource.addMethod('GET', metricsIntegration, authMethodOptions);
 
     // ============================================
     // Chat Lambda: /chat/*
     // ============================================
     const chatResource = this.api.root.addResource('chat');
-    chatResource.addMethod('POST', chatIntegration);
+    chatResource.addMethod('POST', chatIntegration, authMethodOptions);
     const chatConversationsResource = chatResource.addResource('conversations');
-    chatConversationsResource.addProxy({ defaultIntegration: chatIntegration, anyMethod: true });
+    chatConversationsResource.addProxy({ defaultIntegration: chatIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // ============================================
     // Integrations Lambda: /integrations/*, /sources/*
     // ============================================
     const integrationsResource = this.api.root.addResource('integrations');
     const intStatusResource = integrationsResource.addResource('status');
-    intStatusResource.addMethod('GET', integrationsIntegration);
+    intStatusResource.addMethod('GET', integrationsIntegration, authMethodOptions);
     const intSourceResource = integrationsResource.addResource('{source}');
     const intCredentialsResource = intSourceResource.addResource('credentials');
-    intCredentialsResource.addMethod('PUT', integrationsIntegration);
+    intCredentialsResource.addMethod('PUT', integrationsIntegration, authMethodOptions);
     const intTestResource = intSourceResource.addResource('test');
-    intTestResource.addMethod('POST', integrationsIntegration);
+    intTestResource.addMethod('POST', integrationsIntegration, authMethodOptions);
 
     const sourcesResource = this.api.root.addResource('sources');
     const srcStatusResource = sourcesResource.addResource('status');
-    srcStatusResource.addMethod('GET', integrationsIntegration);
+    srcStatusResource.addMethod('GET', integrationsIntegration, authMethodOptions);
     const srcSourceResource = sourcesResource.addResource('{source}');
     const srcEnableResource = srcSourceResource.addResource('enable');
-    srcEnableResource.addMethod('PUT', integrationsIntegration);
+    srcEnableResource.addMethod('PUT', integrationsIntegration, authMethodOptions);
     const srcDisableResource = srcSourceResource.addResource('disable');
-    srcDisableResource.addMethod('PUT', integrationsIntegration);
+    srcDisableResource.addMethod('PUT', integrationsIntegration, authMethodOptions);
 
     // ============================================
     // Scrapers Lambda: /scrapers/*
     // ============================================
     const scrapersResource = this.api.root.addResource('scrapers');
-    scrapersResource.addMethod('GET', scrapersIntegration);
-    scrapersResource.addMethod('POST', scrapersIntegration);
-    scrapersResource.addProxy({ defaultIntegration: scrapersIntegration, anyMethod: true });
+    scrapersResource.addMethod('GET', scrapersIntegration, authMethodOptions);
+    scrapersResource.addMethod('POST', scrapersIntegration, authMethodOptions);
+    scrapersResource.addProxy({ defaultIntegration: scrapersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // ============================================
     // S3 Import Lambda (dedicated to avoid policy limit)
@@ -534,6 +565,7 @@ export class VocAnalyticsStack extends cdk.Stack {
         memorySize: 256,
         environment: {
           S3_IMPORT_BUCKET: s3ImportBucket.bucketName,
+          ALLOWED_ORIGIN: allowedOrigin,
           POWERTOOLS_SERVICE_NAME: 'voc-s3-import-api',
           LOG_LEVEL: 'INFO',
         },
@@ -549,15 +581,15 @@ export class VocAnalyticsStack extends cdk.Stack {
       // S3 Import file explorer endpoints
       const s3ImportResource = this.api.root.addResource('s3-import');
       const s3FilesResource = s3ImportResource.addResource('files');
-      s3FilesResource.addMethod('GET', s3ImportIntegration);
+      s3FilesResource.addMethod('GET', s3ImportIntegration, authMethodOptions);
       const s3SourcesResource = s3ImportResource.addResource('sources');
-      s3SourcesResource.addMethod('GET', s3ImportIntegration);
-      s3SourcesResource.addMethod('POST', s3ImportIntegration);
+      s3SourcesResource.addMethod('GET', s3ImportIntegration, authMethodOptions);
+      s3SourcesResource.addMethod('POST', s3ImportIntegration, authMethodOptions);
       const s3UploadResource = s3ImportResource.addResource('upload-url');
-      s3UploadResource.addMethod('POST', s3ImportIntegration);
+      s3UploadResource.addMethod('POST', s3ImportIntegration, authMethodOptions);
       const s3FileResource = s3ImportResource.addResource('file');
       const s3FilePathResource = s3FileResource.addResource('{key}');
-      s3FilePathResource.addMethod('DELETE', s3ImportIntegration);
+      s3FilePathResource.addMethod('DELETE', s3ImportIntegration, authMethodOptions);
     }
 
     // ============================================
@@ -565,53 +597,143 @@ export class VocAnalyticsStack extends cdk.Stack {
     // ============================================
     const settingsResource = this.api.root.addResource('settings');
     const brandResource = settingsResource.addResource('brand');
-    brandResource.addMethod('GET', settingsIntegration);
-    brandResource.addMethod('PUT', settingsIntegration);
+    brandResource.addMethod('GET', settingsIntegration, authMethodOptions);
+    brandResource.addMethod('PUT', settingsIntegration, authMethodOptions);
     
     // Categories configuration endpoints
     const settingsCategoriesResource = settingsResource.addResource('categories');
-    settingsCategoriesResource.addMethod('GET', settingsIntegration);
-    settingsCategoriesResource.addMethod('PUT', settingsIntegration);
+    settingsCategoriesResource.addMethod('GET', settingsIntegration, authMethodOptions);
+    settingsCategoriesResource.addMethod('PUT', settingsIntegration, authMethodOptions);
     const categoriesGenerateResource = settingsCategoriesResource.addResource('generate');
-    categoriesGenerateResource.addMethod('POST', settingsIntegration);
+    categoriesGenerateResource.addMethod('POST', settingsIntegration, authMethodOptions);
 
     // ============================================
     // Feedback Form Lambda: /feedback-form/* (legacy single form)
+    // NOTE: Public endpoints - no API key required for form submission
     // ============================================
     const feedbackFormResource = this.api.root.addResource('feedback-form');
     const feedbackFormConfigResource = feedbackFormResource.addResource('config');
-    feedbackFormConfigResource.addMethod('GET', feedbackFormIntegration);
-    feedbackFormConfigResource.addMethod('PUT', feedbackFormIntegration);
+    feedbackFormConfigResource.addMethod('GET', feedbackFormIntegration);  // Public - form needs config
+    feedbackFormConfigResource.addMethod('PUT', feedbackFormIntegration, authMethodOptions);  // Protected - admin only
     const feedbackFormSubmitResource = feedbackFormResource.addResource('submit');
-    feedbackFormSubmitResource.addMethod('POST', feedbackFormIntegration);
+    feedbackFormSubmitResource.addMethod('POST', feedbackFormIntegration);  // Public - users submit feedback
     const feedbackFormEmbedResource = feedbackFormResource.addResource('embed');
-    feedbackFormEmbedResource.addMethod('GET', feedbackFormIntegration);
+    feedbackFormEmbedResource.addMethod('GET', feedbackFormIntegration);  // Public - embed code
     const feedbackFormIframeResource = feedbackFormResource.addResource('iframe');
-    feedbackFormIframeResource.addMethod('GET', feedbackFormIntegration);
+    feedbackFormIframeResource.addMethod('GET', feedbackFormIntegration);  // Public - iframe content
 
     // ============================================
     // Feedback Forms Lambda: /feedback-forms/* (multiple forms)
+    // NOTE: List/create protected, individual form access public for submissions
     // ============================================
     const feedbackFormsResource = this.api.root.addResource('feedback-forms');
-    feedbackFormsResource.addMethod('GET', feedbackFormIntegration);  // List all forms
-    feedbackFormsResource.addMethod('POST', feedbackFormIntegration); // Create form
-    // Use proxy for dynamic form_id routes: /feedback-forms/{form_id}/*
+    feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);  // Protected - list all forms
+    feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions); // Protected - create form
+    // Proxy for dynamic form_id routes - public for form rendering/submission
     feedbackFormsResource.addProxy({ defaultIntegration: feedbackFormIntegration, anyMethod: true });
 
     // ============================================
     // Projects Lambda: /projects/*
     // ============================================
     const projectsResource = this.api.root.addResource('projects');
-    projectsResource.addMethod('GET', projectsIntegration);
-    projectsResource.addMethod('POST', projectsIntegration);
-    projectsResource.addProxy({ defaultIntegration: projectsIntegration, anyMethod: true });
+    projectsResource.addMethod('GET', projectsIntegration, authMethodOptions);
+    projectsResource.addMethod('POST', projectsIntegration, authMethodOptions);
+    projectsResource.addProxy({ defaultIntegration: projectsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // ============================================
     // Webhook: /webhooks/trustpilot
+    // NOTE: No API key - webhooks must be accessible by external services
+    // Consider adding webhook signature verification in the Lambda
     // ============================================
     const webhooksResource = this.api.root.addResource('webhooks');
     const trustpilotResource = webhooksResource.addResource('trustpilot');
-    trustpilotResource.addMethod('POST', webhookIntegration);
+    trustpilotResource.addMethod('POST', webhookIntegration);  // No auth - external webhook
+
+    // ============================================
+    // WAF WebACL for API Gateway (REGIONAL scope)
+    // Protects against common web attacks, SQL injection, XSS, and DDoS
+    // ============================================
+    const apiWaf = new wafv2.CfnWebACL(this, 'ApiWaf', {
+      scope: 'REGIONAL',
+      defaultAction: { allow: {} },
+      visibilityConfig: {
+        cloudWatchMetricsEnabled: true,
+        metricName: 'VocApiWaf',
+        sampledRequestsEnabled: true,
+      },
+      rules: [
+        {
+          name: 'AWSManagedRulesCommonRuleSet',
+          priority: 1,
+          overrideAction: { none: {} },
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: 'AWS',
+              name: 'AWSManagedRulesCommonRuleSet',
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: 'ApiCommonRuleSet',
+            sampledRequestsEnabled: true,
+          },
+        },
+        {
+          name: 'AWSManagedRulesKnownBadInputsRuleSet',
+          priority: 2,
+          overrideAction: { none: {} },
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: 'AWS',
+              name: 'AWSManagedRulesKnownBadInputsRuleSet',
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: 'ApiKnownBadInputs',
+            sampledRequestsEnabled: true,
+          },
+        },
+        {
+          name: 'AWSManagedRulesSQLiRuleSet',
+          priority: 3,
+          overrideAction: { none: {} },
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: 'AWS',
+              name: 'AWSManagedRulesSQLiRuleSet',
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: 'ApiSQLiRuleSet',
+            sampledRequestsEnabled: true,
+          },
+        },
+        {
+          name: 'RateLimitRule',
+          priority: 4,
+          action: { block: {} },
+          statement: {
+            rateBasedStatement: {
+              limit: 2000,
+              aggregateKeyType: 'IP',
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: 'ApiRateLimit',
+            sampledRequestsEnabled: true,
+          },
+        },
+      ],
+    });
+
+    // Associate WAF with API Gateway stage
+    new wafv2.CfnWebACLAssociation(this, 'ApiWafAssociation', {
+      resourceArn: `arn:aws:apigateway:${this.region}::/restapis/${this.api.restApiId}/stages/v1`,
+      webAclArn: apiWaf.attrArn,
+    });
 
     // ============================================
     // Outputs

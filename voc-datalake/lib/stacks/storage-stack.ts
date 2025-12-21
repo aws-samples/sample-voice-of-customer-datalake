@@ -7,6 +7,10 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Construct } from 'constructs';
 
+export interface VocStorageStackProps extends cdk.StackProps {
+  frontendDomain?: string;  // CloudFront domain for CORS (e.g., 'd1234567890.cloudfront.net')
+}
+
 export class VocStorageStack extends cdk.Stack {
   public readonly feedbackTable: dynamodb.Table;
   public readonly aggregatesTable: dynamodb.Table;
@@ -16,10 +20,16 @@ export class VocStorageStack extends cdk.Stack {
   public readonly conversationsTable: dynamodb.Table;
   public readonly kmsKey: kms.Key;
   public readonly rawDataBucket: s3.Bucket;
+  public readonly accessLogsBucket: s3.Bucket;
   public readonly avatarsCdnUrl: string;
 
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: VocStorageStackProps) {
     super(scope, id, props);
+
+    // CORS allowed origins - restrict to CloudFront domain if provided
+    const corsAllowedOrigins = props?.frontendDomain 
+      ? [`https://${props.frontendDomain}`]
+      : ['http://localhost:5173', 'http://localhost:3000'];  // Dev only - update after first deploy
 
     // KMS Key for encryption at rest
     this.kmsKey = new kms.Key(this, 'VocKmsKey', {
@@ -27,6 +37,19 @@ export class VocStorageStack extends cdk.Stack {
       description: 'KMS key for VoC Data Lake encryption',
       enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // S3 Access Logs Bucket - stores server access logs for audit trail
+    this.accessLogsBucket = new s3.Bucket(this, 'AccessLogsBucket', {
+      bucketName: `voc-access-logs-${this.account}-${this.region}`,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      versioned: false,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      lifecycleRules: [
+        { expiration: cdk.Duration.days(90) },
+      ],
     });
 
     // S3 Bucket for raw data lake
@@ -40,10 +63,12 @@ export class VocStorageStack extends cdk.Stack {
       enforceSSL: true,
       versioned: false,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      serverAccessLogsBucket: this.accessLogsBucket,
+      serverAccessLogsPrefix: 'raw-data-bucket/',
       cors: [
         {
           allowedMethods: [s3.HttpMethods.GET],
-          allowedOrigins: ['*'],
+          allowedOrigins: corsAllowedOrigins,
           allowedHeaders: ['*'],
           maxAge: 3600,
         },
@@ -54,7 +79,7 @@ export class VocStorageStack extends cdk.Stack {
     const avatarsCorsPolicy = new cloudfront.ResponseHeadersPolicy(this, 'AvatarsCorsPolicy', {
       responseHeadersPolicyName: 'voc-avatars-cors-policy',
       corsBehavior: {
-        accessControlAllowOrigins: ['*'],
+        accessControlAllowOrigins: corsAllowedOrigins,
         accessControlAllowMethods: ['GET', 'HEAD'],
         accessControlAllowHeaders: ['*'],
         accessControlMaxAge: cdk.Duration.hours(1),
@@ -102,7 +127,7 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
-      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       timeToLiveAttribute: 'ttl',
       stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
@@ -136,6 +161,14 @@ export class VocStorageStack extends cdk.Stack {
       nonKeyAttributes: ['feedback_id', 'source_platform', 'problem_summary', 'direct_customer_quote', 'source_url'],
     });
 
+    // GSI4: Query by feedback_id (for direct lookups without scanning)
+    // pk: feedback_id
+    this.feedbackTable.addGlobalSecondaryIndex({
+      indexName: 'gsi4-by-feedback-id',
+      partitionKey: { name: 'feedback_id', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
 
     // Aggregates Table - stores pre-computed metrics
     // PK: METRIC#daily_sentiment, SK: 2024-01-15
@@ -147,8 +180,18 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
+      pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       timeToLiveAttribute: 'ttl',
+    });
+
+    // GSI1: Query aggregates by metric type (avoids full table scans)
+    // pk: metric_type (e.g., 'source', 'persona'), sk: pk (original pk for sorting)
+    this.aggregatesTable.addGlobalSecondaryIndex({
+      indexName: 'gsi1-by-metric-type',
+      partitionKey: { name: 'metric_type', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
     });
 
     // Watermarks Table - tracks ingestion state per source
@@ -158,6 +201,7 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
+      pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
@@ -170,6 +214,7 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
+      pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
@@ -191,6 +236,7 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
+      pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       timeToLiveAttribute: 'ttl',
     });
@@ -212,6 +258,7 @@ export class VocStorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: this.kmsKey,
+      pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       timeToLiveAttribute: 'ttl',
     });
@@ -227,6 +274,7 @@ export class VocStorageStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ConversationsTableName', { value: this.conversationsTable.tableName });
     new cdk.CfnOutput(this, 'RawDataBucketName', { value: this.rawDataBucket.bucketName });
     new cdk.CfnOutput(this, 'RawDataBucketArn', { value: this.rawDataBucket.bucketArn });
+    new cdk.CfnOutput(this, 'AccessLogsBucketName', { value: this.accessLogsBucket.bucketName });
     new cdk.CfnOutput(this, 'AvatarsCdnUrl', { 
       value: this.avatarsCdnUrl,
       description: 'CloudFront URL for persona avatar images',

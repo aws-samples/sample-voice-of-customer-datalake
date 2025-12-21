@@ -1,3 +1,15 @@
+/**
+ * @fileoverview Chat message component for AI conversations.
+ *
+ * Renders a single chat message with:
+ * - User/assistant avatar and styling
+ * - Markdown content rendering
+ * - Copy to clipboard functionality
+ * - Feedback source carousel for assistant messages
+ *
+ * @module components/ChatMessage
+ */
+
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Bot, User, Copy, Check } from 'lucide-react'

@@ -3,21 +3,19 @@ VoC Aggregation Processor Lambda
 Updates real-time aggregates in DynamoDB when new feedback arrives via Streams.
 """
 import os
-import boto3
 from datetime import datetime, timezone
 from decimal import Decimal
 from collections import defaultdict
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer, Metrics
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
 from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord
 
-logger = Logger()
-tracer = Tracer()
-metrics = Metrics(namespace="VoC")
+# Shared module imports
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_dynamodb_resource
 
-# AWS Clients
-dynamodb = boto3.resource('dynamodb')
+# AWS Clients (using shared module for connection reuse)
+dynamodb = get_dynamodb_resource()
 
 # Configuration
 AGGREGATES_TABLE = os.environ['AGGREGATES_TABLE']
@@ -26,20 +24,39 @@ aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
 processor = BatchProcessor(event_type=EventType.DynamoDBStreams)
 
 
+def get_metric_type(pk: str) -> str | None:
+    """Extract metric type from pk for GSI indexing."""
+    if pk.startswith('METRIC#daily_source#'):
+        return 'source'
+    elif pk.startswith('METRIC#persona#'):
+        return 'persona'
+    return None
+
+
 def update_counter(pk: str, sk: str, field: str, increment: int = 1, ttl_days: int = 90):
     """Atomically update a counter in the aggregates table."""
     ttl = int(datetime.now(timezone.utc).timestamp() + ttl_days * 24 * 60 * 60)
     
+    # Build update expression - include metric_type for GSI if applicable
+    metric_type = get_metric_type(pk)
+    update_expr = 'SET #field = if_not_exists(#field, :zero) + :inc, #ttl = :ttl, updated_at = :now'
+    attr_names = {'#field': field, '#ttl': 'ttl'}
+    attr_values = {
+        ':inc': increment,
+        ':zero': 0,
+        ':ttl': ttl,
+        ':now': datetime.now(timezone.utc).isoformat()
+    }
+    
+    if metric_type:
+        update_expr += ', metric_type = :metric_type'
+        attr_values[':metric_type'] = metric_type
+    
     aggregates_table.update_item(
         Key={'pk': pk, 'sk': sk},
-        UpdateExpression='SET #field = if_not_exists(#field, :zero) + :inc, #ttl = :ttl, updated_at = :now',
-        ExpressionAttributeNames={'#field': field, '#ttl': 'ttl'},
-        ExpressionAttributeValues={
-            ':inc': increment,
-            ':zero': 0,
-            ':ttl': ttl,
-            ':now': datetime.now(timezone.utc).isoformat()
-        }
+        UpdateExpression=update_expr,
+        ExpressionAttributeNames=attr_names,
+        ExpressionAttributeValues=attr_values
     )
 
 

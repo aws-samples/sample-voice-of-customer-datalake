@@ -2,31 +2,59 @@
 Projects API Lambda Handler
 Separate Lambda to handle projects endpoints and avoid policy size limits.
 """
+
 import json
 import os
-from typing import Any
-from aws_lambda_powertools import Logger, Tracer
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
-from decimal import Decimal
-
+import sys
 from datetime import timedelta
+from decimal import Decimal
+from typing import Any
+
+# Add shared module to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from shared.logging import logger, tracer, metrics
+
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
 from projects import (
-    list_projects, create_project, get_project, update_project, delete_project,
-    generate_personas, generate_prd, generate_prfaq, project_chat, run_research,
-    create_document, update_document, delete_document,
-    create_persona, update_persona, delete_persona, import_persona,
-    add_persona_note, update_persona_note, delete_persona_note, regenerate_persona_avatar
+    list_projects,
+    create_project,
+    get_project,
+    update_project,
+    delete_project,
+    generate_personas,
+    generate_prd,
+    generate_prfaq,
+    project_chat,
+    run_research,
+    create_document,
+    update_document,
+    delete_document,
+    create_persona,
+    update_persona,
+    delete_persona,
+    import_persona,
+    add_persona_note,
+    update_persona_note,
+    delete_persona_note,
+    regenerate_persona_avatar,
 )
 
-logger = Logger()
-tracer = Tracer()
-
+# Configure CORS - restrict to CloudFront domain in production
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
 cors_config = CORSConfig(
-    allow_origin="*",
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-Amz-Date", "X-Api-Key", "X-Amz-Security-Token"],
+    allow_origin=ALLOWED_ORIGIN,
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-Amz-Date",
+        "X-Api-Key",
+        "X-Amz-Security-Token",
+    ],
     expose_headers=["Content-Type"],
     max_age=300,
-    allow_credentials=False
+    allow_credentials=False,
 )
 
 app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
@@ -633,11 +661,12 @@ def api_save_prioritization_scores():
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to save prioritization scores: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to save prioritization scores'}
 
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler for projects API."""
     try:
@@ -692,11 +721,11 @@ def lambda_handler(event: dict, context: Any) -> dict:
                     ExpressionAttributeValues={
                         ':status': 'failed',
                         ':completed': datetime.now(timezone.utc).isoformat(),
-                        ':error': str(e),
+                        ':error': 'Job execution failed',
                         ':gsi1pk': 'STATUS#failed'
                     }
                 )
-                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': str(e)})}
+                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': 'Job execution failed'})}
         
         # Handle document generation jobs (PRD/PRFAQ)
         if job_type in ['generate_prd', 'generate_prfaq']:
@@ -975,8 +1004,8 @@ Generate 10 questions and answers for INTERNAL stakeholders:
                 
             except Exception as e:
                 logger.exception(f"Document generation failed: {e}")
-                update_doc_job_status('failed', 0, 'error', error=str(e))
-                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': str(e)})}
+                update_doc_job_status('failed', 0, 'error', error='Document generation failed')
+                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': 'Document generation failed'})}
         
         # Handle merge documents job
         if job_type == 'merge_documents':
@@ -1202,8 +1231,8 @@ Output the complete merged document in markdown format."""
                 
             except Exception as e:
                 logger.exception(f"Document merge failed: {e}")
-                update_merge_job_status('failed', 0, 'error', error=str(e))
-                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': str(e)})}
+                update_merge_job_status('failed', 0, 'error', error='Document merge failed')
+                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': 'Document merge failed'})}
         
         # Handle import persona job
         if job_type == 'import_persona':
@@ -1375,12 +1404,12 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
                 
             except json.JSONDecodeError as e:
                 logger.error(f"[IMPORT_PERSONA_JOB] Failed to parse JSON: {e}")
-                update_import_job_status('failed', 0, 'error', error=f'Failed to parse persona data: {str(e)}')
-                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': str(e)})}
+                update_import_job_status('failed', 0, 'error', error='Failed to parse persona data')
+                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': 'Failed to parse persona data'})}
             except Exception as e:
                 logger.exception(f"[IMPORT_PERSONA_JOB] Import failed: {e}")
-                update_import_job_status('failed', 0, 'error', error=str(e))
-                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': str(e)})}
+                update_import_job_status('failed', 0, 'error', error='Persona import failed')
+                return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': 'Persona import failed'})}
         
         # Normal API Gateway request
         result = app.resolve(event, context)
@@ -1396,5 +1425,5 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
                 'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Api-Key,X-Amz-Security-Token',
                 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
             },
-            'body': json.dumps({'error': str(e), 'message': 'Internal server error'})
+            'body': json.dumps({'error': 'Internal server error', 'message': 'An unexpected error occurred. Please try again.'})
         }

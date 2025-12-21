@@ -1,3 +1,16 @@
+/**
+ * @fileoverview Feature prioritization page for PR/FAQ documents.
+ *
+ * Features:
+ * - Score PR/FAQs on impact, time-to-market, strategic fit, confidence
+ * - Weighted priority score calculation
+ * - Sortable table with expandable document previews
+ * - Unsaved changes warning with navigation blocker
+ * - Persist scores to backend
+ *
+ * @module pages/Prioritization
+ */
+
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useBlocker } from 'react-router-dom'

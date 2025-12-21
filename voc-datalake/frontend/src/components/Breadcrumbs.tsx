@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Breadcrumb navigation component.
+ *
+ * Displays hierarchical navigation path based on current route.
+ * Hidden on home page.
+ *
+ * @module components/Breadcrumbs
+ */
+
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronRight, Home } from 'lucide-react'
 import clsx from 'clsx'

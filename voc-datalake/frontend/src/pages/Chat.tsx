@@ -1,3 +1,17 @@
+/**
+ * @fileoverview AI Chat page for conversational data queries.
+ *
+ * Features:
+ * - Natural language queries about feedback data
+ * - Streaming responses via Lambda Function URL
+ * - Conversation history with sidebar
+ * - Filter context for scoped queries
+ * - Suggested questions for quick start
+ * - Export conversations to PDF/Markdown
+ *
+ * @module pages/Chat
+ */
+
 import { useState, useRef, useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Send, Bot, Loader2, Sparkles, PanelLeftClose, PanelLeft } from 'lucide-react'

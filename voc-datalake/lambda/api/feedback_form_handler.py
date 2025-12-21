@@ -9,16 +9,15 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig, Response
-import boto3
 
-logger = Logger()
-tracer = Tracer()
+# Shared module imports
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_dynamodb_resource, get_sqs_client
 
-# AWS Clients
-dynamodb = boto3.resource('dynamodb')
-sqs = boto3.client('sqs')
+# AWS Clients (using shared module for connection reuse)
+dynamodb = get_dynamodb_resource()
+sqs = get_sqs_client()
 
 # Configuration
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
@@ -27,9 +26,13 @@ BRAND_NAME = os.environ.get('BRAND_NAME', '')
 
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 
-# CORS config - allow embedding from any origin
+# CORS config for embeddable feedback form
+# NOTE: This form is designed to be embedded on external websites, so it allows
+# any origin by default. Set ALLOWED_ORIGIN env var to restrict if needed.
+# For the main dashboard API handlers, CORS is restricted to the CloudFront domain.
+ALLOWED_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '*')
 cors_config = CORSConfig(
-    allow_origin="*",
+    allow_origin=ALLOWED_ORIGIN,
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
     expose_headers=["Content-Type"],
     max_age=300,
@@ -80,7 +83,7 @@ def get_form_config():
         }
     except Exception as e:
         logger.error(f"Error fetching form config: {e}")
-        return {'success': False, 'error': str(e)}
+        return {'success': False, 'error': 'Failed to load form configuration'}
 
 
 @app.put("/feedback-form/config")
@@ -116,7 +119,7 @@ def save_form_config():
         return {'success': True, 'message': 'Form configuration saved'}
     except Exception as e:
         logger.error(f"Error saving form config: {e}")
-        return {'success': False, 'error': str(e)}
+        return {'success': False, 'error': 'Failed to save form configuration'}
 
 
 @app.post("/feedback-form/submit")
@@ -240,7 +243,7 @@ def list_forms():
         return {'success': True, 'forms': forms}
     except Exception as e:
         logger.error(f"Error listing forms: {e}")
-        return {'success': False, 'error': str(e), 'forms': []}
+        return {'success': False, 'error': 'Failed to list forms', 'forms': []}
 
 
 @app.post("/feedback-forms")
@@ -288,7 +291,7 @@ def create_form():
         return {'success': True, 'form': _item_to_form(item)}
     except Exception as e:
         logger.error(f"Error creating form: {e}")
-        return {'success': False, 'error': str(e)}
+        return {'success': False, 'error': 'Failed to create form'}
 
 
 @app.get("/feedback-forms/<form_id>")
@@ -307,7 +310,7 @@ def get_form(form_id: str):
         return {'success': True, 'form': _item_to_form(item)}
     except Exception as e:
         logger.error(f"Error getting form: {e}")
-        return {'success': False, 'error': str(e)}
+        return {'success': False, 'error': 'Failed to get form'}
 
 
 @app.put("/feedback-forms/<form_id>")
@@ -353,7 +356,7 @@ def update_form(form_id: str):
         return {'success': True, 'form': _item_to_form(response.get('Attributes', {}))}
     except Exception as e:
         logger.error(f"Error updating form: {e}")
-        return {'success': False, 'error': str(e)}
+        return {'success': False, 'error': 'Failed to update form'}
 
 
 @app.delete("/feedback-forms/<form_id>")
@@ -368,7 +371,7 @@ def delete_form(form_id: str):
         return {'success': True}
     except Exception as e:
         logger.error(f"Error deleting form: {e}")
-        return {'success': False, 'error': str(e)}
+        return {'success': False, 'error': 'Failed to delete form'}
 
 
 @app.get("/feedback-forms/<form_id>/config")
@@ -387,7 +390,7 @@ def get_form_config_by_id(form_id: str):
         return {'success': True, 'config': _item_to_form(item)}
     except Exception as e:
         logger.error(f"Error getting form config: {e}")
-        return {'success': False, 'error': str(e)}
+        return {'success': False, 'error': 'Failed to get form configuration'}
 
 
 @app.post("/feedback-forms/<form_id>/submit")
@@ -714,6 +717,7 @@ def get_widget_js():
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler."""
     return app.resolve(event, context)

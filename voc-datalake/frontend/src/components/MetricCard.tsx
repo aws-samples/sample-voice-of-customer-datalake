@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Dashboard metric card component.
+ *
+ * Displays a single metric with optional trend indicator:
+ * - Title and large value display
+ * - Optional icon with color theming
+ * - Trend arrow (up/down/neutral) with percentage change
+ *
+ * @module components/MetricCard
+ */
+
 import type { ReactNode } from 'react'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import clsx from 'clsx'

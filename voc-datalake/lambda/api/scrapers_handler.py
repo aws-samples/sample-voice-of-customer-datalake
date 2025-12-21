@@ -2,30 +2,105 @@
 Scrapers API Lambda - Handles /scrapers/*
 Manages web scraper configurations and runs.
 """
+
+import ipaddress
 import json
 import os
+import re
+import socket
+import sys
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer
+from urllib.parse import urlparse
+
+# Add shared module to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from shared.logging import logger, tracer, metrics
+from shared.aws import get_dynamodb_resource, get_secrets_client, get_bedrock_client, BEDROCK_MODEL_ID
+
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Key
 import boto3
 
-logger = Logger()
-tracer = Tracer()
+secretsmanager = get_secrets_client()
+lambda_client = boto3.client("lambda")
+dynamodb = get_dynamodb_resource()
 
-secretsmanager = boto3.client('secretsmanager')
-lambda_client = boto3.client('lambda')
-dynamodb = boto3.resource('dynamodb')
-
-SECRETS_ARN = os.environ.get('SECRETS_ARN', '')
-AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
+SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
+AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 
-cors_config = CORSConfig(allow_origin="*", allow_headers=["Content-Type", "Authorization"], max_age=300)
+# Configure CORS - restrict to CloudFront domain in production
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
+cors_config = CORSConfig(
+    allow_origin=ALLOWED_ORIGIN, allow_headers=["Content-Type", "Authorization"], max_age=300
+)
 app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+
+# Blocked hostnames and IP ranges for SSRF protection
+BLOCKED_HOSTNAMES = {'localhost', 'localhost.localdomain', 'ip6-localhost', 'ip6-loopback'}
+BLOCKED_IP_RANGES = [
+    ipaddress.ip_network('127.0.0.0/8'),       # Loopback
+    ipaddress.ip_network('10.0.0.0/8'),        # Private Class A
+    ipaddress.ip_network('172.16.0.0/12'),     # Private Class B
+    ipaddress.ip_network('192.168.0.0/16'),    # Private Class C
+    ipaddress.ip_network('169.254.0.0/16'),    # Link-local (AWS metadata)
+    ipaddress.ip_network('::1/128'),           # IPv6 loopback
+    ipaddress.ip_network('fc00::/7'),          # IPv6 private
+    ipaddress.ip_network('fe80::/10'),         # IPv6 link-local
+]
+
+
+def validate_url(url: str) -> tuple[bool, str]:
+    """
+    Validate URL to prevent SSRF attacks.
+    Returns (is_valid, error_message).
+    """
+    if not url or not isinstance(url, str):
+        return False, 'URL is required'
+    
+    # Parse URL
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False, 'Invalid URL format'
+    
+    # Only allow http/https schemes
+    if parsed.scheme not in ('http', 'https'):
+        return False, 'Only http and https URLs are allowed'
+    
+    # Must have a hostname
+    hostname = parsed.hostname
+    if not hostname:
+        return False, 'URL must have a valid hostname'
+    
+    # Block known dangerous hostnames
+    hostname_lower = hostname.lower()
+    if hostname_lower in BLOCKED_HOSTNAMES:
+        return False, 'Access to localhost is not allowed'
+    
+    # Resolve hostname to IP and check against blocked ranges
+    try:
+        ip_addresses = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        for family, _, _, _, sockaddr in ip_addresses:
+            ip_str = sockaddr[0]
+            try:
+                ip = ipaddress.ip_address(ip_str)
+                for blocked_range in BLOCKED_IP_RANGES:
+                    if ip in blocked_range:
+                        return False, 'Access to internal/private IP addresses is not allowed'
+            except ValueError:
+                continue
+    except socket.gaierror:
+        return False, 'Could not resolve hostname'
+    except Exception as e:
+        logger.warning(f"URL validation error: {e}")
+        return False, 'URL validation failed'
+    
+    return True, ''
 
 
 @app.get("/scrapers")
@@ -72,7 +147,7 @@ def save_scraper():
         return {'success': True, 'scraper': scraper}
     except Exception as e:
         logger.exception(f"Failed to save scraper: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to save scraper configuration'}
 
 
 @app.delete("/scrapers/<scraper_id>")
@@ -91,7 +166,7 @@ def delete_scraper(scraper_id: str):
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to delete scraper: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to delete scraper configuration'}
 
 
 @app.get("/scrapers/templates")
@@ -148,7 +223,7 @@ def run_scraper(scraper_id: str):
         return {'success': True, 'execution_id': execution_id, 'status': 'running'}
     except Exception as e:
         logger.exception(f"Failed to run scraper: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to start scraper run'}
 
 
 @app.get("/scrapers/<scraper_id>/status")
@@ -167,7 +242,8 @@ def get_scraper_status(scraper_id: str):
                 'started_at': run.get('started_at'), 'completed_at': run.get('completed_at'),
                 'pages_scraped': run.get('pages_scraped', 0), 'items_found': run.get('items_found', 0), 'errors': run.get('errors', [])}
     except Exception as e:
-        return {'scraper_id': scraper_id, 'status': 'unknown', 'error': str(e)}
+        logger.warning(f"Failed to get scraper status: {e}")
+        return {'scraper_id': scraper_id, 'status': 'unknown', 'error': 'Failed to retrieve status'}
 
 
 @app.get("/scrapers/<scraper_id>/runs")
@@ -180,7 +256,8 @@ def get_scraper_runs(scraper_id: str):
         response = aggregates_table.query(KeyConditionExpression=Key('pk').eq(f'SCRAPER_RUN#{scraper_id}'), ScanIndexForward=False, Limit=10)
         return {'runs': response.get('Items', [])}
     except Exception as e:
-        return {'runs': [], 'error': str(e)}
+        logger.warning(f"Failed to get scraper runs: {e}")
+        return {'runs': [], 'error': 'Failed to retrieve run history'}
 
 
 @app.post("/scrapers/analyze-url")
@@ -189,8 +266,11 @@ def analyze_url():
     """Use LLM to auto-detect CSS selectors for a URL."""
     body = app.current_event.json_body
     url = body.get('url')
-    if not url:
-        return {'success': False, 'message': 'URL is required'}
+    
+    # Validate URL to prevent SSRF
+    is_valid, error_message = validate_url(url)
+    if not is_valid:
+        return {'success': False, 'message': error_message}
     
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36', 'Accept': 'text/html,application/xhtml+xml'}
@@ -199,16 +279,23 @@ def analyze_url():
             html_content = response.read().decode('utf-8', errors='ignore')
         
         html_sample = html_content[:50000]
-        bedrock = boto3.client('bedrock-runtime')
+        bedrock = get_bedrock_client()
         prompt = f"""Analyze this HTML and identify CSS selectors for extracting reviews:\n\n```html\n{html_sample}\n```\n\nReturn JSON with: container_selector, text_selector, rating_selector, author_selector, date_selector, confidence (high/medium/low), detected_reviews_count"""
-        
-        bedrock_response = bedrock.invoke_model(modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0', contentType='application/json', accept='application/json',
-            body=json.dumps({'anthropic_version': 'bedrock-2023-05-31', 'max_tokens': 1000, 'messages': [{'role': 'user', 'content': prompt}]}))
+
+        bedrock_response = bedrock.invoke_model(
+            modelId=BEDROCK_MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 1000,
+                "messages": [{"role": "user", "content": prompt}],
+            }),
+        )
         
         result = json.loads(bedrock_response['body'].read())
         response_text = result['content'][0]['text']
         
-        import re
         json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
         if json_match:
             selectors = json.loads(json_match.group())
@@ -216,10 +303,11 @@ def analyze_url():
         return {'success': False, 'message': 'Could not parse selectors from response'}
     except Exception as e:
         logger.exception(f"Failed to analyze URL: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': 'Failed to analyze URL'}
 
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

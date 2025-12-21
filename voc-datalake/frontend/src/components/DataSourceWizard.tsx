@@ -1,3 +1,15 @@
+/**
+ * @fileoverview Data source wizard for context selection.
+ *
+ * Multi-step wizard for selecting data sources:
+ * - Toggle feedback, personas, documents, research
+ * - Filter feedback by source, category, sentiment
+ * - Select specific personas and documents
+ * - Used by persona generation, document generation, merge tools
+ *
+ * @module components/DataSourceWizard
+ */
+
 import { useState, useEffect } from 'react'
 import { X, ChevronLeft, ChevronRight, Loader2, FileText } from 'lucide-react'
 import type { ProjectPersona, ProjectDocument } from '../api/client'

@@ -1,14 +1,14 @@
 """
 Instagram Ingestor - Fetches mentions and comments using Instagram Graph API.
 """
-import requests
 from datetime import datetime, timezone, timedelta
 from typing import Generator
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+from base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+import requests
 
 
 class InstagramIngestor(BaseIngestor):
@@ -40,7 +40,7 @@ class InstagramIngestor(BaseIngestor):
         
         while url:
             try:
-                response = requests.get(url, params=params_with_fields)
+                response = fetch_with_retry(url, params=params_with_fields)
                 response.raise_for_status()
                 data = response.json()
             except requests.RequestException as e:
@@ -80,7 +80,7 @@ class InstagramIngestor(BaseIngestor):
         media_params = {**params, 'fields': 'id,timestamp,permalink', 'limit': 25}
         
         try:
-            response = requests.get(media_url, params=media_params)
+            response = fetch_with_retry(media_url, params=media_params)
             response.raise_for_status()
             media_data = response.json()
         except requests.RequestException as e:
@@ -97,7 +97,7 @@ class InstagramIngestor(BaseIngestor):
             comments_params = {**params, 'fields': 'id,text,timestamp,username', 'limit': 100}
             
             try:
-                response = requests.get(comments_url, params=comments_params)
+                response = fetch_with_retry(comments_url, params=comments_params)
                 response.raise_for_status()
                 comments_data = response.json()
             except requests.RequestException:

@@ -17,6 +17,7 @@ export interface VocIngestionStackProps extends cdk.StackProps {
   watermarksTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
   rawDataBucket: s3.Bucket;
+  accessLogsBucket: s3.Bucket;
   kmsKey: kms.Key;
   config: {
     brandName: string;
@@ -24,6 +25,7 @@ export interface VocIngestionStackProps extends cdk.StackProps {
     primaryLanguage: string;
     enabledSources: string[];
   };
+  frontendDomain?: string;  // CloudFront domain for CORS (e.g., 'd1234567890.cloudfront.net')
 }
 
 export class VocIngestionStack extends cdk.Stack {
@@ -35,7 +37,12 @@ export class VocIngestionStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocIngestionStackProps) {
     super(scope, id, props);
 
-    const { feedbackTable, watermarksTable, aggregatesTable, rawDataBucket, kmsKey, config } = props;
+    const { feedbackTable, watermarksTable, aggregatesTable, rawDataBucket, accessLogsBucket, kmsKey, config } = props;
+
+    // CORS allowed origins - restrict to CloudFront domain if provided
+    const corsAllowedOrigins = props.frontendDomain 
+      ? [`https://${props.frontendDomain}`]
+      : ['http://localhost:5173', 'http://localhost:3000'];  // Dev only - update after first deploy
 
     // S3 Import Bucket - dedicated bucket for feedback file uploads
     // Files uploaded here trigger the S3 import Lambda automatically
@@ -48,10 +55,12 @@ export class VocIngestionStack extends cdk.Stack {
       enforceSSL: true,
       versioned: false,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      serverAccessLogsBucket: accessLogsBucket,
+      serverAccessLogsPrefix: 's3-import-bucket/',
       cors: [
         {
           allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.POST, s3.HttpMethods.GET],
-          allowedOrigins: ['*'],
+          allowedOrigins: corsAllowedOrigins,
           allowedHeaders: ['*'],
           maxAge: 3000,
         },
@@ -76,6 +85,7 @@ export class VocIngestionStack extends cdk.Stack {
           trustpilot_api_key: '',
           trustpilot_api_secret: '',
           trustpilot_business_unit_id: '',
+          trustpilot_webhook_secret: '',
           google_api_key: '',
           google_location_ids: '',
           twitter_bearer_token: '',

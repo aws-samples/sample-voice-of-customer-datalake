@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Horizontal feedback carousel component.
+ *
+ * Displays feedback items in a scrollable horizontal carousel:
+ * - Navigation arrows for scrolling
+ * - Compact feedback cards
+ * - Links to feedback detail pages
+ *
+ * @module components/FeedbackCarousel
+ */
+
 import { useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, ExternalLink, Star, AlertTriangle } from 'lucide-react'

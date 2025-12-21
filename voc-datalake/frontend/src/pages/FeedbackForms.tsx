@@ -1,3 +1,16 @@
+/**
+ * @fileoverview Embeddable feedback forms management page.
+ *
+ * Features:
+ * - Create forms from templates (NPS, CSAT, CES, etc.)
+ * - Customize form appearance and fields
+ * - Generate embed code (script or iframe)
+ * - Preview forms in real-time
+ * - Enable/disable forms
+ *
+ * @module pages/FeedbackForms
+ */
+
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 

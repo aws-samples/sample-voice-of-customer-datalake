@@ -1,3 +1,17 @@
+/**
+ * @fileoverview Project detail page with personas, documents, and chat.
+ *
+ * Features:
+ * - Overview tab with project summary
+ * - Personas tab: AI-generated customer personas with CRUD
+ * - Documents tab: PRDs, PR/FAQs, research documents
+ * - Chat tab: Project-scoped AI conversations
+ * - Async job tracking for long-running operations
+ * - Export personas and documents to PDF
+ *
+ * @module pages/ProjectDetail
+ */
+
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
