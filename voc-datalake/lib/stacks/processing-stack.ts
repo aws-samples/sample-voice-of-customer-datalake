@@ -45,8 +45,8 @@ export class VocProcessingStack extends cdk.Stack {
       sid: 'BedrockInvoke',
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        `arn:aws:bedrock:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        `arn:aws:bedrock:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:inference-profile/global.anthropic.claude-haiku-4-5-20250514-v1:0`,
+        `arn:aws:bedrock:*:${cdk.Aws.ACCOUNT_ID}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        `arn:aws:bedrock:*:${cdk.Aws.ACCOUNT_ID}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
       ],
     }));
 
@@ -81,13 +81,29 @@ export class VocProcessingStack extends cdk.Stack {
       description: 'Dependencies for processing lambda (ARM64/Graviton)',
     });
 
+    // Bundle processor code with shared module
+    const processorCode = lambda.Code.fromAsset('lambda', {
+      exclude: ['**/__pycache__', '*.pyc', 'api/**', 'ingestors/**', 'webhooks/**', 'research/**', 'layers/**', 'aggregator/**'],
+      bundling: {
+        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        command: [
+          'bash', '-c', [
+            `mkdir -p /asset-output`,
+            `cp -r /asset-input/processor/* /asset-output/`,
+            `cp -r /asset-input/shared /asset-output/`,
+          ].join(' && '),
+        ],
+        platform: 'linux/arm64',
+      },
+    });
+
     // Main Processing Lambda
     this.processingLambda = new lambda.Function(this, 'FeedbackProcessor', {
       functionName: 'voc-feedback-processor',
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/processor'),
+      code: processorCode,
       role: processingRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 1024,
@@ -97,7 +113,7 @@ export class VocProcessingStack extends cdk.Stack {
         PROJECTS_TABLE: projectsTable.tableName,
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
         PRIMARY_LANGUAGE: config.primaryLanguage,
-        BEDROCK_MODEL_ID: 'global.anthropic.claude-haiku-4-5-20250514-v1:0',
+        BEDROCK_MODEL_ID: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
         POWERTOOLS_SERVICE_NAME: 'voc-processor',
         POWERTOOLS_IDEMPOTENCY_DISABLED: '0',  // Enable idempotency
         LOG_LEVEL: 'INFO',
@@ -117,13 +133,29 @@ export class VocProcessingStack extends cdk.Stack {
       reportBatchItemFailures: true,
     }));
 
+    // Bundle aggregator code with shared module
+    const aggregatorCode = lambda.Code.fromAsset('lambda', {
+      exclude: ['**/__pycache__', '*.pyc', 'api/**', 'ingestors/**', 'webhooks/**', 'research/**', 'layers/**', 'processor/**'],
+      bundling: {
+        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        command: [
+          'bash', '-c', [
+            `mkdir -p /asset-output`,
+            `cp -r /asset-input/aggregator/* /asset-output/`,
+            `cp -r /asset-input/shared /asset-output/`,
+          ].join(' && '),
+        ],
+        platform: 'linux/arm64',
+      },
+    });
+
     // Aggregation Lambda - triggered by DynamoDB Streams
     this.aggregationLambda = new lambda.Function(this, 'AggregationProcessor', {
       functionName: 'voc-aggregation-processor',
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/aggregator'),
+      code: aggregatorCode,
       role: processingRole,
       timeout: cdk.Duration.minutes(1),
       memorySize: 512,

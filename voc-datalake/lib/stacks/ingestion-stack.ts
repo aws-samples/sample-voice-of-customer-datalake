@@ -226,14 +226,29 @@ export class VocIngestionStack extends cdk.Stack {
         lambdaEnv.AGGREGATES_TABLE = aggregatesTable.tableName;
       }
 
+      // Bundle ingestor code with shared module and base_ingestor
+      const ingestorCode = lambda.Code.fromAsset('lambda', {
+        exclude: ['**/__pycache__', '*.pyc', 'api/**', 'processor/**', 'aggregator/**', 'webhooks/**', 'research/**', 'layers/**'],
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash', '-c', [
+              `mkdir -p /asset-output`,
+              `cp -r /asset-input/ingestors/${source}/* /asset-output/`,
+              `cp /asset-input/ingestors/base_ingestor.py /asset-output/`,
+              `cp -r /asset-input/shared /asset-output/`,
+            ].join(' && '),
+          ],
+          platform: 'linux/arm64',
+        },
+      });
+
       const fn = new lambda.Function(this, `Ingestor${this.capitalize(source)}`, {
         functionName: `voc-ingestor-${source}`,
         runtime: lambda.Runtime.PYTHON_3_12,
         architecture: lambda.Architecture.ARM_64,
         handler: 'handler.lambda_handler',
-        code: lambda.Code.fromAsset(`lambda/ingestors/${source}`, {
-          exclude: ['**/__pycache__', '*.pyc'],
-        }),
+        code: ingestorCode,
         role: ingestionRole,
         timeout: sourceConfig.timeout,
         memorySize: 256,
