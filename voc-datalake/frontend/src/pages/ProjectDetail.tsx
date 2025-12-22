@@ -1942,12 +1942,22 @@ export default function ProjectDetail() {
                   </div>
                   <h3 className="text-xl font-semibold text-gray-900 mb-2">Building Your Prototype</h3>
                   <p className="text-gray-500 max-w-md mb-4">
-                    Kiro is generating a working web application based on your PR/FAQ. This usually takes 2-5 minutes.
+                    Kiro is generating a working web application based on your PR/FAQ. This usually takes 5-15 minutes depending on complexity.
                   </p>
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <div className="flex items-center gap-2 text-sm text-gray-400 mb-4">
                     <Clock size={16} />
                     <span>Status: {artifactJob?.status || 'Initializing...'}</span>
                   </div>
+                  <a
+                    href={`https://d1be30ki9oxv87.cloudfront.net/artifact-builder?job=${artifactJobId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setShowArtifactPreview(false)}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
+                  >
+                    <Sparkles size={16} />
+                    Continue Working (Build in Background)
+                  </a>
                   {/* Progress steps */}
                   <div className="mt-8 flex items-center gap-2">
                     {['queued', 'cloning', 'generating', 'building', 'publishing'].map((step, i) => {
