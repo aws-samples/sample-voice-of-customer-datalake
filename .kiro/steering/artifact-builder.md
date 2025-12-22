@@ -1,5 +1,6 @@
 ---
-inclusion: manual
+inclusion: fileMatch
+fileMatchPattern: "**/artifact-builder/**"
 ---
 
 # Artifact Builder - Technical Reference
