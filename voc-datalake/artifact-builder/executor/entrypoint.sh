@@ -4,9 +4,16 @@ set -euo pipefail
 echo "=== Artifact Builder Executor ==="
 echo "Job ID: ${JOB_ID:-not set}"
 echo "AWS Region: ${AWS_REGION:-not set}"
+echo "HOME: $HOME"
 
-# Ensure auth directories exist (should be mounted as EFS volumes)
+# Ensure auth directories exist in EFS-mounted home
 mkdir -p "$HOME/.kiro" "$HOME/.config/kiro" "$HOME/.local/share/kiro-cli"
+
+# Configure git for CodeCommit (must be done at runtime since HOME is EFS-mounted)
+git config --global credential.helper '!aws codecommit credential-helper $@'
+git config --global credential.UseHttpPath true
+git config --global user.email "artifact-builder@internal"
+git config --global user.name "Artifact Builder"
 
 # Check if Kiro CLI is authenticated
 echo "Checking Kiro CLI authentication..."
@@ -17,25 +24,24 @@ else
     echo "✗ Kiro CLI not authenticated"
     echo ""
     echo "ERROR: Kiro CLI requires authentication via device flow."
-    echo "To authenticate, run this container interactively once:"
     echo ""
-    echo "  docker run -it \\"
-    echo "    -v kiro_dotkiro:/home/kiro/.kiro \\"
-    echo "    -v kiro_config:/home/kiro/.config/kiro \\"
-    echo "    -v kiro_data:/home/kiro/.local/share/kiro-cli \\"
-    echo "    <image> /bin/bash"
+    echo "To authenticate, run this container interactively:"
+    echo "  kiro-cli login --use-device-flow"
     echo ""
-    echo "  Then inside the container:"
-    echo "    kiro-cli login --use-device-flow"
+    echo "Follow the instructions to complete login in your browser."
+    echo "The auth state will persist in EFS for future task runs."
     echo ""
-    echo "  Follow the device flow instructions to complete login."
-    echo "  The auth state will persist in the mounted volumes."
-    echo ""
-    echo "For ECS Fargate, mount these paths to EFS and run the login once."
+    
+    # If we're in interactive mode (sleep command), don't exit
+    if [[ "${1:-}" == "/bin/bash" ]] || [[ "${1:-}" == "bash" ]] || [[ "${1:-}" == "sleep"* ]]; then
+        echo "Running in interactive mode - starting shell..."
+        exec "$@"
+    fi
+    
     exit 1
 fi
 
 # Run the Python executor
 echo ""
 echo "Starting artifact generation..."
-exec python3 /home/kiro/app/executor.py "$@"
+exec python3 /app/executor.py "$@"

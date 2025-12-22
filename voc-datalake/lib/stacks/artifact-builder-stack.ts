@@ -269,6 +269,17 @@ export class ArtifactBuilderStack extends cdk.Stack {
       resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/artifact-builder/*`],
     }));
 
+    // SSM permissions required for ECS Exec
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'ssmmessages:CreateControlChannel',
+        'ssmmessages:CreateDataChannel',
+        'ssmmessages:OpenControlChannel',
+        'ssmmessages:OpenDataChannel',
+      ],
+      resources: ['*'],
+    }));
+
     // ECS Task Definition - x86_64 for broader compatibility
     const executorTaskDef = new ecs.FargateTaskDefinition(this, 'ExecutorTaskDef', {
       family: 'artifact-builder-executor',
@@ -306,7 +317,9 @@ export class ArtifactBuilderStack extends cdk.Stack {
     });
 
     executorTaskDef.addContainer('executor', {
-      image: ecs.ContainerImage.fromAsset('artifact-builder/executor'),
+      image: ecs.ContainerImage.fromAsset('artifact-builder/executor', {
+        platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
+      }),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'executor',
         logGroup: executorLogGroup,

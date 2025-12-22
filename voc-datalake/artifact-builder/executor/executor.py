@@ -43,12 +43,11 @@ AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO
 _NAME', 'artifact-builder-template')
 
-# Paths
-HOME = Path(os.environ.get('HOME', '/home/kiro'))
-WORKSPACE = HOME / 'workspace'
+# Paths - app files are in /app, workspace is /workspace (not in EFS-mounted home)
+WORKSPACE = Path('/workspace')
 TEMPLATE_DIR = WORKSPACE / 'template'
 PROJECT_DIR = WORKSPACE / 'project'
-KIRO_PROMPT_FILE = HOME / 'app' / 'kiro_prompt.txt'
+KIRO_PROMPT_FILE = Path('/app/kiro_prompt.txt')
 
 jobs_table = dynamodb.Table(JOBS_TABLE)
 logs = []

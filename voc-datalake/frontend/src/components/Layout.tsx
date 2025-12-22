@@ -32,6 +32,7 @@ import {
   Database,
   Menu,
   X,
+  Sparkles,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, getDaysFromRange } from '../api/client'
@@ -52,6 +53,7 @@ const navItems = [
   { to: '/projects', icon: Briefcase, label: 'Projects' },
   { to: '/prioritization', icon: ListOrdered, label: 'Prioritization' },
   { to: '/data-explorer', icon: Database, label: 'Data Explorer' },
+  { to: '/artifact-builder', icon: Sparkles, label: 'Artifact Builder' },
   { to: '/scrapers', icon: Globe, label: 'Scrapers' },
   { to: '/feedback-forms', icon: FileText, label: 'Feedback Forms' },
   { to: '/settings', icon: Settings, label: 'Settings' },

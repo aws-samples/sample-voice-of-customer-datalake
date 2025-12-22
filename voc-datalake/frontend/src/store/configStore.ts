@@ -10,6 +10,7 @@ export interface SourceConfig {
 
 export interface Config {
   apiEndpoint: string
+  artifactBuilderEndpoint: string
   brandName: string
   brandHandles: string[]
   hashtags: string[]
@@ -50,6 +51,7 @@ export const useConfigStore = create<ConfigStore>()(
     (set) => ({
       config: {
         apiEndpoint: envConfig.apiEndpoint,
+        artifactBuilderEndpoint: envConfig.artifactBuilderEndpoint,
         brandName: '',
         brandHandles: [],
         hashtags: [],

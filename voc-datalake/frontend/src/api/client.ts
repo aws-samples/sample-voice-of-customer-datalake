@@ -6,6 +6,11 @@ const getBaseUrl = () => {
   return config.apiEndpoint || '/api'
 }
 
+const getArtifactBuilderUrl = () => {
+  const { config } = useConfigStore.getState()
+  return config.artifactBuilderEndpoint || ''
+}
+
 // Get auth token for API requests (for streaming endpoints)
 const getAuthToken = async (): Promise<string | null> => {
   if (!authService.isConfigured()) return null
@@ -66,6 +71,39 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
       }
     }
     throw new Error(`API Error: ${response.status}`)
+  }
+  
+  return response.json()
+}
+
+// Fetch function for Artifact Builder API (separate service)
+async function fetchArtifactApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const baseUrl = getArtifactBuilderUrl().replace(/\/+$/, '')
+  
+  if (!baseUrl) {
+    throw new Error('Artifact Builder endpoint not configured')
+  }
+  
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...options?.headers as Record<string, string>,
+  }
+  
+  // Add Authorization header with Cognito ID token if authenticated
+  if (authService.isConfigured()) {
+    const idToken = authService.getIdToken()
+    if (idToken) {
+      headers['Authorization'] = idToken
+    }
+  }
+  
+  const response = await fetch(`${baseUrl}${endpoint}`, {
+    ...options,
+    headers,
+  })
+  
+  if (!response.ok) {
+    throw new Error(`Artifact Builder API Error: ${response.status}`)
   }
   
   return response.json()
@@ -818,6 +856,30 @@ export const api = {
     fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}`, {
       method: 'DELETE'
     }),
+
+  // Artifact Builder (separate service)
+  getArtifactTemplates: () => 
+    fetchArtifactApi<{ templates: ArtifactTemplate[]; styles: ArtifactStyle[] }>('/templates'),
+  
+  createArtifactJob: (data: { prompt: string; project_type: string; style: string; include_mock_data?: boolean; pages?: string[] }) =>
+    fetchArtifactApi<{ job_id: string }>('/jobs', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  getArtifactJobs: (status?: string) => {
+    const params = status ? `?status=${status}` : ''
+    return fetchArtifactApi<{ jobs: ArtifactJob[] }>(`/jobs${params}`)
+  },
+  
+  getArtifactJob: (jobId: string) => 
+    fetchArtifactApi<ArtifactJob>(`/jobs/${jobId}`),
+  
+  getArtifactJobLogs: (jobId: string) =>
+    fetchArtifactApi<{ logs: string }>(`/jobs/${jobId}/logs`),
+  
+  getArtifactDownloadUrl: (jobId: string) =>
+    fetchArtifactApi<{ download_url: string }>(`/jobs/${jobId}/download`),
 }
 
 // Project types
@@ -1022,6 +1084,36 @@ export interface CognitoUser {
   groups: string[]
   created_at: string | null
   last_modified: string | null
+}
+
+// Artifact Builder types
+export interface ArtifactJob {
+  job_id: string
+  status: 'queued' | 'cloning' | 'generating' | 'building' | 'publishing' | 'done' | 'failed'
+  prompt: string
+  project_type: string
+  style: string
+  include_mock_data?: boolean
+  pages?: string[]
+  preview_url?: string
+  repo_url?: string
+  error?: string
+  created_at: string
+  updated_at?: string
+  timeline?: Array<{ status: string; timestamp: string }>
+  summary?: {
+    files_changed?: string[]
+  }
+}
+
+export interface ArtifactTemplate {
+  id: string
+  name: string
+}
+
+export interface ArtifactStyle {
+  id: string
+  name: string
 }
 
 export function getDaysFromRange(range: string, customRange?: { start: string; end: string } | null): number {

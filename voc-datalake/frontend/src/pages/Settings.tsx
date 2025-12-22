@@ -545,6 +545,7 @@ export default function Settings() {
   
   // Local state for form
   const [apiEndpoint, setApiEndpoint] = useState(config.apiEndpoint)
+  const [artifactBuilderEndpoint, setArtifactBuilderEndpoint] = useState(config.artifactBuilderEndpoint)
   const [brandName, setBrandName] = useState(config.brandName)
   const [brandHandles, setBrandHandles] = useState(config.brandHandles.join(', '))
   const [hashtags, setHashtags] = useState(config.hashtags.join(', '))
@@ -582,6 +583,7 @@ export default function Settings() {
     // Update local store (for API endpoint which stays local)
     setConfig({
       apiEndpoint,
+      artifactBuilderEndpoint,
       brandName,
       brandHandles: brandHandlesArray,
       hashtags: hashtagsArray,
@@ -658,6 +660,21 @@ export default function Settings() {
             />
             <p className="text-xs text-gray-500 mt-1">
               The API Gateway endpoint from your VoC deployment
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Artifact Builder Endpoint URL
+            </label>
+            <input
+              type="url"
+              value={artifactBuilderEndpoint}
+              onChange={(e) => setArtifactBuilderEndpoint(e.target.value)}
+              placeholder="https://artifact-builder-api.execute-api.region.amazonaws.com/v1"
+              className="input"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              The Artifact Builder API endpoint for generating prototypes from PR/FAQs
             </p>
           </div>
         </div>

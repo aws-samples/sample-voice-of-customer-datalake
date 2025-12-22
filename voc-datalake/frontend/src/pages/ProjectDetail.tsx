@@ -15,7 +15,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Users, FileText, MessageSquare, Search, Sparkles, Send, User, Bot, Loader2, X, Trash2, Pencil, Clock, CheckCircle, XCircle, Settings, Check, Upload, Image, FileUp, Shuffle } from 'lucide-react'
+import { ArrowLeft, Users, FileText, MessageSquare, Search, Sparkles, Send, User, Bot, Loader2, X, Trash2, Pencil, Clock, CheckCircle, XCircle, Settings, Check, Upload, Image, FileUp, Shuffle, Play, ExternalLink } from 'lucide-react'
 import { api } from '../api/client'
 import type { ProjectPersona, ProjectDocument, ProjectJob, Project } from '../api/client'
 import { useConfigStore } from '../store/configStore'
@@ -416,6 +416,10 @@ export default function ProjectDetail() {
   
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState<{ type: 'persona' | 'document' | null; id: string | null }>({ type: null, id: null })
+  
+  // Artifact Builder state
+  const [artifactJobId, setArtifactJobId] = useState<string | null>(null)
+  const [showArtifactPreview, setShowArtifactPreview] = useState(false)
 
   const { data, isLoading } = useQuery({ queryKey: ['project', id], queryFn: () => api.getProject(id!), enabled: !!config.apiEndpoint && !!id })
   
@@ -600,6 +604,32 @@ export default function ProjectDetail() {
       // Refresh jobs list to show the new import job
       queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
     }
+  })
+  
+  // Artifact Builder mutation - build prototype from PR/FAQ
+  const buildArtifactMut = useMutation({
+    mutationFn: (doc: ProjectDocument) => api.createArtifactJob({
+      prompt: `Build a working web prototype based on this PR/FAQ document:\n\n# ${doc.title}\n\n${doc.content}`,
+      project_type: 'react-vite',
+      style: 'modern',
+      include_mock_data: true,
+    }),
+    onSuccess: (data) => {
+      setArtifactJobId(data.job_id)
+      setShowArtifactPreview(true)
+    }
+  })
+  
+  // Fetch artifact job status when building
+  const { data: artifactJob } = useQuery({
+    queryKey: ['artifact-job', artifactJobId],
+    queryFn: () => api.getArtifactJob(artifactJobId!),
+    enabled: !!artifactJobId && showArtifactPreview,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      if (status === 'done' || status === 'failed') return false
+      return 3000
+    },
   })
   
   const sendChat = () => { 
@@ -1448,6 +1478,22 @@ export default function ProjectDetail() {
                   <div className="flex items-start justify-between mb-4">
                     <h2 className="text-xl font-bold">{selectedDoc.title}</h2>
                     <div className="flex items-center gap-2">
+                      {/* Build Prototype button - only for PRD/PRFAQ documents when artifact builder is configured */}
+                      {(selectedDoc.document_type === 'prd' || selectedDoc.document_type === 'prfaq') && config.artifactBuilderEndpoint && (
+                        <button
+                          onClick={() => buildArtifactMut.mutate(selectedDoc)}
+                          disabled={buildArtifactMut.isPending}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg text-sm font-medium hover:from-purple-700 hover:to-pink-700 disabled:opacity-50"
+                          title="Build a working prototype from this document"
+                        >
+                          {buildArtifactMut.isPending ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <Play size={16} />
+                          )}
+                          Build Prototype
+                        </button>
+                      )}
                       <DocumentExportMenu document={selectedDoc} project={project} />
                       <button 
                         onClick={() => { setEditingDoc(selectedDoc); setNewDocTitle(selectedDoc.title); setNewDocContent(selectedDoc.content) }}
@@ -1791,6 +1837,126 @@ export default function ProjectDetail() {
         }}
         onCancel={() => setConfirmModal({ type: null, id: null })}
       />
+
+      {/* Artifact Preview Modal */}
+      {showArtifactPreview && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-purple-600 to-pink-600">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                  <Sparkles size={20} className="text-white" />
+                </div>
+                <div className="text-white">
+                  <h2 className="font-semibold">Prototype Preview</h2>
+                  <p className="text-sm text-white/80">
+                    {artifactJob?.status === 'done' ? 'Build complete' : 
+                     artifactJob?.status === 'failed' ? 'Build failed' :
+                     `Building... ${artifactJob?.status || 'queued'}`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {artifactJob?.status === 'done' && artifactJob.preview_url && (
+                  <a
+                    href={artifactJob.preview_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm font-medium"
+                  >
+                    <ExternalLink size={16} />
+                    Open in New Tab
+                  </a>
+                )}
+                <button
+                  onClick={() => { setShowArtifactPreview(false); setArtifactJobId(null) }}
+                  className="p-2 hover:bg-white/20 rounded-lg text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-hidden">
+              {artifactJob?.status === 'done' && artifactJob.preview_url ? (
+                <iframe
+                  src={artifactJob.preview_url}
+                  className="w-full h-full border-0"
+                  title="Prototype Preview"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                />
+              ) : artifactJob?.status === 'failed' ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                    <XCircle size={32} className="text-red-500" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">Build Failed</h3>
+                  <p className="text-gray-500 max-w-md mb-4">{artifactJob.error || 'An error occurred while building the prototype.'}</p>
+                  <button
+                    onClick={() => selectedDoc && buildArtifactMut.mutate(selectedDoc)}
+                    disabled={buildArtifactMut.isPending}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                  >
+                    <Play size={16} />
+                    Try Again
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                  <div className="relative mb-6">
+                    <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center">
+                      <Loader2 size={40} className="text-purple-600 animate-spin" />
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-pink-500 rounded-full flex items-center justify-center">
+                      <Sparkles size={16} className="text-white" />
+                    </div>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">Building Your Prototype</h3>
+                  <p className="text-gray-500 max-w-md mb-4">
+                    Kiro is generating a working web application based on your PR/FAQ. This usually takes 2-5 minutes.
+                  </p>
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <Clock size={16} />
+                    <span>Status: {artifactJob?.status || 'Initializing...'}</span>
+                  </div>
+                  {/* Progress steps */}
+                  <div className="mt-8 flex items-center gap-2">
+                    {['queued', 'cloning', 'generating', 'building', 'publishing'].map((step, i) => {
+                      const currentIndex = ['queued', 'cloning', 'generating', 'building', 'publishing'].indexOf(artifactJob?.status || 'queued')
+                      const isComplete = i < currentIndex
+                      const isCurrent = i === currentIndex
+                      return (
+                        <div key={step} className="flex items-center">
+                          <div className={clsx(
+                            'w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium',
+                            isComplete ? 'bg-green-500 text-white' :
+                            isCurrent ? 'bg-purple-500 text-white' :
+                            'bg-gray-200 text-gray-500'
+                          )}>
+                            {isComplete ? <CheckCircle size={16} /> : i + 1}
+                          </div>
+                          {i < 4 && (
+                            <div className={clsx('w-8 h-1 mx-1', isComplete ? 'bg-green-500' : 'bg-gray-200')} />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="mt-2 text-xs text-gray-400">
+                    {artifactJob?.status === 'queued' && 'Waiting in queue...'}
+                    {artifactJob?.status === 'cloning' && 'Setting up project template...'}
+                    {artifactJob?.status === 'generating' && 'Kiro is writing code...'}
+                    {artifactJob?.status === 'building' && 'Compiling and bundling...'}
+                    {artifactJob?.status === 'publishing' && 'Deploying preview...'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
