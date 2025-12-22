@@ -27,7 +27,10 @@ JOBS_TABLE = os.environ.get('JOBS_TABLE', 'artifact-builder-jobs')
 ECS_CLUSTER = os.environ.get('ECS_CLUSTER', '')
 ECS_TASK_DEF = os.environ.get('ECS_TASK_DEF', '')
 ECS_SUBNETS = os.environ.get('ECS_SUBNETS', '').split(',')
+ECS_SECURITY_GROUP = os.environ.get('ECS_SECURITY_GROUP', '')
 ARTIFACTS_BUCKET = os.environ.get('ARTIFACTS_BUCKET', '')
+TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO_NAME', 'artifact-builder-template')
+PREVIEW_URL = os.environ.get('PREVIEW_URL', '')
 
 jobs_table = dynamodb.Table(JOBS_TABLE)
 processor = BatchProcessor(event_type=EventType.SQS)
@@ -82,6 +85,7 @@ def record_handler(record: SQSRecord) -> dict:
             networkConfiguration={
                 'awsvpcConfiguration': {
                     'subnets': ECS_SUBNETS,
+                    'securityGroups': [ECS_SECURITY_GROUP] if ECS_SECURITY_GROUP else [],
                     'assignPublicIp': 'DISABLED',
                 }
             },
@@ -93,6 +97,8 @@ def record_handler(record: SQSRecord) -> dict:
                             {'name': 'JOB_ID', 'value': job_id},
                             {'name': 'ARTIFACTS_BUCKET', 'value': ARTIFACTS_BUCKET},
                             {'name': 'JOBS_TABLE', 'value': JOBS_TABLE},
+                            {'name': 'TEMPLATE_REPO_NAME', 'value': TEMPLATE_REPO_NAME},
+                            {'name': 'PREVIEW_URL', 'value': PREVIEW_URL},
                         ],
                     }
                 ]

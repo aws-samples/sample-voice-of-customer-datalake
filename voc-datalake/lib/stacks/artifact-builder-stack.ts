@@ -11,27 +11,52 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as kms from 'aws-cdk-lib/aws-kms';
+import * as codecommit from 'aws-cdk-lib/aws-codecommit';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 
 export interface ArtifactBuilderStackProps extends cdk.StackProps {
-  kmsKey?: kms.Key;
+  // Optional: pass existing VPC
+  vpc?: ec2.IVpc;
 }
 
 export class ArtifactBuilderStack extends cdk.Stack {
   public readonly api: apigateway.RestApi;
   public readonly artifactsBucket: s3.Bucket;
   public readonly previewDistribution: cloudfront.Distribution;
+  public readonly templateRepo: codecommit.Repository;
 
   constructor(scope: Construct, id: string, props?: ArtifactBuilderStackProps) {
     super(scope, id, props);
+
+    // ============================================
+    // CODECOMMIT - TEMPLATE REPOSITORY
+    // ============================================
+
+    // Read-only template repository
+    // Upload template-app contents here after deployment
+    this.templateRepo = new codecommit.Repository(this, 'TemplateRepo', {
+      repositoryName: 'artifact-builder-template',
+      description: 'Read-only template for Artifact Builder (React + Vite + shadcn/ui)',
+    });
+
+    // ============================================
+    // SSM PARAMETERS
+    // ============================================
+
+    // SSM Parameter for Kiro API key (create placeholder, set value manually)
+    new ssm.StringParameter(this, 'KiroApiKeyParam', {
+      parameterName: '/artifact-builder/kiro-api-key',
+      stringValue: 'PLACEHOLDER_SET_AFTER_DEPLOY',
+      description: 'API key for Kiro CLI (set manually after deployment)',
+      tier: ssm.ParameterTier.STANDARD,
+    });
 
     // ============================================
     // STORAGE
     // ============================================
 
     // S3 Bucket for artifacts (source zips, builds, logs)
-    // Structure: jobs/{JOB_ID}/source.zip, build/, logs.txt, summary.json
     this.artifactsBucket = new s3.Bucket(this, 'ArtifactsBucket', {
       bucketName: `artifact-builder-${this.account}-${this.region}`,
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -50,7 +75,6 @@ export class ArtifactBuilderStack extends cdk.Stack {
       ],
       lifecycleRules: [
         {
-          // Clean up old job artifacts after 30 days
           prefix: 'jobs/',
           expiration: cdk.Duration.days(30),
         },
@@ -58,7 +82,6 @@ export class ArtifactBuilderStack extends cdk.Stack {
     });
 
     // DynamoDB Table for job tracking
-    // PK: JOB#{job_id}
     const jobsTable = new dynamodb.Table(this, 'ArtifactJobsTable', {
       tableName: 'artifact-builder-jobs',
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
@@ -86,7 +109,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
 
     const jobQueue = new sqs.Queue(this, 'ArtifactBuilderQueue', {
       queueName: 'artifact-builder-jobs',
-      visibilityTimeout: cdk.Duration.minutes(30), // Match ECS task timeout
+      visibilityTimeout: cdk.Duration.minutes(30),
       deadLetterQueue: {
         queue: dlq,
         maxReceiveCount: 2,
@@ -97,8 +120,6 @@ export class ArtifactBuilderStack extends cdk.Stack {
     // CLOUDFRONT FOR PREVIEW HOSTING
     // ============================================
 
-    // CloudFront distribution for serving preview builds
-    // Each job's build output is served from /jobs/{JOB_ID}/build/
     this.previewDistribution = new cloudfront.Distribution(this, 'PreviewDistribution', {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(this.artifactsBucket),
@@ -108,7 +129,6 @@ export class ArtifactBuilderStack extends cdk.Stack {
         compress: true,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
       },
-      // Handle SPA routing - return index.html for 404s within job paths
       errorResponses: [
         {
           httpStatus: 404,
@@ -131,10 +151,9 @@ export class ArtifactBuilderStack extends cdk.Stack {
     // VPC FOR ECS FARGATE
     // ============================================
 
-    // VPC for ECS tasks (use default VPC for simplicity)
-    const vpc = new ec2.Vpc(this, 'ArtifactBuilderVpc', {
+    const vpc = props?.vpc ?? new ec2.Vpc(this, 'ArtifactBuilderVpc', {
       maxAzs: 2,
-      natGateways: 1, // Need NAT for Fargate tasks to pull images and access AWS APIs
+      natGateways: 1,
       subnetConfiguration: [
         {
           name: 'Public',
@@ -149,6 +168,13 @@ export class ArtifactBuilderStack extends cdk.Stack {
       ],
     });
 
+    // Security group for ECS tasks
+    const ecsSecurityGroup = new ec2.SecurityGroup(this, 'EcsSecurityGroup', {
+      vpc,
+      description: 'Security group for Artifact Builder ECS tasks',
+      allowAllOutbound: true,
+    });
+
     // ECS Cluster
     const cluster = new ecs.Cluster(this, 'ArtifactBuilderCluster', {
       clusterName: 'artifact-builder',
@@ -160,7 +186,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
     // ECS TASK DEFINITION (EXECUTOR)
     // ============================================
 
-    // Task execution role (for pulling images, logging)
+    // Task execution role
     const taskExecutionRole = new iam.Role(this, 'TaskExecutionRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
       managedPolicies: [
@@ -173,12 +199,34 @@ export class ArtifactBuilderStack extends cdk.Stack {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
     });
 
-    // Grant task role access to S3 and DynamoDB
+    // Grant permissions
     this.artifactsBucket.grantReadWrite(taskRole);
     jobsTable.grantReadWriteData(taskRole);
     jobQueue.grantConsumeMessages(taskRole);
+    this.templateRepo.grantPull(taskRole);
 
-    // Bedrock access for Kiro CLI (Claude Sonnet 4.5)
+    // CodeCommit - create repos and push
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'codecommit:CreateRepository',
+        'codecommit:GetRepository',
+        'codecommit:GitPush',
+        'codecommit:GitPull',
+        'codecommit:TagResource',
+      ],
+      resources: [
+        `arn:aws:codecommit:${this.region}:${this.account}:artifact-*`,
+        this.templateRepo.repositoryArn,
+      ],
+    }));
+
+    // SSM Parameter Store - read credentials
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+      resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/artifact-builder/*`],
+    }));
+
+    // Bedrock access (fallback if Kiro CLI not available)
     taskRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
@@ -187,34 +235,38 @@ export class ArtifactBuilderStack extends cdk.Stack {
       ],
     }));
 
-    // ECS Task Definition
+    // ECS Task Definition - x86_64 for broader compatibility
     const executorTaskDef = new ecs.FargateTaskDefinition(this, 'ExecutorTaskDef', {
       family: 'artifact-builder-executor',
-      cpu: 2048,  // 2 vCPU
-      memoryLimitMiB: 4096,  // 4 GB
+      cpu: 4096,   // 4 vCPU for faster builds
+      memoryLimitMiB: 8192,  // 8 GB for npm install
       taskRole,
       executionRole: taskExecutionRole,
       runtimePlatform: {
-        cpuArchitecture: ecs.CpuArchitecture.ARM64,
+        cpuArchitecture: ecs.CpuArchitecture.X86_64,
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
       },
     });
 
-    // Container definition - will use a Docker image with Node.js, npm, and Kiro CLI
-    const executorContainer = executorTaskDef.addContainer('executor', {
+    // Container definition
+    const executorLogGroup = new logs.LogGroup(this, 'ExecutorLogs', {
+      logGroupName: '/ecs/artifact-builder-executor',
+      retention: logs.RetentionDays.TWO_WEEKS,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    executorTaskDef.addContainer('executor', {
       image: ecs.ContainerImage.fromAsset('artifact-builder/executor'),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'executor',
-        logGroup: new logs.LogGroup(this, 'ExecutorLogs', {
-          logGroupName: '/ecs/artifact-builder-executor',
-          retention: logs.RetentionDays.TWO_WEEKS,
-          removalPolicy: cdk.RemovalPolicy.DESTROY,
-        }),
+        logGroup: executorLogGroup,
       }),
       environment: {
         ARTIFACTS_BUCKET: this.artifactsBucket.bucketName,
         JOBS_TABLE: jobsTable.tableName,
         AWS_REGION: this.region,
+        TEMPLATE_REPO_NAME: this.templateRepo.repositoryName,
+        PREVIEW_URL: `https://${this.previewDistribution.distributionDomainName}`,
       },
     });
 
@@ -222,7 +274,6 @@ export class ArtifactBuilderStack extends cdk.Stack {
     // API LAMBDA (ORCHESTRATOR)
     // ============================================
 
-    // Lambda Layer for dependencies
     const apiLayer = new lambda.LayerVersion(this, 'ArtifactBuilderApiLayer', {
       code: lambda.Code.fromAsset('lambda/layers/processing-deps'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
@@ -230,7 +281,6 @@ export class ArtifactBuilderStack extends cdk.Stack {
       description: 'Dependencies for artifact builder API (ARM64)',
     });
 
-    // API Lambda Role
     const apiRole = new iam.Role(this, 'ArtifactBuilderApiRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [
@@ -242,17 +292,6 @@ export class ArtifactBuilderStack extends cdk.Stack {
     this.artifactsBucket.grantReadWrite(apiRole);
     jobQueue.grantSendMessages(apiRole);
 
-    // Grant permission to run ECS tasks
-    apiRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['ecs:RunTask'],
-      resources: [executorTaskDef.taskDefinitionArn],
-    }));
-    apiRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['iam:PassRole'],
-      resources: [taskRole.roleArn, taskExecutionRole.roleArn],
-    }));
-
-    // API Lambda
     const apiLambda = new lambda.Function(this, 'ArtifactBuilderApi', {
       functionName: 'artifact-builder-api',
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -266,9 +305,6 @@ export class ArtifactBuilderStack extends cdk.Stack {
         JOBS_TABLE: jobsTable.tableName,
         ARTIFACTS_BUCKET: this.artifactsBucket.bucketName,
         JOB_QUEUE_URL: jobQueue.queueUrl,
-        ECS_CLUSTER: cluster.clusterArn,
-        ECS_TASK_DEF: executorTaskDef.taskDefinitionArn,
-        ECS_SUBNETS: vpc.privateSubnets.map(s => s.subnetId).join(','),
         PREVIEW_URL: `https://${this.previewDistribution.distributionDomainName}`,
         POWERTOOLS_SERVICE_NAME: 'artifact-builder-api',
         LOG_LEVEL: 'INFO',
@@ -282,10 +318,9 @@ export class ArtifactBuilderStack extends cdk.Stack {
     });
 
     // ============================================
-    // SQS TRIGGER FOR ECS TASKS
+    // SQS TRIGGER LAMBDA
     // ============================================
 
-    // Lambda to trigger ECS tasks from SQS
     const triggerRole = new iam.Role(this, 'TriggerLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [
@@ -296,6 +331,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
     jobQueue.grantConsumeMessages(triggerRole);
     jobsTable.grantReadWriteData(triggerRole);
 
+    // ECS RunTask permissions
     triggerRole.addToPolicy(new iam.PolicyStatement({
       actions: ['ecs:RunTask'],
       resources: [executorTaskDef.taskDefinitionArn],
@@ -319,16 +355,18 @@ export class ArtifactBuilderStack extends cdk.Stack {
         ECS_CLUSTER: cluster.clusterArn,
         ECS_TASK_DEF: executorTaskDef.taskDefinitionArn,
         ECS_SUBNETS: vpc.privateSubnets.map(s => s.subnetId).join(','),
+        ECS_SECURITY_GROUP: ecsSecurityGroup.securityGroupId,
         ARTIFACTS_BUCKET: this.artifactsBucket.bucketName,
+        TEMPLATE_REPO_NAME: this.templateRepo.repositoryName,
+        PREVIEW_URL: `https://${this.previewDistribution.distributionDomainName}`,
         POWERTOOLS_SERVICE_NAME: 'artifact-builder-trigger',
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
     });
 
-    // SQS event source for trigger Lambda
     triggerLambda.addEventSource(new lambda_event_sources.SqsEventSource(jobQueue, {
-      batchSize: 1,  // Process one job at a time
+      batchSize: 1,
     }));
 
     // ============================================
@@ -354,23 +392,21 @@ export class ArtifactBuilderStack extends cdk.Stack {
 
     // /jobs endpoints
     const jobsResource = this.api.root.addResource('jobs');
-    jobsResource.addMethod('GET', apiIntegration);   // List jobs
-    jobsResource.addMethod('POST', apiIntegration);  // Create job
+    jobsResource.addMethod('GET', apiIntegration);
+    jobsResource.addMethod('POST', apiIntegration);
 
     const jobResource = jobsResource.addResource('{jobId}');
-    jobResource.addMethod('GET', apiIntegration);    // Get job status
+    jobResource.addMethod('GET', apiIntegration);
 
-    // /jobs/{jobId}/logs
     const logsResource = jobResource.addResource('logs');
-    logsResource.addMethod('GET', apiIntegration);   // Get job logs
+    logsResource.addMethod('GET', apiIntegration);
 
-    // /jobs/{jobId}/download
     const downloadResource = jobResource.addResource('download');
-    downloadResource.addMethod('GET', apiIntegration);  // Get download URL
+    downloadResource.addMethod('GET', apiIntegration);
 
     // /templates endpoint
     const templatesResource = this.api.root.addResource('templates');
-    templatesResource.addMethod('GET', apiIntegration);  // List available templates
+    templatesResource.addMethod('GET', apiIntegration);
 
     // ============================================
     // OUTPUTS
@@ -396,9 +432,24 @@ export class ArtifactBuilderStack extends cdk.Stack {
       description: 'Jobs DynamoDB Table',
     });
 
+    new cdk.CfnOutput(this, 'TemplateRepoCloneUrl', {
+      value: this.templateRepo.repositoryCloneUrlHttp,
+      description: 'Template Repository Clone URL (upload template-app here)',
+    });
+
+    new cdk.CfnOutput(this, 'TemplateRepoName', {
+      value: this.templateRepo.repositoryName,
+      description: 'Template Repository Name',
+    });
+
     new cdk.CfnOutput(this, 'EcsClusterArn', {
       value: cluster.clusterArn,
       description: 'ECS Cluster ARN',
+    });
+
+    new cdk.CfnOutput(this, 'SsmParameterPath', {
+      value: '/artifact-builder/',
+      description: 'SSM Parameter Store path for credentials',
     });
   }
 }

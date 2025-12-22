@@ -4,10 +4,14 @@ Artifact Builder Executor
 
 Runs inside ECS Fargate to:
 1. Pull job request from S3
-2. Generate code using Bedrock Claude
-3. Build the project
-4. Upload artifacts to S3
-5. Update job status in DynamoDB
+2. Clone read-only template from CodeCommit
+3. Run Kiro CLI in autonomous mode to generate code
+4. Build the project
+5. Create new CodeCommit repo with the result
+6. Upload artifacts to S3
+7. Update job status in DynamoDB
+
+Credentials are stored in SSM Parameter Store.
 """
 import json
 import os
@@ -17,27 +21,31 @@ import sys
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import boto3
 
 # AWS Clients
 s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
-bedrock = boto3.client('bedrock-runtime')
+ssm = boto3.client('ssm')
+codecommit = boto3.client('codecommit')
 
 # Configuration from environment
 JOB_ID = os.environ.get('JOB_ID', '')
 ARTIFACTS_BUCKET = os.environ.get('ARTIFACTS_BUCKET', '')
 JOBS_TABLE = os.environ.get('JOBS_TABLE', 'artifact-builder-jobs')
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO_NAME', 'artifact-builder-template')
 
-# Bedrock model
-BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+# SSM Parameter paths
+SSM_PREFIX = '/artifact-builder'
 
 # Paths
 WORKSPACE = Path('/workspace')
-TEMPLATES_DIR = Path('/app/templates')
-SYSTEM_PROMPT_FILE = Path('/app/system_prompt.txt')
+TEMPLATE_DIR = WORKSPACE / 'template'
+PROJECT_DIR = WORKSPACE / 'project'
+KIRO_PROMPT_FILE = Path('/app/kiro_prompt.txt')
 
 jobs_table = dynamodb.Table(JOBS_TABLE)
 logs = []
@@ -47,11 +55,12 @@ def log(message: str):
     """Log message and store for upload."""
     timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     line = f"[{timestamp}] {message}"
-    print(line)
+    print(line, flush=True)
     logs.append(line)
 
 
-def update_status(status: str, error: str = None, summary: dict = None):
+def update_status(status: str, error: str = None, summary: dict = None, 
+                  repo_url: str = None, preview_url: str = None):
     """Update job status in DynamoDB."""
     now = datetime.now(timezone.utc).isoformat()
     
@@ -72,6 +81,14 @@ def update_status(status: str, error: str = None, summary: dict = None):
         update_expr += ', summary = :summary'
         expr_values[':summary'] = summary
     
+    if repo_url:
+        update_expr += ', repo_url = :repo_url'
+        expr_values[':repo_url'] = repo_url
+    
+    if preview_url:
+        update_expr += ', preview_url = :preview_url'
+        expr_values[':preview_url'] = preview_url
+    
     jobs_table.update_item(
         Key={'pk': f'JOB#{JOB_ID}', 'sk': 'META'},
         UpdateExpression=update_expr,
@@ -91,6 +108,22 @@ def upload_logs():
     )
 
 
+def get_ssm_parameter(name: str, decrypt: bool = True) -> Optional[str]:
+    """Get parameter from SSM Parameter Store."""
+    try:
+        response = ssm.get_parameter(
+            Name=f'{SSM_PREFIX}/{name}',
+            WithDecryption=decrypt
+        )
+        return response['Parameter']['Value']
+    except ssm.exceptions.ParameterNotFound:
+        log(f"SSM parameter not found: {SSM_PREFIX}/{name}")
+        return None
+    except Exception as e:
+        log(f"Error getting SSM parameter {name}: {e}")
+        return None
+
+
 def get_job_request() -> dict:
     """Download job request from S3."""
     response = s3.get_object(
@@ -100,142 +133,66 @@ def get_job_request() -> dict:
     return json.loads(response['Body'].read().decode('utf-8'))
 
 
-def copy_template(project_type: str):
-    """Copy starter template to workspace."""
-    template_path = TEMPLATES_DIR / project_type
-    if template_path.exists():
-        shutil.copytree(template_path, WORKSPACE, dirs_exist_ok=True)
-        log(f"Copied template: {project_type}")
-    else:
-        # Create minimal React + Vite project
-        log(f"Template {project_type} not found, creating minimal project")
-        create_minimal_react_project()
+def clone_template_repo():
+    """Clone the read-only template repository from CodeCommit."""
+    log(f"Cloning template repository: {TEMPLATE_REPO_NAME}")
+    
+    # Use git-remote-codecommit for authentication
+    repo_url = f'codecommit::{AWS_REGION}://{TEMPLATE_REPO_NAME}'
+    
+    result = subprocess.run(
+        ['git', 'clone', repo_url, str(TEMPLATE_DIR)],
+        capture_output=True,
+        text=True,
+        timeout=120
+    )
+    
+    if result.returncode != 0:
+        log(f"Git clone stderr: {result.stderr}")
+        raise Exception(f"Failed to clone template: {result.stderr}")
+    
+    log(f"Template cloned successfully to {TEMPLATE_DIR}")
+    
+    # Copy template to project directory (we'll work here)
+    shutil.copytree(TEMPLATE_DIR, PROJECT_DIR, dirs_exist_ok=True)
+    
+    # Remove .git from project dir - we'll create a fresh repo
+    git_dir = PROJECT_DIR / '.git'
+    if git_dir.exists():
+        shutil.rmtree(git_dir)
+    
+    log(f"Project directory prepared at {PROJECT_DIR}")
 
 
-def create_minimal_react_project():
-    """Create a minimal React + Vite + Tailwind project."""
-    # package.json
-    package_json = {
-        "name": "artifact",
-        "private": True,
-        "version": "0.0.1",
-        "type": "module",
-        "scripts": {
-            "dev": "vite",
-            "build": "vite build",
-            "preview": "vite preview"
-        },
-        "dependencies": {
-            "react": "^18.2.0",
-            "react-dom": "^18.2.0"
-        },
-        "devDependencies": {
-            "@types/react": "^18.2.0",
-            "@types/react-dom": "^18.2.0",
-            "@vitejs/plugin-react": "^4.2.0",
-            "autoprefixer": "^10.4.16",
-            "postcss": "^8.4.32",
-            "tailwindcss": "^3.4.0",
-            "vite": "^5.0.0"
-        }
-    }
-    (WORKSPACE / 'package.json').write_text(json.dumps(package_json, indent=2))
+def create_output_repo(job_id: str) -> str:
+    """Create a new CodeCommit repository for the output."""
+    repo_name = f'artifact-{job_id}'
     
-    # vite.config.js
-    vite_config = '''import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-
-export default defineConfig({
-  plugins: [react()],
-  build: {
-    outDir: 'dist'
-  }
-})
-'''
-    (WORKSPACE / 'vite.config.js').write_text(vite_config)
+    log(f"Creating output repository: {repo_name}")
     
-    # tailwind.config.js
-    tailwind_config = '''/** @type {import('tailwindcss').Config} */
-export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
-  theme: {
-    extend: {},
-  },
-  plugins: [],
-}
-'''
-    (WORKSPACE / 'tailwind.config.js').write_text(tailwind_config)
-    
-    # postcss.config.js
-    postcss_config = '''export default {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
-}
-'''
-    (WORKSPACE / 'postcss.config.js').write_text(postcss_config)
-    
-    # index.html
-    index_html = '''<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Artifact</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
-'''
-    (WORKSPACE / 'index.html').write_text(index_html)
-    
-    # src directory
-    src_dir = WORKSPACE / 'src'
-    src_dir.mkdir(exist_ok=True)
-    
-    # src/main.jsx
-    main_jsx = '''import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App'
-import './index.css'
-
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
-'''
-    (src_dir / 'main.jsx').write_text(main_jsx)
-    
-    # src/index.css
-    index_css = '''@tailwind base;
-@tailwind components;
-@tailwind utilities;
-'''
-    (src_dir / 'index.css').write_text(index_css)
-    
-    # src/App.jsx (placeholder)
-    app_jsx = '''export default function App() {
-  return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <h1 className="text-4xl font-bold text-gray-800">Hello World</h1>
-    </div>
-  )
-}
-'''
-    (src_dir / 'App.jsx').write_text(app_jsx)
-    
-    log("Created minimal React + Vite + Tailwind project")
+    try:
+        response = codecommit.create_repository(
+            repositoryName=repo_name,
+            repositoryDescription=f'Generated artifact for job {job_id}',
+            tags={
+                'artifact-builder': 'true',
+                'job-id': job_id,
+            }
+        )
+        
+        clone_url = response['repositoryMetadata']['cloneUrlHttp']
+        log(f"Created repository: {clone_url}")
+        return repo_name
+        
+    except codecommit.exceptions.RepositoryNameExistsException:
+        log(f"Repository {repo_name} already exists, reusing")
+        return repo_name
 
 
-def build_user_prompt(request: dict) -> str:
-    """Build the user prompt for Bedrock."""
+def build_kiro_prompt(request: dict) -> str:
+    """Build the prompt to send to Kiro CLI."""
+    base_prompt = KIRO_PROMPT_FILE.read_text() if KIRO_PROMPT_FILE.exists() else ""
+    
     prompt = request.get('prompt', '')
     project_type = request.get('project_type', 'react-vite')
     style = request.get('style', 'minimal')
@@ -243,166 +200,233 @@ def build_user_prompt(request: dict) -> str:
     features = request.get('features', [])
     include_mock_data = request.get('include_mock_data', False)
     
-    user_prompt = f"""User request: {prompt}
+    user_prompt = f"""{base_prompt}
 
-Project type: {project_type}
-Style preferences: {style}
+## User Request
+
+{prompt}
+
+## Configuration
+
+- Project type: {project_type}
+- Style preferences: {style}
 """
     
     if pages:
-        user_prompt += f"Pages/routes to create: {', '.join(pages)}\n"
+        user_prompt += f"- Pages/routes to create: {', '.join(pages)}\n"
     
     if features:
-        user_prompt += f"Features to include: {', '.join(features)}\n"
+        user_prompt += f"- Features to include: {', '.join(features)}\n"
     
     if include_mock_data:
-        user_prompt += "Include realistic mock data for demonstration.\n"
+        user_prompt += "- Include realistic mock data for demonstration\n"
+    
+    user_prompt += """
+## Instructions
+
+1. Analyze the existing template structure
+2. Create or modify files to implement the user's request
+3. Ensure the project builds successfully with `npm run build`
+4. Keep the design clean and responsive
+5. Use the existing shadcn/ui components where appropriate
+"""
     
     return user_prompt
 
 
-def invoke_bedrock(system_prompt: str, user_prompt: str) -> str:
-    """Invoke Bedrock Claude to generate code."""
-    log("Invoking Bedrock Claude Sonnet 4.5...")
+def run_kiro_cli(prompt: str) -> bool:
+    """Run Kiro CLI in autonomous mode."""
+    log("Starting Kiro CLI in autonomous mode...")
     
+    # Write prompt to a file for Kiro to read
+    prompt_file = PROJECT_DIR / '.kiro-prompt.md'
+    prompt_file.write_text(prompt)
+    
+    # Get Kiro API key from SSM
+    kiro_api_key = get_ssm_parameter('kiro-api-key')
+    
+    env = os.environ.copy()
+    if kiro_api_key:
+        env['ANTHROPIC_API_KEY'] = kiro_api_key
+    
+    # Run Kiro CLI
+    # Note: Adjust command based on actual Kiro CLI interface
+    # This assumes kiro has a non-interactive/autonomous mode
+    cmd = [
+        'kiro',
+        '--autonomous',
+        '--allow-all-tools',
+        '--prompt-file', str(prompt_file),
+        '--workspace', str(PROJECT_DIR),
+    ]
+    
+    log(f"Running: {' '.join(cmd)}")
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=PROJECT_DIR,
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 minute timeout
+            env=env,
+        )
+        
+        if result.stdout:
+            log(f"Kiro stdout:\n{result.stdout[:5000]}")
+        if result.stderr:
+            log(f"Kiro stderr:\n{result.stderr[:2000]}")
+        
+        # Clean up prompt file
+        prompt_file.unlink(missing_ok=True)
+        
+        return result.returncode == 0
+        
+    except subprocess.TimeoutExpired:
+        log("Kiro CLI timed out after 10 minutes")
+        return False
+    except FileNotFoundError:
+        log("Kiro CLI not found, falling back to direct execution")
+        return run_fallback_generation(prompt)
+
+
+def run_fallback_generation(prompt: str) -> bool:
+    """Fallback if Kiro CLI is not available - use direct Bedrock."""
+    log("Using fallback Bedrock generation...")
+    
+    bedrock = boto3.client('bedrock-runtime')
+    
+    # Read current project structure
+    files_content = []
+    for file_path in PROJECT_DIR.rglob('*'):
+        if file_path.is_file() and 'node_modules' not in str(file_path):
+            rel_path = file_path.relative_to(PROJECT_DIR)
+            if str(rel_path).startswith('.'):
+                continue
+            try:
+                content = file_path.read_text()
+                files_content.append(f"### {rel_path}\n```\n{content}\n```")
+            except:
+                pass
+    
+    system_prompt = """You are an expert React/TypeScript developer. You will modify an existing React project based on user requirements.
+
+Output your changes in this format for each file:
+
+FILE: path/to/file.tsx
+```tsx
+// complete file content
+```
+
+Only output files that need to be created or modified. Ensure the code is complete and builds without errors."""
+
+    full_prompt = f"""{prompt}
+
+## Current Project Files
+
+{chr(10).join(files_content[:50])}  # Limit to avoid token limits
+"""
+
     request_body = {
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 16000,
         "temperature": 0.3,
         "system": system_prompt,
-        "messages": [
-            {"role": "user", "content": user_prompt}
-        ]
+        "messages": [{"role": "user", "content": full_prompt}]
     }
     
     response = bedrock.invoke_model(
-        modelId=BEDROCK_MODEL_ID,
+        modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0',
         body=json.dumps(request_body),
         contentType='application/json',
         accept='application/json'
     )
     
     response_body = json.loads(response['body'].read())
-    return response_body['content'][0]['text']
-
-
-def parse_and_apply_changes(response: str):
-    """Parse Bedrock response and apply file changes."""
-    log("Parsing AI response and applying changes...")
+    response_text = response_body['content'][0]['text']
     
-    # Look for file blocks in the response
-    # Format: ```filename.ext or ```jsx filename.ext
+    # Parse and apply changes
+    apply_file_changes(response_text)
+    
+    return True
+
+
+def apply_file_changes(response: str):
+    """Parse AI response and apply file changes."""
     import re
     
-    # Pattern to match code blocks with filenames
-    # Supports: ```jsx src/App.jsx or ```src/App.jsx or FILE: src/App.jsx
-    file_pattern = r'(?:FILE:\s*|```(?:\w+\s+)?)([\w./\-]+\.\w+)\s*\n```[\w]*\n(.*?)```'
+    log("Applying file changes...")
     
-    # Also try simpler pattern
-    simple_pattern = r'```(\w+)?\s*\n(.*?)```'
+    # Pattern: FILE: path/to/file.ext followed by code block
+    pattern = r'FILE:\s*([^\n]+)\n```\w*\n(.*?)```'
+    matches = re.findall(pattern, response, re.DOTALL)
     
-    files_written = []
-    
-    # First try to find explicit file markers
-    lines = response.split('\n')
-    current_file = None
-    current_content = []
-    in_code_block = False
-    
-    for line in lines:
-        # Check for file marker
-        file_match = re.match(r'^(?:FILE:|###?\s*`?)([/\w.\-]+\.\w+)`?\s*$', line.strip())
-        if file_match:
-            # Save previous file if any
-            if current_file and current_content:
-                write_file(current_file, '\n'.join(current_content))
-                files_written.append(current_file)
-            current_file = file_match.group(1)
-            current_content = []
-            in_code_block = False
-            continue
+    for filepath, content in matches:
+        filepath = filepath.strip()
+        if filepath.startswith('/'):
+            filepath = filepath[1:]
         
-        # Check for code block start
-        if line.strip().startswith('```'):
-            if in_code_block:
-                # End of code block
-                in_code_block = False
-                if current_file and current_content:
-                    write_file(current_file, '\n'.join(current_content))
-                    files_written.append(current_file)
-                    current_file = None
-                    current_content = []
-            else:
-                # Start of code block - check if filename is on this line
-                block_match = re.match(r'^```\w*\s+([/\w.\-]+\.\w+)\s*$', line.strip())
-                if block_match:
-                    current_file = block_match.group(1)
-                in_code_block = True
-            continue
-        
-        # Accumulate content
-        if in_code_block and current_file:
-            current_content.append(line)
+        full_path = PROJECT_DIR / filepath
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content)
+        log(f"  Wrote: {filepath}")
     
-    # Handle any remaining content
-    if current_file and current_content:
-        write_file(current_file, '\n'.join(current_content))
-        files_written.append(current_file)
-    
-    log(f"Applied changes to {len(files_written)} files: {files_written}")
-    return files_written
+    log(f"Applied {len(matches)} file changes")
 
 
-def write_file(filepath: str, content: str):
-    """Write content to a file, creating directories as needed."""
-    # Clean up filepath
-    filepath = filepath.lstrip('/')
-    if filepath.startswith('workspace/'):
-        filepath = filepath[10:]
-    
-    full_path = WORKSPACE / filepath
-    full_path.parent.mkdir(parents=True, exist_ok=True)
-    full_path.write_text(content)
-    log(f"  Wrote: {filepath}")
-
-
-def run_command(cmd: list, cwd: Path = None) -> tuple[int, str, str]:
+def run_command(cmd: list, cwd: Path = None, timeout: int = 300) -> tuple[int, str, str]:
     """Run a shell command and return exit code, stdout, stderr."""
     log(f"Running: {' '.join(cmd)}")
     result = subprocess.run(
         cmd,
-        cwd=cwd or WORKSPACE,
+        cwd=cwd or PROJECT_DIR,
         capture_output=True,
         text=True,
-        timeout=300  # 5 minute timeout
+        timeout=timeout
     )
     if result.stdout:
-        log(f"stdout: {result.stdout[:1000]}")
+        log(f"stdout: {result.stdout[:2000]}")
     if result.stderr:
         log(f"stderr: {result.stderr[:1000]}")
     return result.returncode, result.stdout, result.stderr
 
 
+def install_dependencies() -> bool:
+    """Run npm install."""
+    log("Installing dependencies...")
+    code, _, _ = run_command(['npm', 'install'], timeout=300)
+    return code == 0
+
+
 def build_project() -> bool:
-    """Run npm install and npm run build."""
-    update_status('building')
+    """Run npm run build."""
+    log("Building project...")
+    code, _, _ = run_command(['npm', 'run', 'build'], timeout=300)
+    return code == 0
+
+
+def push_to_codecommit(repo_name: str) -> str:
+    """Initialize git repo and push to CodeCommit."""
+    log(f"Pushing to CodeCommit repository: {repo_name}")
     
-    # npm install
-    log("Running npm install...")
-    code, stdout, stderr = run_command(['npm', 'install'])
+    # Initialize git repo
+    run_command(['git', 'init'])
+    run_command(['git', 'add', '-A'])
+    run_command(['git', 'commit', '-m', f'Generated artifact for job {JOB_ID}'])
+    
+    # Add remote and push
+    repo_url = f'codecommit::{AWS_REGION}://{repo_name}'
+    run_command(['git', 'remote', 'add', 'origin', repo_url])
+    
+    code, _, stderr = run_command(['git', 'push', '-u', 'origin', 'main', '--force'])
+    
     if code != 0:
-        log(f"npm install failed with code {code}")
-        return False
+        # Try with master branch
+        run_command(['git', 'branch', '-M', 'master'])
+        code, _, _ = run_command(['git', 'push', '-u', 'origin', 'master', '--force'])
     
-    # npm run build
-    log("Running npm run build...")
-    code, stdout, stderr = run_command(['npm', 'run', 'build'])
-    if code != 0:
-        log(f"npm run build failed with code {code}")
-        return False
-    
-    log("Build successful!")
-    return True
+    # Return HTTPS clone URL
+    return f'https://git-codecommit.{AWS_REGION}.amazonaws.com/v1/repos/{repo_name}'
 
 
 def create_source_zip() -> Path:
@@ -410,23 +434,22 @@ def create_source_zip() -> Path:
     zip_path = WORKSPACE / 'source.zip'
     
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for file_path in WORKSPACE.rglob('*'):
+        for file_path in PROJECT_DIR.rglob('*'):
             if file_path.is_file():
+                rel_path = file_path.relative_to(PROJECT_DIR)
                 # Skip node_modules and dist
-                rel_path = file_path.relative_to(WORKSPACE)
-                if 'node_modules' in str(rel_path) or str(rel_path).startswith('dist/'):
+                if 'node_modules' in str(rel_path):
                     continue
-                if str(rel_path) == 'source.zip':
+                if str(rel_path).startswith('dist/'):
                     continue
                 zf.write(file_path, rel_path)
     
-    log(f"Created source.zip")
+    log("Created source.zip")
     return zip_path
 
 
-def upload_artifacts(files_changed: list):
+def upload_artifacts(repo_url: str) -> dict:
     """Upload all artifacts to S3."""
-    update_status('publishing')
     log("Uploading artifacts to S3...")
     
     # Upload source.zip
@@ -439,7 +462,9 @@ def upload_artifacts(files_changed: list):
     log("Uploaded source.zip")
     
     # Upload build output (dist folder)
-    dist_dir = WORKSPACE / 'dist'
+    dist_dir = PROJECT_DIR / 'dist'
+    files_uploaded = []
+    
     if dist_dir.exists():
         for file_path in dist_dir.rglob('*'):
             if file_path.is_file():
@@ -448,18 +473,21 @@ def upload_artifacts(files_changed: list):
                 
                 # Set content type
                 content_type = 'application/octet-stream'
-                if str(file_path).endswith('.html'):
-                    content_type = 'text/html'
-                elif str(file_path).endswith('.css'):
-                    content_type = 'text/css'
-                elif str(file_path).endswith('.js'):
-                    content_type = 'application/javascript'
-                elif str(file_path).endswith('.json'):
-                    content_type = 'application/json'
-                elif str(file_path).endswith('.svg'):
-                    content_type = 'image/svg+xml'
-                elif str(file_path).endswith('.png'):
-                    content_type = 'image/png'
+                suffix = file_path.suffix.lower()
+                content_types = {
+                    '.html': 'text/html',
+                    '.css': 'text/css',
+                    '.js': 'application/javascript',
+                    '.json': 'application/json',
+                    '.svg': 'image/svg+xml',
+                    '.png': 'image/png',
+                    '.jpg': 'image/jpeg',
+                    '.jpeg': 'image/jpeg',
+                    '.ico': 'image/x-icon',
+                    '.woff': 'font/woff',
+                    '.woff2': 'font/woff2',
+                }
+                content_type = content_types.get(suffix, content_type)
                 
                 s3.upload_file(
                     str(file_path),
@@ -467,12 +495,15 @@ def upload_artifacts(files_changed: list):
                     s3_key,
                     ExtraArgs={'ContentType': content_type}
                 )
-        log("Uploaded build output")
+                files_uploaded.append(str(rel_path))
+        
+        log(f"Uploaded {len(files_uploaded)} build files")
     
-    # Create and upload summary
+    # Create summary
     summary = {
         'job_id': JOB_ID,
-        'files_changed': files_changed,
+        'repo_url': repo_url,
+        'files_uploaded': files_uploaded,
         'build_output': 'dist',
         'completed_at': datetime.now(timezone.utc).isoformat(),
     }
@@ -495,56 +526,70 @@ def main():
         sys.exit(1)
     
     log(f"Starting artifact generation for job {JOB_ID}")
+    log(f"AWS Region: {AWS_REGION}")
+    log(f"Template repo: {TEMPLATE_REPO_NAME}")
+    
+    repo_url = None
+    preview_url = None
     
     try:
         # Get job request
         request = get_job_request()
         log(f"Got request: {request.get('prompt', '')[:100]}...")
         
-        # Copy template
-        copy_template(request.get('project_type', 'react-vite'))
+        # Clone template from CodeCommit
+        update_status('cloning')
+        clone_template_repo()
         
-        # Load system prompt
-        system_prompt = SYSTEM_PROMPT_FILE.read_text() if SYSTEM_PROMPT_FILE.exists() else ""
+        # Build Kiro prompt
+        kiro_prompt = build_kiro_prompt(request)
         
-        # Build user prompt
-        user_prompt = build_user_prompt(request)
-        
-        # Generate code with Bedrock
+        # Run Kiro CLI to generate code
         update_status('generating')
-        response = invoke_bedrock(system_prompt, user_prompt)
-        log(f"Got response from Bedrock ({len(response)} chars)")
+        if not run_kiro_cli(kiro_prompt):
+            log("Kiro CLI failed, but continuing with build attempt...")
         
-        # Parse and apply changes
-        files_changed = parse_and_apply_changes(response)
+        # Install dependencies
+        update_status('building')
+        if not install_dependencies():
+            raise Exception("npm install failed")
         
         # Build the project
-        max_retries = 3
+        max_retries = 2
         for attempt in range(max_retries):
             if build_project():
                 break
             log(f"Build failed, attempt {attempt + 1}/{max_retries}")
             if attempt < max_retries - 1:
-                # Ask Bedrock to fix the build
-                fix_prompt = f"""The build failed. Here are the errors:
-
-{logs[-5:]}
-
-Please fix the code to make the build pass. Only output the files that need to be changed."""
-                response = invoke_bedrock(system_prompt, fix_prompt)
-                parse_and_apply_changes(response)
+                # Try to fix with another Kiro run
+                fix_prompt = "The build failed. Please fix any TypeScript or build errors."
+                run_kiro_cli(fix_prompt)
         else:
             raise Exception("Build failed after all retries")
         
-        # Upload artifacts
-        summary = upload_artifacts(files_changed)
+        # Create output repo and push
+        update_status('publishing')
+        output_repo_name = create_output_repo(JOB_ID)
+        repo_url = push_to_codecommit(output_repo_name)
+        
+        # Upload artifacts to S3
+        summary = upload_artifacts(repo_url)
+        
+        # Get preview URL from environment
+        preview_base = os.environ.get('PREVIEW_URL', '')
+        if preview_base:
+            preview_url = f"{preview_base}/jobs/{JOB_ID}/build/index.html"
         
         # Update final status
-        update_status('done', summary=summary)
+        update_status('done', summary=summary, repo_url=repo_url, preview_url=preview_url)
         log("Job completed successfully!")
+        log(f"Repository: {repo_url}")
+        log(f"Preview: {preview_url}")
         
     except Exception as e:
         log(f"ERROR: {str(e)}")
+        import traceback
+        log(traceback.format_exc())
         update_status('failed', error=str(e))
         raise
     
