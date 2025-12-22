@@ -1,6 +1,6 @@
 # Artifact Builder
 
-An agentic PoC builder that turns a single prompt into a working web prototype using **Kiro CLI in autonomous mode**, publishes a live preview, and stores everything in CodeCommit.
+An agentic PoC builder that turns a single prompt into a working web prototype using **Kiro CLI in headless autonomous mode**, publishes a live preview, and stores everything in CodeCommit.
 
 ## Architecture
 
@@ -26,23 +26,76 @@ An agentic PoC builder that turns a single prompt into a working web prototype u
 │   CodeCommit    │◀─────────────┴──────────────│  ECS Fargate    │
 │  (Template +    │                             │  (Executor)     │
 │   Output Repos) │                             │  + Kiro CLI     │
-└─────────────────┘                             └─────────────────┘
+└─────────────────┘                             └────────┬────────┘
                                                          │
                                                          ▼
                                                 ┌─────────────────┐
-                                                │  SSM Parameter  │
-                                                │  Store (Creds)  │
+                                                │  EFS Volume     │
+                                                │  (Auth State)   │
                                                 └─────────────────┘
 ```
+
+## Kiro CLI Authentication
+
+Kiro CLI uses **OAuth device flow** for authentication. This requires a one-time manual login, after which the auth state persists in EFS.
+
+### Auth Directories (Persisted in EFS)
+
+| Directory | Purpose |
+|-----------|---------|
+| `~/.kiro/` | CLI config, agents, steering files |
+| `~/.config/kiro/` | Settings |
+| `~/.local/share/kiro-cli/` | Auth state (sqlite db) |
+
+### One-Time Setup (Required After Deployment)
+
+After deploying the stack, you must complete device flow login once:
+
+```bash
+# Option 1: Run an interactive ECS task
+aws ecs run-task \
+  --cluster artifact-builder \
+  --task-definition artifact-builder-executor \
+  --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx],assignPublicIp=DISABLED}" \
+  --overrides '{"containerOverrides":[{"name":"executor","command":["/bin/bash"]}]}' \
+  --enable-execute-command
+
+# Then exec into the container
+aws ecs execute-command \
+  --cluster artifact-builder \
+  --task <task-id> \
+  --container executor \
+  --interactive \
+  --command "/bin/bash"
+
+# Inside the container, run device flow login
+kiro-cli login --use-device-flow
+
+# Follow the instructions to complete login in your browser
+# The auth state will persist in EFS for future task runs
+```
+
+### Headless Execution Mode
+
+Once authenticated, the executor runs Kiro CLI in headless mode:
+
+```bash
+kiro-cli chat --no-interactive --trust-all-tools "<prompt>"
+```
+
+Flags:
+- `--no-interactive`: No TTY required, headless execution
+- `--trust-all-tools`: Allow all tool executions without prompts
 
 ## Flow
 
 1. User submits prompt via frontend
 2. API Lambda creates job in DynamoDB, uploads request to S3, sends SQS message
 3. Trigger Lambda receives SQS message and starts ECS Fargate task
-4. ECS Executor:
+4. ECS Executor (with EFS-mounted auth state):
    - Clones **read-only template** from CodeCommit (`artifact-builder-template`)
-   - Runs **Kiro CLI in autonomous mode** with `--allow-all-tools`
+   - Runs **Kiro CLI in headless autonomous mode**
    - Kiro generates/modifies code based on user prompt
    - Runs `npm install` and `npm run build`
    - If build fails, Kiro is invoked again to fix errors
@@ -60,11 +113,11 @@ An agentic PoC builder that turns a single prompt into a working web prototype u
 | `artifact-builder-template` | Read-only starter template (React + Vite + shadcn/ui) |
 | `artifact-{job_id}` | Generated output for each job |
 
-### SSM Parameter Store
+### EFS Volume
 
-| Parameter | Description |
-|-----------|-------------|
-| `/artifact-builder/kiro-api-key` | API key for Kiro CLI (required) |
+| Mount Point | Purpose |
+|-------------|---------|
+| `/home/kiro` | Kiro CLI home directory with auth state |
 
 ### Template (`template/`)
 
@@ -105,15 +158,9 @@ git remote add origin $TEMPLATE_REPO_URL
 git push -u origin main
 ```
 
-### 3. Set Kiro API Key (Required)
+### 3. Complete Kiro CLI Authentication (Required)
 
-```bash
-aws ssm put-parameter \
-  --name "/artifact-builder/kiro-api-key" \
-  --value "your-kiro-api-key" \
-  --type SecureString \
-  --overwrite
-```
+See "One-Time Setup" section above. This must be done before jobs can run.
 
 ### 4. Build and Deploy Frontend (Optional)
 
@@ -170,13 +217,28 @@ artifact-builder-{account}-{region}/
 ## Security
 
 - ECS tasks run in private subnets with NAT gateway
+- EFS encrypted at rest with transit encryption
 - CodeCommit repos created per-job with IAM authentication
-- SSM Parameter Store for Kiro API key (SecureString)
 - S3 bucket blocks public access (served via CloudFront)
 - 30-day TTL on job records and artifacts
+- Auth state persisted securely in EFS (not in container image)
 
 ## Requirements
 
-- **Kiro CLI must be installed** in the executor container
-- **Kiro API key must be set** in SSM before running jobs
-- No fallback - jobs will fail if Kiro CLI is unavailable
+- **Kiro CLI must be authenticated** via device flow (one-time setup)
+- **EFS volume must be mounted** for auth state persistence
+- No fallback - jobs will fail if Kiro CLI is not authenticated
+
+## Troubleshooting
+
+### "Kiro CLI not authenticated" error
+
+Run the one-time device flow login as described in the setup section.
+
+### Auth state not persisting
+
+Check that EFS is properly mounted at `/home/kiro` in the container.
+
+### Build failures
+
+Check CloudWatch logs at `/ecs/artifact-builder-executor` for detailed error messages.

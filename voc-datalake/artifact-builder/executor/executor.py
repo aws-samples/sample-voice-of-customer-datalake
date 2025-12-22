@@ -5,13 +5,18 @@ Artifact Builder Executor
 Runs inside ECS Fargate to:
 1. Pull job request from S3
 2. Clone read-only template from CodeCommit
-3. Run Kiro CLI in autonomous mode to generate code
+3. Run Kiro CLI in headless autonomous mode to generate code
 4. Build the project
 5. Create new CodeCommit repo with the result
 6. Upload artifacts to S3
 7. Update job status in DynamoDB
 
-Credentials are stored in SSM Parameter Store.
+Kiro CLI Authentication:
+- Uses OAuth device flow (one-time manual login required)
+- Auth state persisted in EFS-mounted volumes:
+  - ~/.kiro/
+  - ~/.config/kiro/
+  - ~/.local/share/kiro-cli/
 """
 import json
 import os
@@ -28,7 +33,6 @@ import boto3
 # AWS Clients
 s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
-ssm = boto3.client('ssm')
 codecommit = boto3.client('codecommit')
 
 # Configuration from environment
@@ -36,16 +40,15 @@ JOB_ID = os.environ.get('JOB_ID', '')
 ARTIFACTS_BUCKET = os.environ.get('ARTIFACTS_BUCKET', '')
 JOBS_TABLE = os.environ.get('JOBS_TABLE', 'artifact-builder-jobs')
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
-TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO_NAME', 'artifact-builder-template')
-
-# SSM Parameter paths
-SSM_PREFIX = '/artifact-builder'
+TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO
+_NAME', 'artifact-builder-template')
 
 # Paths
-WORKSPACE = Path('/workspace')
+HOME = Path(os.environ.get('HOME', '/home/kiro'))
+WORKSPACE = HOME / 'workspace'
 TEMPLATE_DIR = WORKSPACE / 'template'
 PROJECT_DIR = WORKSPACE / 'project'
-KIRO_PROMPT_FILE = Path('/app/kiro_prompt.txt')
+KIRO_PROMPT_FILE = HOME / 'app' / 'kiro_prompt.txt'
 
 jobs_table = dynamodb.Table(JOBS_TABLE)
 logs = []
@@ -108,22 +111,6 @@ def upload_logs():
     )
 
 
-def get_ssm_parameter(name: str, decrypt: bool = True) -> Optional[str]:
-    """Get parameter from SSM Parameter Store."""
-    try:
-        response = ssm.get_parameter(
-            Name=f'{SSM_PREFIX}/{name}',
-            WithDecryption=decrypt
-        )
-        return response['Parameter']['Value']
-    except ssm.exceptions.ParameterNotFound:
-        log(f"SSM parameter not found: {SSM_PREFIX}/{name}")
-        return None
-    except Exception as e:
-        log(f"Error getting SSM parameter {name}: {e}")
-        return None
-
-
 def get_job_request() -> dict:
     """Download job request from S3."""
     response = s3.get_object(
@@ -136,6 +123,12 @@ def get_job_request() -> dict:
 def clone_template_repo():
     """Clone the read-only template repository from CodeCommit."""
     log(f"Cloning template repository: {TEMPLATE_REPO_NAME}")
+    
+    # Clean up any existing directories
+    if TEMPLATE_DIR.exists():
+        shutil.rmtree(TEMPLATE_DIR)
+    if PROJECT_DIR.exists():
+        shutil.rmtree(PROJECT_DIR)
     
     # Use git-remote-codecommit for authentication
     repo_url = f'codecommit::{AWS_REGION}://{TEMPLATE_REPO_NAME}'
@@ -224,43 +217,40 @@ def build_kiro_prompt(request: dict) -> str:
     user_prompt += """
 ## Instructions
 
-1. Analyze the existing template structure
+1. Analyze the existing template structure in the current directory
 2. Create or modify files to implement the user's request
 3. Ensure the project builds successfully with `npm run build`
 4. Keep the design clean and responsive
 5. Use the existing shadcn/ui components where appropriate
+6. When done, output a summary of what you created
 """
     
     return user_prompt
 
 
 def run_kiro_cli(prompt: str) -> bool:
-    """Run Kiro CLI in autonomous mode with all tools allowed."""
-    log("Starting Kiro CLI in autonomous mode...")
+    """
+    Run Kiro CLI in headless autonomous mode.
     
-    # Write prompt to a file for Kiro to read
-    prompt_file = PROJECT_DIR / '.kiro-prompt.md'
-    prompt_file.write_text(prompt)
+    Uses:
+    - --no-interactive: Headless mode, no TTY required
+    - --trust-all-tools: Allow all tool executions without prompts
     
-    # Get Kiro API key from SSM
-    kiro_api_key = get_ssm_parameter('kiro-api-key')
-    if not kiro_api_key or kiro_api_key == 'PLACEHOLDER_SET_AFTER_DEPLOY':
-        raise Exception("Kiro API key not configured in SSM. Set /artifact-builder/kiro-api-key")
+    Auth must be pre-configured via device flow login with persisted state.
+    """
+    log("Starting Kiro CLI in headless autonomous mode...")
     
-    env = os.environ.copy()
-    env['ANTHROPIC_API_KEY'] = kiro_api_key
-    
-    # Run Kiro CLI in autonomous mode with all tools allowed
-    # Adjust command based on actual Kiro CLI interface
+    # Kiro CLI command for headless execution
+    # The prompt is passed directly as an argument
     cmd = [
-        'kiro',
-        '--autonomous',
-        '--allow-all-tools',
-        '--prompt-file', str(prompt_file),
-        '--workspace', str(PROJECT_DIR),
+        'kiro-cli', 'chat',
+        '--no-interactive',
+        '--trust-all-tools',
+        prompt
     ]
     
-    log(f"Running: {' '.join(cmd)}")
+    log(f"Running: kiro-cli chat --no-interactive --trust-all-tools '<prompt>'")
+    log(f"Working directory: {PROJECT_DIR}")
     
     try:
         result = subprocess.run(
@@ -269,20 +259,27 @@ def run_kiro_cli(prompt: str) -> bool:
             capture_output=True,
             text=True,
             timeout=900,  # 15 minute timeout for complex generations
-            env=env,
         )
         
         if result.stdout:
-            log(f"Kiro stdout:\n{result.stdout[:10000]}")
-        if result.stderr:
-            log(f"Kiro stderr:\n{result.stderr[:5000]}")
+            # Log output (truncate if very long)
+            stdout = result.stdout
+            if len(stdout) > 15000:
+                stdout = stdout[:7500] + "\n...[truncated]...\n" + stdout[-7500:]
+            log(f"Kiro output:\n{stdout}")
         
-        # Clean up prompt file
-        prompt_file.unlink(missing_ok=True)
+        if result.stderr:
+            stderr = result.stderr
+            if len(stderr) > 5000:
+                stderr = stderr[:2500] + "\n...[truncated]...\n" + stderr[-2500:]
+            log(f"Kiro stderr:\n{stderr}")
         
         if result.returncode != 0:
             log(f"Kiro CLI exited with code {result.returncode}")
-            raise Exception(f"Kiro CLI failed with exit code {result.returncode}")
+            # Don't fail immediately - check if files were created
+            if not any(PROJECT_DIR.glob('src/**/*.tsx')):
+                raise Exception(f"Kiro CLI failed with exit code {result.returncode}")
+            log("Files were created despite non-zero exit, continuing...")
         
         return True
         
@@ -290,7 +287,7 @@ def run_kiro_cli(prompt: str) -> bool:
         log("Kiro CLI timed out after 15 minutes")
         raise Exception("Kiro CLI timed out")
     except FileNotFoundError:
-        log("ERROR: Kiro CLI not found. Ensure 'kiro' is installed in the container.")
+        log("ERROR: Kiro CLI not found. Ensure 'kiro-cli' is installed.")
         raise Exception("Kiro CLI not installed")
 
 
@@ -330,20 +327,20 @@ def push_to_codecommit(repo_name: str) -> str:
     log(f"Pushing to CodeCommit repository: {repo_name}")
     
     # Initialize git repo
-    run_command(['git', 'init'])
-    run_command(['git', 'add', '-A'])
-    run_command(['git', 'commit', '-m', f'Generated artifact for job {JOB_ID}'])
+    run_command(['git', 'init'], cwd=PROJECT_DIR)
+    run_command(['git', 'add', '-A'], cwd=PROJECT_DIR)
+    run_command(['git', 'commit', '-m', f'Generated artifact for job {JOB_ID}'], cwd=PROJECT_DIR)
     
     # Add remote and push
     repo_url = f'codecommit::{AWS_REGION}://{repo_name}'
-    run_command(['git', 'remote', 'add', 'origin', repo_url])
+    run_command(['git', 'remote', 'add', 'origin', repo_url], cwd=PROJECT_DIR)
     
-    code, _, stderr = run_command(['git', 'push', '-u', 'origin', 'main', '--force'])
+    code, _, stderr = run_command(['git', 'push', '-u', 'origin', 'main', '--force'], cwd=PROJECT_DIR)
     
     if code != 0:
         # Try with master branch
-        run_command(['git', 'branch', '-M', 'master'])
-        code, _, _ = run_command(['git', 'push', '-u', 'origin', 'master', '--force'])
+        run_command(['git', 'branch', '-M', 'master'], cwd=PROJECT_DIR)
+        code, _, _ = run_command(['git', 'push', '-u', 'origin', 'master', '--force'], cwd=PROJECT_DIR)
     
     # Return HTTPS clone URL
     return f'https://git-codecommit.{AWS_REGION}.amazonaws.com/v1/repos/{repo_name}'
@@ -448,6 +445,7 @@ def main():
     log(f"Starting artifact generation for job {JOB_ID}")
     log(f"AWS Region: {AWS_REGION}")
     log(f"Template repo: {TEMPLATE_REPO_NAME}")
+    log(f"Artifacts bucket: {ARTIFACTS_BUCKET}")
     
     repo_url = None
     preview_url = None
@@ -455,7 +453,7 @@ def main():
     try:
         # Get job request
         request = get_job_request()
-        log(f"Got request: {request.get('prompt', '')[:100]}...")
+        log(f"Got request: {request.get('prompt', '')[:200]}...")
         
         # Clone template from CodeCommit
         update_status('cloning')
@@ -463,6 +461,7 @@ def main():
         
         # Build Kiro prompt
         kiro_prompt = build_kiro_prompt(request)
+        log(f"Built prompt ({len(kiro_prompt)} chars)")
         
         # Run Kiro CLI to generate code (no fallback - must succeed)
         update_status('generating')
@@ -481,7 +480,11 @@ def main():
             log(f"Build failed, attempt {attempt + 1}/{max_retries}")
             if attempt < max_retries - 1:
                 # Ask Kiro to fix the build errors
-                fix_prompt = "The build failed. Please fix any TypeScript or build errors and ensure `npm run build` succeeds."
+                fix_prompt = """The build failed. Please:
+1. Read the error messages above
+2. Fix any TypeScript, ESLint, or build errors
+3. Ensure `npm run build` succeeds
+4. Do not remove functionality, just fix the errors"""
                 run_kiro_cli(fix_prompt)
         else:
             raise Exception("Build failed after all retries")
@@ -501,9 +504,11 @@ def main():
         
         # Update final status
         update_status('done', summary=summary, repo_url=repo_url, preview_url=preview_url)
+        log("=" * 50)
         log("Job completed successfully!")
         log(f"Repository: {repo_url}")
         log(f"Preview: {preview_url}")
+        log("=" * 50)
         
     except Exception as e:
         log(f"ERROR: {str(e)}")

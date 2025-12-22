@@ -11,6 +11,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as efs from 'aws-cdk-lib/aws-efs';
 import * as codecommit from 'aws-cdk-lib/aws-codecommit';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
@@ -44,13 +45,8 @@ export class ArtifactBuilderStack extends cdk.Stack {
     // SSM PARAMETERS
     // ============================================
 
-    // SSM Parameter for Kiro API key (create placeholder, set value manually)
-    new ssm.StringParameter(this, 'KiroApiKeyParam', {
-      parameterName: '/artifact-builder/kiro-api-key',
-      stringValue: 'PLACEHOLDER_SET_AFTER_DEPLOY',
-      description: 'API key for Kiro CLI (set manually after deployment)',
-      tier: ssm.ParameterTier.STANDARD,
-    });
+    // Note: Kiro CLI uses OAuth device flow for authentication
+    // No API key needed - auth state is persisted in EFS volumes
 
     // ============================================
     // STORAGE
@@ -183,6 +179,53 @@ export class ArtifactBuilderStack extends cdk.Stack {
     });
 
     // ============================================
+    // EFS FOR KIRO CLI AUTH PERSISTENCE
+    // ============================================
+    // Kiro CLI uses OAuth device flow - auth state must persist across task runs
+    // Directories to persist:
+    // - ~/.kiro/ (CLI config, agents, steering)
+    // - ~/.config/kiro/ (settings)
+    // - ~/.local/share/kiro-cli/ (auth state, sqlite db)
+
+    const efsSecurityGroup = new ec2.SecurityGroup(this, 'EfsSecurityGroup', {
+      vpc,
+      description: 'Security group for Kiro CLI auth EFS',
+      allowAllOutbound: false,
+    });
+
+    // Allow ECS tasks to access EFS
+    efsSecurityGroup.addIngressRule(
+      ecsSecurityGroup,
+      ec2.Port.tcp(2049),
+      'Allow NFS from ECS tasks'
+    );
+
+    const kiroAuthFileSystem = new efs.FileSystem(this, 'KiroAuthEfs', {
+      vpc,
+      securityGroup: efsSecurityGroup,
+      encrypted: true,
+      performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
+      throughputMode: efs.ThroughputMode.BURSTING,
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Keep auth state on stack delete
+      lifecyclePolicy: efs.LifecyclePolicy.AFTER_30_DAYS,
+    });
+
+    // Access point for Kiro CLI home directory
+    const kiroAccessPoint = new efs.AccessPoint(this, 'KiroAccessPoint', {
+      fileSystem: kiroAuthFileSystem,
+      path: '/kiro-home',
+      posixUser: {
+        uid: '10001',  // Matches 'kiro' user in container
+        gid: '10001',
+      },
+      createAcl: {
+        ownerUid: '10001',
+        ownerGid: '10001',
+        permissions: '755',
+      },
+    });
+
+    // ============================================
     // ECS TASK DEFINITION (EXECUTOR)
     // ============================================
 
@@ -220,19 +263,10 @@ export class ArtifactBuilderStack extends cdk.Stack {
       ],
     }));
 
-    // SSM Parameter Store - read credentials
+    // SSM Parameter Store - read credentials (if any future needs)
     taskRole.addToPolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter', 'ssm:GetParameters'],
       resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/artifact-builder/*`],
-    }));
-
-    // Bedrock access (fallback if Kiro CLI not available)
-    taskRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-      resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-      ],
     }));
 
     // ECS Task Definition - x86_64 for broader compatibility
@@ -247,6 +281,22 @@ export class ArtifactBuilderStack extends cdk.Stack {
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
       },
     });
+
+    // Add EFS volume for Kiro CLI auth persistence
+    executorTaskDef.addVolume({
+      name: 'kiro-auth',
+      efsVolumeConfiguration: {
+        fileSystemId: kiroAuthFileSystem.fileSystemId,
+        transitEncryption: 'ENABLED',
+        authorizationConfig: {
+          accessPointId: kiroAccessPoint.accessPointId,
+          iam: 'ENABLED',
+        },
+      },
+    });
+
+    // Grant EFS access to task role
+    kiroAuthFileSystem.grantReadWrite(taskRole);
 
     // Container definition
     const executorLogGroup = new logs.LogGroup(this, 'ExecutorLogs', {
@@ -267,7 +317,14 @@ export class ArtifactBuilderStack extends cdk.Stack {
         AWS_REGION: this.region,
         TEMPLATE_REPO_NAME: this.templateRepo.repositoryName,
         PREVIEW_URL: `https://${this.previewDistribution.distributionDomainName}`,
+        HOME: '/home/kiro',
       },
+    }).addMountPoints({
+      // Mount EFS to /home/kiro for Kiro CLI auth persistence
+      // This persists ~/.kiro, ~/.config/kiro, ~/.local/share/kiro-cli
+      sourceVolume: 'kiro-auth',
+      containerPath: '/home/kiro',
+      readOnly: false,
     });
 
     // ============================================
@@ -447,9 +504,14 @@ export class ArtifactBuilderStack extends cdk.Stack {
       description: 'ECS Cluster ARN',
     });
 
-    new cdk.CfnOutput(this, 'SsmParameterPath', {
-      value: '/artifact-builder/',
-      description: 'SSM Parameter Store path for credentials',
+    new cdk.CfnOutput(this, 'KiroAuthEfsId', {
+      value: kiroAuthFileSystem.fileSystemId,
+      description: 'EFS File System ID for Kiro CLI auth persistence',
+    });
+
+    new cdk.CfnOutput(this, 'KiroAuthSetupInstructions', {
+      value: `Run 'kiro-cli login --use-device-flow' in a container with EFS mounted to complete one-time auth setup`,
+      description: 'Instructions for Kiro CLI authentication',
     });
   }
 }
