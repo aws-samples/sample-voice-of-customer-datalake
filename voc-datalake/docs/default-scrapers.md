@@ -323,6 +323,6 @@ Each scraped review produces a record with these fields:
 
 ---
 
-## Tested: November 2025
+## Tested: December 2025
 
 These templates were tested against Lufthansa review pages and confirmed working.

@@ -49,7 +49,7 @@ VoC Data Lake aggregates customer feedback from review platforms, social media, 
 │       └────────────┴────────────┴────────────┴────────────┴────────────┘        │
 │                                      │                                           │
 │                    ┌─────────────────┴─────────────────┐                         │
-│                    │  17 Lambda Ingestors              │                         │
+│                    │  16 Lambda Ingestors              │                         │
 │                    │  (EventBridge Scheduled 1-30min)  │                         │
 │                    └─────────────────┬─────────────────┘                         │
 │                                      │                                           │
@@ -316,17 +316,17 @@ voice-of-customer-datalake/
     │   ├── research-stack.ts   # Step Functions workflows
     │   └── frontend-stack.ts   # CloudFront, S3
     ├── lambda/
-    │   ├── ingestors/          # 17 data source ingestors
+    │   ├── ingestors/          # 16 data source ingestors
     │   ├── processor/          # Bedrock/Comprehend enrichment
     │   ├── aggregator/         # Real-time metrics
-    │   ├── api/                # 11 domain-specific API handlers
+    │   ├── api/                # 12 domain-specific API handlers
     │   ├── webhooks/           # Webhook receivers
     │   ├── research/           # Research step functions
     │   ├── shared/             # Shared utilities
     │   └── layers/             # Lambda layers
     ├── frontend/               # React dashboard
     │   ├── src/
-    │   │   ├── pages/          # 13 pages
+    │   │   ├── pages/          # 14 pages
     │   │   ├── components/     # 22 components
     │   │   ├── api/            # API client
     │   │   ├── services/       # Auth service

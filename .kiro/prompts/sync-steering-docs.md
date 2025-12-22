@@ -14,16 +14,16 @@ Generate directory trees for key areas:
 
 ```bash
 # Lambda functions
-find citation-analysis-system/lambda -type f -name "*.py" | head -50
+find voc-datalake/lambda -type f -name "*.py" | head -50
 
-# Web components
-find citation-analysis-system/web/src -type f \( -name "*.tsx" -o -name "*.ts" \) | head -80
+# Frontend components
+find voc-datalake/frontend/src -type f \( -name "*.tsx" -o -name "*.ts" \) | head -80
 
 # Infrastructure
-ls -la citation-analysis-system/lib/
+ls -la voc-datalake/lib/stacks/
 
 # Scripts
-ls -la citation-analysis-system/scripts/
+ls -la voc-datalake/scripts/
 ```
 
 ### Step 2: Read Key Files
@@ -31,31 +31,31 @@ ls -la citation-analysis-system/scripts/
 Read these files to extract accurate technical details:
 
 **Infrastructure (for tech.md and structure.md):**
-- `citation-analysis-system/lib/citation-analysis-stack.ts` - All AWS resources, Lambda configs, DynamoDB tables
+- `voc-datalake/lib/stacks/*.ts` - All AWS resources, Lambda configs, DynamoDB tables
 
 **Lambda Functions (for structure.md):**
-- List all files in `citation-analysis-system/lambda/api/`
-- List all files in `citation-analysis-system/lambda/search/`
+- List all files in `voc-datalake/lambda/api/`
+- List all files in `voc-datalake/lambda/ingestors/`
 - Check other lambda subdirectories
 
-**Web Dashboard (for structure.md):**
-- `citation-analysis-system/web/src/App.tsx` - Main app structure, tabs
-- List all components in `citation-analysis-system/web/src/components/`
-- List all hooks in `citation-analysis-system/web/src/hooks/`
-- `citation-analysis-system/web/src/types/index.ts` - TypeScript types
+**Frontend Dashboard (for structure.md):**
+- `voc-datalake/frontend/src/App.tsx` - Main app structure
+- List all components in `voc-datalake/frontend/src/components/`
+- List all pages in `voc-datalake/frontend/src/pages/`
+- `voc-datalake/frontend/src/api/client.ts` - API client types
 
 **Package Files (for tech.md):**
-- `citation-analysis-system/package.json` - CDK dependencies
-- `citation-analysis-system/web/package.json` - Frontend dependencies
+- `voc-datalake/package.json` - CDK dependencies
+- `voc-datalake/frontend/package.json` - Frontend dependencies
 
 ### Step 3: Compare and Validate
 
 For each steering file, check:
 
 #### structure.md
-- [ ] Lambda function list matches actual files in `lambda/api/` and `lambda/search/`
-- [ ] Web component structure matches actual files in `web/src/components/`
-- [ ] Hooks list matches actual files in `web/src/hooks/`
+- [ ] Lambda function list matches actual files in `lambda/api/` and `lambda/ingestors/`
+- [ ] Frontend component structure matches actual files in `frontend/src/components/`
+- [ ] Pages list matches actual files in `frontend/src/pages/`
 - [ ] DynamoDB tables match CDK stack definitions
 - [ ] S3 buckets match CDK stack definitions
 - [ ] File descriptions are accurate
@@ -66,12 +66,12 @@ For each steering file, check:
 - [ ] AWS services list is complete
 - [ ] API endpoints match actual Lambda handlers
 - [ ] S3 bucket names/purposes are accurate
-- [ ] AI providers list is current
+- [ ] AI model (Bedrock) configuration is current
 
 #### product.md
 - [ ] Features list matches implemented functionality
-- [ ] Dashboard tabs match App.tsx navigation
-- [ ] Industry presets count is accurate
+- [ ] Dashboard pages match frontend routes
+- [ ] Data sources count is accurate
 - [ ] Component descriptions are current
 
 ### Step 4: Update Steering Files
@@ -89,19 +89,22 @@ Run these checks to verify accuracy:
 
 ```bash
 # Count Lambda API handlers
-ls citation-analysis-system/lambda/api/*.py | wc -l
+ls voc-datalake/lambda/api/*.py | wc -l
 
-# Count web components directories
-ls -d citation-analysis-system/web/src/components/*/ | wc -l
+# Count frontend components
+ls voc-datalake/frontend/src/components/*.tsx | wc -l
 
-# Count hooks
-ls citation-analysis-system/web/src/hooks/*.ts | wc -l
+# Count frontend pages
+ls voc-datalake/frontend/src/pages/*.tsx | wc -l
+
+# Count ingestors
+ls -d voc-datalake/lambda/ingestors/*/ | wc -l
 
 # Check DynamoDB tables in CDK
-grep -c "new dynamodb.Table" citation-analysis-system/lib/citation-analysis-stack.ts
+grep -c "new dynamodb.Table" voc-datalake/lib/stacks/storage-stack.ts
 
 # Check S3 buckets in CDK
-grep -c "new s3.Bucket" citation-analysis-system/lib/citation-analysis-stack.ts
+grep -c "new s3.Bucket" voc-datalake/lib/stacks/storage-stack.ts
 ```
 
 ## What to Check in Each File
@@ -112,19 +115,19 @@ For each `.py` file in `lambda/api/`:
 - API endpoint it handles
 - DynamoDB tables it accesses
 
-For `lambda/search/`:
-- Main handler functionality
-- AI provider integrations
-- Brand extraction logic
+For `lambda/ingestors/`:
+- Data source it ingests from
+- Authentication method
+- Schedule frequency
 
-### Web Components
-For each component directory:
+### Frontend Components
+For each component:
 - Main component file and purpose
-- Sub-components
-- Related hooks
+- Props interface
+- Related hooks or stores
 
 ### Infrastructure
-From CDK stack:
+From CDK stacks:
 - Lambda function configurations (memory, timeout, runtime)
 - DynamoDB table schemas (partition key, sort key)
 - S3 bucket configurations

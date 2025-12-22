@@ -12,7 +12,7 @@ For a complete architecture diagram, see the [root README](../README.md#-archite
 
 ### Data Flow
 
-1. **Ingestion**: 17 Lambda ingestors fetch data from external APIs on EventBridge schedules (1-30 min)
+1. **Ingestion**: 16 Lambda ingestors fetch data from external APIs on EventBridge schedules (1-30 min)
 2. **Queueing**: Raw feedback sent to SQS queue for decoupling and reliability
 3. **Processing**: Processor Lambda enriches with Bedrock (Claude Sonnet 4.5), Comprehend, and Translate
 4. **Storage**: Enriched feedback stored in DynamoDB with GSIs for efficient querying
@@ -131,7 +131,7 @@ The infrastructure is organized into multiple stacks for modularity:
 - **Custom Message Lambda**: Branded email templates
 
 ### VocIngestionStack
-- **Lambda Ingestors**: 17 data source ingestors (Trustpilot, Yelp, Google Reviews, Twitter, Instagram, Facebook, Reddit, LinkedIn, TikTok, YouTube, Tavily, Apple App Store, Google Play, Huawei AppGallery, Web Scraper, S3 Import, Feedback Forms)
+- **Lambda Ingestors**: 16 data source ingestors (Trustpilot, Yelp, Google Reviews, Twitter, Instagram, Facebook, Reddit, LinkedIn, TikTok, YouTube, Tavily, Apple App Store, Google Play, Huawei AppGallery, Web Scraper, S3 Import)
 - **EventBridge Rules**: Scheduled ingestion (1-30 min intervals)
 - **SQS Queue**: Processing queue with DLQ for failed messages
 - **Secrets Manager**: API credentials storage with rotation capability
@@ -145,7 +145,7 @@ The infrastructure is organized into multiple stacks for modularity:
 ### VocAnalyticsStack
 - **API Gateway**: REST API with Cognito auth, CORS, throttling (100 req/s, 200 burst)
 - **WAF WebACL**: Rate limiting, SQL injection, XSS protection
-- **Domain-Isolated Lambdas** (11 total):
+- **Domain-Isolated Lambdas** (12 total):
   - Metrics Lambda: `/feedback/*`, `/metrics/*`
   - Chat Lambda: `/chat/*`
   - Chat Stream Lambda: Function URL for streaming
@@ -156,6 +156,7 @@ The infrastructure is organized into multiple stacks for modularity:
   - Users Lambda: `/users/*`
   - Feedback Form Lambda: `/feedback-form/*`, `/feedback-forms/*`
   - S3 Import Lambda: `/s3-import/*`
+  - Data Explorer Lambda: `/data-explorer/*`
 - **Webhook Lambda**: Trustpilot webhook receiver
 
 ### VocResearchStack
@@ -213,6 +214,7 @@ voc-datalake/
 │   │   ├── users_handler.py
 │   │   ├── feedback_form_handler.py
 │   │   ├── s3_import_handler.py
+│   │   ├── data_explorer_handler.py
 │   │   └── projects.py           # Shared business logic
 │   ├── webhooks/trustpilot/
 │   ├── research/

@@ -142,7 +142,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. When a single Lamb
 3. **Minimal permissions** - Each Lambda only gets IAM permissions for resources it actually uses
 4. **Naming convention** - Use `{domain}_handler.py` naming (e.g., `metrics_handler.py`, `chat_handler.py`)
 
-**Current API Lambda Structure (11 handlers):**
+**Current API Lambda Structure (12 handlers):**
 
 ```
 lambda/api/
@@ -156,10 +156,11 @@ lambda/api/
 ├── users_handler.py         # /users/* (Cognito admin)
 ├── feedback_form_handler.py # /feedback-form/*, /feedback-forms/*
 ├── s3_import_handler.py     # /s3-import/*
+├── data_explorer_handler.py # /data-explorer/* (S3 raw data & DynamoDB browser)
 └── projects.py              # Shared business logic for projects
 ```
 
-**Domain-to-Permission Mapping (11 handlers):**
+**Domain-to-Permission Mapping (12 handlers):**
 
 | Domain | Handler | AWS Permissions |
 |--------|---------|-----------------|
@@ -173,6 +174,7 @@ lambda/api/
 | Users | `users_handler.py` | Cognito admin |
 | Feedback Forms | `feedback_form_handler.py` | DynamoDB (aggregates), SQS |
 | S3 Import | `s3_import_handler.py` | S3 bucket only |
+| Data Explorer | `data_explorer_handler.py` | S3, DynamoDB (feedback) |
 | Webhook | `webhooks/trustpilot/handler.py` | DynamoDB, SQS, Secrets Manager |
 
 **When adding new API endpoints:**
@@ -351,6 +353,15 @@ const s3ImportLambda = new lambda.Function(this, 'S3ImportApi', {
 });
 s3ImportBucket.grantReadWrite(s3ImportRole);
 // S3 only - minimal permissions
+
+// 10. Data Explorer Lambda - S3 raw data and DynamoDB browser
+const dataExplorerLambda = new lambda.Function(this, 'DataExplorerApi', {
+  handler: 'data_explorer_handler.lambda_handler',
+  // ...
+});
+rawDataBucket.grantRead(dataExplorerRole);
+feedbackTable.grantReadWriteData(dataExplorerRole);
+// S3 + DynamoDB permissions
 ```
 
 **API Gateway Route Mapping:**

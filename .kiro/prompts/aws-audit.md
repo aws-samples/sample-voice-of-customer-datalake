@@ -37,6 +37,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB, Step Functions, Bedrock |
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
 | `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
+| `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 | `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*` | DynamoDB, SQS |
 | `voc-users-api` | `users_handler.py` | `/users/*` | Cognito, DynamoDB |
 | `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS |
@@ -51,7 +52,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | Async job tracking |
 | `voc-conversations` | `USER#{id}` | `CONV#{id}` | Chat history |
 
-### Data Sources (17+)
+### Data Sources (16)
 Trustpilot, Google Reviews, Twitter/X, Instagram, Facebook, Reddit, Tavily, Apple App Store, Google Play Store, Huawei AppGallery, Yelp, Web Scraper, LinkedIn, TikTok, YouTube, S3 Import
 
 ## Audit Process
@@ -69,7 +70,7 @@ voc-datalake/
 │   ├── research-stack.ts         # Step Functions
 │   └── frontend-stack.ts         # S3 + CloudFront
 ├── lambda/
-│   ├── ingestors/                # 17+ source ingestors
+│   ├── ingestors/                # 16 source ingestors
 │   │   ├── base_ingestor.py      # Abstract base class
 │   │   ├── trustpilot/           # Trustpilot reviews
 │   │   ├── google_reviews/       # Google Reviews
@@ -91,7 +92,7 @@ voc-datalake/
 │   ├── processor/handler.py      # SQS consumer
 │   ├── aggregator/handler.py     # DynamoDB Streams consumer
 │   ├── research/                 # Step Functions tasks
-│   ├── api/                      # Split API handlers (11 files)
+│   ├── api/                      # Split API handlers (12 files)
 │   │   ├── metrics_handler.py    # /feedback/*, /metrics/*
 │   │   ├── chat_handler.py       # /chat/*
 │   │   ├── chat_stream_handler.py # Streaming chat (Function URL)
@@ -100,6 +101,7 @@ voc-datalake/
 │   │   ├── settings_handler.py   # /settings/*
 │   │   ├── projects_handler.py   # /projects/*
 │   │   ├── s3_import_handler.py  # /s3-import/*
+│   │   ├── data_explorer_handler.py # /data-explorer/*
 │   │   ├── feedback_form_handler.py # /feedback-form/*
 │   │   ├── users_handler.py      # /users/*
 │   │   └── projects.py           # Shared business logic
@@ -123,7 +125,7 @@ voc-datalake/
 - `lambda/processor/handler.py` - SQS batch processing, Bedrock invocation
 - `lambda/aggregator/handler.py` - DynamoDB Streams processing
 - `lambda/ingestors/base_ingestor.py` - Base class patterns
-- `lambda/ingestors/*/handler.py` - Source-specific ingestors (17+ sources)
+- `lambda/ingestors/*/handler.py` - Source-specific ingestors (16 sources)
 - `lambda/webhooks/trustpilot/handler.py` - Webhook validation
 - `lambda/research/*.py` - Step Functions task handlers
 

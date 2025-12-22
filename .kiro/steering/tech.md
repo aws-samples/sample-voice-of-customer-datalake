@@ -62,7 +62,7 @@
 
 ### API Lambda Split (20KB IAM Policy Limit)
 
-AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into 11 focused, domain-specific Lambdas:
+AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into 12 focused, domain-specific Lambdas:
 
 | Lambda | Handler | Routes | Permissions |
 |--------|---------|--------|-------------|
@@ -76,6 +76,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*`, `/feedback-forms/*` | DynamoDB (aggregates), SQS |
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
 | `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
+| `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 | `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS, Secrets Manager |
 
 **Benefits:**
@@ -106,21 +107,21 @@ def lambda_handler(event, context):
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| React | 19.2 | UI framework |
-| Vite | 7.2 | Build tool |
-| Tailwind CSS | 4.1 | Styling |
-| Zustand | 5.0 | State management (persisted) |
-| TanStack Query | 5.90 | Data fetching/caching |
-| React Router | 7.9 | Routing |
-| Recharts | 3.5 | Charts (Line, Bar, Pie) |
-| Lucide React | 0.554 | Icons |
-| date-fns | 4.1 | Date formatting |
-| clsx | 2.1 | Conditional classes |
-| react-markdown | 10.1 | Markdown rendering |
-| remark-gfm | 4.0 | GitHub Flavored Markdown |
-| amazon-cognito-identity-js | 6.3 | Cognito authentication |
-| jspdf + html2canvas | 3.0/1.4 | PDF export |
-| TypeScript | 5.9 | Type safety |
+| React | 19.2.0 | UI framework |
+| Vite | 7.2.4 | Build tool |
+| Tailwind CSS | 4.1.17 | Styling |
+| Zustand | 5.0.8 | State management (persisted) |
+| TanStack Query | 5.90.10 | Data fetching/caching |
+| React Router | 7.9.6 | Routing |
+| Recharts | 3.5.0 | Charts (Line, Bar, Pie) |
+| Lucide React | 0.554.0 | Icons |
+| date-fns | 4.1.0 | Date formatting |
+| clsx | 2.1.1 | Conditional classes |
+| react-markdown | 10.1.0 | Markdown rendering |
+| remark-gfm | 4.0.1 | GitHub Flavored Markdown |
+| amazon-cognito-identity-js | 6.3.12 | Cognito authentication |
+| jspdf + html2canvas | 3.0.4/1.4.1 | PDF export |
+| TypeScript | 5.9.3 | Type safety |
 
 ### Pages
 

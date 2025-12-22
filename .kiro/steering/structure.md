@@ -56,7 +56,7 @@ voc-datalake/
 │   │   ├── users_handler.py          # /users/* (Cognito user administration)
 │   │   ├── feedback_form_handler.py  # /feedback-form/*, /feedback-forms/* (embeddable forms)
 │   │   ├── s3_import_handler.py      # /s3-import/* (file explorer)
-│   │   ├── data_explorer_handler.py  # /data-explorer/* (S3 raw data browser)
+│   │   ├── data_explorer_handler.py  # /data-explorer/* (S3 raw data & DynamoDB browser)
 │   │   └── projects.py               # Projects business logic (shared)
 │   └── layers/
 │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4

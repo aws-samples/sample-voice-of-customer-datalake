@@ -213,7 +213,7 @@ Act as a virtual AWS security architect performing pre-deployment and continuous
 When reviewing this project, be aware of the following architecture:
 
 ### Architecture Overview
-VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, and analyzing customer feedback from 17+ data sources in near real-time.
+VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, and analyzing customer feedback from 16+ data sources in near real-time.
 
 ### AWS Services in Use
 | Service | Purpose | Security Considerations |
@@ -224,7 +224,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | API Gateway | REST API with split Lambda backends | Throttling, CORS, Cognito auth |
 | SQS | Processing queue with DLQ | Visibility timeout, batch processing |
 | EventBridge | Scheduled ingestion (1-30 min intervals) | Rate expressions |
-| Secrets Manager | API credentials for 17+ data sources | Auto-rotation capable |
+| Secrets Manager | API credentials for 16 data sources | Auto-rotation capable |
 | KMS | Customer-managed encryption key | Key rotation enabled |
 | Bedrock | Claude Sonnet 4.5 (global inference profile) | Model ARN scoping |
 | Comprehend | Sentiment, language detection, key phrases | - |
@@ -247,6 +247,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*`, `/feedback-forms/*` | DynamoDB, SQS |
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
 | `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
+| `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 | `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS, Secrets Manager |
 
 ### Known Security Status
@@ -286,7 +287,7 @@ voc-datalake/
 │   ├── research-stack.ts             # Step Functions
 │   └── frontend-stack.ts             # S3 + CloudFront
 ├── lambda/
-│   ├── ingestors/                    # 17+ source ingestors
+│   ├── ingestors/                    # 16 source ingestors
 │   │   ├── base_ingestor.py          # Abstract base class
 │   │   ├── trustpilot/handler.py
 │   │   ├── google_reviews/handler.py
@@ -308,7 +309,7 @@ voc-datalake/
 │   ├── processor/handler.py          # SQS consumer
 │   ├── aggregator/handler.py         # DynamoDB Streams consumer
 │   ├── research/                     # Step Functions tasks
-│   ├── api/                          # Split API handlers (11 files)
+│   ├── api/                          # Split API handlers (12 files)
 │   │   ├── metrics_handler.py
 │   │   ├── chat_handler.py
 │   │   ├── chat_stream_handler.py
@@ -319,6 +320,7 @@ voc-datalake/
 │   │   ├── users_handler.py
 │   │   ├── feedback_form_handler.py
 │   │   ├── s3_import_handler.py
+│   │   ├── data_explorer_handler.py
 │   │   └── projects.py               # Shared business logic
 │   └── layers/                       # Lambda layers
 └── frontend/                         # React dashboard
@@ -345,7 +347,7 @@ voc-datalake/
 | `voc-raw-data-*` | Persona avatars | Blocked | KMS | `avatars/{project_id}/` |
 | Frontend bucket | React dashboard | Blocked (CloudFront OAC) | S3-managed | - |
 
-### External API Integrations (17+ Data Sources)
+### External API Integrations (16 Data Sources)
 | Source | Auth Type | Secrets Manager Key |
 |--------|-----------|---------------------|
 | Trustpilot | OAuth2 + Webhook | `trustpilot_api_key`, `trustpilot_webhook_secret` |
