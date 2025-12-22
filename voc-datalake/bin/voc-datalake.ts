@@ -8,6 +8,7 @@ import { VocAnalyticsStack } from '../lib/stacks/analytics-stack';
 import { VocResearchStack } from '../lib/stacks/research-stack';
 import { VocFrontendStack } from '../lib/stacks/frontend-stack';
 import { VocAuthStack } from '../lib/stacks/auth-stack';
+import { ArtifactBuilderStack } from '../lib/stacks/artifact-builder-stack';
 
 const app = new cdk.App();
 
@@ -126,5 +127,12 @@ const frontendStack = new VocFrontendStack(app, 'VocFrontendStack', {
 });
 frontendStack.addDependency(analyticsStack);
 frontendStack.addDependency(authStack);
+
+// Stack 8: Artifact Builder (Agentic PoC Builder)
+// Standalone stack - can be deployed independently
+const artifactBuilderStack = new ArtifactBuilderStack(app, 'ArtifactBuilderStack', {
+  env,
+  description: 'Artifact Builder - Agentic PoC Generator (ECS, S3, CloudFront)',
+});
 
 app.synth();
