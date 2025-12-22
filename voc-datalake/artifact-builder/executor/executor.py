@@ -19,7 +19,8 @@ Kiro CLI Authentication:
   - ~/.local/share/kiro-cli/
 
 Timeout Handling:
-- Entrypoint runs with 30-minute timeout
+- Entrypoint runs with 35-minute timeout (MAX_EXECUTION_TIME)
+- Kiro CLI has 25-minute timeout for code generation
 - SIGTERM handler ensures job is marked as failed on timeout
 """
 import json
@@ -159,7 +160,7 @@ def clone_template_repo(parent_repo_name: str = None):
         ['git', 'clone', repo_url, str(TEMPLATE_DIR)],
         capture_output=True,
         text=True,
-        timeout=120
+        timeout=180
     )
     
     if result.returncode != 0:
@@ -306,7 +307,7 @@ def run_kiro_cli(prompt: str) -> bool:
     
     output_lines = []
     
-    def read_output(fd, timeout=900):
+    def read_output(fd, timeout=1500):
         """Read output from file descriptor with timeout."""
         start_time = datetime.now(timezone.utc)
         while True:
@@ -371,7 +372,7 @@ def run_kiro_cli(prompt: str) -> bool:
         os.close(slave_fd)
         
         # Read output
-        success, status = read_output(master_fd, timeout=900)
+        success, status = read_output(master_fd, timeout=1500)
         
         os.close(master_fd)
         

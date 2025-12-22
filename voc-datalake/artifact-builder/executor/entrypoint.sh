@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Maximum execution time: 30 minutes (1800 seconds)
+# Maximum execution time: 35 minutes (2100 seconds)
 # This prevents runaway tasks from running indefinitely
-MAX_EXECUTION_TIME=${MAX_EXECUTION_TIME:-1800}
+MAX_EXECUTION_TIME=${MAX_EXECUTION_TIME:-2100}
 
 echo "=========================================="
 echo "=== Artifact Builder Executor Starting ==="
