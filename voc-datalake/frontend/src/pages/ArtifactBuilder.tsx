@@ -1,5 +1,6 @@
 /**
  * Artifact Builder - Generate web prototypes from prompts using Kiro CLI
+ * Default view shows artifact history, with a modal for building new artifacts
  */
 
 import { useState } from 'react'
@@ -15,7 +16,6 @@ import {
   CheckCircle,
   XCircle,
   ExternalLink,
-  History,
   Settings,
   Trash2,
   RefreshCw,
@@ -26,6 +26,10 @@ import {
   FileCode,
   Folder,
   ArrowLeft,
+  Download,
+  Eye,
+  FileText,
+  Terminal,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
@@ -68,7 +72,9 @@ export default function ArtifactBuilder() {
   const queryClient = useQueryClient()
   const { config } = useConfigStore()
   const isConfigured = !!config.artifactBuilderEndpoint
-  const [activeTab, setActiveTab] = useState<'build' | 'history'>('build')
+  
+  // Build modal state
+  const [showBuildModal, setShowBuildModal] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [projectType, setProjectType] = useState('react-vite')
   const [style, setStyle] = useState('minimal')
@@ -76,6 +82,8 @@ export default function ArtifactBuilder() {
   const [pages, setPages] = useState<string[]>([])
   const [newPage, setNewPage] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Job detail state
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [showIterateModal, setShowIterateModal] = useState(false)
   const [iteratePrompt, setIteratePrompt] = useState('')
@@ -90,6 +98,7 @@ export default function ArtifactBuilder() {
   const [sourceFileContent, setSourceFileContent] = useState<string>('')
   const [sourceFileLoading, setSourceFileLoading] = useState(false)
   const [currentSourcePath, setCurrentSourcePath] = useState('')
+  const [detailTab, setDetailTab] = useState<'preview' | 'prompt' | 'logs'>('preview')
 
   // Fetch templates
   const { data: templatesData } = useQuery({
@@ -133,40 +142,66 @@ export default function ArtifactBuilder() {
 
   const jobs = jobsData?.jobs || []
 
-  // Group jobs: parent jobs with their iterations as children
+  // Group jobs: find root parents and nest ALL iterations (including nested) under them
   const groupedJobs = (() => {
-    const parentJobs: (ArtifactJob & { iterations?: ArtifactJob[] })[] = []
-    const iterationMap = new Map<string, ArtifactJob[]>()
+    const jobMap = new Map<string, ArtifactJob>()
     
-    // First pass: separate parent jobs and iterations
+    // Build a map of all jobs by ID
     jobs.forEach((job: ArtifactJob) => {
-      if (job.parent_job_id) {
-        const iterations = iterationMap.get(job.parent_job_id) || []
-        iterations.push(job)
-        iterationMap.set(job.parent_job_id, iterations)
+      jobMap.set(job.job_id, job)
+    })
+    
+    // Find the root parent for any job (trace back through parent_job_id chain)
+    const findRootParentId = (job: ArtifactJob): string => {
+      if (!job.parent_job_id) return job.job_id
+      const parent = jobMap.get(job.parent_job_id)
+      if (!parent) return job.job_id // Parent was deleted, treat as root
+      return findRootParentId(parent)
+    }
+    
+    const rootJobs: (ArtifactJob & { iterations?: ArtifactJob[] })[] = []
+    const iterationsByRoot = new Map<string, ArtifactJob[]>()
+    
+    // Categorize each job as either a root or an iteration
+    jobs.forEach((job: ArtifactJob) => {
+      if (!job.parent_job_id) {
+        // This is a root job
+        rootJobs.push({ ...job, iterations: [] })
       } else {
-        parentJobs.push({ ...job, iterations: [] })
+        // This is an iteration - find its root parent
+        const rootId = findRootParentId(job)
+        const iterations = iterationsByRoot.get(rootId) || []
+        iterations.push(job)
+        iterationsByRoot.set(rootId, iterations)
       }
     })
     
-    // Second pass: attach iterations to their parents
-    parentJobs.forEach(parent => {
-      const iterations = iterationMap.get(parent.job_id) || []
-      // Sort iterations by created_at descending
+    // Attach all iterations to their root parents
+    rootJobs.forEach(root => {
+      const iterations = iterationsByRoot.get(root.job_id) || []
+      // Sort iterations by created_at descending (newest first)
       iterations.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      parent.iterations = iterations
+      root.iterations = iterations
     })
     
-    // Handle orphan iterations (parent was deleted)
-    iterationMap.forEach((iterations, parentId) => {
-      const parentExists = parentJobs.some(p => p.job_id === parentId)
-      if (!parentExists) {
-        // Add iterations as standalone jobs
-        iterations.forEach(iter => parentJobs.push({ ...iter, iterations: [] }))
+    // Handle orphan iterations (root parent was deleted)
+    iterationsByRoot.forEach((iterations, rootId) => {
+      const rootExists = rootJobs.some(r => r.job_id === rootId)
+      if (!rootExists) {
+        // Find the oldest iteration to be the new "root"
+        iterations.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        const newRoot = iterations.shift()!
+        rootJobs.push({ 
+          ...newRoot, 
+          iterations: iterations.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        })
       }
     })
     
-    return parentJobs
+    // Sort root jobs by created_at descending (newest first)
+    rootJobs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    
+    return rootJobs
   })()
 
   const toggleParentExpanded = (jobId: string) => {
@@ -262,7 +297,8 @@ export default function ArtifactBuilder() {
     mutationFn: api.createArtifactJob,
     onSuccess: (data) => {
       setSelectedJobId(data.job_id)
-      setActiveTab('history')
+      setShowBuildModal(false)
+      resetBuildForm()
       queryClient.invalidateQueries({ queryKey: ['artifact-jobs'] })
     },
   })
@@ -293,6 +329,16 @@ export default function ArtifactBuilder() {
       queryClient.invalidateQueries({ queryKey: ['artifact-jobs'] })
     },
   })
+
+  const resetBuildForm = () => {
+    setPrompt('')
+    setProjectType('react-vite')
+    setStyle('minimal')
+    setIncludeMockData(false)
+    setPages([])
+    setNewPage('')
+    setShowAdvanced(false)
+  }
 
   const handleIterate = () => {
     if (!iteratePrompt.trim() || !iterateFromJobId) return
@@ -330,306 +376,151 @@ export default function ArtifactBuilder() {
 
   return (
     <div className="space-y-6">
-      {/* Header with tabs */}
-      <div className="flex items-center justify-between">
+      {/* Header with Build button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-purple-500" />
-            Artifact Builder
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-purple-500" />
+            Artifacts
           </h1>
-          <p className="text-gray-500 mt-1">Generate working web prototypes from prompts</p>
+          <p className="text-sm sm:text-base text-gray-500 mt-1">Generated web prototypes from prompts</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab('build')}
-            className={clsx(
-              'px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2',
-              activeTab === 'build' ? 'bg-purple-100 text-purple-700' : 'text-gray-600 hover:bg-gray-100'
-            )}
-          >
-            <Sparkles className="w-4 h-4" />
-            Build
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={clsx(
-              'px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2',
-              activeTab === 'history' ? 'bg-purple-100 text-purple-700' : 'text-gray-600 hover:bg-gray-100'
-            )}
-          >
-            <History className="w-4 h-4" />
-            History
-          </button>
-        </div>
+        <button
+          onClick={() => setShowBuildModal(true)}
+          className="flex items-center justify-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-medium rounded-xl shadow-lg shadow-purple-500/25 transition-all text-sm sm:text-base"
+        >
+          <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+          Build New Artifact
+        </button>
       </div>
 
-      {activeTab === 'build' ? (
-        /* Build Form */
-        <div className="max-w-3xl">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Main Prompt */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                What do you want to build?
-              </label>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="A landing page for a SaaS product with pricing table, feature highlights, and a contact form..."
-                className="w-full h-40 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none"
-                required
-              />
-              <p className="mt-1 text-sm text-gray-500">
-                Be specific about pages, features, and design preferences
-              </p>
+      {/* Artifacts List (default view) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        {/* Jobs List */}
+        <div className="lg:col-span-1 space-y-3">
+          <h2 className="font-semibold text-gray-900">All Artifacts</h2>
+          {jobsLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
             </div>
-
-            {/* Quick Options */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Project Type
-                </label>
-                <select
-                  value={projectType}
-                  onChange={(e) => setProjectType(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
-                >
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
+          ) : jobs.length === 0 ? (
+            <div className="text-center py-10 text-gray-500">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Sparkles className="w-8 h-8 text-gray-300" />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Style
-                </label>
-                <select
-                  value={style}
-                  onChange={(e) => setStyle(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
-                >
-                  {styles.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Mock Data Toggle */}
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeMockData}
-                onChange={(e) => setIncludeMockData(e.target.checked)}
-                className="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-              />
-              <span className="text-sm text-gray-700">Include realistic mock data</span>
-            </label>
-
-            {/* Advanced Options */}
-            <div>
+              <p className="mb-2">No artifacts yet</p>
               <button
-                type="button"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
+                onClick={() => setShowBuildModal(true)}
+                className="text-purple-600 hover:underline font-medium"
               >
-                <ChevronDown className={clsx('w-4 h-4 transition-transform', showAdvanced && 'rotate-180')} />
-                Advanced Options
+                Build your first artifact
               </button>
-
-              {showAdvanced && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-xl space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Specific Pages (optional)
-                    </label>
-                    <div className="flex gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={newPage}
-                        onChange={(e) => setNewPage(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPage())}
-                        placeholder="e.g., About, Pricing, Contact"
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={addPage}
-                        className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
-                    </div>
-                    {pages.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {pages.map(page => (
-                          <span
-                            key={page}
-                            className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm"
-                          >
-                            {page}
-                            <button type="button" onClick={() => removePage(page)} className="hover:text-purple-900">
-                              <X className="w-4 h-4" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={!prompt.trim() || createJob.isPending}
-              className="w-full py-4 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-semibold rounded-xl shadow-lg shadow-purple-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-            >
-              {createJob.isPending ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-5 h-5" />
-                  Generate Artifact
-                </>
-              )}
-            </button>
-
-            {createJob.isError && (
-              <p className="text-red-600 text-sm text-center">
-                {(createJob.error as Error).message}
-              </p>
-            )}
-          </form>
-        </div>
-      ) : (
-        /* History View */
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Jobs List */}
-          <div className="lg:col-span-1 space-y-3">
-            <h2 className="font-semibold text-gray-900">Build History</h2>
-            {jobsLoading ? (
-              <div className="flex items-center justify-center py-10">
-                <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
-              </div>
-            ) : jobs.length === 0 ? (
-              <div className="text-center py-10 text-gray-500">
-                <p>No artifacts yet</p>
-                <button
-                  onClick={() => setActiveTab('build')}
-                  className="mt-2 text-purple-600 hover:underline"
-                >
-                  Build your first artifact
-                </button>
-              </div>
-            ) : (
-              groupedJobs.map((job) => (
-                <div key={job.job_id}>
-                  {/* Parent Job */}
-                  <div className="flex items-start gap-2">
-                    {/* Expand/Collapse button for jobs with iterations */}
-                    {job.iterations && job.iterations.length > 0 ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleParentExpanded(job.job_id) }}
-                        className="mt-4 p-1 hover:bg-gray-100 rounded"
-                      >
-                        {expandedParents.has(job.job_id) ? (
-                          <ChevronDown className="w-4 h-4 text-gray-500" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-gray-500" />
-                        )}
-                      </button>
-                    ) : (
-                      <div className="w-6" /> // Spacer for alignment
-                    )}
+          ) : (
+            groupedJobs.map((job) => (
+              <div key={job.job_id}>
+                {/* Parent Job */}
+                <div className="flex items-start gap-2">
+                  {/* Expand/Collapse button for jobs with iterations */}
+                  {job.iterations && job.iterations.length > 0 ? (
                     <button
-                      onClick={() => setSelectedJobId(job.job_id)}
-                      className={clsx(
-                        'flex-1 text-left p-4 rounded-xl border transition-all',
-                        selectedJobId === job.job_id
-                          ? 'border-purple-300 bg-purple-50'
-                          : 'border-gray-200 bg-white hover:border-purple-200'
-                      )}
+                      onClick={(e) => { e.stopPropagation(); toggleParentExpanded(job.job_id) }}
+                      className="mt-4 p-1 hover:bg-gray-100 rounded"
                     >
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="font-mono text-xs text-gray-500">#{job.job_id.slice(0, 8)}</span>
-                        <StatusBadge status={job.status} />
-                        {job.iterations && job.iterations.length > 0 && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-xs">
-                            <GitBranch className="w-3 h-3" />
-                            {job.iterations.length} iteration{job.iterations.length > 1 ? 's' : ''}
-                          </span>
-                        )}
-                        {job.parent_job_id && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-xs">
-                            <GitBranch className="w-3 h-3" />
-                            iteration
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-900 line-clamp-2">{job.prompt}</p>
-                      <p className="text-xs text-gray-500 mt-2">{formatDate(job.created_at)}</p>
+                      {expandedParents.has(job.job_id) ? (
+                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-gray-500" />
+                      )}
                     </button>
-                  </div>
-                  
-                  {/* Iteration Jobs (children) */}
-                  {job.iterations && job.iterations.length > 0 && expandedParents.has(job.job_id) && (
-                    <div className="ml-8 mt-2 space-y-2 border-l-2 border-purple-200 pl-4">
-                      {job.iterations.map((iteration: ArtifactJob) => (
-                        <button
-                          key={iteration.job_id}
-                          onClick={() => setSelectedJobId(iteration.job_id)}
-                          className={clsx(
-                            'w-full text-left p-3 rounded-lg border transition-all',
-                            selectedJobId === iteration.job_id
-                              ? 'border-blue-300 bg-blue-50'
-                              : 'border-gray-200 bg-white hover:border-blue-200'
-                          )}
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <GitBranch className="w-3 h-3 text-blue-500" />
-                            <span className="font-mono text-xs text-gray-500">#{iteration.job_id.slice(0, 8)}</span>
-                            <StatusBadge status={iteration.status} />
-                          </div>
-                          <p className="text-sm text-gray-900 line-clamp-1">{iteration.prompt}</p>
-                          <p className="text-xs text-gray-500 mt-1">{formatDate(iteration.created_at)}</p>
-                        </button>
-                      ))}
-                    </div>
+                  ) : (
+                    <div className="w-6" /> // Spacer for alignment
                   )}
+                  <button
+                    onClick={() => setSelectedJobId(job.job_id)}
+                    className={clsx(
+                      'flex-1 text-left p-4 rounded-xl border transition-all',
+                      selectedJobId === job.job_id
+                        ? 'border-purple-300 bg-purple-50'
+                        : 'border-gray-200 bg-white hover:border-purple-200'
+                    )}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-mono text-xs text-gray-500">#{job.job_id.slice(0, 8)}</span>
+                      <StatusBadge status={job.status} />
+                      {job.iterations && job.iterations.length > 0 && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-xs">
+                          <GitBranch className="w-3 h-3" />
+                          {job.iterations.length} iteration{job.iterations.length > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {job.parent_job_id && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-xs">
+                          <GitBranch className="w-3 h-3" />
+                          iteration
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-900 line-clamp-2">{job.prompt}</p>
+                    <p className="text-xs text-gray-500 mt-2">{formatDate(job.created_at)}</p>
+                  </button>
                 </div>
-              ))
-            )}
-          </div>
 
-          {/* Job Details */}
-          <div className="lg:col-span-2">
-            {selectedJob ? (
-              <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
-                <div className="flex items-start justify-between">
+                {/* Iteration Jobs (children) */}
+                {job.iterations && job.iterations.length > 0 && expandedParents.has(job.job_id) && (
+                  <div className="ml-8 mt-2 space-y-2 border-l-2 border-purple-200 pl-4">
+                    {job.iterations.map((iteration: ArtifactJob) => (
+                      <button
+                        key={iteration.job_id}
+                        onClick={() => setSelectedJobId(iteration.job_id)}
+                        className={clsx(
+                          'w-full text-left p-3 rounded-lg border transition-all',
+                          selectedJobId === iteration.job_id
+                            ? 'border-blue-300 bg-blue-50'
+                            : 'border-gray-200 bg-white hover:border-blue-200'
+                        )}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <GitBranch className="w-3 h-3 text-blue-500" />
+                          <span className="font-mono text-xs text-gray-500">#{iteration.job_id.slice(0, 8)}</span>
+                          <StatusBadge status={iteration.status} />
+                        </div>
+                        <p className="text-sm text-gray-900 line-clamp-1">{iteration.prompt}</p>
+                        <p className="text-xs text-gray-500 mt-1">{formatDate(iteration.created_at)}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Job Details */}
+        <div className="lg:col-span-2">
+          {selectedJob ? (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col h-[60vh] sm:h-[70vh] lg:h-[calc(100vh-180px)]">
+              {/* Header */}
+              <div className="p-3 sm:p-4 border-b shrink-0">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-0 mb-3">
                   <div>
-                    <h3 className="font-semibold text-gray-900">Job #{selectedJob.job_id.slice(0, 8)}</h3>
-                    <p className="text-sm text-gray-500">{formatDate(selectedJob.created_at)}</p>
+                    <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Job #{selectedJob.job_id.slice(0, 8)}</h3>
+                    <p className="text-xs sm:text-sm text-gray-500">{formatDate(selectedJob.created_at)}</p>
                   </div>
                   <StatusBadge status={selectedJob.status} />
                 </div>
 
                 {/* Error Message */}
                 {selectedJob.status === 'failed' && selectedJob.error && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                    <p className="text-sm text-red-700">{selectedJob.error}</p>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-2 sm:p-3 mb-3">
+                    <p className="text-xs sm:text-sm text-red-700">{selectedJob.error}</p>
                   </div>
                 )}
 
                 {/* Parent Job Info (for iterations) */}
                 {selectedJob.parent_job_id && (
-                  <div className="flex items-center gap-2 text-sm text-purple-600 bg-purple-50 px-3 py-2 rounded-lg">
-                    <GitBranch className="w-4 h-4" />
+                  <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-purple-600 bg-purple-50 px-2 sm:px-3 py-2 rounded-lg mb-3">
+                    <GitBranch className="w-3 h-3 sm:w-4 sm:h-4" />
                     <span>Iterated from job #{selectedJob.parent_job_id.slice(0, 8)}</span>
                     <button
                       onClick={() => setSelectedJobId(selectedJob.parent_job_id!)}
@@ -641,93 +532,319 @@ export default function ArtifactBuilder() {
                 )}
 
                 {/* Actions */}
-                {selectedJob.status === 'done' && (
-                  <div className="flex flex-wrap gap-3">
-                    {selectedJob.preview_url && (
-                      <a
-                        href={selectedJob.preview_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg"
+                <div className="flex flex-wrap gap-2">
+                  {selectedJob.status === 'done' && selectedJob.preview_url && (
+                    <a
+                      href={selectedJob.preview_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm font-medium rounded-lg"
+                    >
+                      <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden xs:inline">Open in New Tab</span>
+                      <span className="xs:hidden">Open</span>
+                    </a>
+                  )}
+                  {selectedJob.status === 'done' && (
+                    <>
+                      <button
+                        onClick={() => openSourceModal(selectedJob.job_id)}
+                        className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-gray-700 hover:bg-gray-800 text-white text-xs sm:text-sm font-medium rounded-lg"
                       >
-                        <ExternalLink className="w-4 h-4" />
-                        Open Preview
-                      </a>
-                    )}
-                    <button
-                      onClick={() => openSourceModal(selectedJob.job_id)}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white font-medium rounded-lg"
-                    >
-                      <Code className="w-4 h-4" />
-                      View Source
-                    </button>
-                    <button
-                      onClick={() => openIterateModal(selectedJob.job_id)}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                      Iterate
-                    </button>
-                    {downloadData?.download_url && (
-                      <a
-                        href={downloadData.download_url}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg"
+                        <Code className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                        <span className="hidden sm:inline">View Source</span>
+                        <span className="sm:hidden">Source</span>
+                      </button>
+                      <button
+                        onClick={() => openIterateModal(selectedJob.job_id)}
+                        className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-medium rounded-lg"
                       >
-                        Download Source
-                      </a>
+                        <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                        Iterate
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => deleteJob.mutate(selectedJob.job_id)}
+                    disabled={deleteJob.isPending}
+                    className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs sm:text-sm font-medium rounded-lg disabled:opacity-50"
+                  >
+                    {deleteJob.isPending ? <Loader2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" /> : <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
+                    Delete
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex border-b shrink-0">
+                <button
+                  onClick={() => setDetailTab('preview')}
+                  className={clsx(
+                    'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
+                    detailTab === 'preview'
+                      ? 'border-purple-600 text-purple-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  )}
+                >
+                  <Eye className="w-4 h-4" />
+                  Preview
+                </button>
+                <button
+                  onClick={() => setDetailTab('prompt')}
+                  className={clsx(
+                    'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
+                    detailTab === 'prompt'
+                      ? 'border-purple-600 text-purple-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  )}
+                >
+                  <FileText className="w-4 h-4" />
+                  Prompt
+                </button>
+                <button
+                  onClick={() => setDetailTab('logs')}
+                  className={clsx(
+                    'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
+                    detailTab === 'logs'
+                      ? 'border-purple-600 text-purple-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  )}
+                >
+                  <Terminal className="w-4 h-4" />
+                  Logs
+                </button>
+              </div>
+
+              {/* Tab Content */}
+              <div className="flex-1 overflow-hidden">
+                {detailTab === 'preview' && (
+                  <div className="h-full">
+                    {selectedJob.status === 'done' && selectedJob.preview_url ? (
+                      <iframe
+                        src={selectedJob.preview_url}
+                        className="w-full h-full border-0"
+                        title={`Preview for job ${selectedJob.job_id}`}
+                      />
+                    ) : selectedJob.status === 'done' ? (
+                      <div className="flex items-center justify-center h-full text-gray-500">
+                        <p>Preview not available</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                        <Loader2 className="w-8 h-8 animate-spin mb-3 text-purple-500" />
+                        <p className="font-medium">Building artifact...</p>
+                        <p className="text-sm mt-1">Status: {selectedJob.status}</p>
+                      </div>
                     )}
-                    <button
-                      onClick={() => deleteJob.mutate(selectedJob.job_id)}
-                      disabled={deleteJob.isPending}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg disabled:opacity-50"
-                    >
-                      {deleteJob.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                      Delete
-                    </button>
                   </div>
                 )}
 
-                {/* Delete button for non-done jobs */}
-                {selectedJob.status !== 'done' && (
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => deleteJob.mutate(selectedJob.job_id)}
-                      disabled={deleteJob.isPending}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg disabled:opacity-50"
-                    >
-                      {deleteJob.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                      Delete Job
-                    </button>
+                {detailTab === 'prompt' && (
+                  <div className="p-4 overflow-y-auto h-full">
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      <span className="px-2 py-1 bg-gray-100 rounded text-xs">{selectedJob.project_type}</span>
+                      <span className="px-2 py-1 bg-gray-100 rounded text-xs">{selectedJob.style}</span>
+                      {selectedJob.include_mock_data && (
+                        <span className="px-2 py-1 bg-gray-100 rounded text-xs">Mock Data</span>
+                      )}
+                    </div>
+                    <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg text-sm">
+                      {selectedJob.prompt}
+                    </p>
                   </div>
                 )}
 
-                {/* Prompt */}
-                <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Prompt</h4>
-                  <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg text-sm">
-                    {selectedJob.prompt}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    <span className="px-2 py-1 bg-gray-100 rounded">{selectedJob.project_type}</span>
-                    <span className="px-2 py-1 bg-gray-100 rounded">{selectedJob.style}</span>
-                    {selectedJob.include_mock_data && (
-                      <span className="px-2 py-1 bg-gray-100 rounded">Mock Data</span>
-                    )}
+                {detailTab === 'logs' && (
+                  <div className="h-full p-4">
+                    <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-auto text-xs font-mono h-full whitespace-pre-wrap">
+                      {logsData?.logs || 'Waiting for logs...'}
+                    </pre>
                   </div>
-                </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gray-50 rounded-xl border border-gray-200 p-6 sm:p-10 text-center text-gray-500 h-[40vh] sm:h-[50vh] lg:h-[calc(100vh-180px)]">
+              <div className="flex flex-col items-center justify-center h-full">
+                <Sparkles className="w-10 h-10 sm:w-12 sm:h-12 text-gray-300 mb-3" />
+                <p className="text-sm sm:text-base">Select an artifact to view details</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
-                {/* Logs */}
+      {/* Build New Artifact Modal */}
+      {showBuildModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-3 sm:p-4 border-b shrink-0">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />
+                </div>
                 <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Build Logs</h4>
-                  <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-xs font-mono max-h-64 overflow-y-auto">
-                    {logsData?.logs || 'Waiting for logs...'}
-                  </pre>
+                  <h2 className="text-base sm:text-lg font-semibold">Build New Artifact</h2>
+                  <p className="text-xs sm:text-sm text-gray-500">Generate a web prototype from your prompt</p>
                 </div>
               </div>
-            ) : (
-              <div className="bg-gray-50 rounded-xl border border-gray-200 p-10 text-center text-gray-500">
-                Select a job to view details
+              <button 
+                onClick={() => { setShowBuildModal(false); resetBuildForm() }} 
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+              {/* Main Prompt */}
+              <div>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+                  What do you want to build?
+                </label>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="A landing page for a SaaS product with pricing table, feature highlights, and a contact form..."
+                  className="w-full h-28 sm:h-32 px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none text-sm sm:text-base"
+                  required
+                  autoFocus
+                />
+                <p className="mt-1 text-xs sm:text-sm text-gray-500">
+                  Be specific about pages, features, and design preferences
+                </p>
               </div>
+
+              {/* Quick Options */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+                    Project Type
+                  </label>
+                  <select
+                    value={projectType}
+                    onChange={(e) => setProjectType(e.target.value)}
+                    className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-sm sm:text-base"
+                  >
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+                    Style
+                  </label>
+                  <select
+                    value={style}
+                    onChange={(e) => setStyle(e.target.value)}
+                    className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-sm sm:text-base"
+                  >
+                    {styles.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Mock Data Toggle */}
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeMockData}
+                  onChange={(e) => setIncludeMockData(e.target.checked)}
+                  className="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                />
+                <span className="text-sm text-gray-700">Include realistic mock data</span>
+              </label>
+
+              {/* Advanced Options */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
+                >
+                  <ChevronDown className={clsx('w-4 h-4 transition-transform', showAdvanced && 'rotate-180')} />
+                  Advanced Options
+                </button>
+
+                {showAdvanced && (
+                  <div className="mt-4 p-4 bg-gray-50 rounded-xl space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Specific Pages (optional)
+                      </label>
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          type="text"
+                          value={newPage}
+                          onChange={(e) => setNewPage(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPage())}
+                          placeholder="e.g., About, Pricing, Contact"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={addPage}
+                          className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+                        >
+                          <Plus className="w-5 h-5" />
+                        </button>
+                      </div>
+                      {pages.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {pages.map(page => (
+                            <span
+                              key={page}
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm"
+                            >
+                              {page}
+                              <button type="button" onClick={() => removePage(page)} className="hover:text-purple-900">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </form>
+
+            {/* Footer */}
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 p-3 sm:p-4 border-t bg-gray-50 shrink-0">
+              <button 
+                type="button"
+                onClick={() => { setShowBuildModal(false); resetBuildForm() }} 
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm sm:text-base"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!prompt.trim() || createJob.isPending}
+                className="flex items-center justify-center gap-2 px-4 sm:px-6 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-medium rounded-lg shadow-lg shadow-purple-500/25 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+              >
+                {createJob.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Generate Artifact
+                  </>
+                )}
+              </button>
+            </div>
+
+            {createJob.isError && (
+              <p className="px-6 pb-4 text-red-600 text-sm text-center">
+                {(createJob.error as Error).message}
+              </p>
             )}
           </div>
         </div>
@@ -735,16 +852,16 @@ export default function ArtifactBuilder() {
 
       {/* Iterate Modal */}
       {showIterateModal && iterateFromJobId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <RefreshCw className="w-5 h-5 text-blue-600" />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-3 sm:p-4 border-b">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold">Iterate on Artifact</h2>
-                  <p className="text-sm text-gray-500">Continue building from job #{iterateFromJobId.slice(0, 8)}</p>
+                  <h2 className="text-base sm:text-lg font-semibold">Iterate on Artifact</h2>
+                  <p className="text-xs sm:text-sm text-gray-500">Continue building from job #{iterateFromJobId.slice(0, 8)}</p>
                 </div>
               </div>
               <button 
@@ -754,42 +871,42 @@ export default function ArtifactBuilder() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                   What changes do you want to make?
                 </label>
                 <textarea
                   value={iteratePrompt}
                   onChange={(e) => setIteratePrompt(e.target.value)}
                   placeholder="e.g., Add a dark mode toggle, Change the hero section colors to blue, Add a contact form page..."
-                  className="w-full h-32 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                  className="w-full h-28 sm:h-32 px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-sm sm:text-base"
                   autoFocus
                 />
-                <p className="mt-2 text-sm text-gray-500">
+                <p className="mt-2 text-xs sm:text-sm text-gray-500">
                   Kiro will modify the existing codebase based on your request, preserving what's already built.
                 </p>
               </div>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-medium text-blue-800 mb-2">💡 Iteration Tips</h4>
-                <ul className="text-sm text-blue-700 space-y-1">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+                <h4 className="font-medium text-blue-800 mb-2 text-sm sm:text-base">💡 Iteration Tips</h4>
+                <ul className="text-xs sm:text-sm text-blue-700 space-y-1">
                   <li>• Be specific about what you want to change</li>
                   <li>• Reference existing components or pages by name</li>
                   <li>• You can iterate multiple times on the same artifact</li>
                 </ul>
               </div>
             </div>
-            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 p-3 sm:p-4 border-t bg-gray-50">
               <button 
                 onClick={() => { setShowIterateModal(false); setIteratePrompt(''); setIterateFromJobId(null) }} 
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm sm:text-base"
               >
                 Cancel
               </button>
               <button
                 onClick={handleIterate}
                 disabled={!iteratePrompt.trim() || iterateJob.isPending}
-                className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="flex items-center justify-center gap-2 px-4 sm:px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm sm:text-base"
               >
                 {iterateJob.isPending ? (
                   <>
@@ -810,17 +927,17 @@ export default function ArtifactBuilder() {
 
       {/* Source Code Modal */}
       {showSourceModal && sourceJobId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl w-full max-w-5xl h-[95vh] sm:h-[85vh] flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                  <Code className="w-5 h-5 text-gray-600" />
+            <div className="flex items-center justify-between p-3 sm:p-4 border-b shrink-0">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                  <Code className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold">Source Code</h2>
-                  <p className="text-sm text-gray-500">Job #{sourceJobId.slice(0, 8)}</p>
+                  <h2 className="text-base sm:text-lg font-semibold">Source Code</h2>
+                  <p className="text-xs sm:text-sm text-gray-500">Job #{sourceJobId.slice(0, 8)}</p>
                 </div>
               </div>
               <button 
@@ -832,55 +949,63 @@ export default function ArtifactBuilder() {
             </div>
 
             {/* Clone Instructions */}
-            <div className="p-4 bg-gray-50 border-b shrink-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Clone this repository</p>
-                  <p className="text-xs text-gray-500 mt-1">Requires AWS CLI with CodeCommit credentials configured</p>
+            <div className="p-3 sm:p-4 bg-gray-50 border-b shrink-0">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm font-medium text-gray-700">Clone this repository</p>
+                  <p className="text-xs text-gray-500 mt-0.5 sm:mt-1 hidden sm:block">Requires AWS CLI with CodeCommit credentials configured</p>
                 </div>
-                <button
-                  onClick={() => copyCloneCommand(sourceJobId)}
-                  className="flex items-center gap-2 px-3 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-mono rounded-lg"
-                >
-                  {copiedClone ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  git clone codecommit::us-west-2://artifact-{sourceJobId}
-                </button>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <button
+                    onClick={() => copyCloneCommand(sourceJobId)}
+                    className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-900 hover:bg-gray-800 text-white text-xs sm:text-sm font-mono rounded-lg overflow-hidden"
+                  >
+                    {copiedClone ? <Check className="w-4 h-4 shrink-0" /> : <Copy className="w-4 h-4 shrink-0" />}
+                    <span className="truncate">git clone ...artifact-{sourceJobId.slice(0, 8)}</span>
+                  </button>
+                  {downloadData?.download_url && (
+                    <a
+                      href={downloadData.download_url}
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm font-medium rounded-lg"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download ZIP
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
 
             {/* File Browser */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
               {/* File Tree */}
-              <div className="w-64 border-r bg-gray-50 overflow-y-auto shrink-0">
-                <div className="p-3 border-b bg-white sticky top-0">
+              <div className="w-full sm:w-56 md:w-64 border-b sm:border-b-0 sm:border-r bg-gray-50 overflow-hidden flex flex-col shrink-0 h-40 sm:h-auto">
+                <div className="h-10 sm:h-11 px-3 border-b bg-white flex items-center shrink-0">
                   {currentSourcePath ? (
                     <button
                       onClick={() => {
                         const parentPath = currentSourcePath.split('/').slice(0, -1).join('/')
                         loadSourceFiles(sourceJobId, parentPath)
                       }}
-                      className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
+                      className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 hover:text-gray-900"
                     >
                       <ArrowLeft className="w-4 h-4" />
-                      Back
+                      <span className="truncate max-w-[140px] sm:max-w-[180px]">/{currentSourcePath || 'Back'}</span>
                     </button>
                   ) : (
-                    <span className="text-sm font-medium text-gray-700">Files</span>
-                  )}
-                  {currentSourcePath && (
-                    <p className="text-xs text-gray-500 mt-1 truncate">/{currentSourcePath}</p>
+                    <span className="text-xs sm:text-sm font-medium text-gray-700">Files</span>
                   )}
                 </div>
                 {sourceFilesLoading ? (
-                  <div className="flex items-center justify-center py-10">
+                  <div className="flex-1 flex items-center justify-center">
                     <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                   </div>
                 ) : sourceFiles.length === 0 ? (
-                  <div className="p-4 text-sm text-gray-500 text-center">
+                  <div className="flex-1 flex items-center justify-center p-4 text-xs sm:text-sm text-gray-500 text-center">
                     No files found
                   </div>
                 ) : (
-                  <div className="p-2 space-y-1">
+                  <div className="flex-1 overflow-y-auto p-2 space-y-1">
                     {sourceFiles.map((file) => (
                       <button
                         key={file.path}
@@ -892,7 +1017,7 @@ export default function ArtifactBuilder() {
                           }
                         }}
                         className={clsx(
-                          'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors',
+                          'w-full flex items-center gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-left text-xs sm:text-sm transition-colors',
                           selectedSourceFile === file.path
                             ? 'bg-purple-100 text-purple-700'
                             : 'hover:bg-gray-100 text-gray-700'
@@ -911,29 +1036,31 @@ export default function ArtifactBuilder() {
               </div>
 
               {/* File Content */}
-              <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                <div className="h-10 sm:h-11 px-3 border-b bg-white flex items-center shrink-0">
+                  {selectedSourceFile ? (
+                    <p className="text-xs sm:text-sm font-mono text-gray-700 truncate">{selectedSourceFile}</p>
+                  ) : (
+                    <span className="text-xs sm:text-sm text-gray-400">No file selected</span>
+                  )}
+                </div>
                 {selectedSourceFile ? (
-                  <>
-                    <div className="p-3 border-b bg-gray-50 shrink-0">
-                      <p className="text-sm font-mono text-gray-700 truncate">{selectedSourceFile}</p>
-                    </div>
-                    <div className="flex-1 overflow-auto">
-                      {sourceFileLoading ? (
-                        <div className="flex items-center justify-center h-full">
-                          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-                        </div>
-                      ) : (
-                        <pre className="p-4 text-sm font-mono text-gray-800 whitespace-pre-wrap break-words">
-                          {sourceFileContent}
-                        </pre>
-                      )}
-                    </div>
-                  </>
+                  <div className="flex-1 overflow-auto">
+                    {sourceFileLoading ? (
+                      <div className="flex items-center justify-center h-full">
+                        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                      </div>
+                    ) : (
+                      <pre className="p-3 sm:p-4 text-xs sm:text-sm font-mono text-gray-800 whitespace-pre-wrap break-words">
+                        {sourceFileContent}
+                      </pre>
+                    )}
+                  </div>
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-gray-500">
-                    <div className="text-center">
-                      <FileCode className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                      <p>Select a file to view its contents</p>
+                    <div className="text-center p-4">
+                      <FileCode className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 text-gray-300" />
+                      <p className="text-xs sm:text-sm">Select a file to view its contents</p>
                     </div>
                   </div>
                 )}

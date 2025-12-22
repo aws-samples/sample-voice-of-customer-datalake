@@ -549,6 +549,14 @@ export class ArtifactBuilderStack extends cdk.Stack {
     const downloadResource = jobResource.addResource('download');
     downloadResource.addMethod('GET', apiIntegration);
 
+    // /jobs/{jobId}/source - source code browser
+    const sourceResource = jobResource.addResource('source');
+    sourceResource.addMethod('GET', apiIntegration);
+
+    // /jobs/{jobId}/source/file - get file content
+    const sourceFileResource = sourceResource.addResource('file');
+    sourceFileResource.addMethod('GET', apiIntegration);
+
     // /templates endpoint
     const templatesResource = this.api.root.addResource('templates');
     templatesResource.addMethod('GET', apiIntegration);

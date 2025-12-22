@@ -11,6 +11,7 @@ Routes:
 """
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
@@ -87,6 +88,96 @@ def decimal_default(obj):
     if isinstance(obj, Decimal):
         return float(obj) if obj % 1 else int(obj)
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+def strip_ansi_codes(text: str) -> str:
+    """Strip ANSI escape codes and fix Kiro CLI streaming output formatting.
+    
+    Kiro CLI streams words one at a time with newlines between them.
+    This function joins those words back into readable sentences.
+    """
+    # Strip ESC[ sequences (colors, cursor control, etc.)
+    text = re.sub(r'\x1B\[[0-9;]*[A-Za-z]', '', text)
+    # Strip OSC sequences (ESC] ... BEL or ESC\)
+    text = re.sub(r'\x1B\][^\x07]*\x07', '', text)
+    text = re.sub(r'\x1B\][^\x1B]*\x1B\\\\', '', text)
+    # Strip standalone ESC characters (important for streaming output)
+    text = re.sub(r'\x1B', '', text)
+    # Strip bracket-only codes (when ESC was lost/encoded differently)
+    text = re.sub(r'\[\?25[lh]', '', text)
+    text = re.sub(r'\[\d*m', '', text)
+    text = re.sub(r'\[38;5;\d+m', '', text)
+    text = re.sub(r'\[48;5;\d+m', '', text)
+    # Normalize line endings
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    
+    # Process line by line to handle Kiro CLI streaming output
+    lines = text.split('\n')
+    result = []
+    streaming_words = []
+    in_streaming_block = False
+    
+    for line in lines:
+        trimmed = line.strip()
+        
+        # Skip empty lines when in streaming block
+        if not trimmed:
+            if not in_streaming_block and result and result[-1] != '':
+                result.append('')
+            continue
+        
+        # Detect start of streaming block (line starting with >)
+        if trimmed.startswith('>'):
+            # Flush any previous streaming words
+            if streaming_words:
+                joined = ' '.join(streaming_words).replace(" ' ", "'").replace('  ', ' ')
+                result.append(joined)
+                streaming_words = []
+            in_streaming_block = True
+            streaming_words.append(trimmed)
+            continue
+        
+        # Check if this is a structural line that ends streaming
+        is_structural = (
+            trimmed.startswith('[') or
+            trimmed.startswith('Reading ') or
+            trimmed.startswith('Writing ') or
+            trimmed.startswith('Creating ') or
+            trimmed.startswith('Updating ') or
+            trimmed.startswith('Deleting ') or
+            '✓' in trimmed or
+            '✗' in trimmed or
+            'Completed' in trimmed or
+            trimmed.startswith('- ') or
+            trimmed.startswith('• ') or
+            (':' in trimmed and len(trimmed) > 30)
+        )
+        
+        if in_streaming_block:
+            if is_structural:
+                # End streaming block, flush words
+                if streaming_words:
+                    joined = ' '.join(streaming_words).replace(" ' ", "'").replace('  ', ' ')
+                    result.append(joined)
+                    streaming_words = []
+                in_streaming_block = False
+                result.append(trimmed)
+            else:
+                # Continue accumulating words
+                streaming_words.append(trimmed)
+        else:
+            # Not in streaming block - add line normally
+            result.append(trimmed)
+    
+    # Flush any remaining streaming words
+    if streaming_words:
+        joined = ' '.join(streaming_words).replace(" ' ", "'").replace('  ', ' ')
+        result.append(joined)
+    
+    # Join and clean up excessive blank lines
+    output = '\n'.join(result)
+    output = re.sub(r'\n{3,}', '\n\n', output)
+    return output.strip()
 
 
 @app.get("/templates")
@@ -300,6 +391,8 @@ def get_job_logs(job_id: str):
             Key=f'jobs/{job_id}/logs.txt'
         )
         logs_content = log_response['Body'].read().decode('utf-8')
+        # Strip ANSI escape codes for clean display
+        logs_content = strip_ansi_codes(logs_content)
     except s3.exceptions.NoSuchKey:
         logs_content = "Logs not yet available"
     except Exception as e:
