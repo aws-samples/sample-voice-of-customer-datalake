@@ -235,7 +235,7 @@ def build_kiro_prompt(request: dict) -> str:
 
 
 def run_kiro_cli(prompt: str) -> bool:
-    """Run Kiro CLI in autonomous mode."""
+    """Run Kiro CLI in autonomous mode with all tools allowed."""
     log("Starting Kiro CLI in autonomous mode...")
     
     # Write prompt to a file for Kiro to read
@@ -244,14 +244,14 @@ def run_kiro_cli(prompt: str) -> bool:
     
     # Get Kiro API key from SSM
     kiro_api_key = get_ssm_parameter('kiro-api-key')
+    if not kiro_api_key or kiro_api_key == 'PLACEHOLDER_SET_AFTER_DEPLOY':
+        raise Exception("Kiro API key not configured in SSM. Set /artifact-builder/kiro-api-key")
     
     env = os.environ.copy()
-    if kiro_api_key:
-        env['ANTHROPIC_API_KEY'] = kiro_api_key
+    env['ANTHROPIC_API_KEY'] = kiro_api_key
     
-    # Run Kiro CLI
-    # Note: Adjust command based on actual Kiro CLI interface
-    # This assumes kiro has a non-interactive/autonomous mode
+    # Run Kiro CLI in autonomous mode with all tools allowed
+    # Adjust command based on actual Kiro CLI interface
     cmd = [
         'kiro',
         '--autonomous',
@@ -268,110 +268,30 @@ def run_kiro_cli(prompt: str) -> bool:
             cwd=PROJECT_DIR,
             capture_output=True,
             text=True,
-            timeout=600,  # 10 minute timeout
+            timeout=900,  # 15 minute timeout for complex generations
             env=env,
         )
         
         if result.stdout:
-            log(f"Kiro stdout:\n{result.stdout[:5000]}")
+            log(f"Kiro stdout:\n{result.stdout[:10000]}")
         if result.stderr:
-            log(f"Kiro stderr:\n{result.stderr[:2000]}")
+            log(f"Kiro stderr:\n{result.stderr[:5000]}")
         
         # Clean up prompt file
         prompt_file.unlink(missing_ok=True)
         
-        return result.returncode == 0
+        if result.returncode != 0:
+            log(f"Kiro CLI exited with code {result.returncode}")
+            raise Exception(f"Kiro CLI failed with exit code {result.returncode}")
+        
+        return True
         
     except subprocess.TimeoutExpired:
-        log("Kiro CLI timed out after 10 minutes")
-        return False
+        log("Kiro CLI timed out after 15 minutes")
+        raise Exception("Kiro CLI timed out")
     except FileNotFoundError:
-        log("Kiro CLI not found, falling back to direct execution")
-        return run_fallback_generation(prompt)
-
-
-def run_fallback_generation(prompt: str) -> bool:
-    """Fallback if Kiro CLI is not available - use direct Bedrock."""
-    log("Using fallback Bedrock generation...")
-    
-    bedrock = boto3.client('bedrock-runtime')
-    
-    # Read current project structure
-    files_content = []
-    for file_path in PROJECT_DIR.rglob('*'):
-        if file_path.is_file() and 'node_modules' not in str(file_path):
-            rel_path = file_path.relative_to(PROJECT_DIR)
-            if str(rel_path).startswith('.'):
-                continue
-            try:
-                content = file_path.read_text()
-                files_content.append(f"### {rel_path}\n```\n{content}\n```")
-            except:
-                pass
-    
-    system_prompt = """You are an expert React/TypeScript developer. You will modify an existing React project based on user requirements.
-
-Output your changes in this format for each file:
-
-FILE: path/to/file.tsx
-```tsx
-// complete file content
-```
-
-Only output files that need to be created or modified. Ensure the code is complete and builds without errors."""
-
-    full_prompt = f"""{prompt}
-
-## Current Project Files
-
-{chr(10).join(files_content[:50])}  # Limit to avoid token limits
-"""
-
-    request_body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 16000,
-        "temperature": 0.3,
-        "system": system_prompt,
-        "messages": [{"role": "user", "content": full_prompt}]
-    }
-    
-    response = bedrock.invoke_model(
-        modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0',
-        body=json.dumps(request_body),
-        contentType='application/json',
-        accept='application/json'
-    )
-    
-    response_body = json.loads(response['body'].read())
-    response_text = response_body['content'][0]['text']
-    
-    # Parse and apply changes
-    apply_file_changes(response_text)
-    
-    return True
-
-
-def apply_file_changes(response: str):
-    """Parse AI response and apply file changes."""
-    import re
-    
-    log("Applying file changes...")
-    
-    # Pattern: FILE: path/to/file.ext followed by code block
-    pattern = r'FILE:\s*([^\n]+)\n```\w*\n(.*?)```'
-    matches = re.findall(pattern, response, re.DOTALL)
-    
-    for filepath, content in matches:
-        filepath = filepath.strip()
-        if filepath.startswith('/'):
-            filepath = filepath[1:]
-        
-        full_path = PROJECT_DIR / filepath
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(content)
-        log(f"  Wrote: {filepath}")
-    
-    log(f"Applied {len(matches)} file changes")
+        log("ERROR: Kiro CLI not found. Ensure 'kiro' is installed in the container.")
+        raise Exception("Kiro CLI not installed")
 
 
 def run_command(cmd: list, cwd: Path = None, timeout: int = 300) -> tuple[int, str, str]:
@@ -544,10 +464,9 @@ def main():
         # Build Kiro prompt
         kiro_prompt = build_kiro_prompt(request)
         
-        # Run Kiro CLI to generate code
+        # Run Kiro CLI to generate code (no fallback - must succeed)
         update_status('generating')
-        if not run_kiro_cli(kiro_prompt):
-            log("Kiro CLI failed, but continuing with build attempt...")
+        run_kiro_cli(kiro_prompt)
         
         # Install dependencies
         update_status('building')
@@ -561,8 +480,8 @@ def main():
                 break
             log(f"Build failed, attempt {attempt + 1}/{max_retries}")
             if attempt < max_retries - 1:
-                # Try to fix with another Kiro run
-                fix_prompt = "The build failed. Please fix any TypeScript or build errors."
+                # Ask Kiro to fix the build errors
+                fix_prompt = "The build failed. Please fix any TypeScript or build errors and ensure `npm run build` succeeds."
                 run_kiro_cli(fix_prompt)
         else:
             raise Exception("Build failed after all retries")

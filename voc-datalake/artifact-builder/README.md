@@ -1,6 +1,6 @@
 # Artifact Builder
 
-An agentic PoC builder that turns a single prompt into a working web prototype using Kiro CLI, publishes a live preview, and stores everything in CodeCommit for review.
+An agentic PoC builder that turns a single prompt into a working web prototype using **Kiro CLI in autonomous mode**, publishes a live preview, and stores everything in CodeCommit.
 
 ## Architecture
 
@@ -42,9 +42,10 @@ An agentic PoC builder that turns a single prompt into a working web prototype u
 3. Trigger Lambda receives SQS message and starts ECS Fargate task
 4. ECS Executor:
    - Clones **read-only template** from CodeCommit (`artifact-builder-template`)
-   - Runs **Kiro CLI in autonomous mode** with all tools allowed
+   - Runs **Kiro CLI in autonomous mode** with `--allow-all-tools`
    - Kiro generates/modifies code based on user prompt
    - Runs `npm install` and `npm run build`
+   - If build fails, Kiro is invoked again to fix errors
    - Creates **new CodeCommit repo** (`artifact-{job_id}`) with the result
    - Uploads source.zip, build/, logs.txt to S3
    - Updates job status to 'done'
@@ -63,15 +64,15 @@ An agentic PoC builder that turns a single prompt into a working web prototype u
 
 | Parameter | Description |
 |-----------|-------------|
-| `/artifact-builder/kiro-api-key` | API key for Kiro CLI |
+| `/artifact-builder/kiro-api-key` | API key for Kiro CLI (required) |
 
-### Template
+### Template (`template/`)
 
-The template is based on `template-app/` in the repo root:
+The template is included in this folder and must be uploaded to CodeCommit:
 - React 19 + TypeScript
 - Vite 7
 - Tailwind CSS 4
-- shadcn/ui components
+- shadcn/ui components (full set)
 - React Router, TanStack Query, Recharts
 
 ## Deployment
@@ -86,7 +87,7 @@ npx cdk deploy ArtifactBuilderStack
 
 ### 2. Upload Template to CodeCommit
 
-After deployment, upload the template-app to the CodeCommit repository:
+After deployment, upload the template to the CodeCommit repository:
 
 ```bash
 # Get the repo URL from stack outputs
@@ -95,8 +96,8 @@ TEMPLATE_REPO_URL=$(aws cloudformation describe-stacks \
   --query 'Stacks[0].Outputs[?OutputKey==`TemplateRepoCloneUrl`].OutputValue' \
   --output text)
 
-# Clone and push template
-cd template-app
+# Push template to CodeCommit
+cd voc-datalake/artifact-builder/template
 git init
 git add -A
 git commit -m "Initial template"
@@ -104,7 +105,7 @@ git remote add origin $TEMPLATE_REPO_URL
 git push -u origin main
 ```
 
-### 3. Set Kiro API Key
+### 3. Set Kiro API Key (Required)
 
 ```bash
 aws ssm put-parameter \
@@ -117,7 +118,7 @@ aws ssm put-parameter \
 ### 4. Build and Deploy Frontend (Optional)
 
 ```bash
-cd artifact-builder/frontend
+cd voc-datalake/artifact-builder/frontend
 npm install
 VITE_API_ENDPOINT=https://your-api.execute-api.region.amazonaws.com/v1 npm run build
 # Deploy dist/ to S3 or Amplify
@@ -127,7 +128,7 @@ VITE_API_ENDPOINT=https://your-api.execute-api.region.amazonaws.com/v1 npm run b
 
 ```bash
 # Frontend
-cd artifact-builder/frontend
+cd voc-datalake/artifact-builder/frontend
 npm install
 npm run dev  # http://localhost:5174
 
@@ -170,14 +171,12 @@ artifact-builder-{account}-{region}/
 
 - ECS tasks run in private subnets with NAT gateway
 - CodeCommit repos created per-job with IAM authentication
-- SSM Parameter Store for credentials (SecureString)
+- SSM Parameter Store for Kiro API key (SecureString)
 - S3 bucket blocks public access (served via CloudFront)
 - 30-day TTL on job records and artifacts
 
-## Cost Optimization
+## Requirements
 
-- ECS Fargate with x86_64 (4 vCPU, 8GB for fast builds)
-- S3 lifecycle rules to expire old artifacts
-- DynamoDB on-demand billing
-- CloudFront caching for previews
-- NAT Gateway in single AZ (can scale for production)
+- **Kiro CLI must be installed** in the executor container
+- **Kiro API key must be set** in SSM before running jobs
+- No fallback - jobs will fail if Kiro CLI is unavailable
