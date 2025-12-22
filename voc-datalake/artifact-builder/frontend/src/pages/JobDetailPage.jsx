@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { 
   ArrowLeft, ExternalLink, Download, Clock, CheckCircle, 
-  XCircle, Loader2, FileCode, Terminal 
+  XCircle, Loader2, FileCode, Terminal, Code
 } from 'lucide-react'
 import { api } from '../api'
+import SourceViewer from '../components/SourceViewer'
 
 const STATUS_CONFIG = {
   queued: { icon: Clock, color: 'text-gray-500', bg: 'bg-gray-100', label: 'Queued' },
@@ -73,6 +75,7 @@ function formatDate(dateString) {
 
 export default function JobDetailPage() {
   const { jobId } = useParams()
+  const [showSourceViewer, setShowSourceViewer] = useState(false)
   
   // Fetch job details
   const { data: job, isLoading, error } = useQuery({
@@ -169,6 +172,13 @@ export default function JobDetailPage() {
               Open Preview
             </a>
           )}
+          <button
+            onClick={() => setShowSourceViewer(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl"
+          >
+            <Code className="w-5 h-5" />
+            View Source
+          </button>
           {downloadData?.download_url && (
             <a
               href={downloadData.download_url}
@@ -179,6 +189,11 @@ export default function JobDetailPage() {
             </a>
           )}
         </div>
+      )}
+      
+      {/* Source Viewer Modal */}
+      {showSourceViewer && (
+        <SourceViewer jobId={jobId} onClose={() => setShowSourceViewer(false)} />
       )}
       
       {/* Details Grid */}
