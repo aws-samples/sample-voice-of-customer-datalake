@@ -879,6 +879,11 @@ export class VocAnalyticsStack extends cdk.Stack {
             managedRuleGroupStatement: {
               vendorName: 'AWS',
               name: 'AWSManagedRulesCommonRuleSet',
+              // Exclude SizeRestrictions_BODY rule - blocks requests >8KB
+              // Projects API needs larger bodies for PRD/PR-FAQ documents (up to 50KB)
+              excludedRules: [
+                { name: 'SizeRestrictions_BODY' },
+              ],
             },
           },
           visibilityConfig: {

@@ -377,7 +377,7 @@ export default function Categories() {
           <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Overall Sentiment</h2>
           <div className="flex items-center justify-center">
             <div className="relative w-full max-w-[280px]">
-              <ResponsiveContainer width="100%" height={160} className="sm:!h-[200px]">
+              <ResponsiveContainer width="100%" height={160} minWidth={0} className="sm:!h-[200px]">
                 <PieChart>
                   <Pie
                     data={sentimentData}
@@ -395,8 +395,8 @@ export default function Categories() {
                     ))}
                   </Pie>
                   <Tooltip 
-                    formatter={(value: number, name: string) => [
-                      `${value} (${sentiment?.percentages[name]?.toFixed(1)}%)`, 
+                    formatter={(value, name) => [
+                      `${value} (${sentiment?.percentages[name as string]?.toFixed(1)}%)`, 
                       name
                     ]}
                   />

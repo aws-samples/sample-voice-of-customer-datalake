@@ -129,7 +129,7 @@ export default function Dashboard() {
         <div className="card !p-4 sm:!p-6">
           <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Feedback Volume & Sentiment Trend</h3>
           <div className="h-[200px] sm:h-[300px] -mx-2 sm:mx-0">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <LineChart data={[...(summary?.daily_totals || [])].sort((a, b) => a.date.localeCompare(b.date))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
@@ -145,7 +145,7 @@ export default function Dashboard() {
         <div className="card !p-4 sm:!p-6">
           <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Sentiment Distribution</h3>
           <div className="h-[200px] sm:h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <PieChart>
                 <Pie
                   data={sentimentPieData}
@@ -175,7 +175,7 @@ export default function Dashboard() {
         <div className="card !p-4 sm:!p-6">
           <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Top Issue Categories</h3>
           <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={categoryBarData} layout="vertical" margin={{ left: 0, right: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis type="number" tick={{ fontSize: 10 }} />
@@ -191,7 +191,7 @@ export default function Dashboard() {
         <div className="card !p-4 sm:!p-6">
           <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Feedback by Source</h3>
           <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={sourceBarData} margin={{ left: 0, right: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={60} />
