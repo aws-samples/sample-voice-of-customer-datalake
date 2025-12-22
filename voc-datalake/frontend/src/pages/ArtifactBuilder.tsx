@@ -30,8 +30,12 @@ import {
   Eye,
   FileText,
   Terminal,
+  File,
+  Image,
+  Package,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
 import { api } from '../api/client'
 import type { ArtifactJob } from '../api/client'
 import { useConfigStore } from '../store/configStore'
@@ -45,6 +49,60 @@ const STATUS_CONFIG: Record<string, { icon: typeof Clock; color: string; bg: str
   publishing: { icon: Loader2, color: 'text-purple-500', bg: 'bg-purple-100', label: 'Publishing', animate: true },
   done: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-100', label: 'Complete' },
   failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-100', label: 'Failed' },
+}
+
+// Get file icon based on extension
+function getFileIcon(filename: string) {
+  const ext = filename.split('.').pop()?.toLowerCase()
+  
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'ico'].includes(ext || '')) {
+    return <Image className="w-4 h-4 text-purple-500" />
+  }
+  if (['js', 'jsx', 'ts', 'tsx'].includes(ext || '')) {
+    return <FileCode className="w-4 h-4 text-yellow-500" />
+  }
+  if (['json', 'yaml', 'yml'].includes(ext || '')) {
+    return <FileCode className="w-4 h-4 text-green-500" />
+  }
+  if (ext === 'md') {
+    return <FileText className="w-4 h-4 text-blue-500" />
+  }
+  if (['css', 'scss'].includes(ext || '')) {
+    return <FileCode className="w-4 h-4 text-pink-500" />
+  }
+  if (ext === 'html') {
+    return <FileCode className="w-4 h-4 text-orange-500" />
+  }
+  if (filename === 'package.json') {
+    return <Package className="w-4 h-4 text-red-500" />
+  }
+  return <File className="w-4 h-4 text-gray-400" />
+}
+
+// Code viewer with line numbers
+function CodeViewer({ content }: { content: string }) {
+  const lines = content.split('\n')
+  
+  return (
+    <div className="bg-gray-900 rounded-lg overflow-hidden">
+      <div className="flex text-sm font-mono">
+        {/* Line numbers */}
+        <div className="select-none bg-gray-800 text-gray-500 text-right py-4 px-3 border-r border-gray-700">
+          {lines.map((_, i) => (
+            <div key={i} className="leading-6">{i + 1}</div>
+          ))}
+        </div>
+        {/* Code content */}
+        <pre className="flex-1 overflow-x-auto py-4 px-4 text-gray-100">
+          <code>
+            {lines.map((line, i) => (
+              <div key={i} className="leading-6 whitespace-pre">{line || ' '}</div>
+            ))}
+          </code>
+        </pre>
+      </div>
+    </div>
+  )
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -224,8 +282,27 @@ export default function ArtifactBuilder() {
     setSourceFileContent('')
     setCurrentSourcePath('')
     
-    // Load root directory files
-    await loadSourceFiles(jobId, '')
+    // Load root directory files and auto-select README.md
+    setSourceFilesLoading(true)
+    try {
+      const response = await api.getArtifactSourceFiles(jobId, '')
+      const files = response.files || []
+      setSourceFiles(files)
+      setCurrentSourcePath('')
+      
+      // Auto-select README.md if it exists
+      const readme = files.find((f: { path: string; type: string }) => 
+        f.type === 'file' && f.path.toLowerCase() === 'readme.md'
+      )
+      if (readme) {
+        loadSourceFileContent(jobId, readme.path)
+      }
+    } catch (error) {
+      console.error('Error loading source files:', error)
+      setSourceFiles([])
+    } finally {
+      setSourceFilesLoading(false)
+    }
   }
 
   const loadSourceFiles = async (jobId: string, path: string) => {
@@ -1026,7 +1103,7 @@ export default function ArtifactBuilder() {
                         {file.type === 'folder' ? (
                           <Folder className="w-4 h-4 text-yellow-500 shrink-0" />
                         ) : (
-                          <FileCode className="w-4 h-4 text-gray-400 shrink-0" />
+                          getFileIcon(file.path.split('/').pop() || '')
                         )}
                         <span className="truncate">{file.path.split('/').pop()}</span>
                       </button>
@@ -1037,9 +1114,12 @@ export default function ArtifactBuilder() {
 
               {/* File Content */}
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-                <div className="h-10 sm:h-11 px-3 border-b bg-white flex items-center shrink-0">
+                <div className="h-10 sm:h-11 px-3 border-b bg-white flex items-center gap-2 shrink-0">
                   {selectedSourceFile ? (
-                    <p className="text-xs sm:text-sm font-mono text-gray-700 truncate">{selectedSourceFile}</p>
+                    <>
+                      {getFileIcon(selectedSourceFile.split('/').pop() || '')}
+                      <p className="text-xs sm:text-sm font-mono text-gray-700 truncate">{selectedSourceFile}</p>
+                    </>
                   ) : (
                     <span className="text-xs sm:text-sm text-gray-400">No file selected</span>
                   )}
@@ -1050,10 +1130,40 @@ export default function ArtifactBuilder() {
                       <div className="flex items-center justify-center h-full">
                         <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
                       </div>
+                    ) : selectedSourceFile.toLowerCase().endsWith('.md') ? (
+                      // Markdown rendering
+                      <div className="p-4 sm:p-6 prose prose-sm max-w-none">
+                        <ReactMarkdown
+                          components={{
+                            h1: ({ children }) => <h1 className="text-2xl font-bold text-gray-900 mt-6 mb-3">{children}</h1>,
+                            h2: ({ children }) => <h2 className="text-xl font-semibold text-gray-900 mt-5 mb-2">{children}</h2>,
+                            h3: ({ children }) => <h3 className="text-lg font-medium text-gray-900 mt-4 mb-2">{children}</h3>,
+                            p: ({ children }) => <p className="text-gray-700 my-2">{children}</p>,
+                            ul: ({ children }) => <ul className="list-disc list-inside my-2 space-y-1">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal list-inside my-2 space-y-1">{children}</ol>,
+                            li: ({ children }) => <li className="text-gray-700">{children}</li>,
+                            code: ({ className, children }) => {
+                              const isInline = !className
+                              return isInline ? (
+                                <code className="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono text-pink-600">{children}</code>
+                              ) : (
+                                <code className="block bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-3 text-sm font-mono">{children}</code>
+                              )
+                            },
+                            pre: ({ children }) => <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-3 text-sm">{children}</pre>,
+                            a: ({ href, children }) => <a href={href} className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">{children}</a>,
+                            strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                            em: ({ children }) => <em className="italic">{children}</em>,
+                          }}
+                        >
+                          {sourceFileContent}
+                        </ReactMarkdown>
+                      </div>
                     ) : (
-                      <pre className="p-3 sm:p-4 text-xs sm:text-sm font-mono text-gray-800 whitespace-pre-wrap break-words">
-                        {sourceFileContent}
-                      </pre>
+                      // Code with line numbers
+                      <div className="p-3 sm:p-4">
+                        <CodeViewer content={sourceFileContent} />
+                      </div>
                     )}
                   </div>
                 ) : (
