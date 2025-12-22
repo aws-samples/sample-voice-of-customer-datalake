@@ -748,29 +748,43 @@ export const api = {
     }),
 
   // Data Explorer - S3 Raw Data Browser
-  getDataExplorerS3: (prefix?: string) => {
+  getDataExplorerBuckets: () =>
+    fetchApi<{ buckets: Array<{ id: string; name: string; label: string; description: string }> }>('/data-explorer/buckets'),
+
+  getDataExplorerS3: (prefix?: string, bucket?: string) => {
     const params = new URLSearchParams()
     if (prefix) params.set('prefix', prefix)
+    if (bucket) params.set('bucket', bucket)
     return fetchApi<{ 
       objects: Array<{ key: string; fullKey?: string; size: number; lastModified: string; isFolder: boolean }>
       bucket: string
+      bucketId: string
+      bucketLabel: string
       prefix: string 
     }>(`/data-explorer/s3?${params}`)
   },
   
-  getDataExplorerS3Preview: (key: string) =>
-    fetchApi<{ content: unknown; size: number; contentType: string; key: string; isPresignedUrl?: boolean }>(`/data-explorer/s3/preview?key=${encodeURIComponent(key)}`),
+  getDataExplorerS3Preview: (key: string, bucket?: string) => {
+    const params = new URLSearchParams()
+    params.set('key', key)
+    if (bucket) params.set('bucket', bucket)
+    return fetchApi<{ content: unknown; size: number; contentType: string; key: string; isPresignedUrl?: boolean }>(`/data-explorer/s3/preview?${params}`)
+  },
 
-  saveDataExplorerS3: (key: string, content: string, syncToDynamo?: boolean) =>
+  saveDataExplorerS3: (key: string, content: string, syncToDynamo?: boolean, bucket?: string) =>
     fetchApi<{ success: boolean; message?: string; synced?: boolean }>('/data-explorer/s3', {
       method: 'PUT',
-      body: JSON.stringify({ key, content, sync_to_dynamo: syncToDynamo })
+      body: JSON.stringify({ key, content, sync_to_dynamo: syncToDynamo, bucket })
     }),
 
-  deleteDataExplorerS3: (key: string) =>
-    fetchApi<{ success: boolean; message?: string }>(`/data-explorer/s3?key=${encodeURIComponent(key)}`, {
+  deleteDataExplorerS3: (key: string, bucket?: string) => {
+    const params = new URLSearchParams()
+    params.set('key', key)
+    if (bucket) params.set('bucket', bucket)
+    return fetchApi<{ success: boolean; message?: string }>(`/data-explorer/s3?${params}`, {
       method: 'DELETE'
-    }),
+    })
+  },
 
   // Data Explorer - DynamoDB Feedback CRUD
   saveDataExplorerFeedback: (feedbackId: string, data: Partial<FeedbackItem>, syncToS3?: boolean) =>
@@ -883,6 +897,15 @@ export const api = {
   
   deleteArtifactJob: (jobId: string) =>
     fetchArtifactApi<{ success: boolean; message: string }>(`/jobs/${jobId}`, { method: 'DELETE' }),
+  
+  // Source code browser
+  getArtifactSourceFiles: (jobId: string, path?: string) => {
+    const params = path ? `?path=${encodeURIComponent(path)}` : ''
+    return fetchArtifactApi<{ files: Array<{ path: string; type: 'file' | 'folder' }> }>(`/jobs/${jobId}/source${params}`)
+  },
+  
+  getArtifactSourceFileContent: (jobId: string, filePath: string) =>
+    fetchArtifactApi<{ content: string; path: string }>(`/jobs/${jobId}/source/file?path=${encodeURIComponent(filePath)}`),
 }
 
 // Project types

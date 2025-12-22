@@ -608,12 +608,19 @@ export default function ProjectDetail() {
   
   // Artifact Builder mutation - build prototype from PR/FAQ
   const buildArtifactMut = useMutation({
-    mutationFn: (doc: ProjectDocument) => api.createArtifactJob({
-      prompt: `Build a working web prototype based on this PR/FAQ document:\n\n# ${doc.title}\n\n${doc.content}`,
-      project_type: 'react-vite',
-      style: 'minimal',
-      include_mock_data: true,
-    }),
+    mutationFn: (doc: ProjectDocument) => {
+      // Build a rich prompt that includes brand context
+      const brandContext = config.brandName 
+        ? `\n\n## Brand Guidelines\n- Company: ${config.brandName}\n- Follow the company's visual identity, color scheme, and design language\n- Ensure the UI feels consistent with ${config.brandName}'s brand\n- Use professional, on-brand styling throughout`
+        : ''
+      
+      return api.createArtifactJob({
+        prompt: `Build a working web prototype based on this PR/FAQ document.${brandContext}\n\n# ${doc.title}\n\n${doc.content}`,
+        project_type: 'react-vite',
+        style: 'corporate',  // Use corporate style for branded prototypes
+        include_mock_data: true,
+      })
+    },
     onSuccess: (data) => {
       setArtifactJobId(data.job_id)
       setShowArtifactPreview(true)

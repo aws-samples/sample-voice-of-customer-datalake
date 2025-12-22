@@ -29,8 +29,11 @@ metrics = Metrics(namespace="ArtifactBuilder")
 dynamodb = boto3.resource('dynamodb')
 s3 = boto3.client('s3')
 sqs = boto3.client('sqs')
+codecommit = boto3.client('codecommit')
+ecs = boto3.client('ecs')
 
 # Configuration
+ECS_CLUSTER = os.environ.get('ECS_CLUSTER', 'artifact-builder')
 JOBS_TABLE = os.environ.get('JOBS_TABLE', 'artifact-builder-jobs')
 ARTIFACTS_BUCKET = os.environ.get('ARTIFACTS_BUCKET', '')
 JOB_QUEUE_URL = os.environ.get('JOB_QUEUE_URL', '')
@@ -348,7 +351,7 @@ def get_download_url(job_id: str):
 @app.delete("/jobs/<job_id>")
 @tracer.capture_method
 def delete_job(job_id: str):
-    """Delete a job and its artifacts."""
+    """Delete a job and all its artifacts (DynamoDB, S3, CodeCommit repo, ECS task)."""
     # Check job exists
     response = jobs_table.get_item(
         Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
@@ -357,14 +360,52 @@ def delete_job(job_id: str):
     if not job:
         raise NotFoundError(f"Job {job_id} not found")
     
-    # Delete from DynamoDB
-    jobs_table.delete_item(
-        Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
-    )
+    cleanup_results = {
+        'dynamodb': False,
+        's3': False,
+        'codecommit': False,
+        'ecs_task': False,
+    }
     
-    # Delete S3 artifacts (best effort)
+    # 1. Stop any running ECS task for this job
+    ecs_task_arn = job.get('ecs_task_arn')
+    if ecs_task_arn:
+        try:
+            # Extract task ID from ARN
+            task_id = ecs_task_arn.split('/')[-1]
+            # Check if task is still running
+            task_response = ecs.describe_tasks(
+                cluster=ECS_CLUSTER,
+                tasks=[task_id]
+            )
+            tasks = task_response.get('tasks', [])
+            if tasks and tasks[0].get('lastStatus') in ['PENDING', 'RUNNING']:
+                ecs.stop_task(
+                    cluster=ECS_CLUSTER,
+                    task=task_id,
+                    reason=f'Job {job_id} deleted by user'
+                )
+                logger.info(f"Stopped ECS task {task_id} for job {job_id}")
+            cleanup_results['ecs_task'] = True
+        except Exception as e:
+            logger.warning(f"Error stopping ECS task for job {job_id}: {e}")
+    else:
+        cleanup_results['ecs_task'] = True  # No task to stop
+    
+    # 2. Delete CodeCommit repository (artifact-{job_id})
+    repo_name = f'artifact-{job_id}'
     try:
-        # List all objects with the job prefix
+        codecommit.delete_repository(repositoryName=repo_name)
+        logger.info(f"Deleted CodeCommit repository {repo_name}")
+        cleanup_results['codecommit'] = True
+    except codecommit.exceptions.RepositoryDoesNotExistException:
+        logger.info(f"CodeCommit repository {repo_name} does not exist, skipping")
+        cleanup_results['codecommit'] = True
+    except Exception as e:
+        logger.warning(f"Error deleting CodeCommit repository {repo_name}: {e}")
+    
+    # 3. Delete S3 artifacts (all objects under jobs/{job_id}/)
+    try:
         paginator = s3.get_paginator('list_objects_v2')
         prefix = f'jobs/{job_id}/'
         
@@ -374,20 +415,155 @@ def delete_job(job_id: str):
                 objects_to_delete.append({'Key': obj['Key']})
         
         if objects_to_delete:
-            s3.delete_objects(
-                Bucket=ARTIFACTS_BUCKET,
-                Delete={'Objects': objects_to_delete}
-            )
+            # Delete in batches of 1000 (S3 limit)
+            for i in range(0, len(objects_to_delete), 1000):
+                batch = objects_to_delete[i:i+1000]
+                s3.delete_objects(
+                    Bucket=ARTIFACTS_BUCKET,
+                    Delete={'Objects': batch}
+                )
             logger.info(f"Deleted {len(objects_to_delete)} S3 objects for job {job_id}")
+        cleanup_results['s3'] = True
     except Exception as e:
         logger.warning(f"Error deleting S3 artifacts for job {job_id}: {e}")
+    
+    # 4. Delete from DynamoDB (do this last so we can retry cleanup if needed)
+    try:
+        jobs_table.delete_item(
+            Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
+        )
+        cleanup_results['dynamodb'] = True
+    except Exception as e:
+        logger.error(f"Error deleting job {job_id} from DynamoDB: {e}")
+        raise
     
     metrics.add_metric(name="JobsDeleted", unit="Count", value=1)
     
     return {
         'success': True,
         'message': f'Job {job_id} deleted',
+        'cleanup': cleanup_results,
     }
+
+
+@app.get("/jobs/<job_id>/source")
+@tracer.capture_method
+def list_source_files(job_id: str):
+    """List source files from CodeCommit repository for a job."""
+    params = app.current_event.query_string_parameters or {}
+    path = params.get('path', '')
+    
+    # Check job exists and is complete
+    response = jobs_table.get_item(
+        Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
+    )
+    job = response.get('Item')
+    if not job:
+        raise NotFoundError(f"Job {job_id} not found")
+    
+    if job.get('status') != 'done':
+        raise BadRequestError("Job is not complete yet")
+    
+    repo_name = f'artifact-{job_id}'
+    
+    try:
+        # Get the default branch
+        repo_info = codecommit.get_repository(repositoryName=repo_name)
+        default_branch = repo_info['repositoryMetadata'].get('defaultBranch', 'main')
+        
+        # Get folder contents
+        folder_path = path if path else '/'
+        
+        response = codecommit.get_folder(
+            repositoryName=repo_name,
+            commitSpecifier=default_branch,
+            folderPath=folder_path
+        )
+        
+        files = []
+        
+        # Add subfolders
+        for folder in response.get('subFolders', []):
+            folder_name = folder['absolutePath']
+            files.append({
+                'path': folder_name,
+                'type': 'folder'
+            })
+        
+        # Add files
+        for file in response.get('files', []):
+            file_path = file['absolutePath']
+            files.append({
+                'path': file_path,
+                'type': 'file'
+            })
+        
+        # Sort: folders first, then files, alphabetically
+        files.sort(key=lambda x: (x['type'] == 'file', x['path'].lower()))
+        
+        return {'files': files}
+        
+    except codecommit.exceptions.RepositoryDoesNotExistException:
+        raise NotFoundError(f"Repository for job {job_id} not found")
+    except codecommit.exceptions.FolderDoesNotExistException:
+        return {'files': []}
+    except Exception as e:
+        logger.error(f"Error listing source files for job {job_id}: {e}")
+        raise BadRequestError(f"Error listing source files: {str(e)}")
+
+
+@app.get("/jobs/<job_id>/source/file")
+@tracer.capture_method
+def get_source_file_content(job_id: str):
+    """Get content of a source file from CodeCommit repository."""
+    params = app.current_event.query_string_parameters or {}
+    file_path = params.get('path', '')
+    
+    if not file_path:
+        raise BadRequestError("path parameter is required")
+    
+    # Check job exists and is complete
+    response = jobs_table.get_item(
+        Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
+    )
+    job = response.get('Item')
+    if not job:
+        raise NotFoundError(f"Job {job_id} not found")
+    
+    if job.get('status') != 'done':
+        raise BadRequestError("Job is not complete yet")
+    
+    repo_name = f'artifact-{job_id}'
+    
+    try:
+        # Get the default branch
+        repo_info = codecommit.get_repository(repositoryName=repo_name)
+        default_branch = repo_info['repositoryMetadata'].get('defaultBranch', 'main')
+        
+        # Get file content
+        response = codecommit.get_file(
+            repositoryName=repo_name,
+            commitSpecifier=default_branch,
+            filePath=file_path
+        )
+        
+        # Decode content (it's returned as bytes)
+        content = response['fileContent'].decode('utf-8')
+        
+        return {
+            'path': file_path,
+            'content': content
+        }
+        
+    except codecommit.exceptions.RepositoryDoesNotExistException:
+        raise NotFoundError(f"Repository for job {job_id} not found")
+    except codecommit.exceptions.FileDoesNotExistException:
+        raise NotFoundError(f"File {file_path} not found")
+    except UnicodeDecodeError:
+        raise BadRequestError("File is binary and cannot be displayed")
+    except Exception as e:
+        logger.error(f"Error getting file content for job {job_id}: {e}")
+        raise BadRequestError(f"Error getting file content: {str(e)}")
 
 
 @logger.inject_lambda_context

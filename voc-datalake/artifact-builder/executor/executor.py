@@ -17,10 +17,15 @@ Kiro CLI Authentication:
   - ~/.kiro/
   - ~/.config/kiro/
   - ~/.local/share/kiro-cli/
+
+Timeout Handling:
+- Entrypoint runs with 30-minute timeout
+- SIGTERM handler ensures job is marked as failed on timeout
 """
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import zipfile
@@ -52,6 +57,21 @@ jobs_table = dynamodb.Table(JOBS_TABLE)
 logs = []
 
 
+def handle_timeout(signum, frame):
+    """Handle SIGTERM from timeout command - mark job as failed and exit."""
+    log("TIMEOUT: Task exceeded maximum execution time")
+    try:
+        upload_logs()
+        update_status('failed', error_msg='Task timed out after maximum execution time')
+    except Exception as e:
+        print(f"Error updating status on timeout: {e}", flush=True)
+    sys.exit(124)  # Standard timeout exit code
+
+
+# Register signal handler for graceful timeout handling
+signal.signal(signal.SIGTERM, handle_timeout)
+
+
 def log(message: str):
     """Log message and store for upload."""
     timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
@@ -60,7 +80,7 @@ def log(message: str):
     logs.append(line)
 
 
-def update_status(status: str, error: str = None, summary: dict = None, 
+def update_status(status: str, error_msg: str = None, summary: dict = None, 
                   repo_url: str = None, preview_url: str = None):
     """Update job status in DynamoDB."""
     now = datetime.now(timezone.utc).isoformat()
@@ -74,9 +94,10 @@ def update_status(status: str, error: str = None, summary: dict = None,
     expr_values[':empty'] = []
     expr_values[':timeline'] = [{'status': status, 'timestamp': now}]
     
-    if error:
-        update_expr += ', error = :error'
-        expr_values[':error'] = error
+    if error_msg:
+        update_expr += ', #error = :error'
+        expr_names['#error'] = 'error'
+        expr_values[':error'] = error_msg
     
     if summary:
         update_expr += ', summary = :summary'
@@ -265,58 +286,118 @@ def run_kiro_cli(prompt: str) -> bool:
     - --trust-all-tools: Allow all tool executions without prompts
     
     Auth must be pre-configured via device flow login with persisted state.
+    
+    Uses Python's pty module to create a proper pseudo-terminal.
     """
+    import pty
+    import select
+    import signal
+    
     log("Starting Kiro CLI in headless autonomous mode...")
     
-    # Kiro CLI command for headless execution
-    # The prompt is passed directly as an argument
-    cmd = [
-        'kiro-cli', 'chat',
-        '--no-interactive',
-        '--trust-all-tools',
-        prompt
-    ]
+    # Write prompt to a temp file to avoid shell escaping issues
+    prompt_file = PROJECT_DIR / '.kiro_prompt.txt'
+    prompt_file.write_text(prompt)
     
     log(f"Running: kiro-cli chat --no-interactive --trust-all-tools '<prompt>'")
     log(f"Working directory: {PROJECT_DIR}")
     
+    output_lines = []
+    
+    def read_output(fd, timeout=900):
+        """Read output from file descriptor with timeout."""
+        start_time = datetime.now(timezone.utc)
+        while True:
+            elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+            if elapsed > timeout:
+                return False, "Timeout"
+            
+            ready, _, _ = select.select([fd], [], [], 1.0)
+            if ready:
+                try:
+                    data = os.read(fd, 4096)
+                    if not data:
+                        break
+                    text = data.decode('utf-8', errors='replace')
+                    output_lines.append(text)
+                    print(text, end='', flush=True)
+                except OSError:
+                    break
+            else:
+                # Check if child process is still running
+                try:
+                    pid, status = os.waitpid(-1, os.WNOHANG)
+                    if pid != 0:
+                        return True, status
+                except ChildProcessError:
+                    break
+        return True, 0
+    
     try:
-        result = subprocess.run(
-            cmd,
-            cwd=PROJECT_DIR,
-            capture_output=True,
-            text=True,
-            timeout=900,  # 15 minute timeout for complex generations
-        )
+        # Build the command
+        cmd = f'cd {PROJECT_DIR} && kiro-cli chat --no-interactive --trust-all-tools "$(cat {prompt_file})"'
         
-        if result.stdout:
-            # Log output (truncate if very long)
-            stdout = result.stdout
-            if len(stdout) > 15000:
-                stdout = stdout[:7500] + "\n...[truncated]...\n" + stdout[-7500:]
-            log(f"Kiro output:\n{stdout}")
+        # Use pty.spawn which properly sets up the terminal
+        # This creates a proper PTY that Kiro CLI needs
+        master_fd, slave_fd = pty.openpty()
         
-        if result.stderr:
-            stderr = result.stderr
-            if len(stderr) > 5000:
-                stderr = stderr[:2500] + "\n...[truncated]...\n" + stderr[-2500:]
-            log(f"Kiro stderr:\n{stderr}")
+        pid = os.fork()
+        if pid == 0:
+            # Child process
+            os.close(master_fd)
+            os.setsid()
+            
+            # Set up the slave as the controlling terminal
+            import fcntl
+            import termios
+            fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
+            
+            os.dup2(slave_fd, 0)
+            os.dup2(slave_fd, 1)
+            os.dup2(slave_fd, 2)
+            
+            if slave_fd > 2:
+                os.close(slave_fd)
+            
+            os.environ['TERM'] = 'xterm-256color'
+            os.environ['HOME'] = '/home/kiro'
+            os.chdir(str(PROJECT_DIR))
+            
+            os.execvp('/bin/bash', ['/bin/bash', '-c', cmd])
         
-        if result.returncode != 0:
-            log(f"Kiro CLI exited with code {result.returncode}")
-            # Don't fail immediately - check if files were created
+        # Parent process
+        os.close(slave_fd)
+        
+        # Read output
+        success, status = read_output(master_fd, timeout=900)
+        
+        os.close(master_fd)
+        
+        # Wait for child to finish
+        try:
+            _, exit_status = os.waitpid(pid, 0)
+            exit_code = os.WEXITSTATUS(exit_status) if os.WIFEXITED(exit_status) else -1
+        except ChildProcessError:
+            exit_code = 0
+        
+        full_output = ''.join(output_lines)
+        if len(full_output) > 15000:
+            full_output = full_output[:7500] + "\n...[truncated]...\n" + full_output[-7500:]
+        log(f"Kiro output:\n{full_output}")
+        
+        if exit_code != 0:
+            log(f"Kiro CLI exited with code {exit_code}")
             if not any(PROJECT_DIR.glob('src/**/*.tsx')):
-                raise Exception(f"Kiro CLI failed with exit code {result.returncode}")
+                raise Exception(f"Kiro CLI failed with exit code {exit_code}")
             log("Files were created despite non-zero exit, continuing...")
         
         return True
         
-    except subprocess.TimeoutExpired:
-        log("Kiro CLI timed out after 15 minutes")
-        raise Exception("Kiro CLI timed out")
-    except FileNotFoundError:
-        log("ERROR: Kiro CLI not found. Ensure 'kiro-cli' is installed.")
-        raise Exception("Kiro CLI not installed")
+    except Exception as e:
+        log(f"Error running Kiro CLI: {e}")
+        import traceback
+        log(traceback.format_exc())
+        raise
 
 
 def run_command(cmd: list, cwd: Path = None, timeout: int = 300) -> tuple[int, str, str]:
@@ -337,9 +418,10 @@ def run_command(cmd: list, cwd: Path = None, timeout: int = 300) -> tuple[int, s
 
 
 def install_dependencies() -> bool:
-    """Run npm install."""
+    """Run npm install with all dependencies (including devDependencies)."""
     log("Installing dependencies...")
-    code, _, _ = run_command(['npm', 'install'], timeout=300)
+    # Use --include=dev to ensure devDependencies are installed (needed for build tools)
+    code, _, _ = run_command(['npm', 'install', '--include=dev'], timeout=300)
     return code == 0
 
 
@@ -350,14 +432,22 @@ def build_project() -> bool:
     return code == 0
 
 
-def push_to_codecommit(repo_name: str) -> str:
+def push_to_codecommit(repo_name: str, prompt_summary: str = None) -> str:
     """Initialize git repo and push to CodeCommit."""
     log(f"Pushing to CodeCommit repository: {repo_name}")
     
     # Initialize git repo
     run_command(['git', 'init'], cwd=PROJECT_DIR)
     run_command(['git', 'add', '-A'], cwd=PROJECT_DIR)
-    run_command(['git', 'commit', '-m', f'Generated artifact for job {JOB_ID}'], cwd=PROJECT_DIR)
+    
+    # Create commit message with summary
+    commit_msg = f'Generated artifact for job {JOB_ID}'
+    if prompt_summary:
+        # Truncate summary if too long
+        summary = prompt_summary[:200] + '...' if len(prompt_summary) > 200 else prompt_summary
+        commit_msg = f'{commit_msg}\n\n{summary}'
+    
+    run_command(['git', 'commit', '-m', commit_msg], cwd=PROJECT_DIR)
     
     # Add remote and push
     repo_url = f'codecommit::{AWS_REGION}://{repo_name}'
@@ -526,7 +616,8 @@ def main():
         # Create output repo and push
         update_status('publishing')
         output_repo_name = create_output_repo(JOB_ID)
-        repo_url = push_to_codecommit(output_repo_name)
+        prompt_summary = request.get('prompt', '')
+        repo_url = push_to_codecommit(output_repo_name, prompt_summary)
         
         # Upload artifacts to S3
         summary = upload_artifacts(repo_url)
@@ -555,7 +646,7 @@ def main():
         log(f"ERROR: {str(e)}")
         import traceback
         log(traceback.format_exc())
-        update_status('failed', error=str(e))
+        update_status('failed', error_msg=str(e))
         raise
     
     finally:

@@ -724,6 +724,15 @@ export class VocAnalyticsStack extends cdk.Stack {
       });
       // S3: full read/write for CRUD
       rawDataBucket.grantReadWrite(dataExplorerRole);
+      // Artifact Builder bucket - use predictable name pattern
+      const artifactBuilderBucketName = `artifact-builder-${this.account}-${this.region}`;
+      dataExplorerRole.addToPolicy(new iam.PolicyStatement({
+        actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject', 's3:ListBucket'],
+        resources: [
+          `arn:aws:s3:::${artifactBuilderBucketName}`,
+          `arn:aws:s3:::${artifactBuilderBucketName}/*`,
+        ],
+      }));
       // DynamoDB: read/write for feedback CRUD
       feedbackTable.grantReadWriteData(dataExplorerRole);
       // KMS for encryption
@@ -745,6 +754,7 @@ export class VocAnalyticsStack extends cdk.Stack {
         memorySize: 256,
         environment: {
           RAW_DATA_BUCKET: rawDataBucket.bucketName,
+          ARTIFACT_BUILDER_BUCKET: artifactBuilderBucketName,
           FEEDBACK_TABLE: feedbackTable.tableName,
           PROCESSING_QUEUE_URL: processingQueueUrl,
           ALLOWED_ORIGIN: allowedOrigin,
@@ -777,6 +787,10 @@ export class VocAnalyticsStack extends cdk.Stack {
       // Stats endpoint
       const dataExplorerStatsResource = dataExplorerResource.addResource('stats');
       dataExplorerStatsResource.addMethod('GET', dataExplorerIntegration, authMethodOptions);
+      
+      // Buckets endpoint - list available buckets
+      const dataExplorerBucketsResource = dataExplorerResource.addResource('buckets');
+      dataExplorerBucketsResource.addMethod('GET', dataExplorerIntegration, authMethodOptions);
     }
 
     // ============================================

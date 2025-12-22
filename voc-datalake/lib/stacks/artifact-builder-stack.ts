@@ -13,6 +13,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as efs from 'aws-cdk-lib/aws-efs';
 import * as codecommit from 'aws-cdk-lib/aws-codecommit';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 
@@ -26,9 +27,25 @@ export class ArtifactBuilderStack extends cdk.Stack {
   public readonly artifactsBucket: s3.Bucket;
   public readonly previewDistribution: cloudfront.Distribution;
   public readonly templateRepo: codecommit.Repository;
+  public readonly executorRepo: ecr.IRepository;
 
   constructor(scope: Construct, id: string, props?: ArtifactBuilderStackProps) {
     super(scope, id, props);
+
+    // ============================================
+    // ECR - EXECUTOR IMAGE REPOSITORY
+    // ============================================
+
+    // Import existing ECR repository (created manually with auth baked in)
+    // If deploying fresh, create the repo first:
+    //   aws ecr create-repository --repository-name artifact-builder-executor --region us-west-2
+    // Then build and push the authenticated image per artifact-builder.md
+    this.executorRepo = ecr.Repository.fromRepositoryName(
+      this, 'ExecutorRepo', 'artifact-builder-executor'
+    ) as ecr.Repository;
+
+    // Note: Lifecycle rules must be set via AWS CLI for imported repos:
+    // aws ecr put-lifecycle-policy --repository-name artifact-builder-executor --lifecycle-policy-text '...'
 
     // ============================================
     // CODECOMMIT - TEMPLATE REPOSITORY
@@ -237,6 +254,9 @@ export class ArtifactBuilderStack extends cdk.Stack {
       ],
     });
 
+    // Grant ECR pull permissions for the pre-authenticated image
+    this.executorRepo.grantPull(taskExecutionRole);
+
     // Task role (for the container to access AWS services)
     const taskRole = new iam.Role(this, 'ExecutorTaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
@@ -247,6 +267,12 @@ export class ArtifactBuilderStack extends cdk.Stack {
     jobsTable.grantReadWriteData(taskRole);
     jobQueue.grantConsumeMessages(taskRole);
     this.templateRepo.grantPull(taskRole);
+
+    // Bedrock permissions (kept for potential future use)
+    // taskRole.addToPolicy(new iam.PolicyStatement({
+    //   actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+    //   resources: ['*'],
+    // }));
 
     // CodeCommit - create repos and push
     taskRole.addToPolicy(new iam.PolicyStatement({
@@ -306,8 +332,20 @@ export class ArtifactBuilderStack extends cdk.Stack {
       },
     });
 
-    // Grant EFS access to task role
-    kiroAuthFileSystem.grantReadWrite(taskRole);
+    // Grant EFS access to task role (using explicit policy to avoid deprecated scope parameter)
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'elasticfilesystem:ClientMount',
+        'elasticfilesystem:ClientWrite',
+        'elasticfilesystem:ClientRootAccess',
+      ],
+      resources: [kiroAuthFileSystem.fileSystemArn],
+      conditions: {
+        StringEquals: {
+          'elasticfilesystem:AccessPointArn': kiroAccessPoint.accessPointArn,
+        },
+      },
+    }));
 
     // Container definition
     const executorLogGroup = new logs.LogGroup(this, 'ExecutorLogs', {
@@ -316,10 +354,14 @@ export class ArtifactBuilderStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // Use pre-authenticated ECR image (auth baked in via docker commit)
+    // To update: docker commit <container> artifact-builder-executor:with-auth
+    //            docker tag ... <account>.dkr.ecr.<region>.amazonaws.com/artifact-builder-executor:with-auth
+    //            docker push ...
+    const executorImage = ecs.ContainerImage.fromEcrRepository(this.executorRepo, 'with-auth');
+
     executorTaskDef.addContainer('executor', {
-      image: ecs.ContainerImage.fromAsset('artifact-builder/executor', {
-        platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
-      }),
+      image: executorImage,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'executor',
         logGroup: executorLogGroup,
@@ -331,12 +373,17 @@ export class ArtifactBuilderStack extends cdk.Stack {
         TEMPLATE_REPO_NAME: this.templateRepo.repositoryName,
         PREVIEW_URL: `https://${this.previewDistribution.distributionDomainName}`,
         HOME: '/home/kiro',
+        MAX_EXECUTION_TIME: '1800',  // 30 minutes max
       },
+      // Enable pseudo-TTY for CLI tools that require it (like Kiro CLI)
+      pseudoTerminal: true,
+      // Give container 2 minutes to gracefully shut down
+      stopTimeout: cdk.Duration.seconds(120),
     }).addMountPoints({
-      // Mount EFS to /home/kiro for Kiro CLI auth persistence
-      // This persists ~/.kiro, ~/.config/kiro, ~/.local/share/kiro-cli
+      // Mount EFS to /home/kiro for Kiro CLI auth persistence (backup)
+      // Primary auth is baked into the image, EFS is for any runtime state
       sourceVolume: 'kiro-auth',
-      containerPath: '/home/kiro',
+      containerPath: '/home/kiro/.kiro-efs',
       readOnly: false,
     });
 
@@ -362,6 +409,32 @@ export class ArtifactBuilderStack extends cdk.Stack {
     this.artifactsBucket.grantReadWrite(apiRole);
     jobQueue.grantSendMessages(apiRole);
 
+    // Permissions for delete: CodeCommit repo deletion and ECS task stop
+    apiRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['codecommit:DeleteRepository'],
+      resources: [`arn:aws:codecommit:${this.region}:${this.account}:artifact-*`],
+    }));
+    
+    // Permissions for source code browser: read CodeCommit repos
+    apiRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'codecommit:GetRepository',
+        'codecommit:GetFolder',
+        'codecommit:GetFile',
+      ],
+      resources: [`arn:aws:codecommit:${this.region}:${this.account}:artifact-*`],
+    }));
+    
+    apiRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['ecs:DescribeTasks', 'ecs:StopTask'],
+      resources: ['*'],
+      conditions: {
+        ArnEquals: {
+          'ecs:cluster': cluster.clusterArn,
+        },
+      },
+    }));
+
     const apiLambda = new lambda.Function(this, 'ArtifactBuilderApi', {
       functionName: 'artifact-builder-api',
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -376,6 +449,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
         ARTIFACTS_BUCKET: this.artifactsBucket.bucketName,
         JOB_QUEUE_URL: jobQueue.queueUrl,
         PREVIEW_URL: `https://${this.previewDistribution.distributionDomainName}`,
+        ECS_CLUSTER: cluster.clusterName,
         POWERTOOLS_SERVICE_NAME: 'artifact-builder-api',
         LOG_LEVEL: 'INFO',
       },
@@ -530,6 +604,11 @@ export class ArtifactBuilderStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'TemplateRepoName', {
       value: this.templateRepo.repositoryName,
       description: 'Template Repository Name',
+    });
+
+    new cdk.CfnOutput(this, 'ExecutorRepoUri', {
+      value: this.executorRepo.repositoryUri,
+      description: 'ECR Repository URI for executor image',
     });
 
     new cdk.CfnOutput(this, 'EcsClusterArn', {

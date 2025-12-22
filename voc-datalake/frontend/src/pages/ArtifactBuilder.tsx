@@ -8,6 +8,7 @@ import {
   Sparkles,
   Loader2,
   ChevronDown,
+  ChevronRight,
   Plus,
   X,
   Clock,
@@ -19,6 +20,12 @@ import {
   Trash2,
   RefreshCw,
   GitBranch,
+  Code,
+  Copy,
+  Check,
+  FileCode,
+  Folder,
+  ArrowLeft,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
@@ -73,6 +80,16 @@ export default function ArtifactBuilder() {
   const [showIterateModal, setShowIterateModal] = useState(false)
   const [iteratePrompt, setIteratePrompt] = useState('')
   const [iterateFromJobId, setIterateFromJobId] = useState<string | null>(null)
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
+  const [showSourceModal, setShowSourceModal] = useState(false)
+  const [sourceJobId, setSourceJobId] = useState<string | null>(null)
+  const [copiedClone, setCopiedClone] = useState(false)
+  const [sourceFiles, setSourceFiles] = useState<{ path: string; type: 'file' | 'folder' }[]>([])
+  const [sourceFilesLoading, setSourceFilesLoading] = useState(false)
+  const [selectedSourceFile, setSelectedSourceFile] = useState<string | null>(null)
+  const [sourceFileContent, setSourceFileContent] = useState<string>('')
+  const [sourceFileLoading, setSourceFileLoading] = useState(false)
+  const [currentSourcePath, setCurrentSourcePath] = useState('')
 
   // Fetch templates
   const { data: templatesData } = useQuery({
@@ -115,6 +132,101 @@ export default function ArtifactBuilder() {
   }
 
   const jobs = jobsData?.jobs || []
+
+  // Group jobs: parent jobs with their iterations as children
+  const groupedJobs = (() => {
+    const parentJobs: (ArtifactJob & { iterations?: ArtifactJob[] })[] = []
+    const iterationMap = new Map<string, ArtifactJob[]>()
+    
+    // First pass: separate parent jobs and iterations
+    jobs.forEach((job: ArtifactJob) => {
+      if (job.parent_job_id) {
+        const iterations = iterationMap.get(job.parent_job_id) || []
+        iterations.push(job)
+        iterationMap.set(job.parent_job_id, iterations)
+      } else {
+        parentJobs.push({ ...job, iterations: [] })
+      }
+    })
+    
+    // Second pass: attach iterations to their parents
+    parentJobs.forEach(parent => {
+      const iterations = iterationMap.get(parent.job_id) || []
+      // Sort iterations by created_at descending
+      iterations.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      parent.iterations = iterations
+    })
+    
+    // Handle orphan iterations (parent was deleted)
+    iterationMap.forEach((iterations, parentId) => {
+      const parentExists = parentJobs.some(p => p.job_id === parentId)
+      if (!parentExists) {
+        // Add iterations as standalone jobs
+        iterations.forEach(iter => parentJobs.push({ ...iter, iterations: [] }))
+      }
+    })
+    
+    return parentJobs
+  })()
+
+  const toggleParentExpanded = (jobId: string) => {
+    setExpandedParents(prev => {
+      const next = new Set(prev)
+      if (next.has(jobId)) {
+        next.delete(jobId)
+      } else {
+        next.add(jobId)
+      }
+      return next
+    })
+  }
+
+  const openSourceModal = async (jobId: string) => {
+    setSourceJobId(jobId)
+    setShowSourceModal(true)
+    setSourceFiles([])
+    setSelectedSourceFile(null)
+    setSourceFileContent('')
+    setCurrentSourcePath('')
+    
+    // Load root directory files
+    await loadSourceFiles(jobId, '')
+  }
+
+  const loadSourceFiles = async (jobId: string, path: string) => {
+    setSourceFilesLoading(true)
+    try {
+      const response = await api.getArtifactSourceFiles(jobId, path)
+      setSourceFiles(response.files || [])
+      setCurrentSourcePath(path)
+    } catch (error) {
+      console.error('Error loading source files:', error)
+      setSourceFiles([])
+    } finally {
+      setSourceFilesLoading(false)
+    }
+  }
+
+  const loadSourceFileContent = async (jobId: string, filePath: string) => {
+    setSourceFileLoading(true)
+    setSelectedSourceFile(filePath)
+    try {
+      const response = await api.getArtifactSourceFileContent(jobId, filePath)
+      setSourceFileContent(response.content || '')
+    } catch (error) {
+      console.error('Error loading file content:', error)
+      setSourceFileContent('Error loading file content')
+    } finally {
+      setSourceFileLoading(false)
+    }
+  }
+
+  const copyCloneCommand = (jobId: string) => {
+    const command = `git clone codecommit::us-west-2://artifact-${jobId}`
+    navigator.clipboard.writeText(command)
+    setCopiedClone(true)
+    setTimeout(() => setCopiedClone(false), 2000)
+  }
 
   // Fetch selected job details
   const { data: selectedJob } = useQuery({
@@ -416,30 +528,81 @@ export default function ArtifactBuilder() {
                 </button>
               </div>
             ) : (
-              jobs.map((job: ArtifactJob) => (
-                <button
-                  key={job.job_id}
-                  onClick={() => setSelectedJobId(job.job_id)}
-                  className={clsx(
-                    'w-full text-left p-4 rounded-xl border transition-all',
-                    selectedJobId === job.job_id
-                      ? 'border-purple-300 bg-purple-50'
-                      : 'border-gray-200 bg-white hover:border-purple-200'
-                  )}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="font-mono text-xs text-gray-500">#{job.job_id.slice(0, 8)}</span>
-                    <StatusBadge status={job.status} />
-                    {job.parent_job_id && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-xs">
-                        <GitBranch className="w-3 h-3" />
-                        iteration
-                      </span>
+              groupedJobs.map((job) => (
+                <div key={job.job_id}>
+                  {/* Parent Job */}
+                  <div className="flex items-start gap-2">
+                    {/* Expand/Collapse button for jobs with iterations */}
+                    {job.iterations && job.iterations.length > 0 ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleParentExpanded(job.job_id) }}
+                        className="mt-4 p-1 hover:bg-gray-100 rounded"
+                      >
+                        {expandedParents.has(job.job_id) ? (
+                          <ChevronDown className="w-4 h-4 text-gray-500" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-gray-500" />
+                        )}
+                      </button>
+                    ) : (
+                      <div className="w-6" /> // Spacer for alignment
                     )}
+                    <button
+                      onClick={() => setSelectedJobId(job.job_id)}
+                      className={clsx(
+                        'flex-1 text-left p-4 rounded-xl border transition-all',
+                        selectedJobId === job.job_id
+                          ? 'border-purple-300 bg-purple-50'
+                          : 'border-gray-200 bg-white hover:border-purple-200'
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-mono text-xs text-gray-500">#{job.job_id.slice(0, 8)}</span>
+                        <StatusBadge status={job.status} />
+                        {job.iterations && job.iterations.length > 0 && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-xs">
+                            <GitBranch className="w-3 h-3" />
+                            {job.iterations.length} iteration{job.iterations.length > 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {job.parent_job_id && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-xs">
+                            <GitBranch className="w-3 h-3" />
+                            iteration
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-900 line-clamp-2">{job.prompt}</p>
+                      <p className="text-xs text-gray-500 mt-2">{formatDate(job.created_at)}</p>
+                    </button>
                   </div>
-                  <p className="text-sm text-gray-900 line-clamp-2">{job.prompt}</p>
-                  <p className="text-xs text-gray-500 mt-2">{formatDate(job.created_at)}</p>
-                </button>
+                  
+                  {/* Iteration Jobs (children) */}
+                  {job.iterations && job.iterations.length > 0 && expandedParents.has(job.job_id) && (
+                    <div className="ml-8 mt-2 space-y-2 border-l-2 border-purple-200 pl-4">
+                      {job.iterations.map((iteration: ArtifactJob) => (
+                        <button
+                          key={iteration.job_id}
+                          onClick={() => setSelectedJobId(iteration.job_id)}
+                          className={clsx(
+                            'w-full text-left p-3 rounded-lg border transition-all',
+                            selectedJobId === iteration.job_id
+                              ? 'border-blue-300 bg-blue-50'
+                              : 'border-gray-200 bg-white hover:border-blue-200'
+                          )}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <GitBranch className="w-3 h-3 text-blue-500" />
+                            <span className="font-mono text-xs text-gray-500">#{iteration.job_id.slice(0, 8)}</span>
+                            <StatusBadge status={iteration.status} />
+                          </div>
+                          <p className="text-sm text-gray-900 line-clamp-1">{iteration.prompt}</p>
+                          <p className="text-xs text-gray-500 mt-1">{formatDate(iteration.created_at)}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))
             )}
           </div>
@@ -491,6 +654,13 @@ export default function ArtifactBuilder() {
                         Open Preview
                       </a>
                     )}
+                    <button
+                      onClick={() => openSourceModal(selectedJob.job_id)}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white font-medium rounded-lg"
+                    >
+                      <Code className="w-4 h-4" />
+                      View Source
+                    </button>
                     <button
                       onClick={() => openIterateModal(selectedJob.job_id)}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg"
@@ -633,6 +803,141 @@ export default function ArtifactBuilder() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Source Code Modal */}
+      {showSourceModal && sourceJobId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                  <Code className="w-5 h-5 text-gray-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold">Source Code</h2>
+                  <p className="text-sm text-gray-500">Job #{sourceJobId.slice(0, 8)}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setShowSourceModal(false); setSourceJobId(null); setSourceFiles([]); setSelectedSourceFile(null) }} 
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Clone Instructions */}
+            <div className="p-4 bg-gray-50 border-b shrink-0">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Clone this repository</p>
+                  <p className="text-xs text-gray-500 mt-1">Requires AWS CLI with CodeCommit credentials configured</p>
+                </div>
+                <button
+                  onClick={() => copyCloneCommand(sourceJobId)}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-mono rounded-lg"
+                >
+                  {copiedClone ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  git clone codecommit::us-west-2://artifact-{sourceJobId}
+                </button>
+              </div>
+            </div>
+
+            {/* File Browser */}
+            <div className="flex-1 flex overflow-hidden">
+              {/* File Tree */}
+              <div className="w-64 border-r bg-gray-50 overflow-y-auto shrink-0">
+                <div className="p-3 border-b bg-white sticky top-0">
+                  {currentSourcePath ? (
+                    <button
+                      onClick={() => {
+                        const parentPath = currentSourcePath.split('/').slice(0, -1).join('/')
+                        loadSourceFiles(sourceJobId, parentPath)
+                      }}
+                      className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      Back
+                    </button>
+                  ) : (
+                    <span className="text-sm font-medium text-gray-700">Files</span>
+                  )}
+                  {currentSourcePath && (
+                    <p className="text-xs text-gray-500 mt-1 truncate">/{currentSourcePath}</p>
+                  )}
+                </div>
+                {sourceFilesLoading ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                  </div>
+                ) : sourceFiles.length === 0 ? (
+                  <div className="p-4 text-sm text-gray-500 text-center">
+                    No files found
+                  </div>
+                ) : (
+                  <div className="p-2 space-y-1">
+                    {sourceFiles.map((file) => (
+                      <button
+                        key={file.path}
+                        onClick={() => {
+                          if (file.type === 'folder') {
+                            loadSourceFiles(sourceJobId, file.path)
+                          } else {
+                            loadSourceFileContent(sourceJobId, file.path)
+                          }
+                        }}
+                        className={clsx(
+                          'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors',
+                          selectedSourceFile === file.path
+                            ? 'bg-purple-100 text-purple-700'
+                            : 'hover:bg-gray-100 text-gray-700'
+                        )}
+                      >
+                        {file.type === 'folder' ? (
+                          <Folder className="w-4 h-4 text-yellow-500 shrink-0" />
+                        ) : (
+                          <FileCode className="w-4 h-4 text-gray-400 shrink-0" />
+                        )}
+                        <span className="truncate">{file.path.split('/').pop()}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* File Content */}
+              <div className="flex-1 flex flex-col overflow-hidden">
+                {selectedSourceFile ? (
+                  <>
+                    <div className="p-3 border-b bg-gray-50 shrink-0">
+                      <p className="text-sm font-mono text-gray-700 truncate">{selectedSourceFile}</p>
+                    </div>
+                    <div className="flex-1 overflow-auto">
+                      {sourceFileLoading ? (
+                        <div className="flex items-center justify-center h-full">
+                          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                        </div>
+                      ) : (
+                        <pre className="p-4 text-sm font-mono text-gray-800 whitespace-pre-wrap break-words">
+                          {sourceFileContent}
+                        </pre>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-gray-500">
+                    <div className="text-center">
+                      <FileCode className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                      <p>Select a file to view its contents</p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

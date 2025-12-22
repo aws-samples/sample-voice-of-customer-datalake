@@ -47,15 +47,23 @@ export default function DataExplorer() {
   const isConfigured = !!config.apiEndpoint
 
   const [viewMode, setViewMode] = useState<ViewMode>('s3-raw')
+  const [selectedBucket, setSelectedBucket] = useState<string>('raw-data')
   const [s3Path, setS3Path] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [sourceFilter, setSourceFilter] = useState<string>('')
   const [editModal, setEditModal] = useState<EditModalState | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 's3' | 'dynamodb'; key: string; id?: string } | null>(null)
 
+  // Fetch available buckets
+  const { data: bucketsData } = useQuery({
+    queryKey: ['data-explorer-buckets'],
+    queryFn: () => api.getDataExplorerBuckets(),
+    enabled: isConfigured,
+  })
+
   const { data: s3Data, isLoading: s3Loading, refetch: refetchS3 } = useQuery({
-    queryKey: ['data-explorer-s3', s3Path.join('/')],
-    queryFn: () => api.getDataExplorerS3(s3Path.join('/')),
+    queryKey: ['data-explorer-s3', selectedBucket, s3Path.join('/')],
+    queryFn: () => api.getDataExplorerS3(s3Path.join('/'), selectedBucket),
     enabled: isConfigured && viewMode === 's3-raw',
   })
 
@@ -79,7 +87,7 @@ export default function DataExplorer() {
 
   const saveS3Mutation = useMutation({
     mutationFn: (params: { key: string; content: string; syncToDynamo?: boolean }) =>
-      api.saveDataExplorerS3(params.key, params.content, params.syncToDynamo),
+      api.saveDataExplorerS3(params.key, params.content, params.syncToDynamo, selectedBucket),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['data-explorer-s3'] })
       queryClient.invalidateQueries({ queryKey: ['data-explorer-feedback'] })
@@ -88,7 +96,7 @@ export default function DataExplorer() {
   })
 
   const deleteS3Mutation = useMutation({
-    mutationFn: (key: string) => api.deleteDataExplorerS3(key),
+    mutationFn: (key: string) => api.deleteDataExplorerS3(key, selectedBucket),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['data-explorer-s3'] })
       setDeleteConfirm(null)
@@ -117,8 +125,13 @@ export default function DataExplorer() {
   const navigateUp = () => setS3Path(s3Path.slice(0, -1))
   const navigateToBreadcrumb = (index: number) => setS3Path(index < 0 ? [] : s3Path.slice(0, index + 1))
 
+  const handleBucketChange = (bucketId: string) => {
+    setSelectedBucket(bucketId)
+    setS3Path([]) // Reset path when switching buckets
+  }
+
   const openS3Editor = async (fullKey: string, mode: 'view' | 'edit') => {
-    const preview = await api.getDataExplorerS3Preview(fullKey)
+    const preview = await api.getDataExplorerS3Preview(fullKey, selectedBucket)
     setEditModal({ 
       isOpen: true, 
       mode, 
@@ -141,7 +154,7 @@ export default function DataExplorer() {
 
   const downloadS3File = async (fullKey: string, filename: string) => {
     try {
-      const preview = await api.getDataExplorerS3Preview(fullKey)
+      const preview = await api.getDataExplorerS3Preview(fullKey, selectedBucket)
       let blob: Blob
       let downloadFilename = filename
 
@@ -224,6 +237,20 @@ export default function DataExplorer() {
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+        {viewMode === 's3-raw' && bucketsData?.buckets && bucketsData.buckets.length > 1 && (
+          <div className="flex items-center gap-2">
+            <HardDrive size={16} className="text-gray-400 flex-shrink-0" />
+            <select 
+              value={selectedBucket} 
+              onChange={(e) => handleBucketChange(e.target.value)} 
+              className="input py-1.5 text-sm flex-1 sm:min-w-[200px]"
+            >
+              {bucketsData.buckets.map((b) => (
+                <option key={b.id} value={b.id}>{b.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {viewMode !== 's3-raw' && (
           <>
             <div className="flex items-center gap-2">
