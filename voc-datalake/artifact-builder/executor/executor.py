@@ -299,7 +299,9 @@ def run_kiro_cli(prompt: str) -> bool:
     prompt_file = PROJECT_DIR / '.kiro_prompt.txt'
     prompt_file.write_text(prompt)
     
-    log(f"Running: kiro-cli chat --no-interactive --trust-all-tools '<prompt>'")
+    # Use Claude Sonnet 4.5 for best results
+    model = "claude-sonnet-4.5"
+    log(f"Running: kiro-cli chat --model {model} --no-interactive --trust-all-tools '<prompt>'")
     log(f"Working directory: {PROJECT_DIR}")
     
     output_lines = []
@@ -334,8 +336,8 @@ def run_kiro_cli(prompt: str) -> bool:
         return True, 0
     
     try:
-        # Build the command
-        cmd = f'cd {PROJECT_DIR} && kiro-cli chat --no-interactive --trust-all-tools "$(cat {prompt_file})"'
+        # Build the command with Claude Sonnet model
+        cmd = f'cd {PROJECT_DIR} && kiro-cli chat --model {model} --no-interactive --trust-all-tools "$(cat {prompt_file})"'
         
         # Use pty.spawn which properly sets up the terminal
         # This creates a proper PTY that Kiro CLI needs
