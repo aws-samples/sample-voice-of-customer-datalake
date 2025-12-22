@@ -175,16 +175,16 @@ def get_templates():
     """Get available scraper templates."""
     templates = [
         {
-            'id': 'trustpilot_jsonld',
-            'name': 'Trustpilot (JSON-LD)',
-            'description': 'Extract reviews using JSON-LD.',
+            'id': 'review_jsonld',
+            'name': 'Review JSON-LD',
+            'description': 'Extract reviews using JSON-LD structured data.',
             'icon': '⭐',
             'extraction_method': 'jsonld',
-            'url_pattern': 'https://www.trustpilot.com/review/{company_domain}',
+            'url_pattern': '',
             'supports_pagination': True,
             'config': {
                 'extraction_method': 'jsonld',
-                'template': 'trustpilot',
+                'template': 'review_jsonld',
                 'pagination': {'enabled': True, 'param': 'page', 'max_pages': 10, 'start': 1}
             }
         },

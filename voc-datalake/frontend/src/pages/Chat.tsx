@@ -134,21 +134,25 @@ export default function Chat() {
     <div className="flex h-[calc(100vh-11rem)] sm:h-[calc(100vh-11rem)] bg-white rounded-xl border border-gray-200 overflow-hidden w-full max-w-full">
       {/* Mobile sidebar overlay */}
       {showSidebar && (
-        <>
-          <div 
-            className="fixed inset-0 bg-black/50 z-40 md:hidden"
-            onClick={() => setShowSidebar(false)}
-          />
-          <div className="fixed inset-y-0 left-0 z-50 md:relative md:z-auto">
-            <ChatSidebar onClose={() => setShowSidebar(false)} />
-          </div>
-        </>
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setShowSidebar(false)}
+        />
+      )}
+      
+      {/* Mobile sidebar */}
+      {showSidebar && (
+        <div className="fixed inset-y-0 left-0 z-50 md:hidden">
+          <ChatSidebar onClose={() => setShowSidebar(false)} />
+        </div>
       )}
       
       {/* Desktop sidebar */}
-      <div className="hidden md:block">
-        {showSidebar && <ChatSidebar />}
-      </div>
+      {showSidebar && (
+        <div className="hidden md:block">
+          <ChatSidebar />
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-gray-100 bg-white">

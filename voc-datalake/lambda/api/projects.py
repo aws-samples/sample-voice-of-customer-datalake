@@ -131,7 +131,7 @@ def invoke_bedrock_chain(steps: list[dict], progress_callback: callable = None) 
 
 @tracer.capture_method
 def list_projects() -> dict:
-    """List all projects."""
+    """List all projects with accurate persona/document counts."""
     if not projects_table:
         return {'projects': []}
     
@@ -143,15 +143,32 @@ def list_projects() -> dict:
     
     projects = []
     for item in response.get('Items', []):
+        project_id = item.get('project_id')
+        
+        # Query actual items to get accurate counts
+        items_response = projects_table.query(
+            KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'),
+            ProjectionExpression='sk'
+        )
+        
+        persona_count = 0
+        document_count = 0
+        for proj_item in items_response.get('Items', []):
+            sk = proj_item.get('sk', '')
+            if sk.startswith('PERSONA#'):
+                persona_count += 1
+            elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('DOC#'):
+                document_count += 1
+        
         projects.append({
-            'project_id': item.get('project_id'),
+            'project_id': project_id,
             'name': item.get('name'),
             'description': item.get('description'),
             'status': item.get('status', 'active'),
             'created_at': item.get('created_at'),
             'updated_at': item.get('updated_at'),
-            'persona_count': item.get('persona_count', 0),
-            'document_count': item.get('document_count', 0),
+            'persona_count': persona_count,
+            'document_count': document_count,
         })
     
     return {'projects': projects}
