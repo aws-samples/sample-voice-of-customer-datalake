@@ -3,5 +3,11 @@
     34892
   ],
   "brandName": "VoC Analytics",
-  "frontendDomain": "d1be30ki9oxv87.cloudfront.net"
+  "frontendDomain": "d1be30ki9oxv87.cloudfront.net",
+  "availability-zones:account=512144631813:region=us-west-2": [
+    "us-west-2a",
+    "us-west-2b",
+    "us-west-2c",
+    "us-west-2d"
+  ]
 }
