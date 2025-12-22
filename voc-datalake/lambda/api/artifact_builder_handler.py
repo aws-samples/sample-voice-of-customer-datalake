@@ -107,8 +107,8 @@ def create_job():
     if not prompt:
         raise BadRequestError("prompt is required")
     
-    if len(prompt) > 10000:
-        raise BadRequestError("prompt must be less than 10000 characters")
+    if len(prompt) > 50000:
+        raise BadRequestError("prompt must be less than 50000 characters")
     
     # Optional fields
     project_type = body.get('project_type', 'react-vite')
@@ -116,6 +116,24 @@ def create_job():
     pages = body.get('pages', [])
     features = body.get('features', [])
     include_mock_data = body.get('include_mock_data', False)
+    
+    # Iteration support - reference a parent job to continue from
+    parent_job_id = body.get('parent_job_id')
+    parent_repo_name = None
+    
+    # If iterating, get the parent job's repo
+    if parent_job_id:
+        parent_response = jobs_table.get_item(
+            Key={'pk': f'JOB#{parent_job_id}', 'sk': 'META'}
+        )
+        parent_job = parent_response.get('Item')
+        if not parent_job:
+            raise BadRequestError(f"Parent job {parent_job_id} not found")
+        if parent_job.get('status') != 'done':
+            raise BadRequestError(f"Parent job {parent_job_id} is not complete")
+        # The repo name is artifact-{job_id}
+        parent_repo_name = f'artifact-{parent_job_id}'
+        logger.info(f"Iterating from parent job {parent_job_id}, repo: {parent_repo_name}")
     
     # Validate project type
     valid_types = [t['id'] for t in TEMPLATES]
@@ -143,6 +161,8 @@ def create_job():
         'pages': pages,
         'features': features,
         'include_mock_data': include_mock_data,
+        'parent_job_id': parent_job_id,
+        'parent_repo_name': parent_repo_name,
         'created_at': now.isoformat(),
         'updated_at': now.isoformat(),
         'timeline': [
@@ -158,7 +178,7 @@ def create_job():
     
     # Save to DynamoDB
     jobs_table.put_item(Item=job)
-    logger.info(f"Created job {job_id}")
+    logger.info(f"Created job {job_id}" + (f" (iterating from {parent_job_id})" if parent_job_id else ""))
     
     # Upload prompt payload to S3
     payload = {
@@ -169,6 +189,8 @@ def create_job():
         'pages': pages,
         'features': features,
         'include_mock_data': include_mock_data,
+        'parent_job_id': parent_job_id,
+        'parent_repo_name': parent_repo_name,
     }
     
     s3.put_object(
@@ -179,18 +201,25 @@ def create_job():
     )
     
     # Send message to SQS to trigger execution
-    sqs.send_message(
-        QueueUrl=JOB_QUEUE_URL,
-        MessageBody=json.dumps({'job_id': job_id}),
-        MessageGroupId=job_id if '.fifo' in JOB_QUEUE_URL else None,
-    ) if JOB_QUEUE_URL else None
+    if JOB_QUEUE_URL:
+        message_params = {
+            'QueueUrl': JOB_QUEUE_URL,
+            'MessageBody': json.dumps({'job_id': job_id}),
+        }
+        # Only add MessageGroupId for FIFO queues
+        if '.fifo' in JOB_QUEUE_URL:
+            message_params['MessageGroupId'] = job_id
+        sqs.send_message(**message_params)
     
     metrics.add_metric(name="JobsCreated", unit="Count", value=1)
+    if parent_job_id:
+        metrics.add_metric(name="IterationJobsCreated", unit="Count", value=1)
     
     return {
         'job_id': job_id,
         'status': 'queued',
         'message': 'Job created successfully',
+        'parent_job_id': parent_job_id,
     }
 
 
@@ -313,6 +342,51 @@ def get_download_url(job_id: str):
         'job_id': job_id,
         'download_url': download_url,
         'expires_in': 3600,
+    }
+
+
+@app.delete("/jobs/<job_id>")
+@tracer.capture_method
+def delete_job(job_id: str):
+    """Delete a job and its artifacts."""
+    # Check job exists
+    response = jobs_table.get_item(
+        Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
+    )
+    job = response.get('Item')
+    if not job:
+        raise NotFoundError(f"Job {job_id} not found")
+    
+    # Delete from DynamoDB
+    jobs_table.delete_item(
+        Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
+    )
+    
+    # Delete S3 artifacts (best effort)
+    try:
+        # List all objects with the job prefix
+        paginator = s3.get_paginator('list_objects_v2')
+        prefix = f'jobs/{job_id}/'
+        
+        objects_to_delete = []
+        for page in paginator.paginate(Bucket=ARTIFACTS_BUCKET, Prefix=prefix):
+            for obj in page.get('Contents', []):
+                objects_to_delete.append({'Key': obj['Key']})
+        
+        if objects_to_delete:
+            s3.delete_objects(
+                Bucket=ARTIFACTS_BUCKET,
+                Delete={'Objects': objects_to_delete}
+            )
+            logger.info(f"Deleted {len(objects_to_delete)} S3 objects for job {job_id}")
+    except Exception as e:
+        logger.warning(f"Error deleting S3 artifacts for job {job_id}: {e}")
+    
+    metrics.add_metric(name="JobsDeleted", unit="Count", value=1)
+    
+    return {
+        'success': True,
+        'message': f'Job {job_id} deleted',
     }
 
 

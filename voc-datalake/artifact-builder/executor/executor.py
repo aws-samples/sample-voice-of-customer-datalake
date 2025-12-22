@@ -40,8 +40,7 @@ JOB_ID = os.environ.get('JOB_ID', '')
 ARTIFACTS_BUCKET = os.environ.get('ARTIFACTS_BUCKET', '')
 JOBS_TABLE = os.environ.get('JOBS_TABLE', 'artifact-builder-jobs')
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
-TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO
-_NAME', 'artifact-builder-template')
+TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO_NAME', 'artifact-builder-template')
 
 # Paths - app files are in /app, workspace is /workspace (not in EFS-mounted home)
 WORKSPACE = Path('/workspace')
@@ -119,9 +118,12 @@ def get_job_request() -> dict:
     return json.loads(response['Body'].read().decode('utf-8'))
 
 
-def clone_template_repo():
-    """Clone the read-only template repository from CodeCommit."""
-    log(f"Cloning template repository: {TEMPLATE_REPO_NAME}")
+def clone_template_repo(parent_repo_name: str = None):
+    """Clone the template or parent repository from CodeCommit."""
+    repo_to_clone = parent_repo_name or TEMPLATE_REPO_NAME
+    is_iteration = parent_repo_name is not None
+    
+    log(f"Cloning {'parent' if is_iteration else 'template'} repository: {repo_to_clone}")
     
     # Clean up any existing directories
     if TEMPLATE_DIR.exists():
@@ -130,7 +132,7 @@ def clone_template_repo():
         shutil.rmtree(PROJECT_DIR)
     
     # Use git-remote-codecommit for authentication
-    repo_url = f'codecommit::{AWS_REGION}://{TEMPLATE_REPO_NAME}'
+    repo_url = f'codecommit::{AWS_REGION}://{repo_to_clone}'
     
     result = subprocess.run(
         ['git', 'clone', repo_url, str(TEMPLATE_DIR)],
@@ -141,9 +143,9 @@ def clone_template_repo():
     
     if result.returncode != 0:
         log(f"Git clone stderr: {result.stderr}")
-        raise Exception(f"Failed to clone template: {result.stderr}")
+        raise Exception(f"Failed to clone {'parent' if is_iteration else 'template'}: {result.stderr}")
     
-    log(f"Template cloned successfully to {TEMPLATE_DIR}")
+    log(f"Repository cloned successfully to {TEMPLATE_DIR}")
     
     # Copy template to project directory (we'll work here)
     shutil.copytree(TEMPLATE_DIR, PROJECT_DIR, dirs_exist_ok=True)
@@ -154,6 +156,8 @@ def clone_template_repo():
         shutil.rmtree(git_dir)
     
     log(f"Project directory prepared at {PROJECT_DIR}")
+    
+    return is_iteration
 
 
 def create_output_repo(job_id: str) -> str:
@@ -181,7 +185,7 @@ def create_output_repo(job_id: str) -> str:
         return repo_name
 
 
-def build_kiro_prompt(request: dict) -> str:
+def build_kiro_prompt(request: dict, is_iteration: bool = False) -> str:
     """Build the prompt to send to Kiro CLI."""
     base_prompt = KIRO_PROMPT_FILE.read_text() if KIRO_PROMPT_FILE.exists() else ""
     
@@ -191,8 +195,33 @@ def build_kiro_prompt(request: dict) -> str:
     pages = request.get('pages', [])
     features = request.get('features', [])
     include_mock_data = request.get('include_mock_data', False)
+    parent_job_id = request.get('parent_job_id')
     
-    user_prompt = f"""{base_prompt}
+    if is_iteration:
+        # Iteration prompt - modify existing code
+        user_prompt = f"""{base_prompt}
+
+## Iteration Request
+
+You are continuing work on an existing project. The codebase has already been generated in a previous session.
+
+**Previous Job ID:** {parent_job_id}
+
+**New Request:**
+{prompt}
+
+## Instructions for Iteration
+
+1. Review the existing codebase structure
+2. Make the requested changes while preserving existing functionality
+3. Do NOT recreate files that don't need changes
+4. Ensure the project still builds successfully with `npm run build`
+5. Keep the design consistent with the existing style
+6. When done, output a summary of what you changed
+"""
+    else:
+        # New project prompt
+        user_prompt = f"""{base_prompt}
 
 ## User Request
 
@@ -203,17 +232,17 @@ def build_kiro_prompt(request: dict) -> str:
 - Project type: {project_type}
 - Style preferences: {style}
 """
-    
-    if pages:
-        user_prompt += f"- Pages/routes to create: {', '.join(pages)}\n"
-    
-    if features:
-        user_prompt += f"- Features to include: {', '.join(features)}\n"
-    
-    if include_mock_data:
-        user_prompt += "- Include realistic mock data for demonstration\n"
-    
-    user_prompt += """
+        
+        if pages:
+            user_prompt += f"- Pages/routes to create: {', '.join(pages)}\n"
+        
+        if features:
+            user_prompt += f"- Features to include: {', '.join(features)}\n"
+        
+        if include_mock_data:
+            user_prompt += "- Include realistic mock data for demonstration\n"
+        
+        user_prompt += """
 ## Instructions
 
 1. Analyze the existing template structure in the current directory
@@ -452,14 +481,20 @@ def main():
     try:
         # Get job request
         request = get_job_request()
+        parent_repo_name = request.get('parent_repo_name')
+        parent_job_id = request.get('parent_job_id')
+        
+        if parent_job_id:
+            log(f"ITERATION MODE: Continuing from job {parent_job_id}")
+        
         log(f"Got request: {request.get('prompt', '')[:200]}...")
         
-        # Clone template from CodeCommit
+        # Clone template or parent repo from CodeCommit
         update_status('cloning')
-        clone_template_repo()
+        is_iteration = clone_template_repo(parent_repo_name)
         
         # Build Kiro prompt
-        kiro_prompt = build_kiro_prompt(request)
+        kiro_prompt = build_kiro_prompt(request, is_iteration)
         log(f"Built prompt ({len(kiro_prompt)} chars)")
         
         # Run Kiro CLI to generate code (no fallback - must succeed)
@@ -496,6 +531,11 @@ def main():
         # Upload artifacts to S3
         summary = upload_artifacts(repo_url)
         
+        # Add iteration info to summary
+        if parent_job_id:
+            summary['parent_job_id'] = parent_job_id
+            summary['is_iteration'] = True
+        
         # Get preview URL from environment
         preview_base = os.environ.get('PREVIEW_URL', '')
         if preview_base:
@@ -505,6 +545,8 @@ def main():
         update_status('done', summary=summary, repo_url=repo_url, preview_url=preview_url)
         log("=" * 50)
         log("Job completed successfully!")
+        if parent_job_id:
+            log(f"Iterated from: {parent_job_id}")
         log(f"Repository: {repo_url}")
         log(f"Preview: {preview_url}")
         log("=" * 50)

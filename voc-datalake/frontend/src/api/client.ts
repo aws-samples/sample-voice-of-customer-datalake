@@ -861,8 +861,8 @@ export const api = {
   getArtifactTemplates: () => 
     fetchArtifactApi<{ templates: ArtifactTemplate[]; styles: ArtifactStyle[] }>('/templates'),
   
-  createArtifactJob: (data: { prompt: string; project_type: string; style: string; include_mock_data?: boolean; pages?: string[] }) =>
-    fetchArtifactApi<{ job_id: string }>('/jobs', {
+  createArtifactJob: (data: { prompt: string; project_type: string; style: string; include_mock_data?: boolean; pages?: string[]; parent_job_id?: string }) =>
+    fetchArtifactApi<{ job_id: string; parent_job_id?: string }>('/jobs', {
       method: 'POST',
       body: JSON.stringify(data)
     }),
@@ -880,6 +880,9 @@ export const api = {
   
   getArtifactDownloadUrl: (jobId: string) =>
     fetchArtifactApi<{ download_url: string }>(`/jobs/${jobId}/download`),
+  
+  deleteArtifactJob: (jobId: string) =>
+    fetchArtifactApi<{ success: boolean; message: string }>(`/jobs/${jobId}`, { method: 'DELETE' }),
 }
 
 // Project types
@@ -1095,6 +1098,8 @@ export interface ArtifactJob {
   style: string
   include_mock_data?: boolean
   pages?: string[]
+  parent_job_id?: string
+  parent_repo_name?: string
   preview_url?: string
   repo_url?: string
   error?: string
@@ -1103,6 +1108,8 @@ export interface ArtifactJob {
   timeline?: Array<{ status: string; timestamp: string }>
   summary?: {
     files_changed?: string[]
+    is_iteration?: boolean
+    parent_job_id?: string
   }
 }
 

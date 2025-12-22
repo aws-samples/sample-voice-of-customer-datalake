@@ -467,6 +467,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
 
     const jobResource = jobsResource.addResource('{jobId}');
     jobResource.addMethod('GET', apiIntegration);
+    jobResource.addMethod('DELETE', apiIntegration);
 
     const logsResource = jobResource.addResource('logs');
     logsResource.addMethod('GET', apiIntegration);
@@ -477,6 +478,25 @@ export class ArtifactBuilderStack extends cdk.Stack {
     // /templates endpoint
     const templatesResource = this.api.root.addResource('templates');
     templatesResource.addMethod('GET', apiIntegration);
+
+    // Add CORS headers to error responses (4XX, 5XX)
+    this.api.addGatewayResponse('Default4XX', {
+      type: apigateway.ResponseType.DEFAULT_4XX,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': "'*'",
+        'Access-Control-Allow-Headers': "'Content-Type,Authorization'",
+        'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'",
+      },
+    });
+
+    this.api.addGatewayResponse('Default5XX', {
+      type: apigateway.ResponseType.DEFAULT_5XX,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': "'*'",
+        'Access-Control-Allow-Headers': "'Content-Type,Authorization'",
+        'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'",
+      },
+    });
 
     // ============================================
     // OUTPUTS

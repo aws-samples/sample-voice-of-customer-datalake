@@ -16,6 +16,9 @@ import {
   ExternalLink,
   History,
   Settings,
+  Trash2,
+  RefreshCw,
+  GitBranch,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
@@ -67,6 +70,9 @@ export default function ArtifactBuilder() {
   const [newPage, setNewPage] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+  const [showIterateModal, setShowIterateModal] = useState(false)
+  const [iteratePrompt, setIteratePrompt] = useState('')
+  const [iterateFromJobId, setIterateFromJobId] = useState<string | null>(null)
 
   // Fetch templates
   const { data: templatesData } = useQuery({
@@ -148,6 +154,44 @@ export default function ArtifactBuilder() {
       queryClient.invalidateQueries({ queryKey: ['artifact-jobs'] })
     },
   })
+
+  // Delete job mutation
+  const deleteJob = useMutation({
+    mutationFn: api.deleteArtifactJob,
+    onSuccess: () => {
+      setSelectedJobId(null)
+      queryClient.invalidateQueries({ queryKey: ['artifact-jobs'] })
+    },
+  })
+
+  // Iterate job mutation
+  const iterateJob = useMutation({
+    mutationFn: (data: { prompt: string; parent_job_id: string }) => 
+      api.createArtifactJob({
+        prompt: data.prompt,
+        project_type: 'react-vite',
+        style: 'minimal',
+        parent_job_id: data.parent_job_id,
+      }),
+    onSuccess: (data) => {
+      setSelectedJobId(data.job_id)
+      setShowIterateModal(false)
+      setIteratePrompt('')
+      setIterateFromJobId(null)
+      queryClient.invalidateQueries({ queryKey: ['artifact-jobs'] })
+    },
+  })
+
+  const handleIterate = () => {
+    if (!iteratePrompt.trim() || !iterateFromJobId) return
+    iterateJob.mutate({ prompt: iteratePrompt.trim(), parent_job_id: iterateFromJobId })
+  }
+
+  const openIterateModal = (jobId: string) => {
+    setIterateFromJobId(jobId)
+    setIteratePrompt('')
+    setShowIterateModal(true)
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -386,6 +430,12 @@ export default function ArtifactBuilder() {
                   <div className="flex items-center gap-2 mb-2">
                     <span className="font-mono text-xs text-gray-500">#{job.job_id.slice(0, 8)}</span>
                     <StatusBadge status={job.status} />
+                    {job.parent_job_id && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-xs">
+                        <GitBranch className="w-3 h-3" />
+                        iteration
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-gray-900 line-clamp-2">{job.prompt}</p>
                   <p className="text-xs text-gray-500 mt-2">{formatDate(job.created_at)}</p>
@@ -413,6 +463,20 @@ export default function ArtifactBuilder() {
                   </div>
                 )}
 
+                {/* Parent Job Info (for iterations) */}
+                {selectedJob.parent_job_id && (
+                  <div className="flex items-center gap-2 text-sm text-purple-600 bg-purple-50 px-3 py-2 rounded-lg">
+                    <GitBranch className="w-4 h-4" />
+                    <span>Iterated from job #{selectedJob.parent_job_id.slice(0, 8)}</span>
+                    <button
+                      onClick={() => setSelectedJobId(selectedJob.parent_job_id!)}
+                      className="underline hover:text-purple-800"
+                    >
+                      View parent
+                    </button>
+                  </div>
+                )}
+
                 {/* Actions */}
                 {selectedJob.status === 'done' && (
                   <div className="flex flex-wrap gap-3">
@@ -427,6 +491,13 @@ export default function ArtifactBuilder() {
                         Open Preview
                       </a>
                     )}
+                    <button
+                      onClick={() => openIterateModal(selectedJob.job_id)}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Iterate
+                    </button>
                     {downloadData?.download_url && (
                       <a
                         href={downloadData.download_url}
@@ -435,6 +506,28 @@ export default function ArtifactBuilder() {
                         Download Source
                       </a>
                     )}
+                    <button
+                      onClick={() => deleteJob.mutate(selectedJob.job_id)}
+                      disabled={deleteJob.isPending}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg disabled:opacity-50"
+                    >
+                      {deleteJob.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      Delete
+                    </button>
+                  </div>
+                )}
+
+                {/* Delete button for non-done jobs */}
+                {selectedJob.status !== 'done' && (
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => deleteJob.mutate(selectedJob.job_id)}
+                      disabled={deleteJob.isPending}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg disabled:opacity-50"
+                    >
+                      {deleteJob.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      Delete Job
+                    </button>
                   </div>
                 )}
 
@@ -466,6 +559,81 @@ export default function ArtifactBuilder() {
                 Select a job to view details
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Iterate Modal */}
+      {showIterateModal && iterateFromJobId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <RefreshCw className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold">Iterate on Artifact</h2>
+                  <p className="text-sm text-gray-500">Continue building from job #{iterateFromJobId.slice(0, 8)}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setShowIterateModal(false); setIteratePrompt(''); setIterateFromJobId(null) }} 
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  What changes do you want to make?
+                </label>
+                <textarea
+                  value={iteratePrompt}
+                  onChange={(e) => setIteratePrompt(e.target.value)}
+                  placeholder="e.g., Add a dark mode toggle, Change the hero section colors to blue, Add a contact form page..."
+                  className="w-full h-32 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                  autoFocus
+                />
+                <p className="mt-2 text-sm text-gray-500">
+                  Kiro will modify the existing codebase based on your request, preserving what's already built.
+                </p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-medium text-blue-800 mb-2">💡 Iteration Tips</h4>
+                <ul className="text-sm text-blue-700 space-y-1">
+                  <li>• Be specific about what you want to change</li>
+                  <li>• Reference existing components or pages by name</li>
+                  <li>• You can iterate multiple times on the same artifact</li>
+                </ul>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
+              <button 
+                onClick={() => { setShowIterateModal(false); setIteratePrompt(''); setIterateFromJobId(null) }} 
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleIterate}
+                disabled={!iteratePrompt.trim() || iterateJob.isPending}
+                className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {iterateJob.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Start Iteration
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

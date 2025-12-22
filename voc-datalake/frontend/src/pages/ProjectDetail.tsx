@@ -611,7 +611,7 @@ export default function ProjectDetail() {
     mutationFn: (doc: ProjectDocument) => api.createArtifactJob({
       prompt: `Build a working web prototype based on this PR/FAQ document:\n\n# ${doc.title}\n\n${doc.content}`,
       project_type: 'react-vite',
-      style: 'modern',
+      style: 'minimal',
       include_mock_data: true,
     }),
     onSuccess: (data) => {
