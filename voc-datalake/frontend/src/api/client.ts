@@ -699,7 +699,7 @@ export const api = {
       body: JSON.stringify(data)
     }),
   
-  updateDocument: (projectId: string, documentId: string, data: { title?: string; content?: string }) =>
+  updateDocument: (projectId: string, documentId: string, data: { title?: string; content?: string; artifact_job_id?: string }) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, {
       method: 'PUT',
       body: JSON.stringify(data)
@@ -1003,6 +1003,7 @@ export interface ProjectDocument {
   content: string
   feature_idea?: string
   question?: string
+  artifact_job_id?: string  // Links to artifact builder job if prototype was built
   created_at: string
   updated_at?: string
 }

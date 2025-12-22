@@ -3,8 +3,9 @@
  * Default view shows artifact history, with a modal for building new artifacts
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import {
   Sparkles,
   Loader2,
@@ -130,6 +131,7 @@ export default function ArtifactBuilder() {
   const queryClient = useQueryClient()
   const { config } = useConfigStore()
   const isConfigured = !!config.artifactBuilderEndpoint
+  const [searchParams] = useSearchParams()
   
   // Build modal state
   const [showBuildModal, setShowBuildModal] = useState(false)
@@ -147,6 +149,14 @@ export default function ArtifactBuilder() {
   const [iteratePrompt, setIteratePrompt] = useState('')
   const [iterateFromJobId, setIterateFromJobId] = useState<string | null>(null)
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
+  
+  // Auto-select job from URL param (e.g., /artifact-builder?job=abc123)
+  useEffect(() => {
+    const jobId = searchParams.get('job')
+    if (jobId && !selectedJobId) {
+      setSelectedJobId(jobId)
+    }
+  }, [searchParams, selectedJobId])
   const [showSourceModal, setShowSourceModal] = useState(false)
   const [sourceJobId, setSourceJobId] = useState<string | null>(null)
   const [copiedClone, setCopiedClone] = useState(false)
@@ -516,29 +526,29 @@ export default function ArtifactBuilder() {
                   <button
                     onClick={() => setSelectedJobId(job.job_id)}
                     className={clsx(
-                      'flex-1 text-left p-4 rounded-xl border transition-all',
+                      'flex-1 min-w-0 text-left p-4 rounded-xl border transition-all',
                       selectedJobId === job.job_id
                         ? 'border-purple-300 bg-purple-50'
                         : 'border-gray-200 bg-white hover:border-purple-200'
                     )}
                   >
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-2">
                       <span className="font-mono text-xs text-gray-500">#{job.job_id.slice(0, 8)}</span>
                       <StatusBadge status={job.status} />
                       {job.iterations && job.iterations.length > 0 && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-xs">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-xs whitespace-nowrap">
                           <GitBranch className="w-3 h-3" />
-                          {job.iterations.length} iteration{job.iterations.length > 1 ? 's' : ''}
+                          {job.iterations.length}
                         </span>
                       )}
                       {job.parent_job_id && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-xs">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-xs whitespace-nowrap">
                           <GitBranch className="w-3 h-3" />
-                          iteration
+                          iter
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-900 line-clamp-2">{job.prompt}</p>
+                    <p className="text-sm text-gray-900 line-clamp-2 break-words">{job.prompt}</p>
                     <p className="text-xs text-gray-500 mt-2">{formatDate(job.created_at)}</p>
                   </button>
                 </div>

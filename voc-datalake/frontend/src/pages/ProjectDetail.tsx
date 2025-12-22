@@ -608,22 +608,29 @@ export default function ProjectDetail() {
   
   // Artifact Builder mutation - build prototype from PR/FAQ
   const buildArtifactMut = useMutation({
-    mutationFn: (doc: ProjectDocument) => {
+    mutationFn: async (doc: ProjectDocument) => {
       // Build a rich prompt that includes brand context
       const brandContext = config.brandName 
         ? `\n\n## Brand Guidelines\n- Company: ${config.brandName}\n- Follow the company's visual identity, color scheme, and design language\n- Ensure the UI feels consistent with ${config.brandName}'s brand\n- Use professional, on-brand styling throughout`
         : ''
       
-      return api.createArtifactJob({
+      const result = await api.createArtifactJob({
         prompt: `Build a working web prototype based on this PR/FAQ document.${brandContext}\n\n# ${doc.title}\n\n${doc.content}`,
         project_type: 'react-vite',
         style: 'corporate',  // Use corporate style for branded prototypes
         include_mock_data: true,
       })
+      
+      // Link the artifact job to the document
+      await api.updateDocument(id!, doc.document_id, { artifact_job_id: result.job_id })
+      
+      return { ...result, document_id: doc.document_id }
     },
     onSuccess: (data) => {
       setArtifactJobId(data.job_id)
       setShowArtifactPreview(true)
+      // Refresh project data to get updated document with artifact_job_id
+      queryClient.invalidateQueries({ queryKey: ['project', id] })
     }
   })
   
@@ -1485,21 +1492,34 @@ export default function ProjectDetail() {
                   <div className="flex items-start justify-between mb-4">
                     <h2 className="text-xl font-bold">{selectedDoc.title}</h2>
                     <div className="flex items-center gap-2">
-                      {/* Build Prototype button - only for PRD/PRFAQ documents when artifact builder is configured */}
+                      {/* Build Prototype / View Artifact button - only for PRD/PRFAQ documents when artifact builder is configured */}
                       {(selectedDoc.document_type === 'prd' || selectedDoc.document_type === 'prfaq') && config.artifactBuilderEndpoint && (
-                        <button
-                          onClick={() => buildArtifactMut.mutate(selectedDoc)}
-                          disabled={buildArtifactMut.isPending}
-                          className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg text-sm font-medium hover:from-purple-700 hover:to-pink-700 disabled:opacity-50"
-                          title="Build a working prototype from this document"
-                        >
-                          {buildArtifactMut.isPending ? (
-                            <Loader2 size={16} className="animate-spin" />
-                          ) : (
-                            <Play size={16} />
-                          )}
-                          Build Prototype
-                        </button>
+                        selectedDoc.artifact_job_id ? (
+                          // Already has an artifact - show View Artifact button
+                          <button
+                            onClick={() => navigate(`/artifact-builder?job=${selectedDoc.artifact_job_id}`)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg text-sm font-medium hover:from-green-700 hover:to-emerald-700"
+                            title="View the built prototype"
+                          >
+                            <ExternalLink size={16} />
+                            View Artifact
+                          </button>
+                        ) : (
+                          // No artifact yet - show Build Prototype button
+                          <button
+                            onClick={() => buildArtifactMut.mutate(selectedDoc)}
+                            disabled={buildArtifactMut.isPending}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg text-sm font-medium hover:from-purple-700 hover:to-pink-700 disabled:opacity-50"
+                            title="Build a working prototype from this document"
+                          >
+                            {buildArtifactMut.isPending ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <Play size={16} />
+                            )}
+                            Build Prototype
+                          </button>
+                        )
                       )}
                       <DocumentExportMenu document={selectedDoc} project={project} />
                       <button 

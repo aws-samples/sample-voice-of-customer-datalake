@@ -1547,6 +1547,9 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
         update_expr += ', #content = :content'
         expr_values[':content'] = body['content']
         expr_names['#content'] = 'content'
+    if 'artifact_job_id' in body:
+        update_expr += ', artifact_job_id = :artifact_job_id'
+        expr_values[':artifact_job_id'] = body['artifact_job_id']
     
     # Find the SK for this document
     response = projects_table.query(
