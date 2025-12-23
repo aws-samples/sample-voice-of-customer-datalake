@@ -15,7 +15,7 @@ import { X, ChevronLeft, ChevronRight, Loader2, FileText } from 'lucide-react'
 import type { ProjectPersona, ProjectDocument } from '../api/client'
 import { api } from '../api/client'
 import { useConfigStore } from '../store/configStore'
-import { SOURCES as DEFAULT_SOURCES, CATEGORIES, SENTIMENTS } from '../constants/filters'
+import { SOURCES as DEFAULT_SOURCES, CATEGORIES as DEFAULT_CATEGORIES, SENTIMENTS } from '../constants/filters'
 import clsx from 'clsx'
 
 // Shared context configuration
@@ -94,6 +94,7 @@ export default function DataSourceWizard({
 }: DataSourceWizardProps) {
   const [step, setStep] = useState(1)
   const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES)
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES)
   const { config } = useConfigStore()
 
   // Fetch actual sources from API
@@ -108,6 +109,21 @@ export default function DataSourceWizard({
       }
     }).catch(() => {
       // Keep default sources on error
+    })
+  }, [config.apiEndpoint])
+
+  // Fetch categories from settings API
+  useEffect(() => {
+    if (!config.apiEndpoint) return
+    
+    api.getCategoriesConfig().then(data => {
+      if (data.categories && data.categories.length > 0) {
+        // Extract category names from the config
+        const categoryNames = data.categories.map(c => c.name)
+        setCategories(categoryNames)
+      }
+    }).catch(() => {
+      // Keep default categories on error
     })
   }, [config.apiEndpoint])
 
@@ -315,7 +331,7 @@ export default function DataSourceWizard({
               <div>
                 <h3 className="font-medium mb-2 sm:mb-3">Categories</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {CATEGORIES.map(c => (
+                  {categories.map(c => (
                     <button
                       key={c}
                       onClick={() => onContextChange({ ...contextConfig, categories: toggleArrayItem(contextConfig.categories, c) })}

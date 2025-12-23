@@ -1,10 +1,10 @@
 /**
- * @fileoverview Authentication state management using Zustand with sessionStorage persistence.
+ * @fileoverview Authentication state management using Zustand with localStorage persistence.
  * 
- * Security considerations:
- * - Uses sessionStorage instead of localStorage to limit token exposure
- * - Tokens are automatically cleared when browser tab/window closes
- * - Reduces risk of XSS-based token theft compared to localStorage
+ * Features:
+ * - Auth state shared across browser tabs via localStorage
+ * - Tokens persist until user explicitly logs out
+ * - Automatic token refresh handled by auth service
  * 
  * @module store/authStore
  */
@@ -86,9 +86,9 @@ export const useAuthStore = create<AuthState>()(
     }),
     { 
       name: 'voc-auth',
-      // Use sessionStorage instead of localStorage for security
-      // Tokens are cleared when browser tab/window is closed
-      storage: createJSONStorage(() => sessionStorage),
+      // Use localStorage to share auth state across browser tabs
+      // Tokens persist until user explicitly logs out
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,
