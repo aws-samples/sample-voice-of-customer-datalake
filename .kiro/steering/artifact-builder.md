@@ -7,41 +7,6 @@ fileMatchPattern: "**/artifact-builder/**"
 
 The Artifact Builder generates web prototypes using Kiro CLI in ECS Fargate. This document captures all the technical details and lessons learned.
 
-## Kiro CLI Login Process (IDC Account)
-
-When building or updating the executor image, you need to authenticate Kiro CLI. Here's the process:
-
-1. Start the Kiro CLI login:
-   ```bash
-   kiro-cli login
-   ```
-
-2. Select "Use with IDC Account":
-   ```
-   ? Select login method ›
-     Use with Builder ID
-   ❯ Use with IDC Account
-   ```
-
-3. Enter the following when prompted:
-   - **Start URL:** `https://amzn.awsapps.com/start`
-   - **Region:** `us-east-1`
-
-4. A code and URL will be displayed:
-   ```
-   Confirm the following code in the browser
-   Code: SOME-CODE
-   Open this URL: https://amzn.awsapps.com/start/#/device?user_code=SOME-CODE
-   ```
-
-5. Open the URL in your browser and verify the code matches what's shown in your terminal.
-
-6. Complete the browser authentication flow.
-
-7. Verify login succeeded:
-   ```bash
-   kiro-cli whoami
-   ```
 
 ## Architecture Overview
 
@@ -98,6 +63,9 @@ docker run -it --platform linux/amd64 --name kiro-amd64-auth artifact-builder-ex
 # 3. Inside container: Login to Kiro CLI
 kiro-cli login --use-device-flow
 # Select "Use with Builder ID"
+# Enter the following when prompted:
+#   - Start URL: https://amzn.awsapps.com/start
+#   - Region: us-east-1
 # Complete browser auth
 # Verify with: kiro-cli whoami
 # Then: exit
