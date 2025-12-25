@@ -1,16 +1,16 @@
 /**
- * @fileoverview Authentication state management using Zustand with sessionStorage persistence.
+ * @fileoverview Authentication state management using Zustand with localStorage persistence.
  * 
- * Security considerations:
- * - Uses sessionStorage instead of localStorage to limit token exposure
- * - Tokens are automatically cleared when browser tab/window closes
- * - Reduces risk of XSS-based token theft compared to localStorage
+ * Features:
+ * - Uses localStorage to persist auth across tabs and browser sessions
+ * - Allows multiple tabs to share the same authenticated session
+ * - Tokens persist until explicit logout or expiration
  * 
  * @module store/authStore
  */
 
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
+import { persist } from 'zustand/middleware'
 
 /**
  * Authenticated user information extracted from Cognito ID token.
@@ -86,9 +86,8 @@ export const useAuthStore = create<AuthState>()(
     }),
     { 
       name: 'voc-auth',
-      // Use sessionStorage instead of localStorage for security
-      // Tokens are cleared when browser tab/window is closed
-      storage: createJSONStorage(() => sessionStorage),
+      // Use localStorage to persist auth across tabs and browser sessions
+      // This allows opening multiple tabs without re-authenticating
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,

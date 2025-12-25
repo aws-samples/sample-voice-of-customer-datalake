@@ -94,6 +94,8 @@ export default function DataSourceWizard({
 }: DataSourceWizardProps) {
   const [step, setStep] = useState(1)
   const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES)
+  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([])
+  const [loadingCategories, setLoadingCategories] = useState(true)
   const { config } = useConfigStore()
 
   // Fetch actual sources from API
@@ -108,6 +110,34 @@ export default function DataSourceWizard({
       }
     }).catch(() => {
       // Keep default sources on error
+    })
+  }, [config.apiEndpoint])
+
+  // Fetch categories from DynamoDB settings
+  useEffect(() => {
+    if (!config.apiEndpoint) return
+    
+    setLoadingCategories(true)
+    api.getCategoriesConfig().then(data => {
+      if (data.categories && data.categories.length > 0) {
+        // Use category id and name from settings
+        const configCategories = data.categories.map(c => ({ id: c.id, name: c.name }))
+        setCategories(configCategories)
+      } else {
+        // Fallback to defaults with formatted names
+        setCategories(CATEGORIES.map(c => ({ 
+          id: c, 
+          name: c.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+        })))
+      }
+    }).catch(() => {
+      // Fallback to defaults with formatted names
+      setCategories(CATEGORIES.map(c => ({ 
+        id: c, 
+        name: c.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+      })))
+    }).finally(() => {
+      setLoadingCategories(false)
     })
   }, [config.apiEndpoint])
 
@@ -314,20 +344,27 @@ export default function DataSourceWizard({
 
               <div>
                 <h3 className="font-medium mb-2 sm:mb-3">Categories</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {CATEGORIES.map(c => (
-                    <button
-                      key={c}
-                      onClick={() => onContextChange({ ...contextConfig, categories: toggleArrayItem(contextConfig.categories, c) })}
-                      className={clsx(
-                        'px-2 sm:px-3 py-2 rounded-lg border text-xs sm:text-sm capitalize truncate',
-                        contextConfig.categories.includes(c) ? `${colors.bgLight} ${colors.border} ${colors.text}` : 'bg-white border-gray-200'
-                      )}
-                    >
-                      {c.replace('_', ' ')}
-                    </button>
-                  ))}
-                </div>
+                {loadingCategories ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 size={20} className="animate-spin text-gray-400" />
+                    <span className="ml-2 text-sm text-gray-500">Loading categories...</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {categories.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => onContextChange({ ...contextConfig, categories: toggleArrayItem(contextConfig.categories, c.id) })}
+                        className={clsx(
+                          'px-2 sm:px-3 py-2 rounded-lg border text-xs sm:text-sm truncate',
+                          contextConfig.categories.includes(c.id) ? `${colors.bgLight} ${colors.border} ${colors.text}` : 'bg-white border-gray-200'
+                        )}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
