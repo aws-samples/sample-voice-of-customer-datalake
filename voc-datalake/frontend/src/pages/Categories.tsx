@@ -395,8 +395,8 @@ export default function Categories() {
                     ))}
                   </Pie>
                   <Tooltip 
-                    formatter={(value: number, name: string) => [
-                      `${value} (${sentiment?.percentages[name]?.toFixed(1)}%)`, 
+                    formatter={(value, name) => [
+                      `${value} (${sentiment?.percentages[name as string]?.toFixed(1)}%)`, 
                       name
                     ]}
                   />

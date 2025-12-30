@@ -787,7 +787,7 @@ export const api = {
   // User Administration (admin only)
   getUsers: () => fetchApi<{ success: boolean; users: CognitoUser[]; message?: string }>('/users'),
   
-  createUser: (data: { email: string; name?: string; group: 'admins' | 'viewers' }) =>
+  createUser: (data: { username: string; email: string; name?: string; group: 'admins' | 'viewers' }) =>
     fetchApi<{ success: boolean; message: string; user?: CognitoUser }>('/users', {
       method: 'POST',
       body: JSON.stringify(data)

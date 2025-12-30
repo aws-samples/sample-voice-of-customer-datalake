@@ -32,15 +32,17 @@ interface CreateUserModalProps {
 }
 
 function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [group, setGroup] = useState<'admins' | 'viewers'>('viewers')
   const [error, setError] = useState('')
 
   const createMutation = useMutation({
-    mutationFn: () => api.createUser({ email, name, group }),
+    mutationFn: () => api.createUser({ username, email, name, group }),
     onSuccess: (data) => {
       if (data.success) {
+        setUsername('')
         setEmail('')
         setName('')
         setGroup('viewers')
@@ -67,6 +69,23 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
+              Username *
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+              placeholder="johndoe"
+              className="input"
+              autoFocus
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Lowercase letters, numbers, hyphens and underscores only
+            </p>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Email Address *
             </label>
             <input
@@ -75,7 +94,6 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="user@example.com"
               className="input"
-              autoFocus
             />
             <p className="text-xs text-gray-500 mt-1">
               A temporary password will be sent to this email
@@ -141,7 +159,7 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
           </button>
           <button
             onClick={() => createMutation.mutate()}
-            disabled={!email || createMutation.isPending}
+            disabled={!username || !email || createMutation.isPending}
             className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
           >
             {createMutation.isPending ? (

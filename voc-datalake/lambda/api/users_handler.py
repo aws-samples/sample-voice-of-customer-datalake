@@ -126,9 +126,13 @@ def create_user():
     require_admin(app.current_event._data)
     
     body = app.current_event.json_body or {}
+    username = body.get('username', '').strip()
     email = body.get('email', '').strip()
     name = body.get('name', '').strip()
     group = body.get('group', 'viewers')  # Default to viewers
+    
+    if not username:
+        raise BadRequestError('Username is required')
     
     if not email:
         raise BadRequestError('Email is required')
@@ -147,17 +151,17 @@ def create_user():
         
         response = cognito.admin_create_user(
             UserPoolId=USER_POOL_ID,
-            Username=email,  # Use email as username
+            Username=username,
             UserAttributes=user_attrs,
             DesiredDeliveryMediums=['EMAIL'],
         )
         
-        username = response['User']['Username']
+        created_username = response['User']['Username']
         
         # Add user to group
         cognito.admin_add_user_to_group(
             UserPoolId=USER_POOL_ID,
-            Username=username,
+            Username=created_username,
             GroupName=group
         )
         
@@ -165,7 +169,7 @@ def create_user():
             'success': True,
             'message': f'User created. Temporary password sent to {email}',
             'user': {
-                'username': username,
+                'username': created_username,
                 'email': email,
                 'name': name,
                 'groups': [group],
@@ -174,7 +178,7 @@ def create_user():
         }
     
     except cognito.exceptions.UsernameExistsException:
-        return {'success': False, 'message': 'A user with this email already exists'}
+        return {'success': False, 'message': 'A user with this username already exists'}
     except Exception as e:
         logger.exception(f'Error creating user: {e}')
         return {'success': False, 'message': str(e)}
