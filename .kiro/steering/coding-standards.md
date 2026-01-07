@@ -1,3 +1,8 @@
+---
+inclusion: conditional
+triggers: ["code style", "coding standard", "naming convention", "best practice", "lint", "format", "error handling", "api design"]
+---
+
 # VoC Data Lake - Coding Standards
 
 ## General Principles

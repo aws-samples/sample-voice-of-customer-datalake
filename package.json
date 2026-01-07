@@ -1,0 +1,13 @@
+{
+  "name": "voice-of-customer-datalake",
+  "private": true,
+  "scripts": {
+    "test": "npm test --prefix voc-datalake/frontend",
+    "test:watch": "npm run test:watch --prefix voc-datalake/frontend",
+    "test:coverage": "npm run test:coverage --prefix voc-datalake/frontend",
+    "typecheck": "npm run typecheck --prefix voc-datalake/frontend",
+    "lint": "npm run lint --prefix voc-datalake/frontend",
+    "build": "npm run build --prefix voc-datalake/frontend",
+    "dev": "npm run dev --prefix voc-datalake/frontend"
+  }
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
+import { Tags } from 'aws-cdk-lib';
 import { VocStorageStack } from '../lib/stacks/storage-stack';
 import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack';
@@ -11,6 +12,14 @@ import { VocAuthStack } from '../lib/stacks/auth-stack';
 import { ArtifactBuilderStack } from '../lib/stacks/artifact-builder-stack';
 
 const app = new cdk.App();
+
+// Cost allocation tag helper - applies Feature tag + common tags to a stack
+function tagStack(stack: cdk.Stack, feature: string) {
+  Tags.of(stack).add('Project', 'VoC-DataLake');
+  Tags.of(stack).add('Feature', feature);
+  Tags.of(stack).add('Environment', process.env.CDK_ENV || 'dev');
+  Tags.of(stack).add('ManagedBy', 'CDK');
+}
 
 // Configuration
 const config = {
@@ -134,5 +143,15 @@ const artifactBuilderStack = new ArtifactBuilderStack(app, 'ArtifactBuilderStack
   env,
   description: 'Artifact Builder - Agentic PoC Generator (ECS, S3, CloudFront)',
 });
+
+// Apply cost allocation tags to all stacks
+tagStack(storageStack, 'Storage');
+tagStack(ingestionStack, 'Ingestion');
+tagStack(processingStack, 'Processing');
+tagStack(researchStack, 'Research');
+tagStack(authStack, 'Auth');
+tagStack(analyticsStack, 'Analytics');
+tagStack(frontendStack, 'Frontend');
+tagStack(artifactBuilderStack, 'ArtifactBuilder');
 
 app.synth();
