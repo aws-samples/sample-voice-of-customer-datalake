@@ -1,3 +1,6 @@
+/**
+ * @fileoverview Tests for ProblemAnalysis page
+ */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -5,13 +8,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 
 // Mock API
-const mockGetCategories = vi.fn()
 const mockGetFeedback = vi.fn()
+const mockGetEntities = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
-    getCategories: (...args: unknown[]) => mockGetCategories(...args),
-    getFeedback: (...args: unknown[]) => mockGetFeedback(...args),
+    getFeedback: (params: unknown) => mockGetFeedback(params),
+    getEntities: (params: unknown) => mockGetEntities(params),
   },
   getDaysFromRange: () => 7,
 }))
@@ -36,89 +39,97 @@ function createWrapper() {
   )
 }
 
-const mockCategoriesData = {
-  categories: {
-    delivery: 50,
-    customer_support: 30,
-    product_quality: 20,
+const mockFeedbackItems = [
+  {
+    feedback_id: 'f1',
+    source_platform: 'twitter',
+    brand_name: 'TestBrand',
+    original_text: 'The delivery was very slow',
+    category: 'delivery',
+    subcategory: 'shipping_speed',
+    problem_summary: 'Slow delivery times',
+    problem_root_cause_hypothesis: 'Logistics bottleneck',
+    sentiment_score: -0.5,
+    sentiment_label: 'negative',
+    urgency: 'high',
+    source_created_at: '2025-01-01',
   },
-}
+  {
+    feedback_id: 'f2',
+    source_platform: 'trustpilot',
+    brand_name: 'TestBrand',
+    original_text: 'Shipping took forever',
+    category: 'delivery',
+    subcategory: 'shipping_speed',
+    problem_summary: 'Delivery too slow',
+    problem_root_cause_hypothesis: null,
+    sentiment_score: -0.6,
+    sentiment_label: 'negative',
+    urgency: 'medium',
+    source_created_at: '2025-01-02',
+  },
+  {
+    feedback_id: 'f3',
+    source_platform: 'twitter',
+    brand_name: 'TestBrand',
+    original_text: 'Product quality is poor',
+    category: 'product',
+    subcategory: 'quality',
+    problem_summary: 'Poor product quality',
+    problem_root_cause_hypothesis: 'Manufacturing issues',
+    sentiment_score: -0.7,
+    sentiment_label: 'negative',
+    urgency: 'high',
+    source_created_at: '2025-01-03',
+  },
+]
 
-const mockFeedbackData = {
-  items: [
-    {
-      feedback_id: '1',
-      category: 'delivery',
-      subcategory: 'late_delivery',
-      problem_summary: 'Package arrived late',
-      sentiment_label: 'negative',
-      sentiment_score: -0.8,
-      original_text: 'My package was 3 days late',
-      source_platform: 'twitter',
-      source_created_at: '2026-01-01T10:00:00Z',
-    },
-    {
-      feedback_id: '2',
-      category: 'delivery',
-      subcategory: 'damaged',
-      problem_summary: 'Package was damaged',
-      sentiment_label: 'negative',
-      sentiment_score: -0.9,
-      original_text: 'Box was crushed',
-      source_platform: 'trustpilot',
-      source_created_at: '2026-01-02T10:00:00Z',
-    },
-    {
-      feedback_id: '3',
-      category: 'customer_support',
-      subcategory: 'slow_response',
-      problem_summary: 'Waited too long for response',
-      sentiment_label: 'negative',
-      sentiment_score: -0.7,
-      original_text: 'Support took 5 days to reply',
-      source_platform: 'google_reviews',
-      source_created_at: '2026-01-03T10:00:00Z',
-    },
-  ],
-  count: 3,
+const mockEntities = {
+  entities: {
+    categories: { delivery: 10, product: 5 },
+    sources: { twitter: 15, trustpilot: 8 },
+  },
 }
 
 describe('ProblemAnalysis', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetCategories.mockResolvedValue(mockCategoriesData)
-    mockGetFeedback.mockResolvedValue(mockFeedbackData)
+    mockGetFeedback.mockResolvedValue({ items: mockFeedbackItems, count: 3 })
+    mockGetEntities.mockResolvedValue(mockEntities)
   })
 
   describe('rendering', () => {
-    it('renders page header', async () => {
-      render(<ProblemAnalysis />, { wrapper: createWrapper() })
-
-      expect(screen.getByText('Problem Analysis')).toBeInTheDocument()
-    })
-
-    it('renders category breakdown after loading', async () => {
+    it('renders stats cards', async () => {
       render(<ProblemAnalysis />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByText('delivery')).toBeInTheDocument()
-        expect(screen.getByText('customer_support')).toBeInTheDocument()
+        expect(screen.getByText('Categories')).toBeInTheDocument()
+        expect(screen.getByText('Subcategories')).toBeInTheDocument()
+        expect(screen.getByText('Problems')).toBeInTheDocument()
+        expect(screen.getByText('Feedback')).toBeInTheDocument()
+        expect(screen.getByText('Urgent')).toBeInTheDocument()
       })
     })
 
-    it('shows issue counts per category', async () => {
+    it('renders filter controls', async () => {
       render(<ProblemAnalysis />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByText('50')).toBeInTheDocument() // delivery count
-        expect(screen.getByText('30')).toBeInTheDocument() // support count
+        expect(screen.getByRole('combobox', { name: '' })).toBeInTheDocument() // Source filter
       })
+    })
+
+    it('renders expand/collapse buttons', async () => {
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      expect(screen.getByRole('button', { name: /expand/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /collapse/i })).toBeInTheDocument()
     })
   })
 
   describe('loading state', () => {
-    it('shows loading spinner while fetching', () => {
-      mockGetCategories.mockReturnValue(new Promise(() => {}))
+    it('shows loading spinner while fetching', async () => {
+      mockGetFeedback.mockReturnValue(new Promise(() => {}))
 
       render(<ProblemAnalysis />, { wrapper: createWrapper() })
 
@@ -126,8 +137,41 @@ describe('ProblemAnalysis', () => {
     })
   })
 
-  describe('category expansion', () => {
-    it('expands category to show subcategories when clicked', async () => {
+  describe('empty state', () => {
+    it('shows empty state when no problems found', async () => {
+      mockGetFeedback.mockResolvedValue({ items: [], count: 0 })
+
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText(/no problem analysis data found/i)).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('category grouping', () => {
+    it('groups feedback by category', async () => {
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('delivery')).toBeInTheDocument()
+        expect(screen.getByText('product')).toBeInTheDocument()
+      })
+    })
+
+    it('shows item counts for categories', async () => {
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        // Should show subcategory and review counts
+        expect(screen.getByText(/sub/)).toBeInTheDocument()
+        expect(screen.getByText(/reviews/)).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('expand/collapse', () => {
+    it('expands category when clicked', async () => {
       const user = userEvent.setup()
       render(<ProblemAnalysis />, { wrapper: createWrapper() })
 
@@ -135,18 +179,14 @@ describe('ProblemAnalysis', () => {
         expect(screen.getByText('delivery')).toBeInTheDocument()
       })
 
-      // Click on delivery category to expand
       await user.click(screen.getByText('delivery'))
 
       await waitFor(() => {
-        // Should show subcategories
-        expect(mockGetFeedback).toHaveBeenCalled()
+        expect(screen.getByText('shipping speed')).toBeInTheDocument()
       })
     })
-  })
 
-  describe('problem details', () => {
-    it('shows problem summaries in expanded view', async () => {
+    it('expand all button expands all categories', async () => {
       const user = userEvent.setup()
       render(<ProblemAnalysis />, { wrapper: createWrapper() })
 
@@ -154,34 +194,83 @@ describe('ProblemAnalysis', () => {
         expect(screen.getByText('delivery')).toBeInTheDocument()
       })
 
-      await user.click(screen.getByText('delivery'))
+      await user.click(screen.getByRole('button', { name: /expand/i }))
 
       await waitFor(() => {
-        expect(screen.getByText(/package arrived late/i)).toBeInTheDocument()
+        expect(screen.getByText('shipping speed')).toBeInTheDocument()
+        expect(screen.getByText('quality')).toBeInTheDocument()
       })
     })
-  })
 
-  describe('sorting', () => {
-    it('sorts categories by issue count by default', async () => {
+    it('collapse all button collapses all categories', async () => {
+      const user = userEvent.setup()
       render(<ProblemAnalysis />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        const categories = screen.getAllByRole('button')
-        // First category should be delivery (50 issues)
-        expect(categories[0]).toHaveTextContent(/delivery/i)
+        expect(screen.getByText('delivery')).toBeInTheDocument()
       })
+
+      // First expand
+      await user.click(screen.getByRole('button', { name: /expand/i }))
+      await waitFor(() => {
+        expect(screen.getByText('shipping speed')).toBeInTheDocument()
+      })
+
+      // Then collapse
+      await user.click(screen.getByRole('button', { name: /collapse/i }))
+      await waitFor(() => {
+        expect(screen.queryByText('shipping speed')).not.toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('filtering', () => {
+    it('filters by urgent only', async () => {
+      const user = userEvent.setup()
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('delivery')).toBeInTheDocument()
+      })
+
+      const urgentCheckbox = screen.getByRole('checkbox', { name: /urgent only/i })
+      await user.click(urgentCheckbox)
+
+      // Should still show categories with urgent items
+      await waitFor(() => {
+        expect(screen.getByText('delivery')).toBeInTheDocument()
+      })
+    })
+
+    it('clears filters when clear button clicked', async () => {
+      const user = userEvent.setup()
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('delivery')).toBeInTheDocument()
+      })
+
+      // Enable urgent filter
+      await user.click(screen.getByRole('checkbox', { name: /urgent only/i }))
+
+      // Clear button should appear
+      const clearButton = screen.getByRole('button', { name: /clear/i })
+      await user.click(clearButton)
+
+      // Checkbox should be unchecked
+      expect(screen.getByRole('checkbox', { name: /urgent only/i })).not.toBeChecked()
+    })
+  })
+
+  describe('similarity threshold', () => {
+    it('renders similarity selector', async () => {
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      const similaritySelect = screen.getByRole('combobox', { name: '' })
+      expect(similaritySelect).toBeInTheDocument()
     })
   })
 })
 
-describe('ProblemAnalysis - not configured', () => {
-  it('shows configuration message when API not configured', () => {
-    vi.doMock('../../store/configStore', () => ({
-      useConfigStore: () => ({
-        timeRange: '7d',
-        config: { apiEndpoint: '' },
-      }),
-    }))
-  })
-})
+// Note: Testing "not configured" state requires module re-mocking which is complex
+// The main functionality is tested above

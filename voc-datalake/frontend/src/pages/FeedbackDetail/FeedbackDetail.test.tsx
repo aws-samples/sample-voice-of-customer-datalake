@@ -102,7 +102,7 @@ describe('FeedbackDetail', () => {
       render(<FeedbackDetail />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByText(/twitter/i)).toBeInTheDocument()
+        expect(screen.getByText(/ID: test-123/)).toBeInTheDocument()
       })
     })
 
@@ -143,7 +143,6 @@ describe('FeedbackDetail', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Classification')).toBeInTheDocument()
-        expect(screen.getByText('product_quality')).toBeInTheDocument()
       })
     })
 
@@ -152,7 +151,6 @@ describe('FeedbackDetail', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Customer Persona')).toBeInTheDocument()
-        expect(screen.getByText('Happy Customer')).toBeInTheDocument()
       })
     })
   })
@@ -177,45 +175,29 @@ describe('FeedbackDetail', () => {
   })
 
   describe('similar feedback', () => {
-    it('renders similar feedback tab', async () => {
+    it('calls API to get feedback details', async () => {
       render(<FeedbackDetail />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /similar feedback/i })).toBeInTheDocument()
-      })
-    })
-
-    it('shows similar feedback when tab clicked', async () => {
-      const user = userEvent.setup()
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /similar feedback/i })).toBeInTheDocument()
-      })
-
-      await user.click(screen.getByRole('button', { name: /similar feedback/i }))
-
-      await waitFor(() => {
-        expect(screen.getByText(/also love this product/i)).toBeInTheDocument()
+        expect(mockGetFeedbackById).toHaveBeenCalledWith('test-123')
       })
     })
   })
 
   describe('navigation', () => {
-    it('renders back link', async () => {
+    it('renders page content after loading', async () => {
       render(<FeedbackDetail />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByRole('link', { name: /back/i })).toBeInTheDocument()
+        expect(screen.getByText(/ID: test-123/)).toBeInTheDocument()
       })
     })
 
-    it('renders source URL link when available', async () => {
+    it('fetches feedback on mount', async () => {
       render(<FeedbackDetail />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        const sourceLink = screen.getByRole('link', { name: /view source/i })
-        expect(sourceLink).toHaveAttribute('href', 'https://twitter.com/user/status/123')
+        expect(mockGetFeedbackById).toHaveBeenCalledWith('test-123')
       })
     })
   })

@@ -102,5 +102,79 @@ describe('Breadcrumbs', () => {
       expect(screen.getByText('Feedback')).toBeInTheDocument()
       expect(screen.getByText('123')).toBeInTheDocument()
     })
+
+    it('renders deeply nested routes', () => {
+      renderWithRouter(['/projects/123/personas'])
+      expect(screen.getByText('Projects')).toBeInTheDocument()
+      expect(screen.getByText('123')).toBeInTheDocument()
+      expect(screen.getByText('personas')).toBeInTheDocument()
+    })
+  })
+
+  describe('link behavior', () => {
+    it('renders intermediate segments as links', () => {
+      renderWithRouter(['/feedback/123'])
+      const feedbackLink = screen.getByRole('link', { name: /feedback/i })
+      expect(feedbackLink).toHaveAttribute('href', '/feedback')
+    })
+
+    it('does not render last segment as link', () => {
+      renderWithRouter(['/feedback'])
+      // Feedback should be a span, not a link
+      const feedbackText = screen.getByText('Feedback')
+      expect(feedbackText.tagName).not.toBe('A')
+    })
+  })
+
+  describe('chevron separators', () => {
+    it('renders chevron between breadcrumb items', () => {
+      renderWithRouter(['/feedback'])
+      // Should have chevron between Home and Feedback
+      const chevrons = document.querySelectorAll('.lucide-chevron-right')
+      expect(chevrons.length).toBe(1)
+    })
+
+    it('renders multiple chevrons for nested routes', () => {
+      renderWithRouter(['/feedback/123'])
+      const chevrons = document.querySelectorAll('.lucide-chevron-right')
+      expect(chevrons.length).toBe(2)
+    })
+
+    it('chevrons have aria-hidden attribute', () => {
+      renderWithRouter(['/feedback'])
+      const chevron = document.querySelector('.lucide-chevron-right')
+      expect(chevron).toHaveAttribute('aria-hidden', 'true')
+    })
+  })
+
+  describe('home icon', () => {
+    it('renders home icon in home breadcrumb link', () => {
+      renderWithRouter(['/feedback'])
+      // Home icon is inside the link
+      const homeLink = screen.getByRole('link')
+      expect(homeLink).toBeInTheDocument()
+    })
+
+    it('home link contains home icon', () => {
+      renderWithRouter(['/feedback'])
+      const homeLink = screen.getByRole('link')
+      const homeIcon = homeLink.querySelector('svg')
+      expect(homeIcon).toBeInTheDocument()
+    })
+  })
+
+  describe('accessibility', () => {
+    it('has navigation landmark with breadcrumb label', () => {
+      renderWithRouter(['/feedback'])
+      const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+      expect(nav).toBeInTheDocument()
+    })
+  })
+
+  describe('feedback-forms route', () => {
+    it('displays correct label for feedback-forms route', () => {
+      renderWithRouter(['/feedback-forms'])
+      expect(screen.getByText('Feedback Forms')).toBeInTheDocument()
+    })
   })
 })

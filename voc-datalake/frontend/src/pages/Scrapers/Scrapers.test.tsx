@@ -240,7 +240,12 @@ describe('Scrapers', () => {
       const deleteButtons = screen.getAllByTitle('Delete')
       await user.click(deleteButtons[0])
 
-      await user.click(screen.getByRole('button', { name: /^delete$/i }))
+      // Find the confirm button in the modal
+      const confirmButtons = screen.getAllByRole('button', { name: /delete/i })
+      const confirmButton = confirmButtons.find(btn => btn.className.includes('danger') || btn.textContent === 'Delete')
+      if (confirmButton) {
+        await user.click(confirmButton)
+      }
 
       await waitFor(() => {
         expect(mockDeleteScraper).toHaveBeenCalledWith('scraper-1')

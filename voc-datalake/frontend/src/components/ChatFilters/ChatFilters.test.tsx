@@ -163,4 +163,190 @@ describe('ChatFilters', () => {
       expect(mockOnChange).toHaveBeenCalledWith({ source: 'trustpilot', category: 'delivery' })
     })
   })
+
+  describe('clearing individual filters', () => {
+    it('clears source filter when All Sources is selected', async () => {
+      const user = userEvent.setup()
+      const activeFilters: ChatFiltersType = { source: 'trustpilot' }
+      render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
+      
+      const selects = screen.getAllByRole('combobox')
+      await user.selectOptions(selects[0], '')
+      
+      expect(mockOnChange).toHaveBeenCalledWith({ source: undefined })
+    })
+
+    it('clears category filter when All Categories is selected', async () => {
+      const user = userEvent.setup()
+      const activeFilters: ChatFiltersType = { category: 'delivery' }
+      render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
+      
+      const selects = screen.getAllByRole('combobox')
+      await user.selectOptions(selects[1], '')
+      
+      expect(mockOnChange).toHaveBeenCalledWith({ category: undefined })
+    })
+
+    it('clears sentiment filter when All Sentiments is selected', async () => {
+      const user = userEvent.setup()
+      const activeFilters: ChatFiltersType = { sentiment: 'positive' }
+      render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
+      
+      const selects = screen.getAllByRole('combobox')
+      await user.selectOptions(selects[2], '')
+      
+      expect(mockOnChange).toHaveBeenCalledWith({ sentiment: undefined })
+    })
+  })
+
+  describe('filter summary', () => {
+    it('shows multiple filters in summary', () => {
+      const activeFilters: ChatFiltersType = { 
+        source: 'trustpilot', 
+        category: 'delivery',
+        sentiment: 'negative'
+      }
+      render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
+      
+      expect(screen.getByText(/focusing on:/i)).toBeInTheDocument()
+      expect(screen.getByText(/Trustpilot, Delivery, Negative/)).toBeInTheDocument()
+    })
+
+    it('shows sentiment without emoji in summary', () => {
+      const activeFilters: ChatFiltersType = { sentiment: 'positive' }
+      render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
+      
+      const summary = screen.getByText(/focusing on:/i)
+      expect(summary).toBeInTheDocument()
+    })
+  })
+
+  describe('filter styling', () => {
+    it('applies category highlight styling when active', () => {
+      const activeFilters: ChatFiltersType = { category: 'delivery' }
+      render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
+      
+      const selects = screen.getAllByRole('combobox')
+      expect(selects[1]).toHaveClass('bg-purple-50')
+    })
+
+    it('applies sentiment highlight styling when active', () => {
+      const activeFilters: ChatFiltersType = { sentiment: 'positive' }
+      render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
+      
+      const selects = screen.getAllByRole('combobox')
+      expect(selects[2]).toHaveClass('bg-green-50')
+    })
+
+    it('applies default styling when filter is not active', () => {
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+      
+      const selects = screen.getAllByRole('combobox')
+      expect(selects[0]).toHaveClass('bg-white')
+    })
+  })
+
+  describe('API data loading', () => {
+    it('does not fetch data when apiEndpoint is not configured', () => {
+      ;(useConfigStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+        config: { apiEndpoint: '' },
+      })
+      
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+      
+      // Should still render with default options
+      expect(screen.getByText('All Sources')).toBeInTheDocument()
+    })
+
+    it('loads sources from API when endpoint is configured', async () => {
+      const { api } = await import('../../api/client')
+      ;(api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sources: { twitter: 100, trustpilot: 50 },
+      })
+      
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+      
+      // API should be called
+      expect(api.getSources).toHaveBeenCalledWith(30)
+    })
+
+    it('loads categories from API when endpoint is configured', async () => {
+      const { api } = await import('../../api/client')
+      ;(api.getCategories as ReturnType<typeof vi.fn>).mockResolvedValue({
+        categories: { delivery: 100, quality: 50 },
+      })
+      
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+      
+      // API should be called
+      expect(api.getCategories).toHaveBeenCalledWith(30)
+    })
+
+    it('handles API errors gracefully for sources', async () => {
+      const { api } = await import('../../api/client')
+      ;(api.getSources as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('API Error'))
+      
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+      
+      // Should still render with default options
+      expect(screen.getByText('All Sources')).toBeInTheDocument()
+    })
+
+    it('handles API errors gracefully for categories', async () => {
+      const { api } = await import('../../api/client')
+      ;(api.getCategories as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('API Error'))
+      
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+      
+      // Should still render with default options
+      expect(screen.getByText('All Categories')).toBeInTheDocument()
+    })
+  })
+
+  describe('filter summary formatting', () => {
+    it('formats source name with underscores to spaces', () => {
+      const activeFilters: ChatFiltersType = { source: 'google_reviews' }
+      render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
+      
+      // Should format google_reviews as "Google Reviews"
+      expect(screen.getByText(/focusing on:/i)).toBeInTheDocument()
+    })
+
+    it('formats category name with underscores to spaces', () => {
+      const activeFilters: ChatFiltersType = { category: 'customer_support' }
+      render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
+      
+      expect(screen.getByText(/focusing on:/i)).toBeInTheDocument()
+    })
+
+    it('shows combined summary for multiple filters', () => {
+      const activeFilters: ChatFiltersType = { 
+        source: 'trustpilot', 
+        category: 'delivery',
+        sentiment: 'positive'
+      }
+      render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
+      
+      const summary = screen.getByText(/focusing on:/i)
+      expect(summary).toBeInTheDocument()
+    })
+  })
+
+  describe('filter dropdown icons', () => {
+    it('renders chevron down icon for each dropdown', () => {
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+      
+      // Each select should have a chevron icon
+      const chevrons = document.querySelectorAll('.lucide-chevron-down')
+      expect(chevrons.length).toBe(3)
+    })
+  })
+
+  describe('max reviews label', () => {
+    it('displays max 30 reviews label', () => {
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+      
+      expect(screen.getByText(/max 30 reviews/i)).toBeInTheDocument()
+    })
+  })
 })

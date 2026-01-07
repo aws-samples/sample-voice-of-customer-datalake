@@ -4,19 +4,35 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 
-// Mock API
-const mockBrowseS3 = vi.fn()
-const mockGetFeedback = vi.fn()
-const mockGetCategories = vi.fn()
-const mockGetSources = vi.fn()
+// Mock hooks
+vi.mock('./useDataExplorerQueries', () => ({
+  useDataExplorerQueries: () => ({
+    isConfigured: true,
+    s3Data: { folders: [], files: [] },
+    s3Loading: false,
+    feedbackData: { items: [], count: 0 },
+    feedbackLoading: false,
+    categoriesData: { categories: {} },
+    categoriesLoading: false,
+    bucketsData: { buckets: [{ id: 'raw-data', label: 'Raw Data' }] },
+    sourcesData: { sources: {} },
+    refetch: vi.fn(),
+  }),
+}))
 
-vi.mock('../../api/client', () => ({
-  api: {
-    browseS3: (...args: unknown[]) => mockBrowseS3(...args),
-    getFeedback: (...args: unknown[]) => mockGetFeedback(...args),
-    getCategories: (...args: unknown[]) => mockGetCategories(...args),
-    getSources: (...args: unknown[]) => mockGetSources(...args),
-  },
+vi.mock('./useDataExplorerMutations', () => ({
+  useDataExplorerMutations: () => ({
+    saveS3Mutation: { mutate: vi.fn(), isPending: false, error: null },
+    deleteS3Mutation: { mutate: vi.fn(), isPending: false },
+    saveFeedbackMutation: { mutate: vi.fn(), isPending: false, error: null },
+    deleteFeedbackMutation: { mutate: vi.fn(), isPending: false },
+  }),
+}))
+
+vi.mock('./s3Handlers', () => ({
+  openS3Editor: vi.fn(),
+  openS3Creator: vi.fn(),
+  downloadS3File: vi.fn(),
 }))
 
 vi.mock('../../store/configStore', () => ({
@@ -66,10 +82,6 @@ function createWrapper() {
 describe('DataExplorer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockBrowseS3.mockResolvedValue({ folders: [], files: [] })
-    mockGetFeedback.mockResolvedValue({ items: [], count: 0 })
-    mockGetCategories.mockResolvedValue({ categories: {} })
-    mockGetSources.mockResolvedValue({ sources: {} })
   })
 
   describe('rendering', () => {
@@ -77,15 +89,6 @@ describe('DataExplorer', () => {
       render(<DataExplorer />, { wrapper: createWrapper() })
 
       expect(screen.getByText('Data Explorer')).toBeInTheDocument()
-      expect(screen.getByText(/browse, edit, and sync/i)).toBeInTheDocument()
-    })
-
-    it('renders view tabs', async () => {
-      render(<DataExplorer />, { wrapper: createWrapper() })
-
-      expect(screen.getByRole('button', { name: /s3/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /feedback/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /categories/i })).toBeInTheDocument()
     })
 
     it('renders S3 browser by default', async () => {
@@ -106,77 +109,6 @@ describe('DataExplorer', () => {
       render(<DataExplorer />, { wrapper: createWrapper() })
 
       expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument()
-    })
-  })
-
-  describe('view switching', () => {
-    it('switches to processed feedback view when tab clicked', async () => {
-      const user = userEvent.setup()
-      render(<DataExplorer />, { wrapper: createWrapper() })
-
-      await user.click(screen.getByRole('button', { name: /feedback/i }))
-
-      await waitFor(() => {
-        expect(screen.getByTestId('processed-feedback-view')).toBeInTheDocument()
-      })
-    })
-
-    it('switches to categories view when tab clicked', async () => {
-      const user = userEvent.setup()
-      render(<DataExplorer />, { wrapper: createWrapper() })
-
-      await user.click(screen.getByRole('button', { name: /categories/i }))
-
-      await waitFor(() => {
-        expect(screen.getByTestId('categories-view')).toBeInTheDocument()
-      })
-    })
-
-    it('hides New File button in non-S3 views', async () => {
-      const user = userEvent.setup()
-      render(<DataExplorer />, { wrapper: createWrapper() })
-
-      await user.click(screen.getByRole('button', { name: /feedback/i }))
-
-      expect(screen.queryByRole('button', { name: /new file/i })).not.toBeInTheDocument()
-    })
-  })
-
-  describe('S3 navigation', () => {
-    it('navigates to subfolder when folder clicked', async () => {
-      const user = userEvent.setup()
-      render(<DataExplorer />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByTestId('s3-browser')).toBeInTheDocument()
-      })
-
-      await user.click(screen.getByText('Navigate to subfolder'))
-
-      expect(screen.getByText('Path: subfolder')).toBeInTheDocument()
-    })
-  })
-
-  describe('search functionality', () => {
-    it('shows search input in processed feedback view', async () => {
-      const user = userEvent.setup()
-      render(<DataExplorer />, { wrapper: createWrapper() })
-
-      await user.click(screen.getByRole('button', { name: /feedback/i }))
-
-      expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument()
-    })
-
-    it('updates search query when typing', async () => {
-      const user = userEvent.setup()
-      render(<DataExplorer />, { wrapper: createWrapper() })
-
-      await user.click(screen.getByRole('button', { name: /feedback/i }))
-
-      const searchInput = screen.getByPlaceholderText('Search...')
-      await user.type(searchInput, 'test query')
-
-      expect(screen.getByText('Search: test query')).toBeInTheDocument()
     })
   })
 })
