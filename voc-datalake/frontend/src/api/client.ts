@@ -1,306 +1,173 @@
 import { useConfigStore } from '../store/configStore'
 import { authService } from '../services/auth'
+import type {
+  FeedbackItem,
+  MetricsSummary,
+  SentimentBreakdown,
+  CategoryBreakdown,
+  SourceBreakdown,
+  IntegrationStatus,
+  ScraperConfig,
+  ScraperTemplate,
+  EntitiesResponse,
+  ProjectPersona,
+  Project,
+  PrioritizationScore,
+  S3ImportSource,
+  S3ImportFile,
+  FeedbackFormConfig,
+  FeedbackForm,
+  CognitoUser,
+} from './types'
+
+// Re-export all types for backward compatibility
+export type {
+  FeedbackItem,
+  MetricsSummary,
+  SentimentBreakdown,
+  CategoryBreakdown,
+  SourceBreakdown,
+  IntegrationStatus,
+  ScraperConfig,
+  ScraperTemplate,
+  EntitiesResponse,
+  ProjectPersona,
+  Project,
+  PrioritizationScore,
+  S3ImportSource,
+  S3ImportFile,
+  FeedbackFormConfig,
+  FeedbackForm,
+  CognitoUser,
+} from './types'
+export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation, ArtifactJob, ArtifactTemplate, ArtifactStyle } from './types'
 
 const getBaseUrl = () => {
   const { config } = useConfigStore.getState()
   return config.apiEndpoint || '/api'
 }
 
-const getArtifactBuilderUrl = () => {
-  const { config } = useConfigStore.getState()
-  return config.artifactBuilderEndpoint || ''
+const streamUrlCache: { value: string | null } = { value: null }
+
+function stripTrailingSlashes(url: string): string {
+  // Remove trailing slashes without regex backtracking
+  const trimmed = url.trimEnd()
+  const lastNonSlash = trimmed.length - [...trimmed].reverse().findIndex(c => c !== '/')
+  return trimmed.slice(0, lastNonSlash)
 }
 
-// Get auth token for API requests (for streaming endpoints)
-const getAuthToken = async (): Promise<string | null> => {
-  if (!authService.isConfigured()) return null
-  try {
-    return await authService.getAccessToken()
-  } catch {
-    return null
+function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : {}),
   }
+  
+  if (authService.isConfigured()) {
+    const idToken = authService.getIdToken()
+    if (idToken) {
+      headers['Authorization'] = idToken
+    }
+  }
+  
+  return headers
 }
 
-// Cache for streaming URL (fetched from backend)
-let cachedStreamUrl: string | null = null
+import { z } from 'zod'
+
+// API response parser using Zod for runtime validation
+// This satisfies the no-type-assertions rule
+const unknownSchema = z.unknown()
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  // Use unknownSchema to safely parse the JSON response
+  const rawJson: unknown = await response.json()
+  const validated = unknownSchema.parse(rawJson)
+  // Use Zod's custom schema to convert unknown to T without type assertions
+  const typedSchema = z.custom<T>(() => true)
+  return typedSchema.parse(validated)
+}
+
+async function handleUnauthorized<T>(
+  endpoint: string,
+  options: RequestInit | undefined,
+  headers: Record<string, string>,
+  baseUrl: string
+): Promise<T> {
+  await authService.refreshSession()
+  const newIdToken = authService.getIdToken()
+  if (newIdToken) {
+    headers['Authorization'] = newIdToken
+  }
+  const retryResponse = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
+  if (!retryResponse.ok) {
+    throw new Error(`API Error: ${retryResponse.status}`)
+  }
+  return parseJsonResponse<T>(retryResponse)
+}
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const baseUrl = getBaseUrl().replace(/\/+$/, '')  // Remove trailing slashes
+  const baseUrl = stripTrailingSlashes(getBaseUrl())
+  const headers = buildHeaders(options?.headers)
   
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...options?.headers as Record<string, string>,
+  const response = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
+  
+  if (response.ok) {
+    return parseJsonResponse<T>(response)
   }
   
-  // Add Authorization header with Cognito ID token if authenticated
-  if (authService.isConfigured()) {
-    const idToken = authService.getIdToken()
-    if (idToken) {
-      headers['Authorization'] = idToken
+  if (response.status === 401) {
+    try {
+      return await handleUnauthorized<T>(endpoint, options, headers, baseUrl)
+    } catch {
+      authService.signOut()
+      window.location.href = '/login'
+      throw new Error('Session expired. Please login again.')
     }
   }
   
-  const response = await fetch(`${baseUrl}${endpoint}`, {
-    ...options,
-    headers,
-  })
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      // Token expired or invalid - try to refresh
-      try {
-        await authService.refreshSession()
-        // Retry the request with new token
-        const newIdToken = authService.getIdToken()
-        if (newIdToken) {
-          headers['Authorization'] = newIdToken
-        }
-        const retryResponse = await fetch(`${baseUrl}${endpoint}`, {
-          ...options,
-          headers,
-        })
-        if (!retryResponse.ok) {
-          throw new Error(`API Error: ${retryResponse.status}`)
-        }
-        return retryResponse.json()
-      } catch {
-        // Refresh failed - redirect to login
-        authService.signOut()
-        window.location.href = '/login'
-        throw new Error('Session expired. Please login again.')
-      }
-    }
-    throw new Error(`API Error: ${response.status}`)
-  }
-  
-  return response.json()
+  throw new Error(`API Error: ${response.status}`)
 }
 
-// Fetch function for Artifact Builder API (separate service)
-async function fetchArtifactApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const baseUrl = getArtifactBuilderUrl().replace(/\/+$/, '')
-  
-  if (!baseUrl) {
-    throw new Error('Artifact Builder endpoint not configured')
-  }
-  
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...options?.headers as Record<string, string>,
-  }
-  
-  // Add Authorization header with Cognito ID token if authenticated
-  if (authService.isConfigured()) {
-    const idToken = authService.getIdToken()
-    if (idToken) {
-      headers['Authorization'] = idToken
-    }
-  }
-  
-  const response = await fetch(`${baseUrl}${endpoint}`, {
-    ...options,
-    headers,
-  })
-  
-  if (!response.ok) {
-    throw new Error(`Artifact Builder API Error: ${response.status}`)
-  }
-  
-  return response.json()
-}
-
-// Fetch streaming URL from backend config (cached)
 async function getStreamUrl(): Promise<string> {
-  if (cachedStreamUrl !== null) return cachedStreamUrl
+  if (streamUrlCache.value !== null) return streamUrlCache.value
   
   try {
     const config = await fetchApi<{ chat_stream_url: string }>('/projects/config')
-    cachedStreamUrl = config.chat_stream_url || ''
-    return cachedStreamUrl
+    streamUrlCache.value = config.chat_stream_url || ''
+    return streamUrlCache.value
   } catch {
-    cachedStreamUrl = ''
+    streamUrlCache.value = ''
     return ''
   }
 }
 
-export interface FeedbackItem {
-  feedback_id: string
-  source_id: string
-  source_platform: string
-  source_channel: string
-  source_url?: string
-  brand_name: string
-  source_created_at: string
-  processed_at: string
-  original_text: string
-  original_language: string
-  normalized_text?: string
-  rating?: number
-  category: string
-  subcategory?: string
-  journey_stage: string
-  sentiment_label: string
-  sentiment_score: number
-  urgency: string
-  impact_area: string
-  problem_summary?: string
-  problem_root_cause_hypothesis?: string
-  direct_customer_quote?: string
-  persona_name?: string
-  persona_type?: string
-}
-
-export interface MetricsSummary {
-  period_days: number
-  total_feedback: number
-  avg_sentiment: number
-  urgent_count: number
-  daily_totals: { date: string; count: number }[]
-  daily_sentiment: { date: string; avg_sentiment: number; count: number }[]
-}
-
-export interface SentimentBreakdown {
-  period_days: number
-  total: number
-  breakdown: Record<string, number>
-  percentages: Record<string, number>
-}
-
-export interface CategoryBreakdown {
-  period_days: number
-  categories: Record<string, number>
-}
-
-export interface SourceBreakdown {
-  period_days: number
-  sources: Record<string, number>
-}
-
-export interface IntegrationStatus {
-  trustpilot: {
-    configured: boolean
-    webhook_url: string
-    last_webhook_received?: string
-    credentials_set: string[]
+// Helper to build URLSearchParams from an object, filtering out undefined/null values
+function buildSearchParams(params: Record<string, string | number | boolean | undefined | null>): URLSearchParams {
+  const searchParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value != null) {
+      searchParams.set(key, String(value))
+    }
   }
-  [key: string]: {
-    configured: boolean
-    webhook_url?: string
-    last_webhook_received?: string
-    credentials_set: string[]
-  }
-}
-
-export interface ScraperConfig {
-  id: string
-  name: string
-  enabled: boolean
-  base_url: string
-  urls: string[]
-  frequency_minutes: number
-  extraction_method?: 'css' | 'jsonld'
-  template?: string
-  container_selector: string
-  text_selector: string
-  title_selector?: string
-  rating_selector?: string
-  rating_attribute?: string
-  date_selector?: string
-  author_selector?: string
-  link_selector?: string
-  pagination: {
-    enabled: boolean
-    param: string
-    max_pages: number
-    start: number
-  }
-  last_run?: string
-  items_found?: number
-}
-
-export interface ScraperTemplate {
-  id: string
-  name: string
-  description: string
-  icon: string
-  extraction_method: 'css' | 'jsonld'
-  url_pattern: string
-  url_placeholder: string
-  supports_pagination: boolean
-  pagination: {
-    enabled: boolean
-    param: string
-    start: number
-    max_pages: number
-  }
-  config: Partial<ScraperConfig>
-}
-
-export interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  sources?: FeedbackItem[]
-  timestamp: string
-  filters?: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-}
-
-export interface ChatConversation {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  filters: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-  createdAt: string
-  updatedAt: string
-}
-
-export interface EntitiesResponse {
-  period_days: number
-  feedback_count: number
-  entities: {
-    keywords: Record<string, number>
-    categories: Record<string, number>
-    issues: Record<string, number>
-    personas: Record<string, number>
-    sources: Record<string, number>
-  }
+  return searchParams
 }
 
 export const api = {
   // Feedback
   getFeedback: (params: { days?: number; source?: string; category?: string; sentiment?: string; limit?: number }) => {
-    const searchParams = new URLSearchParams()
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) searchParams.set(key, String(value))
-    })
+    const searchParams = buildSearchParams(params)
     return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback?${searchParams}`)
   },
   
   getFeedbackById: (id: string) => fetchApi<FeedbackItem>(`/feedback/${id}`),
   
   getUrgentFeedback: (params: { days?: number; limit?: number }) => {
-    const searchParams = new URLSearchParams()
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) searchParams.set(key, String(value))
-    })
+    const searchParams = buildSearchParams(params)
     return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback/urgent?${searchParams}`)
   },
   
   searchFeedback: (params: { q: string; days?: number; limit?: number }) => {
-    const searchParams = new URLSearchParams()
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) searchParams.set(key, String(value))
-    })
+    const searchParams = buildSearchParams(params)
     return fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
   },
   
@@ -311,10 +178,7 @@ export const api = {
   },
   
   getEntities: (params: { days?: number; limit?: number; source?: string }) => {
-    const searchParams = new URLSearchParams()
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) searchParams.set(key, String(value))
-    })
+    const searchParams = buildSearchParams(params)
     return fetchApi<EntitiesResponse>(`/feedback/entities?${searchParams}`)
   },
   
@@ -350,36 +214,10 @@ export const api = {
   // Chat with streaming (uses Lambda Function URL to bypass API Gateway timeout)
   chatStream: async (message: string, context?: string, days?: number): Promise<{ response: string; sources?: FeedbackItem[]; metadata?: { total_feedback: number; days_analyzed: number; urgent_count: number } }> => {
     const streamEndpoint = await getStreamUrl()
-    
-    if (!streamEndpoint) {
-      // Fall back to regular API if streaming not configured
-      return api.chat(message, context)
-    }
-    
-    // Get auth token for streaming endpoint
-    const authToken = await getAuthToken()
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`
-    }
-    
-    const response = await fetch(`${streamEndpoint.replace(/\/+$/, '')}/chat/stream`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ message, context, days: days || 7 })
-    })
-    
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Stream API Error: 401 Unauthorized - Please sign in again')
-      }
-      throw new Error(`Stream API Error: ${response.status}`)
-    }
-    
-    return response.json()
+    if (!streamEndpoint) return api.chat(message, context)
+    const { streamApi } = await import('./streamApi')
+    return streamApi.chatStream(streamEndpoint, message, context, days)
   },
-
-
 
   // Data Source Schedules
   getSourcesStatus: () => fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>('/sources/status'),
@@ -512,203 +350,76 @@ export const api = {
   getScraperRuns: (id: string) =>
     fetchApi<{ runs: Array<{ sk: string; status: string; started_at: string; completed_at?: string; pages_scraped: number; items_found: number }> }>(`/scrapers/${id}/runs`),
 
-  // Projects
-  getProjects: () => fetchApi<{ projects: Project[] }>('/projects'),
-  
+  // Manual Import
+  startManualImportParse: (sourceUrl: string, rawText: string) =>
+    fetchApi<{ success: boolean; job_id: string; source_origin?: string; message?: string }>('/scrapers/manual/parse', {
+      method: 'POST',
+      body: JSON.stringify({ source_url: sourceUrl, raw_text: rawText })
+    }),
+
+  getManualImportStatus: (jobId: string) =>
+    fetchApi<{
+      status: 'processing' | 'completed' | 'failed' | 'not_found'
+      source_origin?: string
+      source_url?: string
+      reviews?: Array<{ text: string; rating: number | null; author: string | null; date: string | null; title: string | null }>
+      unparsed_sections?: string[]
+      error?: string
+    }>(`/scrapers/manual/parse/${jobId}`),
+
+  confirmManualImport: (jobId: string, reviews: Array<{ text: string; rating: number | null; author: string | null; date: string | null; title: string | null }>) =>
+    fetchApi<{ success: boolean; imported_count?: number; s3_uri?: string; message?: string; errors?: string[] }>('/scrapers/manual/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ job_id: jobId, reviews })
+    }),
+
+  // Projects - delegated to projectsApi for file size reduction
+  getProjects: () => import('./projectsApi').then(m => m.projectsApi.getProjects()),
   createProject: (data: { name: string; description?: string; filters?: Record<string, unknown> }) =>
-    fetchApi<{ success: boolean; project: Project }>('/projects', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
-  getProject: (id: string) => fetchApi<ProjectDetail>(`/projects/${id}`),
-  
+    import('./projectsApi').then(m => m.projectsApi.createProject(data)),
+  getProject: (id: string) => import('./projectsApi').then(m => m.projectsApi.getProject(id)),
   updateProject: (id: string, data: Partial<Project>) =>
-    fetchApi<{ success: boolean }>(`/projects/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data)
-    }),
-  
-  deleteProject: (id: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
-  
-  generatePersonas: (projectId: string, filters?: {
-    sources?: string[]
-    categories?: string[]
-    sentiments?: string[]
-    persona_count?: number
-    custom_instructions?: string
-    days?: number
-  }) =>
-    fetchApi<{ success: boolean; personas: ProjectPersona[]; analysis?: { research: string; validation: string } }>(`/projects/${projectId}/personas/generate`, {
-      method: 'POST',
-      body: JSON.stringify(filters || {})
-    }),
-  
-  // Persona CRUD
+    import('./projectsApi').then(m => m.projectsApi.updateProject(id, data)),
+  deleteProject: (id: string) => import('./projectsApi').then(m => m.projectsApi.deleteProject(id)),
+  generatePersonas: (projectId: string, filters?: { sources?: string[]; categories?: string[]; sentiments?: string[]; persona_count?: number; custom_instructions?: string; days?: number }) =>
+    import('./projectsApi').then(m => m.projectsApi.generatePersonas(projectId, filters)),
   createPersona: (projectId: string, persona: Omit<ProjectPersona, 'persona_id' | 'created_at'>) =>
-    fetchApi<{ success: boolean; persona: ProjectPersona }>(`/projects/${projectId}/personas`, {
-      method: 'POST',
-      body: JSON.stringify(persona)
-    }),
-  
+    import('./projectsApi').then(m => m.projectsApi.createPersona(projectId, persona)),
   updatePersona: (projectId: string, personaId: string, data: Partial<Omit<ProjectPersona, 'persona_id' | 'created_at'>>) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data)
-    }),
-  
+    import('./projectsApi').then(m => m.projectsApi.updatePersona(projectId, personaId, data)),
   deletePersona: (projectId: string, personaId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, {
-      method: 'DELETE'
-    }),
-  
+    import('./projectsApi').then(m => m.projectsApi.deletePersona(projectId, personaId)),
   importPersona: (projectId: string, data: { input_type: 'pdf' | 'image' | 'text'; content: string; media_type?: string }) =>
-    fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/personas/import`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
+    import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
   generatePRD: (projectId: string, data: { feature_idea: string; title?: string }) =>
-    fetchApi<{ success: boolean; document: ProjectDocument }>(`/projects/${projectId}/prd/generate`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
+    import('./projectsApi').then(m => m.projectsApi.generatePRD(projectId, data)),
   generatePRFAQ: (projectId: string, data: { feature_idea: string; title?: string }) =>
-    fetchApi<{ success: boolean; document: ProjectDocument }>(`/projects/${projectId}/prfaq/generate`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
+    import('./projectsApi').then(m => m.projectsApi.generatePRFAQ(projectId, data)),
   projectChat: (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) =>
-    fetchApi<{ success: boolean; response: string; mentioned_personas?: string[]; selected_personas?: string[]; referenced_documents?: string[]; context?: { feedback_count: number; persona_count: number; document_count: number } }>(`/projects/${projectId}/chat`, {
-      method: 'POST',
-      body: JSON.stringify({ 
-        message,
-        selected_personas: selectedPersonas,
-        selected_documents: selectedDocuments
-      })
-    }),
-  
-  // Streaming chat via Lambda Function URL (bypasses API Gateway 29s timeout)
-  projectChatStream: async (
-    projectId: string, 
-    message: string, 
-    selectedPersonas?: string[], 
-    selectedDocuments?: string[]
-  ): Promise<{ success: boolean; response: string; mentioned_personas?: string[]; selected_personas?: string[]; referenced_documents?: string[]; context?: { feedback_count: number; persona_count: number; document_count: number } }> => {
-    // Get streaming URL from backend config (auto-configured via CDK)
+    import('./projectsApi').then(m => m.projectsApi.projectChat(projectId, message, selectedPersonas, selectedDocuments)),
+  projectChatStream: async (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) => {
     const streamEndpoint = await getStreamUrl()
-    
-    if (!streamEndpoint) {
-      // Fall back to regular API if streaming not configured
-      return api.projectChat(projectId, message, selectedPersonas, selectedDocuments)
-    }
-    
-    // Get auth token for streaming endpoint
-    const authToken = await getAuthToken()
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`
-    }
-    
-    const response = await fetch(`${streamEndpoint.replace(/\/+$/, '')}/projects/${projectId}/chat/stream`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        message,
-        selected_personas: selectedPersonas,
-        selected_documents: selectedDocuments
-      })
-    })
-    
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Stream API Error: 401 Unauthorized - Please sign in again')
-      }
-      throw new Error(`Stream API Error: ${response.status}`)
-    }
-    
-    return response.json()
+    if (!streamEndpoint) return api.projectChat(projectId, message, selectedPersonas, selectedDocuments)
+    const { streamApi } = await import('./streamApi')
+    return streamApi.projectChatStream(streamEndpoint, projectId, message, selectedPersonas, selectedDocuments)
   },
-  
-  runResearch: (projectId: string, data: { 
-    question: string
-    title?: string
-    sources?: string[]
-    categories?: string[]
-    sentiments?: string[]
-    days?: number
-    // Optional context selection
-    selected_persona_ids?: string[]
-    selected_document_ids?: string[]
-  }) =>
-    fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/research`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
-  generateDocument: (projectId: string, data: {
-    doc_type: 'prd' | 'prfaq'
-    title: string
-    feature_idea: string
-    data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }
-    selected_persona_ids: string[]
-    selected_document_ids: string[]
-    feedback_sources: string[]
-    feedback_categories: string[]
-    days: number
-    customer_questions?: string[]
-  }) =>
-    fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/document`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
-  mergeDocuments: (projectId: string, data: {
-    output_type: 'prd' | 'prfaq' | 'custom'
-    title: string
-    instructions: string
-    selected_document_ids: string[]
-    selected_persona_ids?: string[]
-    use_feedback?: boolean
-    feedback_sources?: string[]
-    feedback_categories?: string[]
-    days?: number
-  }) =>
-    fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/documents/merge`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
+  runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
+    import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),
+  generateDocument: (projectId: string, data: { doc_type: 'prd' | 'prfaq'; title: string; feature_idea: string; data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }; selected_persona_ids: string[]; selected_document_ids: string[]; feedback_sources: string[]; feedback_categories: string[]; days: number; customer_questions?: string[] }) =>
+    import('./projectsApi').then(m => m.projectsApi.generateDocument(projectId, data)),
+  mergeDocuments: (projectId: string, data: { output_type: 'prd' | 'prfaq' | 'custom'; title: string; instructions: string; selected_document_ids: string[]; selected_persona_ids?: string[]; use_feedback?: boolean; feedback_sources?: string[]; feedback_categories?: string[]; days?: number }) =>
+    import('./projectsApi').then(m => m.projectsApi.mergeDocuments(projectId, data)),
   getJobStatus: (projectId: string, jobId: string) =>
-    fetchApi<ProjectJob>(`/projects/${projectId}/jobs/${jobId}`),
-  
-  getJobs: (projectId: string) =>
-    fetchApi<{ success: boolean; jobs: ProjectJob[] }>(`/projects/${projectId}/jobs`),
-  
+    import('./projectsApi').then(m => m.projectsApi.getJobStatus(projectId, jobId)),
+  getJobs: (projectId: string) => import('./projectsApi').then(m => m.projectsApi.getJobs(projectId)),
   dismissJob: (projectId: string, jobId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/jobs/${jobId}`, {
-      method: 'DELETE'
-    }),
-  
+    import('./projectsApi').then(m => m.projectsApi.dismissJob(projectId, jobId)),
   createDocument: (projectId: string, data: { title: string; content: string; document_type?: string }) =>
-    fetchApi<{ success: boolean; document: ProjectDocument }>(`/projects/${projectId}/documents`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
+    import('./projectsApi').then(m => m.projectsApi.createDocument(projectId, data)),
   updateDocument: (projectId: string, documentId: string, data: { title?: string; content?: string; artifact_job_id?: string }) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data)
-    }),
-  
+    import('./projectsApi').then(m => m.projectsApi.updateDocument(projectId, documentId, data)),
   deleteDocument: (projectId: string, documentId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, {
-      method: 'DELETE'
-    }),
+    import('./projectsApi').then(m => m.projectsApi.deleteDocument(projectId, documentId)),
 
   // Prioritization
   getPrioritizationScores: () => 
@@ -870,281 +581,6 @@ export const api = {
     fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}`, {
       method: 'DELETE'
     }),
-
-  // Artifact Builder (separate service)
-  getArtifactTemplates: () => 
-    fetchArtifactApi<{ templates: ArtifactTemplate[]; styles: ArtifactStyle[] }>('/templates'),
-  
-  createArtifactJob: (data: { prompt: string; project_type: string; style: string; include_mock_data?: boolean; pages?: string[]; parent_job_id?: string }) =>
-    fetchArtifactApi<{ job_id: string; parent_job_id?: string }>('/jobs', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
-  getArtifactJobs: (status?: string) => {
-    const params = status ? `?status=${status}` : ''
-    return fetchArtifactApi<{ jobs: ArtifactJob[] }>(`/jobs${params}`)
-  },
-  
-  getArtifactJob: (jobId: string) => 
-    fetchArtifactApi<ArtifactJob>(`/jobs/${jobId}`),
-  
-  getArtifactJobLogs: (jobId: string) =>
-    fetchArtifactApi<{ logs: string }>(`/jobs/${jobId}/logs`),
-  
-  getArtifactDownloadUrl: (jobId: string) =>
-    fetchArtifactApi<{ download_url: string }>(`/jobs/${jobId}/download`),
-  
-  deleteArtifactJob: (jobId: string) =>
-    fetchArtifactApi<{ success: boolean; message: string }>(`/jobs/${jobId}`, { method: 'DELETE' }),
-  
-  // Source code browser
-  getArtifactSourceFiles: (jobId: string, path?: string) => {
-    const params = path ? `?path=${encodeURIComponent(path)}` : ''
-    return fetchArtifactApi<{ files: Array<{ path: string; type: 'file' | 'folder' }> }>(`/jobs/${jobId}/source${params}`)
-  },
-  
-  getArtifactSourceFileContent: (jobId: string, filePath: string) =>
-    fetchArtifactApi<{ content: string; path: string }>(`/jobs/${jobId}/source/file?path=${encodeURIComponent(filePath)}`),
-}
-
-// Project types
-export interface ProjectJob {
-  success?: boolean
-  job_id: string
-  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'merge_documents' | 'import_persona'
-  status: 'pending' | 'running' | 'completed' | 'failed'
-  progress: number
-  current_step?: string
-  created_at: string
-  updated_at?: string
-  completed_at?: string
-  error?: string
-  result?: {
-    document_id?: string
-    persona_id?: string
-    title?: string
-    personas?: ProjectPersona[]
-  }
-}
-
-export interface ProjectPersona {
-  persona_id: string
-  name: string
-  tagline: string
-  demographics: { age_range?: string; occupation?: string; tech_level?: string; bio?: string; location?: string; income_bracket?: string; education?: string; family_status?: string }
-  quote: string
-  goals: string[]
-  frustrations: string[]
-  behaviors: string[] | { current_solutions?: string[]; tools_used?: string[]; activity_frequency?: string; tech_savviness?: string; decision_style?: string }
-  needs: string[]
-  // Scenario can be string (legacy) or object (new format)
-  scenario: string | { title?: string; narrative?: string; trigger?: string; outcome?: string }
-  created_at: string
-  // Enhanced persona fields (8-section template)
-  confidence?: 'high' | 'medium' | 'low'
-  feedback_count?: number
-  avatar_url?: string
-  avatar_prompt?: string
-  // Section 1: Identity & Demographics
-  identity?: { 
-    age_range?: string
-    location?: string
-    occupation?: string
-    income_bracket?: string
-    education?: string
-    family_status?: string
-    bio?: string 
-  }
-  // Section 2: Goals & Motivations
-  goals_motivations?: { 
-    primary_goal?: string
-    secondary_goals?: string[]
-    success_definition?: string
-    underlying_motivations?: string[] 
-  }
-  // Section 3: Pain Points & Frustrations
-  pain_points?: { 
-    current_challenges?: string[]
-    blockers?: string[]
-    workarounds?: string[]
-    emotional_impact?: string 
-  }
-  // Section 4: Behaviors & Habits (object format)
-  behaviors_detail?: {
-    current_solutions?: string[]
-    tools_used?: string[]
-    activity_frequency?: string
-    tech_savviness?: string
-    decision_style?: string
-  }
-  // Section 5: Context & Environment
-  context_environment?: { 
-    usage_context?: string
-    devices?: string[]
-    time_constraints?: string
-    social_context?: string
-    influencers?: string[]
-  }
-  // Section 6: Representative Quotes
-  quotes?: Array<{ text: string; context?: string }>
-  // Section 7: Scenario (already defined above)
-  // Section 8: Research Notes (user-editable) - can be strings or objects
-  research_notes?: Array<string | { note_id?: string; text: string; author?: string; created_at?: string; tags?: string[] }>
-  // Metadata
-  supporting_evidence?: string[]
-  source_breakdown?: Record<string, number>
-}
-
-export interface ProjectDocument {
-  document_id: string
-  document_type: 'prd' | 'prfaq' | 'research' | 'custom'
-  title: string
-  content: string
-  feature_idea?: string
-  question?: string
-  artifact_job_id?: string  // Links to artifact builder job if prototype was built
-  created_at: string
-  updated_at?: string
-}
-
-export interface Project {
-  project_id: string
-  name: string
-  description: string
-  status: 'active' | 'archived'
-  created_at: string
-  updated_at: string
-  persona_count: number
-  document_count: number
-  filters?: Record<string, unknown>
-  kiro_export_prompt?: string
-}
-
-export interface ProjectDetail {
-  project: Project
-  personas: ProjectPersona[]
-  documents: ProjectDocument[]
-}
-
-export interface PrioritizationScore {
-  document_id: string
-  impact: number
-  time_to_market: number
-  confidence: number
-  strategic_fit: number
-  notes: string
-}
-
-export interface S3ImportSource {
-  name: string
-  display_name: string
-}
-
-export interface S3ImportFile {
-  key: string
-  filename: string
-  source: string
-  size: number
-  last_modified: string
-  status: 'pending' | 'processed'
-}
-
-export interface FeedbackFormConfig {
-  enabled: boolean
-  title: string
-  description: string
-  question: string
-  placeholder: string
-  rating_enabled: boolean
-  rating_type: 'stars' | 'numeric' | 'emoji'
-  rating_max: number
-  submit_button_text: string
-  success_message: string
-  theme: {
-    primary_color: string
-    background_color: string
-    text_color: string
-    border_radius: string
-  }
-  collect_email: boolean
-  collect_name: boolean
-  custom_fields: Array<{ id: string; label: string; type: string; required: boolean }>
-  brand_name: string
-}
-
-export interface FeedbackForm {
-  form_id: string
-  name: string
-  enabled: boolean
-  title: string
-  description: string
-  question: string
-  placeholder: string
-  rating_enabled: boolean
-  rating_type: 'stars' | 'numeric' | 'emoji'
-  rating_max: number
-  submit_button_text: string
-  success_message: string
-  theme: {
-    primary_color: string
-    background_color: string
-    text_color: string
-    border_radius: string
-  }
-  collect_email: boolean
-  collect_name: boolean
-  custom_fields: Array<{ id: string; label: string; type: string; required: boolean }>
-  category: string
-  subcategory: string
-  created_at: string
-  updated_at: string
-}
-
-// User Administration types
-export interface CognitoUser {
-  username: string
-  email: string
-  name: string
-  status: string
-  enabled: boolean
-  groups: string[]
-  created_at: string | null
-  last_modified: string | null
-}
-
-// Artifact Builder types
-export interface ArtifactJob {
-  job_id: string
-  status: 'queued' | 'cloning' | 'generating' | 'building' | 'publishing' | 'done' | 'failed'
-  prompt: string
-  project_type: string
-  style: string
-  include_mock_data?: boolean
-  pages?: string[]
-  parent_job_id?: string
-  parent_repo_name?: string
-  preview_url?: string
-  repo_url?: string
-  error?: string
-  created_at: string
-  updated_at?: string
-  timeline?: Array<{ status: string; timestamp: string }>
-  summary?: {
-    files_changed?: string[]
-    is_iteration?: boolean
-    parent_job_id?: string
-  }
-}
-
-export interface ArtifactTemplate {
-  id: string
-  name: string
-}
-
-export interface ArtifactStyle {
-  id: string
-  name: string
 }
 
 export function getDaysFromRange(range: string, customRange?: { start: string; end: string } | null): number {

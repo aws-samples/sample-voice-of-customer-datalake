@@ -2,10 +2,18 @@
 Shared pytest fixtures for Lambda API handler tests.
 """
 import os
+import sys
 import json
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
+
+# Add lambda directory to path for shared module imports
+# and lambda/api directory for handler imports
+lambda_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+api_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, lambda_dir)
+sys.path.insert(0, api_dir)
 
 # Set environment variables BEFORE importing handlers
 os.environ['FEEDBACK_TABLE'] = 'test-feedback'
@@ -17,6 +25,11 @@ os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 os.environ['POWERTOOLS_SERVICE_NAME'] = 'test-voc-api'
 os.environ['POWERTOOLS_METRICS_NAMESPACE'] = 'TestVoC'
 os.environ['ALLOWED_ORIGIN'] = 'http://localhost:5173'
+os.environ['SECRETS_ARN'] = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test-secrets'
+os.environ['RAW_DATA_BUCKET'] = 'test-raw-data-bucket'
+os.environ['ARTIFACT_BUILDER_BUCKET'] = 'test-artifact-builder-bucket'
+os.environ['PROCESSING_QUEUE_URL'] = 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue'
+os.environ['USER_POOL_ID'] = 'us-east-1_testpool'
 
 
 @pytest.fixture
@@ -72,11 +85,21 @@ def api_gateway_event():
         query_params: dict = None,
         body: dict = None,
         path_params: dict = None,
-        headers: dict = None
+        headers: dict = None,
+        resource: str = None
     ):
+        # Auto-generate resource from path if not provided
+        # For proxy routes, replace the proxy value with {proxy+}
+        if resource is None:
+            resource = path
+            if path_params and 'proxy' in path_params:
+                proxy_value = path_params['proxy']
+                resource = path.replace(f'/{proxy_value}', '/{proxy+}')
+        
         return {
             'httpMethod': method,
             'path': path,
+            'resource': resource,
             'queryStringParameters': query_params or {},
             'pathParameters': path_params or {},
             'body': json.dumps(body) if body else None,

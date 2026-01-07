@@ -19,6 +19,99 @@ import { useConfigStore } from '../../store/configStore'
 import { format } from 'date-fns'
 import ConfirmModal from '../../components/ConfirmModal'
 
+interface ProjectCardProps {
+  project: Project
+  onDelete: (id: string) => void
+  onOpen: (id: string) => void
+}
+
+function ProjectCard({ project, onDelete, onOpen }: Readonly<ProjectCardProps>) {
+  return (
+    <div className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all group">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Briefcase size={18} className="text-blue-600 sm:w-5 sm:h-5" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{project.name}</h3>
+            <p className="text-xs text-gray-500">
+              {format(new Date(project.created_at), 'MMM d, yyyy')}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete(project.project_id)
+          }}
+          className="p-1.5 text-gray-400 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+      
+      {project.description && (
+        <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4 line-clamp-2">{project.description}</p>
+      )}
+      
+      <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm text-gray-500 mb-3 sm:mb-4">
+        <span className="flex items-center gap-1">
+          <Users size={14} />
+          {project.persona_count} personas
+        </span>
+        <span className="flex items-center gap-1">
+          <FileText size={14} />
+          {project.document_count} docs
+        </span>
+      </div>
+      
+      <button
+        onClick={() => onOpen(project.project_id)}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-50 text-gray-700 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors text-sm"
+      >
+        Open Project
+        <ArrowRight size={16} />
+      </button>
+    </div>
+  )
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 animate-pulse">
+          <div className="h-6 bg-gray-200 rounded w-3/4 mb-2" />
+          <div className="h-4 bg-gray-100 rounded w-full mb-4" />
+          <div className="h-4 bg-gray-100 rounded w-1/2" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+interface EmptyStateProps {
+  onCreateClick: () => void
+}
+
+function EmptyState({ onCreateClick }: Readonly<EmptyStateProps>) {
+  return (
+    <div className="text-center py-12 sm:py-16 bg-white rounded-xl border border-gray-200">
+      <Briefcase size={40} className="mx-auto text-gray-300 mb-4 sm:w-12 sm:h-12" />
+      <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
+      <p className="text-sm sm:text-base text-gray-500 mb-4 px-4">Create your first project to start building personas and documents</p>
+      <button
+        onClick={onCreateClick}
+        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+      >
+        <Plus size={18} />
+        Create Project
+      </button>
+    </div>
+  )
+}
+
 export default function Projects() {
   const { config } = useConfigStore()
   const navigate = useNavigate()
@@ -34,7 +127,7 @@ export default function Projects() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; description: string }) => api.createProject(data),
+    mutationFn: (projectData: { name: string; description: string }) => api.createProject(projectData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setShowCreate(false)
@@ -61,6 +154,29 @@ export default function Projects() {
     )
   }
 
+  const renderProjectsContent = () => {
+    if (isLoading) {
+      return <LoadingSkeleton />
+    }
+    
+    if (!data?.projects.length) {
+      return <EmptyState onCreateClick={() => setShowCreate(true)} />
+    }
+    
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+        {data.projects.map((project) => (
+          <ProjectCard
+            key={project.project_id}
+            project={project}
+            onDelete={setDeleteProjectId}
+            onOpen={(id) => navigate(`/projects/${id}`)}
+          />
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
@@ -77,7 +193,6 @@ export default function Projects() {
         </button>
       </div>
 
-      {/* Create Modal */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
           <div className="bg-white rounded-t-xl sm:rounded-xl p-4 sm:p-6 w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
@@ -123,86 +238,7 @@ export default function Projects() {
         </div>
       )}
 
-      {/* Projects Grid */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 animate-pulse">
-              <div className="h-6 bg-gray-200 rounded w-3/4 mb-2" />
-              <div className="h-4 bg-gray-100 rounded w-full mb-4" />
-              <div className="h-4 bg-gray-100 rounded w-1/2" />
-            </div>
-          ))}
-        </div>
-      ) : data?.projects.length === 0 ? (
-        <div className="text-center py-12 sm:py-16 bg-white rounded-xl border border-gray-200">
-          <Briefcase size={40} className="mx-auto text-gray-300 mb-4 sm:w-12 sm:h-12" />
-          <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
-          <p className="text-sm sm:text-base text-gray-500 mb-4 px-4">Create your first project to start building personas and documents</p>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus size={18} />
-            Create Project
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-          {data?.projects.map((project: Project) => (
-            <div
-              key={project.project_id}
-              className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all group"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Briefcase size={18} className="text-blue-600 sm:w-5 sm:h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{project.name}</h3>
-                    <p className="text-xs text-gray-500">
-                      {format(new Date(project.created_at), 'MMM d, yyyy')}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setDeleteProjectId(project.project_id)
-                  }}
-                  className="p-1.5 text-gray-400 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-              
-              {project.description && (
-                <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4 line-clamp-2">{project.description}</p>
-              )}
-              
-              <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm text-gray-500 mb-3 sm:mb-4">
-                <span className="flex items-center gap-1">
-                  <Users size={14} />
-                  {project.persona_count} personas
-                </span>
-                <span className="flex items-center gap-1">
-                  <FileText size={14} />
-                  {project.document_count} docs
-                </span>
-              </div>
-              
-              <button
-                onClick={() => navigate(`/projects/${project.project_id}`)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-50 text-gray-700 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors text-sm"
-              >
-                Open Project
-                <ArrowRight size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {renderProjectsContent()}
 
       <ConfirmModal
         isOpen={deleteProjectId !== null}

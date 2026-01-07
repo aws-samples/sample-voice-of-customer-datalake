@@ -23,7 +23,57 @@ interface DocumentExportMenuProps {
   project?: Project | null
 }
 
-export default function DocumentExportMenu({ document: doc, project }: DocumentExportMenuProps) {
+// Helper to find all markdown link positions
+function findMarkdownLinks(text: string): Array<{ start: number; end: number; textStart: number; textEnd: number }> {
+  const links: Array<{ start: number; end: number; textStart: number; textEnd: number }> = []
+  const openBrackets = Array.from(text.matchAll(/\[/g))
+  
+  for (const match of openBrackets) {
+    const start = match.index ?? 0
+    const closeBracket = text.indexOf(']', start)
+    if (closeBracket === -1) continue
+    if (text[closeBracket + 1] !== '(') continue
+    
+    const closeParen = text.indexOf(')', closeBracket)
+    if (closeParen === -1) continue
+    
+    links.push({
+      start,
+      end: closeParen + 1,
+      textStart: start + 1,
+      textEnd: closeBracket,
+    })
+  }
+  return links
+}
+
+// Helper to strip markdown links without vulnerable regex
+function stripMarkdownLinks(text: string): string {
+  const links = findMarkdownLinks(text)
+  if (links.length === 0) return text
+  
+  const initialState: { parts: string[]; lastEnd: number } = { parts: [], lastEnd: 0 }
+  
+  // Use reduce to avoid let mutation
+  const { parts, lastEnd } = links.reduce(
+    (acc, link) => {
+      if (link.start < acc.lastEnd) return acc // skip overlapping
+      return {
+        parts: [
+          ...acc.parts,
+          text.slice(acc.lastEnd, link.start),
+          text.slice(link.textStart, link.textEnd),
+        ],
+        lastEnd: link.end,
+      }
+    },
+    initialState
+  )
+  
+  return [...parts, text.slice(lastEnd)].join('')
+}
+
+export default function DocumentExportMenu({ document: doc, project }: Readonly<DocumentExportMenuProps>) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copiedKiro, setCopiedKiro] = useState(false)
@@ -32,7 +82,8 @@ export default function DocumentExportMenu({ document: doc, project }: DocumentE
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      const target = event.target
+      if (menuRef.current && target instanceof Node && !menuRef.current.contains(target)) {
         setIsOpen(false)
       }
     }
@@ -77,16 +128,15 @@ export default function DocumentExportMenu({ document: doc, project }: DocumentE
   }
 
   const downloadAsTxt = () => {
-    // Strip markdown formatting for plain text
-    const plainText = doc.content
+    // Strip markdown formatting for plain text using safe patterns
+    const plainText = stripMarkdownLinks(doc.content)
       .replace(/#{1,6}\s/g, '') // Remove headers
-      .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold
-      .replace(/\*([^*]+)\*/g, '$1') // Remove italic
-      .replace(/`([^`]+)`/g, '$1') // Remove inline code
-      .replace(/```[\s\S]*?```/g, (match: string) => match.replace(/```\w*\n?/g, '')) // Remove code blocks markers
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove links, keep text
+      .replace(/\*\*(.+?)\*\*/g, '$1') // Remove bold (non-greedy)
+      .replace(/\*(.+?)\*/g, '$1') // Remove italic (non-greedy)
+      .replace(/`(.+?)`/g, '$1') // Remove inline code (non-greedy)
+      .replace(/```/g, '') // Remove code block markers
       .replace(/^[-*+]\s/gm, '• ') // Convert list markers
-      .replace(/^\d+\.\s/gm, '') // Remove numbered list markers
+      .replace(/^\d+\.\s+/gm, '') // Remove numbered list markers
     
     const blob = new Blob([plainText], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -117,7 +167,10 @@ export default function DocumentExportMenu({ document: doc, project }: DocumentE
         iframe.src = 'about:blank'
       })
 
-      const iframeDoc = iframe.contentDocument!
+      const iframeDoc = iframe.contentDocument
+      if (!iframeDoc) {
+        throw new Error('Failed to create iframe document')
+      }
       const container = iframeDoc.createElement('div')
       container.style.width = '800px'
       container.style.backgroundColor = '#ffffff'
@@ -196,7 +249,7 @@ export default function DocumentExportMenu({ document: doc, project }: DocumentE
       const imgHeightMM = (canvas.height * imgWidthMM) / canvas.width
       const totalPages = Math.ceil(imgHeightMM / contentHeight)
       
-      for (let page = 0; page < totalPages; page++) {
+      Array.from({ length: totalPages }).forEach((_, page) => {
         if (page > 0) pdf.addPage()
         
         const sourceY = (page * contentHeight / imgHeightMM) * canvas.height
@@ -208,7 +261,8 @@ export default function DocumentExportMenu({ document: doc, project }: DocumentE
         const pageCanvas = window.document.createElement('canvas')
         pageCanvas.width = canvas.width
         pageCanvas.height = sourceHeight
-        const ctx = pageCanvas.getContext('2d')!
+        const ctx = pageCanvas.getContext('2d')
+        if (!ctx) return
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height)
         ctx.drawImage(canvas, 0, sourceY, canvas.width, sourceHeight, 0, 0, canvas.width, sourceHeight)
@@ -217,7 +271,7 @@ export default function DocumentExportMenu({ document: doc, project }: DocumentE
         const pageImgHeightMM = (sourceHeight * imgWidthMM) / canvas.width
         
         pdf.addImage(pageImgData, 'JPEG', margin, margin, imgWidthMM, pageImgHeightMM)
-      }
+      })
 
       root.unmount()
       window.document.body.removeChild(iframe)

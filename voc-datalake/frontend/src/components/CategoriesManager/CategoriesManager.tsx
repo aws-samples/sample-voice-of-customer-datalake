@@ -132,6 +132,25 @@ export default function CategoriesManager() {
     setNewSubcategoryName(prev => ({ ...prev, [categoryId]: '' }))
   }
 
+  const handleUpdateSubcategory = (categoryId: string, subcategoryId: string, newValue: string) => {
+    const updated = categories.map(c => {
+      if (c.id !== categoryId) return c
+      return {
+        ...c,
+        subcategories: c.subcategories.map(s => {
+          if (s.id !== subcategoryId) return s
+          return {
+            ...s,
+            description: newValue,
+            name: newValue.toLowerCase().replace(/\s+/g, '_'),
+          }
+        }),
+      }
+    })
+    saveMutation.mutate(updated)
+    setEditingSubcategory(null)
+  }
+
   const handleDeleteSubcategory = (categoryId: string, subcategoryId: string) => {
     saveMutation.mutate(
       categories.map(c => c.id === categoryId 
@@ -284,17 +303,7 @@ export default function CategoriesManager() {
                           <input
                             type="text"
                             defaultValue={sub.description || sub.name}
-                            onBlur={(e) => {
-                              const updated = categories.map(c => c.id === category.id 
-                                ? { ...c, subcategories: c.subcategories.map(s => s.id === sub.id 
-                                    ? { ...s, description: e.target.value, name: e.target.value.toLowerCase().replace(/\s+/g, '_') }
-                                    : s
-                                  )}
-                                : c
-                              )
-                              saveMutation.mutate(updated)
-                              setEditingSubcategory(null)
-                            }}
+                            onBlur={(e) => handleUpdateSubcategory(category.id, sub.id, e.target.value)}
                             className="flex-1 min-w-0 px-2 py-1 border border-blue-300 rounded text-sm"
                             autoFocus
                           />

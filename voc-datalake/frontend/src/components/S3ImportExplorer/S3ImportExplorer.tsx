@@ -28,6 +28,97 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+const SUPPORTED_FILE_REGEX = /\.(csv|json|jsonl)$/i
+
+function UploadingState({ count }: Readonly<{ count: number }>) {
+  return (
+    <div className="flex items-center justify-center gap-2 text-blue-600">
+      <Loader2 size={20} className="animate-spin" />
+      <span className="text-sm sm:text-base">Uploading {count} file(s)...</span>
+    </div>
+  )
+}
+
+function SuccessState({ message }: Readonly<{ message: string }>) {
+  return (
+    <div className="flex items-center justify-center gap-2 text-green-600">
+      <CheckCircle2 size={20} />
+      <span className="text-sm sm:text-base">Uploaded {message}</span>
+    </div>
+  )
+}
+
+function ErrorState({ message }: Readonly<{ message: string }>) {
+  return (
+    <div className="flex items-center justify-center gap-2 text-red-600">
+      <AlertCircle size={20} />
+      <span className="text-xs sm:text-sm">{message}</span>
+    </div>
+  )
+}
+
+function IdleState({ selectedSource }: Readonly<{ selectedSource: string }>) {
+  return (
+    <>
+      <Upload size={24} className="mx-auto mb-2 text-gray-400" />
+      <p className="text-gray-600 text-sm sm:text-base">Drop files here or click to upload</p>
+      <p className="text-xs text-gray-400 mt-1">Supports CSV, JSON, JSONL</p>
+      {selectedSource && <p className="text-xs text-blue-600 mt-1">Uploading to: {selectedSource}</p>}
+    </>
+  )
+}
+
+function UploadStateDisplay({ uploadSuccess, uploadError, selectedSource }: Readonly<{ uploadSuccess: string | null; uploadError: string | null; selectedSource: string }>) {
+  if (uploadSuccess) return <SuccessState message={uploadSuccess} />
+  if (uploadError) return <ErrorState message={uploadError} />
+  return <IdleState selectedSource={selectedSource} />
+}
+
+function FileListContent({ loadingFiles, files, onDelete }: Readonly<{ loadingFiles: boolean; files: S3ImportFile[]; onDelete: (key: string) => void }>) {
+  if (loadingFiles) {
+    return (
+      <div className="p-8 text-center text-gray-500">
+        <Loader2 className="mx-auto animate-spin" size={24} />
+      </div>
+    )
+  }
+
+  if (files.length === 0) {
+    return (
+      <div className="p-8 text-center text-gray-500">
+        <FileText className="mx-auto mb-2" size={24} />
+        <p>No files found</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="divide-y">
+      {files.map((file) => (
+        <div key={file.key} className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-4 py-3 hover:bg-gray-50 gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <FileText size={18} className={clsx('flex-shrink-0', file.status === 'processed' ? 'text-green-500' : 'text-blue-500')} />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-sm truncate">{file.filename}</p>
+              <p className="text-xs text-gray-500 truncate">
+                {file.source} • {formatFileSize(file.size)} • {format(new Date(file.last_modified), 'MMM d, yyyy HH:mm')}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 justify-end sm:justify-start ml-6 sm:ml-0">
+            <span className={clsx('text-xs px-2 py-0.5 rounded whitespace-nowrap', file.status === 'processed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')}>
+              {file.status === 'processed' ? 'Processed' : 'Pending'}
+            </span>
+            <button onClick={() => onDelete(file.key)} className="p-2 sm:p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded" title="Delete file">
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function S3ImportExplorer() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -64,51 +155,68 @@ export default function S3ImportExplorer() {
     },
   })
 
-  const handleFileUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
-    
-    const source = selectedSource || 'default'
-    
-    for (const file of Array.from(files)) {
-      if (!file.name.match(/\.(csv|json|jsonl)$/i)) {
-        setUploadError(`Unsupported file type: ${file.name}. Only CSV, JSON, and JSONL files are supported.`)
-        setTimeout(() => setUploadError(null), 5000)
-        continue
-      }
-      
-      setUploadingFiles(prev => new Set(prev).add(file.name))
-      
-      try {
-        const urlResponse = await api.getS3UploadUrl(file.name, source, file.type || 'application/octet-stream')
-        
+  const showTemporaryError = (message: string) => {
+    setUploadError(message)
+    setTimeout(() => setUploadError(null), 5000)
+  }
+
+  const showTemporarySuccess = (filename: string) => {
+    setUploadSuccess(filename)
+    setTimeout(() => setUploadSuccess(null), 3000)
+  }
+
+  const addUploadingFile = (filename: string) => {
+    setUploadingFiles(prev => new Set(prev).add(filename))
+  }
+
+  const removeUploadingFile = (filename: string) => {
+    setUploadingFiles(prev => {
+      const next = new Set(prev)
+      next.delete(filename)
+      return next
+    })
+  }
+
+  const uploadSingleFile = async (file: File, source: string): Promise<boolean> => {
+    if (!SUPPORTED_FILE_REGEX.test(file.name)) {
+      showTemporaryError(`Unsupported file type: ${file.name}. Only CSV, JSON, and JSONL files are supported.`)
+      return false
+    }
+
+    addUploadingFile(file.name)
+
+    const contentType = file.type || 'application/octet-stream'
+    const result = await api.getS3UploadUrl(file.name, source, contentType)
+      .then(async (urlResponse) => {
         if (!urlResponse.success || !urlResponse.upload_url) {
           throw new Error(urlResponse.message || 'Failed to get upload URL')
         }
-        
-        await fetch(urlResponse.upload_url, {
-          method: 'PUT',
-          body: file,
-          headers: { 'Content-Type': file.type || 'application/octet-stream' }
-        })
-        
-        setUploadSuccess(file.name)
-        setTimeout(() => setUploadSuccess(null), 3000)
-        queryClient.invalidateQueries({ queryKey: ['s3-import-files'] })
-      } catch (err) {
-        if (import.meta.env.DEV) {
-          console.error('Upload failed:', err)
-        }
-        setUploadError(`Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`)
-        setTimeout(() => setUploadError(null), 5000)
-      } finally {
-        setUploadingFiles(prev => {
-          const next = new Set(prev)
-          next.delete(file.name)
-          return next
-        })
-      }
+        await fetch(urlResponse.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': contentType } })
+        return true
+      })
+      .catch((err: unknown) => {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+        showTemporaryError(`Failed to upload ${file.name}: ${errorMessage}`)
+        return false
+      })
+
+    removeUploadingFile(file.name)
+    if (result) {
+      showTemporarySuccess(file.name)
+      queryClient.invalidateQueries({ queryKey: ['s3-import-files'] })
     }
-    
+    return result
+  }
+
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+
+    const source = selectedSource || 'default'
+
+    for (const file of Array.from(files)) {
+      await uploadSingleFile(file, source)
+    }
+
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -204,29 +312,9 @@ export default function S3ImportExplorer() {
         />
         
         {uploadingFiles.size > 0 ? (
-          <div className="flex items-center justify-center gap-2 text-blue-600">
-            <Loader2 size={20} className="animate-spin" />
-            <span className="text-sm sm:text-base">Uploading {uploadingFiles.size} file(s)...</span>
-          </div>
-        ) : uploadSuccess ? (
-          <div className="flex items-center justify-center gap-2 text-green-600">
-            <CheckCircle2 size={20} />
-            <span className="text-sm sm:text-base">Uploaded {uploadSuccess}</span>
-          </div>
-        ) : uploadError ? (
-          <div className="flex items-center justify-center gap-2 text-red-600">
-            <AlertCircle size={20} />
-            <span className="text-xs sm:text-sm">{uploadError}</span>
-          </div>
+          <UploadingState count={uploadingFiles.size} />
         ) : (
-          <>
-            <Upload size={24} className="mx-auto mb-2 text-gray-400" />
-            <p className="text-gray-600 text-sm sm:text-base">Drop files here or click to upload</p>
-            <p className="text-xs text-gray-400 mt-1">Supports CSV, JSON, JSONL</p>
-            {selectedSource && (
-              <p className="text-xs text-blue-600 mt-1">Uploading to: {selectedSource}</p>
-            )}
-          </>
+          <UploadStateDisplay uploadSuccess={uploadSuccess} uploadError={uploadError} selectedSource={selectedSource} />
         )}
       </div>
 
@@ -235,49 +323,7 @@ export default function S3ImportExplorer() {
         <div className="bg-gray-50 px-4 py-2 border-b text-sm font-medium text-gray-700">
           Files ({files.length})
         </div>
-        
-        {loadingFiles ? (
-          <div className="p-8 text-center text-gray-500">
-            <Loader2 className="mx-auto animate-spin" size={24} />
-          </div>
-        ) : files.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            <FileText className="mx-auto mb-2" size={24} />
-            <p>No files found</p>
-          </div>
-        ) : (
-          <div className="divide-y">
-            {files.map((file: S3ImportFile) => (
-              <div key={file.key} className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-4 py-3 hover:bg-gray-50 gap-2">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                  <FileText size={18} className={clsx('flex-shrink-0', file.status === 'processed' ? 'text-green-500' : 'text-blue-500')} />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-sm truncate">{file.filename}</p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {file.source} • {formatFileSize(file.size)} • {format(new Date(file.last_modified), 'MMM d, yyyy HH:mm')}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 justify-end sm:justify-start ml-6 sm:ml-0">
-                  <span className={clsx(
-                    'text-xs px-2 py-0.5 rounded whitespace-nowrap',
-                    file.status === 'processed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                  )}>
-                    {file.status === 'processed' ? 'Processed' : 'Pending'}
-                  </span>
-                  <button
-                    onClick={() => deleteFileMutation.mutate(file.key)}
-                    disabled={deleteFileMutation.isPending}
-                    className="p-2 sm:p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
-                    title="Delete file"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <FileListContent loadingFiles={loadingFiles} files={files} onDelete={(key) => deleteFileMutation.mutate(key)} />
       </div>
     </div>
   )

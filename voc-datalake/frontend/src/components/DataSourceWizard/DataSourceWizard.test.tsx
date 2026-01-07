@@ -5,7 +5,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import DataSourceWizard, { defaultContextConfig, type ContextConfig } from './DataSourceWizard'
+import DataSourceWizard from './DataSourceWizard'
+import { defaultContextConfig, type ContextConfig } from './exports'
 import { Sparkles } from 'lucide-react'
 
 // Mock API before importing component

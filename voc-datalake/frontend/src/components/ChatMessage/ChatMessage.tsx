@@ -22,7 +22,7 @@ interface ChatMessageProps {
   message: ChatMessageType
 }
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+export default function ChatMessage({ message }: Readonly<ChatMessageProps>) {
   const [copied, setCopied] = useState(false)
 
   const copyToClipboard = async () => {

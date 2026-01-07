@@ -13,15 +13,14 @@
 
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
 import { 
-  ChevronDown, ChevronRight, AlertTriangle, Lightbulb, 
+  ChevronDown, ChevronRight, AlertTriangle, 
   MessageSquare, TrendingUp, Filter, X, Layers
 } from 'lucide-react'
 import { api, getDaysFromRange } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
-import SentimentBadge from '../../components/SentimentBadge'
 import type { FeedbackItem } from '../../api/client'
+import { SubcategoryRow } from './SubcategoryRow'
 
 interface ProblemGroup {
   problem: string
@@ -85,6 +84,11 @@ function jaccardSimilarity(set1: Set<string>, set2: Set<string>): number {
   return intersection.size / union.size
 }
 
+// Check if keywords match any in a list above threshold
+function matchesAnyKeywords(newKeywords: Set<string>, texts: string[], threshold: number): boolean {
+  return texts.some(text => jaccardSimilarity(newKeywords, extractKeywords(text)) >= threshold)
+}
+
 // Find or create a similar problem group
 function findSimilarProblem(
   problems: Map<string, ProblemGroup>,
@@ -92,25 +96,110 @@ function findSimilarProblem(
   threshold: number = 0.4
 ): string | null {
   const newKeywords = extractKeywords(newProblem)
-  
+
   for (const [existingProblem, group] of problems) {
     const existingKeywords = extractKeywords(existingProblem)
-    const similarity = jaccardSimilarity(newKeywords, existingKeywords)
-    
-    if (similarity >= threshold) {
+    if (jaccardSimilarity(newKeywords, existingKeywords) >= threshold) {
       return existingProblem
     }
-    
-    // Also check against similar problems in the group
-    for (const similar of group.similarProblems) {
-      const similarKeywords = extractKeywords(similar)
-      if (jaccardSimilarity(newKeywords, similarKeywords) >= threshold) {
-        return existingProblem
-      }
+    if (matchesAnyKeywords(newKeywords, group.similarProblems, threshold)) {
+      return existingProblem
     }
   }
-  
+
   return null
+}
+
+function getOrCreateSubcategoryMap(
+  categoryMap: Map<string, Map<string, Map<string, ProblemGroup>>>,
+  category: string
+): Map<string, Map<string, ProblemGroup>> {
+  const existing = categoryMap.get(category)
+  if (existing) return existing
+  const newMap = new Map<string, Map<string, ProblemGroup>>()
+  categoryMap.set(category, newMap)
+  return newMap
+}
+
+function getOrCreateProblemMap(
+  subcategoryMap: Map<string, Map<string, ProblemGroup>>,
+  subcategory: string
+): Map<string, ProblemGroup> {
+  const existing = subcategoryMap.get(subcategory)
+  if (existing) return existing
+  const newMap = new Map<string, ProblemGroup>()
+  subcategoryMap.set(subcategory, newMap)
+  return newMap
+}
+
+function updateExistingGroup(group: ProblemGroup, item: FeedbackItem, problem: string, similarProblemKey: string): void {
+  group.items.push(item)
+  if (item.urgency === 'high') group.urgentCount++
+  if (problem !== similarProblemKey && !group.similarProblems.includes(problem)) {
+    group.similarProblems.push(problem)
+  }
+  if (!group.rootCause && item.problem_root_cause_hypothesis) {
+    group.rootCause = item.problem_root_cause_hypothesis
+  }
+}
+
+function addItemToProblemGroup(
+  problemMap: Map<string, ProblemGroup>,
+  item: FeedbackItem,
+  problem: string,
+  similarityThreshold: number
+): void {
+  const similarProblemKey = findSimilarProblem(problemMap, problem, similarityThreshold)
+
+  if (similarProblemKey) {
+    const group = problemMap.get(similarProblemKey)
+    if (group) {
+      updateExistingGroup(group, item, problem, similarProblemKey)
+    }
+  } else {
+    problemMap.set(problem, {
+      problem,
+      similarProblems: [],
+      rootCause: item.problem_root_cause_hypothesis || null,
+      items: [item],
+      avgSentiment: 0,
+      urgentCount: item.urgency === 'high' ? 1 : 0,
+    })
+  }
+}
+
+function buildSubcategoryGroup(problemMap: Map<string, ProblemGroup>, subcategory: string): SubcategoryGroup {
+  const problems: ProblemGroup[] = []
+
+  for (const group of problemMap.values()) {
+    group.avgSentiment = group.items.reduce((sum, i) => sum + i.sentiment_score, 0) / group.items.length
+    problems.push(group)
+  }
+
+  problems.sort((a, b) => b.items.length - a.items.length)
+  const totalItems = problems.reduce((sum, p) => sum + p.items.length, 0)
+  const urgentCount = problems.reduce((sum, p) => sum + p.urgentCount, 0)
+  return { subcategory, problems, totalItems, urgentCount }
+}
+
+function buildCategoryGroups(categoryMap: Map<string, Map<string, Map<string, ProblemGroup>>>): CategoryGroup[] {
+  const result: CategoryGroup[] = []
+
+  for (const [category, subcategoryMap] of categoryMap) {
+    const subcategories: SubcategoryGroup[] = []
+
+    for (const [subcategory, problemMap] of subcategoryMap) {
+      subcategories.push(buildSubcategoryGroup(problemMap, subcategory))
+    }
+
+    subcategories.sort((a, b) => b.totalItems - a.totalItems)
+    const categoryTotalItems = subcategories.reduce((sum, s) => sum + s.totalItems, 0)
+    const categoryUrgent = subcategories.reduce((sum, s) => sum + s.urgentCount, 0)
+    result.push({ category, subcategories, totalItems: categoryTotalItems, urgentCount: categoryUrgent })
+  }
+
+  result.sort((a, b) => b.totalItems - a.totalItems)
+  return result
 }
 
 export default function ProblemAnalysis() {
@@ -149,127 +238,45 @@ export default function ProblemAnalysis() {
   // Group feedback by category → subcategory → problem (with similarity) → items
   const groupedData = useMemo(() => {
     if (!feedbackData?.items) return []
-    
-    // Structure: category → subcategory → problems
+
     const categoryMap = new Map<string, Map<string, Map<string, ProblemGroup>>>()
-    
-    feedbackData.items
-      .filter(item => item.problem_summary) // Only items with problem analysis
+
+    const filteredItems = feedbackData.items
+      .filter(item => item.problem_summary)
       .filter(item => !showUrgentOnly || item.urgency === 'high')
       .filter(item => !selectedCategory || item.category === selectedCategory)
       .filter(item => !selectedSubcategory || item.subcategory === selectedSubcategory)
       .filter(item => !selectedSource || item.brand_name === selectedSource)
-      .forEach(item => {
-        const category = item.category || 'uncategorized'
-        const subcategory = item.subcategory || 'general'
-        const problem = item.problem_summary || 'Unknown Issue'
-        
-        if (!categoryMap.has(category)) {
-          categoryMap.set(category, new Map())
-        }
-        
-        const subcategoryMap = categoryMap.get(category)!
-        if (!subcategoryMap.has(subcategory)) {
-          subcategoryMap.set(subcategory, new Map())
-        }
-        
-        const problemMap = subcategoryMap.get(subcategory)!
-        
-        // Find similar problem or create new one
-        const similarProblemKey = findSimilarProblem(problemMap, problem, similarityThreshold)
-        
-        if (similarProblemKey) {
-          // Add to existing similar problem group
-          const group = problemMap.get(similarProblemKey)!
-          group.items.push(item)
-          if (item.urgency === 'high') group.urgentCount++
-          // Track the original problem text if different
-          if (problem !== similarProblemKey && !group.similarProblems.includes(problem)) {
-            group.similarProblems.push(problem)
-          }
-          // Update root cause if we find one
-          if (!group.rootCause && item.problem_root_cause_hypothesis) {
-            group.rootCause = item.problem_root_cause_hypothesis
-          }
-        } else {
-          // Create new problem group
-          problemMap.set(problem, {
-            problem,
-            similarProblems: [],
-            rootCause: item.problem_root_cause_hypothesis || null,
-            items: [item],
-            avgSentiment: 0,
-            urgentCount: item.urgency === 'high' ? 1 : 0,
-          })
-        }
-      })
-    
-    // Calculate averages and convert to array
-    const result: CategoryGroup[] = []
-    
-    categoryMap.forEach((subcategoryMap, category) => {
-      const subcategories: SubcategoryGroup[] = []
-      let categoryTotalItems = 0
-      let categoryUrgent = 0
-      
-      subcategoryMap.forEach((problemMap, subcategory) => {
-        const problems: ProblemGroup[] = []
-        let subcategoryTotalItems = 0
-        let subcategoryUrgent = 0
-        
-        problemMap.forEach(group => {
-          group.avgSentiment = group.items.reduce((sum, i) => sum + i.sentiment_score, 0) / group.items.length
-          problems.push(group)
-          subcategoryTotalItems += group.items.length
-          subcategoryUrgent += group.urgentCount
-        })
-        
-        // Sort problems by item count (most common first)
-        problems.sort((a, b) => b.items.length - a.items.length)
-        
-        subcategories.push({
-          subcategory,
-          problems,
-          totalItems: subcategoryTotalItems,
-          urgentCount: subcategoryUrgent,
-        })
-        
-        categoryTotalItems += subcategoryTotalItems
-        categoryUrgent += subcategoryUrgent
-      })
-      
-      // Sort subcategories by total items
-      subcategories.sort((a, b) => b.totalItems - a.totalItems)
-      
-      result.push({
-        category,
-        subcategories,
-        totalItems: categoryTotalItems,
-        urgentCount: categoryUrgent,
-      })
-    })
-    
-    // Sort categories by total items
-    result.sort((a, b) => b.totalItems - a.totalItems)
-    
-    return result
+
+    for (const item of filteredItems) {
+      const category = item.category || 'uncategorized'
+      const subcategory = item.subcategory || 'general'
+      const problem = item.problem_summary || 'Unknown Issue'
+
+      const subcategoryMap = getOrCreateSubcategoryMap(categoryMap, category)
+      const problemMap = getOrCreateProblemMap(subcategoryMap, subcategory)
+      addItemToProblemGroup(problemMap, item, problem, similarityThreshold)
+    }
+
+    return buildCategoryGroups(categoryMap)
   }, [feedbackData, showUrgentOnly, selectedCategory, selectedSubcategory, selectedSource, similarityThreshold])
 
   // Get unique categories from entities (dynamic)
   const allCategories = useMemo(() => {
     if (!entitiesData?.entities?.categories) return []
-    return Object.keys(entitiesData.entities.categories)
-      .sort((a, b) => (entitiesData.entities.categories[b] || 0) - (entitiesData.entities.categories[a] || 0))
+    const categories = entitiesData.entities.categories
+    return Object.keys(categories)
+      .sort((a, b) => (categories[b] ?? 0) - (categories[a] ?? 0))
   }, [entitiesData])
 
   // Get unique subcategories from current data
   const allSubcategories = useMemo(() => {
     if (!feedbackData?.items) return []
     const subcats = new Set<string>()
-    feedbackData.items.forEach(item => {
+    for (const item of feedbackData.items) {
       if (item.subcategory) subcats.add(item.subcategory)
-    })
-    return Array.from(subcats).sort()
+    }
+    return Array.from(subcats).sort((a, b) => a.localeCompare(b))
   }, [feedbackData])
 
   const toggleCategory = (category: string) => {
@@ -303,12 +310,14 @@ export default function ProblemAnalysis() {
     const allCats = new Set(groupedData.map(g => g.category))
     const allSubs = new Set<string>()
     const allProbs = new Set<string>()
-    groupedData.forEach(g => {
-      g.subcategories.forEach(s => {
+    for (const g of groupedData) {
+      for (const s of g.subcategories) {
         allSubs.add(`${g.category}:${s.subcategory}`)
-        s.problems.forEach(p => allProbs.add(`${g.category}:${s.subcategory}:${p.problem}`))
-      })
-    })
+        for (const p of s.problems) {
+          allProbs.add(`${g.category}:${s.subcategory}:${p.problem}`)
+        }
+      }
+    }
     setExpandedCategories(allCats)
     setExpandedSubcategories(allSubs)
     setExpandedProblems(allProbs)
@@ -514,138 +523,16 @@ export default function ProblemAnalysis() {
                 <div className="divide-y divide-gray-100">
                   {categoryGroup.subcategories.map((subcategoryGroup) => {
                     const subcategoryKey = `${categoryGroup.category}:${subcategoryGroup.subcategory}`
-                    const isSubcategoryExpanded = expandedSubcategories.has(subcategoryKey)
-                    
                     return (
-                      <div key={subcategoryKey} className="bg-white">
-                        {/* Subcategory Header */}
-                        <button
-                          onClick={() => toggleSubcategory(subcategoryKey)}
-                          className="w-full px-3 sm:px-6 py-2.5 sm:py-3 pl-6 sm:pl-10 flex items-center justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors"
-                        >
-                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                            {isSubcategoryExpanded ? (
-                              <ChevronDown size={16} className="text-gray-400 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
-                            ) : (
-                              <ChevronRight size={16} className="text-gray-400 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
-                            )}
-                            <Layers size={12} className="text-blue-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
-                            <span className="font-medium text-gray-700 capitalize text-xs sm:text-sm truncate">
-                              {subcategoryGroup.subcategory.replace(/_/g, ' ')}
-                            </span>
-                            <span className="text-xs text-gray-500 hidden xs:inline whitespace-nowrap">
-                              {subcategoryGroup.problems.length} problems • {subcategoryGroup.totalItems} reviews
-                            </span>
-                            {subcategoryGroup.urgentCount > 0 && (
-                              <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full flex-shrink-0">
-                                {subcategoryGroup.urgentCount}
-                              </span>
-                            )}
-                          </div>
-                        </button>
-
-                        {/* Problems List */}
-                        {isSubcategoryExpanded && (
-                          <div className="divide-y divide-gray-50">
-                            {subcategoryGroup.problems.map((problemGroup) => {
-                              const problemKey = `${categoryGroup.category}:${subcategoryGroup.subcategory}:${problemGroup.problem}`
-                              const isExpanded = expandedProblems.has(problemKey)
-                              
-                              return (
-                                <div key={problemKey} className="bg-white">
-                                  {/* Problem Header */}
-                                  <button
-                                    onClick={() => toggleProblem(problemKey)}
-                                    className="w-full px-3 sm:px-6 py-2.5 sm:py-3 pl-10 sm:pl-16 flex flex-col sm:flex-row sm:items-start justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors text-left gap-2"
-                                  >
-                                    <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
-                                      {isExpanded ? (
-                                        <ChevronDown size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
-                                      ) : (
-                                        <ChevronRight size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
-                                      )}
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
-                                          <AlertTriangle size={12} className="text-orange-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
-                                          <span className="font-medium text-gray-800 text-xs sm:text-sm">{problemGroup.problem}</span>
-                                          {problemGroup.similarProblems.length > 0 && (
-                                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full" title={problemGroup.similarProblems.join(', ')}>
-                                              +{problemGroup.similarProblems.length}
-                                            </span>
-                                          )}
-                                        </div>
-                                        {problemGroup.rootCause && (
-                                          <div className="flex items-start gap-1.5 sm:gap-2 text-xs text-gray-600">
-                                            <Lightbulb size={12} className="text-yellow-500 mt-0.5 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
-                                            <span className="line-clamp-2">{problemGroup.rootCause}</span>
-                                          </div>
-                                        )}
-                                        {problemGroup.similarProblems.length > 0 && isExpanded && (
-                                          <div className="mt-2 text-xs text-gray-500">
-                                            <span className="font-medium">Similar:</span>{' '}
-                                            {problemGroup.similarProblems.slice(0, 2).join(' • ')}
-                                            {problemGroup.similarProblems.length > 2 && ` (+${problemGroup.similarProblems.length - 2})`}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-2 sm:gap-3 ml-6 sm:ml-4 flex-shrink-0">
-                                      <span className="text-xs text-gray-500">{problemGroup.items.length}</span>
-                                      {problemGroup.urgentCount > 0 && (
-                                        <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
-                                          {problemGroup.urgentCount}
-                                        </span>
-                                      )}
-                                      <SentimentBadge 
-                                        sentiment={problemGroup.avgSentiment > 0 ? 'positive' : problemGroup.avgSentiment < -0.3 ? 'negative' : 'neutral'} 
-                                        score={problemGroup.avgSentiment} 
-                                      />
-                                    </div>
-                                  </button>
-
-                                  {/* Feedback Items */}
-                                  {isExpanded && (
-                                    <div className="px-3 sm:px-6 pb-3 sm:pb-4 pl-12 sm:pl-24 space-y-2 sm:space-y-3">
-                                      {problemGroup.items.map((item) => (
-                                        <Link
-                                          key={item.feedback_id}
-                                          to={`/feedback/${item.feedback_id}`}
-                                          className="block p-3 sm:p-4 bg-gray-50 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors border border-gray-100"
-                                        >
-                                          <div className="flex items-start justify-between mb-1.5 sm:mb-2 gap-2">
-                                            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                                              <span className="text-xs font-medium text-gray-700 capitalize">
-                                                {item.source_platform.replace(/_/g, ' ')}
-                                              </span>
-                                              {item.urgency === 'high' && (
-                                                <span className="px-1 py-0.5 bg-red-100 text-red-700 text-xs rounded">
-                                                  Urgent
-                                                </span>
-                                              )}
-                                            </div>
-                                            <SentimentBadge sentiment={item.sentiment_label} score={item.sentiment_score} />
-                                          </div>
-                                          <p className="text-xs sm:text-sm text-gray-600 line-clamp-3">{item.original_text}</p>
-                                          {item.problem_summary && item.problem_summary !== problemGroup.problem && (
-                                            <p className="text-xs text-gray-400 mt-1 italic line-clamp-1">
-                                              Original: {item.problem_summary}
-                                            </p>
-                                          )}
-                                          <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-1.5 sm:mt-2 text-xs text-gray-400">
-                                            <span>{new Date(item.source_created_at).toLocaleDateString()}</span>
-                                            {item.rating && <span>★ {item.rating}/5</span>}
-                                            {item.persona_name && <span className="hidden xs:inline">{item.persona_name}</span>}
-                                          </div>
-                                        </Link>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      <SubcategoryRow
+                        key={subcategoryKey}
+                        categoryName={categoryGroup.category}
+                        subcategoryGroup={subcategoryGroup}
+                        isExpanded={expandedSubcategories.has(subcategoryKey)}
+                        onToggle={() => toggleSubcategory(subcategoryKey)}
+                        expandedProblems={expandedProblems}
+                        onToggleProblem={toggleProblem}
+                      />
                     )
                   })}
                 </div>

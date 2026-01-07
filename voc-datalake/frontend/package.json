@@ -13,7 +13,8 @@
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",
     "test:ui": "vitest --ui",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "deploy:frontend": "npm run build && aws s3 sync dist/ s3://voc-datalake-frontend-512144631813 --delete && aws cloudfront create-invalidation --distribution-id E1HZKV2G738RBE --paths '/*'"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.10",
@@ -29,9 +30,11 @@
     "react-router-dom": "^7.9.6",
     "recharts": "^3.5.0",
     "remark-gfm": "^4.0.1",
+    "zod": "^4.3.5",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.5.0",
     "@eslint/js": "^9.39.1",
     "@tailwindcss/vite": "^4.1.17",
     "@testing-library/jest-dom": "^6.6.3",
@@ -46,6 +49,7 @@
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
+    "eslint-plugin-sonarjs": "^3.0.5",
     "globals": "^16.5.0",
     "jsdom": "^26.1.0",
     "tailwindcss": "^4.1.17",

@@ -12,17 +12,164 @@
 
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Loader2, AlertCircle, Eye, EyeOff, MessageSquare } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 import { authService } from '../../services/auth'
 import { CognitoUser } from 'amazon-cognito-identity-js'
-import clsx from 'clsx'
+import {
+  LoginForm,
+  NewPasswordForm,
+  ForgotPasswordForm,
+  ConfirmPasswordForm,
+} from './LoginForms'
 
 type AuthMode = 'login' | 'newPassword' | 'forgotPassword' | 'confirmPassword'
 
+interface CognitoError {
+  code?: string
+  message?: string
+  cognitoUser?: CognitoUser
+}
+
+function isCognitoError(err: unknown): err is CognitoError {
+  return typeof err === 'object' && err !== null
+}
+
+function getFromPath(state: unknown): string {
+  if (state && typeof state === 'object' && 'from' in state) {
+    const fromValue = state.from
+    if (typeof fromValue === 'string') return fromValue
+  }
+  return '/'
+}
+
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (isCognitoError(err) && err.message) {
+    return err.message
+  }
+  return fallback
+}
+
+// Auth Form Content - renders the appropriate form based on mode
+interface AuthFormContentProps {
+  readonly mode: AuthMode
+  readonly username: string
+  readonly password: string
+  readonly newPassword: string
+  readonly confirmNewPassword: string
+  readonly verificationCode: string
+  readonly showPassword: boolean
+  readonly isLoading: boolean
+  readonly error: string | null
+  readonly message: string | null
+  readonly onUsernameChange: (value: string) => void
+  readonly onPasswordChange: (value: string) => void
+  readonly onNewPasswordChange: (value: string) => void
+  readonly onConfirmPasswordChange: (value: string) => void
+  readonly onVerificationCodeChange: (value: string) => void
+  readonly onToggleShowPassword: () => void
+  readonly onSetShowPassword: (checked: boolean) => void
+  readonly onLogin: (e: React.FormEvent) => void
+  readonly onNewPassword: (e: React.FormEvent) => void
+  readonly onForgotPassword: (e: React.FormEvent) => void
+  readonly onConfirmPassword: (e: React.FormEvent) => void
+  readonly onSwitchToForgotPassword: () => void
+  readonly onBackToLogin: () => void
+}
+
+function AuthFormContent({
+  mode,
+  username,
+  password,
+  newPassword,
+  confirmNewPassword,
+  verificationCode,
+  showPassword,
+  isLoading,
+  error,
+  message,
+  onUsernameChange,
+  onPasswordChange,
+  onNewPasswordChange,
+  onConfirmPasswordChange,
+  onVerificationCodeChange,
+  onToggleShowPassword,
+  onSetShowPassword,
+  onLogin,
+  onNewPassword,
+  onForgotPassword,
+  onConfirmPassword,
+  onSwitchToForgotPassword,
+  onBackToLogin,
+}: Readonly<AuthFormContentProps>) {
+  if (mode === 'login') {
+    return (
+      <LoginForm
+        username={username}
+        password={password}
+        showPassword={showPassword}
+        isLoading={isLoading}
+        error={error}
+        message={message}
+        onUsernameChange={onUsernameChange}
+        onPasswordChange={onPasswordChange}
+        onToggleShowPassword={onToggleShowPassword}
+        onSubmit={onLogin}
+        onForgotPassword={onSwitchToForgotPassword}
+      />
+    )
+  }
+
+  if (mode === 'newPassword') {
+    return (
+      <NewPasswordForm
+        newPassword={newPassword}
+        confirmNewPassword={confirmNewPassword}
+        showPassword={showPassword}
+        isLoading={isLoading}
+        error={error}
+        onNewPasswordChange={onNewPasswordChange}
+        onConfirmPasswordChange={onConfirmPasswordChange}
+        onToggleShowPassword={onSetShowPassword}
+        onSubmit={onNewPassword}
+      />
+    )
+  }
+
+  if (mode === 'forgotPassword') {
+    return (
+      <ForgotPasswordForm
+        username={username}
+        isLoading={isLoading}
+        error={error}
+        onUsernameChange={onUsernameChange}
+        onSubmit={onForgotPassword}
+        onBackToLogin={onBackToLogin}
+      />
+    )
+  }
+
+  return (
+    <ConfirmPasswordForm
+      verificationCode={verificationCode}
+      newPassword={newPassword}
+      confirmNewPassword={confirmNewPassword}
+      showPassword={showPassword}
+      isLoading={isLoading}
+      error={error}
+      onVerificationCodeChange={onVerificationCodeChange}
+      onNewPasswordChange={onNewPasswordChange}
+      onConfirmPasswordChange={onConfirmPasswordChange}
+      onSubmit={onConfirmPassword}
+      onBackToLogin={onBackToLogin}
+    />
+  )
+}
+
+// Main Login Component
 export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: string })?.from || '/'
+  const from = getFromPath(location.state)
 
   const [mode, setMode] = useState<AuthMode>('login')
   const [username, setUsername] = useState('')
@@ -34,8 +181,6 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  
-  // For new password challenge
   const [cognitoUser, setCognitoUser] = useState<CognitoUser | null>(null)
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -47,13 +192,12 @@ export default function Login() {
       await authService.signIn(username, password)
       navigate(from, { replace: true })
     } catch (err: unknown) {
-      const error = err as { code?: string; message?: string; cognitoUser?: CognitoUser }
-      if (error.code === 'NewPasswordRequired') {
-        setCognitoUser(error.cognitoUser || null)
+      if (isCognitoError(err) && err.code === 'NewPasswordRequired') {
+        setCognitoUser(err.cognitoUser ?? null)
         setMode('newPassword')
         setError(null)
       } else {
-        setError(error.message || 'Login failed')
+        setError(extractErrorMessage(err, 'Login failed'))
       }
     } finally {
       setIsLoading(false)
@@ -74,7 +218,7 @@ export default function Login() {
       return
     }
 
-    if (!cognitoUser) {
+    if (cognitoUser == null) {
       setError('Session expired. Please login again.')
       setMode('login')
       return
@@ -86,8 +230,7 @@ export default function Login() {
       await authService.completeNewPassword(cognitoUser, newPassword)
       navigate(from, { replace: true })
     } catch (err: unknown) {
-      const error = err as { message?: string }
-      setError(error.message || 'Failed to set new password')
+      setError(extractErrorMessage(err, 'Failed to set new password'))
     } finally {
       setIsLoading(false)
     }
@@ -104,8 +247,7 @@ export default function Login() {
       setMessage('Verification code sent to your email')
       setMode('confirmPassword')
     } catch (err: unknown) {
-      const error = err as { message?: string }
-      setError(error.message || 'Failed to send verification code')
+      setError(extractErrorMessage(err, 'Failed to send verification code'))
     } finally {
       setIsLoading(false)
     }
@@ -131,17 +273,30 @@ export default function Login() {
       setConfirmNewPassword('')
       setVerificationCode('')
     } catch (err: unknown) {
-      const error = err as { message?: string }
-      setError(error.message || 'Failed to reset password')
+      setError(extractErrorMessage(err, 'Failed to reset password'))
     } finally {
       setIsLoading(false)
     }
   }
 
+  const handleSwitchToForgotPassword = () => {
+    setMode('forgotPassword')
+    setError(null)
+    setMessage(null)
+  }
+
+  const handleBackToLogin = () => {
+    setMode('login')
+    setError(null)
+  }
+
+  const handleToggleShowPassword = () => {
+    setShowPassword((prev) => !prev)
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo/Brand */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
             <MessageSquare className="w-8 h-8 text-white" />
@@ -150,285 +305,32 @@ export default function Login() {
           <p className="text-gray-500 mt-1">Voice of the Customer Analytics</p>
         </div>
 
-        {/* Login Card */}
         <div className="bg-white rounded-2xl shadow-xl p-8">
-          {/* Mode: Login */}
-          {mode === 'login' && (
-            <>
-              <h2 className="text-xl font-semibold text-gray-900 mb-6">Sign in</h2>
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Username or Email
-                  </label>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="input"
-                    placeholder="Enter your username"
-                    required
-                    autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="input pr-10"
-                      placeholder="Enter your password"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
-                    <AlertCircle size={16} />
-                    {error}
-                  </div>
-                )}
-
-                {message && (
-                  <div className="text-green-600 text-sm bg-green-50 p-3 rounded-lg">
-                    {message}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className={clsx(
-                    'w-full btn btn-primary py-3 flex items-center justify-center gap-2',
-                    isLoading && 'opacity-75 cursor-not-allowed'
-                  )}
-                >
-                  {isLoading && <Loader2 size={18} className="animate-spin" />}
-                  {isLoading ? 'Signing in...' : 'Sign in'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('forgotPassword')
-                    setError(null)
-                    setMessage(null)
-                  }}
-                  className="w-full text-sm text-blue-600 hover:text-blue-700"
-                >
-                  Forgot password?
-                </button>
-              </form>
-            </>
-          )}
-
-          {/* Mode: New Password Required */}
-          {mode === 'newPassword' && (
-            <>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Set New Password</h2>
-              <p className="text-gray-500 text-sm mb-6">
-                You need to set a new password for your account.
-              </p>
-              <form onSubmit={handleNewPassword} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    New Password
-                  </label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="input"
-                    placeholder="Enter new password"
-                    required
-                    minLength={8}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Confirm Password
-                  </label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={confirmNewPassword}
-                    onChange={(e) => setConfirmNewPassword(e.target.value)}
-                    className="input"
-                    placeholder="Confirm new password"
-                    required
-                  />
-                </div>
-
-                <label className="flex items-center gap-2 text-sm text-gray-600">
-                  <input
-                    type="checkbox"
-                    checked={showPassword}
-                    onChange={(e) => setShowPassword(e.target.checked)}
-                    className="rounded"
-                  />
-                  Show password
-                </label>
-
-                {error && (
-                  <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
-                    <AlertCircle size={16} />
-                    {error}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full btn btn-primary py-3 flex items-center justify-center gap-2"
-                >
-                  {isLoading && <Loader2 size={18} className="animate-spin" />}
-                  Set Password
-                </button>
-              </form>
-            </>
-          )}
-
-          {/* Mode: Forgot Password */}
-          {mode === 'forgotPassword' && (
-            <>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Reset Password</h2>
-              <p className="text-gray-500 text-sm mb-6">
-                Enter your username to receive a verification code.
-              </p>
-              <form onSubmit={handleForgotPassword} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Username or Email
-                  </label>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="input"
-                    placeholder="Enter your username"
-                    required
-                  />
-                </div>
-
-                {error && (
-                  <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
-                    <AlertCircle size={16} />
-                    {error}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full btn btn-primary py-3 flex items-center justify-center gap-2"
-                >
-                  {isLoading && <Loader2 size={18} className="animate-spin" />}
-                  Send Code
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('login')
-                    setError(null)
-                  }}
-                  className="w-full text-sm text-gray-600 hover:text-gray-700"
-                >
-                  Back to login
-                </button>
-              </form>
-            </>
-          )}
-
-          {/* Mode: Confirm Password Reset */}
-          {mode === 'confirmPassword' && (
-            <>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Enter Verification Code</h2>
-              <p className="text-gray-500 text-sm mb-6">
-                Check your email for the verification code.
-              </p>
-              <form onSubmit={handleConfirmPassword} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Verification Code
-                  </label>
-                  <input
-                    type="text"
-                    value={verificationCode}
-                    onChange={(e) => setVerificationCode(e.target.value)}
-                    className="input"
-                    placeholder="Enter code"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    New Password
-                  </label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="input"
-                    placeholder="Enter new password"
-                    required
-                    minLength={8}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Confirm Password
-                  </label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={confirmNewPassword}
-                    onChange={(e) => setConfirmNewPassword(e.target.value)}
-                    className="input"
-                    placeholder="Confirm new password"
-                    required
-                  />
-                </div>
-
-                {error && (
-                  <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
-                    <AlertCircle size={16} />
-                    {error}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full btn btn-primary py-3 flex items-center justify-center gap-2"
-                >
-                  {isLoading && <Loader2 size={18} className="animate-spin" />}
-                  Reset Password
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('login')
-                    setError(null)
-                  }}
-                  className="w-full text-sm text-gray-600 hover:text-gray-700"
-                >
-                  Back to login
-                </button>
-              </form>
-            </>
-          )}
+          <AuthFormContent
+            mode={mode}
+            username={username}
+            password={password}
+            newPassword={newPassword}
+            confirmNewPassword={confirmNewPassword}
+            verificationCode={verificationCode}
+            showPassword={showPassword}
+            isLoading={isLoading}
+            error={error}
+            message={message}
+            onUsernameChange={setUsername}
+            onPasswordChange={setPassword}
+            onNewPasswordChange={setNewPassword}
+            onConfirmPasswordChange={setConfirmNewPassword}
+            onVerificationCodeChange={setVerificationCode}
+            onToggleShowPassword={handleToggleShowPassword}
+            onSetShowPassword={setShowPassword}
+            onLogin={handleLogin}
+            onNewPassword={handleNewPassword}
+            onForgotPassword={handleForgotPassword}
+            onConfirmPassword={handleConfirmPassword}
+            onSwitchToForgotPassword={handleSwitchToForgotPassword}
+            onBackToLogin={handleBackToLogin}
+          />
         </div>
 
         <p className="text-center text-gray-500 text-sm mt-6">

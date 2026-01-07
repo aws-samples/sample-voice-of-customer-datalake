@@ -21,7 +21,7 @@ interface ChatSidebarProps {
   onClose?: () => void
 }
 
-export default function ChatSidebar({ onClose }: ChatSidebarProps) {
+export default function ChatSidebar({ onClose }: Readonly<ChatSidebarProps>) {
   const { 
     conversations, 
     activeConversationId, 

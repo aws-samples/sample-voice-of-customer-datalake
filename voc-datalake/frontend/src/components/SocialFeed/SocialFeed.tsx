@@ -43,7 +43,7 @@ const SOURCE_COLORS: Record<string, string> = {
   appstore_huawei: 'border-l-red-500',
 }
 
-function FeedItem({ item }: { item: FeedbackItem }) {
+function FeedItem({ item }: Readonly<{ item: FeedbackItem }>) {
   const icon = SOURCE_ICONS[item.source_platform] || '📝'
   const borderColor = SOURCE_COLORS[item.source_platform] || 'border-l-gray-300'
   
@@ -56,13 +56,13 @@ function FeedItem({ item }: { item: FeedbackItem }) {
             <span className="text-sm font-medium text-gray-900 capitalize">
               {item.source_platform.replace(/_/g, ' ')}
             </span>
-            {item.rating && (
+            {item.rating != null && (
               <div className="flex items-center gap-0.5">
-                {[...Array(5)].map((_, i) => (
+                {Array.from({ length: 5 }, (_, i) => (
                   <Star
                     key={i}
                     size={12}
-                    className={i < item.rating! ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}
+                    className={i < (item.rating ?? 0) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}
                   />
                 ))}
               </div>
@@ -95,8 +95,8 @@ function FeedItem({ item }: { item: FeedbackItem }) {
 }
 
 interface SocialFeedProps {
-  limit?: number
-  showFilters?: boolean
+  readonly limit?: number
+  readonly showFilters?: boolean
 }
 
 export default function SocialFeed({ limit = 10, showFilters = true }: SocialFeedProps) {
@@ -115,7 +115,7 @@ export default function SocialFeed({ limit = 10, showFilters = true }: SocialFee
   if (isLoading) {
     return (
       <div className="space-y-3">
-        {[...Array(3)].map((_, i) => (
+        {Array.from({ length: 3 }, (_, i) => (
           <div key={i} className="bg-gray-100 rounded-lg h-24 animate-pulse" />
         ))}
       </div>

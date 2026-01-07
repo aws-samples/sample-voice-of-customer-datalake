@@ -18,6 +18,7 @@ voc-datalake/
 │   ├── processing-stack.ts       # Processor Lambda, Bedrock/Comprehend integration
 │   ├── analytics-stack.ts        # API Gateway, split API Lambdas (20KB policy limit), Webhooks, WAF
 │   ├── research-stack.ts         # Step Functions for long-running research jobs
+│   ├── artifact-builder-stack.ts # Artifact Builder (ECS, CodeCommit, ECR, S3)
 │   └── frontend-stack.ts         # S3 + CloudFront for React dashboard
 ├── lambda/                       # Python Lambda functions
 │   ├── ingestors/
@@ -62,6 +63,8 @@ voc-datalake/
 │   │   ├── feedback_form_handler.py  # /feedback-form/*, /feedback-forms/* (embeddable forms)
 │   │   ├── s3_import_handler.py      # /s3-import/* (file explorer)
 │   │   ├── data_explorer_handler.py  # /data-explorer/* (S3 raw data & DynamoDB browser)
+│   │   ├── artifact_builder_handler.py   # /artifacts/* (artifact builder jobs)
+│   │   ├── artifact_trigger_handler.py   # /artifacts/trigger (artifact build triggers)
 │   │   └── projects.py               # Projects business logic (shared)
 │   └── layers/
 │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4
@@ -107,7 +110,8 @@ voc-datalake/
 │   │   │   ├── FeedbackForms.tsx # Feedback form management
 │   │   │   ├── Settings.tsx      # Configuration and integrations
 │   │   │   ├── Projects.tsx      # Research projects list
-│   │   │   └── ProjectDetail.tsx # Single project view
+│   │   │   ├── ProjectDetail.tsx # Single project view
+│   │   │   └── ArtifactBuilder.tsx # AI-powered artifact generation
 │   │   ├── store/
 │   │   │   ├── configStore.ts    # Zustand state (config, time range, custom dates)
 │   │   │   ├── chatStore.ts      # Chat conversation state
@@ -157,6 +161,7 @@ voc-datalake/
 | `voc-projects` | `PROJECT#{id}` | `META\|PERSONA#{id}\|PRD#{id}\|PRFAQ#{id}` | Projects with personas, PRDs, PR/FAQs |
 | `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | Long-running async jobs (research, persona generation) |
 | `voc-conversations` | `USER#{id}` | `CONV#{id}` | AI chat conversation history |
+| `voc-idempotency` | `{id}` | - | Lambda Powertools idempotency tracking |
 
 ## API Endpoints
 
@@ -290,6 +295,8 @@ VocStorageStack (DynamoDB tables, S3 raw data bucket, KMS)
        │           └──▶ VocProcessingStack (Processor, Aggregator)
        │
        ├──▶ VocResearchStack (Step Functions for research workflows)
+       │
+       ├──▶ ArtifactBuilderStack (ECS, CodeCommit, ECR, S3 for artifact generation)
        │
        ├──▶ VocAnalyticsStack (API Gateway, API Lambdas, Webhooks, WAF)
        │           │

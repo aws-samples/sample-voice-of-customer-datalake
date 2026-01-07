@@ -183,6 +183,86 @@ export class VocAnalyticsStack extends cdk.Stack {
     });
 
     // ============================================
+    // Manual Import API Lambda
+    // Handles: /scrapers/manual/*
+    // ============================================
+    const manualImportRole = new iam.Role(this, 'ManualImportLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
+    });
+    aggregatesTable.grantReadWriteData(manualImportRole);
+    kmsKey.grantEncryptDecrypt(manualImportRole);
+    manualImportRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['sqs:SendMessage'],
+      resources: [processingQueueArn],
+    }));
+    manualImportRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-manual-import-processor`],
+    }));
+    if (rawDataBucket) {
+      rawDataBucket.grantReadWrite(manualImportRole);
+    }
+
+    const manualImportLambda = new lambda.Function(this, 'ManualImportApi', {
+      functionName: 'voc-manual-import-api',
+      runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'manual_import_handler.lambda_handler',
+      code: apiCodeWithShared,
+      role: manualImportRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        PROCESSING_QUEUE_URL: processingQueueUrl,
+        RAW_DATA_BUCKET: rawDataBucket?.bucketName || '',
+        MANUAL_IMPORT_PROCESSOR_FUNCTION: 'voc-manual-import-processor',
+        ALLOWED_ORIGIN: allowedOrigin,
+        POWERTOOLS_SERVICE_NAME: 'voc-manual-import-api',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: new logs.LogGroup(this, 'ManualImportApiLogs', { logGroupName: '/aws/lambda/voc-manual-import-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
+    });
+
+    // ============================================
+    // Manual Import Processor Lambda (async, long timeout)
+    // Invoked asynchronously for LLM parsing
+    // ============================================
+    const manualImportProcessorRole = new iam.Role(this, 'ManualImportProcessorRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
+    });
+    aggregatesTable.grantReadWriteData(manualImportProcessorRole);
+    kmsKey.grantEncryptDecrypt(manualImportProcessorRole);
+    manualImportProcessorRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+      ],
+    }));
+
+    const manualImportProcessorLambda = new lambda.Function(this, 'ManualImportProcessor', {
+      functionName: 'voc-manual-import-processor',
+      runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'manual_import_processor.lambda_handler',
+      code: apiCodeWithShared,
+      role: manualImportProcessorRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 1024,
+      environment: {
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        POWERTOOLS_SERVICE_NAME: 'voc-manual-import-processor',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: new logs.LogGroup(this, 'ManualImportProcessorLogs', { logGroupName: '/aws/lambda/voc-manual-import-processor', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
+    });
+
+    // ============================================
     // Lambda 4: Settings API
     // Handles: /settings/*
     // ============================================
@@ -658,6 +738,18 @@ export class VocAnalyticsStack extends cdk.Stack {
     const scrapersResource = this.api.root.addResource('scrapers');
     scrapersResource.addMethod('GET', scrapersIntegration, authMethodOptions);
     scrapersResource.addMethod('POST', scrapersIntegration, authMethodOptions);
+    
+    // Manual Import routes (must be before proxy to take precedence)
+    const manualImportIntegration = new apigateway.LambdaIntegration(manualImportLambda, { proxy: true });
+    const manualResource = scrapersResource.addResource('manual');
+    const manualParseResource = manualResource.addResource('parse');
+    manualParseResource.addMethod('POST', manualImportIntegration, authMethodOptions);
+    const manualParseJobResource = manualParseResource.addResource('{jobId}');
+    manualParseJobResource.addMethod('GET', manualImportIntegration, authMethodOptions);
+    const manualConfirmResource = manualResource.addResource('confirm');
+    manualConfirmResource.addMethod('POST', manualImportIntegration, authMethodOptions);
+    
+    // Proxy for other scraper routes (analyze-url, templates, {id}/run, etc.)
     scrapersResource.addProxy({ defaultIntegration: scrapersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // ============================================

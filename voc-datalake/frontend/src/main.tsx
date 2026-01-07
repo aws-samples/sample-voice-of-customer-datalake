@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import PageLoader from './components/PageLoader'
 import Login from './pages/Login'
 import './index.css'
 
@@ -22,13 +23,6 @@ const Prioritization = lazy(() => import('./pages/Prioritization'))
 const FeedbackForms = lazy(() => import('./pages/FeedbackForms'))
 const DataExplorer = lazy(() => import('./pages/DataExplorer'))
 const ArtifactBuilder = lazy(() => import('./pages/ArtifactBuilder'))
-
-// Loading fallback component
-const PageLoader = () => (
-  <div className="flex items-center justify-center h-64">
-    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-  </div>
-)
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -70,7 +64,12 @@ const router = createBrowserRouter([
   },
 ])
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById('root')
+if (!rootElement) {
+  throw new Error('Root element not found')
+}
+
+createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />

@@ -25,16 +25,154 @@ import type { CognitoUser } from '../../api/client'
 import ConfirmModal from '../ConfirmModal'
 import clsx from 'clsx'
 
+type UserGroup = 'admins' | 'viewers'
+type ActionType = 'delete' | 'disable' | 'enable' | 'reset'
+
+interface ConfirmActionState {
+  type: ActionType
+  user: CognitoUser
+}
+
+// Helper functions for confirm modal
+function getConfirmTitle(actionType: ActionType): string {
+  if (actionType === 'delete') return 'Delete User'
+  if (actionType === 'disable') return 'Disable User'
+  if (actionType === 'enable') return 'Enable User'
+  return 'Reset Password'
+}
+
+function getConfirmMessage(action: ConfirmActionState): string {
+  const email = action.user.email
+  if (action.type === 'delete') {
+    return `Are you sure you want to delete ${email}? This cannot be undone.`
+  }
+  if (action.type === 'disable') {
+    return `Disable ${email}? They will not be able to log in.`
+  }
+  if (action.type === 'enable') {
+    return `Enable ${email}? They will be able to log in again.`
+  }
+  return `Send a password reset email to ${email}?`
+}
+
+function getConfirmLabel(actionType: ActionType): string {
+  if (actionType === 'delete') return 'Delete'
+  if (actionType === 'disable') return 'Disable'
+  if (actionType === 'enable') return 'Enable'
+  return 'Send Reset Email'
+}
+
+function getConfirmVariant(actionType: ActionType): 'danger' | 'info' {
+  return actionType === 'delete' ? 'danger' : 'info'
+}
+
+// Status Badge Component
+function StatusBadge({ user }: Readonly<{ user: CognitoUser }>) {
+  if (!user.enabled) {
+    return <span className="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">Disabled</span>
+  }
+  if (user.status === 'CONFIRMED') {
+    return <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700">Active</span>
+  }
+  if (user.status === 'FORCE_CHANGE_PASSWORD') {
+    return <span className="px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-700">Pending</span>
+  }
+  return <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">{user.status}</span>
+}
+
+// Role Select Component
+interface RoleSelectProps {
+  readonly user: CognitoUser
+  readonly isPending: boolean
+  readonly onChange: (username: string, group: UserGroup) => void
+  readonly size?: 'sm' | 'md'
+}
+
+function RoleSelect({ user, isPending, onChange, size = 'sm' }: RoleSelectProps) {
+  const isAdmin = user.groups.includes('admins')
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value
+    if (value === 'admins' || value === 'viewers') {
+      onChange(user.username, value)
+    }
+  }
+
+  return (
+    <select
+      value={isAdmin ? 'admins' : 'viewers'}
+      onChange={handleChange}
+      disabled={isPending}
+      className={clsx(
+        'text-sm border rounded',
+        size === 'sm' ? 'px-2 py-1' : 'px-2 py-1.5',
+        isAdmin 
+          ? 'border-purple-300 bg-purple-50 text-purple-700'
+          : 'border-gray-300 bg-white text-gray-700'
+      )}
+    >
+      <option value="viewers">Viewer</option>
+      <option value="admins">Admin</option>
+    </select>
+  )
+}
+
+// User Action Buttons Component
+interface UserActionButtonsProps {
+  readonly user: CognitoUser
+  readonly onAction: (type: ActionType, user: CognitoUser) => void
+  readonly iconSize?: number
+  readonly buttonPadding?: string
+}
+
+function UserActionButtons({ user, onAction, iconSize = 16, buttonPadding = 'p-1.5' }: UserActionButtonsProps) {
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => onAction('reset', user)}
+        className={clsx(buttonPadding, 'text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded')}
+        title="Reset password"
+      >
+        <Key size={iconSize} />
+      </button>
+      {user.enabled ? (
+        <button
+          onClick={() => onAction('disable', user)}
+          className={clsx(buttonPadding, 'text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded')}
+          title="Disable user"
+        >
+          <UserX size={iconSize} />
+        </button>
+      ) : (
+        <button
+          onClick={() => onAction('enable', user)}
+          className={clsx(buttonPadding, 'text-gray-500 hover:text-green-600 hover:bg-green-50 rounded')}
+          title="Enable user"
+        >
+          <UserCheck size={iconSize} />
+        </button>
+      )}
+      <button
+        onClick={() => onAction('delete', user)}
+        className={clsx(buttonPadding, 'text-gray-500 hover:text-red-600 hover:bg-red-50 rounded')}
+        title="Delete user"
+      >
+        <Trash2 size={iconSize} />
+      </button>
+    </div>
+  )
+}
+
+// Create User Modal Component
 interface CreateUserModalProps {
-  isOpen: boolean
-  onClose: () => void
-  onSuccess: () => void
+  readonly isOpen: boolean
+  readonly onClose: () => void
+  readonly onSuccess: () => void
 }
 
 function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
-  const [group, setGroup] = useState<'admins' | 'viewers'>('viewers')
+  const [group, setGroup] = useState<UserGroup>('viewers')
   const [error, setError] = useState('')
 
   const createMutation = useMutation({
@@ -157,13 +295,144 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
   )
 }
 
+// Desktop Table Row Component
+interface UserTableRowProps {
+  readonly user: CognitoUser
+  readonly onRoleChange: (username: string, group: UserGroup) => void
+  readonly onAction: (type: ActionType, user: CognitoUser) => void
+  readonly isRoleChangePending: boolean
+}
+
+function UserTableRow({ user, onRoleChange, onAction, isRoleChangePending }: UserTableRowProps) {
+  return (
+    <tr className="hover:bg-gray-50">
+      <td className="px-4 py-3">
+        <div>
+          <p className="font-medium text-gray-900">{user.email}</p>
+          {user.name && <p className="text-sm text-gray-500">{user.name}</p>}
+        </div>
+      </td>
+      <td className="px-4 py-3">
+        <StatusBadge user={user} />
+      </td>
+      <td className="px-4 py-3">
+        <RoleSelect user={user} isPending={isRoleChangePending} onChange={onRoleChange} />
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end">
+          <UserActionButtons user={user} onAction={onAction} />
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+// Mobile Card Component
+interface UserCardProps {
+  readonly user: CognitoUser
+  readonly onRoleChange: (username: string, group: UserGroup) => void
+  readonly onAction: (type: ActionType, user: CognitoUser) => void
+  readonly isRoleChangePending: boolean
+}
+
+function UserCard({ user, onRoleChange, onAction, isRoleChangePending }: UserCardProps) {
+  return (
+    <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-medium text-gray-900 truncate">{user.email}</p>
+          {user.name && <p className="text-sm text-gray-500">{user.name}</p>}
+        </div>
+        <StatusBadge user={user} />
+      </div>
+      
+      <div className="flex items-center justify-between gap-2">
+        <RoleSelect user={user} isPending={isRoleChangePending} onChange={onRoleChange} size="md" />
+        <UserActionButtons user={user} onAction={onAction} iconSize={18} buttonPadding="p-2" />
+      </div>
+    </div>
+  )
+}
+
+// Desktop Table Component
+interface UsersTableProps {
+  readonly users: CognitoUser[]
+  readonly onRoleChange: (username: string, group: UserGroup) => void
+  readonly onAction: (type: ActionType, user: CognitoUser) => void
+  readonly isRoleChangePending: boolean
+}
+
+function UsersTable({ users, onRoleChange, onAction, isRoleChangePending }: UsersTableProps) {
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden hidden md:block">
+      <table className="w-full">
+        <thead className="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">User</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Status</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Role</th>
+            <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-200">
+          {users.map((user) => (
+            <UserTableRow
+              key={user.username}
+              user={user}
+              onRoleChange={onRoleChange}
+              onAction={onAction}
+              isRoleChangePending={isRoleChangePending}
+            />
+          ))}
+        </tbody>
+      </table>
+      
+      {users.length === 0 && (
+        <div className="text-center py-8 text-gray-500">
+          No users found. Add your first user above.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Mobile Cards Component
+interface UsersCardsProps {
+  readonly users: CognitoUser[]
+  readonly onRoleChange: (username: string, group: UserGroup) => void
+  readonly onAction: (type: ActionType, user: CognitoUser) => void
+  readonly isRoleChangePending: boolean
+}
+
+function UsersCards({ users, onRoleChange, onAction, isRoleChangePending }: UsersCardsProps) {
+  if (users.length === 0) {
+    return (
+      <div className="text-center py-8 text-gray-500 border border-gray-200 rounded-lg">
+        No users found. Add your first user above.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {users.map((user) => (
+        <UserCard
+          key={user.username}
+          user={user}
+          onRoleChange={onRoleChange}
+          onAction={onAction}
+          isRoleChangePending={isRoleChangePending}
+        />
+      ))}
+    </div>
+  )
+}
+
+// Main Component
 export default function UserAdmin() {
   const queryClient = useQueryClient()
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [confirmAction, setConfirmAction] = useState<{
-    type: 'delete' | 'disable' | 'enable' | 'reset'
-    user: CognitoUser
-  } | null>(null)
+  const [confirmAction, setConfirmAction] = useState<ConfirmActionState | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
@@ -171,8 +440,13 @@ export default function UserAdmin() {
     queryFn: () => api.getUsers(),
   })
 
+  const showSuccess = (message: string) => {
+    setActionSuccess(message)
+    setTimeout(() => setActionSuccess(null), 3000)
+  }
+
   const updateGroupMutation = useMutation({
-    mutationFn: ({ username, group }: { username: string; group: 'admins' | 'viewers' }) =>
+    mutationFn: ({ username, group }: { username: string; group: UserGroup }) =>
       api.updateUserGroup(username, group),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
@@ -216,42 +490,27 @@ export default function UserAdmin() {
     },
   })
 
-  const showSuccess = (message: string) => {
-    setActionSuccess(message)
-    setTimeout(() => setActionSuccess(null), 3000)
-  }
-
   const handleConfirmAction = () => {
     if (!confirmAction) return
     
-    switch (confirmAction.type) {
-      case 'delete':
-        deleteMutation.mutate(confirmAction.user.username)
-        break
-      case 'disable':
-        disableMutation.mutate(confirmAction.user.username)
-        break
-      case 'enable':
-        enableMutation.mutate(confirmAction.user.username)
-        break
-      case 'reset':
-        resetPasswordMutation.mutate(confirmAction.user.username)
-        break
+    const { type, user } = confirmAction
+    if (type === 'delete') {
+      deleteMutation.mutate(user.username)
+    } else if (type === 'disable') {
+      disableMutation.mutate(user.username)
+    } else if (type === 'enable') {
+      enableMutation.mutate(user.username)
+    } else {
+      resetPasswordMutation.mutate(user.username)
     }
   }
 
-  const getStatusBadge = (user: CognitoUser) => {
-    if (!user.enabled) {
-      return <span className="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">Disabled</span>
-    }
-    switch (user.status) {
-      case 'CONFIRMED':
-        return <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700">Active</span>
-      case 'FORCE_CHANGE_PASSWORD':
-        return <span className="px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-700">Pending</span>
-      default:
-        return <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">{user.status}</span>
-    }
+  const handleRoleChange = (username: string, group: UserGroup) => {
+    updateGroupMutation.mutate({ username, group })
+  }
+
+  const handleAction = (type: ActionType, user: CognitoUser) => {
+    setConfirmAction({ type, user })
   }
 
   if (isLoading) {
@@ -271,11 +530,10 @@ export default function UserAdmin() {
     )
   }
 
-  const users = data?.users || []
+  const users = data?.users ?? []
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Users className="text-blue-600" size={20} />
@@ -291,7 +549,6 @@ export default function UserAdmin() {
         </button>
       </div>
 
-      {/* Success message */}
       {actionSuccess && (
         <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded-lg">
           <CheckCircle2 size={16} />
@@ -299,205 +556,39 @@ export default function UserAdmin() {
         </div>
       )}
 
-      {/* Users table - desktop */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden hidden md:block">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">User</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Status</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Role</th>
-              <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {users.map((user) => (
-              <tr key={user.username} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <div>
-                    <p className="font-medium text-gray-900">{user.email}</p>
-                    {user.name && <p className="text-sm text-gray-500">{user.name}</p>}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  {getStatusBadge(user)}
-                </td>
-                <td className="px-4 py-3">
-                  <select
-                    value={user.groups.includes('admins') ? 'admins' : 'viewers'}
-                    onChange={(e) => updateGroupMutation.mutate({
-                      username: user.username,
-                      group: e.target.value as 'admins' | 'viewers'
-                    })}
-                    disabled={updateGroupMutation.isPending}
-                    className={clsx(
-                      'text-sm border rounded px-2 py-1',
-                      user.groups.includes('admins') 
-                        ? 'border-purple-300 bg-purple-50 text-purple-700'
-                        : 'border-gray-300 bg-white text-gray-700'
-                    )}
-                  >
-                    <option value="viewers">Viewer</option>
-                    <option value="admins">Admin</option>
-                  </select>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-1">
-                    <button
-                      onClick={() => setConfirmAction({ type: 'reset', user })}
-                      className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                      title="Reset password"
-                    >
-                      <Key size={16} />
-                    </button>
-                    {user.enabled ? (
-                      <button
-                        onClick={() => setConfirmAction({ type: 'disable', user })}
-                        className="p-1.5 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded"
-                        title="Disable user"
-                      >
-                        <UserX size={16} />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmAction({ type: 'enable', user })}
-                        className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded"
-                        title="Enable user"
-                      >
-                        <UserCheck size={16} />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setConfirmAction({ type: 'delete', user })}
-                      className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
-                      title="Delete user"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        
-        {users.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            No users found. Add your first user above.
-          </div>
-        )}
+      <UsersTable
+        users={users}
+        onRoleChange={handleRoleChange}
+        onAction={handleAction}
+        isRoleChangePending={updateGroupMutation.isPending}
+      />
+
+      <div className="md:hidden">
+        <UsersCards
+          users={users}
+          onRoleChange={handleRoleChange}
+          onAction={handleAction}
+          isRoleChangePending={updateGroupMutation.isPending}
+        />
       </div>
 
-      {/* Users cards - mobile */}
-      <div className="md:hidden space-y-3">
-        {users.length === 0 ? (
-          <div className="text-center py-8 text-gray-500 border border-gray-200 rounded-lg">
-            No users found. Add your first user above.
-          </div>
-        ) : (
-          users.map((user) => (
-            <div key={user.username} className="border border-gray-200 rounded-lg p-4 space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-900 truncate">{user.email}</p>
-                  {user.name && <p className="text-sm text-gray-500">{user.name}</p>}
-                </div>
-                {getStatusBadge(user)}
-              </div>
-              
-              <div className="flex items-center justify-between gap-2">
-                <select
-                  value={user.groups.includes('admins') ? 'admins' : 'viewers'}
-                  onChange={(e) => updateGroupMutation.mutate({
-                    username: user.username,
-                    group: e.target.value as 'admins' | 'viewers'
-                  })}
-                  disabled={updateGroupMutation.isPending}
-                  className={clsx(
-                    'text-sm border rounded px-2 py-1.5',
-                    user.groups.includes('admins') 
-                      ? 'border-purple-300 bg-purple-50 text-purple-700'
-                      : 'border-gray-300 bg-white text-gray-700'
-                  )}
-                >
-                  <option value="viewers">Viewer</option>
-                  <option value="admins">Admin</option>
-                </select>
-                
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setConfirmAction({ type: 'reset', user })}
-                    className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                    title="Reset password"
-                  >
-                    <Key size={18} />
-                  </button>
-                  {user.enabled ? (
-                    <button
-                      onClick={() => setConfirmAction({ type: 'disable', user })}
-                      className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded"
-                      title="Disable user"
-                    >
-                      <UserX size={18} />
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setConfirmAction({ type: 'enable', user })}
-                      className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded"
-                      title="Enable user"
-                    >
-                      <UserCheck size={18} />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setConfirmAction({ type: 'delete', user })}
-                    className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
-                    title="Delete user"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Create user modal */}
       <CreateUserModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ['users'] })}
       />
 
-      {/* Confirm action modal */}
-      <ConfirmModal
-        isOpen={!!confirmAction}
-        title={
-          confirmAction?.type === 'delete' ? 'Delete User' :
-          confirmAction?.type === 'disable' ? 'Disable User' :
-          confirmAction?.type === 'enable' ? 'Enable User' :
-          'Reset Password'
-        }
-        message={
-          confirmAction?.type === 'delete' 
-            ? `Are you sure you want to delete ${confirmAction.user.email}? This cannot be undone.`
-            : confirmAction?.type === 'disable'
-            ? `Disable ${confirmAction?.user.email}? They will not be able to log in.`
-            : confirmAction?.type === 'enable'
-            ? `Enable ${confirmAction?.user.email}? They will be able to log in again.`
-            : `Send a password reset email to ${confirmAction?.user.email}?`
-        }
-        confirmLabel={
-          confirmAction?.type === 'delete' ? 'Delete' :
-          confirmAction?.type === 'disable' ? 'Disable' :
-          confirmAction?.type === 'enable' ? 'Enable' :
-          'Send Reset Email'
-        }
-        variant={confirmAction?.type === 'delete' ? 'danger' : 'info'}
-        onConfirm={handleConfirmAction}
-        onCancel={() => setConfirmAction(null)}
-      />
+      {confirmAction && (
+        <ConfirmModal
+          isOpen={true}
+          title={getConfirmTitle(confirmAction.type)}
+          message={getConfirmMessage(confirmAction)}
+          confirmLabel={getConfirmLabel(confirmAction.type)}
+          variant={getConfirmVariant(confirmAction.type)}
+          onConfirm={handleConfirmAction}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
     </div>
   )
 }

@@ -34,7 +34,7 @@ export default function ConfirmModal({
   isLoading = false,
   onConfirm,
   onCancel,
-}: ConfirmModalProps) {
+}: Readonly<ConfirmModalProps>) {
   if (!isOpen) return null
 
   const variantStyles = {

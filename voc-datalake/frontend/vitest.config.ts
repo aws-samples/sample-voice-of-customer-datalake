@@ -22,10 +22,13 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       exclude: [
         'node_modules/',
+        'dist/',
+        'public/',
         'src/test/',
         '**/*.d.ts',
         '**/*.config.*',
         '**/main.tsx',
+        'mock-server.js',
       ],
     },
   },

@@ -31,7 +31,7 @@ interface ProtectedRouteProps {
  * } />
  * ```
  */
-export default function ProtectedRoute({ children }: ProtectedRouteProps) {
+export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProps>) {
   const location = useLocation()
   const { isAuthenticated } = useAuthStore()
 

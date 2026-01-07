@@ -36,11 +36,14 @@ export default function TimeRangeSelector() {
   // Close picker/dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setShowPicker(false)
-      }
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowDropdown(false)
+      const target = e.target
+      if (target instanceof Node) {
+        if (pickerRef.current && !pickerRef.current.contains(target)) {
+          setShowPicker(false)
+        }
+        if (dropdownRef.current && !dropdownRef.current.contains(target)) {
+          setShowDropdown(false)
+        }
       }
     }
     document.addEventListener('mousedown', handleClickOutside)

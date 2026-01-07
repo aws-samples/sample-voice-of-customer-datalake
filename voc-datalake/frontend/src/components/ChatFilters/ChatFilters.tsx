@@ -16,11 +16,6 @@ import { api } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import clsx from 'clsx'
 
-interface ChatFiltersProps {
-  filters: ChatFiltersType
-  onChange: (filters: ChatFiltersType) => void
-}
-
 // Default options as fallback
 const defaultSources = [
   { value: '', label: 'All Sources' },
@@ -46,49 +41,102 @@ const sentiments = [
   { value: 'mixed', label: '🤔 Mixed' },
 ]
 
+interface ChatFiltersProps {
+  readonly filters: ChatFiltersType
+  readonly onChange: (filters: ChatFiltersType) => void
+}
+
+type FilterOption = { value: string; label: string }
+
+function formatLabel(str: string): string {
+  return str.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
+function buildSourceOptions(data: { sources: Record<string, number> }): FilterOption[] {
+  return [
+    { value: '', label: 'All Sources' },
+    ...Object.keys(data.sources)
+      .sort((a, b) => data.sources[b] - data.sources[a])
+      .map(source => ({ value: source, label: formatLabel(source) }))
+  ]
+}
+
+function buildCategoryOptions(data: { categories: Record<string, number> }): FilterOption[] {
+  return [
+    { value: '', label: 'All Categories' },
+    ...Object.keys(data.categories)
+      .sort((a, b) => data.categories[b] - data.categories[a])
+      .map(cat => ({ value: cat, label: formatLabel(cat) }))
+  ]
+}
+
+function getActiveFilterSummary(
+  filters: ChatFiltersType,
+  sources: FilterOption[],
+  categories: FilterOption[]
+): string {
+  const parts = [
+    filters.source && sources.find(s => s.value === filters.source)?.label,
+    filters.category && categories.find(c => c.value === filters.category)?.label,
+    filters.sentiment && sentiments.find(s => s.value === filters.sentiment)?.label.replace(/^[^\s]+\s/, ''),
+  ].filter(Boolean)
+  return parts.join(', ')
+}
+
+// Filter select component
+function FilterSelect({
+  value,
+  options,
+  onChange,
+  activeColorClass,
+}: Readonly<{
+  value: string
+  options: FilterOption[]
+  onChange: (value: string) => void
+  activeColorClass: string
+}>) {
+  const isActive = Boolean(value)
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={clsx(
+          'w-full sm:w-auto text-xs px-2 py-2 sm:py-1.5 pr-6 rounded border appearance-none cursor-pointer',
+          isActive ? activeColorClass : 'bg-white border-gray-200'
+        )}
+      >
+        {options.map(s => (
+          <option key={s.value} value={s.value}>{s.label}</option>
+        ))}
+      </select>
+      <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+    </div>
+  )
+}
+
 export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
   const [sources, setSources] = useState(defaultSources)
   const [categories, setCategories] = useState(defaultCategories)
   const { config } = useConfigStore()
 
-  // Fetch actual sources and categories from API
   useEffect(() => {
     if (!config.apiEndpoint) return
-    
-    // Fetch sources
+
     api.getSources(30).then(data => {
       if (data.sources && Object.keys(data.sources).length > 0) {
-        const dynamicSources = [
-          { value: '', label: 'All Sources' },
-          ...Object.keys(data.sources)
-            .sort((a, b) => data.sources[b] - data.sources[a])
-            .map(source => ({
-              value: source,
-              label: source.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-            }))
-        ]
-        setSources(dynamicSources)
+        setSources(buildSourceOptions(data))
       }
-    }).catch(() => {})
-    
-    // Fetch categories
+    }).catch(() => { /* ignore */ })
+
     api.getCategories(30).then(data => {
       if (data.categories && Object.keys(data.categories).length > 0) {
-        const dynamicCategories = [
-          { value: '', label: 'All Categories' },
-          ...Object.keys(data.categories)
-            .sort((a, b) => data.categories[b] - data.categories[a])
-            .map(cat => ({
-              value: cat,
-              label: cat.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-            }))
-        ]
-        setCategories(dynamicCategories)
+        setCategories(buildCategoryOptions(data))
       }
-    }).catch(() => {})
+    }).catch(() => { /* ignore */ })
   }, [config.apiEndpoint])
 
-  const hasActiveFilters = filters.source || filters.category || filters.sentiment
+  const hasActiveFilters = Boolean(filters.source || filters.category || filters.sentiment)
 
   const updateFilter = (key: keyof ChatFiltersType, value: string | undefined) => {
     onChange({ ...filters, [key]: value || undefined })
@@ -115,66 +163,29 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
       </div>
 
       <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
-        {/* Source Filter */}
-        <div className="relative">
-          <select
-            value={filters.source || ''}
-            onChange={(e) => updateFilter('source', e.target.value)}
-            className={clsx(
-              'w-full sm:w-auto text-xs px-2 py-2 sm:py-1.5 pr-6 rounded border appearance-none cursor-pointer',
-              filters.source ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-gray-200'
-            )}
-          >
-            {sources.map(s => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        </div>
-
-        {/* Category Filter */}
-        <div className="relative">
-          <select
-            value={filters.category || ''}
-            onChange={(e) => updateFilter('category', e.target.value)}
-            className={clsx(
-              'w-full sm:w-auto text-xs px-2 py-2 sm:py-1.5 pr-6 rounded border appearance-none cursor-pointer',
-              filters.category ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-white border-gray-200'
-            )}
-          >
-            {categories.map(c => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        </div>
-
-        {/* Sentiment Filter */}
-        <div className="relative">
-          <select
-            value={filters.sentiment || ''}
-            onChange={(e) => updateFilter('sentiment', e.target.value)}
-            className={clsx(
-              'w-full sm:w-auto text-xs px-2 py-2 sm:py-1.5 pr-6 rounded border appearance-none cursor-pointer',
-              filters.sentiment ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200'
-            )}
-          >
-            {sentiments.map(s => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        </div>
+        <FilterSelect
+          value={filters.source ?? ''}
+          options={sources}
+          onChange={(v) => updateFilter('source', v)}
+          activeColorClass="bg-blue-50 border-blue-200 text-blue-700"
+        />
+        <FilterSelect
+          value={filters.category ?? ''}
+          options={categories}
+          onChange={(v) => updateFilter('category', v)}
+          activeColorClass="bg-purple-50 border-purple-200 text-purple-700"
+        />
+        <FilterSelect
+          value={filters.sentiment ?? ''}
+          options={sentiments}
+          onChange={(v) => updateFilter('sentiment', v)}
+          activeColorClass="bg-green-50 border-green-200 text-green-700"
+        />
       </div>
 
-      {/* Active Filters Summary */}
       {hasActiveFilters && (
         <div className="mt-2 text-xs text-gray-500 truncate">
-          Focusing on: {[
-            filters.source && sources.find(s => s.value === filters.source)?.label,
-            filters.category && categories.find(c => c.value === filters.category)?.label,
-            filters.sentiment && sentiments.find(s => s.value === filters.sentiment)?.label.replace(/^[^\s]+\s/, ''),
-          ].filter(Boolean).join(', ')}
+          Focusing on: {getActiveFilterSummary(filters, sources, categories)}
         </div>
       )}
     </div>
