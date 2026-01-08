@@ -6,11 +6,16 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
-import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as path from 'path';
+import {
+  loadPlugins,
+  getPluginsWithWebhook,
+  capitalize,
+  type PluginManifest,
+} from '../plugin-loader';
 
 export interface VocAnalyticsStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -296,6 +301,36 @@ export class VocAnalyticsStack extends cdk.Stack {
     });
 
     // ============================================
+    // Lambda: Logs API (validation/processing logs)
+    // Handles: /logs/*
+    // ============================================
+    const logsRole = new iam.Role(this, 'LogsLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
+    });
+    aggregatesTable.grantReadWriteData(logsRole);
+    kmsKey.grantDecrypt(logsRole);
+
+    const logsLambda = new lambda.Function(this, 'LogsApi', {
+      functionName: 'voc-logs-api',
+      runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'logs_handler.lambda_handler',
+      code: apiCodeWithShared,
+      role: logsRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        ALLOWED_ORIGIN: allowedOrigin,
+        POWERTOOLS_SERVICE_NAME: 'voc-logs-api',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: new logs.LogGroup(this, 'LogsApiLogs', { logGroupName: '/aws/lambda/voc-logs-api', retention: logs.RetentionDays.TWO_WEEKS, removalPolicy: cdk.RemovalPolicy.DESTROY }),
+    });
+
+    // ============================================
     // Lambda: Users API (Cognito user administration)
     // Handles: /users/*
     // ============================================
@@ -563,8 +598,13 @@ export class VocAnalyticsStack extends cdk.Stack {
 
 
     // ============================================
-    // Lambda 5: Webhook (Trustpilot)
+    // Plugin Webhooks - Dynamic from manifests
     // ============================================
+    const pluginsDir = path.join(__dirname, '../../plugins');
+    const allPlugins = loadPlugins(pluginsDir);
+    const webhookPlugins = getPluginsWithWebhook(allPlugins);
+
+    // Common webhook role
     const webhookRole = new iam.Role(this, 'WebhookLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [
@@ -577,36 +617,25 @@ export class VocAnalyticsStack extends cdk.Stack {
       actions: ['sqs:SendMessage'],
       resources: [processingQueueArn],
     }));
-    // Grant read access to secrets for webhook signature validation
     webhookRole.addToPolicy(new iam.PolicyStatement({
       actions: ['secretsmanager:GetSecretValue'],
       resources: [secretsArn],
     }));
 
-    const trustpilotWebhook = new lambda.Function(this, 'TrustpilotWebhook', {
-      functionName: 'voc-webhook-trustpilot',
-      runtime: lambda.Runtime.PYTHON_3_12,
-      architecture: lambda.Architecture.ARM_64,
-      handler: 'handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/webhooks/trustpilot'),
-      role: webhookRole,
-      timeout: cdk.Duration.seconds(30),
-      memorySize: 256,
-      environment: {
-        PROCESSING_QUEUE_URL: processingQueueUrl,
-        FEEDBACK_TABLE: feedbackTable.tableName,
-        SECRETS_ARN: secretsArn,
-        BRAND_NAME: brandName,
-        POWERTOOLS_SERVICE_NAME: 'voc-webhook-trustpilot',
-        LOG_LEVEL: 'INFO',
-      },
-      layers: [apiLayer],
-      logGroup: new logs.LogGroup(this, 'TrustpilotWebhookLogs', {
-        logGroupName: '/aws/lambda/voc-webhook-trustpilot',
-        retention: logs.RetentionDays.TWO_WEEKS,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
-      }),
-    });
+    // Create webhook Lambdas for each plugin with webhook support
+    const webhookLambdas = new Map<string, lambda.Function>();
+    for (const plugin of webhookPlugins) {
+      const webhookFn = this.createWebhookLambda(
+        plugin,
+        webhookRole,
+        apiLayer,
+        processingQueueUrl,
+        feedbackTable.tableName,
+        secretsArn,
+        brandName
+      );
+      webhookLambdas.set(plugin.id, webhookFn);
+    }
 
     // ============================================
     // REST API with Cognito authentication
@@ -674,7 +703,6 @@ export class VocAnalyticsStack extends cdk.Stack {
     const feedbackFormIntegration = new apigateway.LambdaIntegration(feedbackFormLambda, { proxy: true });
     const chatIntegration = new apigateway.LambdaIntegration(chatLambda, { proxy: true });
     const projectsIntegration = new apigateway.LambdaIntegration(projectsLambda, { proxy: true });
-    const webhookIntegration = new apigateway.LambdaIntegration(trustpilotWebhook, { proxy: true });
 
     // ============================================
     // Metrics Lambda: /feedback/*, /metrics/*
@@ -901,6 +929,23 @@ export class VocAnalyticsStack extends cdk.Stack {
     categoriesGenerateResource.addMethod('POST', settingsIntegration, authMethodOptions);
 
     // ============================================
+    // Logs Lambda: /logs/*
+    // ============================================
+    const logsIntegration = new apigateway.LambdaIntegration(logsLambda, { proxy: true });
+    const logsResource = this.api.root.addResource('logs');
+    const logsValidationResource = logsResource.addResource('validation');
+    logsValidationResource.addMethod('GET', logsIntegration, authMethodOptions);
+    const logsValidationSourceResource = logsValidationResource.addResource('{source}');
+    logsValidationSourceResource.addMethod('DELETE', logsIntegration, authMethodOptions);
+    const logsProcessingResource = logsResource.addResource('processing');
+    logsProcessingResource.addMethod('GET', logsIntegration, authMethodOptions);
+    const logsSummaryResource = logsResource.addResource('summary');
+    logsSummaryResource.addMethod('GET', logsIntegration, authMethodOptions);
+    const logsScraperResource = logsResource.addResource('scraper');
+    const logsScraperIdResource = logsScraperResource.addResource('{scraper_id}');
+    logsScraperIdResource.addMethod('GET', logsIntegration, authMethodOptions);
+
+    // ============================================
     // Users Lambda: /users/* (admin only)
     // ============================================
     const usersResource = this.api.root.addResource('users');
@@ -942,104 +987,29 @@ export class VocAnalyticsStack extends cdk.Stack {
     projectsResource.addProxy({ defaultIntegration: projectsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // ============================================
-    // Webhook: /webhooks/trustpilot
+    // Webhooks: /webhooks/{pluginId}
+    // Dynamic routes from plugin manifests
     // NOTE: No API key - webhooks must be accessible by external services
-    // Consider adding webhook signature verification in the Lambda
+    // Webhook signature verification is handled in each Lambda
     // ============================================
     const webhooksResource = this.api.root.addResource('webhooks');
-    const trustpilotResource = webhooksResource.addResource('trustpilot');
-    trustpilotResource.addMethod('POST', webhookIntegration);  // No auth - external webhook
+    
+    // Create routes for each webhook plugin
+    for (const plugin of webhookPlugins) {
+      const webhookFn = webhookLambdas.get(plugin.id);
+      if (!webhookFn) continue;
 
-    // ============================================
-    // WAF WebACL for API Gateway (REGIONAL scope)
-    // Protects against common web attacks, SQL injection, XSS, and DDoS
-    // ============================================
-    const apiWaf = new wafv2.CfnWebACL(this, 'ApiWaf', {
-      scope: 'REGIONAL',
-      defaultAction: { allow: {} },
-      visibilityConfig: {
-        cloudWatchMetricsEnabled: true,
-        metricName: 'VocApiWaf',
-        sampledRequestsEnabled: true,
-      },
-      rules: [
-        {
-          name: 'AWSManagedRulesCommonRuleSet',
-          priority: 1,
-          overrideAction: { none: {} },
-          statement: {
-            managedRuleGroupStatement: {
-              vendorName: 'AWS',
-              name: 'AWSManagedRulesCommonRuleSet',
-              // Exclude SizeRestrictions_BODY rule - blocks requests >8KB
-              // Projects API needs larger bodies for PRD/PR-FAQ documents (up to 50KB)
-              excludedRules: [
-                { name: 'SizeRestrictions_BODY' },
-              ],
-            },
-          },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: 'ApiCommonRuleSet',
-            sampledRequestsEnabled: true,
-          },
-        },
-        {
-          name: 'AWSManagedRulesKnownBadInputsRuleSet',
-          priority: 2,
-          overrideAction: { none: {} },
-          statement: {
-            managedRuleGroupStatement: {
-              vendorName: 'AWS',
-              name: 'AWSManagedRulesKnownBadInputsRuleSet',
-            },
-          },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: 'ApiKnownBadInputs',
-            sampledRequestsEnabled: true,
-          },
-        },
-        {
-          name: 'AWSManagedRulesSQLiRuleSet',
-          priority: 3,
-          overrideAction: { none: {} },
-          statement: {
-            managedRuleGroupStatement: {
-              vendorName: 'AWS',
-              name: 'AWSManagedRulesSQLiRuleSet',
-            },
-          },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: 'ApiSQLiRuleSet',
-            sampledRequestsEnabled: true,
-          },
-        },
-        {
-          name: 'RateLimitRule',
-          priority: 4,
-          action: { block: {} },
-          statement: {
-            rateBasedStatement: {
-              limit: 2000,
-              aggregateKeyType: 'IP',
-            },
-          },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: 'ApiRateLimit',
-            sampledRequestsEnabled: true,
-          },
-        },
-      ],
-    });
+      const webhookInfra = plugin.infrastructure.webhook;
+      if (!webhookInfra) continue;
 
-    // Associate WAF with API Gateway stage
-    new wafv2.CfnWebACLAssociation(this, 'ApiWafAssociation', {
-      resourceArn: `arn:aws:apigateway:${this.region}::/restapis/${this.api.restApiId}/stages/v1`,
-      webAclArn: apiWaf.attrArn,
-    });
+      const webhookIntegration = new apigateway.LambdaIntegration(webhookFn, { proxy: true });
+      const pluginResource = webhooksResource.addResource(plugin.id);
+
+      // Add methods from manifest (default: POST only)
+      for (const method of webhookInfra.methods) {
+        pluginResource.addMethod(method, webhookIntegration);  // No auth - external webhook
+      }
+    }
 
     // ============================================
     // Outputs
@@ -1048,5 +1018,64 @@ export class VocAnalyticsStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ApiId', { value: this.api.restApiId });
     new cdk.CfnOutput(this, 'TrustpilotWebhookUrl', { value: `${this.api.url}webhooks/trustpilot` });
     new cdk.CfnOutput(this, 'ChatStreamUrl', { value: chatStreamUrl.url });
+    new cdk.CfnOutput(this, 'WebhookPlugins', { value: webhookPlugins.map(p => p.id).join(',') });
+  }
+
+  // ============================================
+  // Helper Methods
+  // ============================================
+
+  private createWebhookLambda(
+    plugin: PluginManifest,
+    webhookRole: iam.Role,
+    apiLayer: lambda.LayerVersion,
+    processingQueueUrl: string,
+    feedbackTableName: string,
+    secretsArn: string,
+    brandName: string
+  ): lambda.Function {
+    const webhookCode = lambda.Code.fromAsset('plugins', {
+      exclude: ['**/__pycache__', '*.pyc', '_template/**'],
+      bundling: {
+        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        command: [
+          'bash', '-c', [
+            'mkdir -p /asset-output',
+            `cp -r /asset-input/${plugin.id}/webhook/* /asset-output/`,
+            'cp -r /asset-input/_shared /asset-output/',
+          ].join(' && '),
+        ],
+        platform: 'linux/arm64',
+      },
+    });
+
+    // Use PascalCase plugin name first for backwards compatibility with existing stacks
+    const pascalPluginId = capitalize(plugin.id);
+    
+    return new lambda.Function(this, `${pascalPluginId}Webhook`, {
+      functionName: `voc-webhook-${plugin.id}`,
+      runtime: lambda.Runtime.PYTHON_3_12,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code: webhookCode,
+      role: webhookRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        PROCESSING_QUEUE_URL: processingQueueUrl,
+        FEEDBACK_TABLE: feedbackTableName,
+        SECRETS_ARN: secretsArn,
+        BRAND_NAME: brandName,
+        PLUGIN_ID: plugin.id,
+        POWERTOOLS_SERVICE_NAME: `voc-webhook-${plugin.id}`,
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: new logs.LogGroup(this, `${pascalPluginId}WebhookLogs`, {
+        logGroupName: `/aws/lambda/voc-webhook-${plugin.id}`,
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
   }
 }

@@ -1,0 +1,54 @@
+{
+  "id": "appstore_google",
+  "name": "Google Play Store",
+  "icon": "🤖",
+  "description": "App reviews via Google Play Developer API",
+  "category": "appstore",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(15 minutes)",
+      "timeout": 120,
+      "memory": 256
+    }
+  },
+
+  "config": [
+    {
+      "key": "package_name",
+      "label": "Package Name",
+      "type": "text",
+      "placeholder": "com.example.app",
+      "required": true,
+      "secret": false
+    },
+    {
+      "key": "service_account",
+      "label": "Service Account JSON",
+      "type": "textarea",
+      "placeholder": "{\"type\": \"service_account\", ...}",
+      "required": true,
+      "secret": true
+    }
+  ],
+
+  "setup": {
+    "title": "Google Play Store Setup",
+    "color": "green",
+    "steps": [
+      "Go to Google Play Console",
+      "Navigate to Setup > API access",
+      "Create or link a Google Cloud project",
+      "Create a service account with Play Developer API access",
+      "Download the service account JSON key",
+      "Paste the entire JSON content above"
+    ]
+  },
+
+  "secrets": {
+    "package_name": "",
+    "service_account": ""
+  }
+}

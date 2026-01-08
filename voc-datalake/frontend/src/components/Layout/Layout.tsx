@@ -38,7 +38,7 @@ import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, getDaysFromRange } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
-import { useAuthStore } from '../../store/authStore'
+import { useAuthStore, useIsAdmin } from '../../store/authStore'
 import { authService } from '../../services/auth'
 import TimeRangeSelector from '../TimeRangeSelector'
 import Breadcrumbs from '../Breadcrumbs'
@@ -49,6 +49,7 @@ interface NavItem {
   to: string
   icon: LucideIcon
   label: string
+  adminOnly?: boolean
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -63,7 +64,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/artifact-builder', icon: Sparkles, label: 'Artifact Builder' },
   { to: '/scrapers', icon: Globe, label: 'Scrapers' },
   { to: '/feedback-forms', icon: FileText, label: 'Feedback Forms' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/settings', icon: Settings, label: 'Settings', adminOnly: true },
 ]
 
 // Sidebar header component
@@ -292,10 +293,14 @@ export default function Layout() {
   const location = useLocation()
   const { timeRange, config } = useConfigStore()
   const { user, isAuthenticated } = useAuthStore()
+  const isAdmin = useIsAdmin()
   const days = getDaysFromRange(timeRange)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)
+
+  // Filter nav items based on user role
+  const visibleNavItems = NAV_ITEMS.filter(item => !item.adminOnly || isAdmin)
 
   const { data: urgentData } = useQuery({
     queryKey: ['urgent', days],
@@ -343,7 +348,7 @@ export default function Layout() {
         />
 
         <nav className={clsx('flex-1 overflow-y-auto', sidebarCollapsed && !mobileMenuOpen ? 'lg:px-2 px-4' : 'px-4')}>
-          {NAV_ITEMS.map(item => (
+          {visibleNavItems.map(item => (
             <NavItemLink
               key={item.to}
               item={item}

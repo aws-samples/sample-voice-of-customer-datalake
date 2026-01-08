@@ -69,7 +69,7 @@ function RoleDisplay({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
   return (
     <div className="flex items-center gap-2">
       <Eye size={16} className="text-gray-500 flex-shrink-0" />
-      <span className="text-gray-700">Viewer</span>
+      <span className="text-gray-700">User</span>
     </div>
   )
 }

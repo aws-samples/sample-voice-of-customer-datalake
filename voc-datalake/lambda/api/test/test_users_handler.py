@@ -138,14 +138,16 @@ class TestListUsers:
 class TestCreateUser:
     """Tests for POST /users endpoint."""
 
+    @patch('users_handler.uuid')
     @patch('users_handler.cognito')
     def test_creates_user_successfully(
-        self, mock_cognito, api_gateway_event, lambda_context
+        self, mock_cognito, mock_uuid, api_gateway_event, lambda_context
     ):
-        """Creates new user in Cognito."""
+        """Creates new user in Cognito with UUID username."""
         # Arrange
+        mock_uuid.uuid4.return_value = 'test-uuid-1234'
         mock_cognito.admin_create_user.return_value = {
-            'User': {'Username': 'newuser@example.com'}
+            'User': {'Username': 'test-uuid-1234'}
         }
         mock_cognito.admin_add_user_to_group.return_value = {}
         
@@ -169,6 +171,10 @@ class TestCreateUser:
         assert response['statusCode'] == 200
         assert body['success'] is True
         assert 'newuser@example.com' in body['message']
+        # Verify UUID was used as username, not email
+        mock_cognito.admin_create_user.assert_called_once()
+        call_args = mock_cognito.admin_create_user.call_args
+        assert call_args.kwargs['Username'] == 'test-uuid-1234'
         mock_cognito.admin_add_user_to_group.assert_called_once()
 
     @patch('users_handler.cognito')

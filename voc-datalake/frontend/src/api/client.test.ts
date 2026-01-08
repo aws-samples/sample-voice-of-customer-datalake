@@ -1352,6 +1352,144 @@ describe('API Client', () => {
       )
     })
   })
+
+  describe('getValidationLogs', () => {
+    it('fetches validation logs with default parameters', async () => {
+      const mockResponse = { logs: [], count: 0, days: 7 }
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      })
+
+      const result = await api.getValidationLogs()
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/logs/validation?',
+        expect.any(Object)
+      )
+      expect(result).toEqual(mockResponse)
+    })
+
+    it('includes source and days parameters when provided', async () => {
+      const mockResponse = { logs: [{ source_platform: 'twitter', message_id: 'msg-1' }], count: 1, days: 7 }
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      })
+
+      await api.getValidationLogs({ source: 'twitter', days: 7, limit: 50 })
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('source=twitter'),
+        expect.any(Object)
+      )
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('days=7'),
+        expect.any(Object)
+      )
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('limit=50'),
+        expect.any(Object)
+      )
+    })
+  })
+
+  describe('getProcessingLogs', () => {
+    it('fetches processing logs with parameters', async () => {
+      const mockResponse = { logs: [{ error_type: 'BedrockError', error_message: 'Failed' }], count: 1, days: 7 }
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      })
+
+      const result = await api.getProcessingLogs({ days: 7 })
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/logs/processing'),
+        expect.any(Object)
+      )
+      expect(result).toEqual(mockResponse)
+    })
+  })
+
+  describe('getLogsSummary', () => {
+    it('fetches logs summary with days parameter', async () => {
+      const mockResponse = {
+        summary: {
+          validation_failures: { twitter: 5 },
+          processing_errors: { trustpilot: 2 },
+          total_validation_failures: 5,
+          total_processing_errors: 2,
+        },
+        days: 7,
+      }
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      })
+
+      const result = await api.getLogsSummary(7)
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/logs/summary?days=7',
+        expect.any(Object)
+      )
+      expect(result).toEqual(mockResponse)
+    })
+
+    it('uses default days when not provided', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ summary: {}, days: 7 }),
+      })
+
+      await api.getLogsSummary()
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/logs/summary'),
+        expect.any(Object)
+      )
+    })
+  })
+
+  describe('getScraperLogs', () => {
+    it('fetches scraper logs by scraper ID', async () => {
+      const mockResponse = {
+        scraper_id: 'scraper-123',
+        logs: [{ run_id: 'run-1', status: 'completed', pages_scraped: 10 }],
+        count: 1,
+      }
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      })
+
+      const result = await api.getScraperLogs('scraper-123', { days: 7, limit: 10 })
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/logs/scraper/scraper-123'),
+        expect.any(Object)
+      )
+      expect(result).toEqual(mockResponse)
+    })
+  })
+
+  describe('clearValidationLogs', () => {
+    it('sends DELETE request to clear validation logs for source', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true, deleted: 5 }),
+      })
+
+      const result = await api.clearValidationLogs('twitter')
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/logs/validation/twitter',
+        expect.objectContaining({ method: 'DELETE' })
+      )
+      expect(result).toEqual({ success: true, deleted: 5 })
+    })
+  })
 })
 
 describe('getDaysFromRange', () => {

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "cd .. && npm run generate:manifests",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -14,7 +15,7 @@
     "test:coverage": "vitest --coverage",
     "test:ui": "vitest --ui",
     "typecheck": "tsc -b --noEmit",
-    "deploy:frontend": "npm run build && aws s3 sync dist/ s3://voc-datalake-frontend-512144631813 --delete && aws cloudfront create-invalidation --distribution-id E1HZKV2G738RBE --paths '/*'"
+    "deploy:frontend": "chmod +x scripts/deploy.sh && ./scripts/deploy.sh"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.10",

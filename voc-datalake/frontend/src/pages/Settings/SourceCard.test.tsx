@@ -7,7 +7,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SourceCard from './SourceCard'
-import type { SourceInfo } from './sourceConfig'
+import type { PluginManifest } from '../../plugins/types'
 
 // Mock API
 const mockGetIntegrationStatus = vi.fn()
@@ -43,22 +43,26 @@ function createWrapper() {
   )
 }
 
-const mockSourceInfo: SourceInfo = {
+const mockManifest: PluginManifest = {
+  id: 'test_source',
   name: 'Test Source',
   icon: '🧪',
   description: 'Test source description',
-  fields: [
-    { key: 'api_key', label: 'API Key', type: 'password' },
-    { key: 'business_id', label: 'Business ID', type: 'text', placeholder: 'Enter ID' },
+  config: [
+    { key: 'api_key', label: 'API Key', type: 'password', required: true, secret: true },
+    { key: 'business_id', label: 'Business ID', type: 'text', placeholder: 'Enter ID', required: false, secret: false },
   ],
   webhooks: [
-    { name: 'Test Webhook', events: 'created, updated', docUrl: 'https://docs.example.com' },
+    { name: 'Test Webhook', events: ['created', 'updated'], docUrl: 'https://docs.example.com' },
   ],
-  setupInstructions: {
+  setup: {
     title: 'Setup Instructions',
     color: 'blue',
     steps: ['Step 1', 'Step 2', 'Step 3'],
   },
+  hasIngestor: true,
+  hasWebhook: true,
+  hasS3Trigger: false,
 }
 
 describe('SourceCard', () => {
@@ -71,7 +75,7 @@ describe('SourceCard', () => {
   describe('Header', () => {
     it('renders source name and icon', () => {
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -81,7 +85,7 @@ describe('SourceCard', () => {
 
     it('renders description when provided', () => {
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -92,7 +96,7 @@ describe('SourceCard', () => {
       mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
 
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -103,7 +107,7 @@ describe('SourceCard', () => {
 
     it('shows enabled/disabled toggle', () => {
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -116,7 +120,7 @@ describe('SourceCard', () => {
     it('expands card when header is clicked', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -128,7 +132,7 @@ describe('SourceCard', () => {
     it('shows webhooks section when expanded', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -141,7 +145,7 @@ describe('SourceCard', () => {
     it('shows setup instructions when expanded', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -158,7 +162,7 @@ describe('SourceCard', () => {
       mockEnableSource.mockResolvedValue({ enabled: true })
 
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -175,7 +179,7 @@ describe('SourceCard', () => {
       mockDisableSource.mockResolvedValue({ enabled: false })
 
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -192,7 +196,7 @@ describe('SourceCard', () => {
 
     it('disables toggle when no API endpoint', () => {
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="" />,
         { wrapper: createWrapper() }
       )
 
@@ -204,7 +208,7 @@ describe('SourceCard', () => {
     it('renders credential fields', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -219,7 +223,7 @@ describe('SourceCard', () => {
     it('toggles password visibility', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -238,7 +242,7 @@ describe('SourceCard', () => {
       mockUpdateIntegrationCredentials.mockResolvedValue({ success: true })
 
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -256,7 +260,7 @@ describe('SourceCard', () => {
       mockUpdateIntegrationCredentials.mockResolvedValue({ success: true })
 
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -278,7 +282,7 @@ describe('SourceCard', () => {
       mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
 
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -303,7 +307,7 @@ describe('SourceCard', () => {
       mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
 
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -324,7 +328,7 @@ describe('SourceCard', () => {
       mockTestIntegration.mockResolvedValue({ success: false, message: 'Invalid credentials' })
 
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -344,7 +348,7 @@ describe('SourceCard', () => {
       mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: false } })
 
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -360,7 +364,7 @@ describe('SourceCard', () => {
     it('displays webhook URL', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com/" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com/" />,
         { wrapper: createWrapper() }
       )
 
@@ -372,7 +376,7 @@ describe('SourceCard', () => {
     it('copies webhook URL to clipboard', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com/" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com/" />,
         { wrapper: createWrapper() }
       )
 
@@ -390,7 +394,7 @@ describe('SourceCard', () => {
     it('shows documentation link when provided', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -404,14 +408,18 @@ describe('SourceCard', () => {
   describe('S3 Import Source', () => {
     it('renders S3ImportExplorer for s3_import source', async () => {
       const user = userEvent.setup()
-      const s3SourceInfo: SourceInfo = {
+      const s3Manifest: PluginManifest = {
+        id: 's3_import',
         name: 'S3 Import',
         icon: '📦',
-        fields: [],
+        config: [],
+        hasIngestor: true,
+        hasWebhook: false,
+        hasS3Trigger: true,
       }
 
       render(
-        <SourceCard sourceKey="s3_import" info={s3SourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={s3Manifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -425,7 +433,7 @@ describe('SourceCard', () => {
     it('applies blue color theme', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard sourceKey="test_source" info={mockSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -437,13 +445,13 @@ describe('SourceCard', () => {
 
     it('applies orange color theme', async () => {
       const user = userEvent.setup()
-      const orangeSourceInfo: SourceInfo = {
-        ...mockSourceInfo,
-        setupInstructions: { ...mockSourceInfo.setupInstructions!, color: 'orange' },
+      const orangeManifest: PluginManifest = {
+        ...mockManifest,
+        setup: { ...mockManifest.setup!, color: 'orange' },
       }
 
       render(
-        <SourceCard sourceKey="test_source" info={orangeSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={orangeManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 
@@ -457,14 +465,18 @@ describe('SourceCard', () => {
   describe('Multiline Fields', () => {
     it('renders textarea for multiline fields', async () => {
       const user = userEvent.setup()
-      const multilineSourceInfo: SourceInfo = {
+      const multilineManifest: PluginManifest = {
+        id: 'test_source',
         name: 'Test',
         icon: '🧪',
-        fields: [{ key: 'config', label: 'Config', type: 'text', multiline: true, placeholder: 'Enter config' }],
+        config: [{ key: 'config', label: 'Config', type: 'textarea', placeholder: 'Enter config', required: false, secret: false }],
+        hasIngestor: true,
+        hasWebhook: false,
+        hasS3Trigger: false,
       }
 
       render(
-        <SourceCard sourceKey="test_source" info={multilineSourceInfo} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={multilineManifest} apiEndpoint="https://api.example.com" />,
         { wrapper: createWrapper() }
       )
 

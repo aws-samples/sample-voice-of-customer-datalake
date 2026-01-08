@@ -18,6 +18,10 @@ import type {
   FeedbackFormConfig,
   FeedbackForm,
   CognitoUser,
+  ValidationLogEntry,
+  ProcessingLogEntry,
+  ScraperLogEntry,
+  LogsSummary,
 } from './types'
 
 // Re-export all types for backward compatibility
@@ -39,6 +43,10 @@ export type {
   FeedbackFormConfig,
   FeedbackForm,
   CognitoUser,
+  ValidationLogEntry,
+  ProcessingLogEntry,
+  ScraperLogEntry,
+  LogsSummary,
 } from './types'
 export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation, ArtifactJob, ArtifactTemplate, ArtifactStyle } from './types'
 
@@ -579,6 +587,32 @@ export const api = {
   
   deleteUser: (username: string) =>
     fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}`, {
+      method: 'DELETE'
+    }),
+
+  // Logs API
+  getValidationLogs: (params?: { source?: string; days?: number; limit?: number }) => {
+    const searchParams = buildSearchParams(params ?? {})
+    return fetchApi<{ logs: ValidationLogEntry[]; count: number; days: number }>(`/logs/validation?${searchParams}`)
+  },
+
+  getProcessingLogs: (params?: { source?: string; days?: number; limit?: number }) => {
+    const searchParams = buildSearchParams(params ?? {})
+    return fetchApi<{ logs: ProcessingLogEntry[]; count: number; days: number }>(`/logs/processing?${searchParams}`)
+  },
+
+  getScraperLogs: (scraperId: string, params?: { days?: number; limit?: number }) => {
+    const searchParams = buildSearchParams(params ?? {})
+    return fetchApi<{ scraper_id: string; logs: ScraperLogEntry[]; count: number }>(`/logs/scraper/${scraperId}?${searchParams}`)
+  },
+
+  getLogsSummary: (days?: number) => {
+    const searchParams = buildSearchParams({ days })
+    return fetchApi<{ summary: LogsSummary; days: number }>(`/logs/summary?${searchParams}`)
+  },
+
+  clearValidationLogs: (source: string) =>
+    fetchApi<{ success: boolean; deleted: number }>(`/logs/validation/${source}`, {
       method: 'DELETE'
     }),
 }

@@ -1,6 +1,13 @@
 /**
  * @fileoverview Tests for Settings page component.
  * @module pages/Settings
+ * 
+ * The Settings page uses a tabbed interface:
+ * - Brand tab: API config, brand settings, danger zone
+ * - Data Sources tab: Plugin configurations
+ * - Categories tab: Category management
+ * - Logs tab: Validation/processing logs
+ * - Users tab: User administration (admin only)
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -11,11 +18,16 @@ import { TestRouter } from '../../test/test-utils'
 // Mock API
 const mockGetBrandSettings = vi.fn()
 const mockSaveBrandSettings = vi.fn()
+const mockGetLogsSummary = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
     getBrandSettings: () => mockGetBrandSettings(),
     saveBrandSettings: (settings: unknown) => mockSaveBrandSettings(settings),
+    getLogsSummary: () => mockGetLogsSummary(),
+    getValidationLogs: () => Promise.resolve({ logs: [], count: 0, days: 7 }),
+    getProcessingLogs: () => Promise.resolve({ logs: [], count: 0, days: 7 }),
+    getScrapers: () => Promise.resolve({ scrapers: [] }),
   },
 }))
 
@@ -62,9 +74,13 @@ vi.mock('../../components/ConfirmModal', () => ({
 }))
 
 vi.mock('./SourceCard', () => ({
-  default: ({ sourceKey }: { sourceKey: string }) => (
-    <div data-testid={`source-card-${sourceKey}`}>Source: {sourceKey}</div>
+  default: ({ manifest }: { manifest: { id: string } }) => (
+    <div data-testid={`source-card-${manifest.id}`}>Source: {manifest.id}</div>
   ),
+}))
+
+vi.mock('./LogsSection', () => ({
+  default: () => <div data-testid="logs-section">Logs Section</div>,
 }))
 
 import Settings from './Settings'
@@ -92,6 +108,10 @@ describe('Settings', () => {
       urls_to_track: ['https://example.com'],
     })
     mockSaveBrandSettings.mockResolvedValue({ success: true })
+    mockGetLogsSummary.mockResolvedValue({
+      summary: { validation_failures: {}, processing_errors: {}, total_validation_failures: 0, total_processing_errors: 0 },
+      days: 7,
+    })
   })
 
   describe('header', () => {
@@ -114,35 +134,91 @@ describe('Settings', () => {
     })
   })
 
-  describe('API configuration section', () => {
+  describe('tab navigation', () => {
+    it('displays all tabs for admin users', () => {
+      render(<Settings />, { wrapper: createWrapper() })
+      
+      // Verify all tab buttons exist (getAllByRole since there are mobile + desktop versions)
+      expect(screen.getAllByRole('button', { name: /Brand/i }).length).toBeGreaterThan(0)
+      expect(screen.getAllByRole('button', { name: /Data Sources/i }).length).toBeGreaterThan(0)
+      expect(screen.getAllByRole('button', { name: /Categories/i }).length).toBeGreaterThan(0)
+      expect(screen.getAllByRole('button', { name: /Logs/i }).length).toBeGreaterThan(0)
+      expect(screen.getAllByRole('button', { name: /Users/i }).length).toBeGreaterThan(0)
+    })
+
+    it('starts on Brand tab by default', () => {
+      render(<Settings />, { wrapper: createWrapper() })
+      
+      expect(screen.getByText('Brand Configuration')).toBeInTheDocument()
+    })
+
+    it('switches to Categories tab when clicked', async () => {
+      const user = userEvent.setup()
+      render(<Settings />, { wrapper: createWrapper() })
+      
+      // Click the Categories tab (there are multiple buttons with this text due to mobile/desktop)
+      const categoriesButtons = screen.getAllByRole('button', { name: /Categories/i })
+      await user.click(categoriesButtons[0])
+      
+      expect(screen.getByTestId('categories-manager')).toBeInTheDocument()
+    })
+
+    it('switches to Data Sources tab when clicked', async () => {
+      const user = userEvent.setup()
+      render(<Settings />, { wrapper: createWrapper() })
+      
+      const dataSourcesButtons = screen.getAllByRole('button', { name: /Data Sources/i })
+      await user.click(dataSourcesButtons[0])
+      
+      expect(screen.getByText(/Data Sources & Integrations/i)).toBeInTheDocument()
+    })
+
+    it('switches to Logs tab when clicked', async () => {
+      const user = userEvent.setup()
+      render(<Settings />, { wrapper: createWrapper() })
+      
+      const logsButtons = screen.getAllByRole('button', { name: /Logs/i })
+      await user.click(logsButtons[0])
+      
+      expect(screen.getByTestId('logs-section')).toBeInTheDocument()
+    })
+
+    it('switches to Users tab when clicked', async () => {
+      const user = userEvent.setup()
+      render(<Settings />, { wrapper: createWrapper() })
+      
+      const usersButtons = screen.getAllByRole('button', { name: /Users/i })
+      await user.click(usersButtons[0])
+      
+      expect(screen.getByTestId('user-admin')).toBeInTheDocument()
+    })
+  })
+
+  describe('brand tab - API configuration section', () => {
     it('displays API Configuration heading', () => {
       render(<Settings />, { wrapper: createWrapper() })
       
       expect(screen.getByText('API Configuration')).toBeInTheDocument()
     })
 
-    it('displays API endpoint input', () => {
+    it('shows Connected indicator when API is configured', () => {
       render(<Settings />, { wrapper: createWrapper() })
       
-      expect(screen.getByText(/API Endpoint URL/i)).toBeInTheDocument()
+      expect(screen.getByText(/Connected/i)).toBeInTheDocument()
+    })
+
+    it('expands API config when clicked', async () => {
+      const user = userEvent.setup()
+      render(<Settings />, { wrapper: createWrapper() })
+      
+      // Click to expand API config
+      await user.click(screen.getByText('API Configuration'))
+      
       expect(screen.getByPlaceholderText(/your-api-id.execute-api/i)).toBeInTheDocument()
-    })
-
-    it('displays Artifact Builder endpoint input', () => {
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText(/Artifact Builder Endpoint/i)).toBeInTheDocument()
-    })
-
-    it('populates API endpoint from config', () => {
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      const input = screen.getByPlaceholderText(/your-api-id.execute-api/i)
-      expect(input).toHaveValue('https://api.example.com')
     })
   })
 
-  describe('brand configuration section', () => {
+  describe('brand tab - brand configuration section', () => {
     it('displays Brand Configuration heading', () => {
       render(<Settings />, { wrapper: createWrapper() })
       
@@ -152,26 +228,7 @@ describe('Settings', () => {
     it('displays brand name input', () => {
       render(<Settings />, { wrapper: createWrapper() })
       
-      expect(screen.getByText(/Brand Name/i)).toBeInTheDocument()
       expect(screen.getByPlaceholderText(/Your Brand Name/i)).toBeInTheDocument()
-    })
-
-    it('displays brand handles input', () => {
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText(/Brand Handles/i)).toBeInTheDocument()
-    })
-
-    it('displays hashtags input', () => {
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText(/Hashtags to Track/i)).toBeInTheDocument()
-    })
-
-    it('displays URLs to track textarea', () => {
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText(/URLs to Track/i)).toBeInTheDocument()
     })
 
     it('shows synced indicator when API endpoint is configured', () => {
@@ -181,43 +238,7 @@ describe('Settings', () => {
     })
   })
 
-  describe('categories section', () => {
-    it('displays Feedback Categories heading', () => {
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('Feedback Categories')).toBeInTheDocument()
-    })
-
-    it('renders CategoriesManager component', () => {
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      expect(screen.getByTestId('categories-manager')).toBeInTheDocument()
-    })
-  })
-
-  describe('data sources section', () => {
-    it('displays Data Sources heading', () => {
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText(/Data Sources & Integrations/i)).toBeInTheDocument()
-    })
-  })
-
-  describe('user admin section', () => {
-    it('displays User Administration heading for admin users', () => {
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('User Administration')).toBeInTheDocument()
-    })
-
-    it('renders UserAdmin component for admin users', () => {
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      expect(screen.getByTestId('user-admin')).toBeInTheDocument()
-    })
-  })
-
-  describe('danger zone section', () => {
+  describe('brand tab - danger zone section', () => {
     it('displays Danger Zone heading', () => {
       render(<Settings />, { wrapper: createWrapper() })
       
@@ -309,28 +330,30 @@ describe('Settings', () => {
   })
 
   describe('form inputs', () => {
-    it('updates API endpoint when typed', async () => {
-      const user = userEvent.setup()
-      
-      render(<Settings />, { wrapper: createWrapper() })
-      
-      const input = screen.getByPlaceholderText(/your-api-id.execute-api/i)
-      await user.clear(input)
-      await user.type(input, 'https://new-api.example.com')
-      
-      expect(input).toHaveValue('https://new-api.example.com')
-    })
-
     it('updates brand name when typed', async () => {
       const user = userEvent.setup()
       
       render(<Settings />, { wrapper: createWrapper() })
       
       const input = screen.getByPlaceholderText(/Your Brand Name/i)
-      // Type additional text (don't clear since clear doesn't work well with controlled inputs)
       await user.type(input, ' Updated')
       
       expect(input).toHaveValue('Test Brand Updated')
+    })
+
+    it('updates API endpoint when expanded and typed', async () => {
+      const user = userEvent.setup()
+      
+      render(<Settings />, { wrapper: createWrapper() })
+      
+      // Expand API config first
+      await user.click(screen.getByText('API Configuration'))
+      
+      const input = screen.getByPlaceholderText(/your-api-id.execute-api/i)
+      await user.clear(input)
+      await user.type(input, 'https://new-api.example.com')
+      
+      expect(input).toHaveValue('https://new-api.example.com')
     })
   })
 
@@ -368,7 +391,7 @@ describe('Settings without admin access', () => {
     }))
   })
 
-  it('hides User Administration section for non-admin users', async () => {
+  it('hides Users tab for non-admin users', async () => {
     vi.resetModules()
     vi.doMock('../../store/authStore', () => ({
       useIsAdmin: () => false,
@@ -378,6 +401,7 @@ describe('Settings without admin access', () => {
     
     render(<SettingsNonAdmin />, { wrapper: createWrapper() })
     
-    expect(screen.queryByText('User Administration')).not.toBeInTheDocument()
+    // Users tab should not be visible
+    expect(screen.queryByRole('button', { name: /^Users$/i })).not.toBeInTheDocument()
   })
 })

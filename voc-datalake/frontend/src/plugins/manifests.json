@@ -1,0 +1,689 @@
+[
+  {
+    "id": "appstore_apple",
+    "name": "Apple App Store",
+    "icon": "🍎",
+    "description": "App reviews via Apple App Store RSS feed",
+    "category": "appstore",
+    "config": [
+      {
+        "key": "app_id",
+        "label": "App ID",
+        "type": "text",
+        "required": true,
+        "placeholder": "123456789",
+        "secret": false
+      },
+      {
+        "key": "country_codes",
+        "label": "Country Codes",
+        "type": "text",
+        "required": false,
+        "placeholder": "us, gb, de, fr",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "Apple App Store Setup",
+      "color": "gray",
+      "steps": [
+        "Find your app on the App Store",
+        "Copy the App ID from the URL (e.g., id123456789)",
+        "Enter just the numeric ID above",
+        "Optionally specify country codes (default: us, gb, de, fr)"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "appstore_google",
+    "name": "Google Play Store",
+    "icon": "🤖",
+    "description": "App reviews via Google Play Developer API",
+    "category": "appstore",
+    "config": [
+      {
+        "key": "package_name",
+        "label": "Package Name",
+        "type": "text",
+        "required": true,
+        "placeholder": "com.example.app",
+        "secret": false
+      },
+      {
+        "key": "service_account",
+        "label": "Service Account JSON",
+        "type": "textarea",
+        "required": true,
+        "placeholder": "{\"type\": \"service_account\", ...}",
+        "secret": true
+      }
+    ],
+    "setup": {
+      "title": "Google Play Store Setup",
+      "color": "green",
+      "steps": [
+        "Go to Google Play Console",
+        "Navigate to Setup > API access",
+        "Create or link a Google Cloud project",
+        "Create a service account with Play Developer API access",
+        "Download the service account JSON key",
+        "Paste the entire JSON content above"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "appstore_huawei",
+    "name": "Huawei AppGallery",
+    "icon": "📱",
+    "description": "App reviews via Huawei AppGallery Connect API",
+    "category": "appstore",
+    "config": [
+      {
+        "key": "client_id",
+        "label": "Client ID",
+        "type": "text",
+        "required": true,
+        "secret": false
+      },
+      {
+        "key": "client_secret",
+        "label": "Client Secret",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "app_id",
+        "label": "App ID",
+        "type": "text",
+        "required": true,
+        "placeholder": "123456789",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "Huawei AppGallery Setup",
+      "color": "orange",
+      "steps": [
+        "Go to Huawei AppGallery Connect",
+        "Navigate to Users and permissions > API key",
+        "Create a new API client",
+        "Copy the Client ID and Client Secret",
+        "Get your App ID from the app details page"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "facebook",
+    "name": "Facebook",
+    "icon": "👍",
+    "description": "Page reviews and comments via Meta Graph API",
+    "category": "social",
+    "config": [
+      {
+        "key": "access_token",
+        "label": "Access Token",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "page_id",
+        "label": "Page ID",
+        "type": "text",
+        "required": true,
+        "placeholder": "123456789012345",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "Facebook Setup",
+      "color": "blue",
+      "steps": [
+        "Go to Meta for Developers (developers.facebook.com)",
+        "Create or select an app with Pages API access",
+        "Add your Facebook Page to the app",
+        "Generate a Page Access Token with pages_read_engagement permission",
+        "Get your Page ID from the Page settings"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "google_reviews",
+    "name": "Google Reviews",
+    "icon": "📍",
+    "description": "Business reviews via Google Business Profile API",
+    "category": "reviews",
+    "config": [
+      {
+        "key": "api_key",
+        "label": "API Key / Access Token",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "location_ids",
+        "label": "Location IDs",
+        "type": "textarea",
+        "required": true,
+        "placeholder": "accounts/123/locations/456, accounts/123/locations/789",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "Google Reviews Setup",
+      "color": "blue",
+      "steps": [
+        "Go to Google Cloud Console and enable Business Profile API",
+        "Create OAuth 2.0 credentials or API key",
+        "Link your Google Business Profile to the project",
+        "Get your location IDs from the Business Profile API",
+        "Enter the location IDs (comma-separated) above"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "instagram",
+    "name": "Instagram",
+    "icon": "📸",
+    "description": "Mentions and comments via Instagram Graph API",
+    "category": "social",
+    "config": [
+      {
+        "key": "access_token",
+        "label": "Access Token",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "instagram_account_id",
+        "label": "Instagram Account ID",
+        "type": "text",
+        "required": true,
+        "placeholder": "17841400000000000",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "Instagram Setup",
+      "color": "orange",
+      "steps": [
+        "Go to Meta for Developers (developers.facebook.com)",
+        "Create or select an app with Instagram Graph API access",
+        "Connect your Instagram Business/Creator account",
+        "Generate a long-lived access token",
+        "Get your Instagram Account ID from the API"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "linkedin",
+    "name": "LinkedIn",
+    "icon": "💼",
+    "description": "Company page comments via LinkedIn Marketing API",
+    "category": "social",
+    "config": [
+      {
+        "key": "access_token",
+        "label": "Access Token",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "organization_id",
+        "label": "Organization ID",
+        "type": "text",
+        "required": true,
+        "placeholder": "12345678",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "LinkedIn Setup",
+      "color": "blue",
+      "steps": [
+        "Apply for LinkedIn Marketing Developer Platform access",
+        "Create an app in LinkedIn Developer Portal",
+        "Request r_organization_social permission",
+        "Complete OAuth flow to get access token",
+        "Get your Organization ID from the company page URL"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "reddit",
+    "name": "Reddit",
+    "icon": "🤖",
+    "description": "Brand mentions from Reddit posts and comments",
+    "category": "social",
+    "config": [
+      {
+        "key": "client_id",
+        "label": "Client ID",
+        "type": "text",
+        "required": true,
+        "secret": false
+      },
+      {
+        "key": "client_secret",
+        "label": "Client Secret",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "subreddits",
+        "label": "Subreddits",
+        "type": "textarea",
+        "required": false,
+        "placeholder": "all, technology, business",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "Reddit Setup",
+      "color": "orange",
+      "steps": [
+        "Go to reddit.com/prefs/apps",
+        "Create a new app (script type)",
+        "Copy the Client ID (under the app name)",
+        "Copy the Client Secret",
+        "Optionally specify subreddits to search (default: all)"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "s3_import",
+    "name": "S3 Bulk Import",
+    "icon": "📦",
+    "description": "Import feedback from S3 bucket (CSV, JSON, JSONL)",
+    "category": "import",
+    "config": [
+      {
+        "key": "bucket_name",
+        "label": "S3 Bucket Name",
+        "type": "text",
+        "required": false,
+        "placeholder": "my-feedback-bucket",
+        "secret": false
+      },
+      {
+        "key": "import_prefix",
+        "label": "Import Prefix",
+        "type": "text",
+        "required": false,
+        "placeholder": "imports/",
+        "secret": false
+      },
+      {
+        "key": "processed_prefix",
+        "label": "Processed Prefix",
+        "type": "text",
+        "required": false,
+        "placeholder": "processed/",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "S3 Import Setup",
+      "color": "blue",
+      "steps": [
+        "Create an S3 bucket for feedback imports",
+        "Grant the VoC Lambda role read/write access",
+        "Upload CSV/JSON/JSONL files to the import prefix",
+        "Files are moved to processed prefix after import",
+        "CSV columns: id, text, rating, created_at, source, url"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": true,
+    "version": "1.0.0"
+  },
+  {
+    "id": "tavily",
+    "name": "Tavily Web Search",
+    "icon": "🔍",
+    "description": "Brand mentions from web search using Tavily API",
+    "category": "search",
+    "config": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "type": "password",
+        "required": true,
+        "secret": true
+      }
+    ],
+    "setup": {
+      "title": "Tavily Setup",
+      "color": "blue",
+      "steps": [
+        "Go to tavily.com and create an account",
+        "Navigate to API Keys in your dashboard",
+        "Create a new API key",
+        "Copy and paste the API key above"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "tiktok",
+    "name": "TikTok",
+    "icon": "🎵",
+    "description": "Comments and mentions via TikTok API for Business",
+    "category": "social",
+    "config": [
+      {
+        "key": "access_token",
+        "label": "Access Token",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "refresh_token",
+        "label": "Refresh Token",
+        "type": "password",
+        "required": false,
+        "secret": true
+      },
+      {
+        "key": "client_key",
+        "label": "Client Key",
+        "type": "text",
+        "required": false,
+        "secret": false
+      },
+      {
+        "key": "client_secret",
+        "label": "Client Secret",
+        "type": "password",
+        "required": false,
+        "secret": true
+      },
+      {
+        "key": "business_id",
+        "label": "Business ID",
+        "type": "text",
+        "required": false,
+        "placeholder": "7000000000000000000",
+        "secret": false
+      },
+      {
+        "key": "video_ids",
+        "label": "Video IDs",
+        "type": "textarea",
+        "required": false,
+        "placeholder": "7000000000000000001, 7000000000000000002",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "TikTok Setup",
+      "color": "gray",
+      "steps": [
+        "Apply for TikTok for Business API access",
+        "Create an app in TikTok Developer Portal",
+        "Complete OAuth flow to get access token",
+        "Optionally add refresh token for auto-renewal",
+        "Enter your Business ID or specific Video IDs to monitor"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "trustpilot",
+    "name": "Trustpilot",
+    "icon": "⭐",
+    "description": "Service reviews via webhook and API polling",
+    "category": "reviews",
+    "config": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "api_secret",
+        "label": "API Secret",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "business_unit_id",
+        "label": "Business Unit ID",
+        "type": "text",
+        "required": false,
+        "placeholder": "e.g., 5a7b8c9d0e1f2a3b4c5d6e7f",
+        "secret": false
+      }
+    ],
+    "webhooks": [
+      {
+        "name": "Service Reviews",
+        "events": [
+          "service-review-created",
+          "service-review-updated",
+          "service-review-deleted"
+        ],
+        "docUrl": "https://support.trustpilot.com/hc/en-us/articles/360001108568-Webhooks"
+      }
+    ],
+    "setup": {
+      "title": "Trustpilot Setup",
+      "color": "blue",
+      "steps": [
+        "Log in to your Trustpilot Business Portal",
+        "Go to Integrations → API to get your API Key and Secret",
+        "Copy your Business Unit ID from the URL",
+        "Go to Integrations → Webhooks and add the webhook URL",
+        "Select events: service-review-created, updated, deleted"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": true,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "twitter",
+    "name": "Twitter/X",
+    "icon": "🐦",
+    "description": "Brand mentions via Twitter API v2 Recent Search",
+    "category": "social",
+    "config": [
+      {
+        "key": "bearer_token",
+        "label": "Bearer Token",
+        "type": "password",
+        "required": true,
+        "secret": true
+      }
+    ],
+    "setup": {
+      "title": "Twitter/X Setup",
+      "color": "blue",
+      "steps": [
+        "Go to Twitter Developer Portal (developer.twitter.com)",
+        "Create a new project and app",
+        "Generate a Bearer Token from the Keys & Tokens section",
+        "Copy the Bearer Token and paste it above",
+        "Ensure your app has Read access to tweets"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "webscraper",
+    "name": "Web Scraper",
+    "icon": "🕷️",
+    "description": "Configurable scraper for extracting feedback from websites",
+    "category": "import",
+    "config": [
+      {
+        "key": "configs",
+        "label": "Scraper Configurations (JSON)",
+        "type": "textarea",
+        "required": false,
+        "placeholder": "[{\"id\": \"example\", \"name\": \"Example\", \"base_url\": \"https://...\"}]",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "Web Scraper Setup",
+      "color": "gray",
+      "steps": [
+        "Configure scrapers via the Scrapers page in the dashboard",
+        "Each scraper can use CSS selectors or JSON-LD extraction",
+        "Supports pagination and custom frequencies",
+        "Test scrapers before enabling them",
+        "Scrapers run automatically based on their configured frequency"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "yelp",
+    "name": "Yelp Fusion API",
+    "icon": "🍽️",
+    "description": "Business reviews via official Yelp API",
+    "category": "reviews",
+    "config": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "business_ids",
+        "label": "Business IDs",
+        "type": "textarea",
+        "required": true,
+        "placeholder": "lufthansa-frankfurt-am-main-3, lufthansa-los-angeles-2",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "Yelp Setup",
+      "color": "orange",
+      "steps": [
+        "Go to Yelp Fusion Developer Portal",
+        "Create a new app or use an existing one",
+        "Copy your API Key from the app settings",
+        "Find business IDs from Yelp URLs (slug after /biz/)"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  },
+  {
+    "id": "youtube",
+    "name": "YouTube",
+    "icon": "▶️",
+    "description": "Video comments via YouTube Data API v3",
+    "category": "social",
+    "config": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "channel_id",
+        "label": "Channel ID",
+        "type": "text",
+        "required": false,
+        "placeholder": "UCxxxxxxxxxxxxxxxxxxxxxx",
+        "secret": false
+      },
+      {
+        "key": "video_ids",
+        "label": "Video IDs",
+        "type": "textarea",
+        "required": false,
+        "placeholder": "dQw4w9WgXcQ, abc123xyz",
+        "secret": false
+      },
+      {
+        "key": "search_terms",
+        "label": "Search Terms",
+        "type": "text",
+        "required": false,
+        "placeholder": "brand name | product name",
+        "secret": false
+      }
+    ],
+    "setup": {
+      "title": "YouTube Setup",
+      "color": "orange",
+      "steps": [
+        "Go to Google Cloud Console",
+        "Enable YouTube Data API v3",
+        "Create an API key",
+        "Optionally add your channel ID to monitor all videos",
+        "Or specify individual video IDs to monitor"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0"
+  }
+]

@@ -1,0 +1,60 @@
+{
+  "id": "reddit",
+  "name": "Reddit",
+  "icon": "🤖",
+  "description": "Brand mentions from Reddit posts and comments",
+  "category": "social",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(5 minutes)",
+      "timeout": 120,
+      "memory": 256
+    }
+  },
+
+  "config": [
+    {
+      "key": "client_id",
+      "label": "Client ID",
+      "type": "text",
+      "required": true,
+      "secret": false
+    },
+    {
+      "key": "client_secret",
+      "label": "Client Secret",
+      "type": "password",
+      "required": true,
+      "secret": true
+    },
+    {
+      "key": "subreddits",
+      "label": "Subreddits",
+      "type": "textarea",
+      "placeholder": "all, technology, business",
+      "required": false,
+      "secret": false
+    }
+  ],
+
+  "setup": {
+    "title": "Reddit Setup",
+    "color": "orange",
+    "steps": [
+      "Go to reddit.com/prefs/apps",
+      "Create a new app (script type)",
+      "Copy the Client ID (under the app name)",
+      "Copy the Client Secret",
+      "Optionally specify subreddits to search (default: all)"
+    ]
+  },
+
+  "secrets": {
+    "client_id": "",
+    "client_secret": "",
+    "subreddits": "all"
+  }
+}

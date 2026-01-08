@@ -110,7 +110,7 @@ function RoleSelect({ user, isPending, onChange, size = 'sm' }: RoleSelectProps)
           : 'border-gray-300 bg-white text-gray-700'
       )}
     >
-      <option value="viewers">Viewer</option>
+      <option value="viewers">User</option>
       <option value="admins">Admin</option>
     </select>
   )
@@ -248,7 +248,7 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
                   className="text-blue-600"
                 />
                 <Eye size={16} className="text-gray-500" />
-                <span>Viewer</span>
+                <span>User</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input

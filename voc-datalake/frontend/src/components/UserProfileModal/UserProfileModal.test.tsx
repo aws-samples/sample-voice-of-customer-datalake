@@ -82,13 +82,13 @@ describe('UserProfileModal', () => {
       expect(screen.getByText('Administrator')).toBeInTheDocument()
     })
 
-    it('displays Viewer role for non-admin users', () => {
+    it('displays User role for non-admin users', () => {
       ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         user: { ...mockUser, groups: ['viewers'] },
       })
       
       render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
-      expect(screen.getByText('Viewer')).toBeInTheDocument()
+      expect(screen.getByText('User')).toBeInTheDocument()
     })
 
     it('displays user groups', () => {

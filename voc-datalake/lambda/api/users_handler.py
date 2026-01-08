@@ -12,6 +12,7 @@ Only accessible by users in the 'admins' group.
 """
 import os
 import json
+import uuid
 import boto3
 from typing import Any
 from aws_lambda_powertools import Logger, Tracer
@@ -147,7 +148,7 @@ def create_user():
         
         response = cognito.admin_create_user(
             UserPoolId=USER_POOL_ID,
-            Username=email,  # Use email as username
+            Username=str(uuid.uuid4()),  # Generate unique username (email is set as alias attribute)
             UserAttributes=user_attrs,
             DesiredDeliveryMediums=['EMAIL'],
         )

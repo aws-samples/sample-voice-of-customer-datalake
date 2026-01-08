@@ -7,7 +7,7 @@ import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack';
 import { VocAnalyticsStack } from '../lib/stacks/analytics-stack';
 import { VocResearchStack } from '../lib/stacks/research-stack';
-import { VocFrontendStack } from '../lib/stacks/frontend-stack';
+import { VocFrontendInfraStack, VocFrontendStack } from '../lib/stacks/frontend-stack';
 import { VocAuthStack } from '../lib/stacks/auth-stack';
 import { ArtifactBuilderStack } from '../lib/stacks/artifact-builder-stack';
 
@@ -33,11 +33,6 @@ const config = {
   ],
 };
 
-// CloudFront domain for CORS - set this after first deployment
-// Example: 'd1234567890.cloudfront.net'
-// Pass via: cdk deploy --context frontendDomain=d1234567890.cloudfront.net
-const frontendDomain = app.node.tryGetContext('frontendDomain') as string | undefined;
-
 const env = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
   region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
@@ -47,10 +42,19 @@ const env = {
 const storageStack = new VocStorageStack(app, 'VocStorageStack', {
   env,
   description: 'VoC Data Lake - Storage Layer (DynamoDB, KMS, S3)',
-  frontendDomain,
 });
 
-// Stack 2: Ingestion (Lambda ingestors, EventBridge, SQS)
+// Stack 2: Frontend Infrastructure (S3 + CloudFront) - Created early to get CloudFront domain
+// This stack creates the hosting infrastructure without deploying content
+const frontendInfraStack = new VocFrontendInfraStack(app, 'VocFrontendInfraStack', {
+  env,
+  description: 'VoC Data Lake - Frontend Infrastructure (S3, CloudFront)',
+});
+
+// Get the CloudFront domain for CORS configuration
+const frontendDomain = frontendInfraStack.distributionDomainName;
+
+// Stack 3: Ingestion (Lambda ingestors, EventBridge, SQS)
 const ingestionStack = new VocIngestionStack(app, 'VocIngestionStack', {
   env,
   description: 'VoC Data Lake - Ingestion Layer (Lambda, EventBridge, SQS)',
@@ -64,8 +68,9 @@ const ingestionStack = new VocIngestionStack(app, 'VocIngestionStack', {
   frontendDomain,
 });
 ingestionStack.addDependency(storageStack);
+ingestionStack.addDependency(frontendInfraStack);
 
-// Stack 3: Processing (Lambda processors, Bedrock, DynamoDB Streams)
+// Stack 4: Processing (Lambda processors, Bedrock, DynamoDB Streams)
 const processingStack = new VocProcessingStack(app, 'VocProcessingStack', {
   env,
   description: 'VoC Data Lake - Processing Layer (Lambda, Bedrock, Comprehend)',
@@ -80,7 +85,7 @@ const processingStack = new VocProcessingStack(app, 'VocProcessingStack', {
 processingStack.addDependency(storageStack);
 processingStack.addDependency(ingestionStack);
 
-// Stack 4: Research (Step Functions for long-running research jobs)
+// Stack 5: Research (Step Functions for long-running research jobs)
 const researchStack = new VocResearchStack(app, 'VocResearchStack', {
   env,
   description: 'VoC Data Lake - Research Workflow (Step Functions)',
@@ -91,15 +96,16 @@ const researchStack = new VocResearchStack(app, 'VocResearchStack', {
 });
 researchStack.addDependency(storageStack);
 
-// Stack 5: Auth (Cognito User Pool)
+// Stack 6: Auth (Cognito User Pool)
 const authStack = new VocAuthStack(app, 'VocAuthStack', {
   env,
   description: 'VoC Data Lake - Authentication (Cognito)',
   brandName: config.brandName,
   frontendDomain,
 });
+authStack.addDependency(frontendInfraStack);
 
-// Stack 6: Analytics (API Gateway, Lambda, Webhooks)
+// Stack 7: Analytics (API Gateway, Lambda, Webhooks)
 const analyticsStack = new VocAnalyticsStack(app, 'VocAnalyticsStack', {
   env,
   description: 'VoC Data Lake - Analytics API (API Gateway, Lambda, Webhooks)',
@@ -124,18 +130,7 @@ analyticsStack.addDependency(storageStack);
 analyticsStack.addDependency(ingestionStack);
 analyticsStack.addDependency(researchStack);
 analyticsStack.addDependency(authStack);
-
-// Stack 7: Frontend (S3, CloudFront)
-const frontendStack = new VocFrontendStack(app, 'VocFrontendStack', {
-  env,
-  description: 'VoC Data Lake - Frontend (S3, CloudFront)',
-  apiEndpoint: analyticsStack.api.url,
-  userPoolId: authStack.userPool.userPoolId,
-  userPoolClientId: authStack.userPoolClient.userPoolClientId,
-  cognitoRegion: env.region || 'us-east-1',
-});
-frontendStack.addDependency(analyticsStack);
-frontendStack.addDependency(authStack);
+analyticsStack.addDependency(frontendInfraStack);
 
 // Stack 8: Artifact Builder (Agentic PoC Builder)
 // Standalone stack - can be deployed independently
@@ -144,8 +139,27 @@ const artifactBuilderStack = new ArtifactBuilderStack(app, 'ArtifactBuilderStack
   description: 'Artifact Builder - Agentic PoC Generator (ECS, S3, CloudFront)',
 });
 
+// Stack 9: Frontend Deployment (deploys built frontend to S3)
+// This stack is deployed LAST after the API endpoint is known
+const frontendStack = new VocFrontendStack(app, 'VocFrontendStack', {
+  env,
+  description: 'VoC Data Lake - Frontend Deployment',
+  websiteBucket: frontendInfraStack.websiteBucket,
+  distribution: frontendInfraStack.distribution,
+  apiEndpoint: analyticsStack.api.url,
+  artifactBuilderEndpoint: artifactBuilderStack.api.url,
+  userPoolId: authStack.userPool.userPoolId,
+  userPoolClientId: authStack.userPoolClient.userPoolClientId,
+  cognitoRegion: env.region || 'us-east-1',
+});
+frontendStack.addDependency(analyticsStack);
+frontendStack.addDependency(authStack);
+frontendStack.addDependency(frontendInfraStack);
+frontendStack.addDependency(artifactBuilderStack);
+
 // Apply cost allocation tags to all stacks
 tagStack(storageStack, 'Storage');
+tagStack(frontendInfraStack, 'Frontend');
 tagStack(ingestionStack, 'Ingestion');
 tagStack(processingStack, 'Processing');
 tagStack(researchStack, 'Research');

@@ -1,11 +1,21 @@
 /**
- * @fileoverview Settings page for API configuration and integrations.
+ * @fileoverview Settings page with tabbed navigation.
  * @module pages/Settings
+ * 
+ * Sections:
+ * - Brand Configuration
+ * - Data Sources (Plugins)
+ * - Categories
+ * - Logs (validation failures, processing errors, scraper logs)
+ * - User Administration (admin only)
  */
 
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, Check, AlertCircle, Loader2, CheckCircle2, Tags, Users } from 'lucide-react'
+import { 
+  Save, Check, AlertCircle, Loader2, CheckCircle2, Tags, Users, 
+  Building2, Plug, FileWarning, ChevronDown 
+} from 'lucide-react'
 import { useConfigStore } from '../../store/configStore'
 import { useIsAdmin } from '../../store/authStore'
 import { api } from '../../api/client'
@@ -14,7 +24,10 @@ import UserAdmin from '../../components/UserAdmin'
 import clsx from 'clsx'
 import ConfirmModal from '../../components/ConfirmModal'
 import SourceCard from './SourceCard'
-import { sourceInfo } from './sourceConfig'
+import LogsSection from './LogsSection'
+import { getPluginManifests } from '../../plugins'
+
+type SettingsTab = 'brand' | 'plugins' | 'categories' | 'logs' | 'users'
 
 export default function Settings() {
   const queryClient = useQueryClient()
@@ -23,6 +36,8 @@ export default function Settings() {
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [activeTab, setActiveTab] = useState<SettingsTab>('brand')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const [apiEndpoint, setApiEndpoint] = useState(config.apiEndpoint)
   const [artifactBuilderEndpoint, setArtifactBuilderEndpoint] = useState(config.artifactBuilderEndpoint)
@@ -96,53 +111,132 @@ export default function Settings() {
     setTimeout(() => setSaved(false), 3000)
   }
 
+  const tabs = [
+    { id: 'brand' as const, label: 'Brand', icon: Building2 },
+    { id: 'plugins' as const, label: 'Data Sources', icon: Plug },
+    { id: 'categories' as const, label: 'Categories', icon: Tags },
+    { id: 'logs' as const, label: 'Logs', icon: FileWarning },
+    ...(isAdmin ? [{ id: 'users' as const, label: 'Users', icon: Users }] : []),
+  ]
+
+  const activeTabData = tabs.find(t => t.id === activeTab)
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
+    <div className="max-w-5xl mx-auto">
       <Header saved={saved} saving={saving} onSave={handleSave} />
 
-      <ApiConfigSection
-        apiEndpoint={apiEndpoint}
-        artifactBuilderEndpoint={artifactBuilderEndpoint}
-        onApiEndpointChange={setApiEndpoint}
-        onArtifactBuilderEndpointChange={setArtifactBuilderEndpoint}
-      />
+      {/* Mobile Tab Dropdown */}
+      <div className="sm:hidden mb-4">
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-200 rounded-lg"
+        >
+          <div className="flex items-center gap-2">
+            {activeTabData && <activeTabData.icon size={18} className="text-gray-600" />}
+            <span className="font-medium">{activeTabData?.label}</span>
+          </div>
+          <ChevronDown size={18} className={clsx('text-gray-400 transition-transform', mobileMenuOpen && 'rotate-180')} />
+        </button>
+        {mobileMenuOpen && (
+          <div className="mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false) }}
+                className={clsx(
+                  'w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-gray-50',
+                  activeTab === tab.id && 'bg-blue-50 text-blue-700'
+                )}
+              >
+                <tab.icon size={18} />
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
-      <BrandConfigSection
-        apiEndpoint={apiEndpoint}
-        loadingSettings={loadingSettings}
-        brandName={brandName}
-        brandHandles={brandHandles}
-        hashtags={hashtags}
-        urlsToTrack={urlsToTrack}
-        onBrandNameChange={setBrandName}
-        onBrandHandlesChange={setBrandHandles}
-        onHashtagsChange={setHashtags}
-        onUrlsToTrackChange={setUrlsToTrack}
-      />
+      {/* Desktop Tabs */}
+      <div className="hidden sm:flex border-b border-gray-200 mb-6">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={clsx(
+              'flex items-center gap-2 px-4 py-3 border-b-2 -mb-px transition-colors',
+              activeTab === tab.id
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            )}
+          >
+            <tab.icon size={18} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-      <CategoriesSection apiEndpoint={apiEndpoint} />
+      {/* Tab Content */}
+      <div className="space-y-6">
+        {activeTab === 'brand' && (
+          <>
+            <ApiConfigSection
+              apiEndpoint={apiEndpoint}
+              artifactBuilderEndpoint={artifactBuilderEndpoint}
+              onApiEndpointChange={setApiEndpoint}
+              onArtifactBuilderEndpointChange={setArtifactBuilderEndpoint}
+            />
+            <BrandConfigSection
+              apiEndpoint={apiEndpoint}
+              loadingSettings={loadingSettings}
+              brandName={brandName}
+              brandHandles={brandHandles}
+              hashtags={hashtags}
+              urlsToTrack={urlsToTrack}
+              onBrandNameChange={setBrandName}
+              onBrandHandlesChange={setBrandHandles}
+              onHashtagsChange={setHashtags}
+              onUrlsToTrackChange={setUrlsToTrack}
+            />
+            <DangerZoneSection
+              showResetConfirm={showResetConfirm}
+              onShowResetConfirm={setShowResetConfirm}
+              onReset={() => {
+                setConfig({ apiEndpoint: '', artifactBuilderEndpoint: '', brandName: '', brandHandles: [], hashtags: [], urlsToTrack: [] })
+                setApiEndpoint('')
+                setArtifactBuilderEndpoint('')
+                setBrandName('')
+                setBrandHandles('')
+                setHashtags('')
+                setUrlsToTrack('')
+                setShowResetConfirm(false)
+              }}
+            />
+          </>
+        )}
 
-      <DataSourcesSection apiEndpoint={apiEndpoint} />
+        {activeTab === 'plugins' && (
+          <DataSourcesSection apiEndpoint={apiEndpoint} />
+        )}
 
-      {isAdmin && <UserAdminSection apiEndpoint={apiEndpoint} />}
+        {activeTab === 'categories' && (
+          <CategoriesSection apiEndpoint={apiEndpoint} />
+        )}
 
-      <DangerZoneSection
-        showResetConfirm={showResetConfirm}
-        onShowResetConfirm={setShowResetConfirm}
-        onReset={() => {
-          setConfig({ apiEndpoint: '', artifactBuilderEndpoint: '', brandName: '', brandHandles: [], hashtags: [], urlsToTrack: [] })
-          setApiEndpoint('')
-          setArtifactBuilderEndpoint('')
-          setBrandName('')
-          setBrandHandles('')
-          setHashtags('')
-          setUrlsToTrack('')
-          setShowResetConfirm(false)
-        }}
-      />
+        {activeTab === 'logs' && (
+          <LogsSection apiEndpoint={apiEndpoint} />
+        )}
+
+        {activeTab === 'users' && isAdmin && (
+          <UserAdminSection apiEndpoint={apiEndpoint} />
+        )}
+      </div>
     </div>
   )
 }
+
+// ============================================
+// Header Component
+// ============================================
 
 interface HeaderProps {
   readonly saved: boolean
@@ -161,10 +255,10 @@ function Header({ saved, saving, onSave }: HeaderProps) {
   const buttonClass = saved ? 'bg-green-600 text-white' : 'btn-primary'
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-6">
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-sm sm:text-base text-gray-500">Configure your VoC platform, data sources, and integrations</p>
+        <p className="text-sm sm:text-base text-gray-500">Configure your VoC platform</p>
       </div>
       <button
         onClick={onSave}
@@ -178,6 +272,10 @@ function Header({ saved, saving, onSave }: HeaderProps) {
   )
 }
 
+// ============================================
+// API Config Section
+// ============================================
+
 interface ApiConfigSectionProps {
   readonly apiEndpoint: string
   readonly artifactBuilderEndpoint: string
@@ -186,24 +284,42 @@ interface ApiConfigSectionProps {
 }
 
 function ApiConfigSection({ apiEndpoint, artifactBuilderEndpoint, onApiEndpointChange, onArtifactBuilderEndpointChange }: ApiConfigSectionProps) {
+  const [showApiConfig, setShowApiConfig] = useState(!apiEndpoint)
+
   return (
     <div className="card">
-      <h2 className="text-lg font-semibold mb-4">API Configuration</h2>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">API Endpoint URL</label>
-          <input type="url" value={apiEndpoint} onChange={(e) => onApiEndpointChange(e.target.value)} placeholder="https://your-api-id.execute-api.region.amazonaws.com/v1" className="input" />
-          <p className="text-xs text-gray-500 mt-1">The API Gateway endpoint from your VoC deployment</p>
+      <button
+        onClick={() => setShowApiConfig(!showApiConfig)}
+        className="w-full flex items-center justify-between text-left"
+      >
+        <h2 className="text-lg font-semibold">API Configuration</h2>
+        <div className="flex items-center gap-2">
+          {apiEndpoint && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 size={14} /> Connected</span>}
+          <ChevronDown size={18} className={clsx('text-gray-400 transition-transform', showApiConfig && 'rotate-180')} />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Artifact Builder Endpoint URL</label>
-          <input type="url" value={artifactBuilderEndpoint} onChange={(e) => onArtifactBuilderEndpointChange(e.target.value)} placeholder="https://artifact-builder-api.execute-api.region.amazonaws.com/v1" className="input" />
-          <p className="text-xs text-gray-500 mt-1">The Artifact Builder API endpoint for generating prototypes from PR/FAQs</p>
+      </button>
+      
+      {showApiConfig && (
+        <div className="space-y-4 mt-4 pt-4 border-t border-gray-100">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">API Endpoint URL</label>
+            <input type="url" value={apiEndpoint} onChange={(e) => onApiEndpointChange(e.target.value)} placeholder="https://your-api-id.execute-api.region.amazonaws.com/v1" className="input" />
+            <p className="text-xs text-gray-500 mt-1">The API Gateway endpoint from your VoC deployment</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Artifact Builder Endpoint URL</label>
+            <input type="url" value={artifactBuilderEndpoint} onChange={(e) => onArtifactBuilderEndpointChange(e.target.value)} placeholder="https://artifact-builder-api.execute-api.region.amazonaws.com/v1" className="input" />
+            <p className="text-xs text-gray-500 mt-1">The Artifact Builder API endpoint for generating prototypes</p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
+
+// ============================================
+// Brand Config Section
+// ============================================
 
 interface BrandConfigSectionProps {
   readonly apiEndpoint: string
@@ -254,6 +370,10 @@ function BrandConfigSection({ apiEndpoint, loadingSettings, brandName, brandHand
   )
 }
 
+// ============================================
+// Categories Section
+// ============================================
+
 interface CategoriesSectionProps {
   readonly apiEndpoint: string
 }
@@ -269,7 +389,7 @@ function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
       {!apiEndpoint ? (
         <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
           <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>Configure the API endpoint above to manage categories.</span>
+          <span>Configure the API endpoint in the Brand tab to manage categories.</span>
         </div>
       ) : (
         <CategoriesManager />
@@ -278,29 +398,47 @@ function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
   )
 }
 
+// ============================================
+// Data Sources Section
+// ============================================
+
 interface DataSourcesSectionProps {
   readonly apiEndpoint: string
 }
 
 function DataSourcesSection({ apiEndpoint }: DataSourcesSectionProps) {
+  const pluginManifests = getPluginManifests()
+
   return (
-    <div className="card">
-      <h2 className="text-lg font-semibold mb-2">Data Sources & Integrations</h2>
-      <p className="text-sm text-gray-500 mb-4">Configure API credentials, webhooks, and enable/disable data source schedules.</p>
-      {!apiEndpoint && (
-        <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">
-          <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>Configure the API endpoint above to manage data sources.</span>
-        </div>
-      )}
+    <div className="space-y-4">
+      <div className="card">
+        <h2 className="text-lg font-semibold mb-2">Data Sources & Integrations</h2>
+        <p className="text-sm text-gray-500 mb-4">Configure API credentials, webhooks, and enable/disable data source schedules.</p>
+        {!apiEndpoint && (
+          <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">
+            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+            <span>Configure the API endpoint in the Brand tab to manage data sources.</span>
+          </div>
+        )}
+      </div>
       <div className="space-y-3 sm:space-y-4">
-        {Object.entries(sourceInfo).map(([key, info]) => (
-          <SourceCard key={key} sourceKey={key} info={info} apiEndpoint={apiEndpoint} />
-        ))}
+        {pluginManifests.length === 0 ? (
+          <div className="card text-sm text-gray-500">
+            No data source plugins found. Run <code className="bg-gray-200 px-1 rounded">npm run generate:manifests</code> to generate plugin manifests.
+          </div>
+        ) : (
+          pluginManifests.map((manifest) => (
+            <SourceCard key={manifest.id} manifest={manifest} apiEndpoint={apiEndpoint} />
+          ))
+        )}
       </div>
     </div>
   )
 }
+
+// ============================================
+// User Admin Section
+// ============================================
 
 interface UserAdminSectionProps {
   readonly apiEndpoint: string
@@ -317,7 +455,7 @@ function UserAdminSection({ apiEndpoint }: UserAdminSectionProps) {
       {!apiEndpoint ? (
         <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
           <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>Configure the API endpoint above to manage users.</span>
+          <span>Configure the API endpoint in the Brand tab to manage users.</span>
         </div>
       ) : (
         <UserAdmin />
@@ -325,6 +463,10 @@ function UserAdminSection({ apiEndpoint }: UserAdminSectionProps) {
     </div>
   )
 }
+
+// ============================================
+// Danger Zone Section
+// ============================================
 
 interface DangerZoneSectionProps {
   readonly showResetConfirm: boolean

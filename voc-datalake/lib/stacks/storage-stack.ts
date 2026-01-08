@@ -8,7 +8,7 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Construct } from 'constructs';
 
 export interface VocStorageStackProps extends cdk.StackProps {
-  frontendDomain?: string;  // CloudFront domain for CORS (e.g., 'd1234567890.cloudfront.net')
+  // No frontend domain needed - CORS is handled by individual stacks
 }
 
 export class VocStorageStack extends cdk.Stack {
@@ -27,13 +27,8 @@ export class VocStorageStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: VocStorageStackProps) {
     super(scope, id, props);
 
-    // CORS allowed origins - always include CloudFront domain + localhost for dev
-    // frontendDomain should be set in cdk.context.json or passed via --context
-    const frontendDomain = props?.frontendDomain || this.node.tryGetContext('frontendDomain');
-    
-    const corsAllowedOrigins = frontendDomain 
-      ? [`https://${frontendDomain}`, 'http://localhost:5173', 'http://localhost:3000']
-      : ['http://localhost:5173', 'http://localhost:3000'];  // Dev only - set frontendDomain in cdk.context.json
+    // CORS allowed origins for S3 buckets - include localhost for dev
+    const corsAllowedOrigins = ['http://localhost:5173', 'http://localhost:3000'];
 
     // KMS Key for encryption at rest
     this.kmsKey = new kms.Key(this, 'VocKmsKey', {

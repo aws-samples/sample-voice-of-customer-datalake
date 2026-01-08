@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import AdminRoute from './components/AdminRoute'
 import PageLoader from './components/PageLoader'
 import Login from './pages/Login'
 import './index.css'
@@ -59,7 +60,7 @@ const router = createBrowserRouter([
       { path: 'artifact-builder', element: <Suspense fallback={<PageLoader />}><ArtifactBuilder /></Suspense> },
       { path: 'scrapers', element: <Suspense fallback={<PageLoader />}><Scrapers /></Suspense> },
       { path: 'feedback-forms', element: <Suspense fallback={<PageLoader />}><FeedbackForms /></Suspense> },
-      { path: 'settings', element: <Suspense fallback={<PageLoader />}><Settings /></Suspense> },
+      { path: 'settings', element: <Suspense fallback={<PageLoader />}><AdminRoute><Settings /></AdminRoute></Suspense> },
     ],
   },
 ])

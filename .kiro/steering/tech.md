@@ -88,6 +88,8 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 | `voc-artifact-builder-api` | `artifact_builder_handler.py` | `/artifacts/*` | S3, DynamoDB, ECS, Bedrock |
 | `voc-artifact-trigger-api` | `artifact_trigger_handler.py` | `/artifacts/trigger` | SQS, DynamoDB |
+| `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read |
+| `voc-manual-import-api` | `manual_import_handler.py` | `/manual-import/*` | DynamoDB, SQS, S3 |
 | `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS, Secrets Manager |
 
 **Benefits:**
@@ -132,6 +134,7 @@ def lambda_handler(event, context):
 | remark-gfm | 4.0.1 | GitHub Flavored Markdown |
 | amazon-cognito-identity-js | 6.3.12 | Cognito authentication |
 | jspdf + html2canvas | 3.0.4/1.4.1 | PDF export |
+| Zod | 4.3.5 | Runtime validation |
 | TypeScript | 5.9.3 | Type safety |
 
 ### Pages
@@ -149,9 +152,12 @@ def lambda_handler(event, context):
 | Projects | `/projects` | Research projects list |
 | Project Detail | `/projects/:id` | Personas, PRDs, PR/FAQs, project chat |
 | Artifact Builder | `/artifact-builder` | AI-powered artifact generation |
+| Data Explorer | `/data-explorer` | S3 raw data and DynamoDB browser |
 | Scrapers | `/scrapers` | CSS/JSON-LD selector config, templates |
 | Feedback Forms | `/feedback-forms` | Embeddable form management |
 | Settings | `/settings` | Brand config, integrations, user admin |
+
+Note: Each page is organized in its own folder under `frontend/src/pages/` with an index.tsx entry point.
 
 ### Code Style
 

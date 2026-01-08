@@ -1,0 +1,41 @@
+{
+  "id": "my_source",
+  "name": "My Source",
+  "icon": "🔌",
+  "description": "Template for creating new plugins",
+  "category": "reviews",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(15 minutes)",
+      "timeout": 120,
+      "memory": 256
+    }
+  },
+
+  "config": [
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password",
+      "required": true,
+      "secret": true
+    }
+  ],
+
+  "setup": {
+    "title": "My Source Setup",
+    "color": "blue",
+    "steps": [
+      "Go to My Source developer portal",
+      "Create an API key",
+      "Paste the key above"
+    ]
+  },
+
+  "secrets": {
+    "api_key": ""
+  }
+}

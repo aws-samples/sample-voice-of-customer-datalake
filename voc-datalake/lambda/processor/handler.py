@@ -3,12 +3,14 @@ VoC Feedback Processor Lambda
 Processes raw feedback from SQS, enriches with LLM insights, writes to DynamoDB.
 
 Uses Powertools Idempotency to prevent duplicate processing on SQS retries.
+Validates incoming messages using Pydantic schemas before processing.
 """
 import json
 import os
 import uuid
 import random
 import time
+import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -16,6 +18,10 @@ from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, bat
 from aws_lambda_powertools.utilities.batch.exceptions import BatchProcessingError
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
 from botocore.exceptions import ClientError
+
+# Add plugins directory to path for schema imports
+plugins_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'plugins')
+sys.path.insert(0, plugins_dir)
 
 # Shared module imports
 from shared.logging import logger, tracer, metrics
@@ -27,6 +33,14 @@ from shared.idempotency import (
     IdempotencyAlreadyInProgressError,
 )
 import boto3
+
+# Import validation schemas from plugins
+try:
+    from _shared.schemas import safe_validate_message, MessageValidationError
+    VALIDATION_ENABLED = True
+except ImportError:
+    logger.warning("Could not import validation schemas - validation disabled")
+    VALIDATION_ENABLED = False
 
 # Retry configuration for Bedrock
 BEDROCK_MAX_RETRIES = 5
@@ -48,6 +62,9 @@ PRIMARY_LANGUAGE = os.environ.get('PRIMARY_LANGUAGE', 'en')
 PROCESSOR_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'global.anthropic.claude-haiku-4-5-20251001-v1:0')
 PROMPT_VERSION = '1.0.0'
 
+# Logs configuration - max entries to keep per source
+MAX_LOG_ENTRIES = 100
+
 feedback_table = dynamodb.Table(FEEDBACK_TABLE)
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
 
@@ -64,6 +81,90 @@ else:
     persistence_layer = None
     idempotency_config = None
     logger.warning("IDEMPOTENCY_TABLE not configured - duplicate protection disabled")
+
+
+# ============================================
+# Validation Logging
+# ============================================
+
+def log_validation_failure(source_platform: str, message_id: str, errors: list[str], raw_preview: str):
+    """
+    Log a validation failure to DynamoDB for user visibility.
+    
+    Stores in aggregates table with TTL for automatic cleanup.
+    """
+    if not aggregates_table:
+        logger.warning("Cannot log validation failure - aggregates table not configured")
+        return
+    
+    try:
+        now = datetime.now(timezone.utc)
+        log_entry = {
+            'pk': f"LOGS#validation#{source_platform}",
+            'sk': f"{now.isoformat()}#{message_id[:32]}",
+            'log_type': 'validation_failure',
+            'source_platform': source_platform,
+            'message_id': message_id,
+            'errors': errors,
+            'raw_preview': raw_preview[:500],  # Truncate for storage
+            'timestamp': now.isoformat(),
+            'ttl': int(now.timestamp()) + (7 * 24 * 60 * 60),  # 7 days TTL
+        }
+        aggregates_table.put_item(Item=log_entry)
+        logger.info(f"Logged validation failure for {source_platform}/{message_id}")
+    except Exception as e:
+        logger.error(f"Failed to log validation failure: {e}")
+
+
+def log_processing_error(source_platform: str, message_id: str, error_type: str, error_message: str):
+    """
+    Log a processing error to DynamoDB for user visibility.
+    """
+    if not aggregates_table:
+        return
+    
+    try:
+        now = datetime.now(timezone.utc)
+        log_entry = {
+            'pk': f"LOGS#processing#{source_platform}",
+            'sk': f"{now.isoformat()}#{message_id[:32]}",
+            'log_type': 'processing_error',
+            'source_platform': source_platform,
+            'message_id': message_id,
+            'error_type': error_type,
+            'error_message': error_message[:1000],
+            'timestamp': now.isoformat(),
+            'ttl': int(now.timestamp()) + (7 * 24 * 60 * 60),  # 7 days TTL
+        }
+        aggregates_table.put_item(Item=log_entry)
+    except Exception as e:
+        logger.error(f"Failed to log processing error: {e}")
+
+
+def validate_sqs_message(raw_record: dict) -> tuple[dict | None, list[str]]:
+    """
+    Validate an SQS message using Pydantic schemas.
+    
+    Returns:
+        Tuple of (validated dict or None, list of errors)
+    """
+    if not VALIDATION_ENABLED:
+        return raw_record, []
+    
+    validated_msg, errors = safe_validate_message(raw_record)
+    
+    if errors:
+        source_platform = raw_record.get('source_platform', 'unknown')
+        message_id = raw_record.get('id', 'unknown')
+        raw_preview = json.dumps(raw_record, default=str)[:500]
+        
+        log_validation_failure(source_platform, message_id, errors, raw_preview)
+        metrics.add_metric(name="ValidationFailures", unit="Count", value=1)
+        
+        return None, errors
+    
+    # Convert validated Pydantic model back to dict
+    return validated_msg.model_dump(mode='json', exclude_none=True), []
 
 # LLM Prompts
 SYSTEM_PROMPT = """You are an expert customer experience analyst. Analyze feedback and return ONLY valid JSON:
@@ -519,6 +620,16 @@ def record_handler(record: SQSRecord) -> dict:
     source_platform = raw_record.get('source_platform', 'unknown')
     source_id = raw_record.get('id', 'unknown')
     
+    # Validate the message before processing
+    validated_record, validation_errors = validate_sqs_message(raw_record)
+    if validation_errors:
+        logger.warning(f"Validation failed for {source_platform}/{source_id}: {validation_errors}")
+        # Return success to remove from queue - invalid messages shouldn't be retried
+        return {"status": "skipped", "reason": "validation_failed", "errors": validation_errors}
+    
+    # Use validated record for processing
+    raw_record = validated_record
+    
     # Create idempotency key from source + id
     idempotency_key = f"{source_platform}:{source_id}"
     
@@ -560,6 +671,13 @@ def record_handler(record: SQSRecord) -> dict:
         # Re-raise to fail this record - SQS will retry after visibility timeout
         logger.warning(f"Bedrock throttled for {source_platform}, message will be retried by SQS")
         metrics.add_metric(name="BedrockThrottleRetry", unit="Count", value=1)
+        log_processing_error(source_platform, source_id, "bedrock_throttling", str(e))
+        raise
+    
+    except Exception as e:
+        # Log unexpected errors for visibility
+        logger.exception(f"Unexpected error processing {source_platform}/{source_id}: {e}")
+        log_processing_error(source_platform, source_id, type(e).__name__, str(e))
         raise
 
 

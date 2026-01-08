@@ -405,3 +405,39 @@ export interface ArtifactStyle {
   id: string
   name: string
 }
+
+// Logs Types
+export interface ValidationLogEntry {
+  source_platform: string
+  message_id: string
+  timestamp: string
+  log_type: 'validation_failure'
+  errors: string[]
+  raw_preview?: string
+}
+
+export interface ProcessingLogEntry {
+  source_platform: string
+  message_id: string
+  timestamp: string
+  log_type: 'processing_error'
+  error_type: string
+  error_message: string
+}
+
+export interface ScraperLogEntry {
+  run_id: string
+  status: string
+  started_at: string
+  completed_at?: string
+  pages_scraped: number
+  items_found: number
+  errors: string[]
+}
+
+export interface LogsSummary {
+  validation_failures: Record<string, number>
+  processing_errors: Record<string, number>
+  total_validation_failures: number
+  total_processing_errors: number
+}

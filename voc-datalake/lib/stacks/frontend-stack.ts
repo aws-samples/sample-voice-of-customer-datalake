@@ -5,24 +5,29 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Construct } from 'constructs';
 
-export interface VocFrontendStackProps extends cdk.StackProps {
-  apiEndpoint: string;
-  userPoolId: string;
-  userPoolClientId: string;
-  cognitoRegion: string;
+/**
+ * Props for the frontend infrastructure (S3 + CloudFront).
+ * This stack creates the hosting infrastructure without deploying content.
+ */
+export interface VocFrontendInfraStackProps extends cdk.StackProps {
+  // No dependencies - this stack is created first
 }
 
-export class VocFrontendStack extends cdk.Stack {
+/**
+ * Frontend Infrastructure Stack - Creates S3 bucket and CloudFront distribution.
+ * This stack is deployed BEFORE the analytics stack so the CloudFront domain
+ * can be used for CORS configuration.
+ */
+export class VocFrontendInfraStack extends cdk.Stack {
+  public readonly distribution: cloudfront.Distribution;
+  public readonly websiteBucket: s3.Bucket;
   public readonly distributionDomainName: string;
-  public readonly bucketName: string;
 
-  constructor(scope: Construct, id: string, props: VocFrontendStackProps) {
+  constructor(scope: Construct, id: string, props?: VocFrontendInfraStackProps) {
     super(scope, id, props);
 
-    const { apiEndpoint } = props;
-
     // S3 bucket for hosting the React app
-    const websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
+    this.websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
       bucketName: `voc-datalake-frontend-${this.account}`,
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
@@ -32,13 +37,10 @@ export class VocFrontendStack extends cdk.Stack {
       autoDeleteObjects: true,
     });
 
-    // Note: WAF for CloudFront requires deployment in us-east-1
-    // For production, create a separate cross-region WAF stack
-
-    // CloudFront distribution with S3BucketOrigin (non-deprecated)
-    const distribution = new cloudfront.Distribution(this, 'Distribution', {
+    // CloudFront distribution with S3BucketOrigin
+    this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(websiteBucket),
+        origin: origins.S3BucketOrigin.withOriginAccessControl(this.websiteBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
         cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
@@ -63,11 +65,70 @@ export class VocFrontendStack extends cdk.Stack {
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
     });
 
+    this.distributionDomainName = this.distribution.distributionDomainName;
+
+    // Outputs
+    new cdk.CfnOutput(this, 'WebsiteURL', {
+      value: `https://${this.distribution.distributionDomainName}`,
+      description: 'CloudFront Distribution URL',
+    });
+
+    new cdk.CfnOutput(this, 'BucketName', {
+      value: this.websiteBucket.bucketName,
+      description: 'S3 Bucket Name',
+    });
+
+    new cdk.CfnOutput(this, 'DistributionId', {
+      value: this.distribution.distributionId,
+      description: 'CloudFront Distribution ID',
+    });
+
+    new cdk.CfnOutput(this, 'DistributionDomainName', {
+      value: this.distribution.distributionDomainName,
+      description: 'CloudFront Distribution Domain Name',
+      exportName: 'VocFrontendDomainName',
+    });
+  }
+}
+
+/**
+ * Props for the frontend deployment stack.
+ * This stack deploys the built frontend content to S3.
+ */
+export interface VocFrontendStackProps extends cdk.StackProps {
+  websiteBucket: s3.IBucket;
+  distribution: cloudfront.IDistribution;
+  apiEndpoint: string;
+  artifactBuilderEndpoint?: string;
+  userPoolId: string;
+  userPoolClientId: string;
+  cognitoRegion: string;
+}
+
+/**
+ * Frontend Deployment Stack - Deploys the built frontend to S3.
+ * This stack is deployed AFTER the analytics stack so it can include
+ * the API endpoint in the environment configuration.
+ */
+export class VocFrontendStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: VocFrontendStackProps) {
+    super(scope, id, props);
+
+    const { apiEndpoint, artifactBuilderEndpoint } = props;
+
     // Create .env file content for the frontend build
-    const envContent = `VITE_API_ENDPOINT=${apiEndpoint}
-VITE_COGNITO_USER_POOL_ID=${props.userPoolId}
-VITE_COGNITO_CLIENT_ID=${props.userPoolClientId}
-VITE_COGNITO_REGION=${props.cognitoRegion}`;
+    const envLines = [
+      `VITE_API_ENDPOINT=${apiEndpoint}`,
+      `VITE_COGNITO_USER_POOL_ID=${props.userPoolId}`,
+      `VITE_COGNITO_CLIENT_ID=${props.userPoolClientId}`,
+      `VITE_COGNITO_REGION=${props.cognitoRegion}`,
+    ];
+    
+    if (artifactBuilderEndpoint) {
+      envLines.push(`VITE_ARTIFACT_BUILDER_ENDPOINT=${artifactBuilderEndpoint}`);
+    }
+
+    const envContent = envLines.join('\n');
 
     // Deploy frontend to S3
     new s3deploy.BucketDeployment(this, 'DeployWebsite', {
@@ -75,30 +136,12 @@ VITE_COGNITO_REGION=${props.cognitoRegion}`;
         s3deploy.Source.asset('frontend/dist'),
         s3deploy.Source.data('.env.production', envContent),
       ],
-      destinationBucket: websiteBucket,
-      distribution,
+      destinationBucket: props.websiteBucket,
+      distribution: props.distribution,
       distributionPaths: ['/*'],
     });
 
-    this.distributionDomainName = distribution.distributionDomainName;
-    this.bucketName = websiteBucket.bucketName;
-
     // Outputs
-    new cdk.CfnOutput(this, 'WebsiteURL', {
-      value: `https://${distribution.distributionDomainName}`,
-      description: 'CloudFront Distribution URL',
-    });
-
-    new cdk.CfnOutput(this, 'BucketName', {
-      value: websiteBucket.bucketName,
-      description: 'S3 Bucket Name',
-    });
-
-    new cdk.CfnOutput(this, 'DistributionId', {
-      value: distribution.distributionId,
-      description: 'CloudFront Distribution ID',
-    });
-
     new cdk.CfnOutput(this, 'ApiEndpoint', {
       value: apiEndpoint,
       description: 'API Gateway Endpoint',

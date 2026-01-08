@@ -284,8 +284,9 @@ describe('UserAdmin', () => {
       await user.click(screen.getByRole('button', { name: /add user/i }))
       
       await waitFor(() => {
-        expect(screen.getByText('Viewer')).toBeInTheDocument()
-        expect(screen.getByText('Admin')).toBeInTheDocument()
+        // Check for role radio buttons by their labels
+        expect(screen.getByRole('radio', { name: /user/i })).toBeInTheDocument()
+        expect(screen.getByRole('radio', { name: /admin/i })).toBeInTheDocument()
       })
     })
 
