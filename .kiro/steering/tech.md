@@ -202,6 +202,11 @@ cd frontend
 npm install
 npm run dev    # Dev server at localhost:5173
 npm run mock   # Mock API at localhost:3001
+
+# Configuration Generation
+npm run generate:config   # Generate plugin manifests + menu config
+npm run generate:manifests  # Generate plugin manifests only
+npm run generate:menu       # Generate menu config only
 ```
 
 ## Secrets Manager Structure

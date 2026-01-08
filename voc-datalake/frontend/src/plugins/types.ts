@@ -50,6 +50,7 @@ export const PluginManifestSchema = z.object({
   hasWebhook: z.boolean(),
   hasS3Trigger: z.boolean(),
   version: z.string().optional(),
+  enabled: z.boolean(),
 });
 
 export const PluginManifestsSchema = z.array(PluginManifestSchema);

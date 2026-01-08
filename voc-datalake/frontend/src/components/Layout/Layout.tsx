@@ -44,28 +44,35 @@ import TimeRangeSelector from '../TimeRangeSelector'
 import Breadcrumbs from '../Breadcrumbs'
 import UserProfileModal from '../UserProfileModal'
 import clsx from 'clsx'
+import menuConfig from '../../config/menu-config.json'
 
 interface NavItem {
   to: string
   icon: LucideIcon
   label: string
+  menuKey: string
   adminOnly?: boolean
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/feedback', icon: MessageSquare, label: 'Feedback' },
-  { to: '/categories', icon: FolderOpen, label: 'Categories' },
-  { to: '/problems', icon: SearchX, label: 'Problem Analysis' },
-  { to: '/chat', icon: Bot, label: 'AI Chat' },
-  { to: '/projects', icon: Briefcase, label: 'Projects' },
-  { to: '/prioritization', icon: ListOrdered, label: 'Prioritization' },
-  { to: '/data-explorer', icon: Database, label: 'Data Explorer' },
-  { to: '/artifact-builder', icon: Sparkles, label: 'Artifact Builder' },
-  { to: '/scrapers', icon: Globe, label: 'Scrapers' },
-  { to: '/feedback-forms', icon: FileText, label: 'Feedback Forms' },
-  { to: '/settings', icon: Settings, label: 'Settings', adminOnly: true },
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard', menuKey: 'dashboard' },
+  { to: '/feedback', icon: MessageSquare, label: 'Feedback', menuKey: 'feedback' },
+  { to: '/categories', icon: FolderOpen, label: 'Categories', menuKey: 'categories' },
+  { to: '/problems', icon: SearchX, label: 'Problem Analysis', menuKey: 'problems' },
+  { to: '/chat', icon: Bot, label: 'AI Chat', menuKey: 'chat' },
+  { to: '/projects', icon: Briefcase, label: 'Projects', menuKey: 'projects' },
+  { to: '/prioritization', icon: ListOrdered, label: 'Prioritization', menuKey: 'prioritization' },
+  { to: '/data-explorer', icon: Database, label: 'Data Explorer', menuKey: 'data-explorer' },
+  { to: '/artifact-builder', icon: Sparkles, label: 'Artifact Builder', menuKey: 'artifact-builder' },
+  { to: '/scrapers', icon: Globe, label: 'Scrapers', menuKey: 'scrapers' },
+  { to: '/feedback-forms', icon: FileText, label: 'Feedback Forms', menuKey: 'feedback-forms' },
+  { to: '/settings', icon: Settings, label: 'Settings', menuKey: 'settings', adminOnly: true },
 ]
+
+function isMenuItemEnabled(menuKey: string): boolean {
+  const config = menuConfig as Record<string, boolean>
+  return config[menuKey] ?? true
+}
 
 // Sidebar header component
 function SidebarHeader({ 
@@ -299,8 +306,14 @@ export default function Layout() {
   const [showProfileModal, setShowProfileModal] = useState(false)
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)
 
-  // Filter nav items based on user role
-  const visibleNavItems = NAV_ITEMS.filter(item => !item.adminOnly || isAdmin)
+  // Filter nav items based on user role and menu config
+  const visibleNavItems = NAV_ITEMS.filter(item => {
+    // Check if menu item is enabled in config
+    if (!isMenuItemEnabled(item.menuKey)) return false
+    // Check admin-only restriction
+    if (item.adminOnly && !isAdmin) return false
+    return true
+  })
 
   const { data: urgentData } = useQuery({
     queryKey: ['urgent', days],

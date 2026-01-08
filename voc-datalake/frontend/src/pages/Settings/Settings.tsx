@@ -25,7 +25,7 @@ import clsx from 'clsx'
 import ConfirmModal from '../../components/ConfirmModal'
 import SourceCard from './SourceCard'
 import LogsSection from './LogsSection'
-import { getPluginManifests } from '../../plugins'
+import { getEnabledPlugins } from '../../plugins'
 
 type SettingsTab = 'brand' | 'plugins' | 'categories' | 'logs' | 'users'
 
@@ -407,7 +407,7 @@ interface DataSourcesSectionProps {
 }
 
 function DataSourcesSection({ apiEndpoint }: DataSourcesSectionProps) {
-  const pluginManifests = getPluginManifests()
+  const pluginManifests = getEnabledPlugins()
 
   return (
     <div className="space-y-4">

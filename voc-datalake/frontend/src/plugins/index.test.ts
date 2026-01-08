@@ -19,6 +19,7 @@ vi.mock('./manifests.json', () => ({
       hasWebhook: true,
       hasS3Trigger: false,
       version: '1.0.0',
+      enabled: true,
     },
     {
       id: 'yelp',
@@ -33,6 +34,7 @@ vi.mock('./manifests.json', () => ({
       hasWebhook: false,
       hasS3Trigger: false,
       version: '1.0.0',
+      enabled: true,
     },
     {
       id: 's3_import',
@@ -45,6 +47,7 @@ vi.mock('./manifests.json', () => ({
       hasWebhook: false,
       hasS3Trigger: true,
       version: '1.0.0',
+      enabled: true,
     },
     {
       id: 'twitter',
@@ -57,6 +60,7 @@ vi.mock('./manifests.json', () => ({
       hasWebhook: false,
       hasS3Trigger: false,
       version: '1.0.0',
+      enabled: true,
     },
   ],
 }));
@@ -233,6 +237,7 @@ describe('Type Exports', () => {
     expect(manifest).toHaveProperty('hasIngestor');
     expect(manifest).toHaveProperty('hasWebhook');
     expect(manifest).toHaveProperty('hasS3Trigger');
+    expect(manifest).toHaveProperty('enabled');
   });
 
   it('exports ConfigField type through manifest config', async () => {
@@ -248,5 +253,19 @@ describe('Type Exports', () => {
       expect(configField).toHaveProperty('label');
       expect(configField).toHaveProperty('type');
     }
+  });
+});
+
+describe('getEnabledPlugins', () => {
+  it('returns only enabled plugins', async () => {
+    const { getEnabledPlugins } = await import('./index');
+
+    const plugins = getEnabledPlugins();
+
+    // All mock plugins are enabled
+    expect(plugins).toHaveLength(4);
+    plugins.forEach(p => {
+      expect(p.enabled).toBe(true);
+    });
   });
 });

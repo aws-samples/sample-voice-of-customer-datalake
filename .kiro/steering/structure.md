@@ -83,7 +83,7 @@ voc-datalake/
 │   │   │   ├── streamApi.ts      # Streaming API helpers
 │   │   │   └── responseParser.ts # Response parsing utilities
 │   │   ├── services/auth.ts      # Cognito authentication service
-│   │   ├── components/           # Each component in its own folder with index.tsx
+│   │   ├── components/           # Each component in its own folder with index.tsx (24 total)
 │   │   │   ├── AdminRoute/           # Admin-only route wrapper
 │   │   │   ├── Breadcrumbs/          # Navigation breadcrumbs
 │   │   │   ├── CategoriesManager/    # Category management UI
@@ -97,7 +97,7 @@ voc-datalake/
 │   │   │   ├── FeedbackCard/         # Feedback item display
 │   │   │   ├── FeedbackCarousel/     # Carousel for feedback items
 │   │   │   ├── FeedbackFormConfig/   # Feedback form configuration
-│   │   │   ├── Layout/               # Main layout with sidebar
+│   │   │   ├── Layout/               # Main layout with sidebar (reads menu-config.json)
 │   │   │   ├── MetricCard/           # Dashboard metric card
 │   │   │   ├── PageLoader/           # Page loading indicator
 │   │   │   ├── PersonaExportMenu/    # Export personas
@@ -108,7 +108,7 @@ voc-datalake/
 │   │   │   ├── TimeRangeSelector/    # Date range picker
 │   │   │   ├── UserAdmin/            # User administration
 │   │   │   └── UserProfileModal/     # User profile modal
-│   │   ├── pages/                # Each page in its own folder
+│   │   ├── pages/                # Each page in its own folder (15 total)
 │   │   │   ├── ArtifactBuilder/  # AI-powered artifact generation
 │   │   │   ├── Categories/       # Category breakdown and analysis
 │   │   │   ├── Chat/             # AI chat interface
@@ -123,15 +123,18 @@ voc-datalake/
 │   │   │   ├── ProjectDetail/    # Single project view
 │   │   │   ├── Projects/         # Research projects list
 │   │   │   ├── Scrapers/         # Web scraper configuration
-│   │   │   └── Settings/         # Configuration and integrations
+│   │   │   └── Settings/         # Configuration and integrations (uses getEnabledPlugins)
 │   │   ├── store/
 │   │   │   ├── configStore.ts    # Zustand state (config, time range, custom dates)
 │   │   │   ├── chatStore.ts      # Chat conversation state
 │   │   │   ├── authStore.ts      # Authentication state
 │   │   │   └── manualImportStore.ts # Manual import state
 │   │   ├── plugins/              # Frontend plugin system
-│   │   │   ├── index.ts          # Plugin loader
-│   │   │   └── types.ts          # Plugin type definitions
+│   │   │   ├── index.ts          # Plugin loader (getEnabledPlugins, getPluginManifests)
+│   │   │   ├── types.ts          # Plugin type definitions (with enabled field)
+│   │   │   └── manifests.json    # Generated plugin manifests
+│   │   ├── config/
+│   │   │   └── menu-config.json  # Generated menu visibility config
 │   │   ├── constants/
 │   │   │   └── filters.ts        # Filter constants and options
 │   │   └── utils/
@@ -147,7 +150,8 @@ voc-datalake/
 │   ├── deploy.sh                 # Full deployment script
 │   ├── deploy-frontend.sh        # Frontend-only deployment
 │   ├── test-api.sh               # API validation script
-│   ├── generate-manifests.ts     # Generate plugin manifests
+│   ├── generate-manifests.ts     # Generate plugin manifests with enabled status
+│   ├── generate-menu-config.ts   # Generate menu config from cdk.context.json
 │   ├── generate-integrity.ts     # Generate plugin integrity hashes
 │   ├── validate-plugins.ts       # Validate plugin configurations
 │   └── test-plugin-loader.ts     # Test plugin loading

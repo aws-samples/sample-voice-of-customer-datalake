@@ -1,0 +1,14 @@
+{
+  "dashboard": true,
+  "feedback": true,
+  "categories": true,
+  "problems": true,
+  "chat": true,
+  "projects": true,
+  "prioritization": true,
+  "data-explorer": true,
+  "artifact-builder": false,
+  "scrapers": true,
+  "feedback-forms": true,
+  "settings": true
+}

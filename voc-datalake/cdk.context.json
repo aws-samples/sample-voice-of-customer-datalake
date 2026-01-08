@@ -8,5 +8,37 @@
     "us-west-2b",
     "us-west-2c",
     "us-west-2d"
-  ]
+  ],
+  "pluginStatus": {
+    "trustpilot": false,
+    "yelp": false,
+    "google_reviews": false,
+    "twitter": false,
+    "instagram": false,
+    "facebook": false,
+    "reddit": false,
+    "tavily": false,
+    "appstore_apple": false,
+    "appstore_google": false,
+    "appstore_huawei": false,
+    "webscraper": false,
+    "youtube": false,
+    "tiktok": false,
+    "linkedin": false,
+    "s3_import": false
+  },
+  "menuStatus": {
+    "dashboard": true,
+    "feedback": true,
+    "categories": true,
+    "problems": true,
+    "chat": true,
+    "projects": true,
+    "prioritization": true,
+    "data-explorer": true,
+    "artifact-builder": false,
+    "scrapers": true,
+    "feedback-forms": true,
+    "settings": true
+  }
 }

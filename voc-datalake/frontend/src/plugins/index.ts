@@ -28,6 +28,13 @@ export function getPluginManifests(): PluginManifest[] {
 }
 
 /**
+ * Get only enabled plugin manifests.
+ */
+export function getEnabledPlugins(): PluginManifest[] {
+  return manifests.filter(m => m.enabled);
+}
+
+/**
  * Get a plugin manifest by ID.
  */
 export function getPluginById(id: string): PluginManifest | undefined {

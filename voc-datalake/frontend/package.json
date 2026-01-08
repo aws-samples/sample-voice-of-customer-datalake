@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "cd .. && npm run generate:manifests",
+    "prebuild": "cd .. && npm run generate:manifests && npm run generate:menu",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

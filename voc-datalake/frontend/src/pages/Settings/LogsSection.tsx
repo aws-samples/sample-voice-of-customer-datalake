@@ -99,6 +99,48 @@ export default function LogsSection({ apiEndpoint }: LogsSectionProps) {
 // Summary Card
 // ============================================
 
+interface SummaryCardItemProps {
+  readonly count: number
+  readonly label: string
+  readonly icon: typeof AlertTriangle
+  readonly colorScheme: 'amber' | 'red'
+}
+
+function SummaryCardItem({ count, label, icon: Icon, colorScheme }: SummaryCardItemProps) {
+  const hasIssues = count > 0
+
+  // Determine classes based on state
+  const getContainerClass = () => {
+    if (!hasIssues) return 'bg-green-50 border border-green-200'
+    if (colorScheme === 'amber') return 'bg-amber-50 border border-amber-200'
+    return 'bg-red-50 border border-red-200'
+  }
+
+  const getIconColorClass = () => {
+    if (!hasIssues) return 'text-green-600'
+    if (colorScheme === 'amber') return 'text-amber-600'
+    return 'text-red-600'
+  }
+
+  const getCountColorClass = () => {
+    if (!hasIssues) return 'text-green-700'
+    if (colorScheme === 'amber') return 'text-amber-700'
+    return 'text-red-700'
+  }
+
+  return (
+    <div className={clsx('p-3 rounded-lg', getContainerClass())}>
+      <div className="flex items-center gap-2 mb-1">
+        <Icon size={16} className={getIconColorClass()} />
+        <span className="text-sm font-medium">{label}</span>
+      </div>
+      <p className={clsx('text-2xl font-bold', getCountColorClass())}>
+        {count}
+      </p>
+    </div>
+  )
+}
+
 function LogsSummaryCard({ days }: { readonly days: number }) {
   const { data, isLoading } = useQuery({
     queryKey: ['logs-summary', days],
@@ -121,30 +163,18 @@ function LogsSummaryCard({ days }: { readonly days: number }) {
 
   return (
     <div className="grid grid-cols-2 gap-4">
-      <div className={clsx(
-        'p-3 rounded-lg',
-        totalValidation > 0 ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-200'
-      )}>
-        <div className="flex items-center gap-2 mb-1">
-          <AlertTriangle size={16} className={totalValidation > 0 ? 'text-amber-600' : 'text-green-600'} />
-          <span className="text-sm font-medium">Validation Failures</span>
-        </div>
-        <p className={clsx('text-2xl font-bold', totalValidation > 0 ? 'text-amber-700' : 'text-green-700')}>
-          {totalValidation}
-        </p>
-      </div>
-      <div className={clsx(
-        'p-3 rounded-lg',
-        totalProcessing > 0 ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'
-      )}>
-        <div className="flex items-center gap-2 mb-1">
-          <XCircle size={16} className={totalProcessing > 0 ? 'text-red-600' : 'text-green-600'} />
-          <span className="text-sm font-medium">Processing Errors</span>
-        </div>
-        <p className={clsx('text-2xl font-bold', totalProcessing > 0 ? 'text-red-700' : 'text-green-700')}>
-          {totalProcessing}
-        </p>
-      </div>
+      <SummaryCardItem 
+        count={totalValidation} 
+        label="Validation Failures" 
+        icon={AlertTriangle} 
+        colorScheme="amber" 
+      />
+      <SummaryCardItem 
+        count={totalProcessing} 
+        label="Processing Errors" 
+        icon={XCircle} 
+        colorScheme="red" 
+      />
     </div>
   )
 }
@@ -425,34 +455,49 @@ function ScraperLogCard({ scraperId, scraperName, days }: { readonly scraperId: 
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-gray-100">
-          {isLoading ? (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <Loader2 size={14} className="animate-spin" />
-              Loading runs...
-            </div>
-          ) : logs.length === 0 ? (
-            <p className="text-sm text-gray-500">No runs in this period</p>
-          ) : (
-            <div className="space-y-2">
-              {logs.map(log => (
-                <div key={log.run_id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm">
-                  <div className="flex items-center gap-3">
-                    <ScraperStatusBadge status={log.status} />
-                    <span className="text-gray-600">{formatTimestamp(log.started_at)}</span>
-                  </div>
-                  <div className="flex items-center gap-4 text-gray-500">
-                    <span>{log.pages_scraped} pages</span>
-                    <span>{log.items_found} items</span>
-                    {log.errors.length > 0 && (
-                      <span className="text-red-600">{log.errors.length} errors</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <ScraperLogContent isLoading={isLoading} logs={logs} />
         </div>
       )}
+    </div>
+  )
+}
+
+interface ScraperLogContentProps {
+  readonly isLoading: boolean
+  readonly logs: Array<{ run_id: string; status: string; started_at: string; pages_scraped: number; items_found: number; errors: string[] }>
+}
+
+function ScraperLogContent({ isLoading, logs }: ScraperLogContentProps) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-gray-500">
+        <Loader2 size={14} className="animate-spin" />
+        Loading runs...
+      </div>
+    )
+  }
+
+  if (logs.length === 0) {
+    return <p className="text-sm text-gray-500">No runs in this period</p>
+  }
+
+  return (
+    <div className="space-y-2">
+      {logs.map(log => (
+        <div key={log.run_id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm">
+          <div className="flex items-center gap-3">
+            <ScraperStatusBadge status={log.status} />
+            <span className="text-gray-600">{formatTimestamp(log.started_at)}</span>
+          </div>
+          <div className="flex items-center gap-4 text-gray-500">
+            <span>{log.pages_scraped} pages</span>
+            <span>{log.items_found} items</span>
+            {log.errors.length > 0 && (
+              <span className="text-red-600">{log.errors.length} errors</span>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
