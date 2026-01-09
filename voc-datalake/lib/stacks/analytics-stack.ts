@@ -12,6 +12,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as path from 'path';
 import {
   loadPlugins,
+  getEnabledPlugins,
   getPluginsWithWebhook,
   capitalize,
   type PluginManifest,
@@ -35,6 +36,7 @@ export interface VocAnalyticsStackProps extends cdk.StackProps {
   avatarsCdnUrl?: string;
   frontendDomain?: string;  // CloudFront domain for CORS (e.g., 'd1234567890.cloudfront.net')
   userPool: cognito.UserPool;  // Cognito User Pool for authentication
+  enabledSources: string[];  // Plugin IDs enabled in pluginStatus
 }
 
 export class VocAnalyticsStack extends cdk.Stack {
@@ -614,7 +616,8 @@ export class VocAnalyticsStack extends cdk.Stack {
     // ============================================
     const pluginsDir = path.join(__dirname, '../../plugins');
     const allPlugins = loadPlugins(pluginsDir);
-    const webhookPlugins = getPluginsWithWebhook(allPlugins);
+    const enabledPlugins = getEnabledPlugins(allPlugins, props.enabledSources);
+    const webhookPlugins = getPluginsWithWebhook(enabledPlugins);
 
     // Common webhook role
     const webhookRole = new iam.Role(this, 'WebhookLambdaRole', {

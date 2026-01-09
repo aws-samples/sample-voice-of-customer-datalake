@@ -146,8 +146,9 @@ def get_scraper_logs(scraper_id: str):
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         
+        # Key format matches scrapers_handler: SCRAPER_RUN#{scraper_id}
         response = aggregates_table.query(
-            KeyConditionExpression=Key('pk').eq(f"SCRAPER#{scraper_id}") & Key('sk').begins_with("RUN#"),
+            KeyConditionExpression=Key('pk').eq(f"SCRAPER_RUN#{scraper_id}"),
             ScanIndexForward=False,
             Limit=limit,
         )
@@ -155,7 +156,7 @@ def get_scraper_logs(scraper_id: str):
         logs = []
         for item in response.get('Items', []):
             logs.append({
-                'run_id': item.get('sk', '').replace('RUN#', ''),
+                'run_id': item.get('sk', ''),
                 'status': item.get('status'),
                 'started_at': item.get('started_at'),
                 'completed_at': item.get('completed_at'),

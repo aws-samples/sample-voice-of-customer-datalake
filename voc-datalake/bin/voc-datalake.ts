@@ -158,6 +158,7 @@ const apiStack = new VocApiStack(app, 'VocApiStack', {
   researchStateMachine: processingStack.researchStateMachine,
   brandName: config.brandName,
   artifactBuilderEndpoint,
+  enabledSources,
 });
 apiStack.addDependency(coreStack);
 apiStack.addDependency(ingestionStack);

@@ -12,7 +12,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as path from 'path';
 import { Construct } from 'constructs';
-import { loadPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
+import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
 import { generateDeploymentHash } from '../utils/naming';
 
 export interface VocApiStackProps extends cdk.StackProps {
@@ -43,6 +43,7 @@ export interface VocApiStackProps extends cdk.StackProps {
   // Config
   brandName: string;
   artifactBuilderEndpoint?: string;
+  enabledSources: string[];  // Plugin IDs enabled in pluginStatus
 }
 
 /**
@@ -491,7 +492,8 @@ export class VocApiStack extends cdk.Stack {
     // ============================================
     const pluginsDir = path.join(__dirname, '../../plugins');
     const allPlugins = loadPlugins(pluginsDir);
-    const webhookPlugins = getPluginsWithWebhook(allPlugins);
+    const enabledPlugins = getEnabledPlugins(allPlugins, props.enabledSources);
+    const webhookPlugins = getPluginsWithWebhook(enabledPlugins);
 
     const webhookRole = this.createLambdaRole('WebhookLambdaRole');
     feedbackTable.grantReadWriteData(webhookRole);
