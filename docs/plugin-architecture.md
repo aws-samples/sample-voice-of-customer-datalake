@@ -697,7 +697,7 @@ export class VocIngestionStack extends cdk.Stack {
     const secretsTemplate = aggregateSecrets(allPlugins);
     
     const apiSecrets = new secretsmanager.Secret(this, 'VocApiSecrets', {
-      secretName: 'voc-datalake/api-credentials',
+      secretName: `voc-datalake/api-credentials-${generateDeploymentHash(this.account, this.region)}`,
       description: 'API credentials for VoC data sources',
       generateSecretString: {
         secretStringTemplate: JSON.stringify(secretsTemplate),
@@ -1603,7 +1603,7 @@ python -c "from handler import MySourceIngestor; i = MySourceIngestor(); print(l
 
 ### Q: Where are credentials stored?
 
-**A:** All credentials are stored in AWS Secrets Manager under `voc-datalake/api-credentials`. The secrets template is aggregated from all plugin manifests at deploy time.
+**A:** All credentials are stored in AWS Secrets Manager under `voc-datalake/api-credentials-{hash}`, where `{hash}` is a deployment-specific suffix derived from your AWS account ID and region. The secrets template is aggregated from all plugin manifests at deploy time. You can find the exact secret name in the CloudFormation outputs of the VocIngestionStack.
 
 ### Q: Can plugins have custom UI components?
 

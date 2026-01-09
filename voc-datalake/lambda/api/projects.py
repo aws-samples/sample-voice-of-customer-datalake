@@ -353,17 +353,10 @@ def get_feedback_context(filters: dict, limit: int = 50) -> list[dict]:
     current_date = datetime.now(timezone.utc)
     from datetime import timedelta
     
-    # If specific sources are selected, query each source
-    if sources:
-        for source in sources:
-            response = feedback_table.query(
-                KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
-                Limit=limit // len(sources) + 1,
-                ScanIndexForward=False
-            )
-            items.extend(response.get('Items', []))
-    # If specific categories are selected, query each category
-    elif categories:
+    # Query by date, then filter by source_platform in memory
+    # This ensures consistent filtering with metrics aggregation
+    if categories and not sources:
+        # If only categories are selected, query each category
         for category in categories:
             response = feedback_table.query(
                 IndexName='gsi2-by-category',
@@ -379,24 +372,24 @@ def get_feedback_context(filters: dict, limit: int = 50) -> list[dict]:
             response = feedback_table.query(
                 IndexName='gsi1-by-date',
                 KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=limit - len(items),
+                Limit=500,
                 ScanIndexForward=False
             )
             items.extend(response.get('Items', []))
-            if len(items) >= limit:
+            if len(items) >= limit * 3:
                 break
+    
+    # Apply source filter using source_platform field
+    if sources:
+        items = [i for i in items if i.get('source_platform') in sources]
     
     # Apply sentiment filter
     if sentiments:
         items = [i for i in items if i.get('sentiment_label') in sentiments]
     
-    # Apply category filter if we didn't query by category
-    if categories and not sources:
+    # Apply category filter if we queried by date
+    if categories and sources:
         items = [i for i in items if i.get('category') in categories]
-    
-    # Apply source filter if we didn't query by source
-    if sources and categories:
-        items = [i for i in items if i.get('source_platform') in sources]
     
     return items[:limit]
 

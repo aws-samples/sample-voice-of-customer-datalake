@@ -26,10 +26,26 @@ API Gateway → Lambda → SQS → Lambda (trigger) → ECS Fargate Task
 
 ## Key Endpoints
 
-- **API:** `https://jqimg045ad.execute-api.us-west-2.amazonaws.com/v1`
-- **Preview CDN:** `https://d2jfoq93zcxvct.cloudfront.net`
+Endpoints are deployment-specific. Get them from CloudFormation outputs:
+
+```bash
+# Get API endpoint
+aws cloudformation describe-stacks --stack-name ArtifactBuilderStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text
+
+# Get Preview CDN
+aws cloudformation describe-stacks --stack-name ArtifactBuilderStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`PreviewCdnUrl`].OutputValue' --output text
+
+# Get ECR repository
+aws cloudformation describe-stacks --stack-name ArtifactBuilderStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ExecutorRepositoryUri`].OutputValue' --output text
+```
+
+- **API:** `https://<api-id>.execute-api.<region>.amazonaws.com/v1`
+- **Preview CDN:** `https://<distribution-id>.cloudfront.net`
 - **Template Repo:** `artifact-builder-template` (CodeCommit)
-- **ECR Image:** `512144631813.dkr.ecr.us-west-2.amazonaws.com/artifact-builder-executor:with-auth`
+- **ECR Image:** `<account>.dkr.ecr.<region>.amazonaws.com/artifact-builder-executor:with-auth`
 
 ## Building and Deploying the Executor Image
 
@@ -54,6 +70,12 @@ Kiro CLI uses OAuth device flow. Auth state must be baked into the Docker image 
 ### Full Image Build Process
 
 ```bash
+# Get ECR repository URI from CloudFormation
+ECR_REPO=$(aws cloudformation describe-stacks --stack-name ArtifactBuilderStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ExecutorRepositoryUri`].OutputValue' --output text)
+AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+AWS_REGION=$(aws configure get region)
+
 # 1. Build fresh AMD64 image
 docker build --platform linux/amd64 -t artifact-builder-executor:amd64 voc-datalake/artifact-builder/executor/
 
@@ -81,9 +103,9 @@ docker rm kiro-amd64-auth
 docker run --rm --platform linux/amd64 artifact-builder-executor:with-auth bash -c "timeout 10 kiro-cli whoami"
 
 # 7. Tag and push to ECR
-aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 512144631813.dkr.ecr.us-west-2.amazonaws.com
-docker tag artifact-builder-executor:with-auth 512144631813.dkr.ecr.us-west-2.amazonaws.com/artifact-builder-executor:with-auth
-docker push 512144631813.dkr.ecr.us-west-2.amazonaws.com/artifact-builder-executor:with-auth
+aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
+docker tag artifact-builder-executor:with-auth $ECR_REPO:with-auth
+docker push $ECR_REPO:with-auth
 ```
 
 ### After Pushing New Image
@@ -145,7 +167,11 @@ git push origin main
 ### Check Job Status
 
 ```bash
-curl -s https://jqimg045ad.execute-api.us-west-2.amazonaws.com/v1/jobs/{job_id} | jq .
+# Get API endpoint from CloudFormation
+API_URL=$(aws cloudformation describe-stacks --stack-name ArtifactBuilderStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text)
+
+curl -s "$API_URL/jobs/{job_id}" | jq .
 ```
 
 ### Check ECS Task Logs
@@ -171,7 +197,11 @@ aws ecs describe-tasks --cluster artifact-builder --tasks {task_arn}
 ### Get Job Logs from S3
 
 ```bash
-aws s3 cp s3://artifact-builder-512144631813-us-west-2/jobs/{job_id}/logs.txt -
+# Get S3 bucket from CloudFormation
+S3_BUCKET=$(aws cloudformation describe-stacks --stack-name ArtifactBuilderStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ArtifactBucketName`].OutputValue' --output text)
+
+aws s3 cp "s3://$S3_BUCKET/jobs/{job_id}/logs.txt" -
 ```
 
 ### Common Issues and Solutions

@@ -6,6 +6,9 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "cdk": "cdk",
     "synth": "cdk synth",
     "diff": "cdk diff",
@@ -40,10 +43,11 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/node": "^24.10.1",
+    "@types/node": "^22.19.3",
     "aws-cdk-lib": "^2.229.0",
     "constructs": "^10.4.3",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
   }
 }

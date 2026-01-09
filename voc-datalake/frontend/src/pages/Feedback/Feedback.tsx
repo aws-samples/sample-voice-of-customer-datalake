@@ -219,7 +219,13 @@ function getFeedbackQueryFn(
   feedbackQueryParams: ReturnType<typeof buildFeedbackQueryParams>
 ) {
   if (showUrgentOnly) {
-    return () => api.getUrgentFeedback({ days, limit: 100 })
+    return () => api.getUrgentFeedback({
+      days,
+      limit: 100,
+      source: feedbackQueryParams.source,
+      sentiment: feedbackQueryParams.sentiment,
+      category: feedbackQueryParams.category,
+    })
   }
   return () => api.getFeedback(feedbackQueryParams)
 }
@@ -244,10 +250,17 @@ function useFeedbackData(
   const feedbackQueryParams = buildFeedbackQueryParams(days, sourceFilter, sentimentFilter, categoryFilter)
   const feedbackQueryFn = getFeedbackQueryFn(showUrgentOnly, days, feedbackQueryParams)
 
-  // Server-side search when search term is provided
+  // Server-side search when search term is provided (includes filters)
   const searchQuery = useQuery({
-    queryKey: ['feedback-search', search, days],
-    queryFn: () => api.searchFeedback({ q: search, days, limit: 100 }),
+    queryKey: ['feedback-search', search, days, sourceFilter, sentimentFilter, categoryFilter],
+    queryFn: () => api.searchFeedback({ 
+      q: search, 
+      days, 
+      limit: 100,
+      source: sourceFilter !== 'all' ? sourceFilter : undefined,
+      sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
+      category: categoryFilter !== 'all' ? categoryFilter : undefined,
+    }),
     enabled: hasApiEndpoint && isSearching,
   })
 

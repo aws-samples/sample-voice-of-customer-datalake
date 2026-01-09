@@ -44,7 +44,7 @@ import TimeRangeSelector from '../TimeRangeSelector'
 import Breadcrumbs from '../Breadcrumbs'
 import UserProfileModal from '../UserProfileModal'
 import clsx from 'clsx'
-import menuConfig from '../../config/menu-config.json'
+import { isMenuItemEnabled } from '../../config/menuConfig'
 
 interface NavItem {
   to: string
@@ -68,11 +68,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/feedback-forms', icon: FileText, label: 'Feedback Forms', menuKey: 'feedback-forms' },
   { to: '/settings', icon: Settings, label: 'Settings', menuKey: 'settings', adminOnly: true },
 ]
-
-function isMenuItemEnabled(menuKey: string): boolean {
-  const config = menuConfig as Record<string, boolean>
-  return config[menuKey] ?? true
-}
 
 // Sidebar header component
 function SidebarHeader({ 

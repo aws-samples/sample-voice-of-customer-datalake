@@ -136,42 +136,42 @@ def list_feedback():
     
     items = []
     current_date = datetime.now(timezone.utc)
-    cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
     
-    if source:
-        # Query by source, then filter by category/sentiment/date in memory
-        response = feedback_table.query(
-            KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
-            Limit=500,  # Fetch more to allow filtering
-            ScanIndexForward=False
-        )
-        items = response.get('Items', [])
-        # Filter by date range
-        items = [i for i in items if i.get('date', '') >= cutoff_date]
-        # Filter by category if specified
-        if category:
-            items = [i for i in items if i.get('category') == category]
-    elif category:
+    # Query by date using GSI1, then filter by source/category/sentiment in memory
+    # This approach is consistent because source_platform field matches metrics aggregation
+    if category and not source:
+        # Category-only filter can use GSI2 efficiently
         response = feedback_table.query(
             IndexName='gsi2-by-category',
             KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{category}'),
-            Limit=limit,
+            Limit=limit * 2,  # Fetch extra for sentiment filtering
             ScanIndexForward=False
         )
         items = response.get('Items', [])
     else:
+        # Query by date range, filter source/category in memory
         for i in range(days):
             date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
             response = feedback_table.query(
                 IndexName='gsi1-by-date',
                 KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=limit - len(items),
+                Limit=500,  # Fetch more to allow filtering
                 ScanIndexForward=False
             )
             items.extend(response.get('Items', []))
-            if len(items) >= limit:
+            # Stop early if we have enough items (before filtering)
+            if len(items) >= limit * 5:
                 break
     
+    # Apply source filter using source_platform field (matches metrics aggregation)
+    if source:
+        items = [i for i in items if i.get('source_platform') == source]
+    
+    # Apply category filter if not already filtered by GSI
+    if category and source:
+        items = [i for i in items if i.get('category') == category]
+    
+    # Apply sentiment filter
     if sentiment:
         items = [i for i in items if i.get('sentiment_label') == sentiment]
     
@@ -181,14 +181,24 @@ def list_feedback():
 @app.get("/feedback/urgent")
 @tracer.capture_method
 def get_urgent_feedback():
-    """Get high-urgency feedback items."""
+    """Get high-urgency feedback items with optional filters."""
     params = app.current_event.query_string_parameters or {}
     limit = validate_limit(params.get('limit'), default=50, max_val=100)
+    days = validate_days(params.get('days'), default=30)
+    source_filter = params.get('source')
+    sentiment_filter = params.get('sentiment')
+    category_filter = params.get('category')
+    
+    current_date = datetime.now(timezone.utc)
+    cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+    
+    # Query urgent items - fetch more to allow for filtering
+    fetch_limit = limit * 5 if (source_filter or sentiment_filter or category_filter) else limit
     
     response = feedback_table.query(
         IndexName='gsi3-by-urgency',
         KeyConditionExpression=Key('gsi3pk').eq('URGENCY#high'),
-        Limit=limit,
+        Limit=fetch_limit,
         ScanIndexForward=False
     )
     
@@ -198,10 +208,30 @@ def get_urgent_feedback():
         sk = gsi_item.get('sk')
         if pk and sk:
             full_item = feedback_table.get_item(Key={'pk': pk, 'sk': sk})
-            if full_item.get('Item'):
-                items.append(full_item['Item'])
-        if len(items) >= limit:
-            break
+            item = full_item.get('Item')
+            if not item:
+                continue
+            
+            # Apply date filter
+            item_date = item.get('date', '')
+            if item_date < cutoff_date:
+                continue
+            
+            # Apply source filter
+            if source_filter and item.get('source_platform') != source_filter:
+                continue
+            
+            # Apply sentiment filter
+            if sentiment_filter and item.get('sentiment_label') != sentiment_filter:
+                continue
+            
+            # Apply category filter
+            if category_filter and item.get('category') != category_filter:
+                continue
+            
+            items.append(item)
+            if len(items) >= limit:
+                break
     
     return {'count': len(items), 'items': items[:limit]}
 
@@ -216,31 +246,37 @@ def get_entities():
     source = params.get('source')
     
     current_date = datetime.now(timezone.utc)
-    cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
     
-    # If source filter is provided, query feedback table directly
+    # If source filter is provided, query by date and filter by source_platform
     if source:
-        response = feedback_table.query(
-            KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
-            Limit=1000,
-            ScanIndexForward=False
-        )
+        items = []
+        for i in range(days):
+            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+            response = feedback_table.query(
+                IndexName='gsi1-by-date',
+                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+                Limit=500,
+                ScanIndexForward=False
+            )
+            items.extend(response.get('Items', []))
+            if len(items) >= 1000:
+                break
+        
+        # Filter by source_platform field
+        items = [i for i in items if i.get('source_platform') == source]
         
         category_counts = {}
         issues = {}
-        feedback_count = 0
+        feedback_count = len(items)
         
-        for item in response.get('Items', []):
-            item_date = item.get('date', '')
-            if item_date >= cutoff_date:
-                feedback_count += 1
-                category = item.get('category', 'other')
-                category_counts[category] = category_counts.get(category, 0) + 1
-                
-                problem = item.get('problem_summary', '')
-                if problem and len(problem) > 5:
-                    problem_key = problem[:100].lower().strip()
-                    issues[problem_key] = issues.get(problem_key, 0) + 1
+        for item in items:
+            category = item.get('category', 'other')
+            category_counts[category] = category_counts.get(category, 0) + 1
+            
+            problem = item.get('problem_summary', '')
+            if problem and len(problem) > 5:
+                problem_key = problem[:100].lower().strip()
+                issues[problem_key] = issues.get(problem_key, 0) + 1
         
         sorted_issues = dict(sorted(issues.items(), key=lambda x: x[1], reverse=True)[:20])
         
@@ -340,6 +376,101 @@ def get_entities():
         }
     }
 
+
+
+@app.get("/feedback/search")
+@tracer.capture_method
+def search_feedback():
+    """Search feedback by text query with optional filters.
+    
+    Searches in original_text and title fields.
+    Supports filtering by source, sentiment, category.
+    """
+    params = app.current_event.query_string_parameters or {}
+    
+    query = params.get('q', '').strip().lower()
+    if not query or len(query) < 2:
+        return {'count': 0, 'items': [], 'entities': {}, 'query': query}
+    
+    days = validate_days(params.get('days'), default=30)
+    limit = validate_limit(params.get('limit'), default=50, max_val=100)
+    source_filter = params.get('source')
+    sentiment_filter = params.get('sentiment')
+    category_filter = params.get('category')
+    
+    current_date = datetime.now(timezone.utc)
+    cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+    
+    items = []
+    
+    # Query recent feedback by date, then filter by source_platform in memory
+    candidates = []
+    for i in range(min(days, 30)):  # Cap at 30 days for performance
+        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+        response = feedback_table.query(
+            IndexName='gsi1-by-date',
+            KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+            Limit=300,
+            ScanIndexForward=False
+        )
+        candidates.extend(response.get('Items', []))
+        if len(candidates) >= 1000:
+            break
+    
+    # Filter candidates by search query and other filters
+    for item in candidates:
+        # Date filter
+        item_date = item.get('date', '')
+        if item_date < cutoff_date:
+            continue
+        
+        # Source filter using source_platform field
+        if source_filter and item.get('source_platform') != source_filter:
+            continue
+        
+        # Sentiment filter
+        if sentiment_filter and item.get('sentiment_label') != sentiment_filter:
+            continue
+        
+        # Category filter
+        if category_filter and item.get('category') != category_filter:
+            continue
+        
+        # Text search in original_text and title
+        original_text = (item.get('original_text') or '').lower()
+        title = (item.get('title') or '').lower()
+        problem_summary = (item.get('problem_summary') or '').lower()
+        
+        if query in original_text or query in title or query in problem_summary:
+            items.append(item)
+            if len(items) >= limit:
+                break
+    
+    # Build entities summary from results
+    category_counts = {}
+    source_counts = {}
+    sentiment_counts = {}
+    
+    for item in items:
+        cat = item.get('category', 'other')
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+        
+        src = item.get('source_platform', 'unknown')
+        source_counts[src] = source_counts.get(src, 0) + 1
+        
+        sent = item.get('sentiment_label', 'neutral')
+        sentiment_counts[sent] = sentiment_counts.get(sent, 0) + 1
+    
+    return {
+        'count': len(items),
+        'items': items,
+        'entities': {
+            'categories': dict(sorted(category_counts.items(), key=lambda x: x[1], reverse=True)),
+            'sources': dict(sorted(source_counts.items(), key=lambda x: x[1], reverse=True)),
+            'sentiments': dict(sorted(sentiment_counts.items(), key=lambda x: x[1], reverse=True)),
+        },
+        'query': query
+    }
 
 
 @app.get("/feedback/<feedback_id>")
@@ -462,16 +593,23 @@ def get_sentiment_metrics():
     current_date = datetime.now(timezone.utc)
     
     if source:
-        # Query feedback table directly for source-specific data
-        response = feedback_table.query(
-            KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
-            Limit=1000,
-            ScanIndexForward=False
-        )
-        cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
-        for item in response.get('Items', []):
-            item_date = item.get('date', '')
-            if item_date >= cutoff_date:
+        # Query by date and filter by source_platform field
+        items = []
+        for i in range(days):
+            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+            response = feedback_table.query(
+                IndexName='gsi1-by-date',
+                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+                Limit=500,
+                ScanIndexForward=False
+            )
+            items.extend(response.get('Items', []))
+            if len(items) >= 1000:
+                break
+        
+        # Filter by source_platform field
+        for item in items:
+            if item.get('source_platform') == source:
                 sentiment = item.get('sentiment_label', 'neutral')
                 if sentiment in result:
                     result[sentiment] += 1
@@ -523,16 +661,23 @@ def get_category_metrics():
     current_date = datetime.now(timezone.utc)
     
     if source:
-        # Query feedback table directly for source-specific data
-        response = feedback_table.query(
-            KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
-            Limit=1000,
-            ScanIndexForward=False
-        )
-        cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
-        for item in response.get('Items', []):
-            item_date = item.get('date', '')
-            if item_date >= cutoff_date:
+        # Query by date and filter by source_platform field
+        items = []
+        for i in range(days):
+            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+            response = feedback_table.query(
+                IndexName='gsi1-by-date',
+                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+                Limit=500,
+                ScanIndexForward=False
+            )
+            items.extend(response.get('Items', []))
+            if len(items) >= 1000:
+                break
+        
+        # Filter by source_platform field
+        for item in items:
+            if item.get('source_platform') == source:
                 category = item.get('category', 'other')
                 result[category] = result.get(category, 0) + 1
     else:

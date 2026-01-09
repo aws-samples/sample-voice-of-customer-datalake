@@ -37,7 +37,8 @@ class WebScraperIngestor(BaseIngestor):
 
     def _load_scraper_configs(self) -> list:
         """Load scraper configurations from secrets."""
-        configs_json = self.secrets.get('webscraper_configs', '[]')
+        # After prefix stripping, 'webscraper_configs' becomes 'configs'
+        configs_json = self.secrets.get('configs', '[]')
         try:
             configs = json.loads(configs_json) if configs_json else []
             if self.target_scraper_id:

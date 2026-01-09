@@ -7,6 +7,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
+import { uniqueFunctionName, generateDeploymentHash } from '../utils/naming';
 
 export interface VocProcessingStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -31,6 +32,9 @@ export class VocProcessingStack extends cdk.Stack {
     super(scope, id, props);
 
     const { feedbackTable, aggregatesTable, projectsTable, idempotencyTable, processingQueue, kmsKey, config } = props;
+
+    // Generate deployment hash for unique naming
+    const hash = generateDeploymentHash(this.account, this.region);
 
     // Processing Lambda Role
     const processingRole = new iam.Role(this, 'ProcessingLambdaRole', {
@@ -103,7 +107,7 @@ export class VocProcessingStack extends cdk.Stack {
 
     // Main Processing Lambda
     this.processingLambda = new lambda.Function(this, 'FeedbackProcessor', {
-      functionName: 'voc-feedback-processor',
+      functionName: `voc-feedback-processor-${hash}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -124,7 +128,7 @@ export class VocProcessingStack extends cdk.Stack {
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'ProcessorLogs', {
-        logGroupName: '/aws/lambda/voc-feedback-processor',
+        logGroupName: `/aws/lambda/voc-feedback-processor-${hash}`,
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -155,7 +159,7 @@ export class VocProcessingStack extends cdk.Stack {
 
     // Aggregation Lambda - triggered by DynamoDB Streams
     this.aggregationLambda = new lambda.Function(this, 'AggregationProcessor', {
-      functionName: 'voc-aggregation-processor',
+      functionName: `voc-aggregation-processor-${hash}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -170,7 +174,7 @@ export class VocProcessingStack extends cdk.Stack {
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'AggregatorLogs', {
-        logGroupName: '/aws/lambda/voc-aggregation-processor',
+        logGroupName: `/aws/lambda/voc-aggregation-processor-${hash}`,
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),

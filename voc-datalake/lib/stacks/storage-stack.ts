@@ -6,6 +6,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Construct } from 'constructs';
+import { uniqueBucketName, uniqueTableName, generateDeploymentHash } from '../utils/naming';
 
 export interface VocStorageStackProps extends cdk.StackProps {
   // No frontend domain needed - CORS is handled by individual stacks
@@ -27,12 +28,15 @@ export class VocStorageStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: VocStorageStackProps) {
     super(scope, id, props);
 
+    // Generate deployment hash for unique naming
+    const hash = generateDeploymentHash(this.account, this.region);
+
     // CORS allowed origins for S3 buckets - include localhost for dev
     const corsAllowedOrigins = ['http://localhost:5173', 'http://localhost:3000'];
 
     // KMS Key for encryption at rest
     this.kmsKey = new kms.Key(this, 'VocKmsKey', {
-      alias: 'voc-datalake-key',
+      alias: `voc-datalake-key-${hash}`,
       description: 'KMS key for VoC Data Lake encryption',
       enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -40,7 +44,7 @@ export class VocStorageStack extends cdk.Stack {
 
     // S3 Access Logs Bucket - stores server access logs for audit trail
     this.accessLogsBucket = new s3.Bucket(this, 'AccessLogsBucket', {
-      bucketName: `voc-access-logs-${this.account}-${this.region}`,
+      bucketName: uniqueBucketName('voc-access-logs', this.account, this.region),
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
@@ -55,7 +59,7 @@ export class VocStorageStack extends cdk.Stack {
     // Partitioned structure: raw/{source}/{year}/{month}/{day}/
     // Also stores persona avatars in avatars/{persona_id}.png
     this.rawDataBucket = new s3.Bucket(this, 'RawDataBucket', {
-      bucketName: `voc-raw-data-${this.account}-${this.region}`,
+      bucketName: uniqueBucketName('voc-raw-data', this.account, this.region),
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: this.kmsKey,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -76,7 +80,7 @@ export class VocStorageStack extends cdk.Stack {
 
     // Response headers policy for CORS on avatar images
     const avatarsCorsPolicy = new cloudfront.ResponseHeadersPolicy(this, 'AvatarsCorsPolicy', {
-      responseHeadersPolicyName: 'voc-avatars-cors-policy',
+      responseHeadersPolicyName: `voc-avatars-cors-policy-${hash}`,
       corsBehavior: {
         accessControlAllowOrigins: corsAllowedOrigins,
         accessControlAllowMethods: ['GET', 'HEAD'],
@@ -120,7 +124,7 @@ export class VocStorageStack extends cdk.Stack {
     // GSI2: by category (for issue analysis)
     // GSI3: by urgency (for alerts)
     this.feedbackTable = new dynamodb.Table(this, 'FeedbackTable', {
-      tableName: 'voc-feedback',
+      tableName: uniqueTableName('voc-feedback', this.account, this.region),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -173,7 +177,7 @@ export class VocStorageStack extends cdk.Stack {
     // PK: METRIC#daily_sentiment, SK: 2024-01-15
     // PK: METRIC#category_count, SK: delivery#2024-01-15
     this.aggregatesTable = new dynamodb.Table(this, 'AggregatesTable', {
-      tableName: 'voc-aggregates',
+      tableName: uniqueTableName('voc-aggregates', this.account, this.region),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -195,7 +199,7 @@ export class VocStorageStack extends cdk.Stack {
 
     // Watermarks Table - tracks ingestion state per source
     this.watermarksTable = new dynamodb.Table(this, 'WatermarksTable', {
-      tableName: 'voc-watermarks',
+      tableName: uniqueTableName('voc-watermarks', this.account, this.region),
       partitionKey: { name: 'source', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
@@ -207,7 +211,7 @@ export class VocStorageStack extends cdk.Stack {
     // Projects Table - stores projects with personas, PRDs, PR/FAQs
     // PK: PROJECT#{project_id}, SK: META | PERSONA#{id} | PRD#{id} | PRFAQ#{id} | RESEARCH#{id}
     this.projectsTable = new dynamodb.Table(this, 'ProjectsTable', {
-      tableName: 'voc-projects',
+      tableName: uniqueTableName('voc-projects', this.account, this.region),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -229,7 +233,7 @@ export class VocStorageStack extends cdk.Stack {
     // PK: PROJECT#{project_id}, SK: JOB#{job_id}
     // GSI1: Query jobs by status (for monitoring)
     this.jobsTable = new dynamodb.Table(this, 'JobsTable', {
-      tableName: 'voc-jobs',
+      tableName: uniqueTableName('voc-jobs', this.account, this.region),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -251,7 +255,7 @@ export class VocStorageStack extends cdk.Stack {
     // Conversations Table - stores AI chat conversations
     // PK: USER#default (or user ID when auth is added), SK: CONV#{conversation_id}
     this.conversationsTable = new dynamodb.Table(this, 'ConversationsTable', {
-      tableName: 'voc-conversations',
+      tableName: uniqueTableName('voc-conversations', this.account, this.region),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -266,7 +270,7 @@ export class VocStorageStack extends cdk.Stack {
     // Required schema: id (PK), expiration (TTL), status, data
     // See: https://docs.powertools.aws.dev/lambda/python/latest/utilities/idempotency/
     this.idempotencyTable = new dynamodb.Table(this, 'IdempotencyTable', {
-      tableName: 'voc-idempotency',
+      tableName: uniqueTableName('voc-idempotency', this.account, this.region),
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,

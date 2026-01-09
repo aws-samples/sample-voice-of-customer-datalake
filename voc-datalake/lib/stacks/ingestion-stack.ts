@@ -21,6 +21,7 @@ import {
   capitalize,
   type PluginManifest,
 } from '../plugin-loader';
+import { uniqueBucketName, uniqueQueueName, uniqueFunctionName, uniqueRuleName, generateDeploymentHash } from '../utils/naming';
 
 export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -48,6 +49,9 @@ export class VocIngestionStack extends cdk.Stack {
     super(scope, id, props);
 
     const { feedbackTable, watermarksTable, aggregatesTable, rawDataBucket, accessLogsBucket, kmsKey, config } = props;
+
+    // Generate deployment hash for unique naming
+    const hash = generateDeploymentHash(this.account, this.region);
 
     // Load plugins from manifests
     const pluginsDir = path.join(__dirname, '../../plugins');
@@ -91,7 +95,8 @@ export class VocIngestionStack extends cdk.Stack {
         ingestionRole,
         commonEnv,
         dependenciesLayer,
-        aggregatesTable
+        aggregatesTable,
+        hash
       );
     }
 
@@ -132,7 +137,7 @@ export class VocIngestionStack extends cdk.Stack {
     corsAllowedOrigins: string[]
   ): s3.Bucket {
     return new s3.Bucket(this, 'S3ImportBucket', {
-      bucketName: `voc-import-${this.account}-${this.region}`,
+      bucketName: uniqueBucketName('voc-import', this.account, this.region),
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: kmsKey,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -200,7 +205,7 @@ export class VocIngestionStack extends cdk.Stack {
     };
 
     return new secretsmanager.Secret(this, 'VocApiSecrets', {
-      secretName: 'voc-datalake/api-credentials',
+      secretName: `voc-datalake/api-credentials-${generateDeploymentHash(this.account, this.region)}`,
       description: 'API credentials for VoC data sources',
       generateSecretString: {
         secretStringTemplate: JSON.stringify({
@@ -214,7 +219,7 @@ export class VocIngestionStack extends cdk.Stack {
 
   private createDLQ(kmsKey: kms.Key): sqs.Queue {
     return new sqs.Queue(this, 'ProcessingDLQ', {
-      queueName: 'voc-processing-dlq',
+      queueName: uniqueQueueName('voc-processing-dlq', this.account, this.region),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
       retentionPeriod: cdk.Duration.days(14),
@@ -223,7 +228,7 @@ export class VocIngestionStack extends cdk.Stack {
 
   private createProcessingQueue(kmsKey: kms.Key, dlq: sqs.Queue): sqs.Queue {
     return new sqs.Queue(this, 'ProcessingQueue', {
-      queueName: 'voc-processing-queue',
+      queueName: uniqueQueueName('voc-processing-queue', this.account, this.region),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
       visibilityTimeout: cdk.Duration.minutes(6),
@@ -288,7 +293,8 @@ export class VocIngestionStack extends cdk.Stack {
     ingestionRole: iam.Role,
     commonEnv: Record<string, string>,
     dependenciesLayer: lambda.LayerVersion,
-    aggregatesTable: dynamodb.Table
+    aggregatesTable: dynamodb.Table,
+    hash: string
   ): void {
     const infra = plugin.infrastructure.ingestor;
     if (!infra?.enabled) return;
@@ -312,7 +318,7 @@ export class VocIngestionStack extends cdk.Stack {
     const schedule = this.parseSchedule(infra.schedule);
 
     const fn = new lambda.Function(this, `Ingestor${capitalize(plugin.id)}`, {
-      functionName: `voc-ingestor-${plugin.id}`,
+      functionName: `voc-ingestor-${plugin.id}-${hash}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -323,7 +329,7 @@ export class VocIngestionStack extends cdk.Stack {
       environment: lambdaEnv,
       layers: [dependenciesLayer],
       logGroup: new logs.LogGroup(this, `IngestorLogs${capitalize(plugin.id)}`, {
-        logGroupName: `/aws/lambda/voc-ingestor-${plugin.id}`,
+        logGroupName: `/aws/lambda/voc-ingestor-${plugin.id}-${hash}`,
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -332,7 +338,7 @@ export class VocIngestionStack extends cdk.Stack {
     // Create schedule rule if schedule is defined
     if (schedule) {
       new events.Rule(this, `Schedule${capitalize(plugin.id)}`, {
-        ruleName: `voc-ingest-${plugin.id}-schedule`,
+        ruleName: `voc-ingest-${plugin.id}-schedule-${hash}`,
         schedule,
         targets: [new targets.LambdaFunction(fn, { retryAttempts: 2 })],
         enabled: false, // Disabled by default - enable via Settings UI
@@ -343,17 +349,19 @@ export class VocIngestionStack extends cdk.Stack {
   }
 
   private bundlePluginCode(pluginId: string): lambda.Code {
-    return lambda.Code.fromAsset('plugins', {
-      exclude: ['**/__pycache__', '*.pyc', '_template/**'],
+    return lambda.Code.fromAsset('.', {
+      exclude: ['**/__pycache__', '*.pyc', 'plugins/_template/**', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md', 'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**'],
       bundling: {
         image: lambda.Runtime.PYTHON_3_12.bundlingImage,
         command: [
           'bash', '-c', [
             'mkdir -p /asset-output',
             // Copy plugin ingestor code
-            `cp -r /asset-input/${pluginId}/ingestor/* /asset-output/`,
-            // Copy shared modules
-            'cp -r /asset-input/_shared /asset-output/',
+            `cp -r /asset-input/plugins/${pluginId}/ingestor/* /asset-output/`,
+            // Copy plugin shared modules
+            'cp -r /asset-input/plugins/_shared /asset-output/',
+            // Copy lambda shared modules (logging, aws, http)
+            'cp -r /asset-input/lambda/shared /asset-output/',
           ].join(' && '),
         ],
         platform: 'linux/arm64',

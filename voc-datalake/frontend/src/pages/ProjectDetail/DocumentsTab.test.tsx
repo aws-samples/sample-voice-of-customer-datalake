@@ -5,6 +5,11 @@ import { MemoryRouter } from 'react-router-dom'
 import DocumentsTab from './DocumentsTab'
 import type { ProjectDocument, Project } from '../../api/client'
 
+// Mock menu config module - default to artifact-builder enabled for tests
+vi.mock('../../config/menuConfig', () => ({
+  isArtifactBuilderEnabled: () => true,
+}))
+
 const mockProject: Project = {
   project_id: 'proj-1',
   name: 'Test Project',

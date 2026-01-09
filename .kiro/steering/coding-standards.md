@@ -704,16 +704,22 @@ aws cognito-idp initiate-auth \
 The streaming chat API uses a Lambda Function URL to bypass API Gateway's 29-second timeout:
 
 ```bash
+# Get endpoints from CloudFormation
+CLIENT_ID=$(aws cloudformation describe-stacks --stack-name VocAuthStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
+STREAM_URL=$(aws cloudformation describe-stacks --stack-name VocAnalyticsStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ChatStreamUrl`].OutputValue' --output text)
+
 # Get Cognito token (use single quotes for password with !)
+# Note: Create test user first with aws cognito-idp admin-create-user
 TOKEN=$(aws cognito-idp initiate-auth \
-  --client-id "3vgjagck9p2mp5tbc4cldne6tl" \
+  --client-id "$CLIENT_ID" \
   --auth-flow USER_PASSWORD_AUTH \
   --auth-parameters 'USERNAME=deployment-test,PASSWORD=DeployTest!2025' \
   --query 'AuthenticationResult.IdToken' \
   --output text)
 
 # Test streaming API
-STREAM_URL="https://lxmrq2m3sl32zpflkh2ch234ou0wvwpp.lambda-url.us-west-2.on.aws"
 curl -X POST "$STREAM_URL/chat/stream" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \

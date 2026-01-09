@@ -91,11 +91,20 @@ aws cognito-idp admin-add-user-to-group \
 
 ### Configure API Credentials
 
-After deployment, update the secrets in AWS Secrets Manager:
+After deployment, update the secrets in AWS Secrets Manager. The secret name includes a deployment hash based on your account and region:
 
 ```bash
+# Get the secret name from CloudFormation outputs
+SECRET_NAME=$(aws cloudformation describe-stacks \
+  --stack-name VocIngestionStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiSecretsArn`].OutputValue' \
+  --output text | sed 's/.*secret://' | sed 's/-.*//')
+
+# Or use the pattern: voc-datalake/api-credentials-{hash}
+# where {hash} is derived from your AWS account ID and region
+
 aws secretsmanager put-secret-value \
-  --secret-id voc-datalake/api-credentials \
+  --secret-id "${SECRET_NAME}" \
   --secret-string '{
     "trustpilot_api_key": "your-key",
     "trustpilot_api_secret": "your-secret",

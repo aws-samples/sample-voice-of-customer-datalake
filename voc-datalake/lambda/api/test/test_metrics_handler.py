@@ -114,10 +114,18 @@ class TestListFeedbackEndpoint:
     def test_filters_by_source_when_source_param_provided(
         self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context, sample_feedback_items
     ):
-        """Filters feedback by source platform."""
-        # Arrange
-        twitter_items = [i for i in sample_feedback_items if i['source_platform'] == 'twitter']
-        mock_fb_table.query.return_value = {'Items': twitter_items}
+        """Filters feedback by source platform using source_platform field."""
+        # Arrange - return items only on first query call, empty on subsequent calls
+        # This simulates querying by date where items are only in one day
+        mock_fb_table.query.side_effect = [
+            {'Items': sample_feedback_items},  # First day
+            {'Items': []},  # Subsequent days
+            {'Items': []},
+            {'Items': []},
+            {'Items': []},
+            {'Items': []},
+            {'Items': []},
+        ]
         
         from metrics_handler import lambda_handler
         event = api_gateway_event(
@@ -132,7 +140,9 @@ class TestListFeedbackEndpoint:
         
         # Assert
         assert response['statusCode'] == 200
+        # Should filter to only twitter items (1 in sample_feedback_items)
         assert body['count'] == 1
+        assert all(item['source_platform'] == 'twitter' for item in body['items'])
         mock_fb_table.query.assert_called()
 
     @patch('metrics_handler.feedback_table')
@@ -476,7 +486,7 @@ class TestGetUrgentFeedback:
             ]
         }
         mock_fb_table.get_item.return_value = {
-            'Item': {'feedback_id': '1', 'urgency': 'high', 'original_text': 'Urgent issue!'}
+            'Item': {'feedback_id': '1', 'urgency': 'high', 'original_text': 'Urgent issue!', 'date': '2026-01-07'}
         }
         
         from metrics_handler import lambda_handler
@@ -507,6 +517,71 @@ class TestGetUrgentFeedback:
         body = json.loads(response['body'])
         
         assert response['statusCode'] == 200
+
+    @patch('metrics_handler.feedback_table')
+    def test_filters_by_source(
+        self, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """Filters urgent feedback by source platform."""
+        mock_fb_table.query.return_value = {
+            'Items': [
+                {'pk': 'SOURCE#twitter', 'sk': 'FEEDBACK#1'},
+                {'pk': 'SOURCE#trustpilot', 'sk': 'FEEDBACK#2'}
+            ]
+        }
+        # Return different items based on pk to simulate filtering
+        def get_item_side_effect(Key):
+            if Key['pk'] == 'SOURCE#twitter':
+                return {'Item': {'feedback_id': '1', 'source_platform': 'twitter', 'date': '2026-01-07'}}
+            return {'Item': {'feedback_id': '2', 'source_platform': 'trustpilot', 'date': '2026-01-07'}}
+        
+        mock_fb_table.get_item.side_effect = get_item_side_effect
+        
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback/urgent',
+            query_params={'source': 'twitter'}
+        )
+        
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        
+        assert response['statusCode'] == 200
+        # Should only return twitter items
+        for item in body['items']:
+            assert item['source_platform'] == 'twitter'
+
+    @patch('metrics_handler.feedback_table')
+    def test_filters_by_sentiment_and_category(
+        self, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """Filters urgent feedback by sentiment and category."""
+        mock_fb_table.query.return_value = {
+            'Items': [{'pk': 'SOURCE#test', 'sk': 'FEEDBACK#1'}]
+        }
+        mock_fb_table.get_item.return_value = {
+            'Item': {
+                'feedback_id': '1',
+                'source_platform': 'test',
+                'sentiment_label': 'negative',
+                'category': 'delivery',
+                'date': '2026-01-07'
+            }
+        }
+        
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback/urgent',
+            query_params={'sentiment': 'negative', 'category': 'delivery'}
+        )
+        
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        
+        assert response['statusCode'] == 200
+        assert body['count'] == 1
 
 
 class TestGetEntities:
@@ -795,14 +870,24 @@ class TestGetSentimentWithSource:
     def test_returns_sentiment_for_specific_source(
         self, mock_fb_table, mock_agg_table, api_gateway_event, lambda_context
     ):
-        """Returns sentiment breakdown for specific source."""
-        mock_fb_table.query.return_value = {
-            'Items': [
-                {'date': '2026-01-07', 'sentiment_label': 'positive'},
-                {'date': '2026-01-07', 'sentiment_label': 'positive'},
-                {'date': '2026-01-07', 'sentiment_label': 'negative'},
-            ]
-        }
+        """Returns sentiment breakdown for specific source using source_platform field."""
+        # Return items with source_platform field - filtering happens in memory
+        # Use side_effect to return items only on first call
+        test_items = [
+            {'date': '2026-01-07', 'sentiment_label': 'positive', 'source_platform': 'twitter'},
+            {'date': '2026-01-07', 'sentiment_label': 'positive', 'source_platform': 'twitter'},
+            {'date': '2026-01-07', 'sentiment_label': 'negative', 'source_platform': 'twitter'},
+            {'date': '2026-01-07', 'sentiment_label': 'positive', 'source_platform': 'trustpilot'},
+        ]
+        mock_fb_table.query.side_effect = [
+            {'Items': test_items},  # First day
+            {'Items': []},  # Subsequent days
+            {'Items': []},
+            {'Items': []},
+            {'Items': []},
+            {'Items': []},
+            {'Items': []},
+        ]
         
         from metrics_handler import lambda_handler
         event = api_gateway_event(
@@ -815,5 +900,6 @@ class TestGetSentimentWithSource:
         body = json.loads(response['body'])
         
         assert response['statusCode'] == 200
+        # Should only count twitter items (2 positive, 1 negative)
         assert body['breakdown']['positive'] == 2
         assert body['breakdown']['negative'] == 1

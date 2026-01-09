@@ -16,6 +16,7 @@ import * as codecommit from 'aws-cdk-lib/aws-codecommit';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
+import { uniqueBucketName, uniqueTableName, uniqueQueueName, uniqueFunctionName, generateDeploymentHash } from '../utils/naming';
 
 export interface ArtifactBuilderStackProps extends cdk.StackProps {
   // Optional: pass existing VPC
@@ -32,13 +33,20 @@ export class ArtifactBuilderStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: ArtifactBuilderStackProps) {
     super(scope, id, props);
 
+    // Generate deployment hash for unique naming
+    const hash = generateDeploymentHash(this.account, this.region);
+
     // ============================================
     // ECR - EXECUTOR IMAGE REPOSITORY
     // ============================================
 
     // Import existing ECR repository (created manually with auth baked in)
+    // NOTE: ECR repo name is NOT hashed because:
+    // 1. It's created manually before stack deployment
+    // 2. Auth is baked into the image via docker commit
+    // 3. Changing the name would require rebuilding the authenticated image
     // If deploying fresh, create the repo first:
-    //   aws ecr create-repository --repository-name artifact-builder-executor --region us-west-2
+    //   aws ecr create-repository --repository-name artifact-builder-executor --region <region>
     // Then build and push the authenticated image per artifact-builder.md
     this.executorRepo = ecr.Repository.fromRepositoryName(
       this, 'ExecutorRepo', 'artifact-builder-executor'
@@ -54,7 +62,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
     // Read-only template repository
     // Upload template-app contents here after deployment
     this.templateRepo = new codecommit.Repository(this, 'TemplateRepo', {
-      repositoryName: 'artifact-builder-template',
+      repositoryName: `artifact-builder-template-${hash}`,
       description: 'Read-only template for Artifact Builder (React + Vite + shadcn/ui)',
     });
 
@@ -71,7 +79,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
 
     // S3 Bucket for artifacts (source zips, builds, logs)
     this.artifactsBucket = new s3.Bucket(this, 'ArtifactsBucket', {
-      bucketName: `artifact-builder-${this.account}-${this.region}`,
+      bucketName: uniqueBucketName('artifact-builder', this.account, this.region),
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
@@ -96,7 +104,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
 
     // DynamoDB Table for job tracking
     const jobsTable = new dynamodb.Table(this, 'ArtifactJobsTable', {
-      tableName: 'artifact-builder-jobs',
+      tableName: uniqueTableName('artifact-builder-jobs', this.account, this.region),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -116,12 +124,12 @@ export class ArtifactBuilderStack extends cdk.Stack {
 
     // SQS Queue for job execution
     const dlq = new sqs.Queue(this, 'ArtifactBuilderDLQ', {
-      queueName: 'artifact-builder-dlq',
+      queueName: uniqueQueueName('artifact-builder-dlq', this.account, this.region),
       retentionPeriod: cdk.Duration.days(14),
     });
 
     const jobQueue = new sqs.Queue(this, 'ArtifactBuilderQueue', {
-      queueName: 'artifact-builder-jobs',
+      queueName: uniqueQueueName('artifact-builder-jobs', this.account, this.region),
       visibilityTimeout: cdk.Duration.minutes(30),
       deadLetterQueue: {
         queue: dlq,
@@ -190,7 +198,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
 
     // ECS Cluster
     const cluster = new ecs.Cluster(this, 'ArtifactBuilderCluster', {
-      clusterName: 'artifact-builder',
+      clusterName: `artifact-builder-${hash}`,
       vpc,
       containerInsightsV2: ecs.ContainerInsights.ENABLED,
     });
@@ -292,7 +300,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
     // SSM Parameter Store - read credentials (if any future needs)
     taskRole.addToPolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter', 'ssm:GetParameters'],
-      resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/artifact-builder/*`],
+      resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/artifact-builder-${hash}/*`],
     }));
 
     // SSM permissions required for ECS Exec
@@ -308,7 +316,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
 
     // ECS Task Definition - x86_64 for broader compatibility
     const executorTaskDef = new ecs.FargateTaskDefinition(this, 'ExecutorTaskDef', {
-      family: 'artifact-builder-executor',
+      family: `artifact-builder-executor-${hash}`,
       cpu: 4096,   // 4 vCPU for faster builds
       memoryLimitMiB: 8192,  // 8 GB for npm install
       taskRole,
@@ -349,7 +357,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
 
     // Container definition
     const executorLogGroup = new logs.LogGroup(this, 'ExecutorLogs', {
-      logGroupName: '/ecs/artifact-builder-executor',
+      logGroupName: `/ecs/artifact-builder-executor-${hash}`,
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
@@ -436,7 +444,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
     }));
 
     const apiLambda = new lambda.Function(this, 'ArtifactBuilderApi', {
-      functionName: 'artifact-builder-api',
+      functionName: `artifact-builder-api-${hash}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'artifact_builder_handler.lambda_handler',
@@ -455,7 +463,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
       },
       layers: [apiLayer],
       logGroup: new logs.LogGroup(this, 'ApiLogs', {
-        logGroupName: '/aws/lambda/artifact-builder-api',
+        logGroupName: `/aws/lambda/artifact-builder-api-${hash}`,
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -486,7 +494,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
     }));
 
     const triggerLambda = new lambda.Function(this, 'TriggerLambda', {
-      functionName: 'artifact-builder-trigger',
+      functionName: `artifact-builder-trigger-${hash}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'artifact_trigger_handler.lambda_handler',
@@ -518,7 +526,7 @@ export class ArtifactBuilderStack extends cdk.Stack {
     // ============================================
 
     this.api = new apigateway.RestApi(this, 'ArtifactBuilderApiGateway', {
-      restApiName: 'artifact-builder-api',
+      restApiName: `artifact-builder-api-${hash}`,
       description: 'Artifact Builder API',
       deployOptions: {
         stageName: 'v1',

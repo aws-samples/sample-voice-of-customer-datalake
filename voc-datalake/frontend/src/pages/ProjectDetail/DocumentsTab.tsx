@@ -9,6 +9,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ProjectDocument, Project } from '../../api/client'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
+import { isArtifactBuilderEnabled } from '../../config/menuConfig'
 
 interface DocumentsTabProps {
   readonly project: Project
@@ -87,7 +88,7 @@ export default function DocumentsTab({
                 <h2 className="text-xl font-bold">{selectedDoc.title}</h2>
                 <div className="flex items-center gap-2">
                   {/* Build Prototype / View Artifact button */}
-                  {(selectedDoc.document_type === 'prd' || selectedDoc.document_type === 'prfaq') && artifactBuilderEndpoint && (
+                  {(selectedDoc.document_type === 'prd' || selectedDoc.document_type === 'prfaq') && artifactBuilderEndpoint && isArtifactBuilderEnabled() && (
                     selectedDoc.artifact_job_id ? (
                       <button
                         onClick={() => navigate(`/artifact-builder?job=${selectedDoc.artifact_job_id}`)}

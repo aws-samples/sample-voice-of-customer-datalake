@@ -169,12 +169,12 @@ export const api = {
   
   getFeedbackById: (id: string) => fetchApi<FeedbackItem>(`/feedback/${id}`),
   
-  getUrgentFeedback: (params: { days?: number; limit?: number }) => {
+  getUrgentFeedback: (params: { days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
     return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback/urgent?${searchParams}`)
   },
   
-  searchFeedback: (params: { q: string; days?: number; limit?: number }) => {
+  searchFeedback: (params: { q: string; days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
     return fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
   },
@@ -439,6 +439,13 @@ export const api = {
       body: JSON.stringify({ scores })
     }),
 
+  /** Save only the changed scores (incremental/diff update) */
+  patchPrioritizationScores: (changedScores: Record<string, PrioritizationScore>) =>
+    fetchApi<{ success: boolean; updated_count?: number }>('/projects/prioritization', {
+      method: 'PATCH',
+      body: JSON.stringify({ scores: changedScores })
+    }),
+
   // S3 Import File Explorer
   getS3ImportSources: () => fetchApi<{ sources: S3ImportSource[]; bucket: string | null }>('/s3-import/sources'),
   
@@ -554,6 +561,29 @@ export const api = {
   
   deleteFeedbackForm: (formId: string) =>
     fetchApi<{ success: boolean }>(`/feedback-forms/${formId}`, { method: 'DELETE' }),
+
+  getFeedbackFormStats: (formId: string) =>
+    fetchApi<{ success: boolean; form_id: string; stats: { total_submissions: number; avg_rating: number | null; rating_count: number } }>(`/feedback-forms/${formId}/stats`),
+
+  getFeedbackFormSubmissions: (formId: string, limit?: number) => {
+    const params = new URLSearchParams()
+    if (limit) params.set('limit', String(limit))
+    return fetchApi<{
+      success: boolean
+      form_id: string
+      stats: { total_submissions: number; avg_rating: number | null; rating_count: number }
+      submissions: Array<{
+        feedback_id: string
+        original_text: string
+        rating: number | null
+        sentiment_label: string
+        sentiment_score: number
+        category: string
+        created_at: string
+        persona_name: string
+      }>
+    }>(`/feedback-forms/${formId}/submissions?${params}`)
+  },
 
   // User Administration (admin only)
   getUsers: () => fetchApi<{ success: boolean; users: CognitoUser[]; message?: string }>('/users'),

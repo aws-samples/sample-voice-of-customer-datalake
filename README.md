@@ -65,6 +65,17 @@ npm run deploy:all
 
 See [Deployment Guide](docs/deployment.md) for detailed instructions.
 
+## 🔐 Initial Login
+
+After deployment, an initial admin user is created automatically:
+
+| Field | Value |
+|-------|-------|
+| Username | `admin` |
+| Password | `VocAnalytics@@2026` |
+
+> ⚠️ **Security Warning**: Change this password immediately after your first login!
+
 ## ⚙️ Configuration
 
 Enable/disable plugins and menu items in `voc-datalake/cdk.context.json`:

@@ -23,13 +23,15 @@ dynamodb = boto3.resource('dynamodb')
 ecs = boto3.client('ecs')
 
 # Configuration
-JOBS_TABLE = os.environ.get('JOBS_TABLE', 'artifact-builder-jobs')
+JOBS_TABLE = os.environ.get('JOBS_TABLE')
+if not JOBS_TABLE:
+    raise ValueError("JOBS_TABLE environment variable is required")
 ECS_CLUSTER = os.environ.get('ECS_CLUSTER', '')
 ECS_TASK_DEF = os.environ.get('ECS_TASK_DEF', '')
 ECS_SUBNETS = os.environ.get('ECS_SUBNETS', '').split(',')
 ECS_SECURITY_GROUP = os.environ.get('ECS_SECURITY_GROUP', '')
 ARTIFACTS_BUCKET = os.environ.get('ARTIFACTS_BUCKET', '')
-TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO_NAME', 'artifact-builder-template')
+TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO_NAME', '')
 PREVIEW_URL = os.environ.get('PREVIEW_URL', '')
 
 jobs_table = dynamodb.Table(JOBS_TABLE)

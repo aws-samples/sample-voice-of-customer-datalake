@@ -67,7 +67,11 @@ def get_configured_categories() -> list:
     """Fetch configured categories from DynamoDB settings with caching."""
     global _categories_cache, _categories_cache_time
     
-    aggregates_table = dynamodb.Table(os.environ.get('AGGREGATES_TABLE', 'voc-aggregates'))
+    table_name = os.environ.get('AGGREGATES_TABLE')
+    if not table_name:
+        logger.warning("AGGREGATES_TABLE not set, categories will be empty")
+        return []
+    aggregates_table = dynamodb.Table(table_name)
     now = datetime.now(timezone.utc).timestamp()
     
     # Return cached if still valid
@@ -856,7 +860,7 @@ def parse_context_filters(context_hint: str) -> dict:
 
 
 def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
-    """Build context for VoC AI Chat (main chat page)."""
+    """Build context for VoC AI Chat (main chat page) - tool-based approach."""
     message = body.get('message', '')
     context_hint = body.get('context', '')
     days = validate_days(body.get('days'), default=7)
@@ -869,7 +873,7 @@ def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
     
     current_date = datetime.now(timezone.utc)
     
-    # Get metrics from aggregates
+    # Get high-level metrics from aggregates (lightweight, always available)
     total_feedback = 0
     sentiment_counts = {'positive': 0, 'negative': 0, 'neutral': 0, 'mixed': 0}
     category_counts = {}
@@ -926,99 +930,35 @@ def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
             except Exception:
                 pass
     
-    # Get recent feedback items with filters applied
-    feedback_items = []
-    urgent_items = []
-    
-    if feedback_table:
-        # If source filter is set, query by source instead of date
-        if source_filter:
-            try:
-                response = feedback_table.query(
-                    KeyConditionExpression=Key('pk').eq(f'SOURCE#{source_filter}'),
-                    Limit=50,
-                    ScanIndexForward=False
-                )
-                items = response.get('Items', [])
-                # Apply additional filters
-                for item in items:
-                    if category_filter and item.get('category') != category_filter:
-                        continue
-                    if sentiment_filter and item.get('sentiment_label') != sentiment_filter:
-                        continue
-                    feedback_items.append(item)
-                    if len(feedback_items) >= 30:
-                        break
-            except Exception as e:
-                logger.warning(f"Failed to query by source: {e}")
-        else:
-            # Query by date and apply filters
-            for i in range(min(days, 7)):
-                date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-                try:
-                    response = feedback_table.query(
-                        IndexName='gsi1-by-date',
-                        KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                        Limit=30,
-                        ScanIndexForward=False
-                    )
-                    for item in response.get('Items', []):
-                        # Apply filters
-                        if category_filter and item.get('category') != category_filter:
-                            continue
-                        if sentiment_filter and item.get('sentiment_label') != sentiment_filter:
-                            continue
-                        feedback_items.append(item)
-                    if len(feedback_items) >= 30:
-                        break
-                except Exception:
-                    pass
-        
-        # Get urgent items if relevant
-        if 'urgent' in message.lower() or 'attention' in message.lower():
-            try:
-                response = feedback_table.query(
-                    IndexName='gsi3-by-urgency',
-                    KeyConditionExpression=Key('gsi3pk').eq('URGENCY#high'),
-                    Limit=10,
-                    ScanIndexForward=False
-                )
-                urgent_items = response.get('Items', [])
-            except Exception:
-                pass
-    
-    # Build feedback context
-    feedback_context = []
-    for item in feedback_items[:20]:
-        feedback_context.append({
-            'source': item.get('source_platform', 'unknown'),
-            'date': item.get('source_created_at', '')[:10] if item.get('source_created_at') else '',
-            'text': item.get('original_text', '')[:500],
-            'sentiment': item.get('sentiment_label', 'unknown'),
-            'sentiment_score': float(item.get('sentiment_score', 0)),
-            'category': item.get('category', 'other'),
-            'urgency': item.get('urgency', 'low'),
-            'rating': item.get('rating'),
-            'persona': item.get('persona_name', ''),
-            'problem_summary': item.get('problem_summary', ''),
-        })
-    
-    # Build system prompt
+    # Build system prompt - NO feedback data yet, LLM will use tool if needed
     system_prompt = """You are a Voice of the Customer (VoC) analytics assistant. You help analyze customer feedback data and provide actionable insights.
 
-You have access to real customer feedback data from various sources including Trustpilot, Google Reviews, Twitter, Instagram, Facebook, Reddit, and app stores.
+You have access to a tool called "search_feedback" that lets you search and retrieve customer feedback from various sources (Trustpilot, Google Reviews, Twitter, Instagram, Facebook, Reddit, app stores, etc.).
 
-When answering questions:
-1. Base your answers ONLY on the actual data provided in the context
-2. Be specific with numbers and percentages from the data
-3. Quote actual customer feedback when relevant
-4. Highlight urgent issues that need attention
-5. Provide actionable recommendations based on the data
-6. If the data doesn't contain information to answer a question, say so honestly
+IMPORTANT GUIDELINES:
+1. ONLY use the search_feedback tool when the user's question is specifically about customer feedback, reviews, or customer opinions
+2. For general questions, greetings, or non-feedback topics, respond directly WITHOUT using the tool
+3. When you DO use the tool, be specific with your search query to get relevant results
+4. Base your answers on the actual data returned by the tool
+5. Quote actual customer feedback when relevant
+6. Highlight urgent issues that need attention
+7. Provide actionable recommendations based on the data
+
+Examples of when to USE the tool:
+- "What are customers saying about delivery?"
+- "Show me negative reviews about pricing"
+- "What are the main complaints?"
+- "Find feedback about the mobile app"
+
+Examples of when NOT to use the tool:
+- "Hello" / "Hi there"
+- "What can you do?"
+- "How does this work?"
+- "Thanks for your help"
 
 Format your responses clearly with bullet points or numbered lists when appropriate."""
 
-    # Build data context
+    # Build data context with metrics summary (lightweight)
     data_context = f"""## Current Data Summary (Last {days} days)
 
 **Total Feedback Items:** {total_feedback}
@@ -1032,34 +972,9 @@ Format your responses clearly with bullet points or numbered lists when appropri
 
 **Top Categories:**
 {chr(10).join([f"- {cat}: {count}" for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True)[:5]])}
-
-## Recent Customer Feedback Samples:
-"""
-    
-    for i, fb in enumerate(feedback_context[:15], 1):
-        data_context += f"""
-### Feedback #{i}
-- Source: {fb['source']}
-- Date: {fb['date']}
-- Sentiment: {fb['sentiment']} ({fb['sentiment_score']:.2f})
-- Category: {fb['category']}
-- Urgency: {fb['urgency']}
-- Rating: {fb['rating'] if fb['rating'] else 'N/A'}
-- Text: "{fb['text']}"
-{f"- Problem Summary: {fb['problem_summary']}" if fb['problem_summary'] else ''}
 """
 
-    if urgent_items:
-        data_context += "\n## Urgent Issues Requiring Attention:\n"
-        for i, item in enumerate(urgent_items[:5], 1):
-            data_context += f"""
-### Urgent #{i}
-- Source: {item.get('source_platform', 'unknown')}
-- Text: "{item.get('original_text', '')[:300]}"
-- Category: {item.get('category', 'other')}
-"""
-
-    # Show active filters
+    # Show active filters if any
     active_filters = []
     if source_filter:
         active_filters.append(f"Source: {source_filter}")
@@ -1070,27 +985,144 @@ Format your responses clearly with bullet points or numbered lists when appropri
     
     if active_filters:
         data_context += f"\n## Active Filters: {', '.join(active_filters)}\n"
-        data_context += "Note: The feedback samples above have been filtered based on these criteria.\n"
+        data_context += "When using the search_feedback tool, apply these filters.\n"
 
     user_message = f"{data_context}\n\n---\n\nUser Question: {message}"
-    
-    # Get source items for response
-    source_items = urgent_items[:3] if urgent_items else feedback_items[:3]
     
     metadata = {
         'total_feedback': total_feedback,
         'days_analyzed': days,
         'urgent_count': urgent_count,
-        'sources': source_items
+        'filters': {
+            'source': source_filter,
+            'category': category_filter,
+            'sentiment': sentiment_filter,
+            'days': days
+        }
     }
     
     return system_prompt, user_message, metadata
 
 
+def execute_search_feedback_tool(tool_input: dict, filters: dict) -> list:
+    """Execute the search_feedback tool and return results."""
+    query = tool_input.get('query', '')
+    source = tool_input.get('source') or filters.get('source')
+    category = tool_input.get('category') or filters.get('category')
+    sentiment = tool_input.get('sentiment') or filters.get('sentiment')
+    urgency = tool_input.get('urgency')
+    limit = min(tool_input.get('limit', 15), 30)
+    days = filters.get('days', 30)
+    
+    if not feedback_table:
+        return []
+    
+    # Check if query looks like a review/feedback ID (32-char hex string)
+    # Use GSI4 for direct lookup by feedback_id
+    if query and re.match(r'^[a-f0-9]{32}$', query.lower().strip()):
+        try:
+            response = feedback_table.query(
+                IndexName='gsi4-by-feedback-id',
+                KeyConditionExpression=Key('feedback_id').eq(query.lower().strip()),
+                Limit=1
+            )
+            items = response.get('Items', [])
+            if items:
+                logger.info(f"Found feedback by ID: {query}")
+                return items
+            logger.info(f"No feedback found with ID: {query}")
+        except Exception as e:
+            logger.warning(f"Failed to query by feedback_id: {e}")
+    
+    current_date = datetime.now(timezone.utc)
+    cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+    
+    items = []
+    
+    # Query recent feedback by date, then filter by source_platform in memory
+    candidates = []
+    for i in range(min(days, 30)):
+        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+        try:
+            response = feedback_table.query(
+                IndexName='gsi1-by-date',
+                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+                Limit=300,
+                ScanIndexForward=False
+            )
+            candidates.extend(response.get('Items', []))
+            if len(candidates) >= 1000:
+                break
+        except Exception:
+            pass
+    
+    # Filter candidates
+    query_lower = query.lower() if query else ''
+    
+    for item in candidates:
+        # Date filter
+        item_date = item.get('date', '')
+        if item_date < cutoff_date:
+            continue
+        
+        # Source filter using source_platform field
+        if source and item.get('source_platform') != source:
+            continue
+        
+        # Sentiment filter
+        if sentiment and item.get('sentiment_label') != sentiment:
+            continue
+        
+        # Category filter
+        if category and item.get('category') != category:
+            continue
+        
+        # Urgency filter
+        if urgency and item.get('urgency') != urgency:
+            continue
+        
+        # Text search if query provided
+        if query_lower:
+            original_text = (item.get('original_text') or '').lower()
+            title = (item.get('title') or '').lower()
+            problem_summary = (item.get('problem_summary') or '').lower()
+            
+            if query_lower not in original_text and query_lower not in title and query_lower not in problem_summary:
+                continue
+        
+        items.append(item)
+        if len(items) >= limit:
+            break
+    
+    return items
+
+
+def format_tool_results(items: list) -> str:
+    """Format feedback items as tool result for LLM."""
+    if not items:
+        return "No feedback found matching the search criteria."
+    
+    result = f"Found {len(items)} relevant feedback items:\n\n"
+    
+    for i, item in enumerate(items, 1):
+        result += f"""### Feedback #{i}
+- Source: {item.get('source_platform', 'unknown')}
+- Date: {item.get('source_created_at', '')[:10] if item.get('source_created_at') else 'N/A'}
+- Sentiment: {item.get('sentiment_label', 'unknown')} ({float(item.get('sentiment_score', 0)):.2f})
+- Category: {item.get('category', 'other')}
+- Rating: {item.get('rating') if item.get('rating') else 'N/A'}
+- Text: "{item.get('original_text', '')[:400]}"
+{f"- Problem Summary: {item.get('problem_summary')}" if item.get('problem_summary') else ''}
+
+"""
+    
+    return result
+
+
 def voc_chat_handler(event, context):
     """
     Lambda handler for VoC AI Chat via Function URL.
-    Requires valid API key in Authorization header.
+    Uses Bedrock tool use to intelligently decide when to fetch feedback.
     """
     # Validate authentication
     is_valid, error_msg = validate_auth(event)
@@ -1114,9 +1146,50 @@ def voc_chat_handler(event, context):
         
         # Build context
         system_prompt, user_message, metadata = get_voc_chat_context(body)
+        filters = metadata.get('filters', {})
         
-        # Call Bedrock with streaming
-        response = bedrock.invoke_model_with_response_stream(
+        # Define the search_feedback tool
+        tools = [
+            {
+                "name": "search_feedback",
+                "description": "Search and retrieve customer feedback/reviews from the database. Use this tool ONLY when the user is asking about customer feedback, reviews, complaints, or opinions. Do NOT use for greetings, general questions, or non-feedback topics. You can also look up a specific review by its ID (32-character hex string like '44f12e2242bbd849f6a26c9d3b78adb3') - just pass the ID as the query.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query to find relevant feedback. Use keywords from the user's question (e.g., 'delivery', 'pricing', 'app crash', 'refund'). Can also be a feedback ID (32-char hex string) for direct lookup."
+                        },
+                        "source": {
+                            "type": "string",
+                            "description": "Filter by source platform (e.g., 'trustpilot', 'google_reviews', 'twitter', 'reddit', 'appstore_apple'). Optional."
+                        },
+                        "category": {
+                            "type": "string",
+                            "description": "Filter by category (e.g., 'delivery', 'customer_support', 'product_quality', 'pricing'). Optional."
+                        },
+                        "sentiment": {
+                            "type": "string",
+                            "enum": ["positive", "negative", "neutral", "mixed"],
+                            "description": "Filter by sentiment. Optional."
+                        },
+                        "urgency": {
+                            "type": "string",
+                            "enum": ["high", "medium", "low"],
+                            "description": "Filter by urgency level. Use 'high' to find urgent issues that need immediate attention. Optional."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of feedback items to return (default: 15, max: 30)."
+                        }
+                    },
+                    "required": []
+                }
+            }
+        ]
+        
+        # First call - let LLM decide if it needs to use the tool
+        response = bedrock.invoke_model(
             modelId=MODEL_ID,
             contentType='application/json',
             accept='application/json',
@@ -1124,20 +1197,140 @@ def voc_chat_handler(event, context):
                 'anthropic_version': 'bedrock-2023-05-31',
                 'max_tokens': 2000,
                 'system': system_prompt,
+                'tools': tools,
                 'messages': [{'role': 'user', 'content': user_message}]
             })
         )
         
-        # Collect streamed response
-        full_response = ""
-        for event_chunk in response.get('body', []):
-            chunk = json.loads(event_chunk.get('chunk', {}).get('bytes', b'{}'))
-            if chunk.get('type') == 'content_block_delta':
-                delta = chunk.get('delta', {})
-                if delta.get('type') == 'text_delta':
-                    full_response += delta.get('text', '')
+        result = json.loads(response['body'].read())
         
-        sources = metadata.pop('sources', [])
+        # Check if LLM wants to use a tool
+        sources = []
+        if result.get('stop_reason') == 'tool_use':
+            # LLM decided to use the search_feedback tool
+            tool_use_block = None
+            text_blocks = []
+            
+            for block in result.get('content', []):
+                if block.get('type') == 'tool_use':
+                    tool_use_block = block
+                elif block.get('type') == 'text':
+                    text_blocks.append(block.get('text', ''))
+            
+            if tool_use_block and tool_use_block.get('name') == 'search_feedback':
+                tool_input = tool_use_block.get('input', {})
+                tool_use_id = tool_use_block.get('id')
+                
+                logger.info(f"LLM invoked search_feedback tool with: {tool_input}")
+                
+                # Execute the tool
+                feedback_items = execute_search_feedback_tool(tool_input, filters)
+                tool_result = format_tool_results(feedback_items)
+                
+                # Store sources for response
+                sources = feedback_items[:5]
+                
+                # Build conversation with tool result
+                messages = [
+                    {'role': 'user', 'content': user_message},
+                    {'role': 'assistant', 'content': result.get('content', [])},
+                    {
+                        'role': 'user',
+                        'content': [
+                            {
+                                'type': 'tool_result',
+                                'tool_use_id': tool_use_id,
+                                'content': tool_result
+                            }
+                        ]
+                    }
+                ]
+                
+                # Loop to handle potential recursive tool use (max 3 iterations)
+                max_iterations = 3
+                for iteration in range(max_iterations):
+                    logger.info(f"Tool use iteration {iteration + 1}")
+                    
+                    iter_response = bedrock.invoke_model(
+                        modelId=MODEL_ID,
+                        contentType='application/json',
+                        accept='application/json',
+                        body=json.dumps({
+                            'anthropic_version': 'bedrock-2023-05-31',
+                            'max_tokens': 2000,
+                            'system': system_prompt,
+                            'tools': tools,
+                            'messages': messages
+                        })
+                    )
+                    
+                    iter_result = json.loads(iter_response['body'].read())
+                    
+                    # Check if LLM wants to use tool again
+                    if iter_result.get('stop_reason') == 'tool_use':
+                        # Find the tool use block
+                        iter_tool_block = None
+                        iter_text_parts = []
+                        for block in iter_result.get('content', []):
+                            if block.get('type') == 'tool_use':
+                                iter_tool_block = block
+                            elif block.get('type') == 'text':
+                                iter_text_parts.append(block.get('text', ''))
+                        
+                        if iter_tool_block and iter_tool_block.get('name') == 'search_feedback':
+                            iter_tool_input = iter_tool_block.get('input', {})
+                            iter_tool_id = iter_tool_block.get('id')
+                            
+                            logger.info(f"LLM requested another search: {iter_tool_input}")
+                            
+                            # Execute the tool again
+                            iter_items = execute_search_feedback_tool(iter_tool_input, filters)
+                            iter_tool_result = format_tool_results(iter_items)
+                            
+                            # Add new sources (avoid duplicates)
+                            existing_ids = {s.get('feedback_id') for s in sources}
+                            for item in iter_items[:5]:
+                                if item.get('feedback_id') not in existing_ids:
+                                    sources.append(item)
+                                    existing_ids.add(item.get('feedback_id'))
+                            
+                            # Append to conversation
+                            messages.append({'role': 'assistant', 'content': iter_result.get('content', [])})
+                            messages.append({
+                                'role': 'user',
+                                'content': [
+                                    {
+                                        'type': 'tool_result',
+                                        'tool_use_id': iter_tool_id,
+                                        'content': iter_tool_result
+                                    }
+                                ]
+                            })
+                            continue  # Loop again
+                        else:
+                            # Unknown tool, extract text and break
+                            full_response = ' '.join(iter_text_parts)
+                            break
+                    else:
+                        # LLM finished - extract final text response
+                        full_response = ""
+                        for block in iter_result.get('content', []):
+                            if block.get('type') == 'text':
+                                full_response += block.get('text', '')
+                        break
+                else:
+                    # Max iterations reached - extract whatever text we have
+                    logger.warning("Max tool use iterations reached")
+                    full_response = "I found some relevant feedback but couldn't complete the full analysis. Please try a more specific question."
+            else:
+                # Unknown tool or no tool block
+                full_response = ' '.join(text_blocks)
+        else:
+            # LLM responded directly without using tools
+            full_response = ""
+            for block in result.get('content', []):
+                if block.get('type') == 'text':
+                    full_response += block.get('text', '')
         
         return {
             'statusCode': 200,
@@ -1145,7 +1338,12 @@ def voc_chat_handler(event, context):
             'body': json.dumps({
                 'response': full_response,
                 'sources': sources,
-                'metadata': metadata
+                'metadata': {
+                    'total_feedback': metadata.get('total_feedback', 0),
+                    'days_analyzed': metadata.get('days_analyzed', 7),
+                    'urgent_count': metadata.get('urgent_count', 0),
+                    'tool_used': len(sources) > 0
+                }
             }, cls=DecimalEncoder)
         }
         

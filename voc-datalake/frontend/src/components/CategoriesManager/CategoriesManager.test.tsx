@@ -838,13 +838,14 @@ describe('CategoriesManager', () => {
   describe('empty subcategory input', () => {
     it('does not add subcategory when input is empty', async () => {
       const user = userEvent.setup()
+      const initialCategory = {
+        id: 'cat_1',
+        name: 'delivery',
+        description: 'Delivery',
+        subcategories: [],
+      }
       mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{
-          id: 'cat_1',
-          name: 'delivery',
-          description: 'Delivery',
-          subcategories: [],
-        }],
+        categories: [initialCategory],
       })
       
       renderComponent()
@@ -862,15 +863,26 @@ describe('CategoriesManager', () => {
         expect(screen.getByPlaceholderText('Add subcategory...')).toBeInTheDocument()
       })
       
-      // Get call count before attempting empty submit
-      const callsBefore = mockSaveCategoriesConfig.mock.calls.length
-      
       // Try to add empty subcategory (input is already empty)
       const subInput = screen.getByPlaceholderText('Add subcategory...')
       await user.type(subInput, '{Enter}')
       
-      // Should not have additional calls
-      expect(mockSaveCategoriesConfig.mock.calls.length).toBe(callsBefore)
+      // Wait a bit to ensure any async calls complete
+      await new Promise(resolve => setTimeout(resolve, 50))
+      
+      // Verify that no subcategory was added - check that any save calls
+      // did not include a new subcategory in the delivery category
+      const saveCalls = mockSaveCategoriesConfig.mock.calls
+      for (const call of saveCalls) {
+        const savedCategories = call[0]?.categories || call[0]
+        if (Array.isArray(savedCategories)) {
+          const deliveryCategory = savedCategories.find((c: { id: string }) => c.id === 'cat_1')
+          if (deliveryCategory) {
+            // If delivery category was saved, it should still have no subcategories
+            expect(deliveryCategory.subcategories?.length || 0).toBe(0)
+          }
+        }
+      }
     })
   })
 

@@ -41,12 +41,16 @@ s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
 codecommit = boto3.client('codecommit')
 
-# Configuration from environment
+# Configuration from environment - all required, no hardcoded fallbacks
 JOB_ID = os.environ.get('JOB_ID', '')
 ARTIFACTS_BUCKET = os.environ.get('ARTIFACTS_BUCKET', '')
-JOBS_TABLE = os.environ.get('JOBS_TABLE', 'artifact-builder-jobs')
+JOBS_TABLE = os.environ.get('JOBS_TABLE')
+if not JOBS_TABLE:
+    raise ValueError("JOBS_TABLE environment variable is required")
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
-TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO_NAME', 'artifact-builder-template')
+TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO_NAME')
+if not TEMPLATE_REPO_NAME:
+    raise ValueError("TEMPLATE_REPO_NAME environment variable is required")
 
 # Paths - app files are in /app, workspace is /workspace (not in EFS-mounted home)
 WORKSPACE = Path('/workspace')

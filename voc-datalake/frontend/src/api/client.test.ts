@@ -1170,6 +1170,26 @@ describe('API Client', () => {
     })
   })
 
+  describe('patchPrioritizationScores', () => {
+    it('sends PATCH request with only changed scores', async () => {
+      const changedScores = { doc1: { document_id: 'doc1', impact: 4, time_to_market: 2, confidence: 3, strategic_fit: 4, notes: 'test' } }
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true, updated_count: 1 }),
+      })
+
+      await api.patchPrioritizationScores(changedScores as any)
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/projects/prioritization',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ scores: changedScores }),
+        })
+      )
+    })
+  })
+
   describe('createS3ImportSource', () => {
     it('sends POST request with source name', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({

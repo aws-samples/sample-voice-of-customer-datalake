@@ -104,13 +104,23 @@ export default function SocialFeed({ limit = 10, showFilters = true }: SocialFee
   const days = getDaysFromRange(timeRange, customDateRange)
   const [activeSource, setActiveSource] = useState<string | null>(null)
 
+  // Fetch available sources dynamically
+  const { data: sourcesData } = useQuery({
+    queryKey: ['sources', days],
+    queryFn: () => api.getSources(days),
+    enabled: !!config.apiEndpoint,
+  })
+
   const { data, isLoading } = useQuery({
     queryKey: ['feedback', days, activeSource, customDateRange],
     queryFn: () => api.getFeedback({ days, source: activeSource || undefined, limit }),
     enabled: !!config.apiEndpoint,
   })
 
-  const sources = ['all', 'trustpilot', 'twitter', 'reddit', 'appstore_apple', 'appstore_google']
+  // Build sources list from API response, sorted by count descending
+  const sources = ['all', ...Object.entries(sourcesData?.sources ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([source]) => source)]
 
   if (isLoading) {
     return (

@@ -1,4 +1,4 @@
-import { StrictMode, lazy, Suspense } from 'react'
+import { StrictMode, lazy, Suspense, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -7,6 +7,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 import PageLoader from './components/PageLoader'
 import Login from './pages/Login'
+import { loadRuntimeConfig, isConfigLoaded } from './runtimeConfig'
 import './index.css'
 
 // Lazy load pages for better code splitting
@@ -65,6 +66,52 @@ const router = createBrowserRouter([
   },
 ])
 
+/**
+ * App wrapper that loads runtime config before rendering.
+ */
+function App() {
+  const [configReady, setConfigReady] = useState(isConfigLoaded())
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!configReady) {
+      loadRuntimeConfig()
+        .then(() => setConfigReady(true))
+        .catch((err) => {
+          console.error('Failed to load config:', err)
+          setError('Failed to load application configuration')
+        })
+    }
+  }, [configReady])
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <h1 className="text-xl font-semibold text-red-600 mb-2">Configuration Error</h1>
+          <p className="text-gray-600">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!configReady) {
+    return <PageLoader />
+  }
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+}
+
 const rootElement = document.getElementById('root')
 if (!rootElement) {
   throw new Error('Root element not found')
@@ -72,8 +119,6 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <App />
   </StrictMode>,
 )

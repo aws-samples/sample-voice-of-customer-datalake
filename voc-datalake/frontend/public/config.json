@@ -1,0 +1,9 @@
+{
+  "apiEndpoint": "/api",
+  "artifactBuilderEndpoint": "/artifact-api",
+  "cognito": {
+    "userPoolId": "",
+    "clientId": "",
+    "region": "us-east-1"
+  }
+}

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { config as envConfig } from '../config'
+import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
 
 export interface SourceConfig {
   enabled: boolean
@@ -46,12 +46,27 @@ const defaultSourceConfig: SourceConfig = {
   credentials: {}
 }
 
+// Get runtime config values, with fallbacks for when config isn't loaded yet
+function getApiEndpoint(): string {
+  if (isConfigLoaded()) {
+    return getRuntimeConfig().apiEndpoint
+  }
+  return import.meta.env.VITE_API_ENDPOINT || ''
+}
+
+function getArtifactBuilderEndpoint(): string {
+  if (isConfigLoaded()) {
+    return getRuntimeConfig().artifactBuilderEndpoint
+  }
+  return import.meta.env.VITE_ARTIFACT_BUILDER_ENDPOINT || ''
+}
+
 export const useConfigStore = create<ConfigStore>()(
   persist(
     (set) => ({
       config: {
-        apiEndpoint: envConfig.apiEndpoint,
-        artifactBuilderEndpoint: envConfig.artifactBuilderEndpoint,
+        apiEndpoint: getApiEndpoint(),
+        artifactBuilderEndpoint: getArtifactBuilderEndpoint(),
         brandName: '',
         brandHandles: [],
         hashtags: [],

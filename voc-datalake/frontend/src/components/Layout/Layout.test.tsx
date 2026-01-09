@@ -33,6 +33,15 @@ vi.mock('../../services/auth', () => ({
   },
 }))
 
+// Mock authStore with useIsAdmin
+vi.mock('../../store/authStore', () => ({
+  useAuthStore: vi.fn(() => ({
+    isAuthenticated: true,
+    user: { username: 'testuser', email: 'test@example.com' },
+  })),
+  useIsAdmin: vi.fn(() => true),
+}))
+
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom')
@@ -82,14 +91,6 @@ describe('Layout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
-    
-    // Reset auth store mock for each test
-    vi.doMock('../../store/authStore', () => ({
-      useAuthStore: vi.fn(() => ({
-        isAuthenticated: true,
-        user: { username: 'testuser', email: 'test@example.com' },
-      })),
-    }))
   })
 
   describe('sidebar', () => {
@@ -252,29 +253,10 @@ describe('Layout with authenticated user', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
-    
-    // Mock authenticated user
-    vi.doMock('../../store/authStore', () => ({
-      useAuthStore: vi.fn(() => ({
-        isAuthenticated: true,
-        user: { username: 'testuser', email: 'test@example.com' },
-      })),
-    }))
   })
 
   it('displays sign out button when authenticated', async () => {
-    // Re-import to get fresh mock
-    vi.resetModules()
-    vi.doMock('../../store/authStore', () => ({
-      useAuthStore: () => ({
-        isAuthenticated: true,
-        user: { username: 'testuser', email: 'test@example.com' },
-      }),
-    }))
-    
-    const { default: LayoutWithAuth } = await import('./Layout')
-    
-    render(<LayoutWithAuth />, { wrapper: createWrapper() })
+    render(<Layout />, { wrapper: createWrapper() })
     
     await waitFor(() => {
       expect(screen.getByTitle('Sign out')).toBeInTheDocument()

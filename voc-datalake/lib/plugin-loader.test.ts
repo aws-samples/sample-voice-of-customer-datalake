@@ -3,12 +3,32 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
-import * as path from 'path';
 
 // Mock fs module
 vi.mock('fs');
 
 const mockFs = vi.mocked(fs);
+
+// Helper to create mock Dirent objects
+function createMockDirent(name: string, isDir: boolean) {
+  return {
+    name,
+    isDirectory: () => isDir,
+    isFile: () => !isDir,
+    isBlockDevice: () => false,
+    isCharacterDevice: () => false,
+    isSymbolicLink: () => false,
+    isFIFO: () => false,
+    isSocket: () => false,
+    path: '',
+    parentPath: '',
+  };
+}
+
+// Helper to mock readdirSync return value
+function mockDirents(...names: string[]) {
+  return names.map(name => createMockDirent(name, true)) as unknown as ReturnType<typeof fs.readdirSync>;
+}
 
 describe('Plugin Loader', () => {
   beforeEach(() => {
@@ -30,16 +50,14 @@ describe('Plugin Loader', () => {
     });
 
     it('loads valid plugin manifests from directory', async () => {
-      mockFs.existsSync.mockImplementation((p) => {
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
         const pathStr = String(p);
         if (pathStr.endsWith('plugins')) return true;
         if (pathStr.endsWith('manifest.json')) return true;
         return false;
       });
 
-      mockFs.readdirSync.mockReturnValue([
-        { name: 'trustpilot', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+      mockFs.readdirSync.mockReturnValue(mockDirents('trustpilot'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
         id: 'trustpilot',
@@ -62,11 +80,7 @@ describe('Plugin Loader', () => {
 
     it('skips directories starting with underscore', async () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockReturnValue([
-        { name: '_shared', isDirectory: () => true },
-        { name: '_template', isDirectory: () => true },
-        { name: 'trustpilot', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+      mockFs.readdirSync.mockReturnValue(mockDirents('_shared', '_template', 'trustpilot'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
         id: 'trustpilot',
@@ -84,20 +98,17 @@ describe('Plugin Loader', () => {
     });
 
     it('skips directories without manifest.json', async () => {
-      mockFs.existsSync.mockImplementation((p) => {
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
         const pathStr = String(p);
         if (pathStr.endsWith('plugins')) return true;
-        if (pathStr.includes('valid') && pathStr.endsWith('manifest.json')) return true;
+        if (pathStr.includes('valid_plugin') && pathStr.endsWith('manifest.json')) return true;
         return false;
       });
 
-      mockFs.readdirSync.mockReturnValue([
-        { name: 'valid', isDirectory: () => true },
-        { name: 'invalid', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+      mockFs.readdirSync.mockReturnValue(mockDirents('valid_plugin', 'no_manifest'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
-        id: 'valid',
+        id: 'valid_plugin',
         name: 'Valid Plugin',
         icon: '✓',
         infrastructure: { ingestor: { enabled: true } },
@@ -107,14 +118,12 @@ describe('Plugin Loader', () => {
       const result = loadPlugins('/test/plugins');
 
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('valid');
+      expect(result[0].id).toBe('valid_plugin');
     });
 
     it('throws error when folder name does not match manifest id', async () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockReturnValue([
-        { name: 'wrong_folder', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+      mockFs.readdirSync.mockReturnValue(mockDirents('wrong_folder'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
         id: 'correct_id',  // Doesn't match folder name
@@ -130,9 +139,7 @@ describe('Plugin Loader', () => {
 
     it('throws error for invalid manifest schema', async () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockReturnValue([
-        { name: 'invalid', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+      mockFs.readdirSync.mockReturnValue(mockDirents('invalid'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
         // Missing required fields
@@ -148,9 +155,7 @@ describe('Plugin Loader', () => {
   describe('Manifest Schema Validation', () => {
     it('rejects invalid plugin ID format', async () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockReturnValue([
-        { name: 'Invalid-Plugin', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+      mockFs.readdirSync.mockReturnValue(mockDirents('Invalid-Plugin'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
         id: 'Invalid-Plugin',  // Uppercase and hyphen not allowed
@@ -166,9 +171,7 @@ describe('Plugin Loader', () => {
 
     it('rejects schedule more frequent than 1 minute', async () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockReturnValue([
-        { name: 'fast_plugin', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+      mockFs.readdirSync.mockReturnValue(mockDirents('fast_plugin'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
         id: 'fast_plugin',
@@ -189,9 +192,7 @@ describe('Plugin Loader', () => {
 
     it('rejects timeout exceeding 300 seconds', async () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockReturnValue([
-        { name: 'slow_plugin', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+      mockFs.readdirSync.mockReturnValue(mockDirents('slow_plugin'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
         id: 'slow_plugin',
@@ -212,9 +213,7 @@ describe('Plugin Loader', () => {
 
     it('rejects memory exceeding 1024 MB', async () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockReturnValue([
-        { name: 'big_plugin', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+      mockFs.readdirSync.mockReturnValue(mockDirents('big_plugin'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
         id: 'big_plugin',
@@ -235,9 +234,7 @@ describe('Plugin Loader', () => {
 
     it('rejects webhook path with traversal', async () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockReturnValue([
-        { name: 'bad_plugin', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+      mockFs.readdirSync.mockReturnValue(mockDirents('bad_plugin'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
         id: 'bad_plugin',
@@ -265,7 +262,7 @@ describe('Plugin Loader', () => {
         { id: 'with_ingestor', infrastructure: { ingestor: { enabled: true } } },
         { id: 'without_ingestor', infrastructure: { ingestor: { enabled: false } } },
         { id: 'no_ingestor', infrastructure: {} },
-      ] as any[];
+      ] as Parameters<typeof getPluginsWithIngestor>[0];
 
       const result = getPluginsWithIngestor(plugins);
 
@@ -279,7 +276,7 @@ describe('Plugin Loader', () => {
       const plugins = [
         { id: 'with_webhook', infrastructure: { webhook: { enabled: true, path: '/webhooks/test' } } },
         { id: 'without_webhook', infrastructure: { webhook: { enabled: false, path: '/webhooks/test' } } },
-      ] as any[];
+      ] as Parameters<typeof getPluginsWithWebhook>[0];
 
       const result = getPluginsWithWebhook(plugins);
 
@@ -293,7 +290,7 @@ describe('Plugin Loader', () => {
       const plugins = [
         { id: 's3_import', infrastructure: { s3Trigger: { enabled: true, suffixes: ['.csv'] } } },
         { id: 'no_s3', infrastructure: {} },
-      ] as any[];
+      ] as Parameters<typeof getPluginsWithS3Trigger>[0];
 
       const result = getPluginsWithS3Trigger(plugins);
 
@@ -307,7 +304,7 @@ describe('Plugin Loader', () => {
       const plugins = [
         { id: 'trustpilot', secrets: { api_key: '', api_secret: '' } },
         { id: 'yelp', secrets: { api_key: '' } },
-      ] as any[];
+      ] as unknown as Parameters<typeof aggregateSecrets>[0];
 
       const result = aggregateSecrets(plugins);
 
@@ -323,7 +320,7 @@ describe('Plugin Loader', () => {
         { id: 'trustpilot' },
         { id: 'yelp' },
         { id: 'twitter' },
-      ] as any[];
+      ] as Parameters<typeof getEnabledPlugins>[0];
 
       const enabledSources = ['trustpilot', 'twitter'];
       const result = getEnabledPlugins(plugins, enabledSources);
@@ -347,9 +344,7 @@ describe('Plugin Loader', () => {
 describe('Config Field Schema', () => {
   it('accepts valid config field', async () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.readdirSync.mockReturnValue([
-      { name: 'test_plugin', isDirectory: () => true },
-    ] as unknown as fs.Dirent[]);
+    mockFs.readdirSync.mockReturnValue(mockDirents('test_plugin'));
 
     mockFs.readFileSync.mockReturnValue(JSON.stringify({
       id: 'test_plugin',
@@ -384,9 +379,7 @@ describe('Config Field Schema', () => {
 
   it('accepts select type with options', async () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.readdirSync.mockReturnValue([
-      { name: 'select_plugin', isDirectory: () => true },
-    ] as unknown as fs.Dirent[]);
+    mockFs.readdirSync.mockReturnValue(mockDirents('select_plugin'));
 
     mockFs.readFileSync.mockReturnValue(JSON.stringify({
       id: 'select_plugin',
@@ -417,9 +410,7 @@ describe('Config Field Schema', () => {
 describe('Webhook Info Schema', () => {
   it('accepts valid webhook configuration', async () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.readdirSync.mockReturnValue([
-      { name: 'webhook_plugin', isDirectory: () => true },
-    ] as unknown as fs.Dirent[]);
+    mockFs.readdirSync.mockReturnValue(mockDirents('webhook_plugin'));
 
     mockFs.readFileSync.mockReturnValue(JSON.stringify({
       id: 'webhook_plugin',
@@ -431,7 +422,7 @@ describe('Webhook Info Schema', () => {
           path: '/webhooks/test',
           methods: ['POST'],
           signatureHeader: 'X-Signature',
-          signatureMethod: 'hmac_sha256',
+          signatureMethod: 'hmac_sha',
         },
       },
       webhooks: [

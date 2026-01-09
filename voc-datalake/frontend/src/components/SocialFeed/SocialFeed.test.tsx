@@ -18,6 +18,7 @@ vi.mock('../../store/configStore', () => ({
 vi.mock('../../api/client', () => ({
   api: {
     getFeedback: vi.fn(),
+    getSources: vi.fn(),
   },
   getDaysFromRange: vi.fn().mockReturnValue(7),
 }))
@@ -86,6 +87,10 @@ describe('SocialFeed', () => {
     ;(api.getFeedback as ReturnType<typeof vi.fn>).mockResolvedValue({
       count: 2,
       items: mockFeedbackItems,
+    })
+    ;(api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue({
+      period_days: 7,
+      sources: { trustpilot: 10, twitter: 5 },
     })
   })
 

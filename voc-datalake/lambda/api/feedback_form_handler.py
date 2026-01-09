@@ -15,16 +15,20 @@ from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConf
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_sqs_client
 
+from boto3.dynamodb.conditions import Key
+
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
 sqs = get_sqs_client()
 
 # Configuration
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
+FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 PROCESSING_QUEUE_URL = os.environ.get('PROCESSING_QUEUE_URL', '')
 BRAND_NAME = os.environ.get('BRAND_NAME', '')
 
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
 
 # CORS config for embeddable feedback form
 # NOTE: This form is designed to be embedded on external websites, so it allows
@@ -281,6 +285,8 @@ def create_form():
         'custom_fields': body.get('custom_fields', []),
         'category': body.get('category', ''),
         'subcategory': body.get('subcategory', ''),
+        # Store brand_name at creation time for consistent querying
+        'brand_name': BRAND_NAME,
         'created_at': now,
         'updated_at': now,
     }
@@ -501,6 +507,157 @@ def get_form_iframe(form_id: str):
     return Response(status_code=200, content_type="text/html", body=html)
 
 
+@app.get("/feedback-forms/<form_id>/submissions")
+@tracer.capture_method
+def get_form_submissions(form_id: str):
+    """Get submissions for a specific form with stats."""
+    params = app.current_event.query_string_parameters or {}
+    limit = min(int(params.get('limit', 50)), 100)
+    
+    if not feedback_table:
+        return {'success': False, 'error': 'Feedback table not configured'}
+    
+    # Verify form exists and get its brand_name
+    try:
+        response = aggregates_table.get_item(
+            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+        )
+        form = response.get('Item')
+        if not form:
+            return {'success': False, 'error': 'Form not found'}
+        # Use form's stored brand_name, fall back to env var, then to source_platform
+        form_brand_name = form.get('brand_name') or BRAND_NAME
+    except Exception as e:
+        logger.error(f"Error fetching form: {e}")
+        return {'success': False, 'error': 'Failed to fetch form'}
+    
+    # Query feedback by source_channel (form_{form_id})
+    source_channel = f'form_{form_id}'
+    # Use brand_name for pk if set, otherwise fall back to source_platform
+    source_pk = f"SOURCE#{form_brand_name}" if form_brand_name else 'SOURCE#feedback_form'
+    
+    try:
+        # Use FilterExpression to filter at DynamoDB level and paginate
+        items = []
+        total_rating = 0
+        rating_count = 0
+        
+        query_kwargs = {
+            'KeyConditionExpression': Key('pk').eq(source_pk),
+            'FilterExpression': 'source_channel = :sc',
+            'ExpressionAttributeValues': {':sc': source_channel},
+            'ScanIndexForward': False,
+        }
+        
+        # Paginate through results until we have enough
+        while len(items) < limit:
+            response = feedback_table.query(**query_kwargs)
+            
+            for item in response.get('Items', []):
+                items.append({
+                    'feedback_id': item.get('feedback_id', ''),
+                    'original_text': item.get('original_text', ''),
+                    'rating': float(item.get('rating')) if item.get('rating') else None,
+                    'sentiment_label': item.get('sentiment_label', ''),
+                    'sentiment_score': float(item.get('sentiment_score', 0)),
+                    'category': item.get('category', ''),
+                    'created_at': item.get('source_created_at', ''),
+                    'persona_name': item.get('persona_name', ''),
+                })
+                
+                if item.get('rating'):
+                    total_rating += float(item.get('rating'))
+                    rating_count += 1
+            
+            # Check for more pages
+            if 'LastEvaluatedKey' not in response:
+                break
+            query_kwargs['ExclusiveStartKey'] = response['LastEvaluatedKey']
+        
+        avg_rating = round(total_rating / rating_count, 2) if rating_count > 0 else None
+        
+        return {
+            'success': True,
+            'form_id': form_id,
+            'stats': {
+                'total_submissions': len(items),
+                'avg_rating': avg_rating,
+                'rating_count': rating_count,
+            },
+            'submissions': items[:limit]
+        }
+    except Exception as e:
+        logger.error(f"Error fetching submissions: {e}")
+        return {'success': False, 'error': 'Failed to fetch submissions'}
+
+
+@app.get("/feedback-forms/<form_id>/stats")
+@tracer.capture_method
+def get_form_stats(form_id: str):
+    """Get quick stats for a form (lightweight endpoint for card display)."""
+    if not feedback_table:
+        return {'success': True, 'stats': {'total_submissions': 0, 'avg_rating': None}}
+    
+    # Get form's stored brand_name for correct pk lookup
+    try:
+        form_response = aggregates_table.get_item(
+            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+        )
+        form = form_response.get('Item')
+        form_brand_name = form.get('brand_name', '') if form else ''
+    except Exception as e:
+        logger.warning(f"Could not fetch form brand_name: {e}")
+        form_brand_name = ''
+    
+    source_channel = f'form_{form_id}'
+    # Use form's brand_name, fall back to env var, then to source_platform
+    effective_brand = form_brand_name or BRAND_NAME
+    source_pk = f"SOURCE#{effective_brand}" if effective_brand else 'SOURCE#feedback_form'
+    
+    try:
+        # Use FilterExpression to filter at DynamoDB level and paginate
+        total_rating = 0
+        rating_count = 0
+        submission_count = 0
+        
+        query_kwargs = {
+            'KeyConditionExpression': Key('pk').eq(source_pk),
+            'FilterExpression': 'source_channel = :sc',
+            'ExpressionAttributeValues': {':sc': source_channel},
+            'ProjectionExpression': 'feedback_id, rating',
+        }
+        
+        # Paginate through all results
+        while True:
+            response = feedback_table.query(**query_kwargs)
+            
+            for item in response.get('Items', []):
+                submission_count += 1
+                if item.get('rating'):
+                    total_rating += float(item.get('rating'))
+                    rating_count += 1
+            
+            # Check for more pages
+            if 'LastEvaluatedKey' not in response:
+                break
+            query_kwargs['ExclusiveStartKey'] = response['LastEvaluatedKey']
+        
+        avg_rating = round(total_rating / rating_count, 2) if rating_count > 0 else None
+        
+        return {
+            'success': True,
+            'form_id': form_id,
+            'stats': {
+                'total_submissions': submission_count,
+                'avg_rating': avg_rating,
+                'rating_count': rating_count,
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching form stats: {e}")
+        return {'success': True, 'stats': {'total_submissions': 0, 'avg_rating': None}}
+
+
 def _item_to_form(item: dict) -> dict:
     """Convert DynamoDB item to form response."""
     return {
@@ -522,6 +679,7 @@ def _item_to_form(item: dict) -> dict:
         'custom_fields': item.get('custom_fields', []),
         'category': item.get('category', ''),
         'subcategory': item.get('subcategory', ''),
+        'brand_name': item.get('brand_name', ''),
         'created_at': item.get('created_at', ''),
         'updated_at': item.get('updated_at', ''),
     }
@@ -692,7 +850,11 @@ def get_widget_js():
   };
   TypeformWidget.prototype.next = function() {
     var step = this.steps[this.currentStep];
+    // Validate current step before proceeding
+    if (step.type === 'rating' && !this.data.rating) return;
     if (step.type === 'text' && !this.data.text.trim()) return;
+    if (step.type === 'name' && !this.data.name.trim()) return;
+    if (step.type === 'email' && !this.data.email.trim()) return;
     if (this.currentStep === this.steps.length - 2) { this.submit(); return; }
     if (this.currentStep < this.steps.length - 1) this.goToStep(this.currentStep + 1);
   };

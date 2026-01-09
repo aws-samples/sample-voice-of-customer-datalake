@@ -9,7 +9,7 @@ export type WizardType = 'persona' | 'research' | 'doc' | 'merge' | null
 
 const DEFAULT_PERSONA_CONFIG: PersonaToolConfig = { personaCount: 3, customInstructions: '' }
 const DEFAULT_RESEARCH_CONFIG: ResearchToolConfig = { question: '', title: '' }
-const DEFAULT_DOC_CONFIG: DocToolConfig = { docType: 'prd', title: '', featureIdea: '', customerQuestions: ['', '', '', '', ''] }
+const DEFAULT_DOC_CONFIG: DocToolConfig = { docType: 'prfaq', title: '', featureIdea: '', customerQuestions: ['', '', '', '', ''] }
 const DEFAULT_MERGE_CONFIG: MergeToolConfig = { outputType: 'prfaq', title: '', instructions: '' }
 
 export function useWizardState() {

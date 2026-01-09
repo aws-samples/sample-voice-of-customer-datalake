@@ -14,6 +14,42 @@ interface SectionBounds {
   bottom: number
 }
 
+/**
+ * Converts an image URL to a base64 data URL to avoid CORS issues in html2canvas.
+ * Returns null if the image cannot be loaded.
+ */
+async function imageUrlToDataUrl(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, { mode: 'cors' })
+    if (!response.ok) return null
+    const blob = await response.blob()
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const result = reader.result
+        resolve(typeof result === 'string' ? result : null)
+      }
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Creates a persona object with the avatar URL converted to a data URL.
+ * This ensures the image renders correctly in the PDF.
+ */
+async function preparePersonaForPdf(persona: ProjectPersona): Promise<ProjectPersona> {
+  if (!persona.avatar_url) return persona
+
+  const dataUrl = await imageUrlToDataUrl(persona.avatar_url)
+  if (!dataUrl) return persona
+
+  return { ...persona, avatar_url: dataUrl }
+}
+
 function createIframe(): HTMLIFrameElement {
   const iframe = window.document.createElement('iframe')
   iframe.style.position = 'absolute'
@@ -166,6 +202,9 @@ function renderPdfPages(ctx: PdfRenderContext): void {
 }
 
 export async function generatePersonaPDF(persona: ProjectPersona, filename: string): Promise<void> {
+  // Convert avatar URL to data URL to avoid CORS issues
+  const preparedPersona = await preparePersonaForPdf(persona)
+  
   const iframe = createIframe()
   window.document.body.appendChild(iframe)
 
@@ -178,7 +217,7 @@ export async function generatePersonaPDF(persona: ProjectPersona, filename: stri
   const root = createRoot(container)
 
   await new Promise<void>((resolve) => {
-    root.render(<PersonaPDFContent persona={persona} />)
+    root.render(<PersonaPDFContent persona={preparedPersona} />)
     setTimeout(resolve, 200)
   })
 

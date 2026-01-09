@@ -194,6 +194,7 @@ describe('PluginManifestSchema', () => {
     hasIngestor: true,
     hasWebhook: true,
     hasS3Trigger: false,
+    enabled: true,
     version: '1.0.0',
   };
 
@@ -276,6 +277,7 @@ describe('PluginManifestsSchema', () => {
         hasIngestor: true,
         hasWebhook: true,
         hasS3Trigger: false,
+        enabled: true,
       },
       {
         id: 'yelp',
@@ -285,6 +287,7 @@ describe('PluginManifestsSchema', () => {
         hasIngestor: true,
         hasWebhook: false,
         hasS3Trigger: false,
+        enabled: true,
       },
     ];
 
@@ -315,6 +318,7 @@ describe('PluginManifestsSchema', () => {
         hasIngestor: true,
         hasWebhook: false,
         hasS3Trigger: false,
+        enabled: true,
       },
       {
         id: 'invalid',
@@ -339,6 +343,7 @@ describe('Type Guards', () => {
         hasIngestor: true,
         hasWebhook: false,
         hasS3Trigger: false,
+        enabled: true,
       };
 
       expect(isPluginManifest(manifest)).toBe(true);
@@ -375,6 +380,7 @@ describe('Type Guards', () => {
           hasIngestor: true,
           hasWebhook: false,
           hasS3Trigger: false,
+          enabled: true,
         },
         {
           id: 'test2',
@@ -384,6 +390,7 @@ describe('Type Guards', () => {
           hasIngestor: false,
           hasWebhook: true,
           hasS3Trigger: false,
+          enabled: true,
         },
       ];
 
@@ -404,6 +411,7 @@ describe('Type Guards', () => {
           hasIngestor: true,
           hasWebhook: false,
           hasS3Trigger: false,
+          enabled: true,
         },
         { invalid: true },
       ];
@@ -430,6 +438,7 @@ describe('Validation Functions', () => {
           hasIngestor: true,
           hasWebhook: true,
           hasS3Trigger: false,
+          enabled: true,
         },
       ];
 
@@ -457,6 +466,7 @@ describe('Validation Functions', () => {
           hasIngestor: true,
           hasWebhook: false,
           hasS3Trigger: false,
+          enabled: true,
         },
       ];
 
@@ -514,6 +524,7 @@ describe('Real-World Manifest Examples', () => {
       hasIngestor: true,
       hasWebhook: true,
       hasS3Trigger: false,
+      enabled: true,
       version: '1.0.0',
     };
 
@@ -545,6 +556,7 @@ describe('Real-World Manifest Examples', () => {
       hasIngestor: true,
       hasWebhook: false,
       hasS3Trigger: true,
+      enabled: true,
       version: '1.0.0',
     };
 

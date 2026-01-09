@@ -33,9 +33,13 @@ sqs = boto3.client('sqs')
 codecommit = boto3.client('codecommit')
 ecs = boto3.client('ecs')
 
-# Configuration
-ECS_CLUSTER = os.environ.get('ECS_CLUSTER', 'artifact-builder')
-JOBS_TABLE = os.environ.get('JOBS_TABLE', 'artifact-builder-jobs')
+# Configuration - all required env vars, no hardcoded fallbacks
+ECS_CLUSTER = os.environ.get('ECS_CLUSTER')
+if not ECS_CLUSTER:
+    raise ValueError("ECS_CLUSTER environment variable is required")
+JOBS_TABLE = os.environ.get('JOBS_TABLE')
+if not JOBS_TABLE:
+    raise ValueError("JOBS_TABLE environment variable is required")
 ARTIFACTS_BUCKET = os.environ.get('ARTIFACTS_BUCKET', '')
 JOB_QUEUE_URL = os.environ.get('JOB_QUEUE_URL', '')
 PREVIEW_URL = os.environ.get('PREVIEW_URL', '')

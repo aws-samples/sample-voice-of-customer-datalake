@@ -4,6 +4,7 @@ import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Construct } from 'constructs';
+import { uniqueBucketName } from '../utils/naming';
 
 /**
  * Props for the frontend infrastructure (S3 + CloudFront).
@@ -28,7 +29,7 @@ export class VocFrontendInfraStack extends cdk.Stack {
 
     // S3 bucket for hosting the React app
     this.websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
-      bucketName: `voc-datalake-frontend-${this.account}`,
+      bucketName: uniqueBucketName('voc-frontend', this.account, this.region),
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -116,25 +117,23 @@ export class VocFrontendStack extends cdk.Stack {
 
     const { apiEndpoint, artifactBuilderEndpoint } = props;
 
-    // Create .env file content for the frontend build
-    const envLines = [
-      `VITE_API_ENDPOINT=${apiEndpoint}`,
-      `VITE_COGNITO_USER_POOL_ID=${props.userPoolId}`,
-      `VITE_COGNITO_CLIENT_ID=${props.userPoolClientId}`,
-      `VITE_COGNITO_REGION=${props.cognitoRegion}`,
-    ];
-    
-    if (artifactBuilderEndpoint) {
-      envLines.push(`VITE_ARTIFACT_BUILDER_ENDPOINT=${artifactBuilderEndpoint}`);
-    }
-
-    const envContent = envLines.join('\n');
+    // Runtime config.json - loaded by frontend at startup
+    // This allows the same build to work across multiple environments
+    const runtimeConfig = {
+      apiEndpoint,
+      artifactBuilderEndpoint: artifactBuilderEndpoint || '',
+      cognito: {
+        userPoolId: props.userPoolId,
+        clientId: props.userPoolClientId,
+        region: props.cognitoRegion,
+      },
+    };
 
     // Deploy frontend to S3
     new s3deploy.BucketDeployment(this, 'DeployWebsite', {
       sources: [
         s3deploy.Source.asset('frontend/dist'),
-        s3deploy.Source.data('.env.production', envContent),
+        s3deploy.Source.data('config.json', JSON.stringify(runtimeConfig, null, 2)),
       ],
       destinationBucket: props.websiteBucket,
       distribution: props.distribution,

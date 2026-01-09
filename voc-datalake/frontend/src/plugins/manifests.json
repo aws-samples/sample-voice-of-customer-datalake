@@ -605,7 +605,7 @@
     "hasWebhook": false,
     "hasS3Trigger": false,
     "version": "1.0.0",
-    "enabled": false
+    "enabled": true
   },
   {
     "id": "yelp",

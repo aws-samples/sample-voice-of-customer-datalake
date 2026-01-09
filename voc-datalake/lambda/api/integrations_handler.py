@@ -21,6 +21,7 @@ secretsmanager = get_secrets_client()
 events_client = boto3.client("events")
 
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
+DEPLOYMENT_HASH = os.environ.get("DEPLOYMENT_HASH", "")
 
 # Configure CORS - restrict to CloudFront domain in production
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
@@ -103,9 +104,12 @@ def get_sources_status():
                'reddit', 'tavily', 'appstore_apple', 'appstore_google', 'webscraper',
                'youtube', 'tiktok', 'linkedin', 's3_import']
     
+    # Build rule name suffix based on deployment hash
+    rule_suffix = f"-{DEPLOYMENT_HASH}" if DEPLOYMENT_HASH else ""
+    
     status = {}
     for source in sources:
-        rule_name = f"voc-ingest-{source}-schedule"
+        rule_name = f"voc-ingest-{source}-schedule{rule_suffix}"
         try:
             response = events_client.describe_rule(Name=rule_name)
             status[source] = {
@@ -127,7 +131,8 @@ def get_sources_status():
 @tracer.capture_method
 def enable_source(source: str):
     """Enable a data source schedule."""
-    rule_name = f"voc-ingest-{source}-schedule"
+    rule_suffix = f"-{DEPLOYMENT_HASH}" if DEPLOYMENT_HASH else ""
+    rule_name = f"voc-ingest-{source}-schedule{rule_suffix}"
     try:
         events_client.enable_rule(Name=rule_name)
         return {'success': True, 'source': source, 'enabled': True}
@@ -140,7 +145,8 @@ def enable_source(source: str):
 @tracer.capture_method
 def disable_source(source: str):
     """Disable a data source schedule."""
-    rule_name = f"voc-ingest-{source}-schedule"
+    rule_suffix = f"-{DEPLOYMENT_HASH}" if DEPLOYMENT_HASH else ""
+    rule_name = f"voc-ingest-{source}-schedule{rule_suffix}"
     try:
         events_client.disable_rule(Name=rule_name)
         return {'success': True, 'source': source, 'enabled': False}

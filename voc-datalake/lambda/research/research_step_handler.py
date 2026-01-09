@@ -5,11 +5,13 @@ Each step can run up to 15 minutes, allowing for deep analysis.
 """
 import json
 import os
+import time
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 
 # Shared module imports
@@ -19,7 +21,7 @@ from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
 # Bedrock client with extended timeout for long-running LLM calls
-bedrock_config = Config(read_timeout=300, connect_timeout=10, retries={'max_attempts': 2})
+bedrock_config = Config(read_timeout=300, connect_timeout=10, retries={'max_attempts': 3})
 bedrock = boto3.client('bedrock-runtime', config=bedrock_config)
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
@@ -33,6 +35,11 @@ jobs_table = dynamodb.Table(JOBS_TABLE) if JOBS_TABLE else None
 MODEL_ID = BEDROCK_MODEL_ID
 
 
+class BedrockThrottlingException(Exception):
+    """Custom exception for Bedrock throttling - allows Step Functions to retry."""
+    pass
+
+
 class DecimalEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, Decimal):
@@ -40,21 +47,47 @@ class DecimalEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def invoke_bedrock(system_prompt: str, user_message: str, max_tokens: int = 4096) -> str:
-    """Invoke Bedrock with Claude Sonnet 4.5."""
-    response = bedrock.invoke_model(
-        modelId=MODEL_ID,
-        contentType='application/json',
-        accept='application/json',
-        body=json.dumps({
-            'anthropic_version': 'bedrock-2023-05-31',
-            'max_tokens': max_tokens,
-            'system': system_prompt,
-            'messages': [{'role': 'user', 'content': user_message}]
-        })
-    )
-    result = json.loads(response['body'].read())
-    return result['content'][0]['text']
+def invoke_bedrock_with_retry(system_prompt: str, user_message: str, max_tokens: int = 4096, max_retries: int = 3) -> str:
+    """Invoke Bedrock with Claude Sonnet 4.5 with exponential backoff retry."""
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            response = bedrock.invoke_model(
+                modelId=MODEL_ID,
+                contentType='application/json',
+                accept='application/json',
+                body=json.dumps({
+                    'anthropic_version': 'bedrock-2023-05-31',
+                    'max_tokens': max_tokens,
+                    'system': system_prompt,
+                    'messages': [{'role': 'user', 'content': user_message}]
+                })
+            )
+            result = json.loads(response['body'].read())
+            return result['content'][0]['text']
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            last_error = e
+            
+            # Retry on throttling or service errors
+            if error_code in ['ThrottlingException', 'ServiceUnavailableException', 'ModelStreamErrorException']:
+                wait_time = (2 ** attempt) + (attempt * 0.5)  # Exponential backoff
+                logger.warning(f"Bedrock {error_code}, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(wait_time)
+                continue
+            else:
+                # Non-retryable error
+                raise
+        except Exception as e:
+            last_error = e
+            wait_time = (2 ** attempt) + (attempt * 0.5)
+            logger.warning(f"Bedrock error: {e}, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+            time.sleep(wait_time)
+    
+    # All retries exhausted - raise custom exception for Step Functions
+    logger.error(f"Bedrock invocation failed after {max_retries} attempts: {last_error}")
+    raise BedrockThrottlingException(f"Bedrock invocation failed after {max_retries} retries: {last_error}")
 
 
 def update_job_status(project_id: str, job_id: str, status: str, progress: int, 
@@ -89,12 +122,15 @@ def update_job_status(project_id: str, job_id: str, status: str, progress: int,
         # Extend TTL to 7 days for completed jobs
         expr_values[':ttl'] = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
     
-    jobs_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
-        UpdateExpression=update_expr,
-        ExpressionAttributeValues=expr_values,
-        ExpressionAttributeNames=expr_names
-    )
+    try:
+        jobs_table.update_item(
+            Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values,
+            ExpressionAttributeNames=expr_names
+        )
+    except Exception as e:
+        logger.error(f"Failed to update job status: {e}")
 
 
 def get_feedback_context(filters: dict, limit: int = 100) -> list[dict]:
@@ -110,15 +146,9 @@ def get_feedback_context(filters: dict, limit: int = 100) -> list[dict]:
     items = []
     current_date = datetime.now(timezone.utc)
     
-    if sources:
-        for source in sources:
-            response = feedback_table.query(
-                KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
-                Limit=limit // len(sources) + 1,
-                ScanIndexForward=False
-            )
-            items.extend(response.get('Items', []))
-    elif categories:
+    # Query by date or category, then filter by source_platform in memory
+    # This ensures consistent filtering with metrics aggregation
+    if categories and not sources:
         for category in categories:
             response = feedback_table.query(
                 IndexName='gsi2-by-category',
@@ -133,19 +163,20 @@ def get_feedback_context(filters: dict, limit: int = 100) -> list[dict]:
             response = feedback_table.query(
                 IndexName='gsi1-by-date',
                 KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=limit - len(items),
+                Limit=500,
                 ScanIndexForward=False
             )
             items.extend(response.get('Items', []))
-            if len(items) >= limit:
+            if len(items) >= limit * 3:
                 break
     
+    # Apply source filter using source_platform field
+    if sources:
+        items = [i for i in items if i.get('source_platform') in sources]
     if sentiments:
         items = [i for i in items if i.get('sentiment_label') in sentiments]
-    if categories and not sources:
+    if categories and sources:
         items = [i for i in items if i.get('category') in categories]
-    if sources and categories:
-        items = [i for i in items if i.get('source_platform') in sources]
     
     return items[:limit]
 
@@ -347,8 +378,8 @@ Based on the ACTUAL FEEDBACK DATA above{' and the provided context' if additiona
 
 IMPORTANT: Base ALL findings on the actual feedback data provided. Do not make assumptions beyond what the data shows."""
 
-    update_job_status(project_id, job_id, 'running', 30, 'calling_ai_analysis')
-    analysis = invoke_bedrock(system_prompt, user_prompt, max_tokens=4000)
+    update_job_status(project_id, job_id, 'running', 30, 'calling_ai')
+    analysis = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=4000)
     
     update_job_status(project_id, job_id, 'running', 45, 'analysis_complete')
     
@@ -380,8 +411,8 @@ Provide:
 4. **Recommendations** (actionable next steps)
 5. **Areas for Further Research**"""
 
-    update_job_status(project_id, job_id, 'running', 55, 'calling_ai_synthesis')
-    synthesis = invoke_bedrock(system_prompt, user_prompt, max_tokens=3000)
+    update_job_status(project_id, job_id, 'running', 55, 'calling_ai')
+    synthesis = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=3000)
     
     update_job_status(project_id, job_id, 'running', 70, 'synthesis_complete')
     
@@ -418,8 +449,8 @@ Check:
 
 Provide a final validated research report."""
 
-    update_job_status(project_id, job_id, 'running', 80, 'calling_ai_validation')
-    validation = invoke_bedrock(system_prompt, user_prompt, max_tokens=3000)
+    update_job_status(project_id, job_id, 'running', 80, 'calling_ai')
+    validation = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=3000)
     
     update_job_status(project_id, job_id, 'running', 90, 'validation_complete')
     
@@ -553,6 +584,10 @@ def lambda_handler(event: dict, context: Any) -> dict:
             return step_error(event)
         else:
             raise ValueError(f"Unknown step: {step}")
+    except BedrockThrottlingException as e:
+        # Re-raise with specific error type for Step Functions retry
+        logger.error(f"Bedrock throttling in step {step}: {e}")
+        raise
     except Exception as e:
         logger.exception(f"Step {step} failed: {e}")
         raise

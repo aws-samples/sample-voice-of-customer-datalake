@@ -31,6 +31,9 @@ dynamodb = get_dynamodb_resource()
 
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
+WEBSCRAPER_FUNCTION_NAME = os.environ.get("WEBSCRAPER_FUNCTION_NAME")
+if not WEBSCRAPER_FUNCTION_NAME:
+    raise ValueError("WEBSCRAPER_FUNCTION_NAME environment variable is required")
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 
 # Configure CORS - restrict to CloudFront domain in production
@@ -218,7 +221,7 @@ def run_scraper(scraper_id: str):
                 'pk': f'SCRAPER_RUN#{scraper_id}', 'sk': execution_id, 'status': 'running',
                 'started_at': datetime.now(timezone.utc).isoformat(), 'pages_scraped': 0, 'items_found': 0, 'errors': []
             })
-        lambda_client.invoke(FunctionName='voc-ingestor-webscraper', InvocationType='Event',
+        lambda_client.invoke(FunctionName=WEBSCRAPER_FUNCTION_NAME, InvocationType='Event',
                             Payload=json.dumps({'scraper_id': scraper_id, 'execution_id': execution_id, 'manual_run': True}))
         return {'success': True, 'execution_id': execution_id, 'status': 'running'}
     except Exception as e:

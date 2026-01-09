@@ -266,8 +266,10 @@ export default function Prioritization() {
   const [sortField, setSortField] = useState<SortField>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [scores, setScores] = useState<Record<string, PrioritizationScore>>({})
-  const [hasChanges, setHasChanges] = useState(false)
+  const [changedDocIds, setChangedDocIds] = useState<Set<string>>(new Set())
   const [initialized, setInitialized] = useState(false)
+
+  const hasChanges = changedDocIds.size > 0
 
   const { data: projectsData, isLoading: loadingProjects } = useQuery({
     queryKey: ['projects'],
@@ -312,8 +314,20 @@ export default function Prioritization() {
   }, [allPRFAQs, scores, sortField, sortDirection])
 
   const saveMutation = useMutation({
-    mutationFn: () => api.savePrioritizationScores(scores),
-    onSuccess: () => { setHasChanges(false); queryClient.invalidateQueries({ queryKey: ['prioritization-scores'] }) },
+    mutationFn: () => {
+      // Only send the scores that were actually changed
+      const changedScores: Record<string, PrioritizationScore> = {}
+      changedDocIds.forEach(docId => {
+        if (scores[docId]) {
+          changedScores[docId] = scores[docId]
+        }
+      })
+      return api.patchPrioritizationScores(changedScores)
+    },
+    onSuccess: () => { 
+      setChangedDocIds(new Set())
+      queryClient.invalidateQueries({ queryKey: ['prioritization-scores'] }) 
+    },
   })
 
   const blocker = useBlocker(hasChanges)
@@ -323,7 +337,7 @@ export default function Prioritization() {
       ...prev,
       [docId]: { ...getScore(prev, docId), [field]: value }
     }))
-    setHasChanges(true)
+    setChangedDocIds(prev => new Set(prev).add(docId))
   }
 
   const toggleSort = (field: SortField) => {
@@ -337,7 +351,7 @@ export default function Prioritization() {
 
   const handleReset = () => {
     setScores(savedScores?.scores ?? {})
-    setHasChanges(false)
+    setChangedDocIds(new Set())
   }
 
   if (!config.apiEndpoint) {

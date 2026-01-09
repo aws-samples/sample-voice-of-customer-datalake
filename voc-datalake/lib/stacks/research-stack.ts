@@ -7,6 +7,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
+import { uniqueFunctionName, uniqueStateMachineName, generateDeploymentHash } from '../utils/naming';
 
 export interface VocResearchStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -22,6 +23,9 @@ export class VocResearchStack extends cdk.Stack {
     super(scope, id, props);
 
     const { feedbackTable, projectsTable, jobsTable, kmsKey } = props;
+
+    // Generate deployment hash for unique naming
+    const hash = generateDeploymentHash(this.account, this.region);
 
     // Lambda Layer (reuse processing-deps)
     const researchLayer = new lambda.LayerVersion(this, 'ResearchDepsLayer', {
@@ -54,13 +58,54 @@ export class VocResearchStack extends cdk.Stack {
       ],
     }));
 
+    // Bundle research code with shared module
+    const researchCode = lambda.Code.fromAsset('.', {
+      exclude: [
+        '**/__pycache__',
+        '*.pyc',
+        'node_modules/**',
+        'cdk.out/**',
+        'frontend/**',
+        '*.ts',
+        '*.js',
+        '*.json',
+        '*.md',
+        'bin/**',
+        'lib/**',
+        'dist/**',
+        '.venv/**',
+        '.pytest_cache/**',
+        'plugins/**',
+        'lambda/api/**',
+        'lambda/processor/**',
+        'lambda/ingestors/**',
+        'lambda/aggregator/**',
+        'lambda/webhooks/**',
+        'lambda/artifact-builder/**',
+        'lambda/layers/**',
+      ],
+      bundling: {
+        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        command: [
+          'bash', '-c', [
+            'mkdir -p /asset-output',
+            // Copy research handler code
+            'cp -r /asset-input/lambda/research/* /asset-output/',
+            // Copy shared modules (logging, aws, http)
+            'cp -r /asset-input/lambda/shared /asset-output/',
+          ].join(' && '),
+        ],
+        platform: 'linux/arm64',
+      },
+    });
+
     // Research Step Lambda - handles each step of the research process
     const researchStepLambda = new lambda.Function(this, 'ResearchStepLambda', {
-      functionName: 'voc-research-step',
+      functionName: `voc-research-step-${hash}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'research_step_handler.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/research'),
+      code: researchCode,
       role: researchRole,
       timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
@@ -73,14 +118,13 @@ export class VocResearchStack extends cdk.Stack {
       },
       layers: [researchLayer],
       logGroup: new logs.LogGroup(this, 'ResearchStepLogs', {
-        logGroupName: '/aws/lambda/voc-research-step',
+        logGroupName: `/aws/lambda/voc-research-step-${hash}`,
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
 
-
-    // Step Functions Definition
+    // Step Functions Definition with retry logic
     // Step 1: Initialize - Fetch data and update job status
     const initializeStep = new tasks.LambdaInvoke(this, 'InitializeResearch', {
       lambdaFunction: researchStepLambda,
@@ -98,8 +142,14 @@ export class VocResearchStack extends cdk.Stack {
         'personas_context.$': '$.Payload.personas_context',
       },
     });
+    initializeStep.addRetry({
+      errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'],
+      interval: cdk.Duration.seconds(2),
+      maxAttempts: 3,
+      backoffRate: 2,
+    });
 
-    // Step 2: Analysis - Deep dive into feedback data
+    // Step 2: Analysis - Deep dive into feedback data (with retries for Bedrock)
     const analysisStep = new tasks.LambdaInvoke(this, 'AnalyzeFeedback', {
       lambdaFunction: researchStepLambda,
       payload: sfn.TaskInput.fromObject({
@@ -116,6 +166,12 @@ export class VocResearchStack extends cdk.Stack {
         'analysis.$': '$.Payload.analysis',
       },
     });
+    analysisStep.addRetry({
+      errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'],
+      interval: cdk.Duration.seconds(5),
+      maxAttempts: 3,
+      backoffRate: 2,
+    });
 
     // Step 3: Synthesis - Combine findings into insights
     const synthesisStep = new tasks.LambdaInvoke(this, 'SynthesizeFindings', {
@@ -131,6 +187,12 @@ export class VocResearchStack extends cdk.Stack {
       resultSelector: {
         'synthesis.$': '$.Payload.synthesis',
       },
+    });
+    synthesisStep.addRetry({
+      errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'],
+      interval: cdk.Duration.seconds(5),
+      maxAttempts: 3,
+      backoffRate: 2,
     });
 
     // Step 4: Validate - Cross-check and finalize
@@ -149,6 +211,12 @@ export class VocResearchStack extends cdk.Stack {
         'validation.$': '$.Payload.validation',
       },
     });
+    validateStep.addRetry({
+      errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'],
+      interval: cdk.Duration.seconds(5),
+      maxAttempts: 3,
+      backoffRate: 2,
+    });
 
     // Step 5: Save - Store final results
     const saveStep = new tasks.LambdaInvoke(this, 'SaveResearchResults', {
@@ -165,6 +233,12 @@ export class VocResearchStack extends cdk.Stack {
       }),
       resultPath: '$.save_result',
     });
+    saveStep.addRetry({
+      errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'],
+      interval: cdk.Duration.seconds(2),
+      maxAttempts: 3,
+      backoffRate: 2,
+    });
 
     // Error handler - Update job status on failure
     const handleError = new tasks.LambdaInvoke(this, 'HandleResearchError', {
@@ -175,6 +249,12 @@ export class VocResearchStack extends cdk.Stack {
         'project_id.$': '$.project_id',
         'error.$': '$.error',
       }),
+    });
+    handleError.addRetry({
+      errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException'],
+      interval: cdk.Duration.seconds(1),
+      maxAttempts: 2,
+      backoffRate: 2,
     });
 
     // Success state
@@ -205,13 +285,13 @@ export class VocResearchStack extends cdk.Stack {
 
     // Create the state machine
     this.researchStateMachine = new sfn.StateMachine(this, 'ResearchStateMachine', {
-      stateMachineName: 'voc-research-workflow',
+      stateMachineName: `voc-research-workflow-${hash}`,
       definitionBody: sfn.DefinitionBody.fromChainable(definition),
       timeout: cdk.Duration.hours(1),
       tracingEnabled: true,
       logs: {
         destination: new logs.LogGroup(this, 'ResearchStateMachineLogs', {
-          logGroupName: '/aws/stepfunctions/voc-research-workflow',
+          logGroupName: `/aws/stepfunctions/voc-research-workflow-${hash}`,
           retention: logs.RetentionDays.TWO_WEEKS,
           removalPolicy: cdk.RemovalPolicy.DESTROY,
         }),

@@ -12,6 +12,7 @@ const mockGetProjects = vi.fn()
 const mockGetProject = vi.fn()
 const mockGetPrioritizationScores = vi.fn()
 const mockSavePrioritizationScores = vi.fn()
+const mockPatchPrioritizationScores = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -19,6 +20,7 @@ vi.mock('../../api/client', () => ({
     getProject: (id: string) => mockGetProject(id),
     getPrioritizationScores: () => mockGetPrioritizationScores(),
     savePrioritizationScores: (scores: unknown) => mockSavePrioritizationScores(scores),
+    patchPrioritizationScores: (scores: unknown) => mockPatchPrioritizationScores(scores),
   },
 }))
 
@@ -81,6 +83,7 @@ describe('Prioritization', () => {
     })
     mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
     mockSavePrioritizationScores.mockResolvedValue({ success: true })
+    mockPatchPrioritizationScores.mockResolvedValue({ success: true, updated_count: 1 })
   })
 
   function renderPrioritization() {

@@ -64,21 +64,82 @@ npm run check        # lint + typecheck + test
 | `npm run test` | Runs Vitest test suite |
 | `npm run test:coverage` | Runs tests with coverage report |
 
+## Anthropic Model Access (First-Time Setup)
+
+Anthropic requires first-time customers to submit use case details before invoking Claude models on Amazon Bedrock. This is a **one-time requirement per AWS account** (or once at the organization's management account level).
+
+### Automatic Setup via CDK
+
+The `BedrockAccessStack` automates this process. To enable it:
+
+1. Copy the example config:
+   ```bash
+   cd voc-datalake
+   # If you don't have cdk.context.json yet:
+   cp cdk.context.example.json cdk.context.json
+   ```
+
+2. Add the `anthropicUseCase` section to your `cdk.context.json`:
+   ```json
+   {
+     "anthropicUseCase": {
+       "companyName": "Your Company Name",
+       "companyWebsite": "https://your-company.com",
+       "intendedUsers": "Internal teams for customer feedback analysis",
+       "industryOption": "Technology",
+       "useCases": "Analyzing customer feedback to identify product improvement opportunities, sentiment analysis, and generating insights from voice of customer data."
+     }
+   }
+   ```
+
+3. Deploy the stack:
+   ```bash
+   cdk deploy BedrockAccessStack
+   ```
+
+### Configuration Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `companyName` | Yes | Your company or organization name |
+| `companyWebsite` | Yes | Your company website URL |
+| `intendedUsers` | Yes | Who will use the models (e.g., "Internal engineering teams") |
+| `industryOption` | Yes | Your industry (e.g., "Technology", "Healthcare", "Finance") |
+| `useCases` | Yes | Description of how you'll use the models |
+| `otherIndustryOption` | No | Specify if industryOption is "Other" |
+
+### Security Note
+
+The `anthropicUseCase` config contains company information. For open source forks:
+- Don't commit your actual company details to public repos
+- Use the example file as a template
+- Consider using environment variables in CI/CD pipelines
+
+### Manual Alternative
+
+You can also submit use case details via the AWS Console:
+1. Open Amazon Bedrock console
+2. Navigate to **Bedrock configurations** → **Model access**
+3. Click **Modify model access**
+4. Click **Submit use case details**
+5. Fill out the form and submit
+
+Access is granted immediately after successful submission.
+
 ## CDK Stacks
 
-The platform consists of 9 CDK stacks:
+The platform consists of 5 CDK stacks (+ 1 optional):
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
-| `VocStorageStack` | DynamoDB tables, KMS, S3 raw data bucket | None |
-| `VocFrontendInfraStack` | S3 + CloudFront for frontend hosting | None |
-| `VocIngestionStack` | Lambda ingestors, EventBridge, SQS | Storage, FrontendInfra |
-| `VocProcessingStack` | Lambda processors, Bedrock integration | Storage, Ingestion |
-| `VocResearchStack` | Step Functions for research workflows | Storage |
-| `VocAuthStack` | Cognito User Pool | FrontendInfra |
-| `VocAnalyticsStack` | API Gateway, Lambda APIs, Webhooks | Storage, Ingestion, Research, Auth |
-| `ArtifactBuilderStack` | ECS-based artifact generator | None (standalone) |
-| `VocFrontendStack` | Deploys built frontend to S3 | Analytics, Auth, FrontendInfra |
+| `BedrockAccessStack` | Anthropic use case submission (first-time only) | None |
+| `VocCoreStack` | DynamoDB tables, KMS, S3, CloudFront, Cognito | None |
+| `VocIngestionStack` | Lambda ingestors, EventBridge, SQS | Core |
+| `VocProcessingStack` | Lambda processors, Bedrock, Step Functions | Core, Ingestion |
+| `VocApiStack` | API Gateway, Lambda APIs, Frontend deployment | Core, Ingestion, Processing |
+| `ArtifactBuilderStack` | ECS-based artifact generator (optional) | None (standalone) |
+
+The `ArtifactBuilderStack` is controlled by `menuStatus.ArtifactBuilderStack` in `cdk.context.json`.
 
 ### Deploy All Stacks
 
@@ -92,12 +153,13 @@ npm run deploy:infra    # Deploy all CDK stacks
 cd voc-datalake
 
 # Deploy specific stack
-cdk deploy VocStorageStack
+cdk deploy VocCoreStack
 cdk deploy VocIngestionStack
-cdk deploy VocAnalyticsStack
+cdk deploy VocProcessingStack
+cdk deploy VocApiStack
 
 # Deploy multiple stacks
-cdk deploy VocStorageStack VocIngestionStack
+cdk deploy VocCoreStack VocIngestionStack
 
 # Deploy with auto-approve (no confirmation prompts)
 cdk deploy --all --require-approval never
@@ -107,24 +169,23 @@ cdk deploy --all --require-approval never
 
 Due to dependencies, stacks should be deployed in this order:
 
-1. `VocStorageStack` + `VocFrontendInfraStack` (parallel)
+1. `VocCoreStack`
 2. `VocIngestionStack`
-3. `VocProcessingStack` + `VocResearchStack` + `VocAuthStack` (parallel)
-4. `VocAnalyticsStack`
-5. `ArtifactBuilderStack` (independent)
-6. `VocFrontendStack` (last - needs API endpoint)
+3. `VocProcessingStack`
+4. `VocApiStack`
+5. `ArtifactBuilderStack` (optional, independent)
 
 The `cdk deploy --all` command handles this automatically.
 
 ## Frontend Deployment
 
-### Option 1: Via CDK (Recommended for Initial Setup)
+### Option 1: Via CDK (Recommended)
 
-The `VocFrontendStack` builds and deploys the frontend:
+The `VocApiStack` builds and deploys the frontend automatically:
 
 ```bash
 cd voc-datalake
-cdk deploy VocFrontendStack
+cdk deploy VocApiStack
 ```
 
 ### Option 2: Direct Deployment (Faster for Updates)

@@ -26,6 +26,7 @@ import ConfirmModal from '../../components/ConfirmModal'
 import SourceCard from './SourceCard'
 import LogsSection from './LogsSection'
 import { getEnabledPlugins } from '../../plugins'
+import { getRuntimeConfig, isConfigLoaded } from '../../runtimeConfig'
 
 type SettingsTab = 'brand' | 'plugins' | 'categories' | 'logs' | 'users'
 
@@ -39,12 +40,38 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('brand')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const [apiEndpoint, setApiEndpoint] = useState(config.apiEndpoint)
-  const [artifactBuilderEndpoint, setArtifactBuilderEndpoint] = useState(config.artifactBuilderEndpoint)
+  const [apiEndpoint, setApiEndpoint] = useState(() => {
+    // Prefer runtime config (from config.json) over persisted store value
+    if (isConfigLoaded()) {
+      return getRuntimeConfig().apiEndpoint
+    }
+    return config.apiEndpoint
+  })
+  const [artifactBuilderEndpoint, setArtifactBuilderEndpoint] = useState(() => {
+    if (isConfigLoaded()) {
+      return getRuntimeConfig().artifactBuilderEndpoint
+    }
+    return config.artifactBuilderEndpoint
+  })
   const [brandName, setBrandName] = useState(config.brandName)
   const [brandHandles, setBrandHandles] = useState(config.brandHandles.join(', '))
   const [hashtags, setHashtags] = useState(config.hashtags.join(', '))
   const [urlsToTrack, setUrlsToTrack] = useState(config.urlsToTrack.join('\n'))
+
+  // Sync config store with runtime config on mount
+  useEffect(() => {
+    if (isConfigLoaded()) {
+      const runtimeConfig = getRuntimeConfig()
+      if (runtimeConfig.apiEndpoint && runtimeConfig.apiEndpoint !== config.apiEndpoint) {
+        setConfig({ apiEndpoint: runtimeConfig.apiEndpoint })
+        setApiEndpoint(runtimeConfig.apiEndpoint)
+      }
+      if (runtimeConfig.artifactBuilderEndpoint !== config.artifactBuilderEndpoint) {
+        setConfig({ artifactBuilderEndpoint: runtimeConfig.artifactBuilderEndpoint })
+        setArtifactBuilderEndpoint(runtimeConfig.artifactBuilderEndpoint)
+      }
+    }
+  }, [config.apiEndpoint, config.artifactBuilderEndpoint, setConfig])
 
   const { data: backendSettings, isLoading: loadingSettings } = useQuery({
     queryKey: ['brand-settings'],

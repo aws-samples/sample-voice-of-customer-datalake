@@ -659,7 +659,7 @@ def api_get_prioritization_scores():
 @app.put("/projects/prioritization")
 @tracer.capture_method
 def api_save_prioritization_scores():
-    """Save prioritization scores."""
+    """Save prioritization scores (full replace - deprecated, use PATCH instead)."""
     import boto3
     from datetime import datetime, timezone
     
@@ -679,6 +679,52 @@ def api_save_prioritization_scores():
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to save prioritization scores: {e}")
+        return {'success': False, 'message': 'Failed to save prioritization scores'}
+
+
+@app.patch("/projects/prioritization")
+@tracer.capture_method
+def api_patch_prioritization_scores():
+    """Incrementally update only the changed prioritization scores.
+    
+    This endpoint merges the provided scores with existing scores,
+    allowing multiple users to work concurrently without overwriting
+    each other's changes.
+    """
+    import boto3
+    from datetime import datetime, timezone
+    
+    body = app.current_event.json_body or {}
+    changed_scores = body.get('scores', {})
+    
+    if not changed_scores:
+        return {'success': True, 'message': 'No changes to save'}
+    
+    aggregates_table = boto3.resource('dynamodb').Table(os.environ.get('AGGREGATES_TABLE', ''))
+    now = datetime.now(timezone.utc).isoformat()
+    
+    try:
+        # Get existing scores
+        response = aggregates_table.get_item(
+            Key={'pk': 'PRIORITIZATION', 'sk': 'SCORES'}
+        )
+        existing_item = response.get('Item', {})
+        existing_scores = existing_item.get('scores', {})
+        
+        # Merge changed scores into existing scores
+        merged_scores = {**existing_scores, **changed_scores}
+        
+        # Save merged scores
+        aggregates_table.put_item(Item={
+            'pk': 'PRIORITIZATION',
+            'sk': 'SCORES',
+            'scores': merged_scores,
+            'updated_at': now
+        })
+        
+        return {'success': True, 'updated_count': len(changed_scores)}
+    except Exception as e:
+        logger.exception(f"Failed to patch prioritization scores: {e}")
         return {'success': False, 'message': 'Failed to save prioritization scores'}
 
 
@@ -806,24 +852,21 @@ def lambda_handler(event: dict, context: Any) -> dict:
                     from datetime import timedelta as td
                     current_date = datetime.now(timezone.utc)
                     
+                    # Query by date, then filter by source_platform in memory
+                    for i in range(min(days, 14)):
+                        date = (current_date - td(days=i)).strftime('%Y-%m-%d')
+                        resp = feedback_table.query(
+                            IndexName='gsi1-by-date',
+                            KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+                            Limit=100, ScanIndexForward=False
+                        )
+                        feedback_items.extend(resp.get('Items', []))
+                        if len(feedback_items) >= 100:
+                            break
+                    
+                    # Apply source filter using source_platform field
                     if feedback_sources:
-                        for source in feedback_sources[:3]:
-                            resp = feedback_table.query(
-                                KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
-                                Limit=20, ScanIndexForward=False
-                            )
-                            feedback_items.extend(resp.get('Items', []))
-                    else:
-                        for i in range(min(days, 14)):
-                            date = (current_date - td(days=i)).strftime('%Y-%m-%d')
-                            resp = feedback_table.query(
-                                IndexName='gsi1-by-date',
-                                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                                Limit=30 - len(feedback_items), ScanIndexForward=False
-                            )
-                            feedback_items.extend(resp.get('Items', []))
-                            if len(feedback_items) >= 30:
-                                break
+                        feedback_items = [f for f in feedback_items if f.get('source_platform') in feedback_sources]
                     
                     if feedback_categories:
                         feedback_items = [f for f in feedback_items if f.get('category') in feedback_categories]
@@ -1121,24 +1164,21 @@ Generate 10 questions and answers for INTERNAL stakeholders:
                     from datetime import timedelta as td
                     current_date = datetime.now(timezone.utc)
                     
+                    # Query by date, then filter by source_platform in memory
+                    for i in range(min(days, 14)):
+                        date = (current_date - td(days=i)).strftime('%Y-%m-%d')
+                        resp = feedback_table.query(
+                            IndexName='gsi1-by-date',
+                            KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+                            Limit=100, ScanIndexForward=False
+                        )
+                        feedback_items.extend(resp.get('Items', []))
+                        if len(feedback_items) >= 100:
+                            break
+                    
+                    # Apply source filter using source_platform field
                     if feedback_sources:
-                        for source in feedback_sources[:3]:
-                            resp = feedback_table.query(
-                                KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
-                                Limit=15, ScanIndexForward=False
-                            )
-                            feedback_items.extend(resp.get('Items', []))
-                    else:
-                        for i in range(min(days, 14)):
-                            date = (current_date - td(days=i)).strftime('%Y-%m-%d')
-                            resp = feedback_table.query(
-                                IndexName='gsi1-by-date',
-                                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                                Limit=20 - len(feedback_items), ScanIndexForward=False
-                            )
-                            feedback_items.extend(resp.get('Items', []))
-                            if len(feedback_items) >= 20:
-                                break
+                        feedback_items = [f for f in feedback_items if f.get('source_platform') in feedback_sources]
                     
                     if feedback_categories:
                         feedback_items = [f for f in feedback_items if f.get('category') in feedback_categories]
