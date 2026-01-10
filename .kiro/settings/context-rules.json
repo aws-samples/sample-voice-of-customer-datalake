@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Conditional context inclusion rules for Kiro CLI steering files",
+  "rules": [
+    {
+      "file": "steering/testing.md",
+      "triggers": ["test", "tests", "testing", "pytest", "vitest", "jest", "mock", "fixture", "assertion", "coverage", "tdd", "unit test", "component test", "integration test"],
+      "description": "Testing guidelines and patterns"
+    },
+    {
+      "file": "steering/coding-standards.md",
+      "triggers": ["code style", "coding standard", "naming convention", "best practice", "lint", "format", "python style", "typescript style"],
+      "description": "Code style and standards"
+    },
+    {
+      "file": "steering/cdk-patterns.md",
+      "triggers": ["cdk", "stack", "infrastructure", "cloudformation", "deploy", "iam", "lambda permission", "dynamodb table", "s3 bucket"],
+      "description": "CDK infrastructure patterns"
+    },
+    {
+      "file": "steering/frontend-patterns.md",
+      "triggers": ["react", "component", "hook", "zustand", "tanstack", "tailwind", "frontend", "ui", "dashboard", "page"],
+      "description": "React frontend patterns"
+    },
+    {
+      "file": "steering/lambda-patterns.md",
+      "triggers": ["lambda", "handler", "powertools", "sqs", "dynamodb stream", "api gateway", "python lambda"],
+      "description": "Lambda function patterns"
+    },
+    {
+      "file": "steering/bedrock-ai.md",
+      "triggers": ["bedrock", "claude", "llm", "ai", "anthropic", "invoke model", "prompt", "inference"],
+      "description": "Bedrock AI model usage"
+    },
+    {
+      "file": "steering/structure.md",
+      "triggers": ["project structure", "folder", "directory", "where is", "file location", "api endpoint", "route"],
+      "description": "Project structure and API endpoints"
+    },
+    {
+      "file": "steering/tech.md",
+      "triggers": ["tech stack", "dependency", "version", "library", "package", "aws service", "architecture"],
+      "description": "Technology stack reference"
+    },
+    {
+      "file": "steering/product.md",
+      "triggers": ["product", "feature", "use case", "capability", "what does", "overview", "voc", "voice of customer"],
+      "description": "Product overview and capabilities"
+    },
+    {
+      "file": "steering/artifact-builder.md",
+      "triggers": ["artifact", "builder", "prototype", "ecs", "fargate", "codecommit", "preview"],
+      "description": "Artifact Builder system"
+    },
+    {
+      "file": "prompts/aws-security-review.md",
+      "triggers": ["security review", "security audit", "vulnerability", "iam review", "security best practice"],
+      "description": "AWS security review prompt"
+    },
+    {
+      "file": "prompts/aws-audit.md",
+      "triggers": ["aws audit", "cost audit", "resource audit", "compliance"],
+      "description": "AWS audit prompt"
+    }
+  ],
+  "alwaysInclude": [
+    "steering/kiro-ide.md"
+  ],
+  "fileMatchRules": {
+    "description": "Files with 'inclusion: fileMatch' frontmatter are auto-included when editing matching files",
+    "examples": [
+      "lambda-patterns.md → lambda/**/*.py",
+      "frontend-patterns.md → frontend/**/*.{ts,tsx}",
+      "cdk-patterns.md → lib/**/*.ts"
+    ]
+  }
+}

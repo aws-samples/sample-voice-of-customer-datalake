@@ -18,36 +18,26 @@ from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_s3_client, get_dynamodb_resource, get_sqs_client
-
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
+from shared.api import create_api_resolver, api_handler, DecimalEncoder
 
 s3_client = get_s3_client()
 dynamodb = get_dynamodb_resource()
 sqs_client = get_sqs_client()
 
 RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
+ARTIFACT_BUILDER_BUCKET = os.environ.get("ARTIFACT_BUILDER_BUCKET", "")
 FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
 PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
-cors_config = CORSConfig(
-    allow_origin=ALLOWED_ORIGIN,
-    allow_headers=["Content-Type", "Authorization"],
-    max_age=300,
-    allow_credentials=False,
-)
+# Available buckets for browsing
+AVAILABLE_BUCKETS = {
+    'raw-data': {'name': RAW_DATA_BUCKET, 'label': 'VoC Raw Data', 'description': 'Raw feedback data from all sources'},
+    'artifact-builder': {'name': ARTIFACT_BUILDER_BUCKET, 'label': 'Artifact Builder', 'description': 'Generated artifacts and builds'},
+}
 
-app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
-
-
-class DecimalEncoder(json.JSONEncoder):
-    """Handle Decimal types from DynamoDB."""
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj) if obj % 1 else int(obj)
-        return super().default(obj)
+app = create_api_resolver()
 
 
 def decimal_to_native(obj):
@@ -68,19 +58,24 @@ def decimal_to_native(obj):
 @app.get("/data-explorer/s3")
 @tracer.capture_method
 def list_s3_objects():
-    """List objects in the S3 raw data bucket with folder navigation."""
-    if not RAW_DATA_BUCKET:
-        return {'objects': [], 'bucket': None, 'prefix': ''}
-    
+    """List objects in an S3 bucket with folder navigation."""
     params = app.current_event.query_string_parameters or {}
+    bucket_id = params.get('bucket', 'raw-data')
     prefix = params.get('prefix', '').strip('/')
+    
+    # Get bucket name from available buckets
+    bucket_config = AVAILABLE_BUCKETS.get(bucket_id, {})
+    bucket_name = bucket_config.get('name', '')
+    
+    if not bucket_name:
+        return {'objects': [], 'bucket': None, 'bucketId': bucket_id, 'prefix': '', 'error': 'Bucket not configured'}
     
     if prefix:
         prefix = f"{prefix}/"
     
     try:
         response = s3_client.list_objects_v2(
-            Bucket=RAW_DATA_BUCKET,
+            Bucket=bucket_name,
             Prefix=prefix,
             Delimiter='/',
             MaxKeys=500
@@ -116,32 +111,43 @@ def list_s3_objects():
         
         objects.sort(key=lambda x: (not x['isFolder'], x['key'].lower()))
         
-        return {'objects': objects, 'bucket': RAW_DATA_BUCKET, 'prefix': prefix.rstrip('/')}
+        return {
+            'objects': objects, 
+            'bucket': bucket_name, 
+            'bucketId': bucket_id,
+            'bucketLabel': bucket_config.get('label', bucket_name),
+            'prefix': prefix.rstrip('/')
+        }
         
     except Exception as e:
         logger.exception(f"Failed to list S3 objects: {e}")
-        return {'objects': [], 'bucket': RAW_DATA_BUCKET, 'prefix': prefix, 'error': str(e)}
+        return {'objects': [], 'bucket': bucket_name, 'bucketId': bucket_id, 'prefix': prefix, 'error': str(e)}
 
 
 @app.get("/data-explorer/s3/preview")
 @tracer.capture_method
 def preview_s3_file():
-    """Preview a file from S3 raw data bucket.
+    """Preview a file from S3 bucket.
     
     For text/JSON files: returns the content directly.
     For binary files (images, PDFs): returns a presigned URL.
     """
-    if not RAW_DATA_BUCKET:
-        return {'content': None, 'error': 'S3 bucket not configured'}
-    
     params = app.current_event.query_string_parameters or {}
+    bucket_id = params.get('bucket', 'raw-data')
     key = params.get('key', '')
+    
+    # Get bucket name from available buckets
+    bucket_config = AVAILABLE_BUCKETS.get(bucket_id, {})
+    bucket_name = bucket_config.get('name', '')
+    
+    if not bucket_name:
+        return {'content': None, 'error': 'Bucket not configured'}
     
     if not key:
         return {'content': None, 'error': 'File key is required'}
     
     try:
-        head_response = s3_client.head_object(Bucket=RAW_DATA_BUCKET, Key=key)
+        head_response = s3_client.head_object(Bucket=bucket_name, Key=key)
         size = head_response['ContentLength']
         content_type = head_response.get('ContentType', 'application/octet-stream')
         
@@ -155,7 +161,7 @@ def preview_s3_file():
         if is_binary:
             presigned_url = s3_client.generate_presigned_url(
                 'get_object',
-                Params={'Bucket': RAW_DATA_BUCKET, 'Key': key},
+                Params={'Bucket': bucket_name, 'Key': key},
                 ExpiresIn=3600  # 1 hour
             )
             return {
@@ -169,11 +175,11 @@ def preview_s3_file():
         # For text files, read and return content
         max_preview_size = 1024 * 1024
         if size > max_preview_size:
-            response = s3_client.get_object(Bucket=RAW_DATA_BUCKET, Key=key, Range=f'bytes=0-{max_preview_size - 1}')
+            response = s3_client.get_object(Bucket=bucket_name, Key=key, Range=f'bytes=0-{max_preview_size - 1}')
             content = response['Body'].read().decode('utf-8', errors='replace')
             content = content + '\n\n... [truncated - file too large]'
         else:
-            response = s3_client.get_object(Bucket=RAW_DATA_BUCKET, Key=key)
+            response = s3_client.get_object(Bucket=bucket_name, Key=key)
             content = response['Body'].read().decode('utf-8', errors='replace')
         
         try:
@@ -192,14 +198,19 @@ def preview_s3_file():
 @app.put("/data-explorer/s3")
 @tracer.capture_method
 def save_s3_file():
-    """Create or update a file in S3 raw data bucket."""
-    if not RAW_DATA_BUCKET:
-        return {'success': False, 'message': 'S3 bucket not configured'}
-    
+    """Create or update a file in S3 bucket."""
     body = app.current_event.json_body
+    bucket_id = body.get('bucket', 'raw-data')
     key = body.get('key', '')
     content = body.get('content', '')
     sync_to_dynamo = body.get('sync_to_dynamo', False)
+    
+    # Get bucket name from available buckets
+    bucket_config = AVAILABLE_BUCKETS.get(bucket_id, {})
+    bucket_name = bucket_config.get('name', '')
+    
+    if not bucket_name:
+        return {'success': False, 'message': 'Bucket not configured'}
     
     if not key:
         return {'success': False, 'message': 'File key is required'}
@@ -210,18 +221,19 @@ def save_s3_file():
             content = json.dumps(content, indent=2)
         
         s3_client.put_object(
-            Bucket=RAW_DATA_BUCKET,
+            Bucket=bucket_name,
             Key=key,
             Body=content.encode('utf-8'),
             ContentType='application/json'
         )
         
         synced = False
-        if sync_to_dynamo and PROCESSING_QUEUE_URL:
+        # Only sync to DynamoDB for raw-data bucket
+        if sync_to_dynamo and PROCESSING_QUEUE_URL and bucket_id == 'raw-data':
             # Send to processing queue to reprocess
             try:
                 parsed = json.loads(content)
-                parsed['s3_raw_uri'] = f"s3://{RAW_DATA_BUCKET}/{key}"
+                parsed['s3_raw_uri'] = f"s3://{bucket_name}/{key}"
                 sqs_client.send_message(
                     QueueUrl=PROCESSING_QUEUE_URL,
                     MessageBody=json.dumps(parsed)
@@ -241,18 +253,23 @@ def save_s3_file():
 @app.delete("/data-explorer/s3")
 @tracer.capture_method
 def delete_s3_file():
-    """Delete a file from S3 raw data bucket."""
-    if not RAW_DATA_BUCKET:
-        return {'success': False, 'message': 'S3 bucket not configured'}
-    
+    """Delete a file from S3 bucket."""
     params = app.current_event.query_string_parameters or {}
+    bucket_id = params.get('bucket', 'raw-data')
     key = params.get('key', '')
+    
+    # Get bucket name from available buckets
+    bucket_config = AVAILABLE_BUCKETS.get(bucket_id, {})
+    bucket_name = bucket_config.get('name', '')
+    
+    if not bucket_name:
+        return {'success': False, 'message': 'Bucket not configured'}
     
     if not key:
         return {'success': False, 'message': 'File key is required'}
     
     try:
-        s3_client.delete_object(Bucket=RAW_DATA_BUCKET, Key=key)
+        s3_client.delete_object(Bucket=bucket_name, Key=key)
         return {'success': True, 'message': 'File deleted', 'key': key}
     except Exception as e:
         logger.exception(f"Failed to delete S3 file: {e}")
@@ -417,30 +434,56 @@ def delete_feedback():
         return {'success': False, 'message': str(e)}
 
 
+@app.get("/data-explorer/buckets")
+@tracer.capture_method
+def list_buckets():
+    """List available S3 buckets for browsing."""
+    buckets = []
+    for bucket_id, config in AVAILABLE_BUCKETS.items():
+        if config.get('name'):
+            buckets.append({
+                'id': bucket_id,
+                'name': config['name'],
+                'label': config.get('label', config['name']),
+                'description': config.get('description', ''),
+            })
+    return {'buckets': buckets}
+
+
 @app.get("/data-explorer/stats")
 @tracer.capture_method
 def get_data_stats():
     """Get statistics about the data lake."""
     stats = {
-        's3': {'bucket': RAW_DATA_BUCKET, 'configured': bool(RAW_DATA_BUCKET)},
+        's3': {
+            'buckets': [],
+            'configured': bool(RAW_DATA_BUCKET or ARTIFACT_BUILDER_BUCKET)
+        },
         'dynamodb': {'table': FEEDBACK_TABLE, 'configured': bool(FEEDBACK_TABLE)}
     }
     
-    if RAW_DATA_BUCKET:
-        try:
-            response = s3_client.list_objects_v2(Bucket=RAW_DATA_BUCKET, Prefix='raw/', Delimiter='/', MaxKeys=100)
-            sources = [p['Prefix'].replace('raw/', '').rstrip('/') for p in response.get('CommonPrefixes', []) if p['Prefix'].replace('raw/', '').rstrip('/')]
-            stats['s3']['sources'] = sources
-            stats['s3']['source_count'] = len(sources)
-        except Exception as e:
-            logger.warning(f"Failed to get S3 stats: {e}")
-            stats['s3']['error'] = str(e)
+    # Add info for each configured bucket
+    for bucket_id, config in AVAILABLE_BUCKETS.items():
+        bucket_name = config.get('name', '')
+        if bucket_name:
+            bucket_info = {
+                'id': bucket_id,
+                'name': bucket_name,
+                'label': config.get('label', bucket_name),
+            }
+            try:
+                response = s3_client.list_objects_v2(Bucket=bucket_name, Delimiter='/', MaxKeys=100)
+                folders = [p['Prefix'].rstrip('/') for p in response.get('CommonPrefixes', []) if p['Prefix'].rstrip('/')]
+                bucket_info['folders'] = folders
+                bucket_info['folder_count'] = len(folders)
+            except Exception as e:
+                logger.warning(f"Failed to get stats for bucket {bucket_name}: {e}")
+                bucket_info['error'] = str(e)
+            stats['s3']['buckets'].append(bucket_info)
     
     return stats
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

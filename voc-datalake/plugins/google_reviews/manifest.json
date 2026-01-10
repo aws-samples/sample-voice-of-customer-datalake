@@ -1,0 +1,52 @@
+{
+  "id": "google_reviews",
+  "name": "Google Reviews",
+  "icon": "📍",
+  "description": "Business reviews via Google Business Profile API",
+  "category": "reviews",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(15 minutes)",
+      "timeout": 120,
+      "memory": 256
+    }
+  },
+
+  "config": [
+    {
+      "key": "api_key",
+      "label": "API Key / Access Token",
+      "type": "password",
+      "required": true,
+      "secret": true
+    },
+    {
+      "key": "location_ids",
+      "label": "Location IDs",
+      "type": "textarea",
+      "placeholder": "accounts/123/locations/456, accounts/123/locations/789",
+      "required": true,
+      "secret": false
+    }
+  ],
+
+  "setup": {
+    "title": "Google Reviews Setup",
+    "color": "blue",
+    "steps": [
+      "Go to Google Cloud Console and enable Business Profile API",
+      "Create OAuth 2.0 credentials or API key",
+      "Link your Google Business Profile to the project",
+      "Get your location IDs from the Business Profile API",
+      "Enter the location IDs (comma-separated) above"
+    ]
+  },
+
+  "secrets": {
+    "api_key": "",
+    "location_ids": ""
+  }
+}

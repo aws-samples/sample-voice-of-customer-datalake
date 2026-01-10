@@ -1,0 +1,52 @@
+{
+  "id": "instagram",
+  "name": "Instagram",
+  "icon": "📸",
+  "description": "Mentions and comments via Instagram Graph API",
+  "category": "social",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(5 minutes)",
+      "timeout": 120,
+      "memory": 256
+    }
+  },
+
+  "config": [
+    {
+      "key": "access_token",
+      "label": "Access Token",
+      "type": "password",
+      "required": true,
+      "secret": true
+    },
+    {
+      "key": "instagram_account_id",
+      "label": "Instagram Account ID",
+      "type": "text",
+      "placeholder": "17841400000000000",
+      "required": true,
+      "secret": false
+    }
+  ],
+
+  "setup": {
+    "title": "Instagram Setup",
+    "color": "orange",
+    "steps": [
+      "Go to Meta for Developers (developers.facebook.com)",
+      "Create or select an app with Instagram Graph API access",
+      "Connect your Instagram Business/Creator account",
+      "Generate a long-lived access token",
+      "Get your Instagram Account ID from the API"
+    ]
+  },
+
+  "secrets": {
+    "access_token": "",
+    "instagram_account_id": ""
+  }
+}

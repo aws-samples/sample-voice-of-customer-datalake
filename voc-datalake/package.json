@@ -6,20 +6,48 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "cdk": "cdk",
     "synth": "cdk synth",
+    "diff": "cdk diff",
     "deploy": "cdk deploy --all",
-    "destroy": "cdk destroy --all"
+    "deploy:storage": "cdk deploy VocStorageStack",
+    "deploy:ingestion": "cdk deploy VocIngestionStack",
+    "deploy:processing": "cdk deploy VocProcessingStack",
+    "deploy:analytics": "cdk deploy VocAnalyticsStack",
+    "deploy:auth": "cdk deploy VocAuthStack",
+    "deploy:frontend-infra": "cdk deploy VocFrontendInfraStack",
+    "deploy:frontend": "cdk deploy VocFrontendStack",
+    "deploy:artifact-builder": "cdk deploy ArtifactBuilderStack",
+    "destroy": "cdk destroy --all",
+    "generate:manifests": "ts-node scripts/generate-manifests.ts",
+    "generate:menu": "ts-node scripts/generate-menu-config.ts",
+    "generate:config": "npm run generate:manifests && npm run generate:menu",
+    "generate:integrity": "ts-node scripts/generate-integrity.ts",
+    "validate:plugins": "ts-node scripts/validate-plugins.ts",
+    "prebuild:frontend": "npm run generate:config"
   },
-  "keywords": ["aws", "cdk", "datalake", "voice-of-customer", "analytics"],
+  "keywords": [
+    "aws",
+    "cdk",
+    "datalake",
+    "voice-of-customer",
+    "analytics"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
   "devDependencies": {
-    "@types/node": "^24.10.1",
+    "@types/node": "^22.19.3",
     "aws-cdk-lib": "^2.229.0",
     "constructs": "^10.4.3",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
   }
 }

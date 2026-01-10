@@ -12,30 +12,25 @@ Only accessible by users in the 'admins' group.
 """
 import os
 import json
+import sys
+import uuid
 import boto3
 from typing import Any
-from aws_lambda_powertools import Logger, Tracer
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
-from aws_lambda_powertools.event_handler.exceptions import UnauthorizedError, BadRequestError
 
-logger = Logger()
-tracer = Tracer()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from shared.logging import logger, tracer
+from shared.api import create_api_resolver, api_handler
+
+from aws_lambda_powertools.event_handler.exceptions import UnauthorizedError, BadRequestError
 
 # AWS Clients
 cognito = boto3.client('cognito-idp')
 
 # Configuration
 USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
-ALLOWED_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '*')
 
-cors_config = CORSConfig(
-    allow_origin=ALLOWED_ORIGIN,
-    allow_headers=['Content-Type', 'Authorization'],
-    max_age=300,
-    allow_credentials=False
-)
-
-app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+app = create_api_resolver()
 
 
 def get_caller_groups(event: dict) -> list[str]:
@@ -126,13 +121,9 @@ def create_user():
     require_admin(app.current_event._data)
     
     body = app.current_event.json_body or {}
-    username = body.get('username', '').strip()
     email = body.get('email', '').strip()
     name = body.get('name', '').strip()
     group = body.get('group', 'viewers')  # Default to viewers
-    
-    if not username:
-        raise BadRequestError('Username is required')
     
     if not email:
         raise BadRequestError('Email is required')
@@ -151,17 +142,17 @@ def create_user():
         
         response = cognito.admin_create_user(
             UserPoolId=USER_POOL_ID,
-            Username=username,
+            Username=str(uuid.uuid4()),  # Generate unique username (email is set as alias attribute)
             UserAttributes=user_attrs,
             DesiredDeliveryMediums=['EMAIL'],
         )
         
-        created_username = response['User']['Username']
+        username = response['User']['Username']
         
         # Add user to group
         cognito.admin_add_user_to_group(
             UserPoolId=USER_POOL_ID,
-            Username=created_username,
+            Username=username,
             GroupName=group
         )
         
@@ -169,7 +160,7 @@ def create_user():
             'success': True,
             'message': f'User created. Temporary password sent to {email}',
             'user': {
-                'username': created_username,
+                'username': username,
                 'email': email,
                 'name': name,
                 'groups': [group],
@@ -178,7 +169,7 @@ def create_user():
         }
     
     except cognito.exceptions.UsernameExistsException:
-        return {'success': False, 'message': 'A user with this username already exists'}
+        return {'success': False, 'message': 'A user with this email already exists'}
     except Exception as e:
         logger.exception(f'Error creating user: {e}')
         return {'success': False, 'message': str(e)}
@@ -334,8 +325,7 @@ def delete_user(username: str):
         return {'success': False, 'message': str(e)}
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler."""
     return app.resolve(event, context)

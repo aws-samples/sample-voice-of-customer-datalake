@@ -10,10 +10,19 @@ from shared.aws import (
     get_sqs_client,
     get_secrets_client,
     get_bedrock_client,
+    get_lambda_client,
     get_secret,
     clear_secret_cache,
     invoke_bedrock,
+    invoke_lambda_async,
+    invoke_self_async,
     BEDROCK_MODEL_ID,
+)
+from shared.converse import (
+    converse,
+    converse_chain,
+    converse_with_tools,
+    build_tool_spec,
 )
 from shared.idempotency import (
     get_idempotency_config,
@@ -43,10 +52,18 @@ __all__ = [
     "get_sqs_client",
     "get_secrets_client",
     "get_bedrock_client",
+    "get_lambda_client",
     "get_secret",
     "clear_secret_cache",
     "invoke_bedrock",
+    "invoke_lambda_async",
+    "invoke_self_async",
     "BEDROCK_MODEL_ID",
+    # Converse API
+    "converse",
+    "converse_chain",
+    "converse_with_tools",
+    "build_tool_spec",
     # Idempotency
     "get_idempotency_config",
     "get_persistence_layer",

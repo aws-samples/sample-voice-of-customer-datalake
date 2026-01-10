@@ -1,9 +1,14 @@
+---
+inclusion: conditional
+triggers: ["tech stack", "dependency", "version", "library", "package", "aws service", "architecture", "secrets manager"]
+---
+
 # VoC Data Lake - Tech Stack & Best Practices
 
 ## Infrastructure (AWS CDK)
 
 - **Language**: TypeScript
-- **CDK Version**: 2.x (latest)
+- **CDK Version**: ^2.229.0
 - **Runtime**: Node.js 18+
 - **Entry Point**: `bin/voc-datalake.ts`
 
@@ -25,7 +30,11 @@
 | **Comprehend** | NLP | Sentiment, language detection, key phrases |
 | **Translate** | Multi-language | Auto language pair detection |
 | **Step Functions** | Long-running jobs | Research workflows, persona generation |
-| **CloudFront** | CDN | Frontend distribution |
+| **CloudFront** | CDN | Frontend distribution, avatar images |
+| **ECS Fargate** | Container compute | Artifact Builder executor tasks |
+| **CodeCommit** | Git repository | Artifact Builder template repo |
+| **ECR** | Container registry | Artifact Builder executor images |
+| **EFS** | Shared storage | Artifact Builder workspace persistence |
 
 ## Data Sources
 
@@ -62,7 +71,7 @@
 
 ### API Lambda Split (20KB IAM Policy Limit)
 
-AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into 12 focused, domain-specific Lambdas:
+AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into 15 focused, domain-specific Lambdas:
 
 | Lambda | Handler | Routes | Permissions |
 |--------|---------|--------|-------------|
@@ -77,6 +86,10 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
 | `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
+| `voc-artifact-builder-api` | `artifact_builder_handler.py` | `/artifacts/*` | S3, DynamoDB, ECS, Bedrock |
+| `voc-artifact-trigger-api` | `artifact_trigger_handler.py` | `/artifacts/trigger` | SQS, DynamoDB |
+| `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read |
+| `voc-manual-import-api` | `manual_import_handler.py` | `/manual-import/*` | DynamoDB, SQS, S3 |
 | `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS, Secrets Manager |
 
 **Benefits:**
@@ -107,21 +120,23 @@ def lambda_handler(event, context):
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| React | 19.2.0 | UI framework |
-| Vite | 7.2.4 | Build tool |
-| Tailwind CSS | 4.1.17 | Styling |
-| Zustand | 5.0.8 | State management (persisted) |
-| TanStack Query | 5.90.10 | Data fetching/caching |
-| React Router | 7.9.6 | Routing |
-| Recharts | 3.5.0 | Charts (Line, Bar, Pie) |
-| Lucide React | 0.554.0 | Icons |
-| date-fns | 4.1.0 | Date formatting |
-| clsx | 2.1.1 | Conditional classes |
-| react-markdown | 10.1.0 | Markdown rendering |
-| remark-gfm | 4.0.1 | GitHub Flavored Markdown |
-| amazon-cognito-identity-js | 6.3.12 | Cognito authentication |
-| jspdf + html2canvas | 3.0.4/1.4.1 | PDF export |
-| TypeScript | 5.9.3 | Type safety |
+| React | ^19.2.0 | UI framework |
+| Vite | ^7.2.4 | Build tool |
+| Tailwind CSS | ^4.1.17 | Styling |
+| Zustand | ^5.0.8 | State management (persisted) |
+| TanStack Query | ^5.90.10 | Data fetching/caching |
+| React Router | ^7.9.6 | Routing (react-router-dom) |
+| Recharts | ^3.5.0 | Charts (Line, Bar, Pie) |
+| Lucide React | ^0.554.0 | Icons |
+| date-fns | ^4.1.0 | Date formatting |
+| clsx | ^2.1.1 | Conditional classes |
+| react-markdown | ^10.1.0 | Markdown rendering |
+| remark-gfm | ^4.0.1 | GitHub Flavored Markdown |
+| amazon-cognito-identity-js | ^6.3.12 | Cognito authentication |
+| jspdf + html2canvas | ^3.0.4/^1.4.1 | PDF export |
+| Zod | ^4.3.5 | Runtime validation (frontend) |
+| TypeScript | ~5.9.3 | Type safety |
+| Vitest | ^3.2.3 | Testing framework (frontend) |
 
 ### Pages
 
@@ -137,9 +152,13 @@ def lambda_handler(event, context):
 | AI Chat | `/chat` | Conversational data queries with streaming |
 | Projects | `/projects` | Research projects list |
 | Project Detail | `/projects/:id` | Personas, PRDs, PR/FAQs, project chat |
+| Artifact Builder | `/artifact-builder` | AI-powered artifact generation |
+| Data Explorer | `/data-explorer` | S3 raw data and DynamoDB browser |
 | Scrapers | `/scrapers` | CSS/JSON-LD selector config, templates |
 | Feedback Forms | `/feedback-forms` | Embeddable form management |
 | Settings | `/settings` | Brand config, integrations, user admin |
+
+Note: Each page is organized in its own folder under `frontend/src/pages/` with an index.tsx entry point.
 
 ### Code Style
 
@@ -184,6 +203,11 @@ cd frontend
 npm install
 npm run dev    # Dev server at localhost:5173
 npm run mock   # Mock API at localhost:3001
+
+# Configuration Generation
+npm run generate:config   # Generate plugin manifests + menu config
+npm run generate:manifests  # Generate plugin manifests only
+npm run generate:menu       # Generate menu config only
 ```
 
 ## Secrets Manager Structure

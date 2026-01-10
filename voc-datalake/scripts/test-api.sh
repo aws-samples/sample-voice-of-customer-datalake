@@ -3,17 +3,50 @@
 # Tests all API endpoints after deployment
 set -e
 
-CLIENT_ID="3vgjagck9p2mp5tbc4cldne6tl"
-DEPLOY_USER="deployment-test"
-# NOTE: Use single quotes for password to prevent bash history expansion of '!'
-DEPLOY_PASS='DeployTest!2025'
-DEFAULT_API="https://7m68ea1vl4.execute-api.us-west-2.amazonaws.com/v1"
-DEFAULT_STREAM_URL="https://lxmrq2m3sl32zpflkh2ch234ou0wvwpp.lambda-url.us-west-2.on.aws"
+# Fetch configuration from CloudFormation outputs
+echo "📋 Fetching deployment configuration..."
 
+# Get Cognito Client ID from VocAuthStack
+CLIENT_ID=$(aws cloudformation describe-stacks \
+  --stack-name VocAuthStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
+  --output text 2>/dev/null)
+
+if [ -z "$CLIENT_ID" ] || [ "$CLIENT_ID" = "None" ]; then
+  echo "❌ Could not find Cognito Client ID. Is VocAuthStack deployed?"
+  echo "   You can also pass API_URL and STREAM_URL as arguments."
+  exit 1
+fi
+
+# Get API Gateway URL from VocAnalyticsStack
+DEFAULT_API=$(aws cloudformation describe-stacks \
+  --stack-name VocAnalyticsStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
+  --output text 2>/dev/null)
+
+# Get Chat Stream URL from VocAnalyticsStack
+DEFAULT_STREAM_URL=$(aws cloudformation describe-stacks \
+  --stack-name VocAnalyticsStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ChatStreamUrl`].OutputValue' \
+  --output text 2>/dev/null)
+
+# Test credentials - should be created in Cognito for deployment testing
+# Create with: aws cognito-idp admin-create-user --user-pool-id <pool-id> --username deployment-test
+DEPLOY_USER="${VOC_TEST_USER:-deployment-test}"
+# NOTE: Use single quotes for password to prevent bash history expansion of '!'
+DEPLOY_PASS="${VOC_TEST_PASS:-DeployTest!2025}"
+
+# Allow override via command line arguments
 API="${1:-$DEFAULT_API}"
 API="${API%/}"
 STREAM_URL="${2:-$DEFAULT_STREAM_URL}"
 STREAM_URL="${STREAM_URL%/}"
+
+if [ -z "$API" ] || [ "$API" = "None" ]; then
+  echo "❌ Could not find API endpoint. Is VocAnalyticsStack deployed?"
+  echo "   Usage: $0 [API_URL] [STREAM_URL]"
+  exit 1
+fi
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -23,6 +56,7 @@ NC='\033[0m'
 echo -e "${BLUE}=== VoC API Validation ===${NC}"
 echo "API Endpoint: $API"
 echo "Stream URL: $STREAM_URL"
+echo "Cognito Client ID: $CLIENT_ID"
 
 echo -n "Authenticating... "
 # Use single quotes around auth-parameters to prevent bash ! expansion
@@ -38,6 +72,7 @@ if echo "$AUTH_JSON" | grep -q "IdToken"; then
   echo -e "${GREEN}OK${NC}"
 else
   echo -e "${RED}FAILED${NC}"
+  echo "  Ensure test user exists: aws cognito-idp admin-create-user --user-pool-id <pool-id> --username $DEPLOY_USER"
   exit 1
 fi
 
@@ -129,7 +164,12 @@ tstream() {
     FAIL=$((FAIL+1))
   fi
 }
-tstream "/chat/stream" '{"message":"hello"}'
+
+if [ -n "$STREAM_URL" ] && [ "$STREAM_URL" != "None" ]; then
+  tstream "/chat/stream" '{"message":"hello"}'
+else
+  echo "  ⚠️  Stream URL not configured, skipping"
+fi
 
 echo ""
 T=$((PASS+FAIL))

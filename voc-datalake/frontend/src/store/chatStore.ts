@@ -88,10 +88,10 @@ export const useChatStore = create<ChatStore>()(
             
             const updatedMessages = [...conv.messages, newMessage]
             // Auto-generate title from first user message
-            let title = conv.title
-            if (conv.title === 'New Conversation' && message.role === 'user') {
-              title = message.content.slice(0, 50) + (message.content.length > 50 ? '...' : '')
-            }
+            const shouldGenerateTitle = conv.title === 'New Conversation' && message.role === 'user'
+            const truncatedContent = message.content.slice(0, 50)
+            const suffix = message.content.length > 50 ? '...' : ''
+            const title = shouldGenerateTitle ? truncatedContent + suffix : conv.title
             
             return {
               ...conv,

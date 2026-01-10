@@ -13,21 +13,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_secrets_client
+from shared.api import create_api_resolver, api_handler
 
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
 import boto3
 
 secretsmanager = get_secrets_client()
 events_client = boto3.client("events")
 
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
+DEPLOYMENT_HASH = os.environ.get("DEPLOYMENT_HASH", "")
 
-# Configure CORS - restrict to CloudFront domain in production
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
-cors_config = CORSConfig(
-    allow_origin=ALLOWED_ORIGIN, allow_headers=["Content-Type", "Authorization"], max_age=300
-)
-app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+app = create_api_resolver()
 
 
 @app.get("/integrations/status")
@@ -103,9 +99,12 @@ def get_sources_status():
                'reddit', 'tavily', 'appstore_apple', 'appstore_google', 'webscraper',
                'youtube', 'tiktok', 'linkedin', 's3_import']
     
+    # Build rule name suffix based on deployment hash
+    rule_suffix = f"-{DEPLOYMENT_HASH}" if DEPLOYMENT_HASH else ""
+    
     status = {}
     for source in sources:
-        rule_name = f"voc-ingest-{source}-schedule"
+        rule_name = f"voc-ingest-{source}-schedule{rule_suffix}"
         try:
             response = events_client.describe_rule(Name=rule_name)
             status[source] = {
@@ -127,7 +126,8 @@ def get_sources_status():
 @tracer.capture_method
 def enable_source(source: str):
     """Enable a data source schedule."""
-    rule_name = f"voc-ingest-{source}-schedule"
+    rule_suffix = f"-{DEPLOYMENT_HASH}" if DEPLOYMENT_HASH else ""
+    rule_name = f"voc-ingest-{source}-schedule{rule_suffix}"
     try:
         events_client.enable_rule(Name=rule_name)
         return {'success': True, 'source': source, 'enabled': True}
@@ -140,7 +140,8 @@ def enable_source(source: str):
 @tracer.capture_method
 def disable_source(source: str):
     """Disable a data source schedule."""
-    rule_name = f"voc-ingest-{source}-schedule"
+    rule_suffix = f"-{DEPLOYMENT_HASH}" if DEPLOYMENT_HASH else ""
+    rule_name = f"voc-ingest-{source}-schedule{rule_suffix}"
     try:
         events_client.disable_rule(Name=rule_name)
         return {'success': True, 'source': source, 'enabled': False}
@@ -149,8 +150,6 @@ def disable_source(source: str):
         return {'success': False, 'message': 'Failed to disable data source'}
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

@@ -3,23 +3,27 @@ VoC Feedback Processor Lambda
 Processes raw feedback from SQS, enriches with LLM insights, writes to DynamoDB.
 
 Uses Powertools Idempotency to prevent duplicate processing on SQS retries.
+Validates incoming messages using Pydantic schemas before processing.
 """
 import json
 import os
 import uuid
-import random
-import time
+import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
 from aws_lambda_powertools.utilities.batch.exceptions import BatchProcessingError
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
-from botocore.exceptions import ClientError
+
+# Add plugins directory to path for schema imports
+plugins_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'plugins')
+sys.path.insert(0, plugins_dir)
 
 # Shared module imports
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.converse import converse, BedrockThrottlingError
 from shared.idempotency import (
     get_persistence_layer,
     get_idempotency_config,
@@ -28,14 +32,16 @@ from shared.idempotency import (
 )
 import boto3
 
-# Retry configuration for Bedrock
-BEDROCK_MAX_RETRIES = 5
-BEDROCK_BASE_DELAY = 1.0  # seconds
-BEDROCK_MAX_DELAY = 30.0  # seconds
+# Import validation schemas from plugins
+try:
+    from _shared.schemas import safe_validate_message, MessageValidationError
+    VALIDATION_ENABLED = True
+except ImportError:
+    logger.warning("Could not import validation schemas - validation disabled")
+    VALIDATION_ENABLED = False
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
-bedrock_runtime = get_bedrock_client()
 comprehend = boto3.client('comprehend')
 translate = boto3.client('translate')
 
@@ -47,6 +53,9 @@ PRIMARY_LANGUAGE = os.environ.get('PRIMARY_LANGUAGE', 'en')
 # Processor uses Haiku for cost efficiency (processes many items)
 PROCESSOR_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'global.anthropic.claude-haiku-4-5-20251001-v1:0')
 PROMPT_VERSION = '1.0.0'
+
+# Logs configuration - max entries to keep per source
+MAX_LOG_ENTRIES = 100
 
 feedback_table = dynamodb.Table(FEEDBACK_TABLE)
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
@@ -64,6 +73,90 @@ else:
     persistence_layer = None
     idempotency_config = None
     logger.warning("IDEMPOTENCY_TABLE not configured - duplicate protection disabled")
+
+
+# ============================================
+# Validation Logging
+# ============================================
+
+def log_validation_failure(source_platform: str, message_id: str, errors: list[str], raw_preview: str):
+    """
+    Log a validation failure to DynamoDB for user visibility.
+    
+    Stores in aggregates table with TTL for automatic cleanup.
+    """
+    if not aggregates_table:
+        logger.warning("Cannot log validation failure - aggregates table not configured")
+        return
+    
+    try:
+        now = datetime.now(timezone.utc)
+        log_entry = {
+            'pk': f"LOGS#validation#{source_platform}",
+            'sk': f"{now.isoformat()}#{message_id[:32]}",
+            'log_type': 'validation_failure',
+            'source_platform': source_platform,
+            'message_id': message_id,
+            'errors': errors,
+            'raw_preview': raw_preview[:500],  # Truncate for storage
+            'timestamp': now.isoformat(),
+            'ttl': int(now.timestamp()) + (7 * 24 * 60 * 60),  # 7 days TTL
+        }
+        aggregates_table.put_item(Item=log_entry)
+        logger.info(f"Logged validation failure for {source_platform}/{message_id}")
+    except Exception as e:
+        logger.error(f"Failed to log validation failure: {e}")
+
+
+def log_processing_error(source_platform: str, message_id: str, error_type: str, error_message: str):
+    """
+    Log a processing error to DynamoDB for user visibility.
+    """
+    if not aggregates_table:
+        return
+    
+    try:
+        now = datetime.now(timezone.utc)
+        log_entry = {
+            'pk': f"LOGS#processing#{source_platform}",
+            'sk': f"{now.isoformat()}#{message_id[:32]}",
+            'log_type': 'processing_error',
+            'source_platform': source_platform,
+            'message_id': message_id,
+            'error_type': error_type,
+            'error_message': error_message[:1000],
+            'timestamp': now.isoformat(),
+            'ttl': int(now.timestamp()) + (7 * 24 * 60 * 60),  # 7 days TTL
+        }
+        aggregates_table.put_item(Item=log_entry)
+    except Exception as e:
+        logger.error(f"Failed to log processing error: {e}")
+
+
+def validate_sqs_message(raw_record: dict) -> tuple[dict | None, list[str]]:
+    """
+    Validate an SQS message using Pydantic schemas.
+    
+    Returns:
+        Tuple of (validated dict or None, list of errors)
+    """
+    if not VALIDATION_ENABLED:
+        return raw_record, []
+    
+    validated_msg, errors = safe_validate_message(raw_record)
+    
+    if errors:
+        source_platform = raw_record.get('source_platform', 'unknown')
+        message_id = raw_record.get('id', 'unknown')
+        raw_preview = json.dumps(raw_record, default=str)[:500]
+        
+        log_validation_failure(source_platform, message_id, errors, raw_preview)
+        metrics.add_metric(name="ValidationFailures", unit="Count", value=1)
+        
+        return None, errors
+    
+    # Convert validated Pydantic model back to dict
+    return validated_msg.model_dump(mode='json', exclude_none=True), []
 
 # LLM Prompts
 SYSTEM_PROMPT = """You are an expert customer experience analyst. Analyze feedback and return ONLY valid JSON:
@@ -220,7 +313,7 @@ def get_comprehend_sentiment(text: str, language: str) -> dict:
 @tracer.capture_method
 def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict:
     """
-    Invoke Bedrock LLM for structured insights with exponential backoff retry.
+    Invoke Bedrock LLM for structured insights using shared converse module.
     
     Args:
         raw_record: The feedback record to analyze
@@ -239,113 +332,82 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
         categories_instruction=categories_instruction
     )
     
-    request_body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 800,
-        "temperature": 0.1,
-        "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": user_prompt}]
-    }
-    
-    last_exception = None
-    
-    for attempt in range(BEDROCK_MAX_RETRIES):
-        try:
-            response = bedrock_runtime.invoke_model(
-                modelId=PROCESSOR_MODEL_ID,
-                body=json.dumps(request_body),
-                contentType='application/json',
-                accept='application/json'
-            )
-            
-            response_body = json.loads(response['body'].read())
-            content = response_body.get('content', [{}])[0].get('text', '{}')
-            logger.debug(f"Bedrock raw response: {content[:500]}")
-            
-            # Strip markdown code block wrapper if present (LLM often wraps JSON in ```json ... ```)
-            content = content.strip()
-            if content.startswith('```'):
-                # Remove opening ```json or ```
-                first_newline = content.find('\n')
-                if first_newline != -1:
-                    content = content[first_newline + 1:]
-                # Remove closing ``` (may have trailing whitespace/newlines)
-                content = content.strip()
-                if content.endswith('```'):
-                    content = content[:-3].strip()
-            
-            # Additional fallback: find JSON object boundaries
-            if not content.startswith('{'):
-                # Try to extract JSON from content
-                json_start = content.find('{')
-                json_end = content.rfind('}')
-                if json_start != -1 and json_end != -1:
-                    content = content[json_start:json_end + 1]
-                    logger.info(f"Extracted JSON from position {json_start} to {json_end}")
-            
-            logger.debug(f"Content after markdown strip (first 200 chars): {content[:200]}")
-            llm_result = json.loads(content)
-            latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-            
-            if attempt > 0:
-                logger.info(f"Bedrock succeeded after {attempt + 1} attempts")
-            
-            return {
-                'insights': llm_result,
-                'metadata': {
-                    'model_name': PROCESSOR_MODEL_ID,
-                    'prompt_version': PROMPT_VERSION,
-                    'latency_ms': latency_ms,
-                    'retry_attempts': attempt
-                }
+    try:
+        content = converse(
+            prompt=user_prompt,
+            system_prompt=SYSTEM_PROMPT,
+            max_tokens=800,
+            temperature=0.1,
+            model_id=PROCESSOR_MODEL_ID,
+            max_retries=5,
+            raise_on_throttle=raise_on_throttle,
+        )
+        
+        logger.debug(f"Bedrock raw response: {content[:500]}")
+        
+        # Parse JSON from response
+        parsed_content = _parse_llm_json_response(content)
+        llm_result = json.loads(parsed_content)
+        latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+        
+        return {
+            'insights': llm_result,
+            'metadata': {
+                'model_name': PROCESSOR_MODEL_ID,
+                'prompt_version': PROMPT_VERSION,
+                'latency_ms': latency_ms,
             }
-            
-        except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', '')
-            last_exception = e
-            
-            # Retry on throttling or service unavailable
-            if error_code in ('ThrottlingException', 'ServiceUnavailableException', 'ModelStreamErrorException'):
-                if attempt < BEDROCK_MAX_RETRIES - 1:
-                    # Exponential backoff with jitter
-                    delay = min(BEDROCK_BASE_DELAY * (2 ** attempt) + random.uniform(0, 1), BEDROCK_MAX_DELAY)
-                    logger.warning(f"Bedrock throttled (attempt {attempt + 1}/{BEDROCK_MAX_RETRIES}), retrying in {delay:.2f}s")
-                    time.sleep(delay)
-                    continue
-                else:
-                    # Max retries exhausted - let SQS handle retry
-                    logger.error(f"Bedrock throttled after {BEDROCK_MAX_RETRIES} attempts, raising for SQS retry")
-                    if raise_on_throttle:
-                        raise BedrockThrottlingError(f"Bedrock throttled after {BEDROCK_MAX_RETRIES} retries") from e
-            else:
-                # Non-retryable error
-                logger.error(f"Bedrock non-retryable error: {error_code} - {e}")
-                break
-                
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Bedrock response: {e}. Raw content (first 1000 chars): {content[:1000] if 'content' in dir() else 'N/A'}")
-            last_exception = e
-            break
-            
-        except Exception as e:
-            logger.error(f"Unexpected Bedrock error: {e}")
-            last_exception = e
-            break
-    
-    # Return empty insights on non-throttling failures
-    return {
-        'insights': {},
-        'metadata': {
-            'error': str(last_exception),
-            'retry_attempts': attempt + 1
         }
-    }
+        
+    except BedrockThrottlingError:
+        # Re-raise for SQS retry
+        raise
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Bedrock response: {e}")
+        return {
+            'insights': {},
+            'metadata': {'error': str(e)}
+        }
+        
+    except Exception as e:
+        logger.error(f"Unexpected Bedrock error: {e}")
+        return {
+            'insights': {},
+            'metadata': {'error': str(e)}
+        }
 
 
-class BedrockThrottlingError(Exception):
-    """Raised when Bedrock is throttled after max retries to trigger SQS retry."""
-    pass
-
+def _parse_llm_json_response(content: str) -> str:
+    """
+    Parse JSON from LLM response, handling markdown code blocks.
+    
+    Args:
+        content: Raw LLM response text
+        
+    Returns:
+        Cleaned JSON string
+    """
+    content = content.strip()
+    
+    # Strip markdown code block wrapper if present
+    if content.startswith('```'):
+        first_newline = content.find('\n')
+        if first_newline != -1:
+            content = content[first_newline + 1:]
+        content = content.strip()
+        if content.endswith('```'):
+            content = content[:-3].strip()
+    
+    # Fallback: find JSON object boundaries
+    if not content.startswith('{'):
+        json_start = content.find('{')
+        json_end = content.rfind('}')
+        if json_start != -1 and json_end != -1:
+            content = content[json_start:json_end + 1]
+            logger.info(f"Extracted JSON from position {json_start} to {json_end}")
+    
+    return content
 
 def generate_deterministic_id(source_platform: str, source_id: str, text: str = '', created_at: str = '', url: str = '') -> str:
     """
@@ -519,6 +581,16 @@ def record_handler(record: SQSRecord) -> dict:
     source_platform = raw_record.get('source_platform', 'unknown')
     source_id = raw_record.get('id', 'unknown')
     
+    # Validate the message before processing
+    validated_record, validation_errors = validate_sqs_message(raw_record)
+    if validation_errors:
+        logger.warning(f"Validation failed for {source_platform}/{source_id}: {validation_errors}")
+        # Return success to remove from queue - invalid messages shouldn't be retried
+        return {"status": "skipped", "reason": "validation_failed", "errors": validation_errors}
+    
+    # Use validated record for processing
+    raw_record = validated_record
+    
     # Create idempotency key from source + id
     idempotency_key = f"{source_platform}:{source_id}"
     
@@ -560,6 +632,13 @@ def record_handler(record: SQSRecord) -> dict:
         # Re-raise to fail this record - SQS will retry after visibility timeout
         logger.warning(f"Bedrock throttled for {source_platform}, message will be retried by SQS")
         metrics.add_metric(name="BedrockThrottleRetry", unit="Count", value=1)
+        log_processing_error(source_platform, source_id, "bedrock_throttling", str(e))
+        raise
+    
+    except Exception as e:
+        # Log unexpected errors for visibility
+        logger.exception(f"Unexpected error processing {source_platform}/{source_id}: {e}")
+        log_processing_error(source_platform, source_id, type(e).__name__, str(e))
         raise
 
 

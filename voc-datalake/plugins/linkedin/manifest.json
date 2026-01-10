@@ -1,0 +1,52 @@
+{
+  "id": "linkedin",
+  "name": "LinkedIn",
+  "icon": "💼",
+  "description": "Company page comments via LinkedIn Marketing API",
+  "category": "social",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(15 minutes)",
+      "timeout": 120,
+      "memory": 256
+    }
+  },
+
+  "config": [
+    {
+      "key": "access_token",
+      "label": "Access Token",
+      "type": "password",
+      "required": true,
+      "secret": true
+    },
+    {
+      "key": "organization_id",
+      "label": "Organization ID",
+      "type": "text",
+      "placeholder": "12345678",
+      "required": true,
+      "secret": false
+    }
+  ],
+
+  "setup": {
+    "title": "LinkedIn Setup",
+    "color": "blue",
+    "steps": [
+      "Apply for LinkedIn Marketing Developer Platform access",
+      "Create an app in LinkedIn Developer Portal",
+      "Request r_organization_social permission",
+      "Complete OAuth flow to get access token",
+      "Get your Organization ID from the company page URL"
+    ]
+  },
+
+  "secrets": {
+    "access_token": "",
+    "organization_id": ""
+  }
+}

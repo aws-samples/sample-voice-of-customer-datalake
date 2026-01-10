@@ -1,0 +1,44 @@
+{
+  "id": "webscraper",
+  "name": "Web Scraper",
+  "icon": "🕷️",
+  "description": "Configurable scraper for extracting feedback from websites",
+  "category": "import",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(15 minutes)",
+      "timeout": 300,
+      "memory": 512
+    }
+  },
+
+  "config": [
+    {
+      "key": "configs",
+      "label": "Scraper Configurations (JSON)",
+      "type": "textarea",
+      "placeholder": "[{\"id\": \"example\", \"name\": \"Example\", \"base_url\": \"https://...\"}]",
+      "required": false,
+      "secret": false
+    }
+  ],
+
+  "setup": {
+    "title": "Web Scraper Setup",
+    "color": "gray",
+    "steps": [
+      "Configure scrapers via the Scrapers page in the dashboard",
+      "Each scraper can use CSS selectors or JSON-LD extraction",
+      "Supports pagination and custom frequencies",
+      "Test scrapers before enabling them",
+      "Scrapers run automatically based on their configured frequency"
+    ]
+  },
+
+  "secrets": {
+    "configs": "[]"
+  }
+}

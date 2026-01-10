@@ -1,0 +1,50 @@
+{
+  "name": "voice-of-customer-datalake",
+  "version": "1.0.0",
+  "description": "Voice of the Customer Data Lake - Unified customer feedback intelligence platform",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && cd voc-datalake && npm install && cd frontend && npm install",
+    
+    "dev": "npm run dev --prefix voc-datalake/frontend",
+    "build": "npm run build --prefix voc-datalake/frontend",
+    
+    "lint": "npm run lint --prefix voc-datalake/frontend",
+    "typecheck": "npm run typecheck --prefix voc-datalake/frontend",
+    "test": "npm run test --prefix voc-datalake/frontend -- --run",
+    "test:watch": "npm run test:watch --prefix voc-datalake/frontend",
+    "test:coverage": "npm run test:coverage --prefix voc-datalake/frontend",
+    
+    "check": "npm run lint && npm run typecheck && npm run test",
+    
+    "generate:manifests": "npm run generate:manifests --prefix voc-datalake",
+    "generate:menu": "npm run generate:menu --prefix voc-datalake",
+    "generate:config": "npm run generate:manifests && npm run generate:menu",
+    
+    "validate:plugins": "npm run validate:plugins --prefix voc-datalake",
+    
+    "cdk": "cd voc-datalake && npx cdk",
+    "cdk:diff": "cd voc-datalake && npx cdk diff",
+    "cdk:synth": "cd voc-datalake && npx cdk synth",
+    
+    "deploy:infra": "cd voc-datalake && npx cdk deploy --all --require-approval never",
+    "deploy:frontend": "cd voc-datalake/frontend && npm run deploy:frontend",
+    "deploy:all": "npm run check && npm run deploy:infra && npm run deploy:frontend",
+    
+    "destroy": "cd voc-datalake && npx cdk destroy --all"
+  },
+  "keywords": [
+    "aws",
+    "cdk",
+    "datalake",
+    "voice-of-customer",
+    "analytics",
+    "feedback",
+    "customer-experience"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -15,8 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
-
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
+from shared.api import create_api_resolver, api_handler
 
 dynamodb = get_dynamodb_resource()
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
@@ -27,12 +26,7 @@ SETTINGS_SK = "config"
 CATEGORIES_PK = "SETTINGS#categories"
 CATEGORIES_SK = "config"
 
-# Configure CORS - restrict to CloudFront domain in production
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
-cors_config = CORSConfig(
-    allow_origin=ALLOWED_ORIGIN, allow_headers=["Content-Type", "Authorization"], max_age=300
-)
-app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+app = create_api_resolver()
 
 
 @app.get("/settings/brand")
@@ -115,7 +109,7 @@ def generate_categories():
         return {'success': False, 'message': 'Company description is required'}
     
     try:
-        bedrock = get_bedrock_client()
+        from shared.converse import converse
         prompt = f"""Based on the following company/product description, generate a comprehensive list of feedback categories and subcategories.
 
 Company Description:
@@ -137,20 +131,7 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
   ]
 }}"""
 
-        bedrock_response = bedrock.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 2000,
-                "temperature": 0.3,
-                "messages": [{"role": "user", "content": prompt}],
-            }),
-        )
-        
-        result = json.loads(bedrock_response["body"].read())
-        response_text = result["content"][0]["text"]
+        response_text = converse(prompt=prompt, max_tokens=2000, temperature=0.3)
 
         json_match = re.search(r"\{[\s\S]*\}", response_text)
         if json_match:
@@ -162,8 +143,6 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
         return {'success': False, 'message': 'Failed to generate categories'}
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

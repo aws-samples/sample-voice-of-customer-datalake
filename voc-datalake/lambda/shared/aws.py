@@ -4,6 +4,7 @@ Provides pre-configured clients with connection reuse.
 """
 
 import json
+import os
 import boto3
 from functools import lru_cache
 from shared.logging import logger
@@ -14,6 +15,7 @@ _s3_client = None
 _sqs_client = None
 _secrets_client = None
 _bedrock_client = None
+_lambda_client = None
 
 
 def get_dynamodb_resource():
@@ -56,11 +58,69 @@ def get_secrets_client():
 
 
 def get_bedrock_client():
-    """Get shared Bedrock Runtime client with connection reuse."""
+    """Get shared Bedrock Runtime client with connection reuse.
+    
+    Uses extended read timeout (5 minutes) to handle long LLM responses
+    that can take 2-3 minutes for complex persona generation tasks.
+    """
     global _bedrock_client
     if _bedrock_client is None:
-        _bedrock_client = boto3.client("bedrock-runtime")
+        from botocore.config import Config
+        config = Config(
+            read_timeout=300,  # 5 minutes for long LLM responses
+            connect_timeout=10,
+            retries={'max_attempts': 3}
+        )
+        _bedrock_client = boto3.client("bedrock-runtime", config=config)
     return _bedrock_client
+
+
+def get_lambda_client():
+    """Get shared Lambda client with connection reuse."""
+    global _lambda_client
+    if _lambda_client is None:
+        _lambda_client = boto3.client("lambda")
+    return _lambda_client
+
+
+def invoke_lambda_async(function_name: str, payload: dict) -> dict:
+    """
+    Invoke a Lambda function asynchronously (fire-and-forget).
+    
+    Args:
+        function_name: Lambda function name or ARN
+        payload: Event payload dict
+    
+    Returns:
+        Lambda invoke response (status only, no payload for async)
+    """
+    client = get_lambda_client()
+    return client.invoke(
+        FunctionName=function_name,
+        InvocationType='Event',
+        Payload=json.dumps(payload)
+    )
+
+
+def invoke_self_async(payload: dict) -> dict:
+    """
+    Invoke the current Lambda function asynchronously.
+    
+    Uses AWS_LAMBDA_FUNCTION_NAME environment variable.
+    
+    Args:
+        payload: Event payload dict
+    
+    Returns:
+        Lambda invoke response
+    
+    Raises:
+        ValueError: If AWS_LAMBDA_FUNCTION_NAME is not set
+    """
+    function_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', '')
+    if not function_name:
+        raise ValueError("AWS_LAMBDA_FUNCTION_NAME environment variable not set")
+    return invoke_lambda_async(function_name, payload)
 
 
 @lru_cache(maxsize=10)
@@ -103,7 +163,7 @@ def invoke_bedrock(
     temperature: float = 0.1,
 ) -> str:
     """
-    Invoke Bedrock Claude model with standard configuration.
+    Invoke Bedrock Claude model using Converse API.
 
     Args:
         prompt: User message/prompt
@@ -119,22 +179,21 @@ def invoke_bedrock(
     """
     client = get_bedrock_client()
 
-    request_body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "messages": [{"role": "user", "content": prompt}],
+    messages = [{'role': 'user', 'content': [{'text': prompt}]}]
+    
+    kwargs = {
+        'modelId': BEDROCK_MODEL_ID,
+        'messages': messages,
+        'inferenceConfig': {
+            'maxTokens': max_tokens,
+            'temperature': temperature,
+        }
     }
-
+    
     if system_prompt:
-        request_body["system"] = system_prompt
+        kwargs['system'] = [{'text': system_prompt}]
 
-    response = client.invoke_model(
-        modelId=BEDROCK_MODEL_ID,
-        body=json.dumps(request_body),
-        contentType="application/json",
-        accept="application/json",
-    )
-
-    response_body = json.loads(response["body"].read())
-    return response_body["content"][0]["text"]
+    response = client.converse(**kwargs)
+    
+    content = response.get('output', {}).get('message', {}).get('content', [])
+    return ''.join(block.get('text', '') for block in content if 'text' in block)

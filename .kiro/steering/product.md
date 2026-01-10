@@ -1,3 +1,8 @@
+---
+inclusion: conditional
+triggers: ["product", "feature", "use case", "capability", "overview", "voc", "voice of customer", "data flow"]
+---
+
 # VoC Data Lake - Product Overview
 
 Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for ingesting, processing, and analyzing customer feedback from multiple sources in near real-time.
@@ -11,6 +16,9 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
   - Web search: Tavily
   - Custom web scrapers: Configurable scrapers for any website
   - S3 Import: Bulk import from S3 buckets
+  - Manual Import: Direct data import via UI
+- **Plugin architecture**: Modular data source connectors with manifest-based configuration and enable/disable via `cdk.context.json`
+- **Menu configuration**: Enable/disable dashboard menu items via `cdk.context.json`
 - **Webhook support**: Real-time ingestion via webhooks (Trustpilot service reviews)
 - **LLM-powered analysis**: Amazon Bedrock (Claude Sonnet 4.5) for categorization, sentiment, persona inference, and root cause hypothesis
 - **Multi-language support**: Auto-detection via Comprehend, translation via Amazon Translate
@@ -34,6 +42,9 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 | **Job** | Long-running async task (research, persona generation) tracked via Step Functions |
 | **Conversation** | AI chat conversation history with messages and context |
 | **Feedback Form** | Embeddable form for collecting customer feedback directly |
+| **Plugin** | Modular data source connector with manifest and handler |
+| **Plugin Status** | Enable/disable plugins via `pluginStatus` in `cdk.context.json` |
+| **Menu Status** | Enable/disable menu items via `menuStatus` in `cdk.context.json` |
 
 ## Data Flow
 
@@ -78,10 +89,13 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 | AI Chat | `/chat` | Conversational interface for querying data |
 | Projects | `/projects` | Research projects list |
 | Project Detail | `/projects/:id` | Single project view with personas, PRDs, PR/FAQs |
+| Artifact Builder | `/artifact-builder` | AI-powered artifact generation from feedback |
 | Data Explorer | `/data-explorer` | Browse S3 raw data and DynamoDB processed records |
 | Scrapers | `/scrapers` | Configure custom web scrapers |
 | Feedback Forms | `/feedback-forms` | Manage embeddable feedback forms |
 | Settings | `/settings` | Brand config, integrations, user management |
+
+Note: Each page is organized in its own folder under `frontend/src/pages/` with component files and tests.
 
 ## Serverless Architecture Benefits
 

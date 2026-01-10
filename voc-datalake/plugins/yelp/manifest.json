@@ -1,0 +1,51 @@
+{
+  "id": "yelp",
+  "name": "Yelp Fusion API",
+  "icon": "🍽️",
+  "description": "Business reviews via official Yelp API",
+  "category": "reviews",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(30 minutes)",
+      "timeout": 120,
+      "memory": 256
+    }
+  },
+
+  "config": [
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password",
+      "required": true,
+      "secret": true
+    },
+    {
+      "key": "business_ids",
+      "label": "Business IDs",
+      "type": "textarea",
+      "placeholder": "lufthansa-frankfurt-am-main-3, lufthansa-los-angeles-2",
+      "required": true,
+      "secret": false
+    }
+  ],
+
+  "setup": {
+    "title": "Yelp Setup",
+    "color": "orange",
+    "steps": [
+      "Go to Yelp Fusion Developer Portal",
+      "Create a new app or use an existing one",
+      "Copy your API Key from the app settings",
+      "Find business IDs from Yelp URLs (slug after /biz/)"
+    ]
+  },
+
+  "secrets": {
+    "api_key": "",
+    "business_ids": ""
+  }
+}

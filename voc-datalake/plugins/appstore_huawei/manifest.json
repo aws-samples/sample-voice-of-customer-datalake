@@ -1,0 +1,60 @@
+{
+  "id": "appstore_huawei",
+  "name": "Huawei AppGallery",
+  "icon": "📱",
+  "description": "App reviews via Huawei AppGallery Connect API",
+  "category": "appstore",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(15 minutes)",
+      "timeout": 120,
+      "memory": 256
+    }
+  },
+
+  "config": [
+    {
+      "key": "client_id",
+      "label": "Client ID",
+      "type": "text",
+      "required": true,
+      "secret": false
+    },
+    {
+      "key": "client_secret",
+      "label": "Client Secret",
+      "type": "password",
+      "required": true,
+      "secret": true
+    },
+    {
+      "key": "app_id",
+      "label": "App ID",
+      "type": "text",
+      "placeholder": "123456789",
+      "required": true,
+      "secret": false
+    }
+  ],
+
+  "setup": {
+    "title": "Huawei AppGallery Setup",
+    "color": "orange",
+    "steps": [
+      "Go to Huawei AppGallery Connect",
+      "Navigate to Users and permissions > API key",
+      "Create a new API client",
+      "Copy the Client ID and Client Secret",
+      "Get your App ID from the app details page"
+    ]
+  },
+
+  "secrets": {
+    "client_id": "",
+    "client_secret": "",
+    "app_id": ""
+  }
+}

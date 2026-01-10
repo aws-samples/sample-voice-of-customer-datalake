@@ -1,3 +1,8 @@
+---
+inclusion: conditional
+triggers: ["bedrock", "claude", "llm", "ai", "anthropic", "invoke model", "prompt", "inference"]
+---
+
 # Bedrock AI Model Standards
 
 ## Default Model

@@ -1,0 +1,44 @@
+{
+  "brandName": "Your Brand Name",
+  "pluginStatus": {
+    "trustpilot": false,
+    "yelp": false,
+    "google_reviews": false,
+    "twitter": false,
+    "instagram": false,
+    "facebook": false,
+    "reddit": false,
+    "tavily": false,
+    "appstore_apple": false,
+    "appstore_google": false,
+    "appstore_huawei": false,
+    "webscraper": true,
+    "youtube": false,
+    "tiktok": false,
+    "linkedin": false,
+    "s3_import": false
+  },
+  "menuStatus": {
+    "dashboard": true,
+    "feedback": true,
+    "categories": true,
+    "problems": true,
+    "chat": true,
+    "projects": true,
+    "prioritization": true,
+    "data-explorer": true,
+    "artifact-builder": false,
+    "ArtifactBuilderStack": false,
+    "scrapers": true,
+    "feedback-forms": true,
+    "settings": true
+  },
+  "anthropicUseCase": {
+    "companyName": "Your Company Name",
+    "companyWebsite": "https://your-company.com",
+    "intendedUsers": "0",
+    "industryOption": "Technology",
+    "useCases": "Analyzing customer feedback to identify product improvement opportunities, sentiment analysis, and generating insights from voice of customer data.",
+    "otherIndustryOption": ""
+  }
+}

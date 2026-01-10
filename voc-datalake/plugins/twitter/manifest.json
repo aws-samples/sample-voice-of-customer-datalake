@@ -1,0 +1,43 @@
+{
+  "id": "twitter",
+  "name": "Twitter/X",
+  "icon": "🐦",
+  "description": "Brand mentions via Twitter API v2 Recent Search",
+  "category": "social",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(1 minutes)",
+      "timeout": 60,
+      "memory": 256
+    }
+  },
+
+  "config": [
+    {
+      "key": "bearer_token",
+      "label": "Bearer Token",
+      "type": "password",
+      "required": true,
+      "secret": true
+    }
+  ],
+
+  "setup": {
+    "title": "Twitter/X Setup",
+    "color": "blue",
+    "steps": [
+      "Go to Twitter Developer Portal (developer.twitter.com)",
+      "Create a new project and app",
+      "Generate a Bearer Token from the Keys & Tokens section",
+      "Copy the Bearer Token and paste it above",
+      "Ensure your app has Read access to tweets"
+    ]
+  },
+
+  "secrets": {
+    "bearer_token": ""
+  }
+}

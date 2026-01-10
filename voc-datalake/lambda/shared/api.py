@@ -1,0 +1,258 @@
+"""
+Shared API utilities for VoC Lambda functions.
+Provides common helpers, encoders, validators, and decorators.
+"""
+
+import json
+import os
+import functools
+from decimal import Decimal
+from datetime import datetime, timezone
+
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
+
+from shared.logging import logger, tracer, metrics
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """JSON encoder that handles Decimal types from DynamoDB."""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
+
+
+def validate_days(
+    value: str | int | None,
+    default: int = 7,
+    min_val: int = 1,
+    max_val: int = 365
+) -> int:
+    """Validate and bound days parameter."""
+    try:
+        days = int(value) if value is not None else default
+        return max(min_val, min(days, max_val))
+    except (ValueError, TypeError):
+        return default
+
+
+def validate_limit(
+    value: str | int | None,
+    default: int = 50,
+    min_val: int = 1,
+    max_val: int = 100
+) -> int:
+    """Validate and bound limit parameter."""
+    try:
+        limit = int(value) if value is not None else default
+        return max(min_val, min(limit, max_val))
+    except (ValueError, TypeError):
+        return default
+
+
+def validate_int(
+    value: str | int | None,
+    default: int,
+    min_val: int = 1,
+    max_val: int = 100
+) -> int:
+    """Generic integer validation with bounds."""
+    try:
+        val = int(value) if value is not None else default
+        return max(min_val, min(val, max_val))
+    except (ValueError, TypeError):
+        return default
+
+
+def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
+    """
+    Create standard CORS configuration for API Gateway.
+    
+    Args:
+        allowed_origin: Override origin, defaults to ALLOWED_ORIGIN env var
+    
+    Returns:
+        Configured CORSConfig instance
+    """
+    origin = allowed_origin or os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
+    return CORSConfig(
+        allow_origin=origin,
+        allow_headers=[
+            "Content-Type",
+            "Authorization",
+            "X-Requested-With",
+            "X-Amz-Date",
+            "X-Api-Key",
+            "X-Amz-Security-Token",
+        ],
+        expose_headers=["Content-Type"],
+        max_age=300,
+        allow_credentials=False,
+    )
+
+
+def create_api_resolver(allowed_origin: str | None = None) -> APIGatewayRestResolver:
+    """
+    Create pre-configured API Gateway resolver with standard CORS.
+    
+    Args:
+        allowed_origin: Override origin, defaults to ALLOWED_ORIGIN env var
+    
+    Returns:
+        Configured APIGatewayRestResolver instance
+    """
+    cors_config = create_cors_config(allowed_origin)
+    return APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+
+
+def api_handler(func):
+    """
+    Combined decorator for Lambda API handlers.
+    
+    Applies in order:
+    1. logger.inject_lambda_context - Adds request context to logs
+    2. tracer.capture_lambda_handler - X-Ray tracing
+    3. metrics.log_metrics - CloudWatch metrics with cold start
+    
+    Usage:
+        @api_handler
+        def lambda_handler(event, context):
+            return app.resolve(event, context)
+    """
+    @logger.inject_lambda_context
+    @tracer.capture_lambda_handler
+    @metrics.log_metrics(capture_cold_start_metric=True)
+    @functools.wraps(func)
+    def wrapper(event, context):
+        return func(event, context)
+    return wrapper
+
+
+def json_response(data: dict, status_code: int = 200) -> dict:
+    """
+    Create a JSON response with proper headers.
+    
+    Args:
+        data: Response data dict
+        status_code: HTTP status code (default 200)
+    
+    Returns:
+        Lambda response dict
+    """
+    return {
+        'statusCode': status_code,
+        'headers': {'Content-Type': 'application/json'},
+        'body': json.dumps(data, cls=DecimalEncoder)
+    }
+
+
+def error_response(message: str, status_code: int = 400) -> dict:
+    """
+    Create an error response.
+    
+    Args:
+        message: Error message
+        status_code: HTTP status code (default 400)
+    
+    Returns:
+        Lambda response dict
+    """
+    return json_response({'error': message}, status_code)
+
+
+# Default categories fallback (used when settings not configured)
+DEFAULT_CATEGORIES = [
+    'delivery', 'customer_support', 'product_quality', 'pricing',
+    'website', 'app', 'billing', 'returns', 'communication', 'other'
+]
+
+# Cache for configured categories
+_categories_cache: list | None = None
+_categories_cache_time: float | None = None
+CATEGORIES_CACHE_TTL = 300  # 5 minutes
+
+
+def get_configured_categories(aggregates_table) -> list:
+    """
+    Fetch configured categories from DynamoDB settings with caching.
+    
+    Args:
+        aggregates_table: DynamoDB Table resource for aggregates
+    
+    Returns:
+        List of category names
+    """
+    global _categories_cache, _categories_cache_time
+    
+    if not aggregates_table:
+        logger.warning("Aggregates table not provided, using default categories")
+        return DEFAULT_CATEGORIES
+    
+    now = datetime.now(timezone.utc).timestamp()
+    
+    # Return cached if still valid
+    if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
+        return _categories_cache
+    
+    try:
+        response = aggregates_table.get_item(Key={'pk': 'SETTINGS#categories', 'sk': 'config'})
+        item = response.get('Item')
+        if item and item.get('categories'):
+            _categories_cache = [cat.get('name') for cat in item.get('categories', []) if cat.get('name')]
+            _categories_cache_time = now
+            logger.info(f"Loaded {len(_categories_cache)} categories from settings")
+            return _categories_cache
+    except Exception as e:
+        logger.warning(f"Could not fetch categories from settings: {e}")
+    
+    # Fallback to defaults
+    _categories_cache = DEFAULT_CATEGORIES
+    _categories_cache_time = now
+    return _categories_cache
+
+
+def clear_categories_cache():
+    """Clear the categories cache. Useful for testing or forced refresh."""
+    global _categories_cache, _categories_cache_time
+    _categories_cache = None
+    _categories_cache_time = None
+
+
+def sum_daily_metric(
+    aggregates_table,
+    metric_prefix: str,
+    days: int,
+    current_date=None
+) -> int:
+    """
+    Sum a daily metric over a date range from the aggregates table.
+    
+    Args:
+        aggregates_table: DynamoDB Table resource for aggregates
+        metric_prefix: The pk prefix (e.g., 'METRIC#daily_total', 'METRIC#daily_sentiment#positive')
+        days: Number of days to sum
+        current_date: Optional datetime, defaults to now (UTC)
+    
+    Returns:
+        Total count across the date range
+    """
+    from datetime import datetime, timezone, timedelta
+    
+    if not aggregates_table:
+        return 0
+    
+    if current_date is None:
+        current_date = datetime.now(timezone.utc)
+    
+    total = 0
+    for i in range(days):
+        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+        try:
+            response = aggregates_table.get_item(Key={'pk': metric_prefix, 'sk': date})
+            item = response.get('Item')
+            if item:
+                total += int(item.get('count', 0))
+        except Exception as e:
+            logger.warning(f"Failed to fetch metric {metric_prefix} for {date}: {e}")
+    
+    return total

@@ -3,5 +3,61 @@
     34892
   ],
   "brandName": "VoC Analytics",
-  "frontendDomain": "d1be30ki9oxv87.cloudfront.net"
+  "pluginStatus": {
+    "trustpilot": false,
+    "yelp": false,
+    "google_reviews": false,
+    "twitter": false,
+    "instagram": false,
+    "facebook": false,
+    "reddit": false,
+    "tavily": false,
+    "appstore_apple": false,
+    "appstore_google": false,
+    "appstore_huawei": false,
+    "webscraper": true,
+    "youtube": false,
+    "tiktok": false,
+    "linkedin": false,
+    "s3_import": false
+  },
+  "menuStatus": {
+    "dashboard": true,
+    "feedback": true,
+    "categories": true,
+    "problems": true,
+    "chat": true,
+    "projects": true,
+    "prioritization": true,
+    "data-explorer": true,
+    "artifact-builder": false,
+    "ArtifactBuilderStack": false,
+    "scrapers": true,
+    "feedback-forms": true,
+    "settings": true
+  },
+  "anthropicUseCase": {
+    "companyName": "Amazon Web Services",
+    "companyWebsite": "https://aws.amazon.com",
+    "intendedUsers": "0",
+    "industryOption": "Technology",
+    "useCases": "Analyzing customer feedback to identify product improvement opportunities, sentiment analysis, and generating insights from voice of customer data."
+  },
+  "availability-zones:account=363897344130:region=eu-west-1": [
+    "eu-west-1a",
+    "eu-west-1b",
+    "eu-west-1c"
+  ],
+  "availability-zones:account=363897344130:region=us-west-2": [
+    "us-west-2a",
+    "us-west-2b",
+    "us-west-2c",
+    "us-west-2d"
+  ],
+  "availability-zones:account=512144631813:region=us-west-2": [
+    "us-west-2a",
+    "us-west-2b",
+    "us-west-2c",
+    "us-west-2d"
+  ]
 }

@@ -26,6 +26,19 @@ import { config } from '../config'
 import { useAuthStore } from '../store/authStore'
 import type { User } from '../store/authStore'
 
+// Type guards for JWT payload validation
+function isString(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number'
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
 /**
  * Gets the Cognito User Pool instance.
  * @returns CognitoUserPool instance or null if not configured
@@ -38,6 +51,11 @@ const getUserPool = (): CognitoUserPool | null => {
     UserPoolId: config.cognito.userPoolId,
     ClientId: config.cognito.clientId,
   })
+}
+
+// Type guard for Record<string, unknown>
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
@@ -55,7 +73,11 @@ const parseJwt = (token: string): Record<string, unknown> => {
         .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
         .join('')
     )
-    return JSON.parse(jsonPayload)
+    const parsed: unknown = JSON.parse(jsonPayload)
+    if (isRecord(parsed)) {
+      return parsed
+    }
+    return {}
   } catch {
     return {}
   }
@@ -68,11 +90,16 @@ const parseJwt = (token: string): Record<string, unknown> => {
  */
 const extractUser = (idToken: string): User => {
   const payload = parseJwt(idToken)
+  const username = payload['cognito:username']
+  const email = payload['email']
+  const name = payload['name']
+  const groups = payload['cognito:groups']
+  
   return {
-    username: (payload['cognito:username'] as string) || '',
-    email: (payload['email'] as string) || '',
-    name: (payload['name'] as string) || undefined,
-    groups: (payload['cognito:groups'] as string[]) || [],
+    username: isString(username) ? username : '',
+    email: isString(email) ? email : '',
+    name: isString(name) ? name : undefined,
+    groups: isStringArray(groups) ? groups : [],
   }
 }
 
@@ -132,7 +159,7 @@ export const authService = {
         onFailure: (err) => {
           reject(err)
         },
-        newPasswordRequired: (userAttributes) => {
+        newPasswordRequired: (userAttributes: Record<string, unknown>) => {
           // Handle new password required (first login)
           reject({ 
             code: 'NewPasswordRequired', 
@@ -221,10 +248,10 @@ export const authService = {
 
       cognitoUser.refreshSession(
         new CognitoRefreshToken({ RefreshToken: refreshToken }),
-        (err, session) => {
-          if (err) {
+        (err: Error | null, session: CognitoUserSession | null) => {
+          if (err || !session) {
             useAuthStore.getState().logout()
-            reject(err)
+            reject(err ?? new Error('Session refresh failed'))
             return
           }
 
@@ -262,10 +289,15 @@ export const authService = {
 
     // Check if token is expired (with 5 min buffer)
     const payload = parseJwt(accessToken)
-    const exp = (payload.exp as number) * 1000
+    const exp = payload.exp
+    if (!isNumber(exp)) {
+      return accessToken
+    }
+    
+    const expMs = exp * 1000
     const now = Date.now()
     
-    if (exp - now < 5 * 60 * 1000) {
+    if (expMs - now < 5 * 60 * 1000) {
       try {
         const session = await authService.refreshSession()
         return session.getAccessToken().getJwtToken()
@@ -371,13 +403,13 @@ export const authService = {
       cognitoUser.getSession(
         (err: Error | null, session: CognitoUserSession | null) => {
           if (err || !session) {
-            reject(err || new Error('No session'))
+            reject(err ?? new Error('No session'))
             return
           }
 
-          cognitoUser.changePassword(oldPassword, newPassword, (err) => {
-            if (err) {
-              reject(err)
+          cognitoUser.changePassword(oldPassword, newPassword, (changeErr) => {
+            if (changeErr) {
+              reject(changeErr)
               return
             }
             resolve()

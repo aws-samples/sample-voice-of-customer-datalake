@@ -2,15 +2,15 @@
  * @fileoverview Authentication state management using Zustand with localStorage persistence.
  * 
  * Features:
- * - Auth state shared across browser tabs via localStorage
- * - Tokens persist until user explicitly logs out
- * - Automatic token refresh handled by auth service
+ * - Uses localStorage to persist auth across tabs and browser sessions
+ * - Allows multiple tabs to share the same authenticated session
+ * - Tokens persist until explicit logout or expiration
  * 
  * @module store/authStore
  */
 
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
+import { persist } from 'zustand/middleware'
 
 /**
  * Authenticated user information extracted from Cognito ID token.
@@ -86,9 +86,8 @@ export const useAuthStore = create<AuthState>()(
     }),
     { 
       name: 'voc-auth',
-      // Use localStorage to share auth state across browser tabs
-      // Tokens persist until user explicitly logs out
-      storage: createJSONStorage(() => localStorage),
+      // Use localStorage to persist auth across tabs and browser sessions
+      // This allows opening multiple tabs without re-authenticating
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,

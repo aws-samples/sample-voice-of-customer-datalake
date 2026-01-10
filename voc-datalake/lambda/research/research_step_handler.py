@@ -5,22 +5,27 @@ Each step can run up to 15 minutes, allowing for deep analysis.
 """
 import json
 import os
+import time
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
 from typing import Any
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 
 # Shared module imports
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
+from shared.api import api_handler, DecimalEncoder
+from shared.converse import converse, BedrockThrottlingError
+from shared.feedback import (
+    get_feedback_context as _get_feedback_context,
+    format_feedback_for_llm,
+    get_feedback_statistics,
+)
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
-# Bedrock client with extended timeout for long-running LLM calls
-bedrock_config = Config(read_timeout=300, connect_timeout=10, retries={'max_attempts': 2})
-bedrock = boto3.client('bedrock-runtime', config=bedrock_config)
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -33,28 +38,19 @@ jobs_table = dynamodb.Table(JOBS_TABLE) if JOBS_TABLE else None
 MODEL_ID = BEDROCK_MODEL_ID
 
 
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super().default(obj)
+# Alias for backward compatibility with Step Functions error handling
+BedrockThrottlingException = BedrockThrottlingError
 
 
-def invoke_bedrock(system_prompt: str, user_message: str, max_tokens: int = 4096) -> str:
-    """Invoke Bedrock with Claude Sonnet 4.5."""
-    response = bedrock.invoke_model(
-        modelId=MODEL_ID,
-        contentType='application/json',
-        accept='application/json',
-        body=json.dumps({
-            'anthropic_version': 'bedrock-2023-05-31',
-            'max_tokens': max_tokens,
-            'system': system_prompt,
-            'messages': [{'role': 'user', 'content': user_message}]
-        })
+def invoke_bedrock_with_retry(system_prompt: str, user_message: str, max_tokens: int = 4096, max_retries: int = 3) -> str:
+    """Invoke Bedrock with retry support using shared converse module."""
+    return converse(
+        prompt=user_message,
+        system_prompt=system_prompt,
+        max_tokens=max_tokens,
+        max_retries=max_retries,
+        raise_on_throttle=True,
     )
-    result = json.loads(response['body'].read())
-    return result['content'][0]['text']
 
 
 def update_job_status(project_id: str, job_id: str, status: str, progress: int, 
@@ -89,135 +85,21 @@ def update_job_status(project_id: str, job_id: str, status: str, progress: int,
         # Extend TTL to 7 days for completed jobs
         expr_values[':ttl'] = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
     
-    jobs_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
-        UpdateExpression=update_expr,
-        ExpressionAttributeValues=expr_values,
-        ExpressionAttributeNames=expr_names
-    )
+    try:
+        jobs_table.update_item(
+            Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values,
+            ExpressionAttributeNames=expr_names
+        )
+    except Exception as e:
+        logger.error(f"Failed to update job status: {e}")
 
 
+# Wrapper function to pass module-level table reference to shared function
 def get_feedback_context(filters: dict, limit: int = 100) -> list[dict]:
     """Get feedback items based on filters for LLM context."""
-    if not feedback_table:
-        return []
-    
-    days = filters.get('days', 30)
-    categories = filters.get('categories', [])
-    sentiments = filters.get('sentiments', [])
-    sources = filters.get('sources', [])
-    
-    items = []
-    current_date = datetime.now(timezone.utc)
-    
-    if sources:
-        for source in sources:
-            response = feedback_table.query(
-                KeyConditionExpression=Key('pk').eq(f'SOURCE#{source}'),
-                Limit=limit // len(sources) + 1,
-                ScanIndexForward=False
-            )
-            items.extend(response.get('Items', []))
-    elif categories:
-        for category in categories:
-            response = feedback_table.query(
-                IndexName='gsi2-by-category',
-                KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{category}'),
-                Limit=limit // len(categories) + 1,
-                ScanIndexForward=False
-            )
-            items.extend(response.get('Items', []))
-    else:
-        for i in range(min(days, 30)):
-            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            response = feedback_table.query(
-                IndexName='gsi1-by-date',
-                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=limit - len(items),
-                ScanIndexForward=False
-            )
-            items.extend(response.get('Items', []))
-            if len(items) >= limit:
-                break
-    
-    if sentiments:
-        items = [i for i in items if i.get('sentiment_label') in sentiments]
-    if categories and not sources:
-        items = [i for i in items if i.get('category') in categories]
-    if sources and categories:
-        items = [i for i in items if i.get('source_platform') in sources]
-    
-    return items[:limit]
-
-
-def format_feedback_for_llm(items: list[dict]) -> str:
-    """Format feedback items for LLM context."""
-    lines = []
-    for i, item in enumerate(items, 1):
-        quote = item.get('direct_customer_quote', '')
-        root_cause = item.get('problem_root_cause_hypothesis', '')
-        
-        lines.append(f"""
-### Review {i}
-- Source: {item.get('source_platform', 'unknown')}
-- Date: {item.get('source_created_at', '')[:10] if item.get('source_created_at') else 'N/A'}
-- Sentiment: {item.get('sentiment_label', 'unknown')} (score: {item.get('sentiment_score', 0):.2f})
-- Category: {item.get('category', 'other')}
-- Rating: {item.get('rating', 'N/A')}/5
-- Urgency: {item.get('urgency', 'low')}
-- Full Text: "{item.get('original_text', '')[:600]}"
-{f'- Key Quote: "{quote}"' if quote else ''}
-{f'- Problem Summary: {item.get("problem_summary", "")}' if item.get('problem_summary') else ''}
-{f'- Root Cause: {root_cause}' if root_cause else ''}
-""")
-    return '\n'.join(lines)
-
-
-def get_feedback_statistics(items: list[dict]) -> str:
-    """Generate summary statistics from feedback items."""
-    if not items:
-        return "No feedback data available."
-    
-    sentiments = {}
-    categories = {}
-    sources = {}
-    urgency_counts = {'high': 0, 'medium': 0, 'low': 0}
-    ratings = []
-    
-    for item in items:
-        sent = item.get('sentiment_label', 'unknown')
-        sentiments[sent] = sentiments.get(sent, 0) + 1
-        
-        cat = item.get('category', 'other')
-        categories[cat] = categories.get(cat, 0) + 1
-        
-        src = item.get('source_platform', 'unknown')
-        sources[src] = sources.get(src, 0) + 1
-        
-        urg = item.get('urgency', 'low')
-        if urg in urgency_counts:
-            urgency_counts[urg] += 1
-        
-        if item.get('rating'):
-            ratings.append(float(item['rating']))
-    
-    avg_rating = sum(ratings) / len(ratings) if ratings else 0
-    
-    return f"""## Feedback Statistics (n={len(items)})
-
-**Sentiment Distribution:**
-{chr(10).join([f"- {k}: {v} ({v/len(items)*100:.1f}%)" for k, v in sorted(sentiments.items(), key=lambda x: x[1], reverse=True)])}
-
-**Top Categories:**
-{chr(10).join([f"- {k}: {v}" for k, v in sorted(categories.items(), key=lambda x: x[1], reverse=True)[:5]])}
-
-**Sources:**
-{chr(10).join([f"- {k}: {v}" for k, v in sorted(sources.items(), key=lambda x: x[1], reverse=True)])}
-
-**Urgency:** High: {urgency_counts['high']} | Medium: {urgency_counts['medium']} | Low: {urgency_counts['low']}
-
-**Average Rating:** {avg_rating:.1f}/5 (from {len(ratings)} rated reviews)
-"""
+    return _get_feedback_context(feedback_table, filters, limit)
 
 
 @tracer.capture_method
@@ -347,8 +229,8 @@ Based on the ACTUAL FEEDBACK DATA above{' and the provided context' if additiona
 
 IMPORTANT: Base ALL findings on the actual feedback data provided. Do not make assumptions beyond what the data shows."""
 
-    update_job_status(project_id, job_id, 'running', 30, 'calling_ai_analysis')
-    analysis = invoke_bedrock(system_prompt, user_prompt, max_tokens=4000)
+    update_job_status(project_id, job_id, 'running', 30, 'calling_ai')
+    analysis = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=4000)
     
     update_job_status(project_id, job_id, 'running', 45, 'analysis_complete')
     
@@ -380,8 +262,8 @@ Provide:
 4. **Recommendations** (actionable next steps)
 5. **Areas for Further Research**"""
 
-    update_job_status(project_id, job_id, 'running', 55, 'calling_ai_synthesis')
-    synthesis = invoke_bedrock(system_prompt, user_prompt, max_tokens=3000)
+    update_job_status(project_id, job_id, 'running', 55, 'calling_ai')
+    synthesis = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=3000)
     
     update_job_status(project_id, job_id, 'running', 70, 'synthesis_complete')
     
@@ -418,8 +300,8 @@ Check:
 
 Provide a final validated research report."""
 
-    update_job_status(project_id, job_id, 'running', 80, 'calling_ai_validation')
-    validation = invoke_bedrock(system_prompt, user_prompt, max_tokens=3000)
+    update_job_status(project_id, job_id, 'running', 80, 'calling_ai')
+    validation = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=3000)
     
     update_job_status(project_id, job_id, 'running', 90, 'validation_complete')
     
@@ -530,9 +412,7 @@ def step_error(event: dict) -> dict:
     return {'success': False, 'error': error_message}
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler - routes to appropriate step function."""
     step = event.get('step', 'unknown')
@@ -553,6 +433,10 @@ def lambda_handler(event: dict, context: Any) -> dict:
             return step_error(event)
         else:
             raise ValueError(f"Unknown step: {step}")
+    except BedrockThrottlingException as e:
+        # Re-raise with specific error type for Step Functions retry
+        logger.error(f"Bedrock throttling in step {step}: {e}")
+        raise
     except Exception as e:
         logger.exception(f"Step {step} failed: {e}")
         raise
