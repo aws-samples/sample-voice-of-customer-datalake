@@ -176,7 +176,7 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
   const [error, setError] = useState('')
 
   const createMutation = useMutation({
-    mutationFn: () => api.createUser({ email, name, group }),
+    mutationFn: () => api.createUser({ username: email, email, name, group }),
     onSuccess: (data) => {
       if (data.success) {
         setEmail('')

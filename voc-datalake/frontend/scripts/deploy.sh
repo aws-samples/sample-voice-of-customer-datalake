@@ -44,8 +44,8 @@ echo "Step 2: Fetching runtime configuration..."
 
 API_ENDPOINT=$(aws cloudformation describe-stacks \
   --stack-name VocApiStack \
-  --query "Stacks[0].Outputs[?contains(OutputKey, 'ApiEndpoint')].OutputValue" \
-  --output text 2>/dev/null | head -1)
+  --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
+  --output text 2>/dev/null)
 
 ARTIFACT_ENDPOINT=$(aws cloudformation describe-stacks \
   --stack-name ArtifactBuilderStack \
@@ -86,17 +86,24 @@ npm run build
 # Step 4: Generate runtime config.json
 echo ""
 echo "Step 4: Generating runtime config.json..."
-cat > dist/config.json << EOF
-{
-  "apiEndpoint": "${API_ENDPOINT}",
-  "artifactBuilderEndpoint": "${ARTIFACT_ENDPOINT}",
-  "cognito": {
-    "userPoolId": "${COGNITO_USER_POOL_ID}",
-    "clientId": "${COGNITO_CLIENT_ID}",
-    "region": "${COGNITO_REGION}"
-  }
-}
-EOF
+
+# Use jq to properly escape values and generate valid JSON
+jq -n \
+  --arg apiEndpoint "$API_ENDPOINT" \
+  --arg artifactBuilderEndpoint "$ARTIFACT_ENDPOINT" \
+  --arg userPoolId "$COGNITO_USER_POOL_ID" \
+  --arg clientId "$COGNITO_CLIENT_ID" \
+  --arg region "$COGNITO_REGION" \
+  '{
+    apiEndpoint: $apiEndpoint,
+    artifactBuilderEndpoint: $artifactBuilderEndpoint,
+    cognito: {
+      userPoolId: $userPoolId,
+      clientId: $clientId,
+      region: $region
+    }
+  }' > dist/config.json
+
 echo "  ✓ config.json generated with CloudFormation values"
 
 # Step 5: Sync to S3

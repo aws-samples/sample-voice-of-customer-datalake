@@ -23,35 +23,55 @@ export function getConfig(): RuntimeConfig {
   return getRuntimeConfig()
 }
 
+interface CognitoConfig {
+  userPoolId: string
+  clientId: string
+  region: string
+}
+
+interface LegacyConfig {
+  readonly apiEndpoint: string
+  readonly artifactBuilderEndpoint: string
+  readonly cognito: CognitoConfig
+}
+
+function getEnvString(key: string, defaultValue = ''): string {
+  const value: unknown = import.meta.env[key]
+  return typeof value === 'string' ? value : defaultValue
+}
+
 /**
  * Legacy config object for backward compatibility.
  * 
  * @deprecated Use getConfig() instead for runtime-loaded config.
  * This getter provides backward compatibility but requires config to be loaded first.
  */
-export const config = {
+export const config: LegacyConfig = {
   get apiEndpoint(): string {
     try {
-      return getRuntimeConfig().apiEndpoint
+      const cfg = getRuntimeConfig()
+      return cfg.apiEndpoint
     } catch {
-      return import.meta.env.VITE_API_ENDPOINT || ''
+      return getEnvString('VITE_API_ENDPOINT')
     }
   },
   get artifactBuilderEndpoint(): string {
     try {
-      return getRuntimeConfig().artifactBuilderEndpoint
+      const cfg = getRuntimeConfig()
+      return cfg.artifactBuilderEndpoint
     } catch {
-      return import.meta.env.VITE_ARTIFACT_BUILDER_ENDPOINT || ''
+      return getEnvString('VITE_ARTIFACT_BUILDER_ENDPOINT')
     }
   },
-  get cognito() {
+  get cognito(): CognitoConfig {
     try {
-      return getRuntimeConfig().cognito
+      const cfg = getRuntimeConfig()
+      return cfg.cognito
     } catch {
       return {
-        userPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID || '',
-        clientId: import.meta.env.VITE_COGNITO_CLIENT_ID || '',
-        region: import.meta.env.VITE_COGNITO_REGION || 'us-east-1',
+        userPoolId: getEnvString('VITE_COGNITO_USER_POOL_ID'),
+        clientId: getEnvString('VITE_COGNITO_CLIENT_ID'),
+        region: getEnvString('VITE_COGNITO_REGION', 'us-east-1'),
       }
     }
   },

@@ -46,19 +46,26 @@ const defaultSourceConfig: SourceConfig = {
   credentials: {}
 }
 
+function getEnvString(key: string, defaultValue = ''): string {
+  const value: unknown = import.meta.env[key]
+  return typeof value === 'string' ? value : defaultValue
+}
+
 // Get runtime config values, with fallbacks for when config isn't loaded yet
 function getApiEndpoint(): string {
   if (isConfigLoaded()) {
-    return getRuntimeConfig().apiEndpoint
+    const cfg = getRuntimeConfig()
+    return cfg.apiEndpoint
   }
-  return import.meta.env.VITE_API_ENDPOINT || ''
+  return getEnvString('VITE_API_ENDPOINT')
 }
 
 function getArtifactBuilderEndpoint(): string {
   if (isConfigLoaded()) {
-    return getRuntimeConfig().artifactBuilderEndpoint
+    const cfg = getRuntimeConfig()
+    return cfg.artifactBuilderEndpoint
   }
-  return import.meta.env.VITE_ARTIFACT_BUILDER_ENDPOINT || ''
+  return getEnvString('VITE_ARTIFACT_BUILDER_ENDPOINT')
 }
 
 export const useConfigStore = create<ConfigStore>()(

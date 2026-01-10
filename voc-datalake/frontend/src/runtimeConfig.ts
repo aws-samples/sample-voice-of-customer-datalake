@@ -10,13 +10,16 @@
 
 import { z } from 'zod'
 
+// URL regex pattern for validation (replaces deprecated z.string().url())
+const urlPattern = /^https?:\/\/.+/
+
 // Schema for runtime configuration
 const RuntimeConfigSchema = z.object({
-  apiEndpoint: z.string().url(),
+  apiEndpoint: z.string().regex(urlPattern, 'Invalid URL format'),
   // artifactBuilderEndpoint is optional - empty string or valid URL
   artifactBuilderEndpoint: z.union([
     z.literal(''),
-    z.string().url(),
+    z.string().regex(urlPattern, 'Invalid URL format'),
   ]).default(''),
   cognito: z.object({
     userPoolId: z.string().min(1),
@@ -27,9 +30,11 @@ const RuntimeConfigSchema = z.object({
 
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>
 
-// Singleton state
-let runtimeConfig: RuntimeConfig | null = null
-let configPromise: Promise<RuntimeConfig> | null = null
+// Singleton state using a mutable container (const reference, mutable contents)
+const configState: { config: RuntimeConfig | null; promise: Promise<RuntimeConfig> | null } = {
+  config: null,
+  promise: null,
+}
 
 /**
  * Fetches runtime configuration from /config.json.
@@ -38,18 +43,18 @@ let configPromise: Promise<RuntimeConfig> | null = null
  */
 export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
   // Return cached config if available
-  if (runtimeConfig) {
-    return runtimeConfig
+  if (configState.config) {
+    return configState.config
   }
 
   // Return existing promise if loading is in progress
-  if (configPromise) {
-    return configPromise
+  if (configState.promise) {
+    return configState.promise
   }
 
-  configPromise = fetchConfig()
-  runtimeConfig = await configPromise
-  return runtimeConfig
+  configState.promise = fetchConfig()
+  configState.config = await configState.promise
+  return configState.config
 }
 
 /**
@@ -57,17 +62,17 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
  * Throws if config hasn't been loaded yet.
  */
 export function getRuntimeConfig(): RuntimeConfig {
-  if (!runtimeConfig) {
+  if (!configState.config) {
     throw new Error('Runtime config not loaded. Call loadRuntimeConfig() first.')
   }
-  return runtimeConfig
+  return configState.config
 }
 
 /**
  * Checks if runtime config has been loaded.
  */
 export function isConfigLoaded(): boolean {
-  return runtimeConfig !== null
+  return configState.config !== null
 }
 
 async function fetchConfig(): Promise<RuntimeConfig> {
@@ -97,18 +102,23 @@ async function fetchConfig(): Promise<RuntimeConfig> {
   }
 }
 
+function getEnvString(key: string, defaultValue = ''): string {
+  const value: unknown = import.meta.env[key]
+  return typeof value === 'string' ? value : defaultValue
+}
+
 /**
  * Fallback: Get config from VITE_* environment variables.
  * Used for local development or when config.json is unavailable.
  */
 function getEnvConfig(): RuntimeConfig {
   const envConfig = {
-    apiEndpoint: import.meta.env.VITE_API_ENDPOINT || '',
-    artifactBuilderEndpoint: import.meta.env.VITE_ARTIFACT_BUILDER_ENDPOINT || '',
+    apiEndpoint: getEnvString('VITE_API_ENDPOINT'),
+    artifactBuilderEndpoint: getEnvString('VITE_ARTIFACT_BUILDER_ENDPOINT'),
     cognito: {
-      userPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID || '',
-      clientId: import.meta.env.VITE_COGNITO_CLIENT_ID || '',
-      region: import.meta.env.VITE_COGNITO_REGION || 'us-east-1',
+      userPoolId: getEnvString('VITE_COGNITO_USER_POOL_ID'),
+      clientId: getEnvString('VITE_COGNITO_CLIENT_ID'),
+      region: getEnvString('VITE_COGNITO_REGION', 'us-east-1'),
     },
   }
 

@@ -22,7 +22,7 @@ import {
   CognitoUserSession,
   CognitoRefreshToken,
 } from 'amazon-cognito-identity-js'
-import { config } from '../config'
+import { getConfig } from '../config'
 import { useAuthStore } from '../store/authStore'
 import type { User } from '../store/authStore'
 
@@ -44,12 +44,13 @@ function isStringArray(value: unknown): value is string[] {
  * @returns CognitoUserPool instance or null if not configured
  */
 const getUserPool = (): CognitoUserPool | null => {
-  if (!config.cognito.userPoolId || !config.cognito.clientId) {
+  const cfg = getConfig()
+  if (!cfg.cognito.userPoolId || !cfg.cognito.clientId) {
     return null
   }
   return new CognitoUserPool({
-    UserPoolId: config.cognito.userPoolId,
-    ClientId: config.cognito.clientId,
+    UserPoolId: cfg.cognito.userPoolId,
+    ClientId: cfg.cognito.clientId,
   })
 }
 
@@ -112,7 +113,8 @@ export const authService = {
    * @returns true if Cognito environment variables are set
    */
   isConfigured: (): boolean => {
-    return !!(config.cognito.userPoolId && config.cognito.clientId)
+    const cfg = getConfig()
+    return !!(cfg.cognito.userPoolId && cfg.cognito.clientId)
   },
 
   /**

@@ -38,6 +38,15 @@ vi.mock('../config', () => ({
       clientId: 'testclientid123',
     },
   },
+  getConfig: () => ({
+    apiEndpoint: 'https://api.example.com',
+    artifactBuilderEndpoint: '',
+    cognito: {
+      userPoolId: 'us-east-1_test123',
+      clientId: 'testclientid123',
+      region: 'us-east-1',
+    },
+  }),
 }))
 
 // Mock authStore

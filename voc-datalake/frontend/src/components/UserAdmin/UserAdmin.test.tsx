@@ -310,6 +310,7 @@ describe('UserAdmin', () => {
       
       await waitFor(() => {
         expect(mockCreateUser).toHaveBeenCalledWith({
+          username: 'new@example.com',
           email: 'new@example.com',
           name: 'New User',
           group: 'users',
