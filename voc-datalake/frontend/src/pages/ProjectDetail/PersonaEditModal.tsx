@@ -105,7 +105,7 @@ function BasicInfoSection({ persona, onChange }: Readonly<{ persona: ProjectPers
 
 // Identity & Demographics Section
 function IdentitySection({ persona, onChange }: Readonly<{ persona: ProjectPersona; onChange: (p: ProjectPersona) => void }>) {
-  const bio = persona.identity?.bio ?? persona.demographics?.bio ?? ''
+  const bio = persona.identity?.bio ?? ''
   
   return (
     <div>
@@ -142,14 +142,13 @@ function IdentitySection({ persona, onChange }: Readonly<{ persona: ProjectPerso
 
 // Goals & Motivations Section
 function GoalsSection({ persona, onChange }: Readonly<{ persona: ProjectPersona; onChange: (p: ProjectPersona) => void }>) {
-  const secondaryGoals = persona.goals_motivations?.secondary_goals ?? persona.goals ?? []
+  const secondaryGoals = persona.goals_motivations?.secondary_goals ?? []
   
   const handleGoalsChange = (value: string) => {
     const goals = value.split('\n').filter(g => g.trim())
     onChange({
       ...persona,
       goals_motivations: { ...persona.goals_motivations, secondary_goals: goals },
-      goals,
     })
   }
   
@@ -176,7 +175,7 @@ function GoalsSection({ persona, onChange }: Readonly<{ persona: ProjectPersona;
 
 // Pain Points Section
 function PainPointsSection({ persona, onChange }: Readonly<{ persona: ProjectPersona; onChange: (p: ProjectPersona) => void }>) {
-  const challenges = persona.pain_points?.current_challenges ?? persona.frustrations ?? []
+  const challenges = persona.pain_points?.current_challenges ?? []
   const workarounds = persona.pain_points?.workarounds ?? []
   
   const handleChallengesChange = (value: string) => {
@@ -184,7 +183,6 @@ function PainPointsSection({ persona, onChange }: Readonly<{ persona: ProjectPer
     onChange({
       ...persona,
       pain_points: { ...persona.pain_points, current_challenges: items },
-      frustrations: items,
     })
   }
   
@@ -221,14 +219,22 @@ function PainPointsSection({ persona, onChange }: Readonly<{ persona: ProjectPer
 
 // Quote Section
 function QuoteSection({ persona, onChange }: Readonly<{ persona: ProjectPersona; onChange: (p: ProjectPersona) => void }>) {
-  const quote = persona.quote ?? (persona.quotes?.[0]?.text ?? '')
+  const quote = persona.quotes?.[0]?.text ?? ''
+  
+  const handleQuoteChange = (value: string) => {
+    const existingQuotes = persona.quotes ?? []
+    const updatedQuotes = existingQuotes.length > 0
+      ? [{ ...existingQuotes[0], text: value }, ...existingQuotes.slice(1)]
+      : [{ text: value }]
+    onChange({ ...persona, quotes: updatedQuotes })
+  }
   
   return (
     <div>
       <SectionHeader emoji="💬" title="Representative Quote" />
       <textarea
         value={quote}
-        onChange={e => onChange({ ...persona, quote: e.target.value })}
+        onChange={e => handleQuoteChange(e.target.value)}
         rows={2}
         className="w-full px-3 py-2 border rounded-lg"
         placeholder="A quote that captures their voice..."
@@ -237,49 +243,15 @@ function QuoteSection({ persona, onChange }: Readonly<{ persona: ProjectPersona;
   )
 }
 
-// Type for scenario object
-interface ScenarioObject {
-  title?: string
-  narrative?: string
-  trigger?: string
-  outcome?: string
-}
-
-// Type guard for scenario object
-function isScenarioObject(scenario: string | ScenarioObject | undefined): scenario is ScenarioObject {
-  return scenario != null && typeof scenario === 'object'
-}
-
-// Helper to get scenario field value
-function getScenarioField(scenario: string | ScenarioObject | undefined, field: keyof ScenarioObject): string {
-  if (!isScenarioObject(scenario)) return ''
-  return scenario[field] ?? ''
-}
-
 // Scenario Section
 function ScenarioSection({ persona, onChange }: Readonly<{ persona: ProjectPersona; onChange: (p: ProjectPersona) => void }>) {
-  const scenarioTitle = getScenarioField(persona.scenario, 'title')
-  const scenarioTrigger = getScenarioField(persona.scenario, 'trigger')
-  const scenarioOutcome = getScenarioField(persona.scenario, 'outcome')
+  const scenario = persona.scenario ?? {}
   
-  const scenarioNarrative = isScenarioObject(persona.scenario)
-    ? persona.scenario.narrative ?? ''
-    : persona.scenario ?? ''
-  
-  const updateScenarioField = (field: keyof ScenarioObject, value: string) => {
-    const baseScenario: ScenarioObject = isScenarioObject(persona.scenario) ? persona.scenario : {}
+  const updateScenarioField = (field: 'title' | 'narrative' | 'trigger' | 'outcome', value: string) => {
     onChange({
       ...persona,
-      scenario: { ...baseScenario, [field]: value },
+      scenario: { ...scenario, [field]: value },
     })
-  }
-  
-  const handleNarrativeChange = (value: string) => {
-    if (!isScenarioObject(persona.scenario)) {
-      onChange({ ...persona, scenario: value })
-    } else {
-      onChange({ ...persona, scenario: { ...persona.scenario, narrative: value } })
-    }
   }
   
   return (
@@ -287,15 +259,15 @@ function ScenarioSection({ persona, onChange }: Readonly<{ persona: ProjectPerso
       <SectionHeader emoji="📖" title="Scenario" />
       <InputField
         label="Title"
-        value={scenarioTitle}
+        value={scenario.title ?? ''}
         onChange={value => updateScenarioField('title', value)}
         placeholder="Scenario title..."
       />
       <div className="mt-3">
         <TextAreaField
           label="Narrative"
-          value={scenarioNarrative}
-          onChange={handleNarrativeChange}
+          value={scenario.narrative ?? ''}
+          onChange={value => updateScenarioField('narrative', value)}
           rows={3}
           placeholder="A story showing them in action..."
         />
@@ -303,13 +275,13 @@ function ScenarioSection({ persona, onChange }: Readonly<{ persona: ProjectPerso
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
         <SmallInputField
           label="Trigger"
-          value={scenarioTrigger}
+          value={scenario.trigger ?? ''}
           onChange={value => updateScenarioField('trigger', value)}
           placeholder="What triggers this scenario"
         />
         <SmallInputField
           label="Desired Outcome"
-          value={scenarioOutcome}
+          value={scenario.outcome ?? ''}
           onChange={value => updateScenarioField('outcome', value)}
           placeholder="What they hope to achieve"
         />

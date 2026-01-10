@@ -20,13 +20,12 @@ describe('PersonaPDFContent for PDF generation', () => {
     persona_id: 'test-persona',
     name: 'Test User',
     tagline: 'A test persona for PDF generation',
-    demographics: { age_range: '25-34' },
-    quote: 'This is a test quote',
-    goals: ['Goal 1', 'Goal 2'],
-    frustrations: ['Frustration 1'],
-    behaviors: ['Behavior 1'],
-    needs: ['Need 1'],
-    scenario: 'Test scenario',
+    identity: { age_range: '25-34' },
+    quotes: [{ text: 'This is a test quote' }],
+    goals_motivations: { secondary_goals: ['Goal 1', 'Goal 2'] },
+    pain_points: { current_challenges: ['Challenge 1'] },
+    behaviors: { current_solutions: ['Solution 1'] },
+    scenario: { narrative: 'Test scenario' },
     created_at: '2025-01-01T00:00:00Z',
   })
 
@@ -83,22 +82,15 @@ describe('PersonaPDFContent for PDF generation', () => {
       persona_id: 'minimal',
       name: 'Minimal',
       tagline: 'Minimal persona',
-      demographics: {},
-      quote: '',
-      goals: [],
-      frustrations: [],
-      behaviors: [],
-      needs: [],
-      scenario: '',
       created_at: '2025-01-01T00:00:00Z',
     }
 
     expect(persona.persona_id).toBe('minimal')
-    expect(persona.goals).toHaveLength(0)
-    expect(persona.frustrations).toHaveLength(0)
+    expect(persona.goals_motivations).toBeUndefined()
+    expect(persona.pain_points).toBeUndefined()
   })
 
-  it('handles behaviors as object', () => {
+  it('handles behaviors object', () => {
     const persona = createTestPersona()
     persona.behaviors = {
       current_solutions: ['Solution 1'],
@@ -106,11 +98,10 @@ describe('PersonaPDFContent for PDF generation', () => {
       tech_savviness: 'High',
     }
 
-    expect(Array.isArray(persona.behaviors)).toBe(false)
-    expect((persona.behaviors as { tech_savviness: string }).tech_savviness).toBe('High')
+    expect(persona.behaviors.tech_savviness).toBe('High')
   })
 
-  it('handles scenario as object', () => {
+  it('handles scenario object', () => {
     const persona = createTestPersona()
     persona.scenario = {
       title: 'Scenario Title',
@@ -119,8 +110,7 @@ describe('PersonaPDFContent for PDF generation', () => {
       outcome: 'Expected outcome',
     }
 
-    expect(typeof persona.scenario).toBe('object')
-    expect((persona.scenario as { title: string }).title).toBe('Scenario Title')
+    expect(persona.scenario.title).toBe('Scenario Title')
   })
 
   it('handles research notes as objects', () => {

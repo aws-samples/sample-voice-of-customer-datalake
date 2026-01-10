@@ -66,19 +66,16 @@ npm run check        # lint + typecheck + test
 
 ## CDK Stacks
 
-The platform consists of 9 CDK stacks:
+The platform consists of 6 CDK stacks (consolidated architecture):
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
-| `VocStorageStack` | DynamoDB tables, KMS, S3 raw data bucket | None |
-| `VocFrontendInfraStack` | S3 + CloudFront for frontend hosting | None |
-| `VocIngestionStack` | Lambda ingestors, EventBridge, SQS | Storage, FrontendInfra |
-| `VocProcessingStack` | Lambda processors, Bedrock integration | Storage, Ingestion |
-| `VocResearchStack` | Step Functions for research workflows | Storage |
-| `VocAuthStack` | Cognito User Pool | FrontendInfra |
-| `VocAnalyticsStack` | API Gateway, Lambda APIs, Webhooks | Storage, Ingestion, Research, Auth |
+| `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
+| `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
+| `VocProcessingStackConsolidated` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
+| `VocApiStack` | API Gateway, 15 API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
+| `VocBedrockAccessStack` | Bedrock model access configuration | None |
 | `ArtifactBuilderStack` | ECS-based artifact generator | None (standalone) |
-| `VocFrontendStack` | Deploys built frontend to S3 | Analytics, Auth, FrontendInfra |
 
 ### Deploy All Stacks
 
@@ -92,12 +89,12 @@ npm run deploy:infra    # Deploy all CDK stacks
 cd voc-datalake
 
 # Deploy specific stack
-cdk deploy VocStorageStack
+cdk deploy VocCoreStack
 cdk deploy VocIngestionStack
-cdk deploy VocAnalyticsStack
+cdk deploy VocApiStack
 
 # Deploy multiple stacks
-cdk deploy VocStorageStack VocIngestionStack
+cdk deploy VocCoreStack VocIngestionStack
 
 # Deploy with auto-approve (no confirmation prompts)
 cdk deploy --all --require-approval never
@@ -107,29 +104,19 @@ cdk deploy --all --require-approval never
 
 Due to dependencies, stacks should be deployed in this order:
 
-1. `VocStorageStack` + `VocFrontendInfraStack` (parallel)
+1. `VocCoreStack` + `VocBedrockAccessStack` (parallel, no dependencies)
 2. `VocIngestionStack`
-3. `VocProcessingStack` + `VocResearchStack` + `VocAuthStack` (parallel)
-4. `VocAnalyticsStack`
-5. `ArtifactBuilderStack` (independent)
-6. `VocFrontendStack` (last - needs API endpoint)
+3. `VocProcessingStackConsolidated`
+4. `VocApiStack`
+5. `ArtifactBuilderStack` (independent, can deploy anytime)
 
 The `cdk deploy --all` command handles this automatically.
 
 ## Frontend Deployment
 
-### Option 1: Via CDK (Recommended for Initial Setup)
+### Option 1: Direct Deployment (Recommended)
 
-The `VocFrontendStack` builds and deploys the frontend:
-
-```bash
-cd voc-datalake
-cdk deploy VocFrontendStack
-```
-
-### Option 2: Direct Deployment (Faster for Updates)
-
-For frontend-only changes, use the direct deployment script:
+For frontend changes, use the direct deployment script:
 
 ```bash
 npm run deploy:frontend
@@ -140,6 +127,15 @@ This script:
 2. Builds the frontend (`npm run build`)
 3. Syncs to S3
 4. Invalidates CloudFront cache
+
+### Option 2: Via CDK
+
+Deploy all stacks including frontend infrastructure:
+
+```bash
+cd voc-datalake
+cdk deploy --all
+```
 
 ### Frontend Build Process
 
@@ -314,7 +310,7 @@ aws cloudfront create-invalidation \
 
 ```bash
 aws cloudformation describe-stacks \
-  --stack-name VocAnalyticsStack \
+  --stack-name VocApiStack \
   --query 'Stacks[0].Outputs'
 ```
 

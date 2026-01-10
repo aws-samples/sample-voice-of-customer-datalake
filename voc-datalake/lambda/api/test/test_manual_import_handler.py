@@ -324,7 +324,7 @@ class TestConfirmImportEndpoint:
             path='/scrapers/manual/confirm',
             body={
                 'job_id': 'nonexistent-job',
-                'reviews': [{'text': 'Great!'}]
+                'reviews': [{'text': 'Great!', 'date': '2026-01-10'}]
             }
         )
         
@@ -360,8 +360,8 @@ class TestConfirmImportEndpoint:
             body={
                 'job_id': 'job-123',
                 'reviews': [
-                    {'text': 'Great product!', 'rating': 5, 'author': 'John'},
-                    {'text': 'Good service', 'rating': 4, 'author': 'Jane'}
+                    {'text': 'Great product!', 'rating': 5, 'author': 'John', 'date': '2026-01-10'},
+                    {'text': 'Good service', 'rating': 4, 'author': 'Jane', 'date': '2026-01-09'}
                 ]
             }
         )
@@ -552,7 +552,7 @@ class TestConfirmImportEndpointAdditional:
             path='/scrapers/manual/confirm',
             body={
                 'job_id': 'job-123',
-                'reviews': [{'text': 'Great product!', 'rating': 5}]
+                'reviews': [{'text': 'Great product!', 'rating': 5, 'date': '2026-01-10'}]
             }
         )
         
@@ -591,8 +591,8 @@ class TestConfirmImportEndpointAdditional:
             body={
                 'job_id': 'job-123',
                 'reviews': [
-                    {'text': 'Great product!', 'rating': 5},
-                    {'text': 'Good service', 'rating': 4}
+                    {'text': 'Great product!', 'rating': 5, 'date': '2026-01-10'},
+                    {'text': 'Good service', 'rating': 4, 'date': '2026-01-09'}
                 ]
             }
         )
@@ -617,7 +617,7 @@ class TestConfirmImportEndpointAdditional:
             path='/scrapers/manual/confirm',
             body={
                 'job_id': 'job-123',
-                'reviews': [{'text': 'Great!'}]
+                'reviews': [{'text': 'Great!', 'date': '2026-01-10'}]
             }
         )
         
@@ -645,7 +645,7 @@ class TestConfirmImportEndpointAdditional:
             path='/scrapers/manual/confirm',
             body={
                 'job_id': 'job-123',
-                'reviews': [{'text': 'Great!'}]
+                'reviews': [{'text': 'Great!', 'date': '2026-01-10'}]
             }
         )
         

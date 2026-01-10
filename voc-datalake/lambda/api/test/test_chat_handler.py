@@ -13,20 +13,16 @@ BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
 class TestChatEndpoint:
     """Tests for POST /chat endpoint."""
 
-    @patch('chat_handler.get_bedrock_client')
+    @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_returns_ai_response_for_valid_message(
-        self, mock_agg_table, mock_fb_table, mock_get_bedrock,
-        mock_bedrock_response, api_gateway_event, lambda_context
+        self, mock_agg_table, mock_fb_table, mock_converse,
+        api_gateway_event, lambda_context
     ):
         """Returns AI-generated response based on feedback data."""
         # Arrange
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = mock_bedrock_response(
-            'Based on the feedback data, customers are generally satisfied with the product quality.'
-        )
-        mock_get_bedrock.return_value = mock_bedrock
+        mock_converse.return_value = 'Based on the feedback data, customers are generally satisfied with the product quality.'
         mock_agg_table.get_item.return_value = {'Item': {'count': 100}}
         mock_fb_table.query.return_value = {'Items': []}
         
@@ -49,20 +45,18 @@ class TestChatEndpoint:
         assert response['statusCode'] == 200
         assert 'response' in body
         assert 'satisfied' in body['response']
-        mock_bedrock.invoke_model.assert_called_once()
+        mock_converse.assert_called_once()
 
-    @patch('chat_handler.get_bedrock_client')
+    @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_uses_correct_bedrock_model_id(
-        self, mock_agg_table, mock_fb_table, mock_get_bedrock,
-        mock_bedrock_response, api_gateway_event, lambda_context
+        self, mock_agg_table, mock_fb_table, mock_converse,
+        api_gateway_event, lambda_context
     ):
-        """Verifies Claude Sonnet 4.5 model is used."""
+        """Verifies converse is called (model ID is configured in shared module)."""
         # Arrange
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = mock_bedrock_response('Test response')
-        mock_get_bedrock.return_value = mock_bedrock
+        mock_converse.return_value = 'Test response'
         mock_agg_table.get_item.return_value = {}
         mock_fb_table.query.return_value = {'Items': []}
         
@@ -76,22 +70,19 @@ class TestChatEndpoint:
         # Act
         lambda_handler(event, lambda_context)
         
-        # Assert
-        call_kwargs = mock_bedrock.invoke_model.call_args.kwargs
-        assert call_kwargs['modelId'] == BEDROCK_MODEL_ID
+        # Assert - converse was called (model ID is configured in shared.converse)
+        mock_converse.assert_called_once()
 
-    @patch('chat_handler.get_bedrock_client')
+    @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_returns_graceful_error_when_bedrock_fails(
-        self, mock_agg_table, mock_fb_table, mock_get_bedrock,
+        self, mock_agg_table, mock_fb_table, mock_converse,
         api_gateway_event, lambda_context
     ):
         """Returns graceful error message when Bedrock service fails."""
         # Arrange
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.side_effect = Exception('Service unavailable')
-        mock_get_bedrock.return_value = mock_bedrock
+        mock_converse.side_effect = Exception('Service unavailable')
         mock_agg_table.get_item.return_value = {'Item': {'count': 50}}
         mock_fb_table.query.return_value = {'Items': []}
         
@@ -110,18 +101,16 @@ class TestChatEndpoint:
         assert response['statusCode'] == 200
         assert 'error' in body or 'Error' in body.get('response', '')
 
-    @patch('chat_handler.get_bedrock_client')
+    @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_includes_feedback_sources_in_response(
-        self, mock_agg_table, mock_fb_table, mock_get_bedrock,
-        mock_bedrock_response, sample_feedback_items, api_gateway_event, lambda_context
+        self, mock_agg_table, mock_fb_table, mock_converse,
+        sample_feedback_items, api_gateway_event, lambda_context
     ):
         """Includes source feedback items in response."""
         # Arrange
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = mock_bedrock_response('Analysis complete.')
-        mock_get_bedrock.return_value = mock_bedrock
+        mock_converse.return_value = 'Analysis complete.'
         mock_agg_table.get_item.return_value = {'Item': {'count': 10}}
         mock_fb_table.query.return_value = {'Items': sample_feedback_items}
         
@@ -156,30 +145,30 @@ class TestChatConversationsEndpoint:
 
 
 class TestValidateDaysInChat:
-    """Tests for validate_days helper in chat handler."""
+    """Tests for validate_days helper (now in shared.api)."""
 
     def test_defaults_to_7_days(self):
         """Uses 7 days as default period."""
-        from chat_handler import validate_days
+        from shared.api import validate_days
         
         assert validate_days(None) == 7
 
     def test_accepts_valid_days_parameter(self):
         """Accepts valid days within range."""
-        from chat_handler import validate_days
+        from shared.api import validate_days
         
         assert validate_days('30') == 30
         assert validate_days(14) == 14
 
 
 class TestGetConfiguredCategories:
-    """Tests for get_configured_categories helper function."""
+    """Tests for get_configured_categories helper function (now in shared.api)."""
 
-    @patch('chat_handler.aggregates_table')
-    @patch('chat_handler._categories_cache', None)
-    @patch('chat_handler._categories_cache_time', None)
-    def test_returns_categories_from_settings(self, mock_table):
+    def test_returns_categories_from_settings(self):
         """Returns categories from DynamoDB settings."""
+        from shared.api import get_configured_categories, clear_categories_cache
+        
+        mock_table = MagicMock()
         mock_table.get_item.return_value = {
             'Item': {
                 'categories': [
@@ -189,55 +178,51 @@ class TestGetConfiguredCategories:
             }
         }
         
-        import chat_handler
-        chat_handler._categories_cache = None
-        chat_handler._categories_cache_time = None
-        
-        from chat_handler import get_configured_categories
-        result = get_configured_categories()
+        clear_categories_cache()
+        result = get_configured_categories(mock_table)
         
         assert 'product' in result
         assert 'support' in result
 
-    @patch('chat_handler.aggregates_table')
-    @patch('chat_handler._categories_cache', None)
-    @patch('chat_handler._categories_cache_time', None)
-    def test_returns_defaults_on_exception(self, mock_table):
+    def test_returns_defaults_on_exception(self):
         """Returns default categories when DynamoDB fails."""
+        from shared.api import get_configured_categories, clear_categories_cache, DEFAULT_CATEGORIES
+        
+        mock_table = MagicMock()
         mock_table.get_item.side_effect = Exception('DynamoDB error')
         
-        import chat_handler
-        chat_handler._categories_cache = None
-        chat_handler._categories_cache_time = None
-        
-        from chat_handler import get_configured_categories, DEFAULT_CATEGORIES
-        result = get_configured_categories()
+        clear_categories_cache()
+        result = get_configured_categories(mock_table)
         
         assert result == DEFAULT_CATEGORIES
 
-    @patch('chat_handler.aggregates_table')
-    def test_uses_cache_when_valid(self, mock_table):
+    def test_uses_cache_when_valid(self):
         """Uses cached categories when cache is still valid."""
-        import chat_handler
+        from shared.api import get_configured_categories, clear_categories_cache
+        import shared.api as api_module
         from datetime import datetime, timezone
         
-        chat_handler._categories_cache = ['cached_category']
-        chat_handler._categories_cache_time = datetime.now(timezone.utc).timestamp()
+        # Set up cache
+        api_module._categories_cache = ['cached_category']
+        api_module._categories_cache_time = datetime.now(timezone.utc).timestamp()
         
-        from chat_handler import get_configured_categories
-        result = get_configured_categories()
+        mock_table = MagicMock()
+        result = get_configured_categories(mock_table)
         
         assert result == ['cached_category']
         mock_table.get_item.assert_not_called()
+        
+        # Clean up
+        clear_categories_cache()
 
 
 class TestDecimalEncoder:
-    """Tests for DecimalEncoder JSON encoder."""
+    """Tests for DecimalEncoder JSON encoder (now in shared.api)."""
 
     def test_encodes_decimal_as_float(self):
         """Converts Decimal to float in JSON."""
         from decimal import Decimal
-        from chat_handler import DecimalEncoder
+        from shared.api import DecimalEncoder
         
         data = {'value': Decimal('3.14')}
         result = json.dumps(data, cls=DecimalEncoder)
@@ -246,7 +231,7 @@ class TestDecimalEncoder:
 
     def test_raises_for_non_decimal_types(self):
         """Raises TypeError for unsupported types."""
-        from chat_handler import DecimalEncoder
+        from shared.api import DecimalEncoder
         
         class CustomType:
             pass
@@ -473,27 +458,20 @@ class TestDeleteConversation:
 class TestChatEndpointEdgeCases:
     """Additional edge case tests for POST /chat endpoint."""
 
-    @patch('chat_handler.get_bedrock_client')
+    @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
-    @patch('chat_handler._categories_cache', None)
-    @patch('chat_handler._categories_cache_time', None)
     def test_handles_empty_feedback_data(
-        self, mock_agg_table, mock_fb_table, mock_get_bedrock,
-        mock_bedrock_response, api_gateway_event, lambda_context
+        self, mock_agg_table, mock_fb_table, mock_converse,
+        api_gateway_event, lambda_context
     ):
         """Handles case when no feedback data exists."""
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = mock_bedrock_response(
-            'No feedback data available for analysis.'
-        )
-        mock_get_bedrock.return_value = mock_bedrock
+        mock_converse.return_value = 'No feedback data available for analysis.'
         mock_agg_table.get_item.return_value = {}
         mock_fb_table.query.return_value = {'Items': []}
         
-        import chat_handler
-        chat_handler._categories_cache = None
-        chat_handler._categories_cache_time = None
+        from shared.api import clear_categories_cache
+        clear_categories_cache()
         
         from chat_handler import lambda_handler
         event = api_gateway_event(
@@ -508,17 +486,15 @@ class TestChatEndpointEdgeCases:
         assert response['statusCode'] == 200
         assert 'response' in body
 
-    @patch('chat_handler.get_bedrock_client')
+    @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_uses_days_query_parameter(
-        self, mock_agg_table, mock_fb_table, mock_get_bedrock,
-        mock_bedrock_response, api_gateway_event, lambda_context
+        self, mock_agg_table, mock_fb_table, mock_converse,
+        api_gateway_event, lambda_context
     ):
         """Uses days parameter from query string."""
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = mock_bedrock_response('Analysis complete.')
-        mock_get_bedrock.return_value = mock_bedrock
+        mock_converse.return_value = 'Analysis complete.'
         mock_agg_table.get_item.return_value = {'Item': {'count': 10}}
         mock_fb_table.query.return_value = {'Items': []}
         

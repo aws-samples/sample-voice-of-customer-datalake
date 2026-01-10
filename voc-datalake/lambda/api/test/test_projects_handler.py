@@ -57,17 +57,17 @@ class TestValidatePersonaCount:
         assert validate_persona_count(None, default=3) == 3
 
     def test_clamps_to_min_value(self):
-        """Clamps values below minimum."""
+        """Clamps values below minimum (hardcoded to 1)."""
         from projects_handler import validate_persona_count
         
-        assert validate_persona_count(0, default=3, min_val=1) == 1
-        assert validate_persona_count(-1, default=3, min_val=1) == 1
+        assert validate_persona_count(0, default=3) == 1
+        assert validate_persona_count(-1, default=3) == 1
 
     def test_clamps_to_max_value(self):
-        """Clamps values above maximum."""
+        """Clamps values above maximum (hardcoded to 10)."""
         from projects_handler import validate_persona_count
         
-        assert validate_persona_count(20, default=3, max_val=10) == 10
+        assert validate_persona_count(20, default=3) == 10
 
     def test_accepts_valid_count(self):
         """Accepts valid count within range."""

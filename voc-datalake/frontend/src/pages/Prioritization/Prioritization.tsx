@@ -24,8 +24,7 @@ type SortField = 'priority_score' | 'impact' | 'time_to_market' | 'created_at' |
 type SortDirection = 'asc' | 'desc'
 
 const calculatePriorityScore = (score: PrioritizationScore): number => {
-  const timeScore = 6 - score.time_to_market
-  return (score.impact * 0.4) + (timeScore * 0.3) + (score.strategic_fit * 0.2) + (score.confidence * 0.1)
+  return (score.impact * 0.4) + (score.time_to_market * 0.3) + (score.strategic_fit * 0.2) + (score.confidence * 0.1)
 }
 
 const getScoreColor = (score: number, max: number = 5): string => {
@@ -200,7 +199,7 @@ function PRFAQRow({ prfaq, index, score, isExpanded, onToggle, onUpdateScore }: 
             <div className="space-y-4">
               <h4 className="font-medium text-gray-900">Prioritization Scores</h4>
               <ScoreSlider label="Impact" value={score.impact || 3} onChange={(v) => onUpdateScore('impact', v)} description="Business value and customer benefit" lowLabel="Low" highLabel="High" />
-              <ScoreSlider label="Time to Market" value={score.time_to_market || 3} onChange={(v) => onUpdateScore('time_to_market', v)} description="How quickly can this be delivered?" lowLabel="Fast" highLabel="Slow" inverted />
+              <ScoreSlider label="Time to Market" value={score.time_to_market || 3} onChange={(v) => onUpdateScore('time_to_market', v)} description="How quickly can this be delivered?" lowLabel="Slow" highLabel="Fast" />
               <ScoreSlider label="Strategic Fit" value={score.strategic_fit || 3} onChange={(v) => onUpdateScore('strategic_fit', v)} description="Alignment with company goals" lowLabel="Low" highLabel="High" />
               <ScoreSlider label="Confidence" value={score.confidence || 3} onChange={(v) => onUpdateScore('confidence', v)} description="Certainty in impact and TTM estimates" lowLabel="Low" highLabel="High" />
               <div>

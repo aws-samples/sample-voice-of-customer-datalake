@@ -293,15 +293,19 @@ class TestGetTemplates:
 class TestRunScraper:
     """Tests for POST /scrapers/<scraper_id>/run endpoint."""
 
+    @patch('scrapers_handler.require_webscraper_function')
     @patch('scrapers_handler.lambda_client')
-    @patch('scrapers_handler.aggregates_table')
+    @patch('scrapers_handler.get_aggregates_table')
     def test_triggers_scraper_run_successfully(
-        self, mock_table, mock_lambda, api_gateway_event, lambda_context
+        self, mock_get_table, mock_lambda, mock_require_fn, api_gateway_event, lambda_context
     ):
         """Triggers async scraper Lambda invocation."""
         # Arrange
+        mock_table = MagicMock()
         mock_table.put_item.return_value = {}
+        mock_get_table.return_value = mock_table
         mock_lambda.invoke.return_value = {}
+        mock_require_fn.return_value = 'test-webscraper-function'
         
         from scrapers_handler import lambda_handler
         event = api_gateway_event(
@@ -321,15 +325,19 @@ class TestRunScraper:
         assert 'execution_id' in body
         mock_lambda.invoke.assert_called_once()
 
+    @patch('scrapers_handler.require_webscraper_function')
     @patch('scrapers_handler.lambda_client')
-    @patch('scrapers_handler.aggregates_table')
+    @patch('scrapers_handler.get_aggregates_table')
     def test_stores_run_status_in_dynamodb(
-        self, mock_table, mock_lambda, api_gateway_event, lambda_context
+        self, mock_get_table, mock_lambda, mock_require_fn, api_gateway_event, lambda_context
     ):
         """Stores scraper run status in DynamoDB."""
         # Arrange
+        mock_table = MagicMock()
         mock_table.put_item.return_value = {}
+        mock_get_table.return_value = mock_table
         mock_lambda.invoke.return_value = {}
+        mock_require_fn.return_value = 'test-webscraper-function'
         
         from scrapers_handler import lambda_handler
         event = api_gateway_event(
@@ -352,12 +360,13 @@ class TestRunScraper:
 class TestGetScraperStatus:
     """Tests for GET /scrapers/<scraper_id>/status endpoint."""
 
-    @patch('scrapers_handler.aggregates_table')
+    @patch('scrapers_handler.get_aggregates_table')
     def test_returns_latest_run_status(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns latest scraper run status from DynamoDB."""
         # Arrange
+        mock_table = MagicMock()
         mock_table.query.return_value = {
             'Items': [{
                 'pk': 'SCRAPER_RUN#test-scraper',
@@ -370,6 +379,7 @@ class TestGetScraperStatus:
                 'errors': []
             }]
         }
+        mock_get_table.return_value = mock_table
         
         from scrapers_handler import lambda_handler
         event = api_gateway_event(
@@ -388,13 +398,15 @@ class TestGetScraperStatus:
         assert body['pages_scraped'] == 5
         assert body['items_found'] == 25
 
-    @patch('scrapers_handler.aggregates_table')
+    @patch('scrapers_handler.get_aggregates_table')
     def test_returns_never_run_when_no_history(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns never_run status when no run history exists."""
         # Arrange
+        mock_table = MagicMock()
         mock_table.query.return_value = {'Items': []}
+        mock_get_table.return_value = mock_table
         
         from scrapers_handler import lambda_handler
         event = api_gateway_event(
@@ -415,18 +427,20 @@ class TestGetScraperStatus:
 class TestGetScraperRuns:
     """Tests for GET /scrapers/<scraper_id>/runs endpoint."""
 
-    @patch('scrapers_handler.aggregates_table')
+    @patch('scrapers_handler.get_aggregates_table')
     def test_returns_run_history(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns scraper run history from DynamoDB."""
         # Arrange
+        mock_table = MagicMock()
         mock_table.query.return_value = {
             'Items': [
                 {'sk': 'run_1', 'status': 'completed', 'items_found': 10},
                 {'sk': 'run_2', 'status': 'completed', 'items_found': 15},
             ]
         }
+        mock_get_table.return_value = mock_table
         
         from scrapers_handler import lambda_handler
         event = api_gateway_event(
@@ -447,12 +461,12 @@ class TestGetScraperRuns:
 class TestAnalyzeUrl:
     """Tests for POST /scrapers/analyze-url endpoint."""
 
-    @patch('scrapers_handler.get_bedrock_client')
+    @patch('shared.converse.converse')
     @patch('scrapers_handler.urllib.request.urlopen')
     @patch('scrapers_handler.socket.getaddrinfo')
     def test_analyzes_url_and_returns_selectors(
-        self, mock_getaddrinfo, mock_urlopen, mock_get_bedrock,
-        mock_bedrock_response, api_gateway_event, lambda_context
+        self, mock_getaddrinfo, mock_urlopen, mock_converse,
+        api_gateway_event, lambda_context
     ):
         """Analyzes URL and returns CSS selectors using Bedrock."""
         # Arrange
@@ -464,11 +478,8 @@ class TestAnalyzeUrl:
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_response
         
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = mock_bedrock_response(
-            '{"container_selector": ".review", "text_selector": ".review-text", "confidence": "high"}'
-        )
-        mock_get_bedrock.return_value = mock_bedrock
+        # Mock the converse function to return JSON with selectors
+        mock_converse.return_value = '{"container_selector": ".review", "text_selector": ".review-text", "confidence": "high"}'
         
         from scrapers_handler import lambda_handler
         event = api_gateway_event(
@@ -509,11 +520,11 @@ class TestAnalyzeUrl:
         assert body['success'] is False
         assert 'localhost' in body['message'].lower()
 
-    @patch('scrapers_handler.get_bedrock_client')
+    @patch('shared.converse.converse')
     @patch('scrapers_handler.urllib.request.urlopen')
     @patch('scrapers_handler.socket.getaddrinfo')
     def test_handles_bedrock_failure_gracefully(
-        self, mock_getaddrinfo, mock_urlopen, mock_get_bedrock,
+        self, mock_getaddrinfo, mock_urlopen, mock_converse,
         api_gateway_event, lambda_context
     ):
         """Returns error when Bedrock analysis fails."""
@@ -526,9 +537,8 @@ class TestAnalyzeUrl:
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_response
         
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.side_effect = Exception('Bedrock error')
-        mock_get_bedrock.return_value = mock_bedrock
+        # Mock converse to raise an exception
+        mock_converse.side_effect = Exception('Bedrock error')
         
         from scrapers_handler import lambda_handler
         event = api_gateway_event(

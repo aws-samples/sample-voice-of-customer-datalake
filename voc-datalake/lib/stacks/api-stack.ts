@@ -377,7 +377,7 @@ export class VocApiStack extends cdk.Stack {
       handler: 'projects_handler.lambda_handler',
       code: apiCodeWithShared,
       role: projectsRole,
-      timeout: cdk.Duration.minutes(5),
+      timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,

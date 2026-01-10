@@ -1,206 +1,10 @@
 """
-Tests for feedback_form_handler.py - /feedback-form/* and /feedback-forms/* endpoints.
+Tests for feedback_form_handler.py - /feedback-forms/* endpoints.
 """
 import json
 import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
-
-
-class TestLegacyGetFormConfig:
-    """Tests for GET /feedback-form/config endpoint (legacy single form)."""
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_default_config_when_not_configured(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns default configuration when no config exists."""
-        mock_table.get_item.return_value = {}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(method='GET', path='/feedback-form/config')
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        assert 'config' in body
-        assert body['config']['enabled'] is False
-        assert body['config']['title'] == 'Share Your Feedback'
-        assert body['config']['rating_enabled'] is True
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_stored_config(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns stored configuration from DynamoDB."""
-        mock_table.get_item.return_value = {
-            'Item': {
-                'enabled': True,
-                'title': 'Custom Title',
-                'description': 'Custom description',
-                'question': 'How did we do?',
-                'rating_enabled': True,
-                'rating_type': 'emoji',
-                'rating_max': 5,
-                'theme': {'primary_color': '#FF0000'}
-            }
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(method='GET', path='/feedback-form/config')
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        assert body['config']['enabled'] is True
-        assert body['config']['title'] == 'Custom Title'
-        assert body['config']['rating_type'] == 'emoji'
-        assert body['config']['theme']['primary_color'] == '#FF0000'
-
-
-class TestLegacySaveFormConfig:
-    """Tests for PUT /feedback-form/config endpoint (legacy single form)."""
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_saves_form_configuration(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Saves form configuration to DynamoDB."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='PUT',
-            path='/feedback-form/config',
-            body={
-                'enabled': True,
-                'title': 'New Title',
-                'description': 'New description',
-                'rating_type': 'numeric',
-                'collect_email': True
-            }
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        mock_table.put_item.assert_called_once()
-        
-        # Verify the item structure
-        call_args = mock_table.put_item.call_args
-        item = call_args.kwargs['Item']
-        assert item['pk'] == 'SETTINGS#feedback_form'
-        assert item['sk'] == 'config'
-        assert item['enabled'] is True
-        assert item['title'] == 'New Title'
-        assert item['collect_email'] is True
-
-
-class TestLegacySubmitFeedback:
-    """Tests for POST /feedback-form/submit endpoint (legacy single form)."""
-
-    @patch('feedback_form_handler.sqs')
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_error_when_text_empty(
-        self, mock_table, mock_sqs, api_gateway_event, lambda_context
-    ):
-        """Returns error when feedback text is empty."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-form/submit',
-            body={'text': '', 'rating': 5}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is False
-        assert 'required' in body['error'].lower()
-
-    @patch('feedback_form_handler.sqs')
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_error_when_form_disabled(
-        self, mock_table, mock_sqs, api_gateway_event, lambda_context
-    ):
-        """Returns error when form is not enabled."""
-        mock_table.get_item.return_value = {
-            'Item': {'enabled': False}
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-form/submit',
-            body={'text': 'Great product!', 'rating': 5}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is False
-        assert 'not enabled' in body['error'].lower()
-
-    @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
-    @patch('feedback_form_handler.sqs')
-    @patch('feedback_form_handler.aggregates_table')
-    def test_submits_feedback_successfully(
-        self, mock_table, mock_sqs, api_gateway_event, lambda_context
-    ):
-        """Successfully submits feedback to SQS."""
-        mock_table.get_item.return_value = {
-            'Item': {
-                'enabled': True,
-                'success_message': 'Thanks for your feedback!',
-                'collect_email': True,
-                'collect_name': True
-            }
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-form/submit',
-            body={
-                'text': 'Great product!',
-                'rating': 5,
-                'email': 'test@example.com',
-                'name': 'John Doe'
-            }
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        assert 'feedback_id' in body
-        assert body['message'] == 'Thanks for your feedback!'
-        mock_sqs.send_message.assert_called_once()
 
 
 class TestListForms:
@@ -608,14 +412,14 @@ class TestSubmitFormFeedback:
 
 
 class TestItemToForm:
-    """Tests for _item_to_form helper function."""
+    """Tests for item_to_form helper function."""
 
     def test_converts_dynamodb_item_to_form_response(self):
         """Converts DynamoDB item to form response format."""
         import sys
         import os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import _item_to_form
+        from feedback_form_handler import item_to_form
         
         item = {
             'form_id': 'form-123',
@@ -629,7 +433,7 @@ class TestItemToForm:
             'created_at': '2026-01-01T00:00:00Z'
         }
         
-        result = _item_to_form(item)
+        result = item_to_form(item)
         
         assert result['form_id'] == 'form-123'
         assert result['name'] == 'Test Form'
@@ -643,11 +447,11 @@ class TestItemToForm:
         import sys
         import os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import _item_to_form
+        from feedback_form_handler import item_to_form
         
         item = {'form_id': 'form-123'}
         
-        result = _item_to_form(item)
+        result = item_to_form(item)
         
         assert result['form_id'] == 'form-123'
         assert result['name'] == ''

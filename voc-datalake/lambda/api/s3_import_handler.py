@@ -16,22 +16,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_s3_client
-
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
+from shared.api import create_api_resolver, api_handler
 
 s3_client = get_s3_client()
 S3_IMPORT_BUCKET = os.environ.get("S3_IMPORT_BUCKET", "")
 
-# Configure CORS - restrict to CloudFront domain in production
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
-cors_config = CORSConfig(
-    allow_origin=ALLOWED_ORIGIN,
-    allow_headers=["Content-Type", "Authorization"],
-    max_age=300,
-    allow_credentials=False,
-)
-
-app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+app = create_api_resolver()
 
 
 @app.get("/s3-import/sources")
@@ -168,8 +158,6 @@ def delete_file(key: str):
         return {'success': False, 'message': 'Failed to delete file'}
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

@@ -83,9 +83,9 @@ class TestStripAnsiCodes:
 class TestListTemplatesEndpoint:
     """Tests for GET /templates endpoint."""
 
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_templates_and_styles(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns available templates and style presets."""
         from artifact_builder_handler import lambda_handler
@@ -106,11 +106,14 @@ class TestCreateJobEndpoint:
 
     @patch('artifact_builder_handler.sqs')
     @patch('artifact_builder_handler.s3')
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_creates_job_successfully(
-        self, mock_table, mock_s3, mock_sqs, api_gateway_event, lambda_context
+        self, mock_get_table, mock_s3, mock_sqs, api_gateway_event, lambda_context
     ):
         """Creates a new artifact generation job."""
+        mock_table = MagicMock()
+        mock_get_table.return_value = mock_table
+        
         from artifact_builder_handler import lambda_handler
         
         event = api_gateway_event(
@@ -131,9 +134,9 @@ class TestCreateJobEndpoint:
         mock_table.put_item.assert_called_once()
         mock_s3.put_object.assert_called_once()
 
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_error_when_prompt_missing(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns error when prompt is not provided."""
         from artifact_builder_handler import lambda_handler
@@ -148,9 +151,9 @@ class TestCreateJobEndpoint:
         
         assert response['statusCode'] == 400
 
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_error_when_prompt_too_long(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns error when prompt exceeds maximum length."""
         from artifact_builder_handler import lambda_handler
@@ -165,9 +168,9 @@ class TestCreateJobEndpoint:
         
         assert response['statusCode'] == 400
 
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_error_for_invalid_project_type(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns error for invalid project type."""
         from artifact_builder_handler import lambda_handler
@@ -184,14 +187,16 @@ class TestCreateJobEndpoint:
 
     @patch('artifact_builder_handler.sqs')
     @patch('artifact_builder_handler.s3')
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_creates_iteration_job_from_parent(
-        self, mock_table, mock_s3, mock_sqs, api_gateway_event, lambda_context
+        self, mock_get_table, mock_s3, mock_sqs, api_gateway_event, lambda_context
     ):
         """Creates iteration job referencing parent job."""
+        mock_table = MagicMock()
         mock_table.get_item.return_value = {
             'Item': {'status': 'done', 'job_id': 'parent-123'}
         }
+        mock_get_table.return_value = mock_table
         
         from artifact_builder_handler import lambda_handler
         
@@ -213,17 +218,19 @@ class TestCreateJobEndpoint:
 class TestListJobsEndpoint:
     """Tests for GET /jobs endpoint."""
 
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_list_of_jobs(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns list of all jobs."""
+        mock_table = MagicMock()
         mock_table.scan.return_value = {
             'Items': [
                 {'job_id': 'job-1', 'status': 'done', 'created_at': '2026-01-07T10:00:00Z'},
                 {'job_id': 'job-2', 'status': 'queued', 'created_at': '2026-01-07T11:00:00Z'}
             ]
         }
+        mock_get_table.return_value = mock_table
         
         from artifact_builder_handler import lambda_handler
         
@@ -235,14 +242,16 @@ class TestListJobsEndpoint:
         assert 'jobs' in body
         assert body['count'] == 2
 
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_filters_by_status(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Filters jobs by status when parameter provided."""
+        mock_table = MagicMock()
         mock_table.query.return_value = {
             'Items': [{'job_id': 'job-1', 'status': 'done'}]
         }
+        mock_get_table.return_value = mock_table
         
         from artifact_builder_handler import lambda_handler
         
@@ -262,11 +271,12 @@ class TestListJobsEndpoint:
 class TestGetJobEndpoint:
     """Tests for GET /jobs/<job_id> endpoint."""
 
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_job_details(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns job details for existing job."""
+        mock_table = MagicMock()
         mock_table.get_item.return_value = {
             'Item': {
                 'job_id': 'job-123',
@@ -275,6 +285,7 @@ class TestGetJobEndpoint:
                 'created_at': '2026-01-07T10:00:00Z'
             }
         }
+        mock_get_table.return_value = mock_table
         
         from artifact_builder_handler import lambda_handler
         
@@ -290,12 +301,14 @@ class TestGetJobEndpoint:
         assert body['job_id'] == 'job-123'
         assert body['status'] == 'done'
 
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_not_found_for_missing_job(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns 404 when job doesn't exist."""
+        mock_table = MagicMock()
         mock_table.get_item.return_value = {}
+        mock_get_table.return_value = mock_table
         
         from artifact_builder_handler import lambda_handler
         
@@ -314,12 +327,14 @@ class TestGetJobLogsEndpoint:
     """Tests for GET /jobs/<job_id>/logs endpoint."""
 
     @patch('artifact_builder_handler.s3')
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_job_logs(
-        self, mock_table, mock_s3, api_gateway_event, lambda_context
+        self, mock_get_table, mock_s3, api_gateway_event, lambda_context
     ):
         """Returns logs for existing job."""
+        mock_table = MagicMock()
         mock_table.get_item.return_value = {'Item': {'job_id': 'job-123'}}
+        mock_get_table.return_value = mock_table
         mock_s3.get_object.return_value = {
             'Body': MagicMock(read=lambda: b'Build started...\nBuild completed.')
         }
@@ -339,12 +354,14 @@ class TestGetJobLogsEndpoint:
         assert 'logs' in body
 
     @patch('artifact_builder_handler.s3')
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_placeholder_when_logs_not_available(
-        self, mock_table, mock_s3, api_gateway_event, lambda_context
+        self, mock_get_table, mock_s3, api_gateway_event, lambda_context
     ):
         """Returns placeholder when logs not yet available."""
+        mock_table = MagicMock()
         mock_table.get_item.return_value = {'Item': {'job_id': 'job-123'}}
+        mock_get_table.return_value = mock_table
         # Mock the NoSuchKey exception properly
         mock_s3.exceptions = MagicMock()
         mock_s3.exceptions.NoSuchKey = type('NoSuchKey', (Exception,), {})
@@ -368,14 +385,16 @@ class TestGetDownloadUrlEndpoint:
     """Tests for GET /jobs/<job_id>/download endpoint."""
 
     @patch('artifact_builder_handler.s3')
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_presigned_url(
-        self, mock_table, mock_s3, api_gateway_event, lambda_context
+        self, mock_get_table, mock_s3, api_gateway_event, lambda_context
     ):
         """Returns presigned download URL for completed job."""
+        mock_table = MagicMock()
         mock_table.get_item.return_value = {
             'Item': {'job_id': 'job-123', 'status': 'done'}
         }
+        mock_get_table.return_value = mock_table
         mock_s3.generate_presigned_url.return_value = 'https://s3.example.com/presigned'
         
         from artifact_builder_handler import lambda_handler
@@ -392,14 +411,16 @@ class TestGetDownloadUrlEndpoint:
         assert 'download_url' in body
         assert body['expires_in'] == 3600
 
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_error_when_job_not_complete(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns error when job is not complete."""
+        mock_table = MagicMock()
         mock_table.get_item.return_value = {
             'Item': {'job_id': 'job-123', 'status': 'generating'}
         }
+        mock_get_table.return_value = mock_table
         
         from artifact_builder_handler import lambda_handler
         
@@ -420,14 +441,16 @@ class TestDeleteJobEndpoint:
     @patch('artifact_builder_handler.ecs')
     @patch('artifact_builder_handler.codecommit')
     @patch('artifact_builder_handler.s3')
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_deletes_job_and_artifacts(
-        self, mock_table, mock_s3, mock_codecommit, mock_ecs, api_gateway_event, lambda_context
+        self, mock_get_table, mock_s3, mock_codecommit, mock_ecs, api_gateway_event, lambda_context
     ):
         """Deletes job and all associated artifacts."""
+        mock_table = MagicMock()
         mock_table.get_item.return_value = {
             'Item': {'job_id': 'job-123', 'status': 'done'}
         }
+        mock_get_table.return_value = mock_table
         mock_s3.get_paginator.return_value.paginate.return_value = [
             {'Contents': [{'Key': 'jobs/job-123/file1.txt'}]}
         ]
@@ -446,12 +469,14 @@ class TestDeleteJobEndpoint:
         assert body['success'] is True
         mock_table.delete_item.assert_called_once()
 
-    @patch('artifact_builder_handler.jobs_table')
+    @patch('artifact_builder_handler.get_jobs_table')
     def test_returns_not_found_for_missing_job(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns 404 when job doesn't exist."""
+        mock_table = MagicMock()
         mock_table.get_item.return_value = {}
+        mock_get_table.return_value = mock_table
         
         from artifact_builder_handler import lambda_handler
         

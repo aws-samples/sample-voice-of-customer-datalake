@@ -18,7 +18,6 @@ import {
   ContextSection,
   QuotesSection,
   ScenarioSection,
-  NeedsSection,
 } from './PersonaSections'
 
 interface PersonaDetailViewProps {
@@ -85,8 +84,6 @@ export default function PersonaDetailView({
             isSaving={isSavingNotes}
           />
         </PersonaSection>
-
-        <NeedsSection persona={persona} />
       </div>
     </div>
   )

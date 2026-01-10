@@ -8,7 +8,7 @@ triggers: ["tech stack", "dependency", "version", "library", "package", "aws ser
 ## Infrastructure (AWS CDK)
 
 - **Language**: TypeScript
-- **CDK Version**: 2.x (latest)
+- **CDK Version**: ^2.229.0
 - **Runtime**: Node.js 18+
 - **Entry Point**: `bin/voc-datalake.ts`
 
@@ -71,7 +71,7 @@ triggers: ["tech stack", "dependency", "version", "library", "package", "aws ser
 
 ### API Lambda Split (20KB IAM Policy Limit)
 
-AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into 12 focused, domain-specific Lambdas:
+AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into 15 focused, domain-specific Lambdas:
 
 | Lambda | Handler | Routes | Permissions |
 |--------|---------|--------|-------------|
@@ -120,22 +120,23 @@ def lambda_handler(event, context):
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| React | 19.2.0 | UI framework |
-| Vite | 7.2.4 | Build tool |
-| Tailwind CSS | 4.1.17 | Styling |
-| Zustand | 5.0.8 | State management (persisted) |
-| TanStack Query | 5.90.10 | Data fetching/caching |
-| React Router | 7.9.6 | Routing |
-| Recharts | 3.5.0 | Charts (Line, Bar, Pie) |
-| Lucide React | 0.554.0 | Icons |
-| date-fns | 4.1.0 | Date formatting |
-| clsx | 2.1.1 | Conditional classes |
-| react-markdown | 10.1.0 | Markdown rendering |
-| remark-gfm | 4.0.1 | GitHub Flavored Markdown |
-| amazon-cognito-identity-js | 6.3.12 | Cognito authentication |
-| jspdf + html2canvas | 3.0.4/1.4.1 | PDF export |
-| Zod | 4.3.5 | Runtime validation |
-| TypeScript | 5.9.3 | Type safety |
+| React | ^19.2.0 | UI framework |
+| Vite | ^7.2.4 | Build tool |
+| Tailwind CSS | ^4.1.17 | Styling |
+| Zustand | ^5.0.8 | State management (persisted) |
+| TanStack Query | ^5.90.10 | Data fetching/caching |
+| React Router | ^7.9.6 | Routing (react-router-dom) |
+| Recharts | ^3.5.0 | Charts (Line, Bar, Pie) |
+| Lucide React | ^0.554.0 | Icons |
+| date-fns | ^4.1.0 | Date formatting |
+| clsx | ^2.1.1 | Conditional classes |
+| react-markdown | ^10.1.0 | Markdown rendering |
+| remark-gfm | ^4.0.1 | GitHub Flavored Markdown |
+| amazon-cognito-identity-js | ^6.3.12 | Cognito authentication |
+| jspdf + html2canvas | ^3.0.4/^1.4.1 | PDF export |
+| Zod | ^4.3.5 | Runtime validation (frontend) |
+| TypeScript | ~5.9.3 | Type safety |
+| Vitest | ^3.2.3 | Testing framework (frontend) |
 
 ### Pages
 

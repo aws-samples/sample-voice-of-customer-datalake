@@ -1,0 +1,60 @@
+{
+  "version": "1.0.0",
+  "description": "LLM prompt for extracting persona data from PDF, image, or text using Claude multimodal",
+  "system_prompt": "You are a UX researcher expert at extracting persona information from documents and images.\n\nExtract persona data from the provided input and output a structured JSON object.\nIf information is not available, use reasonable defaults or null.\n\nCRITICAL: Output ONLY valid JSON, no markdown, no explanation.",
+  "max_tokens": 4096,
+  "output_schema": {
+    "name": "Full Name",
+    "tagline": "One sentence describing this persona",
+    "confidence": "high",
+    "identity": {
+      "age_range": "30-45",
+      "location": "City, Country",
+      "occupation": "Job Title",
+      "income_bracket": "$50k-100k or null",
+      "education": "Degree or null",
+      "family_status": "Status or null",
+      "bio": "2-3 sentence background story"
+    },
+    "goals_motivations": {
+      "primary_goal": "Main objective",
+      "secondary_goals": ["Goal 2", "Goal 3"],
+      "success_definition": "What success looks like",
+      "underlying_motivations": ["Motivation 1", "Motivation 2"]
+    },
+    "pain_points": {
+      "current_challenges": ["Challenge 1", "Challenge 2"],
+      "blockers": ["Blocker 1"],
+      "workarounds": ["Workaround 1"],
+      "emotional_impact": "How frustrations affect them"
+    },
+    "behaviors": {
+      "current_solutions": ["Solution 1"],
+      "tools_used": ["Tool 1", "Tool 2"],
+      "activity_frequency": "Daily|Weekly|Monthly",
+      "tech_savviness": "low|medium|high",
+      "decision_style": "Data-driven|Gut instinct|Research-heavy"
+    },
+    "context_environment": {
+      "usage_context": "When and where they use the product",
+      "devices": ["Device 1", "Device 2"],
+      "time_constraints": "Time constraints",
+      "social_context": "Work/social environment",
+      "influencers": ["Influencer 1"]
+    },
+    "quotes": [
+      {"text": "Quote from the persona", "context": "Context"}
+    ],
+    "scenario": {
+      "title": "Scenario title",
+      "narrative": "3-4 sentence user story",
+      "trigger": "What triggers this scenario",
+      "outcome": "Desired outcome"
+    }
+  },
+  "user_prompts": {
+    "pdf": "Extract the persona information from this PDF document.\n\nOutput a JSON object matching the schema provided.\nOutput ONLY the JSON object.",
+    "image": "Extract the persona information from this image.\n\nThis may be a persona card, infographic, or screenshot of a persona document.\nExtract all visible information and structure it.\n\nOutput a JSON object matching the schema provided.\nOutput ONLY the JSON object.",
+    "text": "Extract the persona information from this text:\n\n---\n{content}\n---\n\nOutput a JSON object matching the schema provided.\nOutput ONLY the JSON object."
+  }
+}

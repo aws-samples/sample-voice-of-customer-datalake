@@ -12,19 +12,19 @@ Routes:
 import json
 import os
 import re
+import sys
 import uuid
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any
 
-import boto3
-from aws_lambda_powertools import Logger, Tracer, Metrics
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
-from aws_lambda_powertools.event_handler.exceptions import NotFoundError, BadRequestError
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-logger = Logger()
-tracer = Tracer()
-metrics = Metrics(namespace="ArtifactBuilder")
+import boto3
+from shared.logging import logger, tracer, metrics
+from shared.api import create_api_resolver, api_handler
+
+from aws_lambda_powertools.event_handler.exceptions import NotFoundError, BadRequestError
 
 # AWS Clients
 dynamodb = boto3.resource('dynamodb')
@@ -33,28 +33,33 @@ sqs = boto3.client('sqs')
 codecommit = boto3.client('codecommit')
 ecs = boto3.client('ecs')
 
-# Configuration - all required env vars, no hardcoded fallbacks
-ECS_CLUSTER = os.environ.get('ECS_CLUSTER')
-if not ECS_CLUSTER:
-    raise ValueError("ECS_CLUSTER environment variable is required")
-JOBS_TABLE = os.environ.get('JOBS_TABLE')
-if not JOBS_TABLE:
-    raise ValueError("JOBS_TABLE environment variable is required")
+# Configuration - env vars read at module level, validated at runtime
+ECS_CLUSTER = os.environ.get('ECS_CLUSTER', '')
+JOBS_TABLE = os.environ.get('JOBS_TABLE', '')
 ARTIFACTS_BUCKET = os.environ.get('ARTIFACTS_BUCKET', '')
 JOB_QUEUE_URL = os.environ.get('JOB_QUEUE_URL', '')
 PREVIEW_URL = os.environ.get('PREVIEW_URL', '')
 
-jobs_table = dynamodb.Table(JOBS_TABLE)
+# Lazy table initialization to allow testing
+_jobs_table = None
 
-# CORS config
-cors_config = CORSConfig(
-    allow_origin="*",
-    allow_headers=["Content-Type", "Authorization"],
-    max_age=300,
-    allow_credentials=False
-)
 
-app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+def get_jobs_table():
+    """Get jobs table, validating config on first use."""
+    global _jobs_table
+    if _jobs_table is None:
+        if not JOBS_TABLE:
+            raise ValueError("JOBS_TABLE environment variable is required")
+        _jobs_table = dynamodb.Table(JOBS_TABLE)
+    return _jobs_table
+
+
+def require_ecs_cluster():
+    """Validate ECS_CLUSTER is configured."""
+    if not ECS_CLUSTER:
+        raise ValueError("ECS_CLUSTER environment variable is required")
+
+app = create_api_resolver()
 
 # Available project templates
 TEMPLATES = [
@@ -221,7 +226,7 @@ def create_job():
     
     # If iterating, get the parent job's repo
     if parent_job_id:
-        parent_response = jobs_table.get_item(
+        parent_response = get_jobs_table().get_item(
             Key={'pk': f'JOB#{parent_job_id}', 'sk': 'META'}
         )
         parent_job = parent_response.get('Item')
@@ -275,7 +280,7 @@ def create_job():
     }
     
     # Save to DynamoDB
-    jobs_table.put_item(Item=job)
+    get_jobs_table().put_item(Item=job)
     logger.info(f"Created job {job_id}" + (f" (iterating from {parent_job_id})" if parent_job_id else ""))
     
     # Upload prompt payload to S3
@@ -331,7 +336,7 @@ def list_jobs():
     
     if status_filter:
         # Query by status using GSI
-        response = jobs_table.query(
+        response = get_jobs_table().query(
             IndexName='gsi1-by-status',
             KeyConditionExpression='#status = :status',
             ExpressionAttributeNames={'#status': 'status'},
@@ -341,7 +346,7 @@ def list_jobs():
         )
     else:
         # Scan all jobs (for small datasets)
-        response = jobs_table.scan(
+        response = get_jobs_table().scan(
             FilterExpression='sk = :meta',
             ExpressionAttributeValues={':meta': 'META'},
             Limit=limit,
@@ -362,7 +367,7 @@ def list_jobs():
 @tracer.capture_method
 def get_job(job_id: str):
     """Get job status and details."""
-    response = jobs_table.get_item(
+    response = get_jobs_table().get_item(
         Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
     )
     
@@ -382,7 +387,7 @@ def get_job(job_id: str):
 def get_job_logs(job_id: str):
     """Get job build logs."""
     # Check job exists
-    response = jobs_table.get_item(
+    response = get_jobs_table().get_item(
         Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
     )
     if not response.get('Item'):
@@ -414,7 +419,7 @@ def get_job_logs(job_id: str):
 def get_download_url(job_id: str):
     """Get presigned URL to download source bundle."""
     # Check job exists and is complete
-    response = jobs_table.get_item(
+    response = get_jobs_table().get_item(
         Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
     )
     job = response.get('Item')
@@ -450,7 +455,7 @@ def get_download_url(job_id: str):
 def delete_job(job_id: str):
     """Delete a job and all its artifacts (DynamoDB, S3, CodeCommit repo, ECS task)."""
     # Check job exists
-    response = jobs_table.get_item(
+    response = get_jobs_table().get_item(
         Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
     )
     job = response.get('Item')
@@ -526,7 +531,7 @@ def delete_job(job_id: str):
     
     # 4. Delete from DynamoDB (do this last so we can retry cleanup if needed)
     try:
-        jobs_table.delete_item(
+        get_jobs_table().delete_item(
             Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
         )
         cleanup_results['dynamodb'] = True
@@ -551,7 +556,7 @@ def list_source_files(job_id: str):
     path = params.get('path', '')
     
     # Check job exists and is complete
-    response = jobs_table.get_item(
+    response = get_jobs_table().get_item(
         Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
     )
     job = response.get('Item')
@@ -620,7 +625,7 @@ def get_source_file_content(job_id: str):
         raise BadRequestError("path parameter is required")
     
     # Check job exists and is complete
-    response = jobs_table.get_item(
+    response = get_jobs_table().get_item(
         Key={'pk': f'JOB#{job_id}', 'sk': 'META'}
     )
     job = response.get('Item')
@@ -663,9 +668,7 @@ def get_source_file_content(job_id: str):
         raise BadRequestError(f"Error getting file content: {str(e)}")
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler."""
     return app.resolve(event, context)

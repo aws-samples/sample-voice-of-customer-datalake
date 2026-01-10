@@ -3,20 +3,18 @@ Chat API Lambda - Handles /chat/*
 Manages AI chat conversations.
 """
 
-import json
 import os
 import sys
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
 from typing import Any
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.logging import logger, tracer
+from shared.aws import get_dynamodb_resource
+from shared.api import create_api_resolver, api_handler, validate_days, get_configured_categories
 
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Key
 
@@ -32,77 +30,7 @@ feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 conversations_table = dynamodb.Table(CONVERSATIONS_TABLE) if CONVERSATIONS_TABLE else None
 
-# Default categories fallback
-DEFAULT_CATEGORIES = ['delivery', 'customer_support', 'product_quality', 'pricing', 
-                      'website', 'app', 'billing', 'returns', 'communication', 'other']
-
-# Cache for configured categories
-_categories_cache = None
-_categories_cache_time = None
-CATEGORIES_CACHE_TTL = 300  # 5 minutes
-
-
-def get_configured_categories() -> list:
-    """Fetch configured categories from DynamoDB settings with caching."""
-    global _categories_cache, _categories_cache_time
-    
-    now = datetime.now(timezone.utc).timestamp()
-    
-    # Return cached if still valid
-    if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
-        return _categories_cache
-    
-    try:
-        response = aggregates_table.get_item(Key={'pk': 'SETTINGS#categories', 'sk': 'config'})
-        item = response.get('Item')
-        if item and item.get('categories'):
-            _categories_cache = [cat.get('name') for cat in item.get('categories', []) if cat.get('name')]
-            _categories_cache_time = now
-            logger.info(f"Loaded {len(_categories_cache)} categories from settings")
-            return _categories_cache
-    except Exception as e:
-        logger.warning(f"Could not fetch categories from settings: {e}")
-    
-    # Fallback to defaults
-    _categories_cache = DEFAULT_CATEGORIES
-    _categories_cache_time = now
-    return _categories_cache
-
-
-# Configure CORS - restrict to CloudFront domain in production
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
-cors_config = CORSConfig(
-    allow_origin=ALLOWED_ORIGIN,
-    allow_headers=[
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "X-Amz-Date",
-        "X-Api-Key",
-        "X-Amz-Security-Token",
-    ],
-    expose_headers=["Content-Type"],
-    max_age=300,
-    allow_credentials=False,
-)
-
-app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
-
-
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super().default(obj)
-
-
-def validate_days(value: str | int | None, default: int = 7, min_val: int = 1, max_val: int = 365) -> int:
-    """Validate and bound days parameter."""
-    try:
-        days = int(value) if value is not None else default
-        return max(min_val, min(days, max_val))
-    except (ValueError, TypeError):
-        return default
+app = create_api_resolver()
 
 
 # ============================================
@@ -140,7 +68,7 @@ def chat():
                 sentiment_counts[sentiment] += item.get('count', 0)
     
     category_counts = {}
-    categories = get_configured_categories()
+    categories = get_configured_categories(aggregates_table)
     for category in categories:
         total = 0
         for i in range(days):
@@ -211,20 +139,12 @@ Top Categories: {', '.join([f"{cat}: {count}" for cat, count in sorted(category_
         data_context += f"\n{i}. [{fb['source']}|{fb['sentiment']}] {fb['text'][:200]}"
 
     try:
-        bedrock = get_bedrock_client()
-        bedrock_response = bedrock.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
-            contentType='application/json',
-            accept='application/json',
-            body=json.dumps({
-                'anthropic_version': 'bedrock-2023-05-31',
-                'max_tokens': 1500,
-                'system': system_prompt,
-                'messages': [{'role': 'user', 'content': f"{data_context}\n\nQuestion: {message}"}]
-            })
+        from shared.converse import converse
+        response_text = converse(
+            prompt=f"{data_context}\n\nQuestion: {message}",
+            system_prompt=system_prompt,
+            max_tokens=1500,
         )
-        result = json.loads(bedrock_response['body'].read())
-        response_text = result['content'][0]['text']
         
         return {
             'response': response_text,
@@ -330,9 +250,7 @@ def delete_conversation(proxy: str):
 # Lambda Handler
 # ============================================
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler."""
     return app.resolve(event, context)

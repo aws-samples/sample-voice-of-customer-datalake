@@ -8,15 +8,44 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 
+class TestFixPersonaName:
+    """Tests for fix_persona_name helper function."""
+
+    def test_adds_space_between_camel_case(self):
+        """Adds space between lowercase and uppercase letters."""
+        from projects import fix_persona_name
+        
+        assert fix_persona_name('VeronicaChen') == 'Veronica Chen'
+        assert fix_persona_name('JohnSmith') == 'John Smith'
+        assert fix_persona_name('MaryJaneWatson') == 'Mary Jane Watson'
+
+    def test_preserves_already_spaced_names(self):
+        """Preserves names that already have proper spacing."""
+        from projects import fix_persona_name
+        
+        assert fix_persona_name('John Smith') == 'John Smith'
+        assert fix_persona_name('Mary Jane') == 'Mary Jane'
+
+    def test_handles_single_word_names(self):
+        """Handles single word names without changes."""
+        from projects import fix_persona_name
+        
+        assert fix_persona_name('Marcus') == 'Marcus'
+        assert fix_persona_name('ALLCAPS') == 'ALLCAPS'
+
+    def test_handles_empty_string(self):
+        """Handles empty string input."""
+        from projects import fix_persona_name
+        
+        assert fix_persona_name('') == ''
+
+
 class TestDecimalEncoder:
-    """Tests for DecimalEncoder JSON encoder."""
+    """Tests for DecimalEncoder JSON encoder - now imported from shared.api."""
 
     def test_encodes_decimal_to_float(self):
         """Encodes Decimal values to float."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from projects import DecimalEncoder
+        from shared.api import DecimalEncoder
         
         data = {'value': Decimal('3.14')}
         result = json.dumps(data, cls=DecimalEncoder)
@@ -25,7 +54,7 @@ class TestDecimalEncoder:
 
     def test_encodes_integer_decimal(self):
         """Encodes integer Decimal values."""
-        from projects import DecimalEncoder
+        from shared.api import DecimalEncoder
         
         data = {'value': Decimal('100')}
         result = json.dumps(data, cls=DecimalEncoder)
@@ -34,112 +63,94 @@ class TestDecimalEncoder:
 
 
 class TestValidateDays:
-    """Tests for validate_days helper function."""
+    """Tests for validate_days helper function - now imported from shared.api."""
 
     def test_returns_default_when_value_is_none(self):
         """Returns default value when input is None."""
-        from projects import validate_days
+        from shared.api import validate_days
         
         assert validate_days(None, default=30) == 30
 
     def test_returns_default_when_value_is_invalid(self):
         """Returns default for invalid values."""
-        from projects import validate_days
+        from shared.api import validate_days
         
         assert validate_days('invalid', default=30) == 30
 
     def test_clamps_to_min_value(self):
         """Clamps values below minimum."""
-        from projects import validate_days
+        from shared.api import validate_days
         
         assert validate_days(-5, default=30, min_val=1) == 1
 
     def test_clamps_to_max_value(self):
         """Clamps values above maximum."""
-        from projects import validate_days
+        from shared.api import validate_days
         
         assert validate_days(500, default=30, max_val=365) == 365
 
     def test_accepts_valid_integer(self):
         """Accepts valid integer within range."""
-        from projects import validate_days
+        from shared.api import validate_days
         
         assert validate_days(30, default=7) == 30
 
 
-class TestInvokeBedrock:
-    """Tests for invoke_bedrock function."""
+class TestConverse:
+    """Tests for converse function from shared.converse module."""
 
-    @patch('projects.bedrock')
-    def test_invokes_bedrock_model(self, mock_bedrock):
+    @patch('shared.converse.get_bedrock_client')
+    def test_invokes_bedrock_model(self, mock_get_client):
         """Invokes Bedrock model and returns response."""
-        mock_bedrock.invoke_model.return_value = {
-            'body': MagicMock(read=lambda: json.dumps({
-                'content': [{'type': 'text', 'text': 'AI response'}]
-            }).encode())
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'AI response'}]}}
         }
         
-        from projects import invoke_bedrock
+        from shared.converse import converse
         
-        result = invoke_bedrock('System prompt', 'User message')
+        result = converse(prompt='User message', system_prompt='System prompt')
         
         assert result == 'AI response'
-        mock_bedrock.invoke_model.assert_called_once()
-
-    @patch('projects.bedrock')
-    def test_handles_thinking_blocks(self, mock_bedrock):
-        """Handles response with thinking blocks."""
-        mock_bedrock.invoke_model.return_value = {
-            'body': MagicMock(read=lambda: json.dumps({
-                'content': [
-                    {'type': 'thinking', 'text': 'Thinking...'},
-                    {'type': 'text', 'text': 'Final response'}
-                ]
-            }).encode())
-        }
-        
-        from projects import invoke_bedrock
-        
-        result = invoke_bedrock('System', 'User', thinking_budget=1000)
-        
-        assert result == 'Final response'
+        mock_client.converse.assert_called_once()
 
 
-class TestInvokeBedrockChain:
-    """Tests for invoke_bedrock_chain function."""
+class TestConverseChain:
+    """Tests for converse_chain function from shared.converse module."""
 
-    @patch('projects.invoke_bedrock')
-    def test_executes_chain_of_steps(self, mock_invoke):
+    @patch('shared.converse.converse')
+    def test_executes_chain_of_steps(self, mock_converse):
         """Executes chain of LLM calls."""
-        mock_invoke.side_effect = ['Step 1 result', 'Step 2 result']
+        mock_converse.side_effect = ['Step 1 result', 'Step 2 result']
         
-        from projects import invoke_bedrock_chain
+        from shared.converse import converse_chain
         
         steps = [
             {'system': 'System 1', 'user': 'User 1'},
             {'system': 'System 2', 'user': 'Previous: {previous}'}
         ]
         
-        results = invoke_bedrock_chain(steps)
+        results = converse_chain(steps)
         
         assert len(results) == 2
         assert results[0] == 'Step 1 result'
         assert results[1] == 'Step 2 result'
 
-    @patch('projects.invoke_bedrock')
-    def test_calls_progress_callback(self, mock_invoke):
+    @patch('shared.converse.converse')
+    def test_calls_progress_callback(self, mock_converse):
         """Calls progress callback during chain execution."""
-        mock_invoke.return_value = 'Result'
+        mock_converse.return_value = 'Result'
         progress_calls = []
         
         def callback(progress, step):
             progress_calls.append((progress, step))
         
-        from projects import invoke_bedrock_chain
+        from shared.converse import converse_chain
         
         steps = [{'system': 'S', 'user': 'U', 'step_name': 'test_step'}]
         
-        invoke_bedrock_chain(steps, progress_callback=callback)
+        converse_chain(steps, progress_callback=callback)
         
         assert len(progress_calls) == 1
         assert progress_calls[0][1] == 'test_step'
@@ -366,7 +377,7 @@ class TestGetFeedbackStatistics:
 
     def test_handles_empty_list(self):
         """Handles empty feedback list."""
-        from projects import get_feedback_statistics
+        from shared.feedback import get_feedback_statistics
         
         result = get_feedback_statistics([])
         
@@ -376,28 +387,26 @@ class TestGetFeedbackStatistics:
 class TestGetAvatarCdnUrl:
     """Tests for get_avatar_cdn_url function."""
 
-    @patch('projects.AVATARS_CDN_URL', 'https://cdn.example.com')
     def test_converts_s3_uri_to_cdn_url(self):
         """Converts S3 URI to CloudFront CDN URL."""
-        from projects import get_avatar_cdn_url
+        from shared.avatar import get_avatar_cdn_url
         
         s3_uri = 's3://bucket/avatars/persona_123.png'
-        result = get_avatar_cdn_url(s3_uri)
+        result = get_avatar_cdn_url(s3_uri, cdn_url='https://cdn.example.com')
         
         assert result == 'https://cdn.example.com/persona_123.png'
 
-    @patch('projects.AVATARS_CDN_URL', '')
     def test_returns_none_when_cdn_not_configured(self):
         """Returns None when CDN URL not configured."""
-        from projects import get_avatar_cdn_url
+        from shared.avatar import get_avatar_cdn_url
         
-        result = get_avatar_cdn_url('s3://bucket/avatars/test.png')
+        result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='')
         
         assert result is None
 
     def test_returns_none_for_invalid_uri(self):
         """Returns None for invalid S3 URI."""
-        from projects import get_avatar_cdn_url
+        from shared.avatar import get_avatar_cdn_url
         
         result = get_avatar_cdn_url('not-an-s3-uri')
         
@@ -405,7 +414,7 @@ class TestGetAvatarCdnUrl:
 
     def test_returns_none_for_empty_uri(self):
         """Returns None for empty URI."""
-        from projects import get_avatar_cdn_url
+        from shared.avatar import get_avatar_cdn_url
         
         result = get_avatar_cdn_url('')
         
@@ -415,12 +424,25 @@ class TestGetAvatarCdnUrl:
 class TestGenerateAvatarPromptWithLlm:
     """Tests for generate_avatar_prompt_with_llm function."""
 
-    @patch('projects.invoke_bedrock')
-    def test_generates_prompt_from_persona_data(self, mock_invoke):
+    @patch('shared.avatar.get_avatar_prompt_config')
+    def test_generates_prompt_from_persona_data(self, mock_config):
         """Generates image prompt from persona data."""
-        mock_invoke.return_value = 'Professional headshot of a software engineer'
+        mock_config.return_value = {
+            'system_prompt': 'Generate image prompt',
+            'user_prompt_template': 'Create avatar for {name}',
+            'max_tokens': 200,
+            'fallback_prompt_template': 'Professional headshot of a {occupation}'
+        }
         
-        from projects import generate_avatar_prompt_with_llm
+        from shared.avatar import generate_avatar_prompt_with_llm
+        
+        # Create a mock bedrock client
+        mock_bedrock = MagicMock()
+        mock_bedrock.invoke_model.return_value = {
+            'body': MagicMock(read=lambda: json.dumps({
+                'content': [{'type': 'text', 'text': 'Professional headshot of a software engineer'}]
+            }).encode())
+        }
         
         persona_data = {
             'name': 'John Smith',
@@ -433,19 +455,28 @@ class TestGenerateAvatarPromptWithLlm:
             }
         }
         
-        result = generate_avatar_prompt_with_llm(persona_data)
+        result = generate_avatar_prompt_with_llm(persona_data, mock_bedrock)
         
         assert 'Professional headshot' in result
 
-    @patch('projects.invoke_bedrock')
-    def test_returns_fallback_on_error(self, mock_invoke):
+    @patch('shared.avatar.get_avatar_prompt_config')
+    def test_returns_fallback_on_error(self, mock_config):
         """Returns fallback prompt on LLM error."""
-        mock_invoke.side_effect = Exception('LLM error')
+        mock_config.return_value = {
+            'system_prompt': 'Generate image prompt',
+            'user_prompt_template': 'Create avatar for {name}',
+            'max_tokens': 200,
+            'fallback_prompt_template': 'Professional headshot of a {occupation}'
+        }
         
-        from projects import generate_avatar_prompt_with_llm
+        from shared.avatar import generate_avatar_prompt_with_llm
+        
+        # Create a mock bedrock client that raises an error
+        mock_bedrock = MagicMock()
+        mock_bedrock.invoke_model.side_effect = Exception('LLM error')
         
         persona_data = {'name': 'Test', 'identity': {'occupation': 'Developer'}}
         
-        result = generate_avatar_prompt_with_llm(persona_data)
+        result = generate_avatar_prompt_with_llm(persona_data, mock_bedrock)
         
         assert 'Professional headshot' in result

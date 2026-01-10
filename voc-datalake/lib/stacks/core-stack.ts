@@ -9,7 +9,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
-import { uniqueBucketName, uniqueTableName, uniqueUserPoolName, generateDeploymentHash } from '../utils/naming';
+import { uniqueBucketName, uniqueTableName, generateDeploymentHash } from '../utils/naming';
 
 export interface VocCoreStackProps extends cdk.StackProps {
   brandName: string;
@@ -54,7 +54,6 @@ export class VocCoreStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocCoreStackProps) {
     super(scope, id, props);
 
-    const { brandName } = props;
     const hash = generateDeploymentHash(this.account, this.region);
     const corsAllowedOrigins = ['http://localhost:5173', 'http://localhost:3000'];
 
@@ -349,13 +348,26 @@ export class VocCoreStack extends cdk.Stack {
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       userVerification: {
-        emailSubject: `VoC Analytics - Verify your email`,
-        emailBody: `Welcome to VoC Analytics!\n\nYour verification code is {####}\n\nThis code expires in 24 hours.`,
+        emailSubject: 'VoC Analytics - Verify your email',
+        emailBody: 'Welcome to VoC Analytics!\n\nYour verification code is: {####}\n\nThis code expires in 24 hours.\n\nIf you did not request this, please ignore this email.',
         emailStyle: cognito.VerificationEmailStyle.CODE,
       },
       userInvitation: {
-        emailSubject: `VoC Analytics - You've been invited`,
-        emailBody: `Hello {username},\n\nYou have been invited to VoC Analytics.\n\nYour temporary password is: {####}\n\nPlease sign in and change your password.`,
+        emailSubject: 'VoC Analytics - Welcome! Set up your account',
+        emailBody: `Welcome to VoC Analytics!
+
+You have been invited to join the platform.
+
+To get started:
+1. Go to ${signInUrl}
+2. Enter your email address
+3. Use this temporary password: {####}
+4. Set your new password when prompted
+
+(Your account ID for reference: {username})
+
+Best regards,
+The VoC Analytics Team`,
       },
       lambdaTriggers: { customMessage: customMessageLambda },
     });
@@ -509,21 +521,58 @@ export class VocCoreStack extends cdk.Stack {
   }
 
   private getCustomMessageLambdaCode(signInUrl: string): string {
+    // Note: CustomMessage_AdminCreateUser doesn't work with COGNITO_DEFAULT email sender
+    // (known AWS bug). We handle it via userInvitation config instead.
+    // This Lambda handles ForgotPassword and ResendCode which DO work.
     return `
+import json
+
 def handler(event, context):
     trigger_source = event.get('triggerSource', '')
-    user_attrs = event.get('request', {}).get('userAttributes', {})
-    code = event['request']['codeParameter']
+    request = event.get('request', {})
+    code_param = request.get('codeParameter', '{####}')
     sign_in_url = '${signInUrl}'
     
-    display_name = user_attrs.get('name') or user_attrs.get('email', '').split('@')[0] or 'there'
-    
-    if trigger_source == 'CustomMessage_AdminCreateUser':
-        event['response']['emailSubject'] = 'VoC Analytics - Welcome! Set up your account'
-        event['response']['emailMessage'] = f'''<html><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;"><div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;"><h1 style="color: white; margin: 0; font-size: 24px;">Welcome to VoC Analytics</h1></div><div style="padding: 30px; background: #f9f9f9;"><p style="font-size: 16px;">Hello <strong>{display_name}</strong>,</p><p>You have been invited to VoC Analytics. Use the temporary password below to sign in.</p><div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;"><p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">Your temporary password:</p><p style="font-family: monospace; font-size: 20px; font-weight: bold; color: #667eea; margin: 0; letter-spacing: 1px;">{code}</p></div><div style="text-align: center; margin: 25px 0;"><a href="{sign_in_url}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: bold; font-size: 16px;">Sign In</a></div></div></body></html>'''
-    elif trigger_source == 'CustomMessage_ForgotPassword':
+    # ForgotPassword - styled HTML email
+    if trigger_source == 'CustomMessage_ForgotPassword':
         event['response']['emailSubject'] = 'VoC Analytics - Reset your password'
-        event['response']['emailMessage'] = f'''<html><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;"><div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;"><h1 style="color: white; margin: 0; font-size: 24px;">Password Reset</h1></div><div style="padding: 30px; background: #f9f9f9;"><p>Your password reset code:</p><div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;"><p style="font-family: monospace; font-size: 20px; font-weight: bold; color: #667eea; margin: 0;">{code}</p></div></div></body></html>'''
+        event['response']['emailMessage'] = f"""<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
+  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+    <h1 style="color: white; margin: 0;">Password Reset</h1>
+  </div>
+  <div style="padding: 30px; background: #f9f9f9;">
+    <p>We received a request to reset your password for VoC Analytics.</p>
+    <div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+      <p style="margin: 0 0 10px 0; color: #666;">Your password reset code:</p>
+      <p style="font-family: monospace; font-size: 24px; font-weight: bold; color: #667eea; margin: 0;">{code_param}</p>
+    </div>
+    <p style="color: #666; font-size: 14px;">If you did not request this, please ignore this email.</p>
+    <p style="text-align: center; margin-top: 20px;"><a href="{sign_in_url}" style="color: #667eea;">Go to VoC Analytics</a></p>
+  </div>
+</body>
+</html>"""
+    
+    # ResendCode - styled HTML email  
+    elif trigger_source == 'CustomMessage_ResendCode':
+        event['response']['emailSubject'] = 'VoC Analytics - Your verification code'
+        event['response']['emailMessage'] = f"""<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
+  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+    <h1 style="color: white; margin: 0;">Verification Code</h1>
+  </div>
+  <div style="padding: 30px; background: #f9f9f9;">
+    <p>Here is your verification code for VoC Analytics.</p>
+    <div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+      <p style="margin: 0 0 10px 0; color: #666;">Your verification code:</p>
+      <p style="font-family: monospace; font-size: 24px; font-weight: bold; color: #667eea; margin: 0;">{code_param}</p>
+    </div>
+    <p style="text-align: center; margin-top: 20px;"><a href="{sign_in_url}" style="color: #667eea;">Go to VoC Analytics</a></p>
+  </div>
+</body>
+</html>"""
     
     return event
 `;

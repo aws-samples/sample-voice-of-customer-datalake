@@ -1,0 +1,28 @@
+{
+  "version": "1.0.0",
+  "description": "Multi-step LLM chain for deep research analysis on feedback data",
+  "steps": {
+    "data_analysis": {
+      "name": "data_analysis",
+      "description": "Rigorous analysis of actual customer feedback data",
+      "max_tokens": 9000,
+      "thinking_budget": 5000,
+      "system_prompt": "You are a senior user researcher conducting rigorous analysis of REAL customer feedback data.\nYour analysis must be grounded in the actual feedback provided - cite specific reviews, quote customers directly, and identify patterns from the data.\nBe thorough, data-driven, and cite specific examples.",
+      "user_prompt_template": "Conduct a thorough analysis to answer this research question based on the ACTUAL CUSTOMER FEEDBACK DATA provided below.\n\nRESEARCH QUESTION: {research_question}\n\n## FEEDBACK STATISTICS:\n{feedback_stats}\n\n## ACTUAL CUSTOMER FEEDBACK DATA ({feedback_count} reviews):\n{feedback_context}\n\n---\n\nBased on the ACTUAL FEEDBACK DATA above, analyze:\n1. **Key Themes & Patterns**: What recurring themes appear in the feedback related to the research question?\n2. **Frequency & Severity**: How often do issues appear? How severe are they based on sentiment and urgency?\n3. **Customer Quotes**: Include 5-10 direct quotes from the feedback that best illustrate the findings\n4. **Sentiment Analysis**: What is the overall sentiment? Are there differences by category or source?\n5. **Root Causes**: What underlying issues do customers identify?\n6. **Gaps in Data**: What questions remain unanswered?\n\nIMPORTANT: Base ALL findings on the actual feedback data provided. Do not make assumptions beyond what the data shows."
+    },
+    "synthesis": {
+      "name": "synthesis",
+      "description": "Synthesize analysis into actionable insights",
+      "max_tokens": 9000,
+      "system_prompt": "You are synthesizing research findings into actionable insights.\nFocus on clarity, prioritization, and recommendations.",
+      "user_prompt_template": "Synthesize the analysis into clear findings.\n\nPrevious analysis:\n{previous}\n\nProvide:\n1. **Executive Summary** (2-3 sentences)\n2. **Key Findings** (prioritized list)\n3. **Supporting Evidence** (quotes and data points)\n4. **Recommendations** (actionable next steps)\n5. **Areas for Further Research**"
+    },
+    "validation": {
+      "name": "validation",
+      "description": "Validate and review research quality",
+      "max_tokens": 9000,
+      "system_prompt": "You are a critical reviewer ensuring research quality.\nChallenge assumptions and verify conclusions.",
+      "user_prompt_template": "Review and validate the research findings.\n\nFindings to validate:\n{previous}\n\nCheck:\n1. Are conclusions supported by the data?\n2. Are there alternative interpretations?\n3. What are the confidence levels?\n4. What biases might be present?\n\nProvide a final validated research report."
+    }
+  }
+}

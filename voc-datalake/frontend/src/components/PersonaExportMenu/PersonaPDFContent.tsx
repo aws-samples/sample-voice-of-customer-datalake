@@ -59,7 +59,7 @@ function HeaderSection({ persona }: PersonaPDFContentProps) {
 }
 
 function IdentitySection({ persona }: PersonaPDFContentProps) {
-  const identity = persona.identity ?? persona.demographics
+  const identity = persona.identity
   if (!identity) return null
 
   const attrs = Object.entries(identity).filter(([k, v]) => k !== 'bio' && v)
@@ -99,10 +99,10 @@ function ListSection({ items, title, isLast }: ListSectionProps) {
 
 function GoalsSection({ persona }: PersonaPDFContentProps) {
   const goals = persona.goals_motivations
-  if (!goals && !persona.goals?.length) return null
+  if (!goals) return null
 
-  const secondaryGoals = goals?.secondary_goals ?? persona.goals ?? []
-  const motivations = goals?.underlying_motivations ?? []
+  const secondaryGoals = goals.secondary_goals ?? []
+  const motivations = goals.underlying_motivations ?? []
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
@@ -121,11 +121,11 @@ function GoalsSection({ persona }: PersonaPDFContentProps) {
 
 function PainPointsSection({ persona }: PersonaPDFContentProps) {
   const painPoints = persona.pain_points
-  if (!painPoints && !persona.frustrations?.length) return null
+  if (!painPoints) return null
 
-  const challenges = painPoints?.current_challenges ?? persona.frustrations ?? []
-  const blockers = painPoints?.blockers ?? []
-  const workarounds = painPoints?.workarounds ?? []
+  const challenges = painPoints.current_challenges ?? []
+  const blockers = painPoints.blockers ?? []
+  const workarounds = painPoints.workarounds ?? []
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
@@ -137,29 +137,10 @@ function PainPointsSection({ persona }: PersonaPDFContentProps) {
   )
 }
 
-interface BehaviorsObject {
-  current_solutions?: string[]
-  tech_savviness?: string
-  activity_frequency?: string
-  decision_style?: string
-  tools_used?: string[]
-}
-
 function BehaviorsSection({ persona }: PersonaPDFContentProps) {
   if (!persona.behaviors) return null
 
-  if (Array.isArray(persona.behaviors)) {
-    return (
-      <div data-pdf-section style={{ marginBottom: '24px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#2563eb', marginBottom: '12px' }}>🔄 Behaviors & Habits</h2>
-        <ul style={{ margin: 0, paddingLeft: '20px', color: '#374151' }}>
-          {persona.behaviors.map((b, i) => <li key={i} style={{ marginBottom: '4px' }}>{b}</li>)}
-        </ul>
-      </div>
-    )
-  }
-
-  const behaviors: BehaviorsObject = persona.behaviors
+  const behaviors = persona.behaviors
   const solutions = behaviors.current_solutions ?? []
   const tools = behaviors.tools_used ?? []
 
@@ -231,36 +212,23 @@ function ContextSection({ persona }: PersonaPDFContentProps) {
 }
 
 function QuotesSection({ persona }: PersonaPDFContentProps) {
-  if (!persona.quotes?.length && !persona.quote) return null
+  if (!persona.quotes?.length) return null
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
       <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#6366f1', marginBottom: '12px' }}>💬 Representative Quotes</h2>
-      {persona.quotes?.length ? persona.quotes.map((q, i) => (
+      {persona.quotes.map((q, i) => (
         <blockquote key={i} data-pdf-section style={{ borderLeft: '4px solid #a5b4fc', paddingLeft: '16px', margin: '0 0 12px 0', fontStyle: 'italic', color: '#374151' }}>
           &quot;{q.text}&quot;
           {q.context && <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>— {q.context}</p>}
         </blockquote>
-      )) : persona.quote && (
-        <blockquote style={{ borderLeft: '4px solid #a5b4fc', paddingLeft: '16px', margin: 0, fontStyle: 'italic', color: '#374151' }}>
-          &quot;{persona.quote}&quot;
-        </blockquote>
-      )}
+      ))}
     </div>
   )
 }
 
 function ScenarioSection({ persona }: PersonaPDFContentProps) {
   if (!persona.scenario) return null
-
-  if (typeof persona.scenario === 'string') {
-    return (
-      <div data-pdf-section style={{ marginBottom: '24px', pageBreakInside: 'avoid' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#0d9488', marginBottom: '12px' }}>📖 Scenario</h2>
-        <p data-pdf-section style={{ color: '#374151', lineHeight: '1.6' }}>{persona.scenario}</p>
-      </div>
-    )
-  }
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px', pageBreakInside: 'avoid' }}>

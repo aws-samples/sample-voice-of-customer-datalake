@@ -13,7 +13,6 @@ import pytest
 from unittest.mock import patch, MagicMock, call
 from decimal import Decimal
 from botocore.exceptions import ClientError
-import io
 
 
 class TestSharedModuleImports:
@@ -73,81 +72,68 @@ class TestBedrockThrottlingException:
 
 
 class TestInvokeBedrockWithRetry:
-    """Tests for invoke_bedrock_with_retry function."""
+    """Tests for invoke_bedrock_with_retry function.
     
-    @patch('research_step_handler.bedrock')
-    def test_successful_invocation(self, mock_bedrock):
+    Now delegates to shared.converse module, so we mock that instead.
+    """
+    
+    @patch('research_step_handler.converse')
+    def test_successful_invocation(self, mock_converse):
         """Returns response on successful invocation."""
         from research_step_handler import invoke_bedrock_with_retry
         
-        response_body = {'content': [{'text': 'Test response'}]}
-        mock_bedrock.invoke_model.return_value = {
-            'body': io.BytesIO(json.dumps(response_body).encode())
-        }
+        mock_converse.return_value = 'Test response'
         
         result = invoke_bedrock_with_retry("System prompt", "User message")
         
         assert result == 'Test response'
-        mock_bedrock.invoke_model.assert_called_once()
+        mock_converse.assert_called_once_with(
+            prompt="User message",
+            system_prompt="System prompt",
+            max_tokens=4096,
+            max_retries=3,
+            raise_on_throttle=True,
+        )
     
-    @patch('research_step_handler.time.sleep')
-    @patch('research_step_handler.bedrock')
-    def test_retries_on_throttling(self, mock_bedrock, mock_sleep):
-        """Retries with backoff on ThrottlingException."""
+    @patch('research_step_handler.converse')
+    def test_passes_custom_max_tokens(self, mock_converse):
+        """Passes custom max_tokens to converse."""
         from research_step_handler import invoke_bedrock_with_retry
         
-        # First call fails with throttling, second succeeds
-        throttle_error = ClientError(
-            {'Error': {'Code': 'ThrottlingException', 'Message': 'Rate exceeded'}},
-            'InvokeModel'
-        )
-        response_body = {'content': [{'text': 'Success after retry'}]}
+        mock_converse.return_value = 'Response'
         
-        mock_bedrock.invoke_model.side_effect = [
-            throttle_error,
-            {'body': io.BytesIO(json.dumps(response_body).encode())}
-        ]
+        invoke_bedrock_with_retry("System", "User", max_tokens=2000, max_retries=5)
         
-        result = invoke_bedrock_with_retry("System", "User", max_retries=3)
-        
-        assert result == 'Success after retry'
-        assert mock_bedrock.invoke_model.call_count == 2
-        mock_sleep.assert_called_once()  # Should have slept once between retries
+        call_args = mock_converse.call_args
+        assert call_args.kwargs['max_tokens'] == 2000
+        assert call_args.kwargs['max_retries'] == 5
     
-    @patch('research_step_handler.time.sleep')
-    @patch('research_step_handler.bedrock')
-    def test_raises_after_max_retries(self, mock_bedrock, mock_sleep):
-        """Raises BedrockThrottlingException after max retries exhausted."""
+    @patch('research_step_handler.converse')
+    def test_raises_throttling_error(self, mock_converse):
+        """Raises BedrockThrottlingException on throttling."""
         from research_step_handler import invoke_bedrock_with_retry, BedrockThrottlingException
+        from shared.converse import BedrockThrottlingError
         
-        throttle_error = ClientError(
-            {'Error': {'Code': 'ThrottlingException', 'Message': 'Rate exceeded'}},
-            'InvokeModel'
-        )
-        mock_bedrock.invoke_model.side_effect = throttle_error
+        mock_converse.side_effect = BedrockThrottlingError("Throttled")
         
-        with pytest.raises(BedrockThrottlingException) as exc_info:
-            invoke_bedrock_with_retry("System", "User", max_retries=2)
-        
-        assert "failed after 2 retries" in str(exc_info.value)
-        assert mock_bedrock.invoke_model.call_count == 2
+        with pytest.raises(BedrockThrottlingException):
+            invoke_bedrock_with_retry("System", "User")
     
-    @patch('research_step_handler.bedrock')
-    def test_raises_immediately_on_non_retryable_error(self, mock_bedrock):
-        """Raises immediately on non-retryable ClientError."""
+    @patch('research_step_handler.converse')
+    def test_raises_non_retryable_errors(self, mock_converse):
+        """Raises non-retryable errors immediately."""
         from research_step_handler import invoke_bedrock_with_retry
         
         access_denied = ClientError(
             {'Error': {'Code': 'AccessDeniedException', 'Message': 'Access denied'}},
-            'InvokeModel'
+            'Converse'
         )
-        mock_bedrock.invoke_model.side_effect = access_denied
+        mock_converse.side_effect = access_denied
         
         with pytest.raises(ClientError) as exc_info:
             invoke_bedrock_with_retry("System", "User")
         
         assert exc_info.value.response['Error']['Code'] == 'AccessDeniedException'
-        mock_bedrock.invoke_model.assert_called_once()
 
 
 class TestUpdateJobStatus:

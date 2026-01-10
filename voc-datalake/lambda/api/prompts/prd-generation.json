@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "description": "Multi-step LLM chain for generating Product Requirements Documents",
+  "steps": {
+    "problem_analysis": {
+      "name": "problem_analysis",
+      "description": "Deep analysis of customer problems to define product requirements",
+      "max_tokens": 3000,
+      "system_prompt": "You are a product manager analyzing customer problems to define product requirements.\nBe specific, data-driven, and focus on measurable outcomes.",
+      "user_prompt_template": "Analyze the customer feedback and personas to deeply understand the problem space.\n\nFEATURE IDEA: {feature_idea}\n\nUSER PERSONAS:\n{personas_context}\n\nCUSTOMER FEEDBACK:\n{feedback_context}\n\nProvide a thorough problem analysis:\n1. What are the core problems customers are experiencing?\n2. How do these problems affect different personas?\n3. What is the business impact of not solving these problems?\n4. What are the root causes?\n5. What constraints should we consider?"
+    },
+    "solution_design": {
+      "name": "solution_design",
+      "description": "Design solutions that address real customer needs",
+      "max_tokens": 3000,
+      "system_prompt": "You are a senior product manager designing solutions that address real customer needs.\nFocus on feasibility, impact, and user-centered design.",
+      "user_prompt_template": "Based on the problem analysis, design a solution.\n\nPrevious analysis:\n{previous}\n\nDefine:\n1. **Solution Overview**: High-level description\n2. **Key Features**: 3-5 core features with descriptions\n3. **User Stories**: For each persona, write 2-3 user stories\n4. **Success Metrics**: How will we measure success?\n5. **Risks & Mitigations**: What could go wrong?"
+    },
+    "prd_document": {
+      "name": "prd_document",
+      "description": "Create the final PRD document",
+      "max_tokens": 5000,
+      "system_prompt": "You are creating a professional Product Requirements Document.\nBe comprehensive but concise. Use clear formatting.",
+      "user_prompt_template": "Create a complete PRD document.\n\nPrevious analysis and solution design:\n{previous}\n\nGenerate a PRD with these sections:\n1. **Executive Summary**\n2. **Problem Statement**\n3. **Goals & Success Metrics**\n4. **User Personas** (reference the personas)\n5. **Requirements**\n   - Functional Requirements (prioritized P0/P1/P2)\n   - Non-Functional Requirements\n6. **User Stories & Acceptance Criteria**\n7. **Out of Scope**\n8. **Dependencies & Risks**\n9. **Timeline Considerations**\n\nFormat as a professional document in Markdown."
+    }
+  }
+}

@@ -375,7 +375,7 @@ aws cloudfront create-invalidation \
 
 ```bash
 aws cloudformation describe-stacks \
-  --stack-name VocAnalyticsStack \
+  --stack-name VocApiStack \
   --query 'Stacks[0].Outputs'
 ```
 

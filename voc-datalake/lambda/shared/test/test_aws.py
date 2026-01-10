@@ -250,12 +250,14 @@ class TestInvokeBedrock:
 
     @patch('shared.aws.get_bedrock_client')
     def test_invokes_bedrock_with_prompt(self, mock_get_client):
-        """Invokes Bedrock with user prompt."""
+        """Invokes Bedrock with user prompt using Converse API."""
         mock_client = MagicMock()
-        mock_client.invoke_model.return_value = {
-            'body': MagicMock(read=lambda: json.dumps({
-                'content': [{'text': 'AI response'}]
-            }).encode())
+        mock_client.converse.return_value = {
+            'output': {
+                'message': {
+                    'content': [{'text': 'AI response'}]
+                }
+            }
         }
         mock_get_client.return_value = mock_client
         
@@ -263,16 +265,18 @@ class TestInvokeBedrock:
         result = invoke_bedrock('Hello, AI!')
         
         assert result == 'AI response'
-        mock_client.invoke_model.assert_called_once()
+        mock_client.converse.assert_called_once()
 
     @patch('shared.aws.get_bedrock_client')
     def test_includes_system_prompt_when_provided(self, mock_get_client):
         """Includes system prompt in request when provided."""
         mock_client = MagicMock()
-        mock_client.invoke_model.return_value = {
-            'body': MagicMock(read=lambda: json.dumps({
-                'content': [{'text': 'Response with system context'}]
-            }).encode())
+        mock_client.converse.return_value = {
+            'output': {
+                'message': {
+                    'content': [{'text': 'Response with system context'}]
+                }
+            }
         }
         mock_get_client.return_value = mock_client
         
@@ -280,52 +284,53 @@ class TestInvokeBedrock:
         result = invoke_bedrock('Hello', system_prompt='You are a helpful assistant.')
         
         assert result == 'Response with system context'
-        call_args = mock_client.invoke_model.call_args
-        body = json.loads(call_args.kwargs['body'])
-        assert 'system' in body
-        assert body['system'] == 'You are a helpful assistant.'
+        call_args = mock_client.converse.call_args
+        assert 'system' in call_args.kwargs
+        assert call_args.kwargs['system'] == [{'text': 'You are a helpful assistant.'}]
 
     @patch('shared.aws.get_bedrock_client')
     def test_uses_custom_max_tokens(self, mock_get_client):
         """Uses custom max_tokens parameter."""
         mock_client = MagicMock()
-        mock_client.invoke_model.return_value = {
-            'body': MagicMock(read=lambda: json.dumps({
-                'content': [{'text': 'Short response'}]
-            }).encode())
+        mock_client.converse.return_value = {
+            'output': {
+                'message': {
+                    'content': [{'text': 'Short response'}]
+                }
+            }
         }
         mock_get_client.return_value = mock_client
         
         from shared.aws import invoke_bedrock
         invoke_bedrock('Hello', max_tokens=500)
         
-        call_args = mock_client.invoke_model.call_args
-        body = json.loads(call_args.kwargs['body'])
-        assert body['max_tokens'] == 500
+        call_args = mock_client.converse.call_args
+        assert call_args.kwargs['inferenceConfig']['maxTokens'] == 500
 
     @patch('shared.aws.get_bedrock_client')
     def test_uses_custom_temperature(self, mock_get_client):
         """Uses custom temperature parameter."""
         mock_client = MagicMock()
-        mock_client.invoke_model.return_value = {
-            'body': MagicMock(read=lambda: json.dumps({
-                'content': [{'text': 'Creative response'}]
-            }).encode())
+        mock_client.converse.return_value = {
+            'output': {
+                'message': {
+                    'content': [{'text': 'Creative response'}]
+                }
+            }
         }
         mock_get_client.return_value = mock_client
         
         from shared.aws import invoke_bedrock
         invoke_bedrock('Hello', temperature=0.8)
         
-        call_args = mock_client.invoke_model.call_args
-        body = json.loads(call_args.kwargs['body'])
-        assert body['temperature'] == 0.8
+        call_args = mock_client.converse.call_args
+        assert call_args.kwargs['inferenceConfig']['temperature'] == 0.8
 
     @patch('shared.aws.get_bedrock_client')
     def test_raises_on_bedrock_error(self, mock_get_client):
         """Raises exception on Bedrock API error."""
         mock_client = MagicMock()
-        mock_client.invoke_model.side_effect = Exception('Bedrock service error')
+        mock_client.converse.side_effect = Exception('Bedrock service error')
         mock_get_client.return_value = mock_client
         
         from shared.aws import invoke_bedrock
@@ -334,3 +339,101 @@ class TestInvokeBedrock:
             invoke_bedrock('Hello')
         
         assert 'Bedrock service error' in str(exc_info.value)
+
+
+class TestGetLambdaClient:
+    """Tests for get_lambda_client function."""
+
+    @patch('shared.aws.boto3.client')
+    def test_creates_lambda_client(self, mock_boto_client):
+        """Creates Lambda client on first call."""
+        import shared.aws as aws_module
+        aws_module._lambda_client = None  # Reset cached client
+        
+        mock_client = MagicMock()
+        mock_boto_client.return_value = mock_client
+        
+        from shared.aws import get_lambda_client
+        result = get_lambda_client()
+        
+        mock_boto_client.assert_called_with('lambda')
+        assert result == mock_client
+
+    @patch('shared.aws.boto3.client')
+    def test_reuses_existing_client(self, mock_boto_client):
+        """Reuses existing client on subsequent calls."""
+        import shared.aws as aws_module
+        existing_client = MagicMock()
+        aws_module._lambda_client = existing_client
+        
+        from shared.aws import get_lambda_client
+        result = get_lambda_client()
+        
+        mock_boto_client.assert_not_called()
+        assert result == existing_client
+
+
+class TestInvokeLambdaAsync:
+    """Tests for invoke_lambda_async function."""
+
+    @patch('shared.aws.get_lambda_client')
+    def test_invokes_lambda_with_event_type(self, mock_get_client):
+        """Invokes Lambda with Event invocation type."""
+        mock_client = MagicMock()
+        mock_client.invoke.return_value = {'StatusCode': 202}
+        mock_get_client.return_value = mock_client
+        
+        from shared.aws import invoke_lambda_async
+        result = invoke_lambda_async('my-function', {'key': 'value'})
+        
+        mock_client.invoke.assert_called_once_with(
+            FunctionName='my-function',
+            InvocationType='Event',
+            Payload='{"key": "value"}'
+        )
+        assert result == {'StatusCode': 202}
+
+    @patch('shared.aws.get_lambda_client')
+    def test_handles_complex_payload(self, mock_get_client):
+        """Handles complex nested payload."""
+        mock_client = MagicMock()
+        mock_client.invoke.return_value = {'StatusCode': 202}
+        mock_get_client.return_value = mock_client
+        
+        from shared.aws import invoke_lambda_async
+        payload = {
+            'job_type': 'generate_personas',
+            'project_id': 'proj_123',
+            'filters': {'days': 30, 'sources': ['trustpilot']}
+        }
+        invoke_lambda_async('my-function', payload)
+        
+        call_args = mock_client.invoke.call_args
+        assert call_args.kwargs['FunctionName'] == 'my-function'
+        assert call_args.kwargs['InvocationType'] == 'Event'
+
+
+class TestInvokeSelfAsync:
+    """Tests for invoke_self_async function."""
+
+    @patch.dict('os.environ', {'AWS_LAMBDA_FUNCTION_NAME': 'voc-projects-api'})
+    @patch('shared.aws.invoke_lambda_async')
+    def test_invokes_current_function(self, mock_invoke):
+        """Invokes the current Lambda function."""
+        mock_invoke.return_value = {'StatusCode': 202}
+        
+        from shared.aws import invoke_self_async
+        result = invoke_self_async({'job_type': 'test'})
+        
+        mock_invoke.assert_called_once_with('voc-projects-api', {'job_type': 'test'})
+        assert result == {'StatusCode': 202}
+
+    @patch.dict('os.environ', {'AWS_LAMBDA_FUNCTION_NAME': ''})
+    def test_raises_when_function_name_not_set(self):
+        """Raises ValueError when AWS_LAMBDA_FUNCTION_NAME is not set."""
+        from shared.aws import invoke_self_async
+        
+        with pytest.raises(ValueError) as exc_info:
+            invoke_self_async({'job_type': 'test'})
+        
+        assert 'AWS_LAMBDA_FUNCTION_NAME' in str(exc_info.value)

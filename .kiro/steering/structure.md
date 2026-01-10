@@ -8,160 +8,176 @@ triggers: ["project structure", "folder", "directory", "where is", "file locatio
 ## Repository Layout
 
 ```
-voc-datalake/
-├── bin/
-│   └── voc-datalake.ts           # CDK app entry point - defines all stacks
-├── lib/stacks/                   # CDK stack definitions (TypeScript)
-│   ├── storage-stack.ts          # DynamoDB tables, S3 raw data bucket, KMS
-│   ├── auth-stack.ts             # Cognito User Pool, groups, client
-│   ├── ingestion-stack.ts        # Ingestor Lambdas, EventBridge schedules, SQS, Secrets
-│   ├── processing-stack.ts       # Processor Lambda, Bedrock/Comprehend integration
-│   ├── analytics-stack.ts        # API Gateway, split API Lambdas (20KB policy limit), Webhooks, WAF
-│   ├── research-stack.ts         # Step Functions for long-running research jobs
-│   ├── artifact-builder-stack.ts # Artifact Builder (ECS, CodeCommit, ECR, S3)
-│   └── frontend-stack.ts         # S3 + CloudFront for React dashboard
-├── lambda/                       # Python Lambda functions
-│   ├── ingestors/                # Empty - ingestors moved to plugins/
-│   ├── webhooks/                 # Empty - webhooks handled via API Gateway
-│   ├── processor/handler.py      # SQS consumer - Bedrock/Comprehend enrichment
-│   ├── aggregator/handler.py     # DynamoDB Streams consumer - real-time metrics
-│   ├── research/
-│   │   └── research_step_handler.py  # Step Functions task handler
-│   ├── shared/                   # Shared utilities across Lambdas
-│   │   ├── __init__.py
-│   │   ├── aws.py                # AWS client helpers
-│   │   ├── http.py               # HTTP utilities
-│   │   ├── idempotency.py        # Idempotency helpers
-│   │   └── logging.py            # Logging utilities
-│   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit)
-│   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
-│   │   ├── chat_handler.py           # /chat/* (conversations)
-│   │   ├── chat_stream_handler.py    # Streaming chat (Lambda Function URL)
-│   │   ├── integrations_handler.py   # /integrations/*, /sources/* (credentials, schedules)
-│   │   ├── scrapers_handler.py       # /scrapers/* (web scraper management)
-│   │   ├── settings_handler.py       # /settings/* (brand, categories config)
-│   │   ├── projects_handler.py       # /projects/* (research projects, personas)
-│   │   ├── users_handler.py          # /users/* (Cognito user administration)
-│   │   ├── feedback_form_handler.py  # /feedback-form/*, /feedback-forms/* (embeddable forms)
-│   │   ├── s3_import_handler.py      # /s3-import/* (file explorer)
-│   │   ├── data_explorer_handler.py  # /data-explorer/* (S3 raw data & DynamoDB browser)
-│   │   ├── artifact_builder_handler.py   # /artifacts/* (artifact builder jobs)
-│   │   ├── artifact_trigger_handler.py   # /artifacts/trigger (artifact build triggers)
-│   │   ├── logs_handler.py           # /logs/* (system logs)
-│   │   ├── manual_import_handler.py  # /manual-import/* (manual data import)
-│   │   ├── manual_import_processor.py # Manual import processing logic
-│   │   └── projects.py               # Projects business logic (shared)
-│   └── layers/
-│       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4
-│       └── processing-deps/      # Layer: aws-lambda-powertools
-├── plugins/                      # Data source plugins (moved from lambda/ingestors)
-│   ├── _shared/                  # Shared plugin utilities
-│   ├── _template/                # Template for new plugins
-│   ├── trustpilot/               # Trustpilot reviews
-│   ├── twitter/                  # Twitter/X mentions
-│   ├── google_reviews/           # Google Reviews
-│   ├── instagram/                # Instagram mentions
-│   ├── facebook/                 # Facebook mentions
-│   ├── reddit/                   # Reddit mentions
-│   ├── linkedin/                 # LinkedIn mentions
-│   ├── tiktok/                   # TikTok mentions
-│   ├── youtube/                  # YouTube comments
-│   ├── tavily/                   # Tavily web search
-│   ├── appstore_apple/           # Apple App Store RSS
-│   ├── appstore_google/          # Google Play Developer API
-│   ├── appstore_huawei/          # Huawei AppGallery Connect API
-│   ├── webscraper/               # Configurable web scraper
-│   ├── yelp/                     # Yelp Fusion API
-│   └── s3_import/                # S3 bulk import
-├── frontend/                     # React dashboard (Vite + Tailwind)
-│   ├── src/
-│   │   ├── api/
-│   │   │   ├── client.ts         # API client, fetch helpers
-│   │   │   ├── types.ts          # API type definitions
-│   │   │   ├── artifactApi.ts    # Artifact builder API
-│   │   │   ├── projectsApi.ts    # Projects API
-│   │   │   ├── streamApi.ts      # Streaming API helpers
-│   │   │   └── responseParser.ts # Response parsing utilities
-│   │   ├── services/auth.ts      # Cognito authentication service
-│   │   ├── components/           # Each component in its own folder with index.tsx (24 total)
-│   │   │   ├── AdminRoute/           # Admin-only route wrapper
-│   │   │   ├── Breadcrumbs/          # Navigation breadcrumbs
-│   │   │   ├── CategoriesManager/    # Category management UI
-│   │   │   ├── ChatExportMenu/       # Export chat conversations
-│   │   │   ├── ChatFilters/          # Chat filter controls
-│   │   │   ├── ChatMessage/          # Chat message component
-│   │   │   ├── ChatSidebar/          # Chat conversation sidebar
-│   │   │   ├── ConfirmModal/         # Confirmation dialog
-│   │   │   ├── DataSourceWizard/     # Data source setup wizard
-│   │   │   ├── DocumentExportMenu/   # Export documents
-│   │   │   ├── FeedbackCard/         # Feedback item display
-│   │   │   ├── FeedbackCarousel/     # Carousel for feedback items
-│   │   │   ├── FeedbackFormConfig/   # Feedback form configuration
-│   │   │   ├── Layout/               # Main layout with sidebar (reads menu-config.json)
-│   │   │   ├── MetricCard/           # Dashboard metric card
-│   │   │   ├── PageLoader/           # Page loading indicator
-│   │   │   ├── PersonaExportMenu/    # Export personas
-│   │   │   ├── ProtectedRoute/       # Auth-protected route wrapper
-│   │   │   ├── S3ImportExplorer/     # S3 file browser
-│   │   │   ├── SentimentBadge/       # Sentiment indicator
-│   │   │   ├── SocialFeed/           # Live social media feed
-│   │   │   ├── TimeRangeSelector/    # Date range picker
-│   │   │   ├── UserAdmin/            # User administration
-│   │   │   └── UserProfileModal/     # User profile modal
-│   │   ├── pages/                # Each page in its own folder (15 total)
-│   │   │   ├── ArtifactBuilder/  # AI-powered artifact generation
-│   │   │   ├── Categories/       # Category breakdown and analysis
-│   │   │   ├── Chat/             # AI chat interface
-│   │   │   ├── Dashboard/        # Overview with charts and social feed
-│   │   │   ├── DataExplorer/     # S3 raw data and DynamoDB browser
-│   │   │   ├── Feedback/         # Filterable feedback list
-│   │   │   ├── FeedbackDetail/   # Single feedback item view
-│   │   │   ├── FeedbackForms/    # Feedback form management
-│   │   │   ├── Login/            # Cognito login page
-│   │   │   ├── Prioritization/   # Issue prioritization
-│   │   │   ├── ProblemAnalysis/  # Problem analysis dashboard
-│   │   │   ├── ProjectDetail/    # Single project view
-│   │   │   ├── Projects/         # Research projects list
-│   │   │   ├── Scrapers/         # Web scraper configuration
-│   │   │   └── Settings/         # Configuration and integrations (uses getEnabledPlugins)
-│   │   ├── store/
-│   │   │   ├── configStore.ts    # Zustand state (config, time range, custom dates)
-│   │   │   ├── chatStore.ts      # Chat conversation state
-│   │   │   ├── authStore.ts      # Authentication state
-│   │   │   └── manualImportStore.ts # Manual import state
-│   │   ├── plugins/              # Frontend plugin system
-│   │   │   ├── index.ts          # Plugin loader (getEnabledPlugins, getPluginManifests)
-│   │   │   ├── types.ts          # Plugin type definitions (with enabled field)
-│   │   │   └── manifests.json    # Generated plugin manifests
-│   │   ├── config/
-│   │   │   └── menu-config.json  # Generated menu visibility config
-│   │   ├── constants/
-│   │   │   └── filters.ts        # Filter constants and options
-│   │   └── utils/
-│   │       └── dateUtils.ts      # Date utility functions
-│   ├── package.json
-│   └── vite.config.ts
-├── schemas/
-│   └── feedback-event.schema.json
-├── prompts/
-│   └── feedback-analysis-prompt.json
-├── scripts/
-│   ├── build-layers.sh           # Build Lambda layers with Docker (ARM64)
-│   ├── deploy.sh                 # Full deployment script
-│   ├── deploy-frontend.sh        # Frontend-only deployment
-│   ├── test-api.sh               # API validation script
-│   ├── generate-manifests.ts     # Generate plugin manifests with enabled status
-│   ├── generate-menu-config.ts   # Generate menu config from cdk.context.json
-│   ├── generate-integrity.ts     # Generate plugin integrity hashes
-│   ├── validate-plugins.ts       # Validate plugin configurations
-│   └── test-plugin-loader.ts     # Test plugin loading
-├── docs/
-│   ├── default-scrapers.md       # Default scraper configurations
-│   ├── manual-import-feature.md  # Manual import feature documentation
-│   └── plugin-architecture.md    # Plugin system architecture
-├── cdk.json
-├── tsconfig.json
-└── package.json
+voice-of-customer-datalake/       # Root repository
+├── docs/                         # Documentation
+│   ├── data-lake-structure.md    # Data lake architecture documentation
+│   ├── deployment.md             # Deployment guide
+│   ├── feedback-forms.md         # Feedback forms documentation
+│   ├── getting-started-plugins.md # Plugin development guide
+│   ├── plugin-architecture.md    # Plugin system architecture
+│   ├── processing-pipeline.md    # Processing pipeline documentation
+│   └── scrapers.md               # Web scraper documentation
+├── scripts/                      # Root-level scripts
+│   └── find-*.sh                 # Dead code analysis scripts
+├── static/                       # Static assets (demo videos, thumbnails)
+├── package.json                  # Root scripts (shortcuts)
+└── voc-datalake/                 # Main CDK project
+    ├── bin/
+    │   └── voc-datalake.ts           # CDK app entry point - defines all stacks
+    ├── lib/stacks/                   # CDK stack definitions (TypeScript) - 6 stacks
+    │   ├── api-stack.ts              # API Gateway, split API Lambdas (20KB policy limit), Webhooks, WAF
+    │   ├── artifact-builder-stack.ts # Artifact Builder (ECS, CodeCommit, ECR, S3)
+    │   ├── bedrock-access-stack.ts   # Bedrock model access configuration
+    │   ├── core-stack.ts             # Core infrastructure (DynamoDB, S3, Cognito, CloudFront, KMS)
+    │   ├── ingestion-stack.ts        # Plugin Lambdas, EventBridge schedules, SQS, Secrets
+    │   └── processing-stack-consolidated.ts # Processing + Research (Bedrock, Step Functions)
+    ├── lambda/                       # Python Lambda functions
+    │   ├── processor/handler.py      # SQS consumer - Bedrock/Comprehend enrichment
+    │   ├── aggregator/handler.py     # DynamoDB Streams consumer - real-time metrics
+    │   ├── artifact-builder/         # Artifact builder container code
+    │   ├── research/
+    │   │   └── research_step_handler.py  # Step Functions task handler
+    │   ├── shared/                   # Shared utilities across Lambdas (12 modules)
+    │   │   ├── __init__.py
+    │   │   ├── api.py                # API response helpers
+    │   │   ├── auth.py               # Authentication utilities
+    │   │   ├── avatar.py             # Avatar generation utilities
+    │   │   ├── aws.py                # AWS client helpers
+    │   │   ├── converse.py           # Bedrock conversation utilities
+    │   │   ├── feedback.py           # Feedback data utilities
+    │   │   ├── http.py               # HTTP utilities
+    │   │   ├── idempotency.py        # Idempotency helpers
+    │   │   ├── logging.py            # Logging utilities
+    │   │   ├── project_chat.py       # Project chat utilities
+    │   │   └── prompts.py            # Prompt management utilities
+    │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 15 handlers
+    │   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
+    │   │   ├── chat_handler.py           # /chat/* (conversations)
+    │   │   ├── chat_stream_handler.py    # Streaming chat (Lambda Function URL)
+    │   │   ├── integrations_handler.py   # /integrations/*, /sources/* (credentials, schedules)
+    │   │   ├── scrapers_handler.py       # /scrapers/* (web scraper management)
+    │   │   ├── settings_handler.py       # /settings/* (brand, categories config)
+    │   │   ├── projects_handler.py       # /projects/* (research projects, personas)
+    │   │   ├── users_handler.py          # /users/* (Cognito user administration)
+    │   │   ├── feedback_form_handler.py  # /feedback-form/*, /feedback-forms/* (embeddable forms)
+    │   │   ├── s3_import_handler.py      # /s3-import/* (file explorer)
+    │   │   ├── data_explorer_handler.py  # /data-explorer/* (S3 raw data & DynamoDB browser)
+    │   │   ├── artifact_builder_handler.py   # /artifacts/* (artifact builder jobs)
+    │   │   ├── artifact_trigger_handler.py   # /artifacts/trigger (artifact build triggers)
+    │   │   ├── logs_handler.py           # /logs/* (system logs)
+    │   │   ├── manual_import_handler.py  # /manual-import/* (manual data import)
+    │   │   ├── manual_import_processor.py # Manual import processing logic
+    │   │   ├── projects.py               # Projects business logic (shared)
+    │   │   └── prompts/                  # LLM prompt templates (6 templates)
+    │   │       ├── avatar-generation.json
+    │   │       ├── persona-generation.json
+    │   │       ├── persona-import.json
+    │   │       ├── prd-generation.json
+    │   │       ├── prfaq-generation.json
+    │   │       └── research-analysis.json
+    │   └── layers/
+    │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4
+    │       └── processing-deps/      # Layer: aws-lambda-powertools
+    ├── plugins/                      # Data source plugins (16 plugins)
+    │   ├── _shared/                  # Shared plugin utilities
+    │   ├── _template/                # Template for new plugins
+    │   ├── appstore_apple/           # Apple App Store RSS
+    │   ├── appstore_google/          # Google Play Developer API
+    │   ├── appstore_huawei/          # Huawei AppGallery Connect API
+    │   ├── facebook/                 # Facebook mentions
+    │   ├── google_reviews/           # Google Reviews
+    │   ├── instagram/                # Instagram mentions
+    │   ├── linkedin/                 # LinkedIn mentions
+    │   ├── reddit/                   # Reddit mentions
+    │   ├── s3_import/                # S3 bulk import
+    │   ├── tavily/                   # Tavily web search
+    │   ├── tiktok/                   # TikTok mentions
+    │   ├── trustpilot/               # Trustpilot reviews
+    │   ├── twitter/                  # Twitter/X mentions
+    │   ├── webscraper/               # Configurable web scraper
+    │   ├── yelp/                     # Yelp Fusion API
+    │   └── youtube/                  # YouTube comments
+    ├── frontend/                     # React dashboard (Vite + Tailwind)
+    │   ├── src/
+    │   │   ├── api/
+    │   │   │   ├── client.ts         # API client, fetch helpers
+    │   │   │   ├── types.ts          # API type definitions
+    │   │   │   ├── artifactApi.ts    # Artifact builder API (lazy-loaded)
+    │   │   │   ├── projectsApi.ts    # Projects API (lazy-loaded)
+    │   │   │   └── streamApi.ts      # Streaming API helpers (lazy-loaded)
+    │   │   ├── services/auth.ts      # Cognito authentication service
+    │   │   ├── components/           # Each component in its own folder with index.tsx (23 total)
+    │   │   │   ├── AdminRoute/           # Admin-only route wrapper
+    │   │   │   ├── Breadcrumbs/          # Navigation breadcrumbs
+    │   │   │   ├── CategoriesManager/    # Category management UI
+    │   │   │   ├── ChatExportMenu/       # Export chat conversations
+    │   │   │   ├── ChatFilters/          # Chat filter controls
+    │   │   │   ├── ChatMessage/          # Chat message component
+    │   │   │   ├── ChatSidebar/          # Chat conversation sidebar
+    │   │   │   ├── ConfirmModal/         # Confirmation dialog
+    │   │   │   ├── DataSourceWizard/     # Data source setup wizard
+    │   │   │   ├── DocumentExportMenu/   # Export documents
+    │   │   │   ├── FeedbackCard/         # Feedback item display
+    │   │   │   ├── FeedbackCarousel/     # Carousel for feedback items
+    │   │   │   ├── Layout/               # Main layout with sidebar (reads menu-config.json)
+    │   │   │   ├── MetricCard/           # Dashboard metric card
+    │   │   │   ├── PageLoader/           # Page loading indicator
+    │   │   │   ├── PersonaExportMenu/    # Export personas
+    │   │   │   ├── ProtectedRoute/       # Auth-protected route wrapper
+    │   │   │   ├── S3ImportExplorer/     # S3 file browser
+    │   │   │   ├── SentimentBadge/       # Sentiment indicator
+    │   │   │   ├── SocialFeed/           # Live social media feed
+    │   │   │   ├── TimeRangeSelector/    # Date range picker
+    │   │   │   ├── UserAdmin/            # User administration
+    │   │   │   └── UserProfileModal/     # User profile modal
+    │   │   ├── pages/                # Each page in its own folder (15 total)
+    │   │   │   ├── ArtifactBuilder/  # AI-powered artifact generation
+    │   │   │   ├── Categories/       # Category breakdown and analysis
+    │   │   │   ├── Chat/             # AI chat interface
+    │   │   │   ├── Dashboard/        # Overview with charts and social feed
+    │   │   │   ├── DataExplorer/     # S3 raw data and DynamoDB browser
+    │   │   │   ├── Feedback/         # Filterable feedback list
+    │   │   │   ├── FeedbackDetail/   # Single feedback item view
+    │   │   │   ├── FeedbackForms/    # Feedback form management
+    │   │   │   ├── Login/            # Cognito login page
+    │   │   │   ├── Prioritization/   # Issue prioritization
+    │   │   │   ├── ProblemAnalysis/  # Problem analysis dashboard
+    │   │   │   ├── ProjectDetail/    # Single project view
+    │   │   │   ├── Projects/         # Research projects list
+    │   │   │   ├── Scrapers/         # Web scraper configuration
+    │   │   │   └── Settings/         # Configuration and integrations (uses getEnabledPlugins)
+    │   │   ├── store/
+    │   │   │   ├── configStore.ts    # Zustand state (config, time range, custom dates)
+    │   │   │   ├── chatStore.ts      # Chat conversation state
+    │   │   │   ├── authStore.ts      # Authentication state
+    │   │   │   └── manualImportStore.ts # Manual import state
+    │   │   ├── plugins/              # Frontend plugin system
+    │   │   │   ├── index.ts          # Plugin loader (getEnabledPlugins, getPluginManifests)
+    │   │   │   ├── types.ts          # Plugin type definitions (with enabled field)
+    │   │   │   └── manifests.json    # Generated plugin manifests
+    │   │   ├── config/
+    │   │   │   └── menu-config.json  # Generated menu visibility config
+    │   │   ├── constants/
+    │   │   │   └── filters.ts        # Filter constants and options
+    │   │   └── utils/
+    │   │       └── dateUtils.ts      # Date utility functions
+    │   ├── package.json
+    │   └── vite.config.ts
+    ├── schemas/
+    │   └── feedback-event.schema.json
+    ├── scripts/
+    │   ├── build-layers.sh           # Build Lambda layers with Docker (ARM64)
+    │   ├── deploy.sh                 # Full deployment script
+    │   ├── deploy-frontend.sh        # Frontend-only deployment
+    │   ├── test-api.sh               # API validation script
+    │   ├── generate-manifests.ts     # Generate plugin manifests with enabled status
+    │   ├── generate-menu-config.ts   # Generate menu config from cdk.context.json
+    │   ├── generate-integrity.ts     # Generate plugin integrity hashes
+    │   ├── validate-plugins.ts       # Validate plugin configurations
+    │   └── test-plugin-loader.ts     # Test plugin loading
+    ├── cdk.json
+    ├── tsconfig.json
+    └── package.json
 ```
 
 ## Storage
@@ -321,23 +337,17 @@ voc-datalake/
 ## CDK Stack Dependencies
 
 ```
-VocStorageStack (DynamoDB tables, S3 raw data bucket, KMS)
+VocCoreStack (DynamoDB tables, S3 raw data bucket, KMS, Cognito, CloudFront)
        │
-       ├──▶ VocAuthStack (Cognito User Pool, groups, client)
-       │
-       ├──▶ VocIngestionStack (Ingestors, EventBridge, SQS, Secrets)
+       ├──▶ VocIngestionStack (Plugin Lambdas, EventBridge, SQS, Secrets)
        │           │
-       │           └──▶ VocProcessingStack (Processor, Aggregator)
+       │           └──▶ VocProcessingStackConsolidated (Processor, Aggregator, Step Functions, Bedrock)
        │
-       ├──▶ VocResearchStack (Step Functions for research workflows)
-       │
-       ├──▶ ArtifactBuilderStack (ECS, CodeCommit, ECR, S3 for artifact generation)
-       │
-       ├──▶ VocAnalyticsStack (API Gateway, API Lambdas, Webhooks, WAF)
+       ├──▶ VocApiStack (API Gateway, 15 API Lambdas, Webhooks, WAF)
        │           │
        │           └── Depends on: processingQueue, secretsArn, researchStateMachine, userPool
        │
-       └──▶ VocFrontendStack (S3, CloudFront)
-                    │
-                    └── Depends on: apiEndpoint, userPoolId, userPoolClientId
+       ├──▶ VocBedrockAccessStack (Bedrock model access configuration)
+       │
+       └──▶ ArtifactBuilderStack (ECS, CodeCommit, ECR, S3 for artifact generation) - standalone
 ```

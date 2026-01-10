@@ -204,18 +204,12 @@ export interface ProjectPersona {
   persona_id: string
   name: string
   tagline: string
-  demographics: { age_range?: string; occupation?: string; tech_level?: string; bio?: string; location?: string; income_bracket?: string; education?: string; family_status?: string }
-  quote: string
-  goals: string[]
-  frustrations: string[]
-  behaviors: string[] | { current_solutions?: string[]; tools_used?: string[]; activity_frequency?: string; tech_savviness?: string; decision_style?: string }
-  needs: string[]
-  scenario: string | { title?: string; narrative?: string; trigger?: string; outcome?: string }
   created_at: string
   confidence?: 'high' | 'medium' | 'low'
   feedback_count?: number
   avatar_url?: string
   avatar_prompt?: string
+  // Section 1: Identity & Demographics
   identity?: { 
     age_range?: string
     location?: string
@@ -225,25 +219,29 @@ export interface ProjectPersona {
     family_status?: string
     bio?: string 
   }
+  // Section 2: Goals & Motivations
   goals_motivations?: { 
     primary_goal?: string
     secondary_goals?: string[]
     success_definition?: string
     underlying_motivations?: string[] 
   }
+  // Section 3: Pain Points & Frustrations
   pain_points?: { 
     current_challenges?: string[]
     blockers?: string[]
     workarounds?: string[]
     emotional_impact?: string 
   }
-  behaviors_detail?: {
+  // Section 4: Behaviors & Habits
+  behaviors?: {
     current_solutions?: string[]
     tools_used?: string[]
     activity_frequency?: string
     tech_savviness?: string
     decision_style?: string
   }
+  // Section 5: Context & Environment
   context_environment?: { 
     usage_context?: string
     devices?: string[]
@@ -251,8 +249,18 @@ export interface ProjectPersona {
     social_context?: string
     influencers?: string[]
   }
+  // Section 6: Representative Quotes
   quotes?: Array<{ text: string; context?: string }>
+  // Section 7: Scenario/User Story
+  scenario?: { 
+    title?: string
+    narrative?: string
+    trigger?: string
+    outcome?: string 
+  }
+  // Section 8: Research Notes
   research_notes?: Array<string | { note_id?: string; text: string; author?: string; created_at?: string; tags?: string[] }>
+  // Metadata
   supporting_evidence?: string[]
   source_breakdown?: Record<string, number>
 }

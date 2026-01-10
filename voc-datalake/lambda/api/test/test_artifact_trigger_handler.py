@@ -10,12 +10,16 @@ from datetime import datetime, timezone
 class TestUpdateJobStatus:
     """Tests for update_job_status helper function."""
 
-    @patch('artifact_trigger_handler.jobs_table')
-    def test_updates_status_in_dynamodb(self, mock_table):
+    @patch('artifact_trigger_handler.get_jobs_table')
+    def test_updates_status_in_dynamodb(self, mock_get_table):
         """Updates job status in DynamoDB."""
         import sys
         import os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        mock_table = MagicMock()
+        mock_get_table.return_value = mock_table
+        
         from artifact_trigger_handler import update_job_status
         
         update_job_status('job-123', 'generating')
@@ -26,9 +30,12 @@ class TestUpdateJobStatus:
         assert ':status' in call_args.kwargs['ExpressionAttributeValues']
         assert call_args.kwargs['ExpressionAttributeValues'][':status'] == 'generating'
 
-    @patch('artifact_trigger_handler.jobs_table')
-    def test_includes_error_when_provided(self, mock_table):
+    @patch('artifact_trigger_handler.get_jobs_table')
+    def test_includes_error_when_provided(self, mock_get_table):
         """Includes error message when provided."""
+        mock_table = MagicMock()
+        mock_get_table.return_value = mock_table
+        
         from artifact_trigger_handler import update_job_status
         
         update_job_status('job-123', 'failed', error='Task failed to start')
@@ -41,10 +48,12 @@ class TestUpdateJobStatus:
 class TestRecordHandler:
     """Tests for record_handler SQS message processor."""
 
-    @patch('artifact_trigger_handler.jobs_table')
+    @patch('artifact_trigger_handler.get_jobs_table')
     @patch('artifact_trigger_handler.ecs')
-    def test_starts_ecs_task_successfully(self, mock_ecs, mock_table):
+    def test_starts_ecs_task_successfully(self, mock_ecs, mock_get_table):
         """Starts ECS Fargate task for job."""
+        mock_table = MagicMock()
+        mock_get_table.return_value = mock_table
         mock_ecs.run_task.return_value = {
             'tasks': [{'taskArn': 'arn:aws:ecs:us-east-1:123:task/cluster/task-id'}],
             'failures': []
@@ -62,10 +71,12 @@ class TestRecordHandler:
         assert 'task_arn' in result
         mock_ecs.run_task.assert_called_once()
 
-    @patch('artifact_trigger_handler.jobs_table')
+    @patch('artifact_trigger_handler.get_jobs_table')
     @patch('artifact_trigger_handler.ecs')
-    def test_handles_ecs_task_failure(self, mock_ecs, mock_table):
+    def test_handles_ecs_task_failure(self, mock_ecs, mock_get_table):
         """Handles ECS task start failure."""
+        mock_table = MagicMock()
+        mock_get_table.return_value = mock_table
         mock_ecs.run_task.return_value = {
             'tasks': [],
             'failures': [{'reason': 'Capacity unavailable'}]
@@ -83,9 +94,12 @@ class TestRecordHandler:
         update_calls = mock_table.update_item.call_args_list
         assert any(':status' in str(call) for call in update_calls)
 
-    @patch('artifact_trigger_handler.jobs_table')
-    def test_returns_error_when_job_id_missing(self, mock_table):
+    @patch('artifact_trigger_handler.get_jobs_table')
+    def test_returns_error_when_job_id_missing(self, mock_get_table):
         """Returns error when job_id not in message."""
+        mock_table = MagicMock()
+        mock_get_table.return_value = mock_table
+        
         from artifact_trigger_handler import record_handler
         
         record = MagicMock()
@@ -96,10 +110,12 @@ class TestRecordHandler:
         assert result['status'] == 'error'
         assert 'No job_id' in result['message']
 
-    @patch('artifact_trigger_handler.jobs_table')
+    @patch('artifact_trigger_handler.get_jobs_table')
     @patch('artifact_trigger_handler.ecs')
-    def test_stores_task_arn_in_job_record(self, mock_ecs, mock_table):
+    def test_stores_task_arn_in_job_record(self, mock_ecs, mock_get_table):
         """Stores ECS task ARN in job record."""
+        mock_table = MagicMock()
+        mock_get_table.return_value = mock_table
         task_arn = 'arn:aws:ecs:us-east-1:123:task/cluster/task-id'
         mock_ecs.run_task.return_value = {
             'tasks': [{'taskArn': task_arn}],
@@ -121,10 +137,12 @@ class TestRecordHandler:
         )
         assert arn_stored
 
-    @patch('artifact_trigger_handler.jobs_table')
+    @patch('artifact_trigger_handler.get_jobs_table')
     @patch('artifact_trigger_handler.ecs')
-    def test_handles_ecs_exception(self, mock_ecs, mock_table):
+    def test_handles_ecs_exception(self, mock_ecs, mock_get_table):
         """Handles ECS client exception."""
+        mock_table = MagicMock()
+        mock_get_table.return_value = mock_table
         mock_ecs.run_task.side_effect = Exception('ECS service unavailable')
         
         from artifact_trigger_handler import record_handler
@@ -144,10 +162,12 @@ class TestLambdaHandler:
     """Tests for the main Lambda handler."""
 
     @patch('artifact_trigger_handler.processor')
-    @patch('artifact_trigger_handler.jobs_table')
+    @patch('artifact_trigger_handler.get_jobs_table')
     @patch('artifact_trigger_handler.ecs')
-    def test_processes_sqs_batch(self, mock_ecs, mock_table, mock_processor):
+    def test_processes_sqs_batch(self, mock_ecs, mock_get_table, mock_processor):
         """Processes SQS batch of messages."""
+        mock_table = MagicMock()
+        mock_get_table.return_value = mock_table
         mock_processor.response.return_value = {'batchItemFailures': []}
         mock_ecs.run_task.return_value = {
             'tasks': [{'taskArn': 'arn:aws:ecs:us-east-1:123:task/cluster/task-id'}],

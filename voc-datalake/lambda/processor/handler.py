@@ -8,8 +8,6 @@ Validates incoming messages using Pydantic schemas before processing.
 import json
 import os
 import uuid
-import random
-import time
 import sys
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -17,7 +15,6 @@ from typing import Any
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
 from aws_lambda_powertools.utilities.batch.exceptions import BatchProcessingError
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
-from botocore.exceptions import ClientError
 
 # Add plugins directory to path for schema imports
 plugins_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'plugins')
@@ -26,6 +23,7 @@ sys.path.insert(0, plugins_dir)
 # Shared module imports
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.converse import converse, BedrockThrottlingError
 from shared.idempotency import (
     get_persistence_layer,
     get_idempotency_config,
@@ -42,14 +40,8 @@ except ImportError:
     logger.warning("Could not import validation schemas - validation disabled")
     VALIDATION_ENABLED = False
 
-# Retry configuration for Bedrock
-BEDROCK_MAX_RETRIES = 5
-BEDROCK_BASE_DELAY = 1.0  # seconds
-BEDROCK_MAX_DELAY = 30.0  # seconds
-
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
-bedrock_runtime = get_bedrock_client()
 comprehend = boto3.client('comprehend')
 translate = boto3.client('translate')
 
@@ -321,7 +313,7 @@ def get_comprehend_sentiment(text: str, language: str) -> dict:
 @tracer.capture_method
 def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict:
     """
-    Invoke Bedrock LLM for structured insights with exponential backoff retry.
+    Invoke Bedrock LLM for structured insights using shared converse module.
     
     Args:
         raw_record: The feedback record to analyze
@@ -340,113 +332,82 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
         categories_instruction=categories_instruction
     )
     
-    request_body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 800,
-        "temperature": 0.1,
-        "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": user_prompt}]
-    }
-    
-    last_exception = None
-    
-    for attempt in range(BEDROCK_MAX_RETRIES):
-        try:
-            response = bedrock_runtime.invoke_model(
-                modelId=PROCESSOR_MODEL_ID,
-                body=json.dumps(request_body),
-                contentType='application/json',
-                accept='application/json'
-            )
-            
-            response_body = json.loads(response['body'].read())
-            content = response_body.get('content', [{}])[0].get('text', '{}')
-            logger.debug(f"Bedrock raw response: {content[:500]}")
-            
-            # Strip markdown code block wrapper if present (LLM often wraps JSON in ```json ... ```)
-            content = content.strip()
-            if content.startswith('```'):
-                # Remove opening ```json or ```
-                first_newline = content.find('\n')
-                if first_newline != -1:
-                    content = content[first_newline + 1:]
-                # Remove closing ``` (may have trailing whitespace/newlines)
-                content = content.strip()
-                if content.endswith('```'):
-                    content = content[:-3].strip()
-            
-            # Additional fallback: find JSON object boundaries
-            if not content.startswith('{'):
-                # Try to extract JSON from content
-                json_start = content.find('{')
-                json_end = content.rfind('}')
-                if json_start != -1 and json_end != -1:
-                    content = content[json_start:json_end + 1]
-                    logger.info(f"Extracted JSON from position {json_start} to {json_end}")
-            
-            logger.debug(f"Content after markdown strip (first 200 chars): {content[:200]}")
-            llm_result = json.loads(content)
-            latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-            
-            if attempt > 0:
-                logger.info(f"Bedrock succeeded after {attempt + 1} attempts")
-            
-            return {
-                'insights': llm_result,
-                'metadata': {
-                    'model_name': PROCESSOR_MODEL_ID,
-                    'prompt_version': PROMPT_VERSION,
-                    'latency_ms': latency_ms,
-                    'retry_attempts': attempt
-                }
+    try:
+        content = converse(
+            prompt=user_prompt,
+            system_prompt=SYSTEM_PROMPT,
+            max_tokens=800,
+            temperature=0.1,
+            model_id=PROCESSOR_MODEL_ID,
+            max_retries=5,
+            raise_on_throttle=raise_on_throttle,
+        )
+        
+        logger.debug(f"Bedrock raw response: {content[:500]}")
+        
+        # Parse JSON from response
+        parsed_content = _parse_llm_json_response(content)
+        llm_result = json.loads(parsed_content)
+        latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+        
+        return {
+            'insights': llm_result,
+            'metadata': {
+                'model_name': PROCESSOR_MODEL_ID,
+                'prompt_version': PROMPT_VERSION,
+                'latency_ms': latency_ms,
             }
-            
-        except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', '')
-            last_exception = e
-            
-            # Retry on throttling or service unavailable
-            if error_code in ('ThrottlingException', 'ServiceUnavailableException', 'ModelStreamErrorException'):
-                if attempt < BEDROCK_MAX_RETRIES - 1:
-                    # Exponential backoff with jitter
-                    delay = min(BEDROCK_BASE_DELAY * (2 ** attempt) + random.uniform(0, 1), BEDROCK_MAX_DELAY)
-                    logger.warning(f"Bedrock throttled (attempt {attempt + 1}/{BEDROCK_MAX_RETRIES}), retrying in {delay:.2f}s")
-                    time.sleep(delay)
-                    continue
-                else:
-                    # Max retries exhausted - let SQS handle retry
-                    logger.error(f"Bedrock throttled after {BEDROCK_MAX_RETRIES} attempts, raising for SQS retry")
-                    if raise_on_throttle:
-                        raise BedrockThrottlingError(f"Bedrock throttled after {BEDROCK_MAX_RETRIES} retries") from e
-            else:
-                # Non-retryable error
-                logger.error(f"Bedrock non-retryable error: {error_code} - {e}")
-                break
-                
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Bedrock response: {e}. Raw content (first 1000 chars): {content[:1000] if 'content' in dir() else 'N/A'}")
-            last_exception = e
-            break
-            
-        except Exception as e:
-            logger.error(f"Unexpected Bedrock error: {e}")
-            last_exception = e
-            break
-    
-    # Return empty insights on non-throttling failures
-    return {
-        'insights': {},
-        'metadata': {
-            'error': str(last_exception),
-            'retry_attempts': attempt + 1
         }
-    }
+        
+    except BedrockThrottlingError:
+        # Re-raise for SQS retry
+        raise
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Bedrock response: {e}")
+        return {
+            'insights': {},
+            'metadata': {'error': str(e)}
+        }
+        
+    except Exception as e:
+        logger.error(f"Unexpected Bedrock error: {e}")
+        return {
+            'insights': {},
+            'metadata': {'error': str(e)}
+        }
 
 
-class BedrockThrottlingError(Exception):
-    """Raised when Bedrock is throttled after max retries to trigger SQS retry."""
-    pass
-
+def _parse_llm_json_response(content: str) -> str:
+    """
+    Parse JSON from LLM response, handling markdown code blocks.
+    
+    Args:
+        content: Raw LLM response text
+        
+    Returns:
+        Cleaned JSON string
+    """
+    content = content.strip()
+    
+    # Strip markdown code block wrapper if present
+    if content.startswith('```'):
+        first_newline = content.find('\n')
+        if first_newline != -1:
+            content = content[first_newline + 1:]
+        content = content.strip()
+        if content.endswith('```'):
+            content = content[:-3].strip()
+    
+    # Fallback: find JSON object boundaries
+    if not content.startswith('{'):
+        json_start = content.find('{')
+        json_end = content.rfind('}')
+        if json_start != -1 and json_end != -1:
+            content = content[json_start:json_end + 1]
+            logger.info(f"Extracted JSON from position {json_start} to {json_end}")
+    
+    return content
 
 def generate_deterministic_id(source_platform: str, source_id: str, text: str = '', created_at: str = '', url: str = '') -> str:
     """

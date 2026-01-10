@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "description": "Multi-step LLM chain for generating Amazon-style PR/FAQ documents",
+  "steps": {
+    "customer_thinking": {
+      "name": "customer_thinking",
+      "description": "Deep customer-centric thinking about needs and wants",
+      "max_tokens": 2000,
+      "system_prompt": "You are thinking deeply about customers and their needs.\nChannel the voice of real customers based on the feedback data.",
+      "user_prompt_template": "Think deeply about what customers really want and need.\n\nFEATURE IDEA: {feature_idea}\n\nUSER PERSONAS:\n{personas_context}\n\nCUSTOMER FEEDBACK:\n{feedback_context}\n\nAnswer these questions from the customer's perspective:\n1. What problem does this solve for me?\n2. Why should I care about this?\n3. How will this make my life better?\n4. What would make me skeptical?\n5. What would delight me about this?"
+    },
+    "press_release": {
+      "name": "press_release",
+      "description": "Write Amazon-style press release announcing the feature",
+      "max_tokens": 2500,
+      "system_prompt": "You are writing an Amazon-style press release announcing a new feature.\nWrite as if the feature is already launched and successful. Be specific and customer-focused.",
+      "user_prompt_template": "Write a press release for this feature.\n\nCustomer insights:\n{previous}\n\nThe press release should include:\n1. **Headline**: Attention-grabbing, customer-benefit focused\n2. **Subheadline**: Expand on the headline\n3. **City, Date**: [City, Date]\n4. **Opening Paragraph**: Who, what, when, where, why\n5. **Problem Paragraph**: The customer problem being solved\n6. **Solution Paragraph**: How the feature solves it\n7. **Quote from Leadership**: Vision and commitment\n8. **Customer Quote**: From one of the personas\n9. **How It Works**: Brief explanation\n10. **Call to Action**: How to get started\n\nWrite in professional press release style."
+    },
+    "customer_faq": {
+      "name": "customer_faq",
+      "description": "Generate customer-facing FAQ section",
+      "max_tokens": 2000,
+      "system_prompt": "You are anticipating customer questions about a new feature.\nThink like a skeptical but interested customer.",
+      "user_prompt_template": "Generate the Customer FAQ section.\n\nPress Release:\n{previous}\n\nCreate 5-7 customer FAQs covering:\n- How does this work?\n- How much does it cost?\n- When is it available?\n- What if I have problems?\n- How is this different from alternatives?\n- Questions specific to each persona\n\nFormat as Q&A pairs."
+    },
+    "internal_faq": {
+      "name": "internal_faq",
+      "description": "Generate internal stakeholder FAQ section",
+      "max_tokens": 2000,
+      "system_prompt": "You are anticipating internal stakeholder questions.\nThink like executives, engineers, and business partners.",
+      "user_prompt_template": "Generate the Internal FAQ section.\n\nPress Release and Customer FAQ:\n{previous}\n\nCreate 5-7 internal FAQs covering:\n- Why now? Why this?\n- What are the technical requirements?\n- What are the risks?\n- How do we measure success?\n- What resources are needed?\n- What's the timeline?\n\nFormat as Q&A pairs."
+    }
+  }
+}

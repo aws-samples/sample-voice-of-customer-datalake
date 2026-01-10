@@ -6,7 +6,7 @@
 import type { ProjectPersona } from '../../api/client'
 
 function addIdentitySection(lines: string[], persona: ProjectPersona): void {
-  const identity = persona.identity ?? persona.demographics
+  const identity = persona.identity
   if (!identity) return
 
   lines.push('## Identity & Demographics')
@@ -27,23 +27,23 @@ function addListItems(lines: string[], items: string[], header: string): void {
 
 function addGoalsSection(lines: string[], persona: ProjectPersona): void {
   const goals = persona.goals_motivations
-  if (!goals && !persona.goals?.length) return
+  if (!goals) return
 
   lines.push('## Goals & Motivations')
-  if (goals?.primary_goal) lines.push(`**Primary Goal:** ${goals.primary_goal}`)
-  addListItems(lines, goals?.secondary_goals ?? persona.goals ?? [], '**Secondary Goals:**')
-  addListItems(lines, goals?.underlying_motivations ?? [], '**Underlying Motivations:**')
+  if (goals.primary_goal) lines.push(`**Primary Goal:** ${goals.primary_goal}`)
+  addListItems(lines, goals.secondary_goals ?? [], '**Secondary Goals:**')
+  addListItems(lines, goals.underlying_motivations ?? [], '**Underlying Motivations:**')
   lines.push('')
 }
 
 function addPainPointsSection(lines: string[], persona: ProjectPersona): void {
   const painPoints = persona.pain_points
-  if (!painPoints && !persona.frustrations?.length) return
+  if (!painPoints) return
 
   lines.push('## Pain Points & Frustrations')
-  addListItems(lines, painPoints?.current_challenges ?? persona.frustrations ?? [], '**Current Challenges:**')
-  addListItems(lines, painPoints?.blockers ?? [], '**Blockers:**')
-  addListItems(lines, painPoints?.workarounds ?? [], '**Workarounds:**')
+  addListItems(lines, painPoints.current_challenges ?? [], '**Current Challenges:**')
+  addListItems(lines, painPoints.blockers ?? [], '**Blockers:**')
+  addListItems(lines, painPoints.workarounds ?? [], '**Workarounds:**')
   lines.push('')
 }
 
@@ -52,18 +52,14 @@ function addBehaviorsSection(lines: string[], persona: ProjectPersona): void {
   if (!behaviors) return
 
   lines.push('## Behaviors & Habits')
-  if (Array.isArray(behaviors)) {
-    behaviors.forEach(b => lines.push(`- ${b}`))
-  } else {
-    if (behaviors.current_solutions?.length) {
-      lines.push('**Current Solutions:**')
-      behaviors.current_solutions.forEach(s => lines.push(`- ${s}`))
-    }
-    if (behaviors.tech_savviness) lines.push(`- **Tech Savviness:** ${behaviors.tech_savviness}`)
-    if (behaviors.activity_frequency) lines.push(`- **Activity Frequency:** ${behaviors.activity_frequency}`)
-    if (behaviors.decision_style) lines.push(`- **Decision Style:** ${behaviors.decision_style}`)
-    if (behaviors.tools_used?.length) lines.push(`- **Tools Used:** ${behaviors.tools_used.join(', ')}`)
+  if (behaviors.current_solutions?.length) {
+    lines.push('**Current Solutions:**')
+    behaviors.current_solutions.forEach(s => lines.push(`- ${s}`))
   }
+  if (behaviors.tech_savviness) lines.push(`- **Tech Savviness:** ${behaviors.tech_savviness}`)
+  if (behaviors.activity_frequency) lines.push(`- **Activity Frequency:** ${behaviors.activity_frequency}`)
+  if (behaviors.decision_style) lines.push(`- **Decision Style:** ${behaviors.decision_style}`)
+  if (behaviors.tools_used?.length) lines.push(`- **Tools Used:** ${behaviors.tools_used.join(', ')}`)
   lines.push('')
 }
 
@@ -82,33 +78,24 @@ function addContextSection(lines: string[], persona: ProjectPersona): void {
 }
 
 function addQuotesSection(lines: string[], persona: ProjectPersona): void {
-  if (!persona.quotes?.length && !persona.quote) return
+  if (!persona.quotes?.length) return
 
   lines.push('## Representative Quotes')
-  if (persona.quotes?.length) {
-    persona.quotes.forEach(q => {
-      lines.push(`> "${q.text}"`)
-      if (q.context) lines.push(`> — ${q.context}`)
-      lines.push('')
-    })
-  } else if (persona.quote) {
-    lines.push(`> "${persona.quote}"`)
+  persona.quotes.forEach(q => {
+    lines.push(`> "${q.text}"`)
+    if (q.context) lines.push(`> — ${q.context}`)
     lines.push('')
-  }
+  })
 }
 
 function addScenarioSection(lines: string[], persona: ProjectPersona): void {
   if (!persona.scenario) return
 
   lines.push('## Scenario')
-  if (typeof persona.scenario === 'string') {
-    lines.push(persona.scenario)
-  } else {
-    if (persona.scenario.title) lines.push(`### ${persona.scenario.title}`)
-    if (persona.scenario.narrative) lines.push(persona.scenario.narrative)
-    if (persona.scenario.trigger) lines.push(`**Trigger:** ${persona.scenario.trigger}`)
-    if (persona.scenario.outcome) lines.push(`**Desired Outcome:** ${persona.scenario.outcome}`)
-  }
+  if (persona.scenario.title) lines.push(`### ${persona.scenario.title}`)
+  if (persona.scenario.narrative) lines.push(persona.scenario.narrative)
+  if (persona.scenario.trigger) lines.push(`**Trigger:** ${persona.scenario.trigger}`)
+  if (persona.scenario.outcome) lines.push(`**Desired Outcome:** ${persona.scenario.outcome}`)
   lines.push('')
 }
 
@@ -120,14 +107,6 @@ function addResearchNotesSection(lines: string[], persona: ProjectPersona): void
     const text = typeof note === 'string' ? note : note.text
     lines.push(`- ${text}`)
   })
-  lines.push('')
-}
-
-function addNeedsSection(lines: string[], persona: ProjectPersona): void {
-  if (!persona.needs?.length || persona.goals_motivations) return
-
-  lines.push('## Needs')
-  persona.needs.forEach(n => lines.push(`- ${n}`))
   lines.push('')
 }
 
@@ -152,7 +131,6 @@ export function personaToMarkdown(persona: ProjectPersona): string {
   addQuotesSection(lines, persona)
   addScenarioSection(lines, persona)
   addResearchNotesSection(lines, persona)
-  addNeedsSection(lines, persona)
 
   return lines.join('\n')
 }

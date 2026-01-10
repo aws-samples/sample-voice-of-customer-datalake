@@ -6,26 +6,25 @@ Launches an ECS Fargate task to execute the artifact generation.
 """
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
+# Add shared module to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import boto3
-from aws_lambda_powertools import Logger, Tracer, Metrics
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
 
-logger = Logger()
-tracer = Tracer()
-metrics = Metrics(namespace="ArtifactBuilder")
+from shared.logging import logger, tracer, metrics
 
 # AWS Clients
 dynamodb = boto3.resource('dynamodb')
 ecs = boto3.client('ecs')
 
 # Configuration
-JOBS_TABLE = os.environ.get('JOBS_TABLE')
-if not JOBS_TABLE:
-    raise ValueError("JOBS_TABLE environment variable is required")
+JOBS_TABLE = os.environ.get('JOBS_TABLE', '')
 ECS_CLUSTER = os.environ.get('ECS_CLUSTER', '')
 ECS_TASK_DEF = os.environ.get('ECS_TASK_DEF', '')
 ECS_SUBNETS = os.environ.get('ECS_SUBNETS', '').split(',')
@@ -34,12 +33,26 @@ ARTIFACTS_BUCKET = os.environ.get('ARTIFACTS_BUCKET', '')
 TEMPLATE_REPO_NAME = os.environ.get('TEMPLATE_REPO_NAME', '')
 PREVIEW_URL = os.environ.get('PREVIEW_URL', '')
 
-jobs_table = dynamodb.Table(JOBS_TABLE)
+# Lazy initialization for jobs table
+_jobs_table = None
+
+
+def get_jobs_table():
+    """Get jobs table with lazy initialization."""
+    global _jobs_table
+    if _jobs_table is None:
+        if not JOBS_TABLE:
+            raise ValueError("JOBS_TABLE environment variable is required")
+        _jobs_table = dynamodb.Table(JOBS_TABLE)
+    return _jobs_table
+
+
 processor = BatchProcessor(event_type=EventType.SQS)
 
 
 def update_job_status(job_id: str, status: str, error: str = None):
     """Update job status in DynamoDB."""
+    jobs_table = get_jobs_table()
     now = datetime.now(timezone.utc).isoformat()
     
     update_expr = 'SET #status = :status, updated_at = :now'
@@ -120,6 +133,7 @@ def record_handler(record: SQSRecord) -> dict:
         logger.info(f"Started ECS task {task_arn} for job {job_id}")
         
         # Store task ARN in job record
+        jobs_table = get_jobs_table()
         jobs_table.update_item(
             Key={'pk': f'JOB#{job_id}', 'sk': 'META'},
             UpdateExpression='SET ecs_task_arn = :arn',

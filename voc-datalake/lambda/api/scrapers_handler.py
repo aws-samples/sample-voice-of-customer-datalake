@@ -19,8 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_secrets_client, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.api import create_api_resolver, api_handler
 
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Key
 import boto3
@@ -31,17 +31,27 @@ dynamodb = get_dynamodb_resource()
 
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
-WEBSCRAPER_FUNCTION_NAME = os.environ.get("WEBSCRAPER_FUNCTION_NAME")
-if not WEBSCRAPER_FUNCTION_NAME:
-    raise ValueError("WEBSCRAPER_FUNCTION_NAME environment variable is required")
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+WEBSCRAPER_FUNCTION_NAME = os.environ.get("WEBSCRAPER_FUNCTION_NAME", "")
 
-# Configure CORS - restrict to CloudFront domain in production
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
-cors_config = CORSConfig(
-    allow_origin=ALLOWED_ORIGIN, allow_headers=["Content-Type", "Authorization"], max_age=300
-)
-app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+# Lazy table initialization
+_aggregates_table = None
+
+
+def get_aggregates_table():
+    """Get aggregates table if configured."""
+    global _aggregates_table
+    if _aggregates_table is None and AGGREGATES_TABLE:
+        _aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
+    return _aggregates_table
+
+
+def require_webscraper_function():
+    """Validate WEBSCRAPER_FUNCTION_NAME is configured."""
+    if not WEBSCRAPER_FUNCTION_NAME:
+        raise ValueError("WEBSCRAPER_FUNCTION_NAME environment variable is required")
+    return WEBSCRAPER_FUNCTION_NAME
+
+app = create_api_resolver()
 
 # Blocked hostnames and IP ranges for SSRF protection
 BLOCKED_HOSTNAMES = {'localhost', 'localhost.localdomain', 'ip6-localhost', 'ip6-loopback'}
@@ -216,12 +226,14 @@ def run_scraper(scraper_id: str):
     """Trigger a scraper run."""
     execution_id = f"run_{scraper_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     try:
-        if aggregates_table:
-            aggregates_table.put_item(Item={
+        table = get_aggregates_table()
+        if table:
+            table.put_item(Item={
                 'pk': f'SCRAPER_RUN#{scraper_id}', 'sk': execution_id, 'status': 'running',
                 'started_at': datetime.now(timezone.utc).isoformat(), 'pages_scraped': 0, 'items_found': 0, 'errors': []
             })
-        lambda_client.invoke(FunctionName=WEBSCRAPER_FUNCTION_NAME, InvocationType='Event',
+        function_name = require_webscraper_function()
+        lambda_client.invoke(FunctionName=function_name, InvocationType='Event',
                             Payload=json.dumps({'scraper_id': scraper_id, 'execution_id': execution_id, 'manual_run': True}))
         return {'success': True, 'execution_id': execution_id, 'status': 'running'}
     except Exception as e:
@@ -233,10 +245,11 @@ def run_scraper(scraper_id: str):
 @tracer.capture_method
 def get_scraper_status(scraper_id: str):
     """Get the latest run status for a scraper."""
-    if not aggregates_table:
+    table = get_aggregates_table()
+    if not table:
         return {'scraper_id': scraper_id, 'status': 'unknown'}
     try:
-        response = aggregates_table.query(KeyConditionExpression=Key('pk').eq(f'SCRAPER_RUN#{scraper_id}'), ScanIndexForward=False, Limit=1)
+        response = table.query(KeyConditionExpression=Key('pk').eq(f'SCRAPER_RUN#{scraper_id}'), ScanIndexForward=False, Limit=1)
         items = response.get('Items', [])
         if not items:
             return {'scraper_id': scraper_id, 'status': 'never_run'}
@@ -253,10 +266,11 @@ def get_scraper_status(scraper_id: str):
 @tracer.capture_method
 def get_scraper_runs(scraper_id: str):
     """Get scraper run history."""
-    if not aggregates_table:
+    table = get_aggregates_table()
+    if not table:
         return {'runs': []}
     try:
-        response = aggregates_table.query(KeyConditionExpression=Key('pk').eq(f'SCRAPER_RUN#{scraper_id}'), ScanIndexForward=False, Limit=10)
+        response = table.query(KeyConditionExpression=Key('pk').eq(f'SCRAPER_RUN#{scraper_id}'), ScanIndexForward=False, Limit=10)
         return {'runs': response.get('Items', [])}
     except Exception as e:
         logger.warning(f"Failed to get scraper runs: {e}")
@@ -282,22 +296,10 @@ def analyze_url():
             html_content = response.read().decode('utf-8', errors='ignore')
         
         html_sample = html_content[:50000]
-        bedrock = get_bedrock_client()
+        from shared.converse import converse
         prompt = f"""Analyze this HTML and identify CSS selectors for extracting reviews:\n\n```html\n{html_sample}\n```\n\nReturn JSON with: container_selector, text_selector, rating_selector, author_selector, date_selector, confidence (high/medium/low), detected_reviews_count"""
 
-        bedrock_response = bedrock.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 1000,
-                "messages": [{"role": "user", "content": prompt}],
-            }),
-        )
-        
-        result = json.loads(bedrock_response['body'].read())
-        response_text = result['content'][0]['text']
+        response_text = converse(prompt=prompt, max_tokens=1000)
         
         json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
         if json_match:
@@ -309,8 +311,6 @@ def analyze_url():
         return {'success': False, 'message': 'Failed to analyze URL'}
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

@@ -24,8 +24,8 @@ const createConfig = (overrides: Partial<ContextConfig> = {}): ContextConfig => 
 })
 
 const mockPersonas: ProjectPersona[] = [
-  { persona_id: 'p1', name: 'Power User', tagline: 'Expert', demographics: {}, quote: '', goals: [], frustrations: [], behaviors: [], needs: [], scenario: '', created_at: '' },
-  { persona_id: 'p2', name: 'Casual User', tagline: 'Beginner', demographics: {}, quote: '', goals: [], frustrations: [], behaviors: [], needs: [], scenario: '', created_at: '' },
+  { persona_id: 'p1', name: 'Power User', tagline: 'Expert', created_at: '' },
+  { persona_id: 'p2', name: 'Casual User', tagline: 'Beginner', created_at: '' },
 ]
 
 const mockDocuments: ProjectDocument[] = [

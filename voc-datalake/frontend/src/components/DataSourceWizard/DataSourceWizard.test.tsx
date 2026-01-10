@@ -36,8 +36,8 @@ function createWrapper() {
 }
 
 const mockPersonas = [
-  { persona_id: 'p1', name: 'Power User', tagline: 'Uses all features', description: '', pain_points: [], goals: [], behaviors: [], demographics: {} },
-  { persona_id: 'p2', name: 'Casual User', tagline: 'Basic usage', description: '', pain_points: [], goals: [], behaviors: [], demographics: {} },
+  { persona_id: 'p1', name: 'Power User', tagline: 'Uses all features', created_at: '' },
+  { persona_id: 'p2', name: 'Casual User', tagline: 'Basic usage', created_at: '' },
 ]
 
 const mockDocuments = [

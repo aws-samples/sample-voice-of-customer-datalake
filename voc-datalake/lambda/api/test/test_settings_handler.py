@@ -258,19 +258,15 @@ class TestSaveCategoriesConfig:
 class TestGenerateCategories:
     """Tests for POST /settings/categories/generate endpoint."""
 
-    @patch('settings_handler.get_bedrock_client')
+    @patch('shared.converse.converse')
     @patch('settings_handler.aggregates_table')
     def test_generates_categories_from_description(
-        self, mock_table, mock_get_bedrock, mock_bedrock_response,
+        self, mock_table, mock_converse,
         api_gateway_event, lambda_context
     ):
         """Generates categories using Bedrock LLM."""
-        # Arrange
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = mock_bedrock_response(
-            '{"categories": [{"id": "product_quality", "name": "product_quality", "description": "Product Quality", "subcategories": []}]}'
-        )
-        mock_get_bedrock.return_value = mock_bedrock
+        # Arrange - mock the converse function to return JSON with categories
+        mock_converse.return_value = '{"categories": [{"id": "product_quality", "name": "product_quality", "description": "Product Quality", "subcategories": []}]}'
         
         from settings_handler import lambda_handler
         event = api_gateway_event(
@@ -287,7 +283,7 @@ class TestGenerateCategories:
         assert response['statusCode'] == 200
         assert body['success'] is True
         assert len(body['categories']) > 0
-        mock_bedrock.invoke_model.assert_called_once()
+        mock_converse.assert_called_once()
 
     @patch('settings_handler.aggregates_table')
     def test_returns_error_when_description_missing(
@@ -311,16 +307,14 @@ class TestGenerateCategories:
         assert body['success'] is False
         assert 'required' in body['message'].lower()
 
-    @patch('settings_handler.get_bedrock_client')
+    @patch('shared.converse.converse')
     @patch('settings_handler.aggregates_table')
     def test_handles_bedrock_failure_gracefully(
-        self, mock_table, mock_get_bedrock, api_gateway_event, lambda_context
+        self, mock_table, mock_converse, api_gateway_event, lambda_context
     ):
         """Returns error when Bedrock service fails."""
-        # Arrange
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.side_effect = Exception('Bedrock unavailable')
-        mock_get_bedrock.return_value = mock_bedrock
+        # Arrange - mock converse to raise an exception
+        mock_converse.side_effect = Exception('Bedrock unavailable')
         
         from settings_handler import lambda_handler
         event = api_gateway_event(

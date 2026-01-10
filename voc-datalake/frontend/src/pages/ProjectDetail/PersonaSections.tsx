@@ -2,18 +2,17 @@ import type { ProjectPersona } from '../../api/client'
 import PersonaSection from './PersonaSection'
 
 export function IdentitySection({ persona }: Readonly<{ persona: ProjectPersona }>) {
-  const data = persona.identity ?? persona.demographics
-  if (!data) return null
+  if (!persona.identity) return null
 
-  const bio = persona.identity?.bio ?? persona.demographics?.bio
+  const { bio, ...attributes } = persona.identity
 
   return (
     <PersonaSection title="Identity & Demographics" icon="👤" color="purple">
       <div className="space-y-3">
         {bio && <p className="text-gray-700 text-sm leading-relaxed">{bio}</p>}
         <div className="flex flex-wrap gap-2">
-          {Object.entries(data).map(([key, value]) =>
-            value && key !== 'bio' ? (
+          {Object.entries(attributes).map(([key, value]) =>
+            value ? (
               <span key={key} className="px-2 py-1 bg-purple-50 border border-purple-100 rounded text-xs text-purple-700">
                 {key.replace(/_/g, ' ')}: {String(value)}
               </span>
@@ -38,16 +37,15 @@ function GoalsList({ goals, label }: Readonly<{ goals: string[]; label: string }
 }
 
 export function GoalsSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
-  const hasGoals = persona.goals_motivations ?? (persona.goals && persona.goals.length > 0)
-  if (!hasGoals) return null
+  if (!persona.goals_motivations) return null
 
-  const secondaryGoals = persona.goals_motivations?.secondary_goals ?? persona.goals ?? []
-  const motivations = persona.goals_motivations?.underlying_motivations ?? []
+  const secondaryGoals = persona.goals_motivations.secondary_goals ?? []
+  const motivations = persona.goals_motivations.underlying_motivations ?? []
 
   return (
     <PersonaSection title="Goals & Motivations" icon="🎯" color="green">
       <div className="space-y-3">
-        {persona.goals_motivations?.primary_goal && (
+        {persona.goals_motivations.primary_goal && (
           <div className="p-3 bg-green-50 rounded-lg border border-green-100">
             <p className="text-xs text-green-600 font-medium mb-1">Primary Goal</p>
             <p className="text-gray-700 text-sm">{persona.goals_motivations.primary_goal}</p>
@@ -73,12 +71,11 @@ function PainPointsList({ items, label }: Readonly<{ items: string[]; label: str
 }
 
 export function PainPointsSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
-  const hasPainPoints = persona.pain_points ?? (persona.frustrations && persona.frustrations.length > 0)
-  if (!hasPainPoints) return null
+  if (!persona.pain_points) return null
 
-  const challenges = persona.pain_points?.current_challenges ?? persona.frustrations ?? []
-  const blockers = persona.pain_points?.blockers ?? []
-  const workarounds = persona.pain_points?.workarounds ?? []
+  const challenges = persona.pain_points.current_challenges ?? []
+  const blockers = persona.pain_points.blockers ?? []
+  const workarounds = persona.pain_points.workarounds ?? []
 
   return (
     <PersonaSection title="Pain Points & Frustrations" icon="😤" color="red">
@@ -91,36 +88,11 @@ export function PainPointsSection({ persona }: Readonly<{ persona: ProjectPerson
   )
 }
 
-interface BehaviorsObject {
-  current_solutions?: string[]
-  tech_savviness?: string
-  activity_frequency?: string
-  decision_style?: string
-  tools_used?: string[]
-}
-
-function isBehaviorsObject(b: unknown): b is BehaviorsObject {
-  return typeof b === 'object' && b !== null && !Array.isArray(b)
-}
-
 export function BehaviorsSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
   if (!persona.behaviors) return null
 
-  if (Array.isArray(persona.behaviors) && persona.behaviors.length > 0) {
-    return (
-      <PersonaSection title="Behaviors" icon="🔄" color="blue">
-        <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
-          {persona.behaviors.map((b: string, i: number) => <li key={i}>{b}</li>)}
-        </ul>
-      </PersonaSection>
-    )
-  }
-
-  if (!isBehaviorsObject(persona.behaviors)) return null
-
-  const behaviors = persona.behaviors
-  const solutions = behaviors.current_solutions ?? []
-  const tools = behaviors.tools_used ?? []
+  const solutions = persona.behaviors.current_solutions ?? []
+  const tools = persona.behaviors.tools_used ?? []
 
   return (
     <PersonaSection title="Behaviors & Habits" icon="🔄" color="blue">
@@ -134,19 +106,19 @@ export function BehaviorsSection({ persona }: Readonly<{ persona: ProjectPersona
           </div>
         )}
         <div className="flex flex-wrap gap-2">
-          {behaviors.tech_savviness && (
+          {persona.behaviors.tech_savviness && (
             <span className="px-2 py-1 bg-blue-50 border border-blue-100 rounded text-xs text-blue-700">
-              Tech: {behaviors.tech_savviness}
+              Tech: {persona.behaviors.tech_savviness}
             </span>
           )}
-          {behaviors.activity_frequency && (
+          {persona.behaviors.activity_frequency && (
             <span className="px-2 py-1 bg-blue-50 border border-blue-100 rounded text-xs text-blue-700">
-              {behaviors.activity_frequency}
+              {persona.behaviors.activity_frequency}
             </span>
           )}
-          {behaviors.decision_style && (
+          {persona.behaviors.decision_style && (
             <span className="px-2 py-1 bg-blue-50 border border-blue-100 rounded text-xs text-blue-700">
-              {behaviors.decision_style}
+              {persona.behaviors.decision_style}
             </span>
           )}
         </div>
@@ -199,15 +171,12 @@ function QuoteBlock({ text, context }: Readonly<{ text: string; context?: string
 }
 
 export function QuotesSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
-  const hasQuotes = (persona.quotes?.length ?? 0) > 0 || persona.quote
-  if (!hasQuotes) return null
-
-  const quotes = persona.quotes ?? (persona.quote ? [{ text: persona.quote }] : [])
+  if (!persona.quotes || persona.quotes.length === 0) return null
 
   return (
     <PersonaSection title="Representative Quotes" icon="💬" color="indigo">
       <div className="space-y-3">
-        {quotes.map((q: { text: string; context?: string }, i: number) => (
+        {persona.quotes.map((q: { text: string; context?: string }, i: number) => (
           <QuoteBlock key={i} text={q.text} context={q.context} />
         ))}
       </div>
@@ -217,14 +186,6 @@ export function QuotesSection({ persona }: Readonly<{ persona: ProjectPersona }>
 
 export function ScenarioSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
   if (!persona.scenario) return null
-
-  if (typeof persona.scenario === 'string') {
-    return (
-      <PersonaSection title="Scenario" icon="📖" color="teal">
-        <p className="text-gray-700 text-sm leading-relaxed">{persona.scenario}</p>
-      </PersonaSection>
-    )
-  }
 
   return (
     <PersonaSection title="Scenario" icon="📖" color="teal">
@@ -248,18 +209,6 @@ export function ScenarioSection({ persona }: Readonly<{ persona: ProjectPersona 
           </div>
         )}
       </div>
-    </PersonaSection>
-  )
-}
-
-export function NeedsSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
-  if (!persona.needs || persona.needs.length === 0 || persona.goals_motivations) return null
-
-  return (
-    <PersonaSection title="Needs" icon="✨" color="emerald">
-      <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
-        {persona.needs.map((n: string, i: number) => <li key={i}>{n}</li>)}
-      </ul>
     </PersonaSection>
   )
 }

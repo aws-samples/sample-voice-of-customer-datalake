@@ -18,10 +18,9 @@ from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_s3_client, get_dynamodb_resource, get_sqs_client
-
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
+from shared.api import create_api_resolver, api_handler, DecimalEncoder
 
 s3_client = get_s3_client()
 dynamodb = get_dynamodb_resource()
@@ -38,23 +37,7 @@ AVAILABLE_BUCKETS = {
     'artifact-builder': {'name': ARTIFACT_BUILDER_BUCKET, 'label': 'Artifact Builder', 'description': 'Generated artifacts and builds'},
 }
 
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
-cors_config = CORSConfig(
-    allow_origin=ALLOWED_ORIGIN,
-    allow_headers=["Content-Type", "Authorization"],
-    max_age=300,
-    allow_credentials=False,
-)
-
-app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
-
-
-class DecimalEncoder(json.JSONEncoder):
-    """Handle Decimal types from DynamoDB."""
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj) if obj % 1 else int(obj)
-        return super().default(obj)
+app = create_api_resolver()
 
 
 def decimal_to_native(obj):
@@ -501,8 +484,6 @@ def get_data_stats():
     return stats
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

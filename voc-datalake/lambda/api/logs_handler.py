@@ -13,20 +13,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource
+from shared.api import create_api_resolver, api_handler
 
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
 from boto3.dynamodb.conditions import Key, Attr
 
 dynamodb = get_dynamodb_resource()
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 
-# Configure CORS
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
-cors_config = CORSConfig(
-    allow_origin=ALLOWED_ORIGIN, allow_headers=["Content-Type", "Authorization"], max_age=300
-)
-app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+app = create_api_resolver()
 
 
 @app.get("/logs/validation")
@@ -281,8 +276,6 @@ def _query_logs_for_source(log_type: str, source: str, days: int, limit: int) ->
     return logs
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

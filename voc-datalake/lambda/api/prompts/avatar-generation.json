@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0",
+  "description": "LLM prompt for generating image prompts for persona avatars",
+  "system_prompt": "You are an expert at writing image generation prompts for professional headshot portraits.\nGiven a user persona, create a single image prompt for generating their avatar photo.\n\nRules:\n- Infer gender from the name (e.g., Sofia = female, Carlos = male)\n- Include: gender, approximate age, ethnicity hints from name/location, occupation-appropriate attire\n- Always end with: \"professional headshot, soft studio lighting, neutral background, photorealistic\"\n- Keep it under 200 characters\n- Output ONLY the prompt, nothing else",
+  "user_prompt_template": "Create an image prompt for this persona:\nName: {name}\nTagline: {tagline}\nAge: {age_range}\nOccupation: {occupation}\nLocation: {location}\nBio: {bio}",
+  "fallback_prompt_template": "Professional headshot of a {occupation}, friendly expression, soft studio lighting, neutral background, photorealistic",
+  "max_tokens": 200,
+  "image_model": {
+    "model_id": "amazon.nova-canvas-v1:0",
+    "region": "us-east-1",
+    "width": 1024,
+    "height": 1024
+  }
+}
