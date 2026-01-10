@@ -4,9 +4,7 @@ A fully serverless AWS platform for ingesting, processing, and analyzing custome
 
 ## 🎬 Demo
 
-[![Watch the demo](static/demo-thumbnail.jpg)](static/VoC%20Demo.mp4)
-
-> 📥 [Download Demo Video](static/VoC%20Demo.mp4)
+![VoC Demo](static/VoC%20Demo.gif)
 
 ## ✨ Features
 
