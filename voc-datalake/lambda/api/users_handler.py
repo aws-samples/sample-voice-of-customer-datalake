@@ -4,7 +4,7 @@ User Administration API Lambda - Handles /users/*
 Provides Cognito user management for admins:
 - List users
 - Create users
-- Update user groups (admin/viewer)
+- Update user groups (admins/users)
 - Reset passwords
 - Enable/disable users
 
@@ -123,13 +123,13 @@ def create_user():
     body = app.current_event.json_body or {}
     email = body.get('email', '').strip()
     name = body.get('name', '').strip()
-    group = body.get('group', 'viewers')  # Default to viewers
+    group = body.get('group', 'users')  # Default to users
     
     if not email:
         raise BadRequestError('Email is required')
     
-    if group not in ['admins', 'viewers']:
-        raise BadRequestError('Group must be "admins" or "viewers"')
+    if group not in ['admins', 'users']:
+        raise BadRequestError('Group must be "admins" or "users"')
     
     try:
         # Create user with temporary password (they'll be forced to change on first login)
@@ -178,14 +178,14 @@ def create_user():
 @app.put('/users/<username>/group')
 @tracer.capture_method
 def update_user_group(username: str):
-    """Update user's group (admin/viewer)."""
+    """Update user's group (admins/users)."""
     require_admin(app.current_event._data)
     
     body = app.current_event.json_body or {}
     new_group = body.get('group', '').strip()
     
-    if new_group not in ['admins', 'viewers']:
-        raise BadRequestError('Group must be "admins" or "viewers"')
+    if new_group not in ['admins', 'users']:
+        raise BadRequestError('Group must be "admins" or "users"')
     
     try:
         # Get current groups
@@ -197,7 +197,7 @@ def update_user_group(username: str):
         
         # Remove from old groups
         for group in current_groups:
-            if group in ['admins', 'viewers']:
+            if group in ['admins', 'users']:
                 cognito.admin_remove_user_from_group(
                     UserPoolId=USER_POOL_ID,
                     Username=username,

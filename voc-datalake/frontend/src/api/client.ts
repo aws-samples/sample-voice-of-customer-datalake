@@ -588,13 +588,13 @@ export const api = {
   // User Administration (admin only)
   getUsers: () => fetchApi<{ success: boolean; users: CognitoUser[]; message?: string }>('/users'),
   
-  createUser: (data: { username: string; email: string; name?: string; group: 'admins' | 'viewers' }) =>
+  createUser: (data: { username: string; email: string; name?: string; group: 'admins' | 'users' }) =>
     fetchApi<{ success: boolean; message: string; user?: CognitoUser }>('/users', {
       method: 'POST',
       body: JSON.stringify(data)
     }),
   
-  updateUserGroup: (username: string, group: 'admins' | 'viewers') =>
+  updateUserGroup: (username: string, group: 'admins' | 'users') =>
     fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}/group`, {
       method: 'PUT',
       body: JSON.stringify({ group })

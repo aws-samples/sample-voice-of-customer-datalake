@@ -84,7 +84,7 @@ describe('UserAdmin', () => {
     it('displays user count', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'user1@example.com', status: 'CONFIRMED', enabled: true, groups: ['viewers'] },
+          { username: 'user1', email: 'user1@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
           { username: 'user2', email: 'user2@example.com', status: 'CONFIRMED', enabled: true, groups: ['admins'] },
         ],
       })
@@ -123,7 +123,7 @@ describe('UserAdmin', () => {
     it('displays user email', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -139,7 +139,7 @@ describe('UserAdmin', () => {
     it('displays user name when available', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', name: 'John Doe', status: 'CONFIRMED', enabled: true, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', name: 'John Doe', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -157,7 +157,7 @@ describe('UserAdmin', () => {
     it('shows Active badge for confirmed enabled users', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -173,7 +173,7 @@ describe('UserAdmin', () => {
     it('shows Disabled badge for disabled users', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: false, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: false, groups: ['users'] },
         ],
       })
       
@@ -188,7 +188,7 @@ describe('UserAdmin', () => {
     it('shows Pending badge for users requiring password change', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'FORCE_CHANGE_PASSWORD', enabled: true, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', status: 'FORCE_CHANGE_PASSWORD', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -223,7 +223,7 @@ describe('UserAdmin', () => {
       const user = userEvent.setup()
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -312,7 +312,7 @@ describe('UserAdmin', () => {
         expect(mockCreateUser).toHaveBeenCalledWith({
           email: 'new@example.com',
           name: 'New User',
-          group: 'viewers',
+          group: 'users',
         })
       })
     })
@@ -344,7 +344,7 @@ describe('UserAdmin', () => {
       const user = userEvent.setup()
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -367,7 +367,7 @@ describe('UserAdmin', () => {
       const user = userEvent.setup()
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -387,7 +387,7 @@ describe('UserAdmin', () => {
     it('shows enable button for disabled users', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: false, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: false, groups: ['users'] },
         ],
       })
       
@@ -402,7 +402,7 @@ describe('UserAdmin', () => {
       const user = userEvent.setup()
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -426,7 +426,7 @@ describe('UserAdmin', () => {
       const user = userEvent.setup()
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['viewers'] },
+          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       

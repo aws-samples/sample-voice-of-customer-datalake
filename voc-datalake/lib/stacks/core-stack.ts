@@ -402,10 +402,10 @@ The VoC Analytics Team`,
       description: 'VoC administrators with full access',
     });
 
-    new cognito.CfnUserPoolGroup(this, 'ViewerGroup', {
+    new cognito.CfnUserPoolGroup(this, 'UsersGroup', {
       userPoolId: this.userPool.userPoolId,
-      groupName: 'viewers',
-      description: 'VoC viewers with read-only access',
+      groupName: 'users',
+      description: 'VoC users with standard access',
     });
 
     // ============================================

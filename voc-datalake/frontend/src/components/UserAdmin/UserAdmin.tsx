@@ -25,7 +25,7 @@ import type { CognitoUser } from '../../api/client'
 import ConfirmModal from '../ConfirmModal'
 import clsx from 'clsx'
 
-type UserGroup = 'admins' | 'viewers'
+type UserGroup = 'admins' | 'users'
 type ActionType = 'delete' | 'disable' | 'enable' | 'reset'
 
 interface ConfirmActionState {
@@ -92,14 +92,14 @@ function RoleSelect({ user, isPending, onChange, size = 'sm' }: RoleSelectProps)
   const isAdmin = user.groups.includes('admins')
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value
-    if (value === 'admins' || value === 'viewers') {
+    if (value === 'admins' || value === 'users') {
       onChange(user.username, value)
     }
   }
 
   return (
     <select
-      value={isAdmin ? 'admins' : 'viewers'}
+      value={isAdmin ? 'admins' : 'users'}
       onChange={handleChange}
       disabled={isPending}
       className={clsx(
@@ -110,7 +110,7 @@ function RoleSelect({ user, isPending, onChange, size = 'sm' }: RoleSelectProps)
           : 'border-gray-300 bg-white text-gray-700'
       )}
     >
-      <option value="viewers">User</option>
+      <option value="users">User</option>
       <option value="admins">Admin</option>
     </select>
   )
@@ -172,7 +172,7 @@ interface CreateUserModalProps {
 function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
-  const [group, setGroup] = useState<UserGroup>('viewers')
+  const [group, setGroup] = useState<UserGroup>('users')
   const [error, setError] = useState('')
 
   const createMutation = useMutation({
@@ -181,7 +181,7 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
       if (data.success) {
         setEmail('')
         setName('')
-        setGroup('viewers')
+        setGroup('users')
         setError('')
         onSuccess()
         onClose()
@@ -242,9 +242,9 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
                 <input
                   type="radio"
                   name="group"
-                  value="viewers"
-                  checked={group === 'viewers'}
-                  onChange={() => setGroup('viewers')}
+                  value="users"
+                  checked={group === 'users'}
+                  onChange={() => setGroup('users')}
                   className="text-blue-600"
                 />
                 <Eye size={16} className="text-gray-500" />
