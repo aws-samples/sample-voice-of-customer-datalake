@@ -185,6 +185,12 @@ export class BedrockAccessStack extends cdk.Stack {
       resources: ['*'],
     }));
 
+    // AWS Marketplace permissions required for Bedrock model subscriptions
+    modelAgreementLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['aws-marketplace:ViewSubscriptions', 'aws-marketplace:Subscribe'],
+      resources: ['*'],
+    }));
+
     // Create a custom resource provider
     const modelAgreementProvider = new cr.Provider(this, 'ModelAgreementProvider', {
       onEventHandler: modelAgreementLambda,
