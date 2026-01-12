@@ -7,7 +7,7 @@ This guide covers how to deploy the VoC (Voice of Customer) platform, including 
 - **AWS CLI** configured with appropriate credentials
 - **Node.js** 18+ and npm
 - **Python** 3.12+ (for Lambda functions)
-- **AWS CDK** CLI installed (`npm install -g aws-cdk`)
+- **Docker** (for building Lambda layers)
 
 ## Project Structure
 
@@ -95,7 +95,7 @@ The `BedrockAccessStack` automates this process. To enable it:
 
 3. Deploy the stack:
    ```bash
-   cdk deploy BedrockAccessStack
+   npm run deploy:infra
    ```
 
 ### Configuration Fields
@@ -256,15 +256,10 @@ npm run deploy:frontend   # Deploy updated frontend
 
 ## Environment Variables
 
-The frontend fetches configuration from CloudFormation outputs:
-
-- `VITE_API_ENDPOINT` - API Gateway URL
-- `VITE_ARTIFACT_BUILDER_ENDPOINT` - Artifact Builder API URL
-- `VITE_USER_POOL_ID` - Cognito User Pool ID
-- `VITE_USER_POOL_CLIENT_ID` - Cognito Client ID
-- `VITE_COGNITO_REGION` - AWS Region
-
-These are automatically set by `scripts/update-env.sh`.
+The frontend fetches configuration at runtime from a `config.json` file that is generated during deployment. The deploy script automatically:
+1. Fetches values from CloudFormation outputs
+2. Generates `config.json` with API endpoint, Cognito settings, etc.
+3. Uploads it to S3 alongside the frontend build
 
 ## Deployment Workflow
 
@@ -276,11 +271,10 @@ These are automatically set by `scripts/update-env.sh`.
 npm run check
 
 # 3. Preview changes
-cd voc-datalake
-cdk diff
+npm run cdk:diff
 
 # 4. Deploy
-cdk deploy --all
+npm run deploy:infra
 ```
 
 ### For Frontend Changes
@@ -353,7 +347,7 @@ jobs:
 If deploying to a new AWS account/region:
 
 ```bash
-cdk bootstrap aws://ACCOUNT_ID/REGION
+npm run cdk:bootstrap
 ```
 
 ### Stack Stuck in UPDATE_ROLLBACK
