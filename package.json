@@ -4,7 +4,9 @@
   "description": "Voice of the Customer Data Lake - Unified customer feedback intelligence platform",
   "private": true,
   "scripts": {
-    "install:all": "npm install && cd voc-datalake && npm install && cd frontend && npm install",
+    "install:all": "npm install && npm install --prefix voc-datalake && npm install --prefix voc-datalake/frontend",
+    
+    "build:layers": "cd voc-datalake && chmod +x scripts/build-layers.sh && ./scripts/build-layers.sh",
     
     "dev": "npm run dev --prefix voc-datalake/frontend",
     "build": "npm run build --prefix voc-datalake/frontend",
@@ -23,15 +25,16 @@
     
     "validate:plugins": "npm run validate:plugins --prefix voc-datalake",
     
-    "cdk": "cd voc-datalake && npx cdk",
-    "cdk:diff": "cd voc-datalake && npx cdk diff",
-    "cdk:synth": "cd voc-datalake && npx cdk synth",
+    "cdk": "npm run cdk --prefix voc-datalake --",
+    "cdk:diff": "npm run cdk --prefix voc-datalake -- diff",
+    "cdk:synth": "npm run cdk --prefix voc-datalake -- synth",
+    "cdk:bootstrap": "npm run cdk --prefix voc-datalake -- bootstrap",
     
-    "deploy:infra": "cd voc-datalake && npx cdk deploy --all --require-approval never",
-    "deploy:frontend": "cd voc-datalake/frontend && npm run deploy:frontend",
+    "deploy:infra": "npm run cdk --prefix voc-datalake -- deploy --all --require-approval never",
+    "deploy:frontend": "npm run deploy:frontend --prefix voc-datalake/frontend",
     "deploy:all": "npm run check && npm run deploy:infra && npm run deploy:frontend",
     
-    "destroy": "cd voc-datalake && npx cdk destroy --all"
+    "destroy": "npm run cdk --prefix voc-datalake -- destroy --all"
   },
   "keywords": [
     "aws",

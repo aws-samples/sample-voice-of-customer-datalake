@@ -50,14 +50,17 @@ Each plugin is self-contained with a `manifest.json` that defines infrastructure
 
 ```bash
 # Clone and install
-git clone https://github.com/your-org/voice-of-customer-datalake.git
+git clone xxxxxx (repo url)
 cd voice-of-customer-datalake
-npm install && cd voc-datalake && npm install && cd frontend && npm install
+npm run install:all
 
 # Build Lambda layers (requires Docker)
-cd .. && ./scripts/build-layers.sh
+npm run build:layers
 
-# Deploy (first time: npx cdk bootstrap)
+# Bootstrap CDK (first time only)
+npm run cdk:bootstrap
+
+# Deploy everything
 npm run deploy:all
 ```
 

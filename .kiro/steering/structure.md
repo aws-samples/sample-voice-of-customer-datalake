@@ -167,8 +167,6 @@ voice-of-customer-datalake/       # Root repository
     │   └── feedback-event.schema.json
     ├── scripts/
     │   ├── build-layers.sh           # Build Lambda layers with Docker (ARM64)
-    │   ├── deploy.sh                 # Full deployment script
-    │   ├── deploy-frontend.sh        # Frontend-only deployment
     │   ├── test-api.sh               # API validation script
     │   ├── generate-manifests.ts     # Generate plugin manifests with enabled status
     │   ├── generate-menu-config.ts   # Generate menu config from cdk.context.json

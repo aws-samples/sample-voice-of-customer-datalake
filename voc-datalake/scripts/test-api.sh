@@ -6,27 +6,27 @@ set -e
 # Fetch configuration from CloudFormation outputs
 echo "📋 Fetching deployment configuration..."
 
-# Get Cognito Client ID from VocAuthStack
+# Get Cognito Client ID from VocCoreStack
 CLIENT_ID=$(aws cloudformation describe-stacks \
-  --stack-name VocAuthStack \
+  --stack-name VocCoreStack \
   --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
   --output text 2>/dev/null)
 
 if [ -z "$CLIENT_ID" ] || [ "$CLIENT_ID" = "None" ]; then
-  echo "❌ Could not find Cognito Client ID. Is VocAuthStack deployed?"
+  echo "❌ Could not find Cognito Client ID. Is VocCoreStack deployed?"
   echo "   You can also pass API_URL and STREAM_URL as arguments."
   exit 1
 fi
 
-# Get API Gateway URL from VocAnalyticsStack
+# Get API Gateway URL from VocApiStack
 DEFAULT_API=$(aws cloudformation describe-stacks \
-  --stack-name VocAnalyticsStack \
+  --stack-name VocApiStack \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
   --output text 2>/dev/null)
 
-# Get Chat Stream URL from VocAnalyticsStack
+# Get Chat Stream URL from VocApiStack
 DEFAULT_STREAM_URL=$(aws cloudformation describe-stacks \
-  --stack-name VocAnalyticsStack \
+  --stack-name VocApiStack \
   --query 'Stacks[0].Outputs[?OutputKey==`ChatStreamUrl`].OutputValue' \
   --output text 2>/dev/null)
 
@@ -43,7 +43,7 @@ STREAM_URL="${2:-$DEFAULT_STREAM_URL}"
 STREAM_URL="${STREAM_URL%/}"
 
 if [ -z "$API" ] || [ "$API" = "None" ]; then
-  echo "❌ Could not find API endpoint. Is VocAnalyticsStack deployed?"
+  echo "❌ Could not find API endpoint. Is VocApiStack deployed?"
   echo "   Usage: $0 [API_URL] [STREAM_URL]"
   exit 1
 fi

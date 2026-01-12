@@ -705,9 +705,9 @@ The streaming chat API uses a Lambda Function URL to bypass API Gateway's 29-sec
 
 ```bash
 # Get endpoints from CloudFormation
-CLIENT_ID=$(aws cloudformation describe-stacks --stack-name VocAuthStack \
+CLIENT_ID=$(aws cloudformation describe-stacks --stack-name VocCoreStack \
   --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
-STREAM_URL=$(aws cloudformation describe-stacks --stack-name VocAnalyticsStack \
+STREAM_URL=$(aws cloudformation describe-stacks --stack-name VocApiStack \
   --query 'Stacks[0].Outputs[?OutputKey==`ChatStreamUrl`].OutputValue' --output text)
 
 # Get Cognito token (use single quotes for password with !)

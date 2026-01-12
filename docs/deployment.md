@@ -29,16 +29,17 @@ voice-of-customer-datalake/
 From the project root:
 
 ```bash
-# Install dependencies
-npm install
-cd voc-datalake && npm install
-cd frontend && npm install
+# Install all dependencies
+npm run install:all
 
-# Run quality checks
-npm run check        # Runs lint, typecheck, and tests
+# Build Lambda layers (requires Docker)
+npm run build:layers
+
+# Bootstrap CDK (first time only)
+npm run cdk:bootstrap
 
 # Deploy everything
-npm run deploy:all   # Deploys all CDK stacks + frontend
+npm run deploy:all
 ```
 
 ## Quality Checks
@@ -326,10 +327,10 @@ jobs:
           node-version: '20'
           
       - name: Install dependencies
-        run: |
-          npm install
-          cd voc-datalake && npm install
-          cd frontend && npm install
+        run: npm run install:all
+          
+      - name: Build Lambda layers
+        run: npm run build:layers
           
       - name: Quality checks
         run: npm run check
@@ -383,11 +384,15 @@ aws cloudformation describe-stacks \
 
 | Command | Description |
 |---------|-------------|
-| `npm run check` | Run all quality checks |
+| `npm run install:all` | Install all dependencies (root + CDK + frontend) |
+| `npm run build:layers` | Build Lambda layers with Docker (ARM64) |
+| `npm run cdk:bootstrap` | Bootstrap CDK in AWS account |
+| `npm run check` | Run all quality checks (lint + typecheck + test) |
 | `npm run deploy:all` | Deploy infrastructure + frontend |
 | `npm run deploy:infra` | Deploy CDK stacks only |
 | `npm run deploy:frontend` | Deploy frontend only |
 | `npm run generate:config` | Regenerate plugin/menu config |
 | `npm run dev` | Start frontend dev server |
-| `cdk diff` | Preview infrastructure changes |
-| `cdk synth` | Generate CloudFormation templates |
+| `npm run cdk:diff` | Preview infrastructure changes |
+| `npm run cdk:synth` | Generate CloudFormation templates |
+| `npm run destroy` | Destroy all stacks |
