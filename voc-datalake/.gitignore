@@ -41,3 +41,6 @@ coverage/
 secrets.json
 *.pem
 *.key
+
+# Workshop files
+Workshop/*
