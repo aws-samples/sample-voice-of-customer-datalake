@@ -21,7 +21,7 @@ import {
   capitalize,
   type PluginManifest,
 } from '../plugin-loader';
-import { uniqueBucketName, uniqueQueueName, uniqueFunctionName, uniqueRuleName, generateDeploymentHash } from '../utils/naming';
+import { uniqueName } from '../utils/naming';
 
 export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -50,8 +50,7 @@ export class VocIngestionStack extends cdk.Stack {
 
     const { feedbackTable, watermarksTable, aggregatesTable, rawDataBucket, accessLogsBucket, kmsKey, config } = props;
 
-    // Generate deployment hash for unique naming
-    const hash = generateDeploymentHash(this.account, this.region);
+
 
     // Load plugins from manifests
     const pluginsDir = path.join(__dirname, '../../plugins');
@@ -95,8 +94,7 @@ export class VocIngestionStack extends cdk.Stack {
         ingestionRole,
         commonEnv,
         dependenciesLayer,
-        aggregatesTable,
-        hash
+        aggregatesTable
       );
     }
 
@@ -137,7 +135,7 @@ export class VocIngestionStack extends cdk.Stack {
     corsAllowedOrigins: string[]
   ): s3.Bucket {
     return new s3.Bucket(this, 'S3ImportBucket', {
-      bucketName: uniqueBucketName('voc-import', this.account, this.region),
+      bucketName: uniqueName('voc-import'),
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: kmsKey,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -205,7 +203,7 @@ export class VocIngestionStack extends cdk.Stack {
     };
 
     return new secretsmanager.Secret(this, 'VocApiSecrets', {
-      secretName: `voc-datalake/api-credentials-${generateDeploymentHash(this.account, this.region)}`,
+      secretName: uniqueName('voc-datalake/api-credentials'),
       description: 'API credentials for VoC data sources',
       generateSecretString: {
         secretStringTemplate: JSON.stringify({
@@ -219,7 +217,7 @@ export class VocIngestionStack extends cdk.Stack {
 
   private createDLQ(kmsKey: kms.Key): sqs.Queue {
     return new sqs.Queue(this, 'ProcessingDLQ', {
-      queueName: uniqueQueueName('voc-processing-dlq', this.account, this.region),
+      queueName: uniqueName('voc-processing-dlq'),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
       retentionPeriod: cdk.Duration.days(14),
@@ -228,7 +226,7 @@ export class VocIngestionStack extends cdk.Stack {
 
   private createProcessingQueue(kmsKey: kms.Key, dlq: sqs.Queue): sqs.Queue {
     return new sqs.Queue(this, 'ProcessingQueue', {
-      queueName: uniqueQueueName('voc-processing-queue', this.account, this.region),
+      queueName: uniqueName('voc-processing-queue'),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
       visibilityTimeout: cdk.Duration.minutes(6),
@@ -294,7 +292,6 @@ export class VocIngestionStack extends cdk.Stack {
     commonEnv: Record<string, string>,
     dependenciesLayer: lambda.LayerVersion,
     aggregatesTable: dynamodb.Table,
-    hash: string
   ): void {
     const infra = plugin.infrastructure.ingestor;
     if (!infra?.enabled) return;
@@ -318,7 +315,7 @@ export class VocIngestionStack extends cdk.Stack {
     const schedule = this.parseSchedule(infra.schedule);
 
     const fn = new lambda.Function(this, `Ingestor${capitalize(plugin.id)}`, {
-      functionName: `voc-ingestor-${plugin.id}-${hash}`,
+      functionName: uniqueName(`voc-ingestor-${plugin.id}`),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -329,7 +326,7 @@ export class VocIngestionStack extends cdk.Stack {
       environment: lambdaEnv,
       layers: [dependenciesLayer],
       logGroup: new logs.LogGroup(this, `IngestorLogs${capitalize(plugin.id)}`, {
-        logGroupName: `/aws/lambda/voc-ingestor-${plugin.id}-${hash}`,
+        logGroupName: uniqueName(`/aws/lambda/voc-ingestor-${plugin.id}`),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -338,7 +335,7 @@ export class VocIngestionStack extends cdk.Stack {
     // Create schedule rule if schedule is defined
     if (schedule) {
       new events.Rule(this, `Schedule${capitalize(plugin.id)}`, {
-        ruleName: `voc-ingest-${plugin.id}-schedule-${hash}`,
+        ruleName: uniqueName(`voc-ingest-${plugin.id}-schedule`),
         schedule,
         targets: [new targets.LambdaFunction(fn, { retryAttempts: 2 })],
         enabled: false, // Disabled by default - enable via Settings UI

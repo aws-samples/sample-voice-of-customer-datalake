@@ -297,64 +297,62 @@ const removeIntrinsicDefaults = (template) => {
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
-const main = async () => {
-  const [stackName] = process.argv.slice(2);
-  if (!stackName) {
-    console.error('Please provide a stack name as an argument\n e.g. node scripts/convert-template.mjs [stack-name]');
-    process.exit(1);
-  }
+const processStack = async (stackName, basePath, templatesOutDir) => {
+  console.log(`\nConverting template for stack: ${stackName}`);
+  const assetsOutDir = resolve(basePath, '..', 'Workshop', 'assets', stackName);
 
-  console.log(`Converting template for stack ${stackName}`);
-
-  const currentDir = process.cwd();
-  const basePath = resolve(currentDir, 'cdk.out');
-  const templatesOutDir = resolve(currentDir, 'Workshop', 'static', 'cfn');
-  const assetsOutDir = resolve(currentDir, 'Workshop', 'assets', stackName);
-
-  // Load template and assets
   const template = await readJSON(join(basePath, `${stackName}.template.json`));
   const assets = await readJSON(join(basePath, `${stackName}.assets.json`));
 
   if (!template || !assets) {
-    console.error('Failed to load template or assets; aborting');
-    process.exit(1);
+    console.error(`Failed to load template or assets for ${stackName}; skipping`);
+    return false;
   }
 
-  // Prepare output directories
-  if (!existsSync(templatesOutDir)) await ensureDir(templatesOutDir);
   await cleanDir(assetsOutDir);
-
-  // Process assets
   await processFileAssets(assets, basePath, assetsOutDir);
 
-  // Transform template
   cleanTemplateMetadata(template);
   addAssetParameters(template);
   updateLambdaS3References(template);
   updateIAMPolicies(template);
   updateBucketDeployment(template);
 
-  // Replace hardcoded region/account
   const { region, account } = detectRegionAndAccount(JSON.stringify(template));
-
-  if (!region || !account) {
-    console.warn('Warning: Could not detect region or account. Skipping replacements.');
-  } else {
+  if (region && account) {
     console.log(`Detected region: ${region}, account: ${account}`);
-    console.log('Replacing hardcoded values with pseudo-parameters...');
   }
 
   let finalTemplate = region && account ? replaceHardcodedValues(template, region, account) : template;
   finalTemplate = fixFnJoinStrings(finalTemplate);
   removeIntrinsicDefaults(finalTemplate);
 
-  // Write output
   const outPath = resolve(templatesOutDir, `${stackName}.json`);
   await writeJSON(finalTemplate, outPath);
 
-  console.log(`Template for stack ${stackName} converted successfully.`);
-  console.log(`- Template: ${outPath}`);
-  console.log(`- Assets folder: ${assetsOutDir}`);
+  console.log(`✓ ${stackName} → ${outPath}`);
+  return true;
+};
+
+const main = async () => {
+  const stackNames = process.argv.slice(2);
+  if (!stackNames.length) {
+    console.error('Usage: node scripts/convert-template.mjs <stack1> [stack2] [stack3] ...');
+    process.exit(1);
+  }
+
+  const currentDir = process.cwd();
+  const basePath = resolve(currentDir, 'cdk.out');
+  const templatesOutDir = resolve(currentDir, 'Workshop', 'static', 'cfn');
+
+  if (!existsSync(templatesOutDir)) await ensureDir(templatesOutDir);
+
+  const results = await Promise.all(stackNames.map((name) => processStack(name, basePath, templatesOutDir)));
+  const success = results.filter(Boolean).length;
+
+  console.log(`\nCompleted: ${success}/${stackNames.length} stacks converted`);
+  if (success < stackNames.length) process.exit(1);
 };
 
 main();
+

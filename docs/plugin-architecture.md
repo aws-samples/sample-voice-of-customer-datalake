@@ -697,7 +697,7 @@ export class VocIngestionStack extends cdk.Stack {
     const secretsTemplate = aggregateSecrets(allPlugins);
     
     const apiSecrets = new secretsmanager.Secret(this, 'VocApiSecrets', {
-      secretName: `voc-datalake/api-credentials-${generateDeploymentHash(this.account, this.region)}`,
+      secretName: uniqueName('voc-datalake/api-credentials'),
       description: 'API credentials for VoC data sources',
       generateSecretString: {
         secretStringTemplate: JSON.stringify(secretsTemplate),
