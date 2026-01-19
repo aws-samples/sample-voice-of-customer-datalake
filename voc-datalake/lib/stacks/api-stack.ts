@@ -13,7 +13,7 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
-import { generateDeploymentHash } from '../utils/naming';
+import { uniqueName } from '../utils/naming';
 
 export interface VocApiStackProps extends cdk.StackProps {
   // Core stack resources
@@ -70,7 +70,7 @@ export class VocApiStack extends cdk.Stack {
       secretsArn, s3ImportBucket, researchStateMachine, brandName, artifactBuilderEndpoint
     } = props;
 
-    const hash = generateDeploymentHash(this.account, this.region);
+
 
     // CORS configuration
     const corsAllowedOrigins = [`https://${frontendDomainName}`, 'http://localhost:5173', 'http://localhost:3000'];
@@ -104,7 +104,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantDecrypt(metricsRole);
 
     const metricsLambda = new lambda.Function(this, 'MetricsApi', {
-      functionName: `voc-metrics-api-${hash}`,
+      functionName: uniqueName('voc-metrics-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'metrics_handler.lambda_handler',
@@ -120,7 +120,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('MetricsApiLogs', `voc-metrics-api-${hash}`),
+      logGroup: this.createLogGroup('MetricsApiLogs', uniqueName('voc-metrics-api')),
     });
 
     // Integrations API
@@ -135,7 +135,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const integrationsLambda = new lambda.Function(this, 'IntegrationsApi', {
-      functionName: `voc-integrations-api-${hash}`,
+      functionName: uniqueName('voc-integrations-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'integrations_handler.lambda_handler',
@@ -143,9 +143,9 @@ export class VocApiStack extends cdk.Stack {
       role: integrationsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      environment: { SECRETS_ARN: secretsArn, DEPLOYMENT_HASH: hash, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO' },
+      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('IntegrationsApiLogs', `voc-integrations-api-${hash}`),
+      logGroup: this.createLogGroup('IntegrationsApiLogs', uniqueName('voc-integrations-api')),
     });
 
     // Scrapers API
@@ -158,7 +158,7 @@ export class VocApiStack extends cdk.Stack {
     }));
     scrapersRole.addToPolicy(new iam.PolicyStatement({
       actions: ['lambda:InvokeFunction'],
-      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-ingestor-webscraper-${hash}`],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-ingestor-webscraper-*`],
     }));
     scrapersRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
@@ -174,7 +174,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const scrapersLambda = new lambda.Function(this, 'ScrapersApi', {
-      functionName: `voc-scrapers-api-${hash}`,
+      functionName: uniqueName('voc-scrapers-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'scrapers_handler.lambda_handler',
@@ -182,9 +182,9 @@ export class VocApiStack extends cdk.Stack {
       role: scrapersRole,
       timeout: cdk.Duration.seconds(60),
       memorySize: 512,
-      environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, WEBSCRAPER_FUNCTION_NAME: `voc-ingestor-webscraper-${hash}`, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO' },
+      environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, WEBSCRAPER_FUNCTION_NAME: uniqueName('voc-ingestor-webscraper'), ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ScrapersApiLogs', `voc-scrapers-api-${hash}`),
+      logGroup: this.createLogGroup('ScrapersApiLogs', uniqueName('voc-scrapers-api')),
     });
 
 
@@ -193,11 +193,11 @@ export class VocApiStack extends cdk.Stack {
     aggregatesTable.grantReadWriteData(manualImportRole);
     kmsKey.grantEncryptDecrypt(manualImportRole);
     manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
-    manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-manual-import-processor-${hash}`] }));
+    manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-manual-import-processor-*`] }));
     rawDataBucket.grantReadWrite(manualImportRole);
 
     const manualImportLambda = new lambda.Function(this, 'ManualImportApi', {
-      functionName: `voc-manual-import-api-${hash}`,
+      functionName: uniqueName('voc-manual-import-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'manual_import_handler.lambda_handler',
@@ -209,13 +209,13 @@ export class VocApiStack extends cdk.Stack {
         AGGREGATES_TABLE: aggregatesTable.tableName,
         PROCESSING_QUEUE_URL: processingQueueUrl,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
-        MANUAL_IMPORT_PROCESSOR_FUNCTION: `voc-manual-import-processor-${hash}`,
+        MANUAL_IMPORT_PROCESSOR_FUNCTION: uniqueName('voc-manual-import-processor'),
         ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-manual-import-api',
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ManualImportApiLogs', `voc-manual-import-api-${hash}`),
+      logGroup: this.createLogGroup('ManualImportApiLogs', uniqueName('voc-manual-import-api')),
     });
 
     // Manual Import Processor (async)
@@ -228,7 +228,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     new lambda.Function(this, 'ManualImportProcessor', {
-      functionName: `voc-manual-import-processor-${hash}`,
+      functionName: uniqueName('voc-manual-import-processor'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'manual_import_processor.lambda_handler',
@@ -238,7 +238,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 1024,
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, POWERTOOLS_SERVICE_NAME: 'voc-manual-import-processor', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ManualImportProcessorLogs', `voc-manual-import-processor-${hash}`),
+      logGroup: this.createLogGroup('ManualImportProcessorLogs', uniqueName('voc-manual-import-processor')),
     });
 
     // Settings API
@@ -251,7 +251,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const settingsLambda = new lambda.Function(this, 'SettingsApi', {
-      functionName: `voc-settings-api-${hash}`,
+      functionName: uniqueName('voc-settings-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'settings_handler.lambda_handler',
@@ -261,7 +261,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-settings-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('SettingsApiLogs', `voc-settings-api-${hash}`),
+      logGroup: this.createLogGroup('SettingsApiLogs', uniqueName('voc-settings-api')),
     });
 
     // Logs API
@@ -270,7 +270,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantDecrypt(logsRole);
 
     const logsLambda = new lambda.Function(this, 'LogsApi', {
-      functionName: `voc-logs-api-${hash}`,
+      functionName: uniqueName('voc-logs-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'logs_handler.lambda_handler',
@@ -280,7 +280,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-logs-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('LogsApiLogs', `voc-logs-api-${hash}`),
+      logGroup: this.createLogGroup('LogsApiLogs', uniqueName('voc-logs-api')),
     });
 
     // Users API
@@ -291,7 +291,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const usersLambda = new lambda.Function(this, 'UsersApi', {
-      functionName: `voc-users-api-${hash}`,
+      functionName: uniqueName('voc-users-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'users_handler.lambda_handler',
@@ -301,7 +301,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: { USER_POOL_ID: userPool.userPoolId, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-users-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('UsersApiLogs', `voc-users-api-${hash}`),
+      logGroup: this.createLogGroup('UsersApiLogs', uniqueName('voc-users-api')),
     });
 
     // Feedback Form API
@@ -312,7 +312,7 @@ export class VocApiStack extends cdk.Stack {
     feedbackFormRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
 
     const feedbackFormLambda = new lambda.Function(this, 'FeedbackFormApi', {
-      functionName: `voc-feedback-form-api-${hash}`,
+      functionName: uniqueName('voc-feedback-form-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'feedback_form_handler.lambda_handler',
@@ -322,7 +322,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, FEEDBACK_TABLE: feedbackTable.tableName, PROCESSING_QUEUE_URL: processingQueueUrl, BRAND_NAME: brandName, POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('FeedbackFormApiLogs', `voc-feedback-form-api-${hash}`),
+      logGroup: this.createLogGroup('FeedbackFormApiLogs', uniqueName('voc-feedback-form-api')),
     });
 
     // Chat API
@@ -337,7 +337,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const chatLambda = new lambda.Function(this, 'ChatApi', {
-      functionName: `voc-chat-api-${hash}`,
+      functionName: uniqueName('voc-chat-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'chat_handler.lambda_handler',
@@ -347,7 +347,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 512,
       environment: { FEEDBACK_TABLE: feedbackTable.tableName, AGGREGATES_TABLE: aggregatesTable.tableName, CONVERSATIONS_TABLE: conversationsTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-chat-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ChatApiLogs', `voc-chat-api-${hash}`),
+      logGroup: this.createLogGroup('ChatApiLogs', uniqueName('voc-chat-api')),
     });
 
 
@@ -367,11 +367,11 @@ export class VocApiStack extends cdk.Stack {
         'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
     }));
-    projectsRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-projects-api-${hash}`] }));
+    projectsRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-projects-api-*`] }));
     rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
 
     const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
-      functionName: `voc-projects-api-${hash}`,
+      functionName: uniqueName('voc-projects-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'projects_handler.lambda_handler',
@@ -392,7 +392,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ProjectsApiLogs', `voc-projects-api-${hash}`),
+      logGroup: this.createLogGroup('ProjectsApiLogs', uniqueName('voc-projects-api')),
     });
 
     // Chat Stream (Function URL)
@@ -407,7 +407,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const chatStreamLambda = new lambda.Function(this, 'ChatStreamApi', {
-      functionName: `voc-chat-stream-${hash}`,
+      functionName: uniqueName('voc-chat-stream'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'chat_stream_handler.lambda_handler',
@@ -424,7 +424,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ChatStreamLogs', `voc-chat-stream-${hash}`),
+      logGroup: this.createLogGroup('ChatStreamLogs', uniqueName('voc-chat-stream')),
     });
 
     const chatStreamUrl = chatStreamLambda.addFunctionUrl({
@@ -440,7 +440,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(s3ImportRole);
 
     const s3ImportLambda = new lambda.Function(this, 'S3ImportApi', {
-      functionName: `voc-s3-import-api-${hash}`,
+      functionName: uniqueName('voc-s3-import-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 's3_import_handler.lambda_handler',
@@ -450,7 +450,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: { S3_IMPORT_BUCKET: s3ImportBucket.bucketName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-s3-import-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('S3ImportApiLogs', `voc-s3-import-api-${hash}`),
+      logGroup: this.createLogGroup('S3ImportApiLogs', uniqueName('voc-s3-import-api')),
     });
 
     // Data Explorer API
@@ -466,7 +466,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const dataExplorerLambda = new lambda.Function(this, 'DataExplorerApi', {
-      functionName: `voc-data-explorer-api-${hash}`,
+      functionName: uniqueName('voc-data-explorer-api'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'data_explorer_handler.lambda_handler',
@@ -484,7 +484,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('DataExplorerApiLogs', `voc-data-explorer-api-${hash}`),
+      logGroup: this.createLogGroup('DataExplorerApiLogs', uniqueName('voc-data-explorer-api')),
     });
 
     // ============================================
@@ -503,7 +503,7 @@ export class VocApiStack extends cdk.Stack {
 
     const webhookLambdas = new Map<string, lambda.Function>();
     for (const plugin of webhookPlugins) {
-      const webhookFn = this.createWebhookLambda(plugin, webhookRole, apiLayer, processingQueueUrl, feedbackTable.tableName, secretsArn, brandName, hash);
+      const webhookFn = this.createWebhookLambda(plugin, webhookRole, apiLayer, processingQueueUrl, feedbackTable.tableName, secretsArn, brandName);
       webhookLambdas.set(plugin.id, webhookFn);
     }
 
@@ -512,7 +512,7 @@ export class VocApiStack extends cdk.Stack {
     // API GATEWAY
     // ============================================
     this.api = new apigateway.RestApi(this, 'VocAnalyticsApi', {
-      restApiName: `voc-analytics-api-${hash}`,
+      restApiName: uniqueName('voc-analytics-api'),
       description: 'Voice of the Customer Analytics API',
       deployOptions: { stageName: 'v1', throttlingRateLimit: 100, throttlingBurstLimit: 200, metricsEnabled: true },
       defaultCorsPreflightOptions: {
@@ -750,8 +750,7 @@ export class VocApiStack extends cdk.Stack {
     processingQueueUrl: string,
     feedbackTableName: string,
     secretsArn: string,
-    brandName: string,
-    hash: string
+    brandName: string
   ): lambda.Function {
     const webhookCode = lambda.Code.fromAsset('plugins', {
       exclude: ['**/__pycache__', '*.pyc', '_template/**'],
@@ -765,7 +764,7 @@ export class VocApiStack extends cdk.Stack {
     const pascalPluginId = capitalize(plugin.id);
 
     return new lambda.Function(this, `${pascalPluginId}Webhook`, {
-      functionName: `voc-webhook-${plugin.id}-${hash}`,
+      functionName: uniqueName(`voc-webhook-${plugin.id}`),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -783,7 +782,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup(`${pascalPluginId}WebhookLogs`, `voc-webhook-${plugin.id}-${hash}`),
+      logGroup: this.createLogGroup(`${pascalPluginId}WebhookLogs`, uniqueName(`voc-webhook-${plugin.id}`)),
     });
   }
 }

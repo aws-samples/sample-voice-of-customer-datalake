@@ -9,7 +9,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
-import { uniqueBucketName, uniqueTableName, generateDeploymentHash } from '../utils/naming';
+import { uniqueName } from '../utils/naming';
 
 export interface VocCoreStackProps extends cdk.StackProps {
   brandName: string;
@@ -54,14 +54,13 @@ export class VocCoreStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocCoreStackProps) {
     super(scope, id, props);
 
-    const hash = generateDeploymentHash(this.account, this.region);
     const corsAllowedOrigins = ['http://localhost:5173', 'http://localhost:3000'];
 
     // ============================================
     // KMS KEY
     // ============================================
     this.kmsKey = new kms.Key(this, 'VocKmsKey', {
-      alias: `voc-datalake-key-${hash}`,
+      alias: uniqueName('voc-datalake-key'),
       description: 'KMS key for VoC Data Lake encryption',
       enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -71,7 +70,7 @@ export class VocCoreStack extends cdk.Stack {
     // S3 BUCKETS
     // ============================================
     this.accessLogsBucket = new s3.Bucket(this, 'AccessLogsBucket', {
-      bucketName: uniqueBucketName('voc-access-logs', this.account, this.region),
+      bucketName: uniqueName('voc-access-logs'),
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
@@ -81,7 +80,7 @@ export class VocCoreStack extends cdk.Stack {
     });
 
     this.rawDataBucket = new s3.Bucket(this, 'RawDataBucket', {
-      bucketName: uniqueBucketName('voc-raw-data', this.account, this.region),
+      bucketName: uniqueName('voc-raw-data'),
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: this.kmsKey,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -100,7 +99,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Frontend hosting bucket
     this.websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
-      bucketName: uniqueBucketName('voc-frontend', this.account, this.region),
+      bucketName: uniqueName('voc-frontend'),
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -115,7 +114,7 @@ export class VocCoreStack extends cdk.Stack {
     
     // Avatars CDN
     const avatarsCorsPolicy = new cloudfront.ResponseHeadersPolicy(this, 'AvatarsCorsPolicy', {
-      responseHeadersPolicyName: `voc-avatars-cors-policy-${hash}`,
+      responseHeadersPolicyName: uniqueName('voc-avatars-cors-policy'),
       corsBehavior: {
         accessControlAllowOrigins: corsAllowedOrigins,
         accessControlAllowMethods: ['GET', 'HEAD'],
@@ -170,7 +169,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Feedback Table
     this.feedbackTable = new dynamodb.Table(this, 'FeedbackTable', {
-      tableName: uniqueTableName('voc-feedback', this.account, this.region),
+      tableName: uniqueName('voc-feedback'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -212,7 +211,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Aggregates Table
     this.aggregatesTable = new dynamodb.Table(this, 'AggregatesTable', {
-      tableName: uniqueTableName('voc-aggregates', this.account, this.region),
+      tableName: uniqueName('voc-aggregates'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -232,7 +231,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Watermarks Table
     this.watermarksTable = new dynamodb.Table(this, 'WatermarksTable', {
-      tableName: uniqueTableName('voc-watermarks', this.account, this.region),
+      tableName: uniqueName('voc-watermarks'),
       partitionKey: { name: 'source', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
@@ -243,7 +242,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Projects Table
     this.projectsTable = new dynamodb.Table(this, 'ProjectsTable', {
-      tableName: uniqueTableName('voc-projects', this.account, this.region),
+      tableName: uniqueName('voc-projects'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -262,7 +261,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Jobs Table
     this.jobsTable = new dynamodb.Table(this, 'JobsTable', {
-      tableName: uniqueTableName('voc-jobs', this.account, this.region),
+      tableName: uniqueName('voc-jobs'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -282,7 +281,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Conversations Table
     this.conversationsTable = new dynamodb.Table(this, 'ConversationsTable', {
-      tableName: uniqueTableName('voc-conversations', this.account, this.region),
+      tableName: uniqueName('voc-conversations'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -295,7 +294,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Idempotency Table
     this.idempotencyTable = new dynamodb.Table(this, 'IdempotencyTable', {
-      tableName: uniqueTableName('voc-idempotency', this.account, this.region),
+      tableName: uniqueName('voc-idempotency'),
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
@@ -330,7 +329,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Cognito User Pool
     this.userPool = new cognito.UserPool(this, 'VocUserPool', {
-      userPoolName: `voc-user-pool-${hash}`,
+      userPoolName: uniqueName('voc-user-pool'),
       selfSignUpEnabled: false,
       signInAliases: { email: true, username: true },
       autoVerify: { email: true },
@@ -374,7 +373,7 @@ The VoC Analytics Team`,
 
     // User Pool Client
     this.userPoolClient = this.userPool.addClient('VocWebClient', {
-      userPoolClientName: `voc-web-client-${hash}`,
+      userPoolClientName: uniqueName('voc-web-client'),
       authFlows: { userPassword: true, userSrp: true },
       oAuth: {
         flows: { authorizationCodeGrant: true, implicitCodeGrant: true },
@@ -390,7 +389,7 @@ The VoC Analytics Team`,
     });
 
     // User Pool Domain
-    const domainPrefix = `voc-${hash}`;
+    const domainPrefix = uniqueName('voc');
     this.userPoolDomain = this.userPool.addDomain('VocUserPoolDomain', {
       cognitoDomain: { domainPrefix },
     });
@@ -431,7 +430,7 @@ The VoC Analytics Team`,
           ],
           MessageAction: 'SUPPRESS', // Don't send email for initial admin
         },
-        physicalResourceId: cr.PhysicalResourceId.of(`admin-user-${hash}`),
+        physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-user')),
       },
       policy: cr.AwsCustomResourcePolicy.fromStatements([
         new iam.PolicyStatement({
@@ -452,7 +451,7 @@ The VoC Analytics Team`,
           Password: initialAdminPassword,
           Permanent: true,
         },
-        physicalResourceId: cr.PhysicalResourceId.of(`admin-password-${hash}`),
+        physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-password')),
       },
       policy: cr.AwsCustomResourcePolicy.fromStatements([
         new iam.PolicyStatement({
@@ -473,7 +472,7 @@ The VoC Analytics Team`,
           Username: initialAdminUsername,
           GroupName: 'admins',
         },
-        physicalResourceId: cr.PhysicalResourceId.of(`admin-group-${hash}`),
+        physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-group')),
       },
       policy: cr.AwsCustomResourcePolicy.fromStatements([
         new iam.PolicyStatement({

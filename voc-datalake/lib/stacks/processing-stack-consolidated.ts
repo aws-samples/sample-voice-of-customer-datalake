@@ -9,7 +9,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
-import { generateDeploymentHash } from '../utils/naming';
+import { uniqueName } from '../utils/naming';
 
 export interface VocProcessingStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -47,7 +47,7 @@ export class VocProcessingStack extends cdk.Stack {
     super(scope, id, props);
 
     const { feedbackTable, aggregatesTable, projectsTable, jobsTable, idempotencyTable, processingQueue, kmsKey, config } = props;
-    const hash = generateDeploymentHash(this.account, this.region);
+
 
     // Shared Lambda Layer
     const processingLayer = new lambda.LayerVersion(this, 'ProcessingDepsLayer', {
@@ -112,7 +112,7 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     this.processingLambda = new lambda.Function(this, 'FeedbackProcessor', {
-      functionName: `voc-feedback-processor-${hash}`,
+      functionName: uniqueName('voc-feedback-processor'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -133,7 +133,7 @@ export class VocProcessingStack extends cdk.Stack {
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'ProcessorLogs', {
-        logGroupName: `/aws/lambda/voc-feedback-processor-${hash}`,
+        logGroupName: uniqueName('/aws/lambda/voc-feedback-processor'),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -159,7 +159,7 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     this.aggregationLambda = new lambda.Function(this, 'AggregationProcessor', {
-      functionName: `voc-aggregation-processor-${hash}`,
+      functionName: uniqueName('voc-aggregation-processor'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -174,7 +174,7 @@ export class VocProcessingStack extends cdk.Stack {
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'AggregatorLogs', {
-        logGroupName: `/aws/lambda/voc-aggregation-processor-${hash}`,
+        logGroupName: uniqueName('/aws/lambda/voc-aggregation-processor'),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -221,7 +221,7 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     const researchStepLambda = new lambda.Function(this, 'ResearchStepLambda', {
-      functionName: `voc-research-step-${hash}`,
+      functionName: uniqueName('voc-research-step'),
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       handler: 'research_step_handler.lambda_handler',
@@ -238,14 +238,14 @@ export class VocProcessingStack extends cdk.Stack {
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'ResearchStepLogs', {
-        logGroupName: `/aws/lambda/voc-research-step-${hash}`,
+        logGroupName: uniqueName('/aws/lambda/voc-research-step'),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
 
     // Step Functions workflow
-    this.researchStateMachine = this.createResearchStateMachine(researchStepLambda, hash);
+    this.researchStateMachine = this.createResearchStateMachine(researchStepLambda);
 
     // ============================================
     // OUTPUTS
@@ -256,7 +256,7 @@ export class VocProcessingStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ResearchStepLambdaArn', { value: researchStepLambda.functionArn });
   }
 
-  private createResearchStateMachine(researchStepLambda: lambda.Function, hash: string): sfn.StateMachine {
+  private createResearchStateMachine(researchStepLambda: lambda.Function): sfn.StateMachine {
     // Step 1: Initialize
     const initializeStep = new tasks.LambdaInvoke(this, 'InitializeResearch', {
       lambdaFunction: researchStepLambda,
@@ -368,13 +368,13 @@ export class VocProcessingStack extends cdk.Stack {
     handleError.next(failState);
 
     return new sfn.StateMachine(this, 'ResearchStateMachine', {
-      stateMachineName: `voc-research-workflow-${hash}`,
+      stateMachineName: uniqueName('voc-research-workflow'),
       definitionBody: sfn.DefinitionBody.fromChainable(definition),
       timeout: cdk.Duration.hours(1),
       tracingEnabled: true,
       logs: {
         destination: new logs.LogGroup(this, 'ResearchStateMachineLogs', {
-          logGroupName: `/aws/stepfunctions/voc-research-workflow-${hash}`,
+          logGroupName: uniqueName('/aws/stepfunctions/voc-research-workflow'),
           retention: logs.RetentionDays.TWO_WEEKS,
           removalPolicy: cdk.RemovalPolicy.DESTROY,
         }),
