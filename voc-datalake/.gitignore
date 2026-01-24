@@ -3,11 +3,7 @@ node_modules/
 
 # Build output
 dist/
-*.js
 *.d.ts
-!jest.config.js
-!frontend/eslint.config.js
-!frontend/mock-server.js
 
 # CDK output
 cdk.out/

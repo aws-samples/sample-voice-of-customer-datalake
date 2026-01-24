@@ -93,7 +93,7 @@ def format_feedback_for_llm(items: list[dict]) -> str:
 ### Review {i}
 - Source: {item.get('source_platform', 'unknown')}
 - Date: {item.get('source_created_at', '')[:10] if item.get('source_created_at') else 'N/A'}
-- Sentiment: {item.get('sentiment_label', 'unknown')} (score: {item.get('sentiment_score', 0):.2f})
+- Sentiment: {item.get('sentiment_label', 'unknown')} (score: {float(item.get('sentiment_score', 0)):.2f})
 - Category: {item.get('category', 'other')}
 - Rating: {item.get('rating', 'N/A')}/5
 - Urgency: {item.get('urgency', 'low')}
