@@ -1,0 +1,86 @@
+name: Infrastructure / Observability
+description: CloudWatch dashboards, alarms, or infrastructure improvements
+title: "[Infra]: "
+labels: ["infrastructure", "observability"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for infrastructure improvements like monitoring, alarms, or CDK changes.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What infrastructure improvement is needed?
+      placeholder: "No CloudWatch alarms are configured for critical metrics"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      description: What kind of infrastructure change?
+      options:
+        - CloudWatch Dashboard
+        - CloudWatch Alarms
+        - IAM Permissions
+        - CDK Stack Changes
+        - S3/DynamoDB Configuration
+        - Lambda Configuration
+        - API Gateway
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current State
+      description: What exists today?
+      placeholder: "No alarms defined in any CDK stack"
+    validations:
+      required: true
+
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements
+      description: What needs to be added?
+      placeholder: |
+        ### Critical Alarms (P1)
+        | Alarm | Threshold | Action |
+        |-------|-----------|--------|
+        | DLQ messages | > 0 | Page on-call |
+        | Lambda error rate | > 5% | Page on-call |
+        
+        ### Warning Alarms (P2)
+        | Alarm | Threshold | Action |
+        |-------|-----------|--------|
+        | Lambda duration | > 80% timeout | Email team |
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: CDK Files to Modify
+      description: Which stack files need changes?
+      placeholder: |
+        - `lib/stacks/processing-stack-consolidated.ts`
+        - `lib/stacks/api-stack.ts`
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know this is done?
+      placeholder: |
+        - [ ] Alarms created in CDK
+        - [ ] SNS topic for notifications
+        - [ ] Dashboard URLs in stack outputs
+    validations:
+      required: true

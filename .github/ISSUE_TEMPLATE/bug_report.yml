@@ -1,0 +1,99 @@
+name: Bug Report
+description: Report a bug in the VoC Data Lake platform
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below.
+
+  - type: input
+    id: url
+    attributes:
+      label: URL / Page
+      description: Which page is affected?
+      placeholder: "e.g., https://d451uzybnj2c8.cloudfront.net/feedback"
+    validations:
+      required: false
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Brief description of the bug
+      placeholder: "When I click X, Y happens instead of Z"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1. Navigate to /feedback
+        2. Select "twitter" from source dropdown
+        3. Check "Urgent only" checkbox
+        4. Observe that source filter resets to "All Sources"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen?
+      placeholder: "Source filter should remain on 'twitter'"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happens?
+      placeholder: "Source filter resets to 'All Sources'"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected Area
+      description: Which part of the system is affected?
+      options:
+        - Frontend - Dashboard
+        - Frontend - Feedback List
+        - Frontend - Categories
+        - Frontend - Problem Analysis
+        - Frontend - Chat
+        - Frontend - Projects
+        - Frontend - Settings
+        - Frontend - Export/PDF
+        - Backend - API
+        - Backend - Processing
+        - Backend - Ingestion
+        - Infrastructure - CDK
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Affected Files (if known)
+      description: List any files you think are related
+      placeholder: |
+        - `frontend/src/pages/Feedback/Feedback.tsx`
+        - `frontend/src/api/client.ts`
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other information (screenshots, logs, etc.)
+    validations:
+      required: false

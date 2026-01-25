@@ -1,0 +1,80 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please describe what you'd like to see.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Brief description of the feature
+      placeholder: "Add ability to export feedback as CSV"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this solve?
+      placeholder: "Users need to analyze feedback in Excel but currently can only view in the dashboard"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How should this work?
+      placeholder: |
+        1. Add "Export CSV" button to Feedback page
+        2. Include all visible columns
+        3. Respect current filters
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other approaches did you consider?
+      placeholder: "Could also add JSON export, but CSV is more widely used"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the system?
+      options:
+        - Frontend - Dashboard
+        - Frontend - Feedback
+        - Frontend - Chat
+        - Frontend - Projects
+        - Frontend - Settings
+        - Backend - API
+        - Backend - Processing
+        - Plugins
+        - Infrastructure
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know this is done?
+      placeholder: |
+        - [ ] Export button visible on Feedback page
+        - [ ] CSV includes all columns
+        - [ ] Filters are applied to export
+    validations:
+      required: false

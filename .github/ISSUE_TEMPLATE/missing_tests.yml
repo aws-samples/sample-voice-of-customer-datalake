@@ -1,0 +1,85 @@
+name: Missing Tests
+description: Request for new test coverage
+title: "[Tests]: "
+labels: ["testing", "quality"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to track missing test coverage.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What needs test coverage?
+      placeholder: "The processor Lambda handler lacks unit tests"
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Files to Test
+      description: Which files need tests?
+      placeholder: |
+        - `lambda/processor/handler.py`
+        - `lambda/aggregator/handler.py`
+    validations:
+      required: true
+
+  - type: textarea
+    id: functions
+    attributes:
+      label: Key Functions to Test
+      description: List specific functions that need coverage
+      placeholder: |
+        - `validate_sqs_message()`
+        - `process_feedback()`
+        - `invoke_bedrock_llm()`
+        - `generate_deterministic_id()`
+    validations:
+      required: true
+
+  - type: textarea
+    id: scenarios
+    attributes:
+      label: Test Scenarios
+      description: What scenarios should be covered?
+      placeholder: |
+        ### Happy Path
+        - [ ] Valid message is processed successfully
+        - [ ] Feedback is stored in DynamoDB
+        
+        ### Error Handling
+        - [ ] Invalid message format returns error
+        - [ ] Bedrock timeout is handled gracefully
+        
+        ### Edge Cases
+        - [ ] Empty text field
+        - [ ] Very long text (10K+ chars)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: test-type
+    attributes:
+      label: Test Type
+      description: What kind of tests are needed?
+      multiple: true
+      options:
+        - Unit tests
+        - Integration tests
+        - Component tests (React)
+        - E2E tests
+    validations:
+      required: true
+
+  - type: input
+    id: coverage
+    attributes:
+      label: Target Coverage
+      description: What coverage percentage should we aim for?
+      placeholder: "80%"
+    validations:
+      required: false

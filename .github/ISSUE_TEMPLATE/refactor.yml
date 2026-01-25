@@ -1,0 +1,81 @@
+name: Code Quality / Refactoring
+description: Technical debt, code duplication, or refactoring needed
+title: "[Refactor]: "
+labels: ["refactor", "tech-debt"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for code quality improvements, refactoring, or technical debt.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What needs to be improved?
+      placeholder: "Multiple Lambda handlers have duplicated utility functions"
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current State
+      description: Describe the current problematic code/pattern
+      placeholder: |
+        `get_jobs_table()` is duplicated in 3 files:
+        - `artifact_builder_handler.py`
+        - `artifact_trigger_handler.py`
+        - `projects_handler.py`
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed Solution
+      description: How should this be fixed?
+      placeholder: |
+        1. Create `shared/jobs.py` with common job utilities
+        2. Move `get_jobs_table()` to shared module
+        3. Update all handlers to import from shared
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Affected Files
+      description: List all files that need changes
+      placeholder: |
+        | File | Change |
+        |------|--------|
+        | `lambda/shared/jobs.py` | Create new file |
+        | `lambda/api/projects_handler.py` | Import from shared |
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      description: How significant is this change?
+      options:
+        - Low - Cosmetic/minor improvement
+        - Medium - Improves maintainability
+        - High - Affects multiple components
+        - Critical - Blocking other work
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know this is done?
+      placeholder: |
+        - [ ] No duplicate `get_jobs_table()` functions
+        - [ ] All handlers use shared module
+        - [ ] Tests pass
+    validations:
+      required: true

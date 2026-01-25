@@ -1,0 +1,86 @@
+name: Security Issue
+description: Security vulnerabilities or concerns
+title: "[Security]: "
+labels: ["security", "priority-high"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **For critical security vulnerabilities, please report privately via GitHub Security Advisories instead of creating a public issue.**
+        
+        Use this template for security improvements that can be discussed publicly.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the security concern
+      placeholder: "Public endpoint lacks rate limiting"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How severe is this issue?
+      options:
+        - Low - Minor concern
+        - Medium - Should be addressed
+        - High - Significant risk
+        - Critical - Immediate action needed
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: What type of security issue?
+      options:
+        - Authentication/Authorization
+        - Input Validation
+        - Rate Limiting/DoS
+        - Data Exposure
+        - Dependency Vulnerability
+        - CORS/Headers
+        - Encryption
+        - IAM Permissions
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk Description
+      description: What could go wrong?
+      placeholder: |
+        - Public endpoint could be abused for spam
+        - No throttling allows unlimited requests
+        - Input not sanitized before storage
+    validations:
+      required: true
+
+  - type: textarea
+    id: mitigation
+    attributes:
+      label: Proposed Mitigation
+      description: How should this be fixed?
+      placeholder: |
+        1. Add WAF rate limiting
+        2. Implement input sanitization
+        3. Add CAPTCHA for public forms
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Affected Files
+      description: Which files are involved?
+      placeholder: |
+        - `lambda/api/feedback_form_handler.py`
+        - `lib/stacks/api-stack.ts`
+    validations:
+      required: true
