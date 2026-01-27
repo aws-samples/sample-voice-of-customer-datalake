@@ -66,16 +66,15 @@ npm run check        # lint + typecheck + test
 
 ## CDK Stacks
 
-The platform consists of 6 CDK stacks (consolidated architecture):
+The platform consists of 5 CDK stacks (consolidated architecture):
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
 | `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStackConsolidated` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
-| `VocApiStack` | API Gateway, 15 API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
+| `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
 | `VocBedrockAccessStack` | Bedrock model access configuration | None |
-| `ArtifactBuilderStack` | ECS-based artifact generator | None (standalone) |
 
 ### Deploy All Stacks
 
@@ -108,7 +107,6 @@ Due to dependencies, stacks should be deployed in this order:
 2. `VocIngestionStack`
 3. `VocProcessingStackConsolidated`
 4. `VocApiStack`
-5. `ArtifactBuilderStack` (independent, can deploy anytime)
 
 The `cdk deploy --all` command handles this automatically.
 
@@ -176,7 +174,7 @@ Enable/disable menu items in `voc-datalake/cdk.context.json`:
   "menuStatus": {
     "dashboard": true,
     "feedback": true,
-    "artifact-builder": false
+    "scrapers": false
   }
 }
 ```
@@ -193,7 +191,6 @@ npm run deploy:frontend   # Deploy updated frontend
 The frontend fetches configuration from CloudFormation outputs:
 
 - `VITE_API_ENDPOINT` - API Gateway URL
-- `VITE_ARTIFACT_BUILDER_ENDPOINT` - Artifact Builder API URL
 - `VITE_USER_POOL_ID` - Cognito User Pool ID
 - `VITE_USER_POOL_CLIENT_ID` - Cognito Client ID
 - `VITE_COGNITO_REGION` - AWS Region

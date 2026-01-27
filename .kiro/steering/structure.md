@@ -24,9 +24,8 @@ voice-of-customer-datalake/       # Root repository
 └── voc-datalake/                 # Main CDK project
     ├── bin/
     │   └── voc-datalake.ts           # CDK app entry point - defines all stacks
-    ├── lib/stacks/                   # CDK stack definitions (TypeScript) - 6 stacks
+    ├── lib/stacks/                   # CDK stack definitions (TypeScript) - 5 stacks
     │   ├── api-stack.ts              # API Gateway, split API Lambdas (20KB policy limit), Webhooks, WAF
-    │   ├── artifact-builder-stack.ts # Artifact Builder (ECS, CodeCommit, ECR, S3)
     │   ├── bedrock-access-stack.ts   # Bedrock model access configuration
     │   ├── core-stack.ts             # Core infrastructure (DynamoDB, S3, Cognito, CloudFront, KMS)
     │   ├── ingestion-stack.ts        # Plugin Lambdas, EventBridge schedules, SQS, Secrets
@@ -34,7 +33,6 @@ voice-of-customer-datalake/       # Root repository
     ├── lambda/                       # Python Lambda functions
     │   ├── processor/handler.py      # SQS consumer - Bedrock/Comprehend enrichment
     │   ├── aggregator/handler.py     # DynamoDB Streams consumer - real-time metrics
-    │   ├── artifact-builder/         # Artifact builder container code
     │   ├── research/
     │   │   └── research_step_handler.py  # Step Functions task handler
     │   ├── shared/                   # Shared utilities across Lambdas (12 modules)
@@ -62,8 +60,6 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── feedback_form_handler.py  # /feedback-form/*, /feedback-forms/* (embeddable forms)
     │   │   ├── s3_import_handler.py      # /s3-import/* (file explorer)
     │   │   ├── data_explorer_handler.py  # /data-explorer/* (S3 raw data & DynamoDB browser)
-    │   │   ├── artifact_builder_handler.py   # /artifacts/* (artifact builder jobs)
-    │   │   ├── artifact_trigger_handler.py   # /artifacts/trigger (artifact build triggers)
     │   │   ├── logs_handler.py           # /logs/* (system logs)
     │   │   ├── manual_import_handler.py  # /manual-import/* (manual data import)
     │   │   ├── manual_import_processor.py # Manual import processing logic
@@ -102,7 +98,6 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── api/
     │   │   │   ├── client.ts         # API client, fetch helpers
     │   │   │   ├── types.ts          # API type definitions
-    │   │   │   ├── artifactApi.ts    # Artifact builder API (lazy-loaded)
     │   │   │   ├── projectsApi.ts    # Projects API (lazy-loaded)
     │   │   │   └── streamApi.ts      # Streaming API helpers (lazy-loaded)
     │   │   ├── services/auth.ts      # Cognito authentication service
@@ -130,8 +125,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── TimeRangeSelector/    # Date range picker
     │   │   │   ├── UserAdmin/            # User administration
     │   │   │   └── UserProfileModal/     # User profile modal
-    │   │   ├── pages/                # Each page in its own folder (15 total)
-    │   │   │   ├── ArtifactBuilder/  # AI-powered artifact generation
+    │   │   ├── pages/                # Each page in its own folder (14 total)
     │   │   │   ├── Categories/       # Category breakdown and analysis
     │   │   │   ├── Chat/             # AI chat interface
     │   │   │   ├── Dashboard/        # Overview with charts and social feed
@@ -341,11 +335,9 @@ VocCoreStack (DynamoDB tables, S3 raw data bucket, KMS, Cognito, CloudFront)
        │           │
        │           └──▶ VocProcessingStackConsolidated (Processor, Aggregator, Step Functions, Bedrock)
        │
-       ├──▶ VocApiStack (API Gateway, 15 API Lambdas, Webhooks, WAF)
+       ├──▶ VocApiStack (API Gateway, API Lambdas, Webhooks, WAF)
        │           │
        │           └── Depends on: processingQueue, secretsArn, researchStateMachine, userPool
        │
-       ├──▶ VocBedrockAccessStack (Bedrock model access configuration)
-       │
-       └──▶ ArtifactBuilderStack (ECS, CodeCommit, ECR, S3 for artifact generation) - standalone
+       └──▶ VocBedrockAccessStack (Bedrock model access configuration)
 ```

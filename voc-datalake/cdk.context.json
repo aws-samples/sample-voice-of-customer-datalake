@@ -4,22 +4,7 @@
   ],
   "brandName": "VoC Analytics",
   "pluginStatus": {
-    "trustpilot": false,
-    "yelp": false,
-    "google_reviews": false,
-    "twitter": false,
-    "instagram": false,
-    "facebook": false,
-    "reddit": false,
-    "tavily": false,
-    "appstore_apple": false,
-    "appstore_google": false,
-    "appstore_huawei": false,
-    "webscraper": true,
-    "youtube": false,
-    "tiktok": false,
-    "linkedin": false,
-    "s3_import": false
+    "webscraper": true
   },
   "menuStatus": {
     "dashboard": true,

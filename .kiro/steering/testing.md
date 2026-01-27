@@ -887,7 +887,6 @@ describe('configStore', () => {
     useConfigStore.setState({
       config: {
         apiEndpoint: '',
-        artifactBuilderEndpoint: '',
         brandName: '',
         brandHandles: [],
         hashtags: [],

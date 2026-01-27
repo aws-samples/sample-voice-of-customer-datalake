@@ -90,7 +90,7 @@ Enable/disable plugins and menu items in `voc-datalake/cdk.context.json`:
   },
   "menuStatus": {
     "dashboard": true,
-    "artifact-builder": false
+    "scrapers": false
   }
 }
 ```

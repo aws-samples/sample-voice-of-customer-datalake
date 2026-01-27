@@ -24,8 +24,6 @@ body:
       description: Describe the current problematic code/pattern
       placeholder: |
         `get_jobs_table()` is duplicated in 3 files:
-        - `artifact_builder_handler.py`
-        - `artifact_trigger_handler.py`
         - `projects_handler.py`
     validations:
       required: true
