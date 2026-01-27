@@ -1,44 +1,35 @@
 /**
  * DocumentsTab - Documents list and detail view
  */
-import { FileText, Pencil, Trash2, Loader2, Play, ExternalLink } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { FileText, Pencil, Trash2, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
 import { format } from 'date-fns'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ProjectDocument, Project } from '../../api/client'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
-import { isArtifactBuilderEnabled } from '../../config/menuConfig'
 
 interface DocumentsTabProps {
   readonly project: Project
   readonly documents: ProjectDocument[]
   readonly selectedDoc: ProjectDocument | null
-  readonly artifactBuilderEndpoint: string | undefined
   readonly onSelectDoc: (doc: ProjectDocument) => void
   readonly onEditDoc: () => void
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
-  readonly onBuildArtifact: (doc: ProjectDocument) => void
   readonly isDeleting: boolean
-  readonly isBuildingArtifact: boolean
 }
 
 export default function DocumentsTab({
   project,
   documents,
   selectedDoc,
-  artifactBuilderEndpoint,
   onSelectDoc,
   onEditDoc,
   onDeleteDoc,
   onCreateDoc,
-  onBuildArtifact,
   isDeleting,
-  isBuildingArtifact,
 }: DocumentsTabProps) {
-  const navigate = useNavigate()
 
   return (
     <div className="space-y-4">
@@ -87,33 +78,6 @@ export default function DocumentsTab({
               <div className="flex items-start justify-between mb-4">
                 <h2 className="text-xl font-bold">{selectedDoc.title}</h2>
                 <div className="flex items-center gap-2">
-                  {/* Build Prototype / View Artifact button */}
-                  {(selectedDoc.document_type === 'prd' || selectedDoc.document_type === 'prfaq') && artifactBuilderEndpoint && isArtifactBuilderEnabled() && (
-                    selectedDoc.artifact_job_id ? (
-                      <button
-                        onClick={() => navigate(`/artifact-builder?job=${selectedDoc.artifact_job_id}`)}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg text-sm font-medium hover:from-green-700 hover:to-emerald-700"
-                        title="View the built prototype"
-                      >
-                        <ExternalLink size={16} />
-                        View Artifact
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => onBuildArtifact(selectedDoc)}
-                        disabled={isBuildingArtifact}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg text-sm font-medium hover:from-purple-700 hover:to-pink-700 disabled:opacity-50"
-                        title="Build a working prototype from this document"
-                      >
-                        {isBuildingArtifact ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          <Play size={16} />
-                        )}
-                        Build Prototype
-                      </button>
-                    )
-                  )}
                   <DocumentExportMenu document={selectedDoc} project={project} />
                   <button 
                     onClick={onEditDoc}

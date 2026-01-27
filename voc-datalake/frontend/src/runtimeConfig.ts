@@ -16,11 +16,6 @@ const urlPattern = /^https?:\/\/.+/
 // Schema for runtime configuration
 const RuntimeConfigSchema = z.object({
   apiEndpoint: z.string().regex(urlPattern, 'Invalid URL format'),
-  // artifactBuilderEndpoint is optional - empty string or valid URL
-  artifactBuilderEndpoint: z.union([
-    z.literal(''),
-    z.string().regex(urlPattern, 'Invalid URL format'),
-  ]).default(''),
   cognito: z.object({
     userPoolId: z.string().min(1),
     clientId: z.string().min(1),
@@ -114,7 +109,6 @@ function getEnvString(key: string, defaultValue = ''): string {
 function getEnvConfig(): RuntimeConfig {
   const envConfig = {
     apiEndpoint: getEnvString('VITE_API_ENDPOINT'),
-    artifactBuilderEndpoint: getEnvString('VITE_ARTIFACT_BUILDER_ENDPOINT'),
     cognito: {
       userPoolId: getEnvString('VITE_COGNITO_USER_POOL_ID'),
       clientId: getEnvString('VITE_COGNITO_CLIENT_ID'),
@@ -129,7 +123,6 @@ function getEnvConfig(): RuntimeConfig {
     // Return a minimal config to prevent crashes
     return {
       apiEndpoint: 'http://localhost:3000',
-      artifactBuilderEndpoint: '',
       cognito: {
         userPoolId: '',
         clientId: '',

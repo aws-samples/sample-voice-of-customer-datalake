@@ -22,7 +22,6 @@ const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
 const Prioritization = lazy(() => import('./pages/Prioritization'))
 const FeedbackForms = lazy(() => import('./pages/FeedbackForms'))
 const DataExplorer = lazy(() => import('./pages/DataExplorer'))
-const ArtifactBuilder = lazy(() => import('./pages/ArtifactBuilder'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,7 +55,6 @@ const router = createBrowserRouter([
       { path: 'projects/:id', element: <Suspense fallback={<PageLoader />}><ProjectDetail /></Suspense> },
       { path: 'prioritization', element: <Suspense fallback={<PageLoader />}><Prioritization /></Suspense> },
       { path: 'data-explorer', element: <Suspense fallback={<PageLoader />}><DataExplorer /></Suspense> },
-      { path: 'artifact-builder', element: <Suspense fallback={<PageLoader />}><ArtifactBuilder /></Suspense> },
       { path: 'scrapers', element: <Suspense fallback={<PageLoader />}><Scrapers /></Suspense> },
       { path: 'feedback-forms', element: <Suspense fallback={<PageLoader />}><FeedbackForms /></Suspense> },
       { path: 'settings', element: <Suspense fallback={<PageLoader />}><AdminRoute><Settings /></AdminRoute></Suspense> },

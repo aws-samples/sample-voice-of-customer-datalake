@@ -27,14 +27,12 @@ dynamodb = get_dynamodb_resource()
 sqs_client = get_sqs_client()
 
 RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
-ARTIFACT_BUILDER_BUCKET = os.environ.get("ARTIFACT_BUILDER_BUCKET", "")
 FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
 PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 
 # Available buckets for browsing
 AVAILABLE_BUCKETS = {
     'raw-data': {'name': RAW_DATA_BUCKET, 'label': 'VoC Raw Data', 'description': 'Raw feedback data from all sources'},
-    'artifact-builder': {'name': ARTIFACT_BUILDER_BUCKET, 'label': 'Artifact Builder', 'description': 'Generated artifacts and builds'},
 }
 
 app = create_api_resolver()
@@ -457,7 +455,7 @@ def get_data_stats():
     stats = {
         's3': {
             'buckets': [],
-            'configured': bool(RAW_DATA_BUCKET or ARTIFACT_BUILDER_BUCKET)
+            'configured': bool(RAW_DATA_BUCKET)
         },
         'dynamodb': {'table': FEEDBACK_TABLE, 'configured': bool(FEEDBACK_TABLE)}
     }

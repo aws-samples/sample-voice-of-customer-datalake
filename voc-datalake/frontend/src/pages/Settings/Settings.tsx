@@ -47,12 +47,6 @@ export default function Settings() {
     }
     return config.apiEndpoint
   })
-  const [artifactBuilderEndpoint, setArtifactBuilderEndpoint] = useState(() => {
-    if (isConfigLoaded()) {
-      return getRuntimeConfig().artifactBuilderEndpoint
-    }
-    return config.artifactBuilderEndpoint
-  })
   const [brandName, setBrandName] = useState(config.brandName)
   const [brandHandles, setBrandHandles] = useState(config.brandHandles.join(', '))
   const [hashtags, setHashtags] = useState(config.hashtags.join(', '))
@@ -66,12 +60,8 @@ export default function Settings() {
         setConfig({ apiEndpoint: runtimeConfig.apiEndpoint })
         setApiEndpoint(runtimeConfig.apiEndpoint)
       }
-      if (runtimeConfig.artifactBuilderEndpoint !== config.artifactBuilderEndpoint) {
-        setConfig({ artifactBuilderEndpoint: runtimeConfig.artifactBuilderEndpoint })
-        setArtifactBuilderEndpoint(runtimeConfig.artifactBuilderEndpoint)
-      }
     }
-  }, [config.apiEndpoint, config.artifactBuilderEndpoint, setConfig])
+  }, [config.apiEndpoint, setConfig])
 
   const { data: backendSettings, isLoading: loadingSettings } = useQuery({
     queryKey: ['brand-settings'],
@@ -122,7 +112,6 @@ export default function Settings() {
 
     setConfig({
       apiEndpoint,
-      artifactBuilderEndpoint,
       brandName,
       brandHandles: brandHandlesArray,
       hashtags: hashtagsArray,
@@ -208,9 +197,7 @@ export default function Settings() {
           <>
             <ApiConfigSection
               apiEndpoint={apiEndpoint}
-              artifactBuilderEndpoint={artifactBuilderEndpoint}
               onApiEndpointChange={setApiEndpoint}
-              onArtifactBuilderEndpointChange={setArtifactBuilderEndpoint}
             />
             <BrandConfigSection
               apiEndpoint={apiEndpoint}
@@ -228,9 +215,8 @@ export default function Settings() {
               showResetConfirm={showResetConfirm}
               onShowResetConfirm={setShowResetConfirm}
               onReset={() => {
-                setConfig({ apiEndpoint: '', artifactBuilderEndpoint: '', brandName: '', brandHandles: [], hashtags: [], urlsToTrack: [] })
+                setConfig({ apiEndpoint: '', brandName: '', brandHandles: [], hashtags: [], urlsToTrack: [] })
                 setApiEndpoint('')
-                setArtifactBuilderEndpoint('')
                 setBrandName('')
                 setBrandHandles('')
                 setHashtags('')
@@ -305,12 +291,10 @@ function Header({ saved, saving, onSave }: HeaderProps) {
 
 interface ApiConfigSectionProps {
   readonly apiEndpoint: string
-  readonly artifactBuilderEndpoint: string
   readonly onApiEndpointChange: (value: string) => void
-  readonly onArtifactBuilderEndpointChange: (value: string) => void
 }
 
-function ApiConfigSection({ apiEndpoint, artifactBuilderEndpoint, onApiEndpointChange, onArtifactBuilderEndpointChange }: ApiConfigSectionProps) {
+function ApiConfigSection({ apiEndpoint, onApiEndpointChange }: ApiConfigSectionProps) {
   const [showApiConfig, setShowApiConfig] = useState(!apiEndpoint)
 
   return (
@@ -332,11 +316,6 @@ function ApiConfigSection({ apiEndpoint, artifactBuilderEndpoint, onApiEndpointC
             <label className="block text-sm font-medium text-gray-700 mb-1">API Endpoint URL</label>
             <input type="url" value={apiEndpoint} onChange={(e) => onApiEndpointChange(e.target.value)} placeholder="https://your-api-id.execute-api.region.amazonaws.com/v1" className="input" />
             <p className="text-xs text-gray-500 mt-1">The API Gateway endpoint from your VoC deployment</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Artifact Builder Endpoint URL</label>
-            <input type="url" value={artifactBuilderEndpoint} onChange={(e) => onArtifactBuilderEndpointChange(e.target.value)} placeholder="https://artifact-builder-api.execute-api.region.amazonaws.com/v1" className="input" />
-            <p className="text-xs text-gray-500 mt-1">The Artifact Builder API endpoint for generating prototypes</p>
           </div>
         </div>
       )}

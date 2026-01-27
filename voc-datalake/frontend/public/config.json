@@ -1,6 +1,5 @@
 {
   "apiEndpoint": "/api",
-  "artifactBuilderEndpoint": "/artifact-api",
   "cognito": {
     "userPoolId": "",
     "clientId": "",

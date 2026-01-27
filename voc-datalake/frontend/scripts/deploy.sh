@@ -47,16 +47,6 @@ API_ENDPOINT=$(aws cloudformation describe-stacks \
   --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
   --output text 2>/dev/null)
 
-ARTIFACT_ENDPOINT=$(aws cloudformation describe-stacks \
-  --stack-name ArtifactBuilderStack \
-  --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
-  --output text 2>/dev/null || echo "")
-
-# Handle "None" response
-if [ "$ARTIFACT_ENDPOINT" = "None" ]; then
-  ARTIFACT_ENDPOINT=""
-fi
-
 COGNITO_USER_POOL_ID=$(aws cloudformation describe-stacks \
   --stack-name VocCoreStack \
   --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" \
@@ -73,7 +63,6 @@ COGNITO_REGION=$(aws cloudformation describe-stacks \
   --output text 2>/dev/null || echo "us-west-2")
 
 echo "  API Endpoint: $API_ENDPOINT"
-echo "  Artifact Builder: ${ARTIFACT_ENDPOINT:-'(not deployed)'}"
 echo "  Cognito Pool: $COGNITO_USER_POOL_ID"
 echo "  Cognito Client: $COGNITO_CLIENT_ID"
 echo "  Cognito Region: $COGNITO_REGION"
@@ -90,13 +79,11 @@ echo "Step 4: Generating runtime config.json..."
 # Use jq to properly escape values and generate valid JSON
 jq -n \
   --arg apiEndpoint "$API_ENDPOINT" \
-  --arg artifactBuilderEndpoint "$ARTIFACT_ENDPOINT" \
   --arg userPoolId "$COGNITO_USER_POOL_ID" \
   --arg clientId "$COGNITO_CLIENT_ID" \
   --arg region "$COGNITO_REGION" \
   '{
     apiEndpoint: $apiEndpoint,
-    artifactBuilderEndpoint: $artifactBuilderEndpoint,
     cognito: {
       userPoolId: $userPoolId,
       clientId: $clientId,

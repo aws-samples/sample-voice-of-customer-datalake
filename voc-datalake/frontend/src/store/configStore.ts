@@ -10,7 +10,6 @@ export interface SourceConfig {
 
 export interface Config {
   apiEndpoint: string
-  artifactBuilderEndpoint: string
   brandName: string
   brandHandles: string[]
   hashtags: string[]
@@ -60,20 +59,11 @@ function getApiEndpoint(): string {
   return getEnvString('VITE_API_ENDPOINT')
 }
 
-function getArtifactBuilderEndpoint(): string {
-  if (isConfigLoaded()) {
-    const cfg = getRuntimeConfig()
-    return cfg.artifactBuilderEndpoint
-  }
-  return getEnvString('VITE_ARTIFACT_BUILDER_ENDPOINT')
-}
-
 export const useConfigStore = create<ConfigStore>()(
   persist(
     (set) => ({
       config: {
         apiEndpoint: getApiEndpoint(),
-        artifactBuilderEndpoint: getArtifactBuilderEndpoint(),
         brandName: '',
         brandHandles: [],
         hashtags: [],

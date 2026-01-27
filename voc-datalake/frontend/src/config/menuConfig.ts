@@ -23,7 +23,3 @@ const menuConfig = parseMenuConfig()
 export function isMenuItemEnabled(menuKey: string): boolean {
   return menuConfig[menuKey] ?? true
 }
-
-export function isArtifactBuilderEnabled(): boolean {
-  return menuConfig['artifact-builder'] ?? true
-}

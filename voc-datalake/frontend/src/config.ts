@@ -31,7 +31,6 @@ interface CognitoConfig {
 
 interface LegacyConfig {
   readonly apiEndpoint: string
-  readonly artifactBuilderEndpoint: string
   readonly cognito: CognitoConfig
 }
 
@@ -53,14 +52,6 @@ export const config: LegacyConfig = {
       return cfg.apiEndpoint
     } catch {
       return getEnvString('VITE_API_ENDPOINT')
-    }
-  },
-  get artifactBuilderEndpoint(): string {
-    try {
-      const cfg = getRuntimeConfig()
-      return cfg.artifactBuilderEndpoint
-    } catch {
-      return getEnvString('VITE_ARTIFACT_BUILDER_ENDPOINT')
     }
   },
   get cognito(): CognitoConfig {

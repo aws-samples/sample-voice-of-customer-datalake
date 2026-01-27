@@ -6,7 +6,6 @@ import { VocCoreStack } from '../lib/stacks/core-stack';
 import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
 import { VocApiStack } from '../lib/stacks/api-stack';
-import { ArtifactBuilderStack } from '../lib/stacks/artifact-builder-stack';
 import { BedrockAccessStack, AnthropicUseCaseSchema } from '../lib/stacks/bedrock-access-stack';
 
 const app = new cdk.App();
@@ -33,10 +32,6 @@ const config = {
   enabledSources,
 };
 
-// Feature flags
-const menuStatus = app.node.tryGetContext('menuStatus') || {};
-const enableArtifactBuilder = menuStatus['ArtifactBuilderStack'] ?? false;
-
 const env = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
   region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
@@ -47,14 +42,13 @@ const env = {
 // Submits Anthropic use case for first-time access
 // ============================================
 const anthropicUseCaseRaw = app.node.tryGetContext('anthropicUseCase');
-let bedrockAccessStack: BedrockAccessStack | undefined;
 
 if (anthropicUseCaseRaw) {
   // Validate the config using Zod schema
   const parseResult = AnthropicUseCaseSchema.safeParse(anthropicUseCaseRaw);
   
   if (parseResult.success) {
-    bedrockAccessStack = new BedrockAccessStack(app, 'BedrockAccessStack', {
+    const bedrockAccessStack = new BedrockAccessStack(app, 'BedrockAccessStack', {
       env,
       description: 'VoC Data Lake - Bedrock Access (Anthropic Use Case & Model Agreements)',
       anthropicUseCase: parseResult.data,
@@ -122,19 +116,6 @@ tagStack(processingStack, 'Processing');
 // Stack 4: VocApiStack
 // Merges: Analytics + Frontend deployment
 // ============================================
-let artifactBuilderStack: ArtifactBuilderStack | undefined;
-let artifactBuilderEndpoint: string | undefined;
-
-// Stack 5 (optional): ArtifactBuilderStack
-if (enableArtifactBuilder) {
-  artifactBuilderStack = new ArtifactBuilderStack(app, 'ArtifactBuilderStack', {
-    env,
-    description: 'Artifact Builder - Agentic PoC Generator (ECS, S3, CloudFront)',
-  });
-  tagStack(artifactBuilderStack, 'ArtifactBuilder');
-  artifactBuilderEndpoint = artifactBuilderStack.api.url;
-}
-
 const apiStack = new VocApiStack(app, 'VocApiStack', {
   env,
   description: 'VoC Data Lake - API & Frontend (API Gateway, Lambda, S3 Deploy)',
@@ -157,15 +138,11 @@ const apiStack = new VocApiStack(app, 'VocApiStack', {
   s3ImportBucket: ingestionStack.s3ImportBucket,
   researchStateMachine: processingStack.researchStateMachine,
   brandName: config.brandName,
-  artifactBuilderEndpoint,
   enabledSources,
 });
 apiStack.addDependency(coreStack);
 apiStack.addDependency(ingestionStack);
 apiStack.addDependency(processingStack);
-if (artifactBuilderStack) {
-  apiStack.addDependency(artifactBuilderStack);
-}
 tagStack(apiStack, 'Api');
 
 app.synth();

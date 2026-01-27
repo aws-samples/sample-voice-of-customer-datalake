@@ -8,8 +8,7 @@ vi.mock('../store/configStore', () => ({
   useConfigStore: {
     getState: vi.fn(() => ({
       config: { 
-        apiEndpoint: 'https://api.example.com',
-        artifactBuilderEndpoint: 'https://artifact.example.com'
+        apiEndpoint: 'https://api.example.com'
       },
     })),
   },
