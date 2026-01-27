@@ -22,7 +22,7 @@ import boto3
 
 from projects import (
     list_projects, create_project, get_project, update_project, delete_project,
-    generate_personas, generate_prd, generate_prfaq, project_chat, run_research,
+    generate_personas, project_chat, run_research,
     create_document, update_document, delete_document,
     create_persona, update_persona, delete_persona,
     add_persona_note, update_persona_note, delete_persona_note,
@@ -222,18 +222,6 @@ def api_generate_personas(project_id: str):
 # ============================================
 # Document Routes
 # ============================================
-
-@app.post("/projects/<project_id>/prd/generate")
-@tracer.capture_method
-def api_generate_prd(project_id: str):
-    return generate_prd(project_id, app.current_event.json_body)
-
-
-@app.post("/projects/<project_id>/prfaq/generate")
-@tracer.capture_method
-def api_generate_prfaq(project_id: str):
-    return generate_prfaq(project_id, app.current_event.json_body)
-
 
 @app.post("/projects/<project_id>/chat")
 @tracer.capture_method

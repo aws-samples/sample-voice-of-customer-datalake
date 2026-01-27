@@ -272,7 +272,6 @@ export interface ProjectDocument {
   content: string
   feature_idea?: string
   question?: string
-  artifact_job_id?: string
   created_at: string
   updated_at?: string
 }

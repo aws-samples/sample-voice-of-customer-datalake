@@ -94,18 +94,6 @@ export const projectsApi = {
       body: JSON.stringify(data)
     }),
   
-  generatePRD: (projectId: string, data: { feature_idea: string; title?: string }) =>
-    fetchApi<{ success: boolean; document: ProjectDocument }>(`/projects/${projectId}/prd/generate`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
-  generatePRFAQ: (projectId: string, data: { feature_idea: string; title?: string }) =>
-    fetchApi<{ success: boolean; document: ProjectDocument }>(`/projects/${projectId}/prfaq/generate`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
   projectChat: (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) =>
     fetchApi<{ success: boolean; response: string; mentioned_personas?: string[]; selected_personas?: string[]; referenced_documents?: string[]; context?: { feedback_count: number; persona_count: number; document_count: number } }>(`/projects/${projectId}/chat`, {
       method: 'POST',
@@ -175,7 +163,7 @@ export const projectsApi = {
       body: JSON.stringify(data)
     }),
   
-  updateDocument: (projectId: string, documentId: string, data: { title?: string; content?: string; artifact_job_id?: string }) =>
+  updateDocument: (projectId: string, documentId: string, data: { title?: string; content?: string }) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, {
       method: 'PUT',
       body: JSON.stringify(data)
