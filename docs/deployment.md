@@ -129,18 +129,15 @@ Access is granted immediately after successful submission.
 
 ## CDK Stacks
 
-The platform consists of 5 CDK stacks (+ 1 optional):
+The platform consists of 5 CDK stacks:
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
-| `BedrockAccessStack` | Anthropic use case submission (first-time only) | None |
-| `VocCoreStack` | DynamoDB tables, KMS, S3, CloudFront, Cognito | None |
-| `VocIngestionStack` | Lambda ingestors, EventBridge, SQS | Core |
-| `VocProcessingStack` | Lambda processors, Bedrock, Step Functions | Core, Ingestion |
-| `VocApiStack` | API Gateway, Lambda APIs, Frontend deployment | Core, Ingestion, Processing |
-| `ArtifactBuilderStack` | ECS-based artifact generator (optional) | None (standalone) |
-
-The `ArtifactBuilderStack` is controlled by `menuStatus.ArtifactBuilderStack` in `cdk.context.json`.
+| `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
+| `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
+| `VocProcessingStackConsolidated` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
+| `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
+| `VocBedrockAccessStack` | Bedrock model access configuration | None |
 
 ### Deploy All Stacks
 
@@ -156,7 +153,7 @@ cd voc-datalake
 # Deploy specific stack
 cdk deploy VocCoreStack
 cdk deploy VocIngestionStack
-cdk deploy VocProcessingStack
+cdk deploy VocProcessingStackConsolidated
 cdk deploy VocApiStack
 
 # Deploy multiple stacks
@@ -170,11 +167,10 @@ cdk deploy --all --require-approval never
 
 Due to dependencies, stacks should be deployed in this order:
 
-1. `VocCoreStack`
+1. `VocCoreStack` + `VocBedrockAccessStack` (parallel, no dependencies)
 2. `VocIngestionStack`
-3. `VocProcessingStack`
+3. `VocProcessingStackConsolidated`
 4. `VocApiStack`
-5. `ArtifactBuilderStack` (optional, independent)
 
 The `cdk deploy --all` command handles this automatically.
 
@@ -242,7 +238,7 @@ Enable/disable menu items in `voc-datalake/cdk.context.json`:
   "menuStatus": {
     "dashboard": true,
     "feedback": true,
-    "artifact-builder": false
+    "scrapers": false
   }
 }
 ```
@@ -260,6 +256,13 @@ The frontend fetches configuration at runtime from a `config.json` file that is 
 1. Fetches values from CloudFormation outputs
 2. Generates `config.json` with API endpoint, Cognito settings, etc.
 3. Uploads it to S3 alongside the frontend build
+
+### Runtime Configuration
+
+The frontend automatically fetches configuration from CloudFormation outputs including:
+- API Gateway endpoint
+- Cognito User Pool settings
+- AWS Region
 
 ## Deployment Workflow
 

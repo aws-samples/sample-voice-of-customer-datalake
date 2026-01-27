@@ -114,7 +114,6 @@ The Data Explorer provides a UI for browsing and managing data lake contents.
 | Bucket | Description |
 |--------|-------------|
 | `raw-data` | VoC raw feedback data |
-| `artifact-builder` | Generated artifacts and builds |
 
 ### API Endpoints
 

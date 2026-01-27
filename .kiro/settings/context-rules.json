@@ -48,11 +48,6 @@
       "description": "Product overview and capabilities"
     },
     {
-      "file": "steering/artifact-builder.md",
-      "triggers": ["artifact", "builder", "prototype", "ecs", "fargate", "codecommit", "preview"],
-      "description": "Artifact Builder system"
-    },
-    {
       "file": "prompts/aws-security-review.md",
       "triggers": ["security review", "security audit", "vulnerability", "iam review", "security best practice"],
       "description": "AWS security review prompt"

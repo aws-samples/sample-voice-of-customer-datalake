@@ -31,10 +31,6 @@ triggers: ["tech stack", "dependency", "version", "library", "package", "aws ser
 | **Translate** | Multi-language | Auto language pair detection |
 | **Step Functions** | Long-running jobs | Research workflows, persona generation |
 | **CloudFront** | CDN | Frontend distribution, avatar images |
-| **ECS Fargate** | Container compute | Artifact Builder executor tasks |
-| **CodeCommit** | Git repository | Artifact Builder template repo |
-| **ECR** | Container registry | Artifact Builder executor images |
-| **EFS** | Shared storage | Artifact Builder workspace persistence |
 
 ## Data Sources
 
@@ -86,8 +82,6 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
 | `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
-| `voc-artifact-builder-api` | `artifact_builder_handler.py` | `/artifacts/*` | S3, DynamoDB, ECS, Bedrock |
-| `voc-artifact-trigger-api` | `artifact_trigger_handler.py` | `/artifacts/trigger` | SQS, DynamoDB |
 | `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read |
 | `voc-manual-import-api` | `manual_import_handler.py` | `/manual-import/*` | DynamoDB, SQS, S3 |
 | `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS, Secrets Manager |
@@ -152,7 +146,6 @@ def lambda_handler(event, context):
 | AI Chat | `/chat` | Conversational data queries with streaming |
 | Projects | `/projects` | Research projects list |
 | Project Detail | `/projects/:id` | Personas, PRDs, PR/FAQs, project chat |
-| Artifact Builder | `/artifact-builder` | AI-powered artifact generation |
 | Data Explorer | `/data-explorer` | S3 raw data and DynamoDB browser |
 | Scrapers | `/scrapers` | CSS/JSON-LD selector config, templates |
 | Feedback Forms | `/feedback-forms` | Embeddable form management |
