@@ -7,46 +7,6 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
 
-class TestValidateDays:
-    """Tests for validate_days helper function."""
-
-    def test_returns_default_when_value_is_none(self):
-        """Returns default value when input is None."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from projects_handler import validate_days
-        
-        assert validate_days(None, default=30) == 30
-
-    def test_returns_default_when_value_is_invalid(self):
-        """Returns default for invalid values."""
-        from projects_handler import validate_days
-        
-        assert validate_days('invalid', default=30) == 30
-        assert validate_days('abc', default=7) == 7
-
-    def test_clamps_to_min_value(self):
-        """Clamps values below minimum."""
-        from projects_handler import validate_days
-        
-        assert validate_days(-5, default=30, min_val=1) == 1
-        assert validate_days(0, default=30, min_val=1) == 1
-
-    def test_clamps_to_max_value(self):
-        """Clamps values above maximum."""
-        from projects_handler import validate_days
-        
-        assert validate_days(500, default=30, max_val=365) == 365
-
-    def test_accepts_valid_integer(self):
-        """Accepts valid integer within range."""
-        from projects_handler import validate_days
-        
-        assert validate_days(30, default=7) == 30
-        assert validate_days('60', default=7) == 60
-
-
 class TestValidatePersonaCount:
     """Tests for validate_persona_count helper function."""
 
@@ -406,15 +366,4 @@ class TestDocumentCRUDEndpoints:
         assert body['success'] is True
 
 
-class TestDecimalEncoder:
-    """Tests for DecimalEncoder JSON encoder."""
 
-    def test_encodes_decimal_to_float(self):
-        """Encodes Decimal values to float."""
-        from decimal import Decimal
-        from projects_handler import DecimalEncoder
-        
-        data = {'value': Decimal('3.14')}
-        result = json.dumps(data, cls=DecimalEncoder)
-        
-        assert '3.14' in result

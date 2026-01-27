@@ -48,7 +48,7 @@ export type {
   ScraperLogEntry,
   LogsSummary,
 } from './types'
-export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation, ArtifactJob, ArtifactTemplate, ArtifactStyle } from './types'
+export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation } from './types'
 
 const getBaseUrl = () => {
   const { config } = useConfigStore.getState()
@@ -399,10 +399,6 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.deletePersona(projectId, personaId)),
   importPersona: (projectId: string, data: { input_type: 'pdf' | 'image' | 'text'; content: string; media_type?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
-  generatePRD: (projectId: string, data: { feature_idea: string; title?: string }) =>
-    import('./projectsApi').then(m => m.projectsApi.generatePRD(projectId, data)),
-  generatePRFAQ: (projectId: string, data: { feature_idea: string; title?: string }) =>
-    import('./projectsApi').then(m => m.projectsApi.generatePRFAQ(projectId, data)),
   projectChat: (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) =>
     import('./projectsApi').then(m => m.projectsApi.projectChat(projectId, message, selectedPersonas, selectedDocuments)),
   projectChatStream: async (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) => {
@@ -424,7 +420,7 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.dismissJob(projectId, jobId)),
   createDocument: (projectId: string, data: { title: string; content: string; document_type?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.createDocument(projectId, data)),
-  updateDocument: (projectId: string, documentId: string, data: { title?: string; content?: string; artifact_job_id?: string }) =>
+  updateDocument: (projectId: string, documentId: string, data: { title?: string; content?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.updateDocument(projectId, documentId, data)),
   deleteDocument: (projectId: string, documentId: string) =>
     import('./projectsApi').then(m => m.projectsApi.deleteDocument(projectId, documentId)),

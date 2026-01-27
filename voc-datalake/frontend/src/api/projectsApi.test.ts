@@ -291,46 +291,6 @@ describe('projectsApi', () => {
     })
   })
 
-  describe('generatePRD', () => {
-    it('sends POST request with feature idea', async () => {
-      const data = { feature_idea: 'Add dark mode', title: 'Dark Mode PRD' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, document: { document_id: 'd1', title: 'Dark Mode PRD' } }),
-      })
-
-      await projectsApi.generatePRD('p1', data)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/p1/prd/generate',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify(data),
-        })
-      )
-    })
-  })
-
-  describe('generatePRFAQ', () => {
-    it('sends POST request with feature idea', async () => {
-      const data = { feature_idea: 'Add notifications', title: 'Notifications PR/FAQ' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, document: { document_id: 'd1', title: 'Notifications PR/FAQ' } }),
-      })
-
-      await projectsApi.generatePRFAQ('p1', data)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/p1/prfaq/generate',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify(data),
-        })
-      )
-    })
-  })
-
   describe('projectChat', () => {
     it('sends POST request with message', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
