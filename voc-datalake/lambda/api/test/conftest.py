@@ -27,7 +27,6 @@ os.environ['POWERTOOLS_METRICS_NAMESPACE'] = 'TestVoC'
 os.environ['ALLOWED_ORIGIN'] = 'http://localhost:5173'
 os.environ['SECRETS_ARN'] = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test-secrets'
 os.environ['RAW_DATA_BUCKET'] = 'test-raw-data-bucket'
-os.environ['ARTIFACT_BUILDER_BUCKET'] = 'test-artifact-builder-bucket'
 os.environ['PROCESSING_QUEUE_URL'] = 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue'
 os.environ['USER_POOL_ID'] = 'us-east-1_testpool'
 

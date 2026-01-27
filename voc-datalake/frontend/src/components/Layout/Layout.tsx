@@ -32,7 +32,6 @@ import {
   Database,
   Menu,
   X,
-  Sparkles,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -63,7 +62,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/projects', icon: Briefcase, label: 'Projects', menuKey: 'projects' },
   { to: '/prioritization', icon: ListOrdered, label: 'Prioritization', menuKey: 'prioritization' },
   { to: '/data-explorer', icon: Database, label: 'Data Explorer', menuKey: 'data-explorer' },
-  { to: '/artifact-builder', icon: Sparkles, label: 'Artifact Builder', menuKey: 'artifact-builder' },
   { to: '/scrapers', icon: Globe, label: 'Scrapers', menuKey: 'scrapers' },
   { to: '/feedback-forms', icon: FileText, label: 'Feedback Forms', menuKey: 'feedback-forms' },
   { to: '/settings', icon: Settings, label: 'Settings', menuKey: 'settings', adminOnly: true },

@@ -381,39 +381,6 @@ export interface CognitoUser {
   last_modified: string | null
 }
 
-export interface ArtifactJob {
-  job_id: string
-  status: 'queued' | 'cloning' | 'generating' | 'building' | 'publishing' | 'done' | 'failed'
-  prompt: string
-  project_type: string
-  style: string
-  include_mock_data?: boolean
-  pages?: string[]
-  parent_job_id?: string
-  parent_repo_name?: string
-  preview_url?: string
-  repo_url?: string
-  error?: string
-  created_at: string
-  updated_at?: string
-  timeline?: Array<{ status: string; timestamp: string }>
-  summary?: {
-    files_changed?: string[]
-    is_iteration?: boolean
-    parent_job_id?: string
-  }
-}
-
-export interface ArtifactTemplate {
-  id: string
-  name: string
-}
-
-export interface ArtifactStyle {
-  id: string
-  name: string
-}
-
 // Logs Types
 export interface ValidationLogEntry {
   source_platform: string

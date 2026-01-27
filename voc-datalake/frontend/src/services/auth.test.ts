@@ -40,7 +40,6 @@ vi.mock('../config', () => ({
   },
   getConfig: () => ({
     apiEndpoint: 'https://api.example.com',
-    artifactBuilderEndpoint: '',
     cognito: {
       userPoolId: 'us-east-1_test123',
       clientId: 'testclientid123',

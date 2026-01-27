@@ -24,7 +24,6 @@ os.environ.setdefault('JOBS_TABLE', 'test-jobs')
 os.environ.setdefault('ALLOWED_ORIGIN', 'http://localhost:5173')
 os.environ.setdefault('SECRETS_ARN', 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test-secrets')
 os.environ.setdefault('RAW_DATA_BUCKET', 'test-raw-data-bucket')
-os.environ.setdefault('ARTIFACT_BUILDER_BUCKET', 'test-artifact-builder-bucket')
 os.environ.setdefault('PROCESSING_QUEUE_URL', 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
 os.environ.setdefault('USER_POOL_ID', 'us-east-1_testpool')
 

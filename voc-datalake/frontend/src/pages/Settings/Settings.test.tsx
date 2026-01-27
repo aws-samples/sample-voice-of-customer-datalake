@@ -37,7 +37,6 @@ vi.mock('../../store/configStore', () => ({
   useConfigStore: vi.fn(() => ({
     config: {
       apiEndpoint: 'https://api.example.com',
-      artifactBuilderEndpoint: 'https://artifact.example.com',
       brandName: 'Test Brand',
       brandHandles: ['@testbrand'],
       hashtags: ['#testbrand'],

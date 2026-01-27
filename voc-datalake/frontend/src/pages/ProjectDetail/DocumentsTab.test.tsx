@@ -5,11 +5,6 @@ import { MemoryRouter } from 'react-router-dom'
 import DocumentsTab from './DocumentsTab'
 import type { ProjectDocument, Project } from '../../api/client'
 
-// Mock menu config module - default to artifact-builder enabled for tests
-vi.mock('../../config/menuConfig', () => ({
-  isArtifactBuilderEnabled: () => true,
-}))
-
 const mockProject: Project = {
   project_id: 'proj-1',
   name: 'Test Project',
@@ -30,14 +25,11 @@ const defaultProps = {
   project: mockProject,
   documents: [] as ProjectDocument[],
   selectedDoc: null,
-  artifactBuilderEndpoint: undefined,
   onSelectDoc: vi.fn(),
   onEditDoc: vi.fn(),
   onDeleteDoc: vi.fn(),
   onCreateDoc: vi.fn(),
-  onBuildArtifact: vi.fn(),
   isDeleting: false,
-  isBuildingArtifact: false,
 }
 
 const renderWithRouter = (ui: React.ReactElement) => {
@@ -122,30 +114,5 @@ describe('DocumentsTab', () => {
     
     await user.click(screen.getByTitle('Delete document'))
     expect(onDeleteDoc).toHaveBeenCalledTimes(1)
-  })
-
-  it('shows Build Prototype button when artifactBuilderEndpoint is set', () => {
-    renderWithRouter(
-      <DocumentsTab 
-        {...defaultProps} 
-        documents={[mockDoc]} 
-        selectedDoc={mockDoc} 
-        artifactBuilderEndpoint="https://example.com" 
-      />
-    )
-    expect(screen.getByRole('button', { name: /Build Prototype/i })).toBeInTheDocument()
-  })
-
-  it('shows View Artifact button when document has artifact_job_id', () => {
-    const docWithArtifact = { ...mockDoc, artifact_job_id: 'artifact-1' }
-    renderWithRouter(
-      <DocumentsTab 
-        {...defaultProps} 
-        documents={[docWithArtifact]} 
-        selectedDoc={docWithArtifact} 
-        artifactBuilderEndpoint="https://example.com" 
-      />
-    )
-    expect(screen.getByRole('button', { name: /View Artifact/i })).toBeInTheDocument()
   })
 })

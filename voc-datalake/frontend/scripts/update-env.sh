@@ -15,11 +15,6 @@ if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "None" ]; then
   exit 0
 fi
 
-ARTIFACT_ENDPOINT=$(aws cloudformation describe-stacks \
-  --stack-name ArtifactBuilderStack \
-  --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
-  --output text 2>/dev/null || echo "")
-
 COGNITO_USER_POOL_ID=$(aws cloudformation describe-stacks \
   --stack-name VocAuthStack \
   --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" \
@@ -37,14 +32,12 @@ COGNITO_REGION=$(aws cloudformation describe-stacks \
 
 echo "Updating .env.production with:"
 echo "  API_ENDPOINT: $API_ENDPOINT"
-echo "  ARTIFACT_ENDPOINT: $ARTIFACT_ENDPOINT"
 echo "  COGNITO_USER_POOL_ID: $COGNITO_USER_POOL_ID"
 echo "  COGNITO_CLIENT_ID: $COGNITO_CLIENT_ID"
 echo "  COGNITO_REGION: $COGNITO_REGION"
 
 cat > .env.production << EOF
 VITE_API_ENDPOINT=${API_ENDPOINT}
-VITE_ARTIFACT_BUILDER_ENDPOINT=${ARTIFACT_ENDPOINT}
 VITE_COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
 VITE_COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
 VITE_COGNITO_REGION=${COGNITO_REGION}

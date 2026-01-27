@@ -42,7 +42,6 @@ export interface VocApiStackProps extends cdk.StackProps {
   
   // Config
   brandName: string;
-  artifactBuilderEndpoint?: string;
   enabledSources: string[];  // Plugin IDs enabled in pluginStatus
 }
 
@@ -67,7 +66,7 @@ export class VocApiStack extends cdk.Stack {
       feedbackTable, aggregatesTable, projectsTable, jobsTable, conversationsTable,
       kmsKey, rawDataBucket, avatarsCdnUrl, websiteBucket, frontendDistribution,
       frontendDomainName, userPool, userPoolClient, processingQueueUrl, processingQueueArn,
-      secretsArn, s3ImportBucket, researchStateMachine, brandName, artifactBuilderEndpoint
+      secretsArn, s3ImportBucket, researchStateMachine, brandName
     } = props;
 
 
@@ -459,11 +458,6 @@ export class VocApiStack extends cdk.Stack {
     feedbackTable.grantReadWriteData(dataExplorerRole);
     kmsKey.grantEncryptDecrypt(dataExplorerRole);
     dataExplorerRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
-    const artifactBuilderBucketName = `artifact-builder-${this.account}-${this.region}`;
-    dataExplorerRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject', 's3:ListBucket'],
-      resources: [`arn:aws:s3:::${artifactBuilderBucketName}`, `arn:aws:s3:::${artifactBuilderBucketName}/*`],
-    }));
 
     const dataExplorerLambda = new lambda.Function(this, 'DataExplorerApi', {
       functionName: uniqueName('voc-data-explorer-api'),
@@ -476,7 +470,6 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: {
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
-        ARTIFACT_BUILDER_BUCKET: artifactBuilderBucketName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         PROCESSING_QUEUE_URL: processingQueueUrl,
         ALLOWED_ORIGIN: allowedOrigin,
@@ -695,7 +688,6 @@ export class VocApiStack extends cdk.Stack {
     // This allows the same build to work across multiple environments
     const runtimeConfig = {
       apiEndpoint: this.api.url,
-      artifactBuilderEndpoint: artifactBuilderEndpoint || '',
       cognito: {
         userPoolId: userPool.userPoolId,
         clientId: userPoolClient.userPoolClientId,

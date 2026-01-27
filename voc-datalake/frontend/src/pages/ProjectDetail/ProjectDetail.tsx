@@ -173,7 +173,6 @@ export default function ProjectDetail() {
         jobs={jobs}
         selectedPersona={selection.selectedPersona}
         selectedDoc={selection.selectedDoc}
-        artifactBuilderEndpoint={config.artifactBuilderEndpoint}
         chatMessages={chatMessages}
         isChatPending={chatMut.isPending}
         isDeleting={deletePersonaMut.isPending || deleteDocMut.isPending}

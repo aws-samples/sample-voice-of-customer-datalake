@@ -16,7 +16,6 @@ interface TabContentProps {
   readonly jobs: ProjectJob[]
   readonly selectedPersona: ProjectPersona | null
   readonly selectedDoc: ProjectDocument | null
-  readonly artifactBuilderEndpoint: string
   readonly chatMessages: Array<{ role: 'user' | 'assistant'; content: string }>
   readonly isChatPending: boolean
   readonly isDeleting: boolean
@@ -48,7 +47,6 @@ export default function TabContent({
   jobs,
   selectedPersona,
   selectedDoc,
-  artifactBuilderEndpoint,
   chatMessages,
   isChatPending,
   isDeleting,
@@ -111,14 +109,11 @@ export default function TabContent({
         project={project}
         documents={documents}
         selectedDoc={selectedDoc}
-        artifactBuilderEndpoint={artifactBuilderEndpoint}
         onSelectDoc={onSelectDoc}
         onEditDoc={onEditDoc}
         onDeleteDoc={onDeleteDoc}
         onCreateDoc={onCreateDoc}
-        onBuildArtifact={() => { /* Artifact building handled in DocumentsTab */ }}
         isDeleting={isDeleting}
-        isBuildingArtifact={false}
       />
     )
   }
