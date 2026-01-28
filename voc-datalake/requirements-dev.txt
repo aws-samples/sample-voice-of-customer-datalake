@@ -1,4 +1,9 @@
 # Development and testing dependencies for VoC Lambda functions
+#
+# To run tests, also install production dependencies:
+#   pip install -r lambda/layers/ingestion-deps/requirements.txt
+#   pip install -r lambda/layers/processing-deps/requirements.txt
+#
 pytest>=8.0.0
 pytest-cov>=6.0.0
 pytest-mock>=3.14.0

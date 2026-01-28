@@ -69,7 +69,7 @@ class WebScraperIngestor(BaseIngestor):
     def _generate_id(self, url: str, text: str) -> str:
         """Generate unique ID for scraped content."""
         content = f"{url}:{text[:100]}"
-        return hashlib.md5(content.encode()).hexdigest()[:16]
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     def _extract_text(self, element, selector_config: dict) -> str:
         """Extract text from element based on config."""
