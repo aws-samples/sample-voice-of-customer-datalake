@@ -173,6 +173,10 @@ export class BedrockAccessStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(2),
       code: lambda.Code.fromInline(this.getModelAgreementLambdaCode()),
       description: 'Creates Bedrock model agreements by fetching offer tokens and accepting EULA',
+      logGroup: new logs.LogGroup(this, 'ModelAgreementLambdaLogs', {
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
     });
 
     // Grant Bedrock permissions to the Lambda
