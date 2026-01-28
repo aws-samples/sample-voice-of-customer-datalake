@@ -20,7 +20,7 @@ function renderWithRouter(ui: React.ReactElement) {
 const createMockFeedback = (id: string, overrides?: Partial<FeedbackItem>): FeedbackItem => ({
   feedback_id: id,
   source_id: `src-${id}`,
-  source_platform: 'trustpilot',
+  source_platform: 'webscraper',
   source_channel: 'reviews',
   brand_name: 'TestBrand',
   source_created_at: '2025-01-15T10:30:00Z',
@@ -74,8 +74,8 @@ describe('FeedbackCarousel', () => {
       renderWithRouter(<FeedbackCarousel items={items} />)
       
       // Component capitalizes the source name via CSS (capitalize class)
-      expect(screen.getByText('trustpilot')).toBeInTheDocument()
-      expect(screen.getByText('⭐')).toBeInTheDocument()
+      expect(screen.getByText('webscraper')).toBeInTheDocument()
+      expect(screen.getByText('🌐')).toBeInTheDocument()
     })
 
     it('displays sentiment badge', () => {
@@ -160,13 +160,13 @@ describe('FeedbackCarousel', () => {
       expect(screen.getByText('Web Scraper')).toBeInTheDocument()
     })
 
-    it('formats twitter source correctly', () => {
-      const items = [createMockFeedback('1', { source_platform: 'twitter' })]
+    it('formats webscraper source correctly', () => {
+      const items = [createMockFeedback('1', { source_platform: 'webscraper' })]
       renderWithRouter(<FeedbackCarousel items={items} />)
       
       // Component capitalizes the source name via CSS (capitalize class)
-      expect(screen.getByText('twitter')).toBeInTheDocument()
-      expect(screen.getByText('𝕏')).toBeInTheDocument()
+      expect(screen.getByText('webscraper')).toBeInTheDocument()
+      expect(screen.getByText('🌐')).toBeInTheDocument()
     })
   })
 

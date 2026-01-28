@@ -167,7 +167,7 @@ describe('ChatMessage', () => {
       const sources = [{
         feedback_id: 'fb-1',
         source_id: 'src-1',
-        source_platform: 'trustpilot',
+        source_platform: 'webscraper',
         source_channel: 'reviews',
         brand_name: 'TestBrand',
         source_created_at: '2025-01-15T10:00:00Z',

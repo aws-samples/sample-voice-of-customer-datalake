@@ -10,8 +10,8 @@ const mockData = {
   bucket: 'voc-raw-data',
   prefix: 'raw/',
   objects: [
-    { key: 'twitter/', fullKey: 'raw/twitter/', size: 0, lastModified: '2025-01-01T00:00:00Z', isFolder: true },
-    { key: 'trustpilot/', fullKey: 'raw/trustpilot/', size: 0, lastModified: '2025-01-01T00:00:00Z', isFolder: true },
+    { key: 'webscraper/', fullKey: 'raw/webscraper/', size: 0, lastModified: '2025-01-01T00:00:00Z', isFolder: true },
+    { key: 'manual_import/', fullKey: 'raw/manual_import/', size: 0, lastModified: '2025-01-01T00:00:00Z', isFolder: true },
     { key: 'feedback-001.json', fullKey: 'raw/feedback-001.json', size: 1024, lastModified: '2025-01-15T10:30:00Z', isFolder: false },
     { key: 'image.png', fullKey: 'raw/image.png', size: 2048, lastModified: '2025-01-15T11:00:00Z', isFolder: false },
   ],
@@ -41,8 +41,8 @@ describe('S3Browser', () => {
     it('renders folders', () => {
       render(<S3Browser {...defaultProps} />)
 
-      expect(screen.getByText('twitter/')).toBeInTheDocument()
-      expect(screen.getByText('trustpilot/')).toBeInTheDocument()
+      expect(screen.getByText('webscraper/')).toBeInTheDocument()
+      expect(screen.getByText('manual_import/')).toBeInTheDocument()
     })
 
     it('renders files with size', () => {
@@ -53,10 +53,10 @@ describe('S3Browser', () => {
     })
 
     it('renders path breadcrumbs', () => {
-      render(<S3Browser {...defaultProps} path={['raw', 'twitter']} />)
+      render(<S3Browser {...defaultProps} path={['raw', 'webscraper']} />)
 
       expect(screen.getByText('raw')).toBeInTheDocument()
-      expect(screen.getByText('twitter')).toBeInTheDocument()
+      expect(screen.getByText('webscraper')).toBeInTheDocument()
     })
 
     it('shows back button when in subfolder', () => {
@@ -95,8 +95,8 @@ describe('S3Browser', () => {
 
       render(<S3Browser {...defaultProps} onNavigateToFolder={onNavigateToFolder} />)
 
-      await user.click(screen.getByText('twitter/'))
-      expect(onNavigateToFolder).toHaveBeenCalledWith('twitter/')
+      await user.click(screen.getByText('webscraper/'))
+      expect(onNavigateToFolder).toHaveBeenCalledWith('webscraper/')
     })
 
     it('calls onNavigateUp when back button clicked', async () => {
@@ -113,7 +113,7 @@ describe('S3Browser', () => {
       const onNavigateToBreadcrumb = vi.fn()
       const user = userEvent.setup()
 
-      render(<S3Browser {...defaultProps} path={['raw', 'twitter']} onNavigateToBreadcrumb={onNavigateToBreadcrumb} />)
+      render(<S3Browser {...defaultProps} path={['raw', 'webscraper']} onNavigateToBreadcrumb={onNavigateToBreadcrumb} />)
 
       await user.click(screen.getByText('raw'))
       expect(onNavigateToBreadcrumb).toHaveBeenCalledWith(0)

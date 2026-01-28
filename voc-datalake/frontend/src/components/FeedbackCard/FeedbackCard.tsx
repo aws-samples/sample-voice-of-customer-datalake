@@ -36,15 +36,11 @@ interface FeedbackCardProps {
 }
 
 const SOURCE_ICONS: Record<string, string> = {
-  twitter: '𝕏',
-  instagram: '📷',
-  facebook: '📘',
-  reddit: '🔴',
-  trustpilot: '⭐',
-  google_reviews: '🔍',
-  tavily: '🌐',
   web_scrape: '🌐',
   web_scrape_jsonld: '🌐',
+  webscraper: '🌐',
+  manual_import: '📝',
+  s3_import: '📦',
 }
 
 function getSourceIcon(platform: string, channel?: string): string {

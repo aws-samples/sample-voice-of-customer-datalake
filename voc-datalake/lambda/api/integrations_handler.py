@@ -38,15 +38,7 @@ def get_integration_status():
         secrets = json.loads(response.get('SecretString', '{}'))
         
         integrations = {
-            'trustpilot': ['trustpilot_api_key', 'trustpilot_api_secret', 'trustpilot_business_unit_id'],
-            'google_reviews': ['google_api_key'],
-            'twitter': ['twitter_bearer_token'],
-            'meta': ['meta_access_token'],
-            'reddit': ['reddit_client_id', 'reddit_client_secret'],
-            'tavily': ['tavily_api_key'],
-            'youtube': ['youtube_api_key'],
-            'tiktok': ['tiktok_access_token'],
-            'linkedin': ['linkedin_access_token'],
+            'webscraper': ['webscraper_api_key'],
         }
         
         status = {}
@@ -95,9 +87,7 @@ def test_integration(source: str):
 @tracer.capture_method
 def get_sources_status():
     """Get status of all data source schedules."""
-    sources = ['trustpilot', 'google_reviews', 'twitter', 'instagram', 'facebook', 
-               'reddit', 'tavily', 'appstore_apple', 'appstore_google', 'webscraper',
-               'youtube', 'tiktok', 'linkedin', 's3_import']
+    sources = ['webscraper', 'manual_import', 's3_import']
     
     # Build rule name suffix based on deployment hash
     rule_suffix = f"-{DEPLOYMENT_HASH}" if DEPLOYMENT_HASH else ""

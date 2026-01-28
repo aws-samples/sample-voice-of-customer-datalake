@@ -66,7 +66,7 @@ const mockEntitiesData = {
   entities: {
     issues: { 'slow delivery': 20, 'damaged package': 15 },
     categories: { delivery: 50 },
-    sources: { twitter: 40, trustpilot: 30 },
+    sources: { webscraper: 40, manual_import: 30 },
   },
 }
 
@@ -74,7 +74,7 @@ const mockFeedbackData = {
   items: [
     {
       feedback_id: '1',
-      source_platform: 'twitter',
+      source_platform: 'webscraper',
       original_text: 'Great delivery!',
       sentiment_label: 'positive',
       sentiment_score: 0.9,
@@ -259,10 +259,10 @@ describe('Categories', () => {
         expect(screen.getByRole('combobox')).toBeInTheDocument()
       })
 
-      await user.selectOptions(screen.getByRole('combobox'), 'twitter')
+      await user.selectOptions(screen.getByRole('combobox'), 'webscraper')
 
       await waitFor(() => {
-        expect(mockGetCategories).toHaveBeenCalledWith(7, 'twitter')
+        expect(mockGetCategories).toHaveBeenCalledWith(7, 'webscraper')
       })
     })
   })

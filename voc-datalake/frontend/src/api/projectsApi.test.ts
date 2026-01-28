@@ -74,7 +74,7 @@ describe('projectsApi', () => {
     })
 
     it('includes filters when provided', async () => {
-      const projectData = { name: 'Project', filters: { sources: ['twitter'] } }
+      const projectData = { name: 'Project', filters: { sources: ['webscraper'] } }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ success: true, project: { ...projectData, project_id: 'p1' } }),
@@ -167,7 +167,7 @@ describe('projectsApi', () => {
 
     it('includes filters when provided', async () => {
       const filters = {
-        sources: ['twitter', 'instagram'],
+        sources: ['webscraper', 'manual_import'],
         categories: ['delivery'],
         sentiments: ['negative'],
         persona_count: 5,
@@ -349,7 +349,7 @@ describe('projectsApi', () => {
       const data = {
         question: 'Research question',
         title: 'Research Title',
-        sources: ['twitter'],
+        sources: ['webscraper'],
         categories: ['delivery'],
         sentiments: ['negative'],
         days: 30,
@@ -381,7 +381,7 @@ describe('projectsApi', () => {
         data_sources: { feedback: true, personas: true, documents: false, research: false },
         selected_persona_ids: ['per1'],
         selected_document_ids: [],
-        feedback_sources: ['twitter'],
+        feedback_sources: ['webscraper'],
         feedback_categories: ['feature_request'],
         days: 30,
       }
@@ -411,7 +411,7 @@ describe('projectsApi', () => {
         selected_document_ids: ['doc1', 'doc2'],
         selected_persona_ids: ['per1'],
         use_feedback: true,
-        feedback_sources: ['twitter'],
+        feedback_sources: ['webscraper'],
         feedback_categories: ['delivery'],
         days: 30,
       }

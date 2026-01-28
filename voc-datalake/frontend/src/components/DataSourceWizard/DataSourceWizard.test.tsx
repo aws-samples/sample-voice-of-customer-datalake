@@ -64,7 +64,7 @@ const defaultProps = {
 describe('DataSourceWizard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetSources.mockResolvedValue({ sources: { twitter: 100, instagram: 50 } })
+    mockGetSources.mockResolvedValue({ sources: { webscraper: 100, manual_import: 50 } })
     mockGetCategoriesConfig.mockResolvedValue({
       categories: [
         { id: 'delivery', name: 'delivery', description: 'Delivery Issues' },

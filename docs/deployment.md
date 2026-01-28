@@ -222,9 +222,7 @@ Enable/disable plugins in `voc-datalake/cdk.context.json`:
 ```json
 {
   "pluginStatus": {
-    "trustpilot": true,
-    "yelp": false,
-    "twitter": true
+    "webscraper": true
   }
 }
 ```

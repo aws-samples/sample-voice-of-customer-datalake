@@ -10,16 +10,12 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 ## Core Capabilities
 
 - **Multi-source feedback ingestion**: 
-  - Review platforms: Trustpilot, Google Reviews, Yelp
-  - Social media: Twitter/X, Instagram, Facebook, Reddit, LinkedIn, TikTok, YouTube
-  - App stores: Apple App Store, Google Play Store, Huawei AppGallery
-  - Web search: Tavily
   - Custom web scrapers: Configurable scrapers for any website
-  - S3 Import: Bulk import from S3 buckets
   - Manual Import: Direct data import via UI
+  - Feedback Forms: Embeddable forms for direct customer feedback
 - **Plugin architecture**: Modular data source connectors with manifest-based configuration and enable/disable via `cdk.context.json`
 - **Menu configuration**: Enable/disable dashboard menu items via `cdk.context.json`
-- **Webhook support**: Real-time ingestion via webhooks (Trustpilot service reviews)
+- **Webhook support**: Real-time ingestion via webhooks for plugins that support it
 - **LLM-powered analysis**: Amazon Bedrock (Claude Sonnet 4.5) for categorization, sentiment, persona inference, and root cause hypothesis
 - **Multi-language support**: Auto-detection via Comprehend, translation via Amazon Translate
 - **Real-time aggregation**: DynamoDB Streams trigger instant metric updates
@@ -110,7 +106,6 @@ Note: Each page is organized in its own folder under `frontend/src/pages/` with 
 1. **Customer Experience Monitoring**: Track sentiment trends across channels
 2. **Issue Detection**: Identify urgent problems requiring immediate attention
 3. **Product Feedback Analysis**: Categorize and prioritize feature requests/complaints
-4. **App Store Monitoring**: Track iOS, Android, and Huawei app reviews
-5. **Competitive Intelligence**: Monitor brand mentions via web scraping
-6. **Support Team Enablement**: Provide suggested responses for common issues
-7. **Direct Feedback Collection**: Embed forms in websites/apps to collect customer feedback
+4. **Web Scraping**: Monitor reviews and feedback from any website
+5. **Support Team Enablement**: Provide suggested responses for common issues
+6. **Direct Feedback Collection**: Embed forms in websites/apps to collect customer feedback

@@ -33,7 +33,7 @@ body:
       description: How can we reproduce this issue?
       placeholder: |
         1. Navigate to /feedback
-        2. Select "twitter" from source dropdown
+        2. Select "webscraper" from source dropdown
         3. Check "Urgent only" checkbox
         4. Observe that source filter resets to "All Sources"
     validations:
@@ -44,7 +44,7 @@ body:
     attributes:
       label: Expected Behavior
       description: What should happen?
-      placeholder: "Source filter should remain on 'twitter'"
+      placeholder: "Source filter should remain on 'webscraper'"
     validations:
       required: true
 

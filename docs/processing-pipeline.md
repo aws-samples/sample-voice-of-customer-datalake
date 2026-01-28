@@ -35,7 +35,7 @@ Plugins fetch data from external sources and send to the processing queue.
 ```python
 {
     "id": "source_unique_id",
-    "source_platform": "trustpilot",
+    "source_platform": "webscraper",
     "source_channel": "review",
     "text": "The feedback content",
     "rating": 4.5,
@@ -43,13 +43,13 @@ Plugins fetch data from external sources and send to the processing queue.
     "ingested_at": "2026-01-08T10:35:00Z",
     "brand_name": "MyBrand",
     "url": "https://source.com/review/123",
-    "s3_raw_uri": "s3://bucket/raw/trustpilot/2026/01/08/abc123.json"
+    "s3_raw_uri": "s3://bucket/raw/webscraper/2026/01/08/abc123.json"
 }
 ```
 
 ## Step 2: Message Validation
 
-Before processing, messages are validated using Pydantic schemas.
+Before processing, messages are validated using Pydantic schemas. For detailed validation implementation including security sanitization, see [Plugin Architecture - SQS Message Validation](plugin-architecture.md#sqs-message-validation-layer).
 
 ### Validation Rules
 

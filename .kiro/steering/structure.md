@@ -58,7 +58,6 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── projects_handler.py       # /projects/* (research projects, personas)
     │   │   ├── users_handler.py          # /users/* (Cognito user administration)
     │   │   ├── feedback_form_handler.py  # /feedback-form/*, /feedback-forms/* (embeddable forms)
-    │   │   ├── s3_import_handler.py      # /s3-import/* (file explorer)
     │   │   ├── data_explorer_handler.py  # /data-explorer/* (S3 raw data & DynamoDB browser)
     │   │   ├── logs_handler.py           # /logs/* (system logs)
     │   │   ├── manual_import_handler.py  # /manual-import/* (manual data import)
@@ -74,25 +73,10 @@ voice-of-customer-datalake/       # Root repository
     │   └── layers/
     │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4
     │       └── processing-deps/      # Layer: aws-lambda-powertools
-    ├── plugins/                      # Data source plugins (16 plugins)
+    ├── plugins/                      # Data source plugins
     │   ├── _shared/                  # Shared plugin utilities
     │   ├── _template/                # Template for new plugins
-    │   ├── appstore_apple/           # Apple App Store RSS
-    │   ├── appstore_google/          # Google Play Developer API
-    │   ├── appstore_huawei/          # Huawei AppGallery Connect API
-    │   ├── facebook/                 # Facebook mentions
-    │   ├── google_reviews/           # Google Reviews
-    │   ├── instagram/                # Instagram mentions
-    │   ├── linkedin/                 # LinkedIn mentions
-    │   ├── reddit/                   # Reddit mentions
-    │   ├── s3_import/                # S3 bulk import
-    │   ├── tavily/                   # Tavily web search
-    │   ├── tiktok/                   # TikTok mentions
-    │   ├── trustpilot/               # Trustpilot reviews
-    │   ├── twitter/                  # Twitter/X mentions
-    │   ├── webscraper/               # Configurable web scraper
-    │   ├── yelp/                     # Yelp Fusion API
-    │   └── youtube/                  # YouTube comments
+    │   └── webscraper/               # Configurable web scraper
     ├── frontend/                     # React dashboard (Vite + Tailwind)
     │   ├── src/
     │   │   ├── api/
@@ -282,7 +266,7 @@ voice-of-customer-datalake/       # Root repository
 ### Webhooks
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/webhooks/trustpilot` | Trustpilot webhook receiver (public) |
+| POST | `/webhooks/{plugin}` | Plugin webhook receiver (public) |
 
 ### Logs (logs_handler.py)
 | Method | Path | Description |
@@ -296,15 +280,6 @@ voice-of-customer-datalake/       # Root repository
 | POST | `/manual-import` | Import data manually |
 | GET | `/manual-import/status` | Get import status |
 | POST | `/manual-import/validate` | Validate import data |
-
-### S3 Import (s3_import_handler.py)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/s3-import/files` | List files in S3 |
-| GET | `/s3-import/sources` | List import sources |
-| POST | `/s3-import/sources` | Create import source |
-| POST | `/s3-import/upload-url` | Get presigned upload URL |
-| DELETE | `/s3-import/file/{key}` | Delete file |
 
 ### Data Explorer (data_explorer_handler.py)
 | Method | Path | Description |

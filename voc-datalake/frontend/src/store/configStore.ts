@@ -15,17 +15,6 @@ export interface Config {
   hashtags: string[]
   urlsToTrack: string[]
   sources: {
-    trustpilot: SourceConfig
-    yelp: SourceConfig
-    google_reviews: SourceConfig
-    twitter: SourceConfig
-    instagram: SourceConfig
-    facebook: SourceConfig
-    reddit: SourceConfig
-    tavily: SourceConfig
-    appstore_apple: SourceConfig
-    appstore_google: SourceConfig
-    appstore_huawei: SourceConfig
     webscraper: SourceConfig
   }
 }
@@ -69,17 +58,6 @@ export const useConfigStore = create<ConfigStore>()(
         hashtags: [],
         urlsToTrack: [],
         sources: {
-          trustpilot: { ...defaultSourceConfig },
-          yelp: { ...defaultSourceConfig },
-          google_reviews: { ...defaultSourceConfig },
-          twitter: { ...defaultSourceConfig },
-          instagram: { ...defaultSourceConfig },
-          facebook: { ...defaultSourceConfig },
-          reddit: { ...defaultSourceConfig },
-          tavily: { ...defaultSourceConfig },
-          appstore_apple: { ...defaultSourceConfig },
-          appstore_google: { ...defaultSourceConfig },
-          appstore_huawei: { ...defaultSourceConfig },
           webscraper: { ...defaultSourceConfig },
         }
       },

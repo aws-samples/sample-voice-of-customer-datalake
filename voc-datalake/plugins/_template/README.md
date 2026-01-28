@@ -30,7 +30,7 @@ plugins/your_source/
 | `name` | Yes | Display name in UI |
 | `icon` | Yes | Emoji or SVG filename |
 | `description` | No | Short description |
-| `category` | No | One of: reviews, social, appstore, import, search |
+| `category` | No | One of: reviews, social, import, search, scraper |
 | `infrastructure` | Yes | AWS resources to deploy |
 | `config` | Yes | Configuration fields for UI |
 | `webhooks` | No | Webhook endpoints to display |

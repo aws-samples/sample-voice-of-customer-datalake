@@ -404,7 +404,7 @@ class TestInvokeLambdaAsync:
         payload = {
             'job_type': 'generate_personas',
             'project_id': 'proj_123',
-            'filters': {'days': 30, 'sources': ['trustpilot']}
+            'filters': {'days': 30, 'sources': ['webscraper']}
         }
         invoke_lambda_async('my-function', payload)
         

@@ -18,11 +18,7 @@ class TestGetIntegrationStatus:
         # Arrange
         mock_secrets.get_secret_value.return_value = {
             'SecretString': json.dumps({
-                'trustpilot_api_key': 'key123',
-                'trustpilot_api_secret': 'secret123',
-                'trustpilot_business_unit_id': 'bu123',
-                'twitter_bearer_token': 'bearer123',
-                'reddit_client_id': 'reddit_id',
+                'webscraper_api_key': 'key123',
             })
         }
         
@@ -39,12 +35,8 @@ class TestGetIntegrationStatus:
         
         # Assert
         assert response['statusCode'] == 200
-        assert 'trustpilot' in body
-        assert body['trustpilot']['configured'] is True
-        assert 'twitter' in body
-        assert body['twitter']['configured'] is True
-        assert 'reddit' in body
-        assert body['reddit']['configured'] is False  # Missing client_secret
+        assert 'webscraper' in body
+        assert body['webscraper']['configured'] is True
 
     @patch('integrations_handler.secretsmanager')
     def test_returns_unconfigured_when_no_credentials(
@@ -65,8 +57,7 @@ class TestGetIntegrationStatus:
         
         # Assert
         assert response['statusCode'] == 200
-        assert body['trustpilot']['configured'] is False
-        assert body['twitter']['configured'] is False
+        assert body['webscraper']['configured'] is False
 
     @patch('integrations_handler.secretsmanager')
     def test_returns_error_when_secrets_unavailable(
@@ -105,11 +96,10 @@ class TestUpdateCredentials:
         from integrations_handler import lambda_handler
         event = api_gateway_event(
             method='PUT',
-            path='/integrations/trustpilot/credentials',
-            path_params={'source': 'trustpilot'},
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
             body={
-                'trustpilot_api_key': 'new_key',
-                'trustpilot_api_secret': 'new_secret'
+                'webscraper_api_key': 'new_key',
             }
         )
         
@@ -128,7 +118,7 @@ class TestUpdateCredentials:
     ):
         """Preserves existing credentials when updating."""
         # Arrange
-        existing_secrets = {'twitter_bearer_token': 'existing_token'}
+        existing_secrets = {'webscraper_api_key': 'existing_key'}
         mock_secrets.get_secret_value.return_value = {
             'SecretString': json.dumps(existing_secrets)
         }
@@ -137,9 +127,9 @@ class TestUpdateCredentials:
         from integrations_handler import lambda_handler
         event = api_gateway_event(
             method='PUT',
-            path='/integrations/reddit/credentials',
-            path_params={'source': 'reddit'},
-            body={'reddit_client_id': 'new_reddit_id'}
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+            body={'webscraper_configs': '[]'}
         )
         
         # Act
@@ -149,8 +139,8 @@ class TestUpdateCredentials:
         assert mock_secrets.put_secret_value.called
         call_args = mock_secrets.put_secret_value.call_args
         saved_secrets = json.loads(call_args[1]['SecretString'])
-        assert saved_secrets['twitter_bearer_token'] == 'existing_token'
-        assert saved_secrets['reddit_client_id'] == 'new_reddit_id'
+        assert saved_secrets['webscraper_api_key'] == 'existing_key'
+        assert saved_secrets['webscraper_configs'] == '[]'
 
     @patch('integrations_handler.secretsmanager')
     def test_returns_error_when_update_fails(
@@ -166,9 +156,9 @@ class TestUpdateCredentials:
         from integrations_handler import lambda_handler
         event = api_gateway_event(
             method='PUT',
-            path='/integrations/twitter/credentials',
-            path_params={'source': 'twitter'},
-            body={'twitter_bearer_token': 'token'}
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+            body={'webscraper_api_key': 'key'}
         )
         
         # Act
@@ -191,8 +181,8 @@ class TestTestIntegration:
         from integrations_handler import lambda_handler
         event = api_gateway_event(
             method='POST',
-            path='/integrations/trustpilot/test',
-            path_params={'source': 'trustpilot'}
+            path='/integrations/webscraper/test',
+            path_params={'source': 'webscraper'}
         )
         
         # Act
@@ -215,10 +205,8 @@ class TestGetSourcesStatus:
         """Returns schedule status for all data sources."""
         # Arrange
         def describe_rule_side_effect(Name):
-            if 'trustpilot' in Name:
+            if 'webscraper' in Name:
                 return {'State': 'ENABLED', 'ScheduleExpression': 'rate(1 hour)'}
-            elif 'twitter' in Name:
-                return {'State': 'DISABLED', 'ScheduleExpression': 'rate(30 minutes)'}
             raise mock_events.exceptions.ResourceNotFoundException({}, 'describe_rule')
         
         mock_events.describe_rule.side_effect = describe_rule_side_effect
@@ -236,8 +224,7 @@ class TestGetSourcesStatus:
         # Assert
         assert response['statusCode'] == 200
         assert 'sources' in body
-        assert body['sources']['trustpilot']['enabled'] is True
-        assert body['sources']['twitter']['enabled'] is False
+        assert body['sources']['webscraper']['enabled'] is True
 
     @patch('integrations_handler.events_client')
     def test_handles_missing_rules_gracefully(
@@ -259,7 +246,7 @@ class TestGetSourcesStatus:
         
         # Assert
         assert response['statusCode'] == 200
-        assert body['sources']['trustpilot']['exists'] is False
+        assert body['sources']['webscraper']['exists'] is False
 
 
 class TestEnableSource:
@@ -276,8 +263,8 @@ class TestEnableSource:
         from integrations_handler import lambda_handler
         event = api_gateway_event(
             method='PUT',
-            path='/sources/trustpilot/enable',
-            path_params={'source': 'trustpilot'}
+            path='/sources/webscraper/enable',
+            path_params={'source': 'webscraper'}
         )
         
         # Act
@@ -288,7 +275,7 @@ class TestEnableSource:
         assert response['statusCode'] == 200
         assert body['success'] is True
         assert body['enabled'] is True
-        mock_events.enable_rule.assert_called_once_with(Name='voc-ingest-trustpilot-schedule')
+        mock_events.enable_rule.assert_called_once_with(Name='voc-ingest-webscraper-schedule')
 
     @patch('integrations_handler.events_client')
     def test_returns_error_when_enable_fails(
@@ -301,8 +288,8 @@ class TestEnableSource:
         from integrations_handler import lambda_handler
         event = api_gateway_event(
             method='PUT',
-            path='/sources/twitter/enable',
-            path_params={'source': 'twitter'}
+            path='/sources/webscraper/enable',
+            path_params={'source': 'webscraper'}
         )
         
         # Act
@@ -328,8 +315,8 @@ class TestDisableSource:
         from integrations_handler import lambda_handler
         event = api_gateway_event(
             method='PUT',
-            path='/sources/reddit/disable',
-            path_params={'source': 'reddit'}
+            path='/sources/webscraper/disable',
+            path_params={'source': 'webscraper'}
         )
         
         # Act
@@ -340,4 +327,4 @@ class TestDisableSource:
         assert response['statusCode'] == 200
         assert body['success'] is True
         assert body['enabled'] is False
-        mock_events.disable_rule.assert_called_once_with(Name='voc-ingest-reddit-schedule')
+        mock_events.disable_rule.assert_called_once_with(Name='voc-ingest-webscraper-schedule')

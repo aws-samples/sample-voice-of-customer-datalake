@@ -62,22 +62,22 @@ class TestVerifyHmacSha256:
         assert verify_hmac_sha256(payload, signature.upper(), secret) is True
 
 
-class TestVerifyTrustpilotSignature:
-    """Tests for verify_trustpilot_signature() function."""
+class TestVerifyGenericSignature:
+    """Tests for verify_generic_signature() function."""
 
-    def test_verifies_trustpilot_hmac_signature(self):
-        """Verifies Trustpilot webhook signature."""
-        from _shared.webhook_auth import verify_trustpilot_signature
+    def test_verifies_generic_hmac_signature(self):
+        """Verifies generic webhook signature using HMAC-SHA256."""
+        from _shared.webhook_auth import verify_generic_signature
         
-        payload = b'{"eventType": "service-review-created"}'
-        secret = 'trustpilot-webhook-secret'
+        payload = b'{"eventType": "webhook-event"}'
+        secret = 'webhook-secret'
         signature = hmac.new(
             secret.encode('utf-8'),
             payload,
             hashlib.sha256
         ).hexdigest()
         
-        assert verify_trustpilot_signature(payload, signature, secret) is True
+        assert verify_generic_signature(payload, signature, secret) is True
 
 
 class TestVerifyGithubSignature:
@@ -171,13 +171,13 @@ class TestRequireWebhookSignatureDecorator:
             hashlib.sha256
         ).hexdigest()
         
-        @require_webhook_signature('trustpilot', 'X-Trustpilot-Signature')
+        @require_webhook_signature('generic', 'X-Webhook-Signature')
         def handler(event, context):
             return {'statusCode': 200, 'body': 'OK'}
         
         event = {
             'body': payload,
-            'headers': {'X-Trustpilot-Signature': signature},
+            'headers': {'X-Webhook-Signature': signature},
             'isBase64Encoded': False,
         }
         
@@ -190,13 +190,13 @@ class TestRequireWebhookSignatureDecorator:
         """Returns 401 when signature invalid."""
         from _shared.webhook_auth import require_webhook_signature
         
-        @require_webhook_signature('trustpilot', 'X-Trustpilot-Signature')
+        @require_webhook_signature('generic', 'X-Webhook-Signature')
         def handler(event, context):
             return {'statusCode': 200, 'body': 'OK'}
         
         event = {
             'body': '{"test": "data"}',
-            'headers': {'X-Trustpilot-Signature': 'wrong-signature'},
+            'headers': {'X-Webhook-Signature': 'wrong-signature'},
             'isBase64Encoded': False,
         }
         
@@ -210,7 +210,7 @@ class TestRequireWebhookSignatureDecorator:
         """Returns 401 when signature header missing."""
         from _shared.webhook_auth import require_webhook_signature
         
-        @require_webhook_signature('trustpilot', 'X-Trustpilot-Signature')
+        @require_webhook_signature('generic', 'X-Webhook-Signature')
         def handler(event, context):
             return {'statusCode': 200, 'body': 'OK'}
         
@@ -230,13 +230,13 @@ class TestRequireWebhookSignatureDecorator:
         """Returns 500 when WEBHOOK_SECRET not set."""
         from _shared.webhook_auth import require_webhook_signature
         
-        @require_webhook_signature('trustpilot', 'X-Trustpilot-Signature')
+        @require_webhook_signature('generic', 'X-Webhook-Signature')
         def handler(event, context):
             return {'statusCode': 200, 'body': 'OK'}
         
         event = {
             'body': '{"test": "data"}',
-            'headers': {'X-Trustpilot-Signature': 'some-sig'},
+            'headers': {'X-Webhook-Signature': 'some-sig'},
             'isBase64Encoded': False,
         }
         
@@ -258,14 +258,14 @@ class TestRequireWebhookSignatureDecorator:
             hashlib.sha256
         ).hexdigest()
         
-        @require_webhook_signature('trustpilot', 'X-Trustpilot-Signature')
+        @require_webhook_signature('generic', 'X-Webhook-Signature')
         def handler(event, context):
             return {'statusCode': 200, 'body': 'OK'}
         
         # Header with different case
         event = {
             'body': payload,
-            'headers': {'x-trustpilot-signature': signature},  # lowercase
+            'headers': {'x-webhook-signature': signature},  # lowercase
             'isBase64Encoded': False,
         }
         
@@ -287,13 +287,13 @@ class TestRequireWebhookSignatureDecorator:
             hashlib.sha256
         ).hexdigest()
         
-        @require_webhook_signature('trustpilot', 'X-Trustpilot-Signature')
+        @require_webhook_signature('generic', 'X-Webhook-Signature')
         def handler(event, context):
             return {'statusCode': 200, 'body': 'OK'}
         
         event = {
             'body': base64.b64encode(payload.encode()).decode(),
-            'headers': {'X-Trustpilot-Signature': signature},
+            'headers': {'X-Webhook-Signature': signature},
             'isBase64Encoded': True,
         }
         
@@ -305,11 +305,11 @@ class TestRequireWebhookSignatureDecorator:
 class TestSignatureVerifierRegistry:
     """Tests for SIGNATURE_VERIFIERS registry."""
 
-    def test_contains_trustpilot_verifier(self):
-        """Registry includes trustpilot verifier."""
+    def test_contains_generic_verifier(self):
+        """Registry includes generic verifier."""
         from _shared.webhook_auth import SIGNATURE_VERIFIERS
         
-        assert 'trustpilot' in SIGNATURE_VERIFIERS
+        assert 'generic' in SIGNATURE_VERIFIERS
 
     def test_contains_github_verifier(self):
         """Registry includes github verifier."""

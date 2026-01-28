@@ -10,35 +10,22 @@ from datetime import datetime, timezone
 class TestExtractSourceFromUrl:
     """Tests for extract_source_from_url helper function."""
 
-    def test_extracts_trustpilot_from_url(self):
-        """Extracts trustpilot source from trustpilot.com URL."""
+    def test_extracts_g2_from_url(self):
+        """Extracts g2 source from g2.com URL."""
         import sys
         import os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from manual_import_handler import extract_source_from_url
         
-        assert extract_source_from_url('https://www.trustpilot.com/review/example') == 'trustpilot'
-        assert extract_source_from_url('https://trustpilot.com/review/example') == 'trustpilot'
-
-    def test_extracts_g2_from_url(self):
-        """Extracts g2 source from g2.com URL."""
-        from manual_import_handler import extract_source_from_url
-        
         assert extract_source_from_url('https://www.g2.com/products/example') == 'g2'
         assert extract_source_from_url('https://g2.com/products/example') == 'g2'
 
-    def test_extracts_twitter_from_x_domain(self):
-        """Extracts twitter source from x.com URL."""
+    def test_extracts_capterra_from_url(self):
+        """Extracts capterra source from capterra.com URL."""
         from manual_import_handler import extract_source_from_url
         
-        assert extract_source_from_url('https://x.com/user/status/123') == 'twitter'
-        assert extract_source_from_url('https://twitter.com/user/status/123') == 'twitter'
-
-    def test_extracts_google_reviews_from_maps(self):
-        """Extracts google_reviews from Google Maps URL."""
-        from manual_import_handler import extract_source_from_url
-        
-        assert extract_source_from_url('https://maps.google.com/place/example') == 'google_reviews'
+        assert extract_source_from_url('https://www.capterra.com/p/12345/product') == 'capterra'
+        assert extract_source_from_url('https://capterra.com/reviews/12345') == 'capterra'
 
     def test_returns_sanitized_domain_for_unknown_source(self):
         """Returns sanitized domain for unknown sources."""
@@ -90,7 +77,7 @@ class TestStartParseEndpoint:
         event = api_gateway_event(
             method='POST',
             path='/scrapers/manual/parse',
-            body={'source_url': 'https://trustpilot.com/review/example'}
+            body={'source_url': 'https://g2.com/review/example'}
         )
         
         response = lambda_handler(event, lambda_context)
@@ -111,7 +98,7 @@ class TestStartParseEndpoint:
             method='POST',
             path='/scrapers/manual/parse',
             body={
-                'source_url': 'https://trustpilot.com/review/example',
+                'source_url': 'https://g2.com/review/example',
                 'raw_text': 'x' * (MAX_CHARACTERS + 1)
             }
         )
@@ -137,7 +124,7 @@ class TestStartParseEndpoint:
             method='POST',
             path='/scrapers/manual/parse',
             body={
-                'source_url': 'https://trustpilot.com/review/example',
+                'source_url': 'https://g2.com/review/example',
                 'raw_text': 'Great product! 5 stars.'
             }
         )
@@ -147,7 +134,7 @@ class TestStartParseEndpoint:
         
         assert body['success'] is True
         assert 'job_id' in body
-        assert body['source_origin'] == 'trustpilot'
+        assert body['source_origin'] == 'g2'
         mock_table.put_item.assert_called_once()
         mock_lambda.invoke.assert_called_once()
 
@@ -183,8 +170,8 @@ class TestGetParseStatusEndpoint:
         mock_table.get_item.return_value = {
             'Item': {
                 'status': 'processing',
-                'source_origin': 'trustpilot',
-                'source_url': 'https://trustpilot.com/review/example'
+                'source_origin': 'g2',
+                'source_url': 'https://g2.com/review/example'
             }
         }
         
@@ -200,7 +187,7 @@ class TestGetParseStatusEndpoint:
         body = json.loads(response['body'])
         
         assert body['status'] == 'processing'
-        assert body['source_origin'] == 'trustpilot'
+        assert body['source_origin'] == 'g2'
 
     @patch('manual_import_handler.aggregates_table')
     def test_returns_completed_status_with_reviews(
@@ -210,8 +197,8 @@ class TestGetParseStatusEndpoint:
         mock_table.get_item.return_value = {
             'Item': {
                 'status': 'completed',
-                'source_origin': 'trustpilot',
-                'source_url': 'https://trustpilot.com/review/example',
+                'source_origin': 'g2',
+                'source_url': 'https://g2.com/review/example',
                 'reviews': [
                     {'text': 'Great product!', 'rating': 5, 'author': 'John'}
                 ],
@@ -242,8 +229,8 @@ class TestGetParseStatusEndpoint:
         mock_table.get_item.return_value = {
             'Item': {
                 'status': 'failed',
-                'source_origin': 'trustpilot',
-                'source_url': 'https://trustpilot.com/review/example',
+                'source_origin': 'g2',
+                'source_url': 'https://g2.com/review/example',
                 'error': 'LLM parsing failed'
             }
         }
@@ -345,8 +332,8 @@ class TestConfirmImportEndpoint:
         """Successfully imports reviews to SQS and S3."""
         mock_table.get_item.return_value = {
             'Item': {
-                'source_origin': 'trustpilot',
-                'source_url': 'https://trustpilot.com/review/example',
+                'source_origin': 'g2',
+                'source_url': 'https://g2.com/review/example',
                 'raw_text': 'Original raw text',
                 'reviews': [{'text': 'Great!', 'rating': 5}]
             }
@@ -376,46 +363,6 @@ class TestConfirmImportEndpoint:
         mock_table.update_item.assert_called_once()
 
 
-class TestExtractSourceFromUrlAdditional:
-    """Additional tests for extract_source_from_url edge cases."""
-
-    def test_extracts_capterra_from_url(self):
-        """Extracts capterra source from capterra.com URL."""
-        from manual_import_handler import extract_source_from_url
-        
-        assert extract_source_from_url('https://www.capterra.com/p/12345/product') == 'capterra'
-        assert extract_source_from_url('https://capterra.com/reviews/12345') == 'capterra'
-
-    def test_extracts_yelp_from_url(self):
-        """Extracts yelp source from yelp.com URL."""
-        from manual_import_handler import extract_source_from_url
-        
-        assert extract_source_from_url('https://www.yelp.com/biz/example') == 'yelp'
-
-    def test_extracts_app_store_from_url(self):
-        """Extracts app_store source from apps.apple.com URL."""
-        from manual_import_handler import extract_source_from_url
-        
-        assert extract_source_from_url('https://apps.apple.com/app/example') == 'app_store'
-
-    def test_extracts_play_store_from_url(self):
-        """Extracts play_store source from play.google.com URL."""
-        from manual_import_handler import extract_source_from_url
-        
-        assert extract_source_from_url('https://play.google.com/store/apps/details?id=com.example') == 'play_store'
-
-    def test_extracts_social_media_sources(self):
-        """Extracts social media sources correctly."""
-        from manual_import_handler import extract_source_from_url
-        
-        assert extract_source_from_url('https://www.facebook.com/page/reviews') == 'facebook'
-        assert extract_source_from_url('https://www.reddit.com/r/example') == 'reddit'
-        assert extract_source_from_url('https://www.linkedin.com/company/example') == 'linkedin'
-        assert extract_source_from_url('https://www.instagram.com/example') == 'instagram'
-        assert extract_source_from_url('https://www.tiktok.com/@example') == 'tiktok'
-        assert extract_source_from_url('https://www.youtube.com/watch?v=example') == 'youtube'
-
-
 class TestStartParseEndpointAdditional:
     """Additional tests for POST /scrapers/manual/parse endpoint."""
 
@@ -435,7 +382,7 @@ class TestStartParseEndpointAdditional:
             method='POST',
             path='/scrapers/manual/parse',
             body={
-                'source_url': 'https://trustpilot.com/review/example',
+                'source_url': 'https://g2.com/review/example',
                 'raw_text': 'Great product! 5 stars.'
             }
         )
@@ -463,7 +410,7 @@ class TestStartParseEndpointAdditional:
             method='POST',
             path='/scrapers/manual/parse',
             body={
-                'source_url': '  https://trustpilot.com/review/example  ',
+                'source_url': '  https://g2.com/review/example  ',
                 'raw_text': '  Great product!  '
             }
         )
@@ -475,7 +422,7 @@ class TestStartParseEndpointAdditional:
         # Verify the put_item was called with trimmed values
         call_args = mock_table.put_item.call_args
         item = call_args[1]['Item']
-        assert item['source_url'] == 'https://trustpilot.com/review/example'
+        assert item['source_url'] == 'https://g2.com/review/example'
         assert item['raw_text'] == 'Great product!'
 
 
@@ -537,8 +484,8 @@ class TestConfirmImportEndpointAdditional:
         """Continues import even if S3 upload fails."""
         mock_table.get_item.return_value = {
             'Item': {
-                'source_origin': 'trustpilot',
-                'source_url': 'https://trustpilot.com/review/example',
+                'source_origin': 'g2',
+                'source_url': 'https://g2.com/review/example',
                 'raw_text': 'Original raw text',
                 'reviews': []
             }
@@ -574,8 +521,8 @@ class TestConfirmImportEndpointAdditional:
         """Reports errors when SQS send fails for some reviews."""
         mock_table.get_item.return_value = {
             'Item': {
-                'source_origin': 'trustpilot',
-                'source_url': 'https://trustpilot.com/review/example',
+                'source_origin': 'g2',
+                'source_url': 'https://g2.com/review/example',
                 'raw_text': 'Original raw text',
                 'reviews': []
             }

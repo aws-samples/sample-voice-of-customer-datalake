@@ -31,8 +31,8 @@ def verify_hmac_sha256(payload: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(expected.lower(), signature.lower())
 
 
-def verify_trustpilot_signature(payload: bytes, signature: str, secret: str) -> bool:
-    """Verify Trustpilot webhook signature (HMAC-SHA256)."""
+def verify_generic_signature(payload: bytes, signature: str, secret: str) -> bool:
+    """Verify generic webhook signature (HMAC-SHA256)."""
     return verify_hmac_sha256(payload, signature, secret)
 
 
@@ -85,7 +85,7 @@ def verify_slack_signature(payload: bytes, signature: str, secret: str, timestam
 
 # Registry of verification methods per provider
 SIGNATURE_VERIFIERS: dict[str, Callable[[bytes, str, str], bool]] = {
-    "trustpilot": verify_trustpilot_signature,
+    "generic": verify_generic_signature,
     "github": verify_github_signature,
     "stripe": verify_stripe_signature,
     "hmac_sha256": verify_hmac_sha256,
@@ -97,7 +97,7 @@ def require_webhook_signature(provider: str, header_name: str = "X-Signature"):
     Decorator to require webhook signature verification.
     
     Usage:
-        @require_webhook_signature('trustpilot', 'X-Trustpilot-Signature')
+        @require_webhook_signature('generic', 'X-Webhook-Signature')
         def lambda_handler(event, context):
             ...
     """

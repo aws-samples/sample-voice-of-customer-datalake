@@ -27,10 +27,10 @@ describe('manualImportStore', () => {
     it('sets source URL and updates lastUpdated', () => {
       const { setSourceUrl } = useManualImportStore.getState()
 
-      setSourceUrl('https://trustpilot.com/review/example.com')
+      setSourceUrl('https://example.com/review/example.com')
 
       const state = useManualImportStore.getState()
-      expect(state.sourceUrl).toBe('https://trustpilot.com/review/example.com')
+      expect(state.sourceUrl).toBe('https://example.com/review/example.com')
       expect(state.lastUpdated).not.toBeNull()
     })
   })
@@ -179,7 +179,7 @@ describe('manualImportStore', () => {
       state.setRawText('Some text')
       state.setParsedReviews([{ text: 'Review', rating: 5, author: null, date: null, title: null }])
       state.setJobId('job-123')
-      state.setSourceOrigin('trustpilot')
+      state.setSourceOrigin('webscraper')
 
       state.clearDraft()
 

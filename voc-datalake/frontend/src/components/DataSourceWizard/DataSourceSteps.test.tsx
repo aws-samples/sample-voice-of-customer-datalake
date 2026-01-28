@@ -213,7 +213,7 @@ describe('FeedbackFiltersStep', () => {
   const defaultProps = {
     contextConfig: defaultContextConfig,
     onContextChange: vi.fn(),
-    sources: ['twitter', 'instagram', 'facebook'],
+    sources: ['webscraper', 'manual_import', 's3_import'],
     categories: [
       { id: 'delivery', name: 'Delivery' },
       { id: 'quality', name: 'Quality' },
@@ -246,16 +246,16 @@ describe('FeedbackFiltersStep', () => {
   describe('Sources', () => {
     it('displays all source buttons', () => {
       render(<FeedbackFiltersStep {...defaultProps} />)
-      expect(screen.getByText('Twitter')).toBeInTheDocument()
-      expect(screen.getByText('Instagram')).toBeInTheDocument()
-      expect(screen.getByText('Facebook')).toBeInTheDocument()
+      expect(screen.getByText('Webscraper')).toBeInTheDocument()
+      expect(screen.getByText('Manual Import')).toBeInTheDocument()
+      expect(screen.getByText('S3 Import')).toBeInTheDocument()
     })
 
     it('formats source names correctly', () => {
-      const props = { ...defaultProps, sources: ['google_reviews', 'app_store'] }
+      const props = { ...defaultProps, sources: ['webscraper', 'manual_import'] }
       render(<FeedbackFiltersStep {...props} />)
-      expect(screen.getByText('Google Reviews')).toBeInTheDocument()
-      expect(screen.getByText('App Store')).toBeInTheDocument()
+      expect(screen.getByText('Webscraper')).toBeInTheDocument()
+      expect(screen.getByText('Manual Import')).toBeInTheDocument()
     })
 
     it('toggles source selection when clicked', async () => {
@@ -263,20 +263,20 @@ describe('FeedbackFiltersStep', () => {
       const onContextChange = vi.fn()
       render(<FeedbackFiltersStep {...defaultProps} onContextChange={onContextChange} />)
       
-      await user.click(screen.getByText('Twitter'))
+      await user.click(screen.getByText('Webscraper'))
       
       expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ sources: ['twitter'] })
+        expect.objectContaining({ sources: ['webscraper'] })
       )
     })
 
     it('removes source when already selected', async () => {
       const user = userEvent.setup()
       const onContextChange = vi.fn()
-      const config = { ...defaultContextConfig, sources: ['twitter'] }
+      const config = { ...defaultContextConfig, sources: ['webscraper'] }
       render(<FeedbackFiltersStep {...defaultProps} contextConfig={config} onContextChange={onContextChange} />)
       
-      await user.click(screen.getByText('Twitter'))
+      await user.click(screen.getByText('Webscraper'))
       
       expect(onContextChange).toHaveBeenCalledWith(
         expect.objectContaining({ sources: [] })

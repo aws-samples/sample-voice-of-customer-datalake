@@ -57,9 +57,9 @@ function createWrapper(initialEntries = ['/feedback']) {
 }
 
 const mockFeedbackItems = [
-  { feedback_id: '1', original_text: 'Great product!', sentiment_label: 'positive', source_platform: 'twitter' },
-  { feedback_id: '2', original_text: 'Needs improvement', sentiment_label: 'negative', source_platform: 'email' },
-  { feedback_id: '3', original_text: 'Average experience', sentiment_label: 'neutral', source_platform: 'twitter' },
+  { feedback_id: '1', original_text: 'Great product!', sentiment_label: 'positive', source_platform: 'webscraper' },
+  { feedback_id: '2', original_text: 'Needs improvement', sentiment_label: 'negative', source_platform: 'manual_import' },
+  { feedback_id: '3', original_text: 'Average experience', sentiment_label: 'neutral', source_platform: 'webscraper' },
 ]
 
 describe('Feedback', () => {
@@ -71,7 +71,7 @@ describe('Feedback', () => {
     })
     mockGetEntities.mockResolvedValue({
       entities: {
-        sources: { twitter: 100, email: 50 },
+        sources: { webscraper: 100, manual_import: 50 },
         categories: { delivery: 30, support: 20 },
       },
     })
@@ -309,11 +309,11 @@ describe('Feedback', () => {
 
   describe('URL sync', () => {
     it('initializes filters from URL parameters', async () => {
-      render(<Feedback />, { wrapper: createWrapper(['/feedback?source=twitter&sentiment=positive']) })
+      render(<Feedback />, { wrapper: createWrapper(['/feedback?source=webscraper&sentiment=positive']) })
       
       await waitFor(() => {
         expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({
-          source: 'twitter',
+          source: 'webscraper',
           sentiment: 'positive',
         }))
       })

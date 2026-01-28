@@ -79,16 +79,16 @@ class TestGetFeedbackForChat:
         mock_table = MagicMock()
         mock_table.query.return_value = {
             'Items': [
-                {'source_platform': 'twitter', 'original_text': 'Tweet 1'},
-                {'source_platform': 'trustpilot', 'original_text': 'Review 1'},
-                {'source_platform': 'twitter', 'original_text': 'Tweet 2'},
+                {'source_platform': 'webscraper', 'original_text': 'Review 1'},
+                {'source_platform': 'manual_import', 'original_text': 'Review 2'},
+                {'source_platform': 'webscraper', 'original_text': 'Review 3'},
             ]
         }
         
-        result = get_feedback_for_chat(mock_table, {'sources': ['twitter']}, limit=10)
+        result = get_feedback_for_chat(mock_table, {'sources': ['webscraper']}, limit=10)
         
         assert len(result) == 2
-        assert all(item['source_platform'] == 'twitter' for item in result)
+        assert all(item['source_platform'] == 'webscraper' for item in result)
 
     def test_returns_empty_list_when_table_none(self):
         """Returns empty list when table not configured."""
@@ -108,7 +108,7 @@ class TestFormatFeedbackForChat:
         
         items = [
             {
-                'source_platform': 'twitter',
+                'source_platform': 'webscraper',
                 'sentiment_label': 'positive',
                 'category': 'product',
                 'original_text': 'Great product!'
@@ -117,7 +117,7 @@ class TestFormatFeedbackForChat:
         
         result = format_feedback_for_chat(items)
         
-        assert '[twitter|positive|product]' in result
+        assert '[webscraper|positive|product]' in result
         assert 'Great product!' in result
 
     def test_returns_placeholder_for_empty(self):

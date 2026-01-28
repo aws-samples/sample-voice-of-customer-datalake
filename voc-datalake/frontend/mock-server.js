@@ -6,9 +6,9 @@ import http from 'http';
 const mockFeedback = [
   {
     feedback_id: '1',
-    source_platform: 'twitter',
-    source_channel: 'tweet',
-    source_url: 'https://twitter.com/user/status/123',
+    source_platform: 'webscraper',
+    source_channel: 'review',
+    source_url: 'https://example.com/review/123',
     original_text: 'Really disappointed with the delivery time. Ordered 2 weeks ago and still waiting!',
     rating: null,
     category: 'delivery',
@@ -26,7 +26,7 @@ const mockFeedback = [
   },
   {
     feedback_id: '2',
-    source_platform: 'trustpilot',
+    source_platform: 'manual_import',
     source_channel: 'review',
     original_text: 'Amazing customer service! They resolved my issue within minutes. Highly recommend!',
     rating: 5,
@@ -45,7 +45,7 @@ const mockFeedback = [
   },
   {
     feedback_id: '3',
-    source_platform: 'reddit',
+    source_platform: 's3_import',
     source_channel: 'post',
     original_text: 'The product quality has really gone downhill. My last 3 orders had defects.',
     rating: null,
@@ -91,12 +91,9 @@ let feedbackFormConfig = {
 // Mock sources status
 const mockSourcesStatus = {
   sources: [
-    { source: 'twitter', enabled: true, last_run: new Date().toISOString(), status: 'success', schedule: 'rate(1 minute)' },
-    { source: 'trustpilot', enabled: true, last_run: new Date().toISOString(), status: 'success', schedule: 'rate(5 minutes)' },
-    { source: 'google_reviews', enabled: false, last_run: null, status: 'disabled', schedule: 'rate(15 minutes)' },
-    { source: 'reddit', enabled: true, last_run: new Date().toISOString(), status: 'success', schedule: 'rate(5 minutes)' },
-    { source: 'instagram', enabled: false, last_run: null, status: 'disabled', schedule: 'rate(5 minutes)' },
-    { source: 'facebook', enabled: false, last_run: null, status: 'disabled', schedule: 'rate(5 minutes)' },
+    { source: 'webscraper', enabled: true, last_run: new Date().toISOString(), status: 'success', schedule: 'rate(5 minutes)' },
+    { source: 'manual_import', enabled: true, last_run: new Date().toISOString(), status: 'success', schedule: 'manual' },
+    { source: 's3_import', enabled: true, last_run: new Date().toISOString(), status: 'success', schedule: 'event-driven' },
   ]
 };
 
@@ -133,7 +130,7 @@ const mockBuckets = [
 
 const mockS3Files = {
   'raw-data': {
-    folders: ['twitter/', 'trustpilot/', 'reddit/', 'webscraper/'],
+    folders: ['webscraper/', 'manual_import/', 's3_import/'],
     files: []
   }
 };
@@ -163,12 +160,12 @@ const handlers = {
 
   // Settings - Categories
   'GET /settings/categories': () => mockCategoriesConfig,
-  'PUT /settings/categories': (body) => ({ success: true, message: 'Categories saved' }),
+  'PUT /settings/categories': () => ({ success: true, message: 'Categories saved' }),
 
   // Data Explorer
   'GET /data-explorer/buckets': () => ({ buckets: mockBuckets }),
   'GET /data-explorer/s3': () => mockS3Files['raw-data'],
-  'GET /data-explorer/stats': () => ({ total_files: 1247, total_size_mb: 156.3, sources: 6 }),
+  'GET /data-explorer/stats': () => ({ total_files: 1247, total_size_mb: 156.3, sources: 3 }),
 
   // Scrapers
   'GET /scrapers': () => ({ scrapers: mockScrapers }),
@@ -213,12 +210,9 @@ const handlers = {
   'GET /metrics/sources': () => ({
     period_days: 7,
     sources: {
-      twitter: 423,
-      trustpilot: 312,
-      google_reviews: 234,
-      reddit: 156,
-      instagram: 78,
-      facebook: 44,
+      webscraper: 523,
+      manual_import: 412,
+      s3_import: 312,
     },
   }),
   'GET /metrics/personas': () => ({
@@ -231,7 +225,7 @@ const handlers = {
       'Loyal Customer': 123,
     },
   }),
-  'POST /chat': (body) => ({
+  'POST /chat': () => ({
     response: `I analyzed your feedback data. Here's what I found:\n\n• Total feedback: 1,247 items\n• Average sentiment: 0.12 (slightly positive)\n• Top category: Delivery (25%)\n• Urgent items: 23 requiring attention\n\nWould you like me to dive deeper into any specific area?`,
     sources: mockFeedback.slice(0, 2),
   }),
@@ -301,7 +295,7 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({
       bucket,
       prefix,
-      folders: prefix ? [] : ['twitter/', 'trustpilot/', 'reddit/', 'webscraper/'],
+      folders: prefix ? [] : ['webscraper/', 'manual_import/', 's3_import/'],
       files: prefix ? [
         { key: `${prefix}item1.json`, size: 1234, last_modified: new Date().toISOString() },
         { key: `${prefix}item2.json`, size: 2345, last_modified: new Date().toISOString() },

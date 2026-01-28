@@ -113,7 +113,7 @@ const ManifestSchema = z.object({
   name: SafeStringSchema,
   icon: IconSchema,
   description: SafeStringSchema.optional(),
-  category: z.enum(['reviews', 'social', 'appstore', 'import', 'search']).optional(),
+  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper']).optional(),
   infrastructure: InfrastructureSchema,
   config: z.array(ConfigFieldSchema).max(20).default([]),
   webhooks: z.array(WebhookInfoSchema).max(5).optional(),

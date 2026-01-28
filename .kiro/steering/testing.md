@@ -212,12 +212,12 @@ class TestListFeedback:
         # Arrange
         mock_table.query.return_value = {
             'Items': [
-                {'feedback_id': '1', 'source_platform': 'twitter', 'date': '2025-01-01'},
-                {'feedback_id': '2', 'source_platform': 'twitter', 'date': '2025-01-02'},
+                {'feedback_id': '1', 'source_platform': 'webscraper', 'date': '2025-01-01'},
+                {'feedback_id': '2', 'source_platform': 'webscraper', 'date': '2025-01-02'},
             ]
         }
         from metrics_handler import lambda_handler
-        event = api_gateway_event(method='GET', path='/feedback', query_params={'source': 'twitter'})
+        event = api_gateway_event(method='GET', path='/feedback', query_params={'source': 'webscraper'})
         
         # Act
         response = lambda_handler(event, lambda_context)
@@ -228,7 +228,7 @@ class TestListFeedback:
         assert body['count'] == 2
         mock_table.query.assert_called_once()
         call_args = mock_table.query.call_args
-        assert 'SOURCE#twitter' in str(call_args)
+        assert 'SOURCE#webscraper' in str(call_args)
 
     @patch('metrics_handler.feedback_table')
     def test_limits_results_to_max_100(self, mock_table, api_gateway_event, lambda_context):
@@ -307,7 +307,7 @@ def test_stores_feedback_item_in_dynamodb(dynamodb_table):
     """Verifies feedback is stored with correct key structure."""
     # Arrange
     item = {
-        'pk': 'SOURCE#twitter',
+        'pk': 'SOURCE#webscraper',
         'sk': 'FEEDBACK#123',
         'feedback_id': '123',
         'text': 'Great product!'
@@ -317,7 +317,7 @@ def test_stores_feedback_item_in_dynamodb(dynamodb_table):
     dynamodb_table.put_item(Item=item)
     
     # Assert
-    response = dynamodb_table.get_item(Key={'pk': 'SOURCE#twitter', 'sk': 'FEEDBACK#123'})
+    response = dynamodb_table.get_item(Key={'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#123'})
     assert response['Item']['feedback_id'] == '123'
     assert response['Item']['text'] == 'Great product!'
 ```
@@ -1068,10 +1068,10 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockResponse),
       })
 
-      const result = await api.getFeedback({ days: 7, source: 'twitter' })
+      const result = await api.getFeedback({ days: 7, source: 'webscraper' })
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback?days=7&source=twitter',
+        'https://api.example.com/feedback?days=7&source=webscraper',
         expect.objectContaining({
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
@@ -1115,10 +1115,10 @@ describe('API Client', () => {
         json: () => Promise.resolve({}),
       })
 
-      await api.getSummary(7, 'twitter')
+      await api.getSummary(7, 'webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/metrics/summary?days=7&source=twitter',
+        'https://api.example.com/metrics/summary?days=7&source=webscraper',
         expect.any(Object)
       )
     })

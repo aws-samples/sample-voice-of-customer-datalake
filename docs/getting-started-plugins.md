@@ -2,6 +2,8 @@
 
 This guide explains how to create, configure, and deploy data source plugins for the VoC (Voice of Customer) platform.
 
+> 📖 For in-depth technical details about the plugin system, including security hardening, infrastructure isolation, and observability, see the [Plugin Architecture](plugin-architecture.md) document.
+
 ## Overview
 
 The VoC platform uses a plugin architecture for data source connectors. Each plugin is a self-contained folder that defines:
@@ -30,7 +32,7 @@ plugins/your_source/
 cp -r plugins/_template plugins/your_source_id
 ```
 
-Use lowercase with underscores for the folder name (e.g., `google_reviews`, `app_store`).
+Use lowercase with underscores for the folder name (e.g., `my_reviews`, `custom_source`).
 
 ### Step 2: Configure the Manifest
 
@@ -225,11 +227,11 @@ Secret keys in the manifest are prefixed with your plugin ID automatically.
 
 Available categories for your plugin:
 
-- `reviews` - Product/service reviews (Trustpilot, Yelp, Google Reviews)
-- `social` - Social media mentions (Twitter, Instagram, Reddit)
-- `appstore` - App store reviews (Apple, Google Play, Huawei)
+- `reviews` - Product/service reviews
+- `social` - Social media mentions
 - `import` - File imports (S3, CSV, JSON)
-- `search` - Web search results (Tavily)
+- `search` - Web search results
+- `scraper` - Web scraping sources
 
 ## Testing Locally
 
@@ -249,3 +251,5 @@ for item in i.fetch_new_items():
 - Use `self.secrets.get("key")` to access credentials
 - Each plugin has isolated access to its own secrets
 - All data is validated before processing (see Message Validation)
+
+For detailed security information including webhook signature verification, code integrity checks, and circuit breakers, see [Plugin Architecture - Security Hardening](plugin-architecture.md#security-hardening).

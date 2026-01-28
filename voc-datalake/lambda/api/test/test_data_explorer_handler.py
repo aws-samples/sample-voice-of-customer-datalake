@@ -20,8 +20,8 @@ class TestListS3Objects:
         from datetime import datetime
         mock_s3.list_objects_v2.return_value = {
             'CommonPrefixes': [
-                {'Prefix': 'twitter/'},
-                {'Prefix': 'trustpilot/'}
+                {'Prefix': 'webscraper/'},
+                {'Prefix': 'manual_import/'}
             ],
             'Contents': [
                 {'Key': 'readme.txt', 'Size': 100, 'LastModified': datetime(2025, 1, 1)},
@@ -62,7 +62,7 @@ class TestListS3Objects:
         mock_s3.list_objects_v2.return_value = {
             'CommonPrefixes': [],
             'Contents': [
-                {'Key': 'twitter/tweet-1.json', 'Size': 500, 'LastModified': datetime(2025, 1, 1)},
+                {'Key': 'webscraper/review-1.json', 'Size': 500, 'LastModified': datetime(2025, 1, 1)},
             ]
         }
         
@@ -70,7 +70,7 @@ class TestListS3Objects:
         event = api_gateway_event(
             method='GET',
             path='/data-explorer/s3',
-            query_params={'bucket': 'raw-data', 'prefix': 'twitter'}
+            query_params={'bucket': 'raw-data', 'prefix': 'webscraper'}
         )
         
         # Act
@@ -79,10 +79,10 @@ class TestListS3Objects:
         
         # Assert
         assert response['statusCode'] == 200
-        assert body['prefix'] == 'twitter'
+        assert body['prefix'] == 'webscraper'
         mock_s3.list_objects_v2.assert_called_once()
         call_args = mock_s3.list_objects_v2.call_args
-        assert call_args[1]['Prefix'] == 'twitter/'
+        assert call_args[1]['Prefix'] == 'webscraper/'
 
 
 class TestPreviewS3File:
@@ -107,7 +107,7 @@ class TestPreviewS3File:
         event = api_gateway_event(
             method='GET',
             path='/data-explorer/s3/preview',
-            query_params={'bucket': 'raw-data', 'key': 'twitter/tweet-1.json'}
+            query_params={'bucket': 'raw-data', 'key': 'webscraper/review-1.json'}
         )
         
         # Act
@@ -191,7 +191,7 @@ class TestSaveS3File:
             path='/data-explorer/s3',
             body={
                 'bucket': 'raw-data',
-                'key': 'twitter/new-tweet.json',
+                'key': 'webscraper/new-review.json',
                 'content': {'feedback_id': 'new-123', 'text': 'New feedback'}
             }
         )
@@ -221,7 +221,7 @@ class TestSaveS3File:
             path='/data-explorer/s3',
             body={
                 'bucket': 'raw-data',
-                'key': 'twitter/tweet.json',
+                'key': 'webscraper/review.json',
                 'content': {'feedback_id': '123'},
                 'sync_to_dynamo': True
             }
@@ -251,7 +251,7 @@ class TestDeleteS3File:
         event = api_gateway_event(
             method='DELETE',
             path='/data-explorer/s3',
-            query_params={'bucket': 'raw-data', 'key': 'twitter/old-tweet.json'}
+            query_params={'bucket': 'raw-data', 'key': 'webscraper/old-review.json'}
         )
         
         # Act
@@ -284,7 +284,7 @@ class TestSaveFeedback:
             body={
                 'feedback_id': 'fb-123',
                 'data': {
-                    'source_platform': 'twitter',
+                    'source_platform': 'webscraper',
                     'original_text': 'Updated text',
                     'sentiment_label': 'positive',
                     'sentiment_score': 0.85
@@ -335,7 +335,7 @@ class TestDeleteFeedback:
         mock_table = MagicMock()
         mock_dynamodb.Table.return_value = mock_table
         mock_table.query.return_value = {
-            'Items': [{'pk': 'SOURCE#twitter', 'sk': 'FEEDBACK#fb-123'}]
+            'Items': [{'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#fb-123'}]
         }
         mock_table.delete_item.return_value = {}
         
@@ -412,8 +412,8 @@ class TestGetDataStats:
         # Arrange
         mock_s3.list_objects_v2.return_value = {
             'CommonPrefixes': [
-                {'Prefix': 'twitter/'},
-                {'Prefix': 'trustpilot/'}
+                {'Prefix': 'webscraper/'},
+                {'Prefix': 'manual_import/'}
             ]
         }
         

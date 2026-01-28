@@ -227,11 +227,11 @@ describe('chatStore', () => {
       const { createConversation, updateConversationFilters } = useChatStore.getState()
       
       const convId = createConversation()
-      updateConversationFilters(convId, { source: 'twitter', sentiment: 'positive' })
+      updateConversationFilters(convId, { source: 'webscraper', sentiment: 'positive' })
       
       const state = useChatStore.getState()
       const conv = state.conversations.find(c => c.id === convId)
-      expect(conv?.filters).toEqual({ source: 'twitter', sentiment: 'positive' })
+      expect(conv?.filters).toEqual({ source: 'webscraper', sentiment: 'positive' })
     })
   })
 

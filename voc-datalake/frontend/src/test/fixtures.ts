@@ -10,9 +10,9 @@ import type { FeedbackItem } from '../api/client'
 export const mockFeedbackItem: FeedbackItem = {
   feedback_id: '0099c016c50bcbb168052aafec6caf95',
   source_id: 'scraper_scraper_1766340982507_dc48e11b45f7500b',
-  source_platform: 'trustpilot',
+  source_platform: 'webscraper',
   source_channel: 'review',
-  source_url: 'https://www.trustpilot.com/users/570688940000ff000a15581e/',
+  source_url: 'https://example.com/reviews/user123',
   brand_name: 'VoC Analytics',
   source_created_at: '2025-12-29T13:17:02+01:00',
   processed_at: '2026-01-05T13:13:03.265251+00:00',
@@ -39,10 +39,10 @@ export const mockFeedbackItem: FeedbackItem = {
  */
 export const mockPositiveFeedbackItem: FeedbackItem = {
   feedback_id: 'abc123positive',
-  source_id: 'twitter_12345',
-  source_platform: 'twitter',
+  source_id: 'manual_12345',
+  source_platform: 'manual_import',
   source_channel: 'social',
-  source_url: 'https://twitter.com/user/status/12345',
+  source_url: 'https://example.com/feedback/12345',
   brand_name: 'VoC Analytics',
   source_created_at: '2025-12-28T10:00:00+00:00',
   processed_at: '2025-12-28T10:05:00+00:00',
@@ -67,8 +67,8 @@ export const mockPositiveFeedbackItem: FeedbackItem = {
  */
 export const mockNeutralFeedbackItem: FeedbackItem = {
   feedback_id: 'neutral456',
-  source_id: 'instagram_67890',
-  source_platform: 'instagram',
+  source_id: 's3_67890',
+  source_platform: 's3_import',
   source_channel: 'social',
   brand_name: 'VoC Analytics',
   source_created_at: '2025-12-27T15:30:00+00:00',

@@ -36,37 +36,12 @@ app = create_api_resolver()
 MAX_CHARACTERS = 10000
 JOB_TTL_SECONDS = 3600  # 1 hour
 
-# Domain to source mapping
+# Domain to source mapping for URL detection
 DOMAIN_TO_SOURCE = {
-    'trustpilot.com': 'trustpilot',
-    'www.trustpilot.com': 'trustpilot',
     'g2.com': 'g2',
     'www.g2.com': 'g2',
     'capterra.com': 'capterra',
     'www.capterra.com': 'capterra',
-    'google.com': 'google_reviews',
-    'www.google.com': 'google_reviews',
-    'maps.google.com': 'google_reviews',
-    'yelp.com': 'yelp',
-    'www.yelp.com': 'yelp',
-    'apps.apple.com': 'app_store',
-    'play.google.com': 'play_store',
-    'twitter.com': 'twitter',
-    'www.twitter.com': 'twitter',
-    'x.com': 'twitter',
-    'www.x.com': 'twitter',
-    'facebook.com': 'facebook',
-    'www.facebook.com': 'facebook',
-    'reddit.com': 'reddit',
-    'www.reddit.com': 'reddit',
-    'linkedin.com': 'linkedin',
-    'www.linkedin.com': 'linkedin',
-    'instagram.com': 'instagram',
-    'www.instagram.com': 'instagram',
-    'tiktok.com': 'tiktok',
-    'www.tiktok.com': 'tiktok',
-    'youtube.com': 'youtube',
-    'www.youtube.com': 'youtube',
 }
 
 PARSE_SYSTEM_PROMPT = """You are a review parser. Your job is to extract individual reviews from raw pasted text.

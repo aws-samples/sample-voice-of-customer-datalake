@@ -23,10 +23,7 @@ MAX_METADATA_VALUE_LENGTH = 1000
 
 # Known plugin IDs (for validation)
 KNOWN_SOURCES = {
-    "trustpilot", "yelp", "google_reviews", "twitter", "instagram",
-    "facebook", "reddit", "tavily", "appstore_apple", "appstore_google",
-    "appstore_huawei", "webscraper", "youtube", "tiktok", "linkedin",
-    "s3_import", "manual_import"
+    "webscraper", "s3_import", "manual_import"
 }
 
 

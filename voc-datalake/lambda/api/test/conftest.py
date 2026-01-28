@@ -139,11 +139,11 @@ def lambda_context():
 def sample_feedback_item():
     """Create a sample feedback item for testing."""
     return {
-        'pk': 'SOURCE#twitter',
+        'pk': 'SOURCE#webscraper',
         'sk': 'FEEDBACK#test-123',
         'feedback_id': 'test-123',
-        'source_platform': 'twitter',
-        'source_id': 'tweet-456',
+        'source_platform': 'webscraper',
+        'source_id': 'review-456',
         'original_text': 'Great product, love the features!',
         'sentiment_label': 'positive',
         'sentiment_score': 0.85,
@@ -161,10 +161,10 @@ def sample_feedback_items(sample_feedback_item):
     items = [sample_feedback_item]
     items.append({
         **sample_feedback_item,
-        'pk': 'SOURCE#trustpilot',
+        'pk': 'SOURCE#manual_import',
         'sk': 'FEEDBACK#test-456',
         'feedback_id': 'test-456',
-        'source_platform': 'trustpilot',
+        'source_platform': 'manual_import',
         'original_text': 'Delivery was slow, disappointed.',
         'sentiment_label': 'negative',
         'sentiment_score': -0.65,

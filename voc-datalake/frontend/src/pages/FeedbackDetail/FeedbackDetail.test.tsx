@@ -40,7 +40,7 @@ function createWrapper(feedbackId: string = 'test-123') {
 
 const mockFeedback = {
   feedback_id: 'test-123',
-  source_platform: 'twitter',
+  source_platform: 'webscraper',
   source_channel: 'mentions',
   original_text: 'This is a great product! Really love the quality.',
   normalized_text: null,
@@ -61,7 +61,7 @@ const mockFeedback = {
   keywords: ['quality', 'product'],
   source_created_at: '2026-01-01T10:00:00Z',
   processed_at: '2026-01-01T10:05:00Z',
-  source_url: 'https://twitter.com/user/status/123',
+  source_url: 'https://example.com/review/123',
   author_name: 'John Doe',
   author_location: 'New York',
 }
@@ -70,7 +70,7 @@ const mockSimilarFeedback = {
   items: [
     {
       feedback_id: 'similar-1',
-      source_platform: 'trustpilot',
+      source_platform: 'webscraper',
       original_text: 'Also love this product!',
       sentiment_label: 'positive',
       sentiment_score: 0.9,

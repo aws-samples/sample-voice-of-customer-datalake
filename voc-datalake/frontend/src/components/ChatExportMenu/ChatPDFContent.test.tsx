@@ -49,7 +49,7 @@ describe('ChatPDFContent', () => {
       {
         feedback_id: 'fb1',
         source_id: 's1',
-        source_platform: 'trustpilot',
+        source_platform: 'webscraper',
         source_channel: 'reviews',
         brand_name: 'TestBrand',
         source_created_at: '2025-01-10T00:00:00Z',
@@ -68,7 +68,7 @@ describe('ChatPDFContent', () => {
       {
         feedback_id: 'fb2',
         source_id: 's2',
-        source_platform: 'twitter',
+        source_platform: 'manual_import',
         source_channel: 'social',
         brand_name: 'TestBrand',
         source_created_at: '2025-01-11T00:00:00Z',
@@ -152,7 +152,7 @@ describe('ChatPDFContent', () => {
       const conversation = createConversation([assistantMessageWithSources])
       render(<ChatPDFContent conversation={conversation} />)
       
-      expect(screen.getByText(/trustpilot/i)).toBeInTheDocument()
+      expect(screen.getByText(/webscraper/i)).toBeInTheDocument()
     })
 
     it('renders source original text', () => {

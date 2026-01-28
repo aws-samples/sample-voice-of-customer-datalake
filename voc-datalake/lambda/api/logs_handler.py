@@ -52,9 +52,7 @@ def get_validation_logs():
         else:
             # Query all sources - need to scan or query known sources
             known_sources = [
-                'trustpilot', 'yelp', 'google_reviews', 'twitter', 'instagram',
-                'facebook', 'reddit', 'webscraper', 'manual_import', 's3_import',
-                'appstore_apple', 'appstore_google', 'youtube', 'tiktok', 'linkedin'
+                'webscraper', 'manual_import', 's3_import'
             ]
             for src in known_sources:
                 src_logs = _query_logs_for_source('validation', src, days, limit // len(known_sources) + 1)
@@ -100,9 +98,7 @@ def get_processing_logs():
             logs = _query_logs_for_source('processing', source, days, limit)
         else:
             known_sources = [
-                'trustpilot', 'yelp', 'google_reviews', 'twitter', 'instagram',
-                'facebook', 'reddit', 'webscraper', 'manual_import', 's3_import',
-                'appstore_apple', 'appstore_google', 'youtube', 'tiktok', 'linkedin'
+                'webscraper', 'manual_import', 's3_import'
             ]
             for src in known_sources:
                 src_logs = _query_logs_for_source('processing', src, days, limit // len(known_sources) + 1)
@@ -193,9 +189,7 @@ def get_logs_summary():
         }
         
         known_sources = [
-            'trustpilot', 'yelp', 'google_reviews', 'twitter', 'instagram',
-            'facebook', 'reddit', 'webscraper', 'manual_import', 's3_import',
-            'appstore_apple', 'appstore_google', 'youtube', 'tiktok', 'linkedin'
+            'webscraper', 'manual_import', 's3_import'
         ]
         
         for source in known_sources:
