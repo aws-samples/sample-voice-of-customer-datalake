@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import '@testing-library/jest-dom/vitest'
 import userEvent from '@testing-library/user-event'
 import ChatFilters from './ChatFilters'
 import type { ChatFilters as ChatFiltersType } from '../../store/chatStore'
@@ -63,9 +64,9 @@ describe('ChatFilters', () => {
       render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
       
       const selects = screen.getAllByRole('combobox')
-      await user.selectOptions(selects[0], 'trustpilot')
+      await user.selectOptions(selects[0], 'webscraper')
       
-      expect(mockOnChange).toHaveBeenCalledWith({ source: 'trustpilot' })
+      expect(mockOnChange).toHaveBeenCalledWith({ source: 'webscraper' })
     })
   })
 
@@ -113,7 +114,7 @@ describe('ChatFilters', () => {
 
   describe('active filters', () => {
     it('shows Clear button when filters are active', () => {
-      const activeFilters: ChatFiltersType = { source: 'trustpilot' }
+      const activeFilters: ChatFiltersType = { source: 'webscraper' }
       render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
       
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument()
@@ -127,7 +128,7 @@ describe('ChatFilters', () => {
 
     it('clears all filters when Clear is clicked', async () => {
       const user = userEvent.setup()
-      const activeFilters: ChatFiltersType = { source: 'trustpilot', category: 'delivery' }
+      const activeFilters: ChatFiltersType = { source: 'webscraper', category: 'delivery' }
       render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
       
       await user.click(screen.getByRole('button', { name: /clear/i }))
@@ -136,14 +137,14 @@ describe('ChatFilters', () => {
     })
 
     it('shows active filters summary', () => {
-      const activeFilters: ChatFiltersType = { source: 'trustpilot' }
+      const activeFilters: ChatFiltersType = { source: 'webscraper' }
       render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
       
       expect(screen.getByText(/focusing on:/i)).toBeInTheDocument()
     })
 
     it('applies highlight styling to active filter dropdowns', () => {
-      const activeFilters: ChatFiltersType = { source: 'trustpilot' }
+      const activeFilters: ChatFiltersType = { source: 'webscraper' }
       render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
       
       const selects = screen.getAllByRole('combobox')
@@ -154,20 +155,20 @@ describe('ChatFilters', () => {
   describe('preserving existing filters', () => {
     it('preserves other filters when updating one', async () => {
       const user = userEvent.setup()
-      const activeFilters: ChatFiltersType = { source: 'trustpilot' }
+      const activeFilters: ChatFiltersType = { source: 'webscraper' }
       render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
       
       const selects = screen.getAllByRole('combobox')
       await user.selectOptions(selects[1], 'delivery')
       
-      expect(mockOnChange).toHaveBeenCalledWith({ source: 'trustpilot', category: 'delivery' })
+      expect(mockOnChange).toHaveBeenCalledWith({ source: 'webscraper', category: 'delivery' })
     })
   })
 
   describe('clearing individual filters', () => {
     it('clears source filter when All Sources is selected', async () => {
       const user = userEvent.setup()
-      const activeFilters: ChatFiltersType = { source: 'trustpilot' }
+      const activeFilters: ChatFiltersType = { source: 'webscraper' }
       render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
       
       const selects = screen.getAllByRole('combobox')
@@ -202,14 +203,14 @@ describe('ChatFilters', () => {
   describe('filter summary', () => {
     it('shows multiple filters in summary', () => {
       const activeFilters: ChatFiltersType = { 
-        source: 'trustpilot', 
+        source: 'webscraper', 
         category: 'delivery',
         sentiment: 'negative'
       }
       render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
       
       expect(screen.getByText(/focusing on:/i)).toBeInTheDocument()
-      expect(screen.getByText(/Trustpilot, Delivery, Negative/)).toBeInTheDocument()
+      expect(screen.getByText(/Web Scraper, Delivery, Negative/)).toBeInTheDocument()
     })
 
     it('shows sentiment without emoji in summary', () => {
@@ -261,7 +262,7 @@ describe('ChatFilters', () => {
     it('loads sources from API when endpoint is configured', async () => {
       const { api } = await import('../../api/client')
       ;(api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue({
-        sources: { twitter: 100, trustpilot: 50 },
+        sources: { webscraper: 100, manual_import: 50 },
       })
       
       render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
@@ -305,10 +306,10 @@ describe('ChatFilters', () => {
 
   describe('filter summary formatting', () => {
     it('formats source name with underscores to spaces', () => {
-      const activeFilters: ChatFiltersType = { source: 'google_reviews' }
+      const activeFilters: ChatFiltersType = { source: 'manual_import' }
       render(<ChatFilters filters={activeFilters} onChange={mockOnChange} />)
       
-      // Should format google_reviews as "Google Reviews"
+      // Should format manual_import as "Manual Import"
       expect(screen.getByText(/focusing on:/i)).toBeInTheDocument()
     })
 
@@ -321,7 +322,7 @@ describe('ChatFilters', () => {
 
     it('shows combined summary for multiple filters', () => {
       const activeFilters: ChatFiltersType = { 
-        source: 'trustpilot', 
+        source: 'webscraper', 
         category: 'delivery',
         sentiment: 'positive'
       }

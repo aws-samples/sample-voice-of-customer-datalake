@@ -8,7 +8,7 @@ A fully serverless AWS platform for ingesting, processing, and analyzing custome
 
 ## ✨ Features
 
-- **Plugin-Based Architecture**: 16 built-in data source plugins, easily create your own
+- **Plugin-Based Architecture**: Extensible data source plugins, easily create your own
 - **AI-Powered Analysis**: Amazon Bedrock (Claude) for sentiment, categorization, and insights
 - **Real-Time Processing**: Event-driven with SQS and DynamoDB Streams
 - **Multi-Language Support**: Auto-detection and translation
@@ -20,19 +20,19 @@ A fully serverless AWS platform for ingesting, processing, and analyzing custome
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           DATA SOURCE PLUGINS                            │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐           │
-│  │Trustpilot│ │  Yelp   │ │ Twitter │ │App Store│ │ Custom  │  + 11    │
-│  │  Plugin  │ │ Plugin  │ │ Plugin  │ │ Plugins │ │ Scraper │  more    │
-│  └────┬─────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘           │
-│       └────────────┴──────────┴───────────┴───────────┘                 │
-│                                │                                         │
-│                    ┌───────────┴───────────┐                            │
-│                    │   Plugin Loader (CDK)  │                            │
-│                    │  manifest.json → Lambda │                            │
-│                    └───────────┬───────────┘                            │
-└────────────────────────────────┼────────────────────────────────────────┘
-                                 │
-                                 ▼
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                        │
+│  │ Web Scraper │ │   Custom    │ │  Feedback   │                        │
+│  │   Plugin    │ │   Plugins   │ │    Forms    │                        │
+│  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘                        │
+│         └───────────────┴───────────────┘                               │
+│                         │                                                │
+│             ┌───────────┴───────────┐                                   │
+│             │   Plugin Loader (CDK)  │                                   │
+│             │  manifest.json → Lambda │                                   │
+│             └───────────┬───────────┘                                   │
+└─────────────────────────┼───────────────────────────────────────────────┘
+                          │
+                          ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │  S3 Raw Data  →  SQS Queue  →  Processor Lambda  →  DynamoDB Feedback  │
 │                               (Bedrock + Comprehend)                    │
@@ -84,13 +84,11 @@ Enable/disable plugins and menu items in `voc-datalake/cdk.context.json`:
 ```json
 {
   "pluginStatus": {
-    "trustpilot": true,
-    "twitter": true,
-    "yelp": false
+    "webscraper": true
   },
   "menuStatus": {
     "dashboard": true,
-    "scrapers": false
+    "scrapers": true
   }
 }
 ```
@@ -101,10 +99,8 @@ After changes: `npm run generate:config && npm run deploy:frontend`
 
 | Category | Plugins |
 |----------|---------|
-| Reviews | Trustpilot, Yelp, Google Reviews |
-| Social | Twitter/X, Instagram, Facebook, Reddit, LinkedIn, TikTok, YouTube |
-| App Stores | Apple App Store, Google Play, Huawei AppGallery |
-| Other | Tavily (web search), Web Scraper, S3 Import, Feedback Forms |
+| Scraping | Web Scraper (CSS selectors, JSON-LD extraction) |
+| Direct Input | Feedback Forms (embeddable forms) |
 
 ## 🛠️ Create Your Own Plugin
 

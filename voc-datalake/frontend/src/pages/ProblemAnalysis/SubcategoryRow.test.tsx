@@ -17,7 +17,7 @@ const mockSubcategoryGroup = {
       items: [
         {
           feedback_id: 'f1',
-          source_platform: 'twitter',
+          source_platform: 'webscraper',
           brand_name: 'TestBrand',
           original_text: 'Delivery was slow',
           category: 'delivery',
@@ -45,7 +45,7 @@ const mockSubcategoryGroup = {
       items: [
         {
           feedback_id: 'f2',
-          source_platform: 'trustpilot',
+          source_platform: 'manual_import',
           brand_name: 'TestBrand',
           original_text: 'Package arrived damaged',
           category: 'delivery',

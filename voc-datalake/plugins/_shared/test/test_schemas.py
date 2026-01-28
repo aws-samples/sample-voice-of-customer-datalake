@@ -12,7 +12,7 @@ class TestIngestMessageValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Great product!',
             'created_at': '2025-01-01T12:00:00Z',
         }
@@ -20,7 +20,7 @@ class TestIngestMessageValidation:
         result = validate_message(raw)
         
         assert result.id == 'msg-123'
-        assert result.source_platform == 'trustpilot'
+        assert result.source_platform == 'webscraper'
         assert result.text == 'Great product!'
 
     def test_accepts_valid_message_with_optional_fields(self):
@@ -29,11 +29,11 @@ class TestIngestMessageValidation:
         
         raw = {
             'id': 'msg-456',
-            'source_platform': 'yelp',
+            'source_platform': 'g2',
             'text': 'Good service',
             'created_at': '2025-01-02T10:00:00Z',
             'rating': 4.5,
-            'url': 'https://yelp.com/review/456',
+            'url': 'https://g2.com/review/456',
             'author': 'John Doe',
             'title': 'Review Title',
         }
@@ -41,7 +41,7 @@ class TestIngestMessageValidation:
         result = validate_message(raw)
         
         assert result.rating == 4.5
-        assert result.url == 'https://yelp.com/review/456'
+        assert result.url == 'https://g2.com/review/456'
         assert result.author == 'John Doe'
         assert result.title == 'Review Title'
 
@@ -50,7 +50,7 @@ class TestIngestMessageValidation:
         from _shared.schemas import validate_message, MessageValidationError
         
         raw = {
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Some text',
             'created_at': '2025-01-01T12:00:00Z',
         }
@@ -66,7 +66,7 @@ class TestIngestMessageValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'created_at': '2025-01-01T12:00:00Z',
         }
         
@@ -81,7 +81,7 @@ class TestIngestMessageValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': '',
             'created_at': '2025-01-01T12:00:00Z',
         }
@@ -112,7 +112,7 @@ class TestSourcePlatformValidation:
         """Accepts valid source_platform format."""
         from _shared.schemas import validate_message
         
-        for platform in ['trustpilot', 'google_reviews', 'appstore_apple', 's3_import']:
+        for platform in ['webscraper', 'manual_import', 's3_import', 'g2']:
             raw = {
                 'id': 'msg-123',
                 'source_platform': platform,
@@ -128,7 +128,7 @@ class TestSourcePlatformValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'TrustPilot',
+            'source_platform': 'WebScraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
         }
@@ -156,7 +156,7 @@ class TestSourcePlatformValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trust-pilot',  # hyphen not allowed
+            'source_platform': 'web-scraper',  # hyphen not allowed
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
         }
@@ -175,7 +175,7 @@ class TestRatingValidation:
         for rating in [1, 2, 3, 4, 5, 1.5, 4.5]:
             raw = {
                 'id': 'msg-123',
-                'source_platform': 'trustpilot',
+                'source_platform': 'webscraper',
                 'text': 'Test',
                 'created_at': '2025-01-01T12:00:00Z',
                 'rating': rating,
@@ -189,7 +189,7 @@ class TestRatingValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
             'rating': 0,
@@ -204,7 +204,7 @@ class TestRatingValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
             'rating': 6,
@@ -219,7 +219,7 @@ class TestRatingValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
             'rating': None,
@@ -238,14 +238,14 @@ class TestUrlValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
-            'url': 'https://trustpilot.com/review/123',
+            'url': 'https://example.com/review/123',
         }
         
         result = validate_message(raw)
-        assert result.url == 'https://trustpilot.com/review/123'
+        assert result.url == 'https://example.com/review/123'
 
     def test_accepts_http_url(self):
         """Accepts valid HTTP URL."""
@@ -253,7 +253,7 @@ class TestUrlValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
             'url': 'http://example.com/review',
@@ -268,7 +268,7 @@ class TestUrlValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
             'url': 'ftp://example.com/file',
@@ -283,7 +283,7 @@ class TestUrlValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
             'url': '',
@@ -302,7 +302,7 @@ class TestCreatedAtValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
         }
@@ -316,7 +316,7 @@ class TestCreatedAtValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00+05:00',
         }
@@ -332,7 +332,7 @@ class TestCreatedAtValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': future.isoformat(),
         }
@@ -349,7 +349,7 @@ class TestCreatedAtValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': future.isoformat(),
         }
@@ -367,7 +367,7 @@ class TestTextSanitization:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Hello\x00World\x1fTest',
             'created_at': '2025-01-01T12:00:00Z',
         }
@@ -383,7 +383,7 @@ class TestTextSanitization:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Line 1\nLine 2\tTabbed',
             'created_at': '2025-01-01T12:00:00Z',
         }
@@ -398,7 +398,7 @@ class TestTextSanitization:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Para 1\n\n\n\n\nPara 2',
             'created_at': '2025-01-01T12:00:00Z',
         }
@@ -413,7 +413,7 @@ class TestTextSanitization:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': '   Trimmed text   ',
             'created_at': '2025-01-01T12:00:00Z',
         }
@@ -431,7 +431,7 @@ class TestMetadataValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
             'metadata': {
@@ -451,7 +451,7 @@ class TestMetadataValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
             'metadata': {
@@ -468,7 +468,7 @@ class TestMetadataValidation:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Test',
             'created_at': '2025-01-01T12:00:00Z',
             'metadata': {
@@ -489,7 +489,7 @@ class TestSafeValidateMessage:
         
         raw = {
             'id': 'msg-123',
-            'source_platform': 'trustpilot',
+            'source_platform': 'webscraper',
             'text': 'Valid message',
             'created_at': '2025-01-01T12:00:00Z',
         }

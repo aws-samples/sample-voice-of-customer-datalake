@@ -8,7 +8,7 @@ import type { FeedbackItem } from '../../api/client'
 const mockFeedback: FeedbackItem[] = [
   {
     feedback_id: '1',
-    source_platform: 'twitter',
+    source_platform: 'webscraper',
     original_text: 'Great delivery service, very fast!',
     sentiment_label: 'positive',
     sentiment_score: 0.9,
@@ -31,7 +31,7 @@ const mockFeedback: FeedbackItem[] = [
   },
   {
     feedback_id: '2',
-    source_platform: 'trustpilot',
+    source_platform: 'manual_import',
     original_text: 'This is a very long review that should be truncated because it exceeds the character limit for display in the compact view. The full text should only be visible when expanded.',
     sentiment_label: 'negative',
     sentiment_score: -0.7,
@@ -86,8 +86,8 @@ describe('FeedbackList', () => {
   it('shows source platform badges', () => {
     renderWithRouter(<FeedbackList feedback={mockFeedback} selectedCategories={['delivery']} />)
 
-    expect(screen.getByText('twitter')).toBeInTheDocument()
-    expect(screen.getByText('trustpilot')).toBeInTheDocument()
+    expect(screen.getByText('webscraper')).toBeInTheDocument()
+    expect(screen.getByText('manual_import')).toBeInTheDocument()
   })
 
   it('shows ratings when available', () => {

@@ -45,7 +45,7 @@ class TestGetValidationLogs:
         mock_table.query.return_value = {
             'Items': [
                 {
-                    'source_platform': 'twitter',
+                    'source_platform': 'webscraper',
                     'message_id': 'msg-123',
                     'timestamp': '2025-01-01T12:00:00Z',
                     'log_type': 'validation',
@@ -59,7 +59,7 @@ class TestGetValidationLogs:
         event = api_gateway_event(
             method='GET',
             path='/logs/validation',
-            query_params={'source': 'twitter', 'days': '7'}
+            query_params={'source': 'webscraper', 'days': '7'}
         )
         
         # Act
@@ -69,7 +69,7 @@ class TestGetValidationLogs:
         # Assert
         assert response['statusCode'] == 200
         assert body['count'] == 1
-        assert body['logs'][0]['source_platform'] == 'twitter'
+        assert body['logs'][0]['source_platform'] == 'webscraper'
         assert body['logs'][0]['errors'] == ['Missing required field: text']
 
     @patch('logs_handler.aggregates_table')
@@ -145,7 +145,7 @@ class TestGetProcessingLogs:
         mock_table.query.return_value = {
             'Items': [
                 {
-                    'source_platform': 'trustpilot',
+                    'source_platform': 'manual_import',
                     'message_id': 'msg-456',
                     'timestamp': '2025-01-01T12:00:00Z',
                     'log_type': 'processing',
@@ -159,7 +159,7 @@ class TestGetProcessingLogs:
         event = api_gateway_event(
             method='GET',
             path='/logs/processing',
-            query_params={'source': 'trustpilot'}  # Filter by source for predictable count
+            query_params={'source': 'manual_import'}  # Filter by source for predictable count
         )
         
         # Act
@@ -206,9 +206,9 @@ class TestGetLogsSummary:
         def mock_query(**kwargs):
             pk = kwargs.get('KeyConditionExpression')
             # Simulate different results based on query
-            if 'validation' in str(pk) and 'twitter' in str(pk):
+            if 'validation' in str(pk) and 'webscraper' in str(pk):
                 return {'Items': [{'id': '1'}, {'id': '2'}]}
-            elif 'processing' in str(pk) and 'twitter' in str(pk):
+            elif 'processing' in str(pk) and 'webscraper' in str(pk):
                 return {'Items': [{'id': '3'}]}
             return {'Items': []}
         
@@ -307,8 +307,8 @@ class TestClearValidationLogs:
         # Arrange
         mock_table.query.return_value = {
             'Items': [
-                {'pk': 'LOGS#validation#twitter', 'sk': '2025-01-01T12:00:00Z'},
-                {'pk': 'LOGS#validation#twitter', 'sk': '2025-01-01T13:00:00Z'}
+                {'pk': 'LOGS#validation#webscraper', 'sk': '2025-01-01T12:00:00Z'},
+                {'pk': 'LOGS#validation#webscraper', 'sk': '2025-01-01T13:00:00Z'}
             ]
         }
         mock_batch_writer = MagicMock()
@@ -319,8 +319,8 @@ class TestClearValidationLogs:
         from logs_handler import lambda_handler
         event = api_gateway_event(
             method='DELETE',
-            path='/logs/validation/twitter',
-            path_params={'source': 'twitter'}
+            path='/logs/validation/webscraper',
+            path_params={'source': 'webscraper'}
         )
         
         # Act
@@ -371,8 +371,8 @@ class TestClearValidationLogs:
         from logs_handler import lambda_handler
         event = api_gateway_event(
             method='DELETE',
-            path='/logs/validation/twitter',
-            path_params={'source': 'twitter'}
+            path='/logs/validation/webscraper',
+            path_params={'source': 'webscraper'}
         )
         
         # Act

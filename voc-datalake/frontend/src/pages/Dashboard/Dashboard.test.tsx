@@ -103,7 +103,7 @@ describe('Dashboard', () => {
       categories: { delivery: 50, support: 30, quality: 20 },
     })
     mockGetSources.mockResolvedValue({
-      sources: { twitter: 100, email: 50 },
+      sources: { webscraper: 100, manual_import: 50 },
     })
     mockGetUrgentFeedback.mockResolvedValue({
       count: 3,

@@ -475,7 +475,7 @@ def get_search_feedback_tool() -> dict:
             },
             'source': {
                 'type': 'string',
-                'description': 'Filter by source platform (e.g., "trustpilot", "google_reviews", "twitter").'
+                'description': 'Filter by source platform (e.g., "webscraper", "manual_import", "s3_import").'
             },
             'category': {
                 'type': 'string',

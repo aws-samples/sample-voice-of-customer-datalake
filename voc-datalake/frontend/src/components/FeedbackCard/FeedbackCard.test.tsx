@@ -23,9 +23,9 @@ function renderWithRouter(ui: React.ReactElement, initialEntries: string[] = ['/
 const mockFeedback: FeedbackItem = {
   feedback_id: 'fb-123',
   source_id: 'src-123',
-  source_platform: 'trustpilot',
+  source_platform: 'webscraper',
   source_channel: 'reviews',
-  source_url: 'https://trustpilot.com/review/123',
+  source_url: 'https://example.com/review/123',
   brand_name: 'TestBrand',
   source_created_at: '2025-01-15T10:30:00Z',
   processed_at: '2025-01-15T10:35:00Z',
@@ -58,8 +58,8 @@ describe('FeedbackCard', () => {
     it('renders source platform with icon', () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       // Component capitalizes the source name via CSS (capitalize class)
-      expect(screen.getByText('trustpilot')).toBeInTheDocument()
-      expect(screen.getByText('⭐')).toBeInTheDocument()
+      expect(screen.getByText('webscraper')).toBeInTheDocument()
+      expect(screen.getByText('🌐')).toBeInTheDocument()
     })
 
     it('renders sentiment badge', () => {
@@ -144,7 +144,7 @@ describe('FeedbackCard', () => {
     it('renders external link when source_url is provided', () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       const externalLink = document.querySelector('a[target="_blank"]')
-      expect(externalLink).toHaveAttribute('href', 'https://trustpilot.com/review/123')
+      expect(externalLink).toHaveAttribute('href', 'https://example.com/review/123')
     })
 
     it('renders copy button', () => {
@@ -181,12 +181,11 @@ describe('FeedbackCard', () => {
       expect(screen.getByText('Web Scraper')).toBeInTheDocument()
     })
 
-    it('formats twitter source correctly', () => {
-      const twitterFeedback = { ...mockFeedback, source_platform: 'twitter' }
-      renderWithRouter(<FeedbackCard feedback={twitterFeedback} />)
-      // Component capitalizes the source name via CSS (capitalize class)
-      expect(screen.getByText('twitter')).toBeInTheDocument()
-      expect(screen.getByText('𝕏')).toBeInTheDocument()
+    it('formats webscraper source correctly', () => {
+      const webscraperFeedback = { ...mockFeedback, source_platform: 'web_scrape' }
+      renderWithRouter(<FeedbackCard feedback={webscraperFeedback} />)
+      expect(screen.getByText('Web Scraper')).toBeInTheDocument()
+      expect(screen.getByText('🌐')).toBeInTheDocument()
     })
   })
 

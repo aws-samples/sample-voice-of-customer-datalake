@@ -84,10 +84,7 @@ class BaseIngestor(ABC):
         """Get list of known plugin prefixes for secret filtering."""
         # This could be loaded from environment or manifest
         return [
-            "trustpilot", "yelp", "google_reviews", "twitter", "instagram",
-            "facebook", "reddit", "tavily", "appstore_apple", "appstore_google",
-            "appstore_huawei", "webscraper", "youtube", "tiktok", "linkedin",
-            "s3_import", "manual_import"
+            "webscraper", "s3_import", "manual_import"
         ]
 
     def get_watermark(self, key: str, default: str = None) -> str:

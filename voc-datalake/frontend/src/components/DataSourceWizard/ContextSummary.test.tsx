@@ -70,10 +70,10 @@ describe('ContextSummary', () => {
     })
 
     it('shows selected sources', () => {
-      const config = createConfig({ useFeedback: true, sources: ['twitter', 'trustpilot'] })
+      const config = createConfig({ useFeedback: true, sources: ['webscraper', 'manual_import'] })
       render(<ContextSummary config={config} personas={[]} documents={[]} />)
 
-      expect(screen.getByText('twitter, trustpilot')).toBeInTheDocument()
+      expect(screen.getByText('webscraper, manual_import')).toBeInTheDocument()
     })
 
     it('shows selected categories', () => {

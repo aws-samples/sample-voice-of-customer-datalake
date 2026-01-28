@@ -60,7 +60,7 @@ class TestListFeedbackEndpoint:
         event = api_gateway_event(
             method='GET', 
             path='/feedback', 
-            query_params={'source': 'twitter', 'days': '7'}
+            query_params={'source': 'webscraper', 'days': '7'}
         )
         
         response = lambda_handler(event, lambda_context)
@@ -68,7 +68,7 @@ class TestListFeedbackEndpoint:
         
         assert response['statusCode'] == 200
         assert body['count'] == 1
-        assert all(item['source_platform'] == 'twitter' for item in body['items'])
+        assert all(item['source_platform'] == 'webscraper' for item in body['items'])
 
     @patch('metrics_handler.feedback_table')
     @patch('metrics_handler.aggregates_table')
@@ -87,7 +87,7 @@ class TestListFeedbackEndpoint:
         event = api_gateway_event(
             method='GET', 
             path='/feedback', 
-            query_params={'limit': '10', 'source': 'twitter'}
+            query_params={'limit': '10', 'source': 'webscraper'}
         )
         
         response = lambda_handler(event, lambda_context)
@@ -206,8 +206,8 @@ class TestGetUrgentFeedback:
         """Returns high-urgency feedback items."""
         mock_fb_table.query.return_value = {
             'Items': [
-                {'pk': 'SOURCE#twitter', 'sk': 'FEEDBACK#1', 'urgency': 'high'},
-                {'pk': 'SOURCE#trustpilot', 'sk': 'FEEDBACK#2', 'urgency': 'high'}
+                {'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#1', 'urgency': 'high'},
+                {'pk': 'SOURCE#manual_import', 'sk': 'FEEDBACK#2', 'urgency': 'high'}
             ]
         }
         mock_fb_table.get_item.return_value = {
@@ -258,14 +258,14 @@ class TestGetUrgentFeedback:
         """Filters urgent feedback by source platform."""
         mock_fb_table.query.return_value = {
             'Items': [
-                {'pk': 'SOURCE#twitter', 'sk': 'FEEDBACK#1'},
-                {'pk': 'SOURCE#trustpilot', 'sk': 'FEEDBACK#2'}
+                {'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#1'},
+                {'pk': 'SOURCE#manual_import', 'sk': 'FEEDBACK#2'}
             ]
         }
         def get_item_side_effect(Key):
-            if Key['pk'] == 'SOURCE#twitter':
-                return {'Item': {'feedback_id': '1', 'source_platform': 'twitter', 'date': '2026-01-07'}}
-            return {'Item': {'feedback_id': '2', 'source_platform': 'trustpilot', 'date': '2026-01-07'}}
+            if Key['pk'] == 'SOURCE#webscraper':
+                return {'Item': {'feedback_id': '1', 'source_platform': 'webscraper', 'date': '2026-01-07'}}
+            return {'Item': {'feedback_id': '2', 'source_platform': 'manual_import', 'date': '2026-01-07'}}
         
         mock_fb_table.get_item.side_effect = get_item_side_effect
         
@@ -277,7 +277,7 @@ class TestGetUrgentFeedback:
         event = api_gateway_event(
             method='GET',
             path='/feedback/urgent',
-            query_params={'source': 'twitter'}
+            query_params={'source': 'webscraper'}
         )
         
         response = lambda_handler(event, lambda_context)
@@ -285,7 +285,7 @@ class TestGetUrgentFeedback:
         
         assert response['statusCode'] == 200
         for item in body['items']:
-            assert item['source_platform'] == 'twitter'
+            assert item['source_platform'] == 'webscraper'
 
 
 class TestGetFeedbackById:
@@ -448,8 +448,8 @@ class TestGetSourceMetrics:
         """Returns source platform distribution."""
         mock_agg_table.query.return_value = {
             'Items': [
-                {'pk': 'METRIC#daily_source#twitter', 'sk': '2026-01-07', 'count': 50},
-                {'pk': 'METRIC#daily_source#trustpilot', 'sk': '2026-01-07', 'count': 30},
+                {'pk': 'METRIC#daily_source#webscraper', 'sk': '2026-01-07', 'count': 50},
+                {'pk': 'METRIC#daily_source#manual_import', 'sk': '2026-01-07', 'count': 30},
             ]
         }
         

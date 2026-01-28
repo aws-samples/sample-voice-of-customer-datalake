@@ -30,17 +30,13 @@ function formatDateSafe(dateStr: string | undefined): string {
 }
 
 const SOURCE_ICONS: Record<string, string> = {
-  trustpilot: '⭐', google_reviews: '🔍', twitter: '𝕏', instagram: '📷',
-  facebook: '📘', reddit: '🔴', tavily: '🌐', appstore_apple: '🍎',
-  appstore_google: '▶️', appstore_huawei: '📱',
+  webscraper: '🌐', web_scrape: '🌐', web_scrape_jsonld: '🌐',
+  manual_import: '📝', s3_import: '📦',
 }
 
 const SOURCE_COLORS: Record<string, string> = {
-  trustpilot: 'border-l-green-500', google_reviews: 'border-l-blue-500',
-  twitter: 'border-l-gray-800', instagram: 'border-l-pink-500',
-  facebook: 'border-l-blue-600', reddit: 'border-l-orange-500',
-  appstore_apple: 'border-l-gray-500', appstore_google: 'border-l-green-600',
-  appstore_huawei: 'border-l-red-500',
+  webscraper: 'border-l-blue-500', web_scrape: 'border-l-blue-500',
+  manual_import: 'border-l-purple-500', s3_import: 'border-l-green-500',
 }
 
 function FeedItem({ item }: Readonly<{ item: FeedbackItem }>) {

@@ -79,24 +79,7 @@ voc-datalake/
 │   │   │   └── handler.py
 │   │   └── README.md
 │   │
-│   ├── trustpilot/                   # Example: hybrid (polling + webhook)
-│   │   ├── manifest.json
-│   │   ├── ingestor/
-│   │   │   └── handler.py
-│   │   └── webhook/
-│   │       └── handler.py
-│   │
-│   ├── twitter/                      # Example: polling only
-│   │   ├── manifest.json
-│   │   └── ingestor/
-│   │       └── handler.py
-│   │
-│   ├── s3_import/                    # Example: S3 trigger (no schedule)
-│   │   ├── manifest.json
-│   │   └── ingestor/
-│   │       └── handler.py
-│   │
-│   └── yelp/
+│   └── webscraper/                   # Web scraper plugin
 │       ├── manifest.json
 │       └── ingestor/
 │           └── handler.py
@@ -131,80 +114,45 @@ The `manifest.json` is the single source of truth for each plugin. It defines:
 
 ```json
 {
-  "id": "trustpilot",
-  "name": "Trustpilot",
-  "icon": "⭐",
-  "description": "Service reviews via webhook and API polling",
-  "category": "reviews",
+  "id": "webscraper",
+  "name": "Web Scraper",
+  "icon": "🌐",
+  "description": "Extract reviews from web pages using CSS selectors or JSON-LD",
+  "category": "import",
   
   "infrastructure": {
     "ingestor": {
       "enabled": true,
-      "schedule": "rate(5 minutes)",
-      "timeout": 120,
-      "memory": 256
-    },
-    "webhook": {
-      "enabled": true,
-      "path": "/webhooks/trustpilot",
-      "methods": ["POST"]
-    },
-    "s3Trigger": {
-      "enabled": false,
-      "suffixes": []
+      "schedule": "rate(30 minutes)",
+      "timeout": 300,
+      "memory": 512
     }
   },
   
   "config": [
     {
-      "key": "api_key",
-      "label": "API Key",
-      "type": "password",
-      "required": true,
-      "secret": true
-    },
-    {
-      "key": "api_secret",
-      "label": "API Secret",
-      "type": "password",
-      "required": true,
-      "secret": true
-    },
-    {
-      "key": "business_unit_id",
-      "label": "Business Unit ID",
-      "type": "text",
-      "placeholder": "e.g., 5a7b8c9d0e1f2a3b4c5d6e7f",
+      "key": "configs",
+      "label": "Scraper Configurations",
+      "type": "textarea",
       "required": false,
-      "secret": false
-    }
-  ],
-  
-  "webhooks": [
-    {
-      "name": "Service Reviews",
-      "events": ["service-review-created", "service-review-updated", "service-review-deleted"],
-      "docUrl": "https://support.trustpilot.com/hc/en-us/articles/360001108568"
+      "secret": true
     }
   ],
   
   "setup": {
-    "title": "Trustpilot Setup",
+    "title": "Web Scraper Setup",
     "color": "blue",
     "steps": [
-      "Log in to your Trustpilot Business Portal",
-      "Go to Integrations → API to get your API Key and Secret",
-      "Copy your Business Unit ID from the URL",
-      "Go to Integrations → Webhooks and add the webhook URL",
-      "Select events: service-review-created, updated, deleted"
+      "Navigate to the Scrapers page in the dashboard",
+      "Create a new scraper configuration",
+      "Enter the URL to scrape and configure CSS selectors",
+      "Test the scraper to verify extraction works",
+      "Enable the scraper to run on schedule"
     ]
   },
   
   "secrets": {
-    "trustpilot_api_key": "",
-    "trustpilot_api_secret": "",
-    "trustpilot_business_unit_id": "",
-    "trustpilot_webhook_secret": ""
+    "webscraper_configs": "[]"
   }
 }
 ```
@@ -217,7 +165,7 @@ The `manifest.json` is the single source of truth for each plugin. It defines:
 | `name` | string | Yes | Display name in UI |
 | `icon` | string | Yes | Emoji or path to SVG icon |
 | `description` | string | No | Short description shown in UI |
-| `category` | enum | No | One of: `reviews`, `social`, `appstore`, `import`, `search` |
+| `category` | enum | No | One of: `reviews`, `social`, `import`, `search`, `scraper` |
 | `infrastructure` | object | Yes | AWS resources to deploy |
 | `config` | array | Yes | Configuration fields for UI |
 | `webhooks` | array | No | Webhook endpoints to display in UI |
@@ -245,8 +193,8 @@ The `manifest.json` is the single source of truth for each plugin. It defines:
 ```json
 "webhook": {
   "enabled": true,
-  "path": "/webhooks/trustpilot",  // API Gateway path
-  "methods": ["POST"]               // HTTP methods to allow
+  "path": "/webhooks/{plugin}",  // API Gateway path (plugin ID substituted)
+  "methods": ["POST"]            // HTTP methods to allow
 }
 ```
 
@@ -292,200 +240,98 @@ The `manifest.json` is the single source of truth for each plugin. It defines:
 
 ## Example Manifests
 
-### Polling Only (Twitter)
+### Web Scraper Plugin
 
-Simple connector that polls an API on a schedule.
+The webscraper plugin extracts reviews from web pages using CSS selectors or JSON-LD structured data.
 
 ```json
 {
-  "id": "twitter",
-  "name": "Twitter / X",
-  "icon": "𝕏",
-  "category": "social",
+  "id": "webscraper",
+  "name": "Web Scraper",
+  "icon": "🌐",
+  "description": "Extract reviews from web pages using CSS selectors or JSON-LD",
+  "category": "import",
   
   "infrastructure": {
     "ingestor": {
       "enabled": true,
-      "schedule": "rate(1 minute)",
-      "timeout": 60,
+      "schedule": "rate(30 minutes)",
+      "timeout": 300,
+      "memory": 512
+    }
+  },
+  
+  "config": [
+    {
+      "key": "configs",
+      "label": "Scraper Configurations",
+      "type": "textarea",
+      "required": false,
+      "secret": true
+    }
+  ],
+  
+  "setup": {
+    "title": "Web Scraper Setup",
+    "color": "blue",
+    "steps": [
+      "Navigate to the Scrapers page in the dashboard",
+      "Create a new scraper configuration",
+      "Enter the URL to scrape and configure CSS selectors",
+      "Test the scraper to verify extraction works",
+      "Enable the scraper to run on schedule"
+    ]
+  },
+  
+  "secrets": {
+    "webscraper_configs": "[]"
+  }
+}
+```
+
+### Custom Plugin Template
+
+Use the `_template` folder as a starting point for creating new plugins:
+
+```json
+{
+  "id": "my_custom_source",
+  "name": "My Custom Source",
+  "icon": "🔌",
+  "description": "Custom data source connector",
+  "category": "import",
+  
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(15 minutes)",
+      "timeout": 120,
       "memory": 256
     }
   },
   
   "config": [
     {
-      "key": "bearer_token",
-      "label": "Bearer Token",
+      "key": "api_key",
+      "label": "API Key",
       "type": "password",
       "required": true,
       "secret": true
     }
   ],
   
-  "secrets": {
-    "twitter_bearer_token": ""
-  }
-}
-```
-
-### Hybrid: Polling + Webhook (Trustpilot)
-
-Connector that both polls for historical data and receives real-time webhooks.
-
-```json
-{
-  "id": "trustpilot",
-  "name": "Trustpilot",
-  "icon": "⭐",
-  "description": "Service reviews via webhook and API polling",
-  "category": "reviews",
-  
-  "infrastructure": {
-    "ingestor": {
-      "enabled": true,
-      "schedule": "rate(5 minutes)",
-      "timeout": 120,
-      "memory": 256
-    },
-    "webhook": {
-      "enabled": true,
-      "path": "/webhooks/trustpilot",
-      "methods": ["POST"]
-    }
-  },
-  
-  "config": [
-    { "key": "api_key", "label": "API Key", "type": "password", "required": true, "secret": true },
-    { "key": "api_secret", "label": "API Secret", "type": "password", "required": true, "secret": true },
-    { "key": "business_unit_id", "label": "Business Unit ID", "type": "text", "placeholder": "e.g., 5a7b8c9d0e1f2a3b4c5d6e7f" }
-  ],
-  
-  "webhooks": [
-    {
-      "name": "Service Reviews",
-      "events": ["service-review-created", "service-review-updated", "service-review-deleted"],
-      "docUrl": "https://support.trustpilot.com/hc/en-us/articles/360001108568"
-    }
-  ],
-  
   "setup": {
-    "title": "Trustpilot Setup",
+    "title": "Custom Source Setup",
     "color": "blue",
     "steps": [
-      "Log in to your Trustpilot Business Portal",
-      "Go to Integrations → API to get your API Key and Secret",
-      "Copy your Business Unit ID from the URL",
-      "Go to Integrations → Webhooks and add the webhook URL",
-      "Select events: service-review-created, updated, deleted"
+      "Obtain API credentials from your data source",
+      "Enter the API key above",
+      "Enable the integration"
     ]
   },
   
   "secrets": {
-    "trustpilot_api_key": "",
-    "trustpilot_api_secret": "",
-    "trustpilot_business_unit_id": "",
-    "trustpilot_webhook_secret": ""
-  }
-}
-```
-
-### S3 Trigger (Bulk Import)
-
-Connector triggered by file uploads, no polling schedule.
-
-```json
-{
-  "id": "s3_import",
-  "name": "S3 Bulk Import",
-  "icon": "📦",
-  "description": "Import feedback from S3 bucket (CSV, JSON, JSONL)",
-  "category": "import",
-  
-  "infrastructure": {
-    "ingestor": {
-      "enabled": true,
-      "timeout": 300,
-      "memory": 512
-    },
-    "s3Trigger": {
-      "enabled": true,
-      "suffixes": [".csv", ".json", ".jsonl"]
-    }
-  },
-  
-  "config": [
-    { "key": "bucket_name", "label": "S3 Bucket Name", "type": "text", "placeholder": "my-feedback-bucket" },
-    { "key": "import_prefix", "label": "Import Prefix", "type": "text", "placeholder": "imports/" },
-    { "key": "processed_prefix", "label": "Processed Prefix", "type": "text", "placeholder": "processed/" }
-  ],
-  
-  "setup": {
-    "title": "S3 Import Setup",
-    "color": "blue",
-    "steps": [
-      "Create an S3 bucket for feedback imports",
-      "Grant the VoC Lambda role read/write access",
-      "Upload CSV/JSON/JSONL files to the import prefix",
-      "Files are moved to processed prefix after import",
-      "CSV columns: id, text, rating, created_at, source, url"
-    ]
-  },
-  
-  "secrets": {
-    "s3_import_bucket": "",
-    "s3_import_prefix": "imports/",
-    "s3_import_processed_prefix": "processed/"
-  }
-}
-```
-
-### Multiple Config Fields (Yelp)
-
-Connector with credentials and a list of business IDs.
-
-```json
-{
-  "id": "yelp",
-  "name": "Yelp Fusion API",
-  "icon": "🍽️",
-  "description": "Business reviews via official Yelp API",
-  "category": "reviews",
-  
-  "infrastructure": {
-    "ingestor": {
-      "enabled": true,
-      "schedule": "rate(30 minutes)",
-      "timeout": 120,
-      "memory": 256
-    }
-  },
-  
-  "config": [
-    { "key": "api_key", "label": "API Key", "type": "password", "required": true, "secret": true },
-    { 
-      "key": "business_ids", 
-      "label": "Business IDs", 
-      "type": "textarea", 
-      "placeholder": "lufthansa-frankfurt-am-main-3, lufthansa-los-angeles-2",
-      "required": true,
-      "secret": false
-    }
-  ],
-  
-  "setup": {
-    "title": "Yelp Setup",
-    "color": "orange",
-    "steps": [
-      "Go to Yelp Fusion Developer Portal",
-      "Create a new app or use an existing one",
-      "Copy your API Key from the app settings",
-      "Find business IDs from Yelp URLs (slug after /biz/)"
-    ]
-  },
-  
-  "secrets": {
-    "yelp_api_key": "",
-    "yelp_business_ids": ""
+    "my_custom_source_api_key": ""
   }
 }
 ```
@@ -562,7 +408,7 @@ const ManifestSchema = z.object({
   name: z.string(),
   icon: z.string(),
   description: z.string().optional(),
-  category: z.enum(['reviews', 'social', 'appstore', 'import', 'search']).optional(),
+  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper']).optional(),
   infrastructure: InfrastructureSchema,
   config: z.array(ConfigFieldSchema).default([]),
   webhooks: z.array(WebhookInfoSchema).optional(),
@@ -965,7 +811,7 @@ export const PluginManifestSchema = z.object({
   name: z.string(),
   icon: z.string(),
   description: z.string().optional(),
-  category: z.enum(['reviews', 'social', 'appstore', 'import', 'search']).optional(),
+  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper']).optional(),
   config: z.array(ConfigFieldSchema),
   webhooks: z.array(WebhookInfoSchema).optional(),
   setup: SetupSchema.optional(),
@@ -1192,11 +1038,7 @@ function ConfigFieldInput({
   "brandHandles": ["@mybrand", "mybrand"],
   "primaryLanguage": "en",
   "enabledSources": [
-    "trustpilot",
-    "yelp",
-    "twitter",
-    "google_reviews",
-    "s3_import"
+    "webscraper"
   ]
 }
 ```
@@ -1376,7 +1218,7 @@ def lambda_handler(event, context):
 // cdk.context.json
 {
   "enabledSources": [
-    "trustpilot",
+    "webscraper",
     "my_source"  // Add your new source
   ]
 }
@@ -1399,7 +1241,7 @@ All plugins must output messages in this format to the SQS processing queue.
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | string | Unique identifier from the source (used for deduplication) |
-| `source_platform` | string | Plugin ID (e.g., `trustpilot`, `twitter`) |
+| `source_platform` | string | Plugin ID (e.g., `webscraper`) |
 | `text` | string | The feedback content |
 | `created_at` | string | ISO 8601 timestamp |
 
@@ -1421,12 +1263,12 @@ All plugins must output messages in this format to the SQS processing queue.
 ```json
 {
   "id": "review_abc123",
-  "source_platform": "trustpilot",
+  "source_platform": "webscraper",
   "channel": "review",
   "text": "Great product! Fast shipping and excellent quality.",
   "rating": 5,
   "created_at": "2026-01-08T10:30:00Z",
-  "url": "https://trustpilot.com/reviews/abc123",
+  "url": "https://example.com/reviews/abc123",
   "author": "John D.",
   "title": "Excellent experience",
   "language": "en",
@@ -1564,7 +1406,7 @@ npm run generate:manifests
 
 ```bash
 # Test individual plugin
-cd plugins/trustpilot/ingestor
+cd plugins/webscraper/ingestor
 python -m pytest test_handler.py
 ```
 
@@ -1572,7 +1414,7 @@ python -m pytest test_handler.py
 
 ```bash
 # Deploy to dev environment
-cdk deploy --context enabledSources='["trustpilot"]'
+cdk deploy --context enabledSources='["webscraper"]'
 
 # Test via Settings UI
 # 1. Enable the source
@@ -1662,10 +1504,7 @@ MAX_METADATA_SIZE = 10_000  # 10KB max for metadata JSON
 
 # Known plugin IDs (loaded from manifests at deploy time)
 KNOWN_SOURCES = {
-    'trustpilot', 'yelp', 'google_reviews', 'twitter', 'instagram',
-    'facebook', 'reddit', 'tavily', 'appstore_apple', 'appstore_google',
-    'appstore_huawei', 'webscraper', 'youtube', 'tiktok', 'linkedin',
-    's3_import', 'manual_import'
+    'webscraper', 'manual_import', 's3_import'
 }
 
 class ValidationError(Exception):
@@ -2097,9 +1936,8 @@ class BaseIngestor:
 ```
 
 This means:
-- `trustpilot` plugin sees: `api_key`, `api_secret`, `business_unit_id`
-- `twitter` plugin sees: `bearer_token`
-- Neither can see the other's secrets
+- `webscraper` plugin sees: `configs`
+- Each plugin can only access its own secrets
 
 ### Cost Controls
 
@@ -2263,7 +2101,7 @@ Every resource created for a plugin gets tagged for cost allocation and tracking
 |-----|-------|---------|
 | `Project` | `VoC-DataLake` | Top-level project identification |
 | `Feature` | `Plugin` | Distinguishes plugin costs from core platform |
-| `Plugin` | `{plugin-id}` | Identifies specific plugin (e.g., `trustpilot`) |
+| `Plugin` | `{plugin-id}` | Identifies specific plugin (e.g., `webscraper`) |
 | `PluginCategory` | `{category}` | Groups plugins (e.g., `reviews`, `social`) |
 | `Environment` | `dev`/`staging`/`prod` | Environment separation |
 | `ManagedBy` | `CDK` | Infrastructure management |
@@ -2924,8 +2762,8 @@ class WebhookAuthError(Exception):
     pass
 
 
-def verify_trustpilot_signature(payload: bytes, signature: str, secret: str) -> bool:
-    """Verify Trustpilot webhook signature (HMAC-SHA256)."""
+def verify_generic_signature(payload: bytes, signature: str, secret: str) -> bool:
+    """Verify generic webhook signature (HMAC-SHA256)."""
     expected = hmac.new(
         secret.encode('utf-8'),
         payload,
@@ -2969,7 +2807,7 @@ def verify_stripe_signature(payload: bytes, signature: str, secret: str) -> bool
 
 # Registry of verification methods per provider
 SIGNATURE_VERIFIERS: dict[str, Callable[[bytes, str, str], bool]] = {
-    'trustpilot': verify_trustpilot_signature,
+    'generic': verify_generic_signature,
     'github': verify_github_signature,
     'stripe': verify_stripe_signature,
     # Add more as needed
@@ -2981,7 +2819,7 @@ def require_webhook_signature(provider: str, header_name: str = 'X-Signature'):
     Decorator to require webhook signature verification.
     
     Usage:
-        @require_webhook_signature('trustpilot', 'X-Trustpilot-Signature')
+        @require_webhook_signature('generic', 'X-Webhook-Signature')
         def lambda_handler(event, context):
             ...
     """
@@ -3046,14 +2884,14 @@ def require_webhook_signature(provider: str, header_name: str = 'X-Signature'):
 **Webhook handler with signature verification:**
 
 ```python
-# plugins/trustpilot/webhook/handler.py
+# plugins/webscraper/webhook/handler.py
 from webhook_auth import require_webhook_signature
 
-@require_webhook_signature('trustpilot', 'X-Trustpilot-Signature')
+@require_webhook_signature('generic', 'X-Webhook-Signature')
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 def lambda_handler(event: dict, context) -> dict:
-    """Trustpilot webhook handler with signature verification."""
+    """Webhook handler with signature verification."""
     # At this point, signature is verified
     body = json.loads(event.get('body', '{}'))
     # ... process webhook
@@ -3066,14 +2904,14 @@ def lambda_handler(event: dict, context) -> dict:
   "infrastructure": {
     "webhook": {
       "enabled": true,
-      "path": "/webhooks/trustpilot",
+      "path": "/webhooks/{plugin}",
       "methods": ["POST"],
-      "signatureHeader": "X-Trustpilot-Signature",
-      "signatureMethod": "trustpilot"
+      "signatureHeader": "X-Plugin-Signature",
+      "signatureMethod": "hmac-sha256"
     }
   },
   "secrets": {
-    "trustpilot_webhook_secret": ""
+    "webscraper_webhook_secret": ""
   }
 }
 ```
@@ -3137,7 +2975,7 @@ const StrictManifestSchema = z.object({
   name: SafeStringSchema,
   icon: IconSchema,
   description: SafeStringSchema.optional(),
-  category: z.enum(['reviews', 'social', 'appstore', 'import', 'search']).optional(),
+  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper']).optional(),
   
   infrastructure: z.object({
     ingestor: z.object({
@@ -3211,7 +3049,7 @@ export function loadAndValidateManifest(manifestPath: string): PluginManifest {
 ```json
 // manifest.json with integrity hash
 {
-  "id": "trustpilot",
+  "id": "webscraper",
   "version": "1.2.0",
   "integrity": {
     "ingestor": "sha256-a1b2c3d4e5f6...",
@@ -3557,7 +3395,7 @@ class BaseIngestor:
 ```
 # All audit events for a plugin
 fields @timestamp, audit_event.action, audit_event.success, audit_event.details
-| filter audit_event.plugin_id = 'trustpilot'
+| filter audit_event.plugin_id = 'webscraper'
 | sort @timestamp desc
 | limit 100
 
@@ -3584,7 +3422,7 @@ fields @timestamp, audit_event.plugin_id, audit_event.details.ip_address, audit_
 ```json
 // manifest.json
 {
-  "id": "trustpilot",
+  "id": "webscraper",
   "version": "1.2.0",
   "minPlatformVersion": "2.0.0",
   // ...
@@ -3933,7 +3771,7 @@ Before deploying a plugin, verify:
 
 ```bash
 # Run all security checks
-npm run security:check -- --plugin=trustpilot
+npm run security:check -- --plugin=webscraper
 
 # Output:
 # ✓ Manifest schema valid
@@ -3944,5 +3782,5 @@ npm run security:check -- --plugin=trustpilot
 # ✓ Version valid (1.2.0)
 # ✓ Tests pass (12/12)
 # 
-# Plugin trustpilot passed all security checks
+# Plugin webscraper passed all security checks
 ```

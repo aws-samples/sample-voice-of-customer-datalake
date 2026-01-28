@@ -26,8 +26,7 @@ s3://voc-raw-data-bucket/
 ### Example Paths
 
 ```
-raw/trustpilot/2026/01/08/abc123def456.json
-raw/twitter/2026/01/08/tweet_789012345.json
+raw/webscraper/2026/01/08/abc123def456.json
 raw/feedback_form/2026/01/08/uuid-here.json
 ```
 
@@ -38,7 +37,7 @@ Each JSON file contains:
 ```json
 {
   "item_id": "abc123def456",
-  "source_platform": "trustpilot",
+  "source_platform": "webscraper",
   "ingested_at": "2026-01-08T10:30:00Z",
   "partition_date": "2026-01-08",
   "raw_content": "Original API response (optional)",
@@ -189,7 +188,7 @@ response = table.query(
 ```python
 response = table.query(
     KeyConditionExpression='pk = :pk',
-    ExpressionAttributeValues={':pk': 'SOURCE#trustpilot'}
+    ExpressionAttributeValues={':pk': 'SOURCE#webscraper'}
 )
 ```
 

@@ -45,10 +45,10 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockResponse),
       })
 
-      const result = await api.getFeedback({ days: 7, source: 'twitter' })
+      const result = await api.getFeedback({ days: 7, source: 'webscraper' })
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback?days=7&source=twitter',
+        'https://api.example.com/feedback?days=7&source=webscraper',
         expect.objectContaining({
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
@@ -76,7 +76,7 @@ describe('API Client', () => {
 
       await api.getFeedback({ 
         days: 30, 
-        source: 'instagram', 
+        source: 'webscraper', 
         category: 'delivery', 
         sentiment: 'negative',
         limit: 50 
@@ -87,7 +87,7 @@ describe('API Client', () => {
         expect.any(Object)
       )
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('source=instagram'),
+        expect.stringContaining('source=webscraper'),
         expect.any(Object)
       )
       expect(global.fetch).toHaveBeenCalledWith(
@@ -206,10 +206,10 @@ describe('API Client', () => {
         json: () => Promise.resolve({}),
       })
 
-      await api.getSummary(7, 'twitter')
+      await api.getSummary(7, 'webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/metrics/summary?days=7&source=twitter',
+        'https://api.example.com/metrics/summary?days=7&source=webscraper',
         expect.any(Object)
       )
     })
@@ -253,7 +253,7 @@ describe('API Client', () => {
 
   describe('getSources', () => {
     it('fetches source breakdown', async () => {
-      const mockSources = { sources: { twitter: 100, instagram: 50 } }
+      const mockSources = { sources: { webscraper: 100, manual_import: 50 } }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockSources),
@@ -556,7 +556,7 @@ describe('API Client', () => {
 
   describe('getIntegrationStatus', () => {
     it('fetches integration status', async () => {
-      const mockStatus = { trustpilot: { configured: true, credentials_set: ['api_key'] } }
+      const mockStatus = { webscraper: { configured: true, credentials_set: ['api_key'] } }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockStatus),
@@ -580,10 +580,10 @@ describe('API Client', () => {
         json: () => Promise.resolve({ success: true, message: 'Updated' }),
       })
 
-      await api.updateIntegrationCredentials('trustpilot', credentials)
+      await api.updateIntegrationCredentials('webscraper', credentials)
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/integrations/trustpilot/credentials',
+        'https://api.example.com/integrations/webscraper/credentials',
         expect.objectContaining({
           method: 'PUT',
           body: JSON.stringify(credentials),
@@ -599,10 +599,10 @@ describe('API Client', () => {
         json: () => Promise.resolve({ success: true, message: 'Connection successful' }),
       })
 
-      await api.testIntegration('twitter')
+      await api.testIntegration('webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/integrations/twitter/test',
+        'https://api.example.com/integrations/webscraper/test',
         expect.objectContaining({ method: 'POST' })
       )
     })
@@ -683,10 +683,10 @@ describe('API Client', () => {
         json: () => Promise.resolve({ period_days: 7, personas: {} }),
       })
 
-      await api.getPersonas(7, 'twitter')
+      await api.getPersonas(7, 'webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/metrics/personas?days=7&source=twitter',
+        'https://api.example.com/metrics/personas?days=7&source=webscraper',
         expect.any(Object)
       )
     })
@@ -700,7 +700,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockResponse),
       })
 
-      await api.getEntities({ days: 30, limit: 10, source: 'twitter' })
+      await api.getEntities({ days: 30, limit: 10, source: 'webscraper' })
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('days=30'),
@@ -711,7 +711,7 @@ describe('API Client', () => {
         expect.any(Object)
       )
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('source=twitter'),
+        expect.stringContaining('source=webscraper'),
         expect.any(Object)
       )
     })
@@ -719,7 +719,7 @@ describe('API Client', () => {
 
   describe('getSourcesStatus', () => {
     it('fetches source schedule status', async () => {
-      const mockResponse = { sources: { twitter: { enabled: true, schedule: 'rate(5 minutes)' } } }
+      const mockResponse = { sources: { webscraper: { enabled: true, schedule: 'rate(5 minutes)' } } }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockResponse),
@@ -739,13 +739,13 @@ describe('API Client', () => {
     it('sends PUT request to enable source', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ success: true, source: 'twitter', enabled: true }),
+        json: () => Promise.resolve({ success: true, source: 'webscraper', enabled: true }),
       })
 
-      await api.enableSource('twitter')
+      await api.enableSource('webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/sources/twitter/enable',
+        'https://api.example.com/sources/webscraper/enable',
         expect.objectContaining({ method: 'PUT' })
       )
     })
@@ -755,13 +755,13 @@ describe('API Client', () => {
     it('sends PUT request to disable source', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ success: true, source: 'twitter', enabled: false }),
+        json: () => Promise.resolve({ success: true, source: 'webscraper', enabled: false }),
       })
 
-      await api.disableSource('twitter')
+      await api.disableSource('webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/sources/twitter/disable',
+        'https://api.example.com/sources/webscraper/disable',
         expect.objectContaining({ method: 'PUT' })
       )
     })
@@ -1390,16 +1390,16 @@ describe('API Client', () => {
     })
 
     it('includes source and days parameters when provided', async () => {
-      const mockResponse = { logs: [{ source_platform: 'twitter', message_id: 'msg-1' }], count: 1, days: 7 }
+      const mockResponse = { logs: [{ source_platform: 'webscraper', message_id: 'msg-1' }], count: 1, days: 7 }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockResponse),
       })
 
-      await api.getValidationLogs({ source: 'twitter', days: 7, limit: 50 })
+      await api.getValidationLogs({ source: 'webscraper', days: 7, limit: 50 })
 
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('source=twitter'),
+        expect.stringContaining('source=webscraper'),
         expect.any(Object)
       )
       expect(global.fetch).toHaveBeenCalledWith(
@@ -1435,8 +1435,8 @@ describe('API Client', () => {
     it('fetches logs summary with days parameter', async () => {
       const mockResponse = {
         summary: {
-          validation_failures: { twitter: 5 },
-          processing_errors: { trustpilot: 2 },
+          validation_failures: { webscraper: 5 },
+          processing_errors: { manual_import: 2 },
           total_validation_failures: 5,
           total_processing_errors: 2,
         },
@@ -1500,10 +1500,10 @@ describe('API Client', () => {
         json: () => Promise.resolve({ success: true, deleted: 5 }),
       })
 
-      const result = await api.clearValidationLogs('twitter')
+      const result = await api.clearValidationLogs('webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/logs/validation/twitter',
+        'https://api.example.com/logs/validation/webscraper',
         expect.objectContaining({ method: 'DELETE' })
       )
       expect(result).toEqual({ success: true, deleted: 5 })

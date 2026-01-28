@@ -76,7 +76,7 @@ try {
 console.log('loadPlugins:');
 
 test('loads all plugin manifests from directory', () => {
-  assertArrayLength(plugins, 16, 'Should load 16 plugins');
+  assertArrayLength(plugins, 1, 'Should load 1 plugin (webscraper)');
 });
 
 test('each plugin has required fields', () => {
@@ -96,12 +96,11 @@ test('plugin IDs are lowercase with underscores', () => {
   }
 });
 
-test('trustpilot plugin has correct structure', () => {
-  const trustpilot = plugins.find(p => p.id === 'trustpilot');
-  if (!trustpilot) throw new Error('Trustpilot plugin not found');
-  assertEqual(trustpilot.name, 'Trustpilot');
-  assertEqual(trustpilot.infrastructure.ingestor?.enabled, true);
-  assertEqual(trustpilot.infrastructure.webhook?.enabled, true);
+test('webscraper plugin has correct structure', () => {
+  const webscraper = plugins.find(p => p.id === 'webscraper');
+  if (!webscraper) throw new Error('Webscraper plugin not found');
+  assertEqual(webscraper.name, 'Web Scraper');
+  assertEqual(webscraper.infrastructure.ingestor?.enabled, true);
 });
 
 // Test: getPluginsWithIngestor
@@ -109,8 +108,7 @@ console.log('\ngetPluginsWithIngestor:');
 
 test('returns plugins with ingestors enabled', () => {
   const ingestorPlugins = getPluginsWithIngestor(plugins);
-  // All plugins should have ingestors
-  assertArrayLength(ingestorPlugins, 16);
+  assertArrayLength(ingestorPlugins, 1);
   for (const p of ingestorPlugins) {
     assertEqual(p.infrastructure.ingestor?.enabled, true);
   }
@@ -121,9 +119,8 @@ console.log('\ngetPluginsWithWebhook:');
 
 test('returns only plugins with webhooks enabled', () => {
   const webhookPlugins = getPluginsWithWebhook(plugins);
-  // Only trustpilot has webhook
-  assertArrayLength(webhookPlugins, 1);
-  assertEqual(webhookPlugins[0].id, 'trustpilot');
+  // webscraper doesn't have webhook
+  assertArrayLength(webhookPlugins, 0);
 });
 
 // Test: getPluginsWithS3Trigger
@@ -131,21 +128,18 @@ console.log('\ngetPluginsWithS3Trigger:');
 
 test('returns only plugins with S3 triggers enabled', () => {
   const s3Plugins = getPluginsWithS3Trigger(plugins);
-  // Only s3_import has S3 trigger
-  assertArrayLength(s3Plugins, 1);
-  assertEqual(s3Plugins[0].id, 's3_import');
+  // webscraper doesn't have S3 trigger
+  assertArrayLength(s3Plugins, 0);
 });
 
 // Test: getEnabledPlugins
 console.log('\ngetEnabledPlugins:');
 
 test('filters plugins by enabled sources list', () => {
-  const enabledSources = ['trustpilot', 'yelp', 'twitter'];
+  const enabledSources = ['webscraper'];
   const enabled = getEnabledPlugins(plugins, enabledSources);
-  assertArrayLength(enabled, 3);
-  assertContains(enabled.map(p => p.id), 'trustpilot');
-  assertContains(enabled.map(p => p.id), 'yelp');
-  assertContains(enabled.map(p => p.id), 'twitter');
+  assertArrayLength(enabled, 1);
+  assertContains(enabled.map(p => p.id), 'webscraper');
 });
 
 test('returns empty array when no sources enabled', () => {
@@ -181,19 +175,19 @@ test('handles plugins without secrets', () => {
 console.log('\ncapitalize:');
 
 test('capitalizes first letter', () => {
-  assertEqual(capitalize('trustpilot'), 'Trustpilot');
+  assertEqual(capitalize('webscraper'), 'Webscraper');
 });
 
 test('converts snake_case to PascalCase', () => {
-  assertEqual(capitalize('google_reviews'), 'GoogleReviews');
-  assertEqual(capitalize('appstore_apple'), 'AppstoreApple');
+  assertEqual(capitalize('custom_source'), 'CustomSource');
+  assertEqual(capitalize('my_plugin'), 'MyPlugin');
 });
 
 // Test: Manifest validation
 console.log('\nManifest Validation:');
 
 test('all plugins have valid categories', () => {
-  const validCategories = ['reviews', 'social', 'appstore', 'import', 'search'];
+  const validCategories = ['reviews', 'social', 'import', 'search', 'scraper'];
   for (const plugin of plugins) {
     if (plugin.category && !validCategories.includes(plugin.category)) {
       throw new Error(`Invalid category '${plugin.category}' for plugin ${plugin.id}`);

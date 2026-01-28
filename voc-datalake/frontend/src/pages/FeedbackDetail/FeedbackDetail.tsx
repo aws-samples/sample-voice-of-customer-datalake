@@ -44,12 +44,11 @@ const suggestedResponses: Record<string, string[]> = {
 }
 
 const platformIcons: Record<string, string> = {
-  twitter: '𝕏',
-  instagram: '📷',
-  facebook: '📘',
-  reddit: '🔴',
-  trustpilot: '⭐',
-  google_reviews: '🔍',
+  web_scrape: '🌐',
+  web_scrape_jsonld: '🌐',
+  webscraper: '🌐',
+  manual_import: '📝',
+  s3_import: '📦',
 }
 
 function getPlatformIcon(platform: string): string {

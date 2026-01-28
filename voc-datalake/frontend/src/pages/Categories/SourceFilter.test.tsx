@@ -6,7 +6,7 @@ import { SourceFilter } from './SourceFilter'
 const defaultProps = {
   selectedSource: null as string | null,
   onSourceChange: vi.fn(),
-  allSources: ['twitter', 'trustpilot', 'google_reviews'],
+  allSources: ['webscraper', 'manual_import', 's3_import'],
 }
 
 describe('SourceFilter', () => {
@@ -15,9 +15,9 @@ describe('SourceFilter', () => {
 
     expect(screen.getByRole('combobox')).toBeInTheDocument()
     expect(screen.getByText('All Sources')).toBeInTheDocument()
-    expect(screen.getByText('twitter')).toBeInTheDocument()
-    expect(screen.getByText('trustpilot')).toBeInTheDocument()
-    expect(screen.getByText('google_reviews')).toBeInTheDocument()
+    expect(screen.getByText('webscraper')).toBeInTheDocument()
+    expect(screen.getByText('manual_import')).toBeInTheDocument()
+    expect(screen.getByText('s3_import')).toBeInTheDocument()
   })
 
   it('calls onSourceChange when source selected', async () => {
@@ -25,21 +25,21 @@ describe('SourceFilter', () => {
     const onChange = vi.fn()
     render(<SourceFilter {...defaultProps} onSourceChange={onChange} />)
 
-    await user.selectOptions(screen.getByRole('combobox'), 'twitter')
-    expect(onChange).toHaveBeenCalledWith('twitter')
+    await user.selectOptions(screen.getByRole('combobox'), 'webscraper')
+    expect(onChange).toHaveBeenCalledWith('webscraper')
   })
 
   it('calls onSourceChange with null when All Sources selected', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
-    render(<SourceFilter {...defaultProps} selectedSource="twitter" onSourceChange={onChange} />)
+    render(<SourceFilter {...defaultProps} selectedSource="webscraper" onSourceChange={onChange} />)
 
     await user.selectOptions(screen.getByRole('combobox'), '')
     expect(onChange).toHaveBeenCalledWith(null)
   })
 
   it('shows clear button when source is selected', () => {
-    render(<SourceFilter {...defaultProps} selectedSource="twitter" />)
+    render(<SourceFilter {...defaultProps} selectedSource="webscraper" />)
     expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument()
   })
 
@@ -51,14 +51,14 @@ describe('SourceFilter', () => {
   it('calls onSourceChange with null when clear clicked', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
-    render(<SourceFilter {...defaultProps} selectedSource="twitter" onSourceChange={onChange} />)
+    render(<SourceFilter {...defaultProps} selectedSource="webscraper" onSourceChange={onChange} />)
 
     await user.click(screen.getByRole('button', { name: /clear/i }))
     expect(onChange).toHaveBeenCalledWith(null)
   })
 
   it('shows selected source badge', () => {
-    render(<SourceFilter {...defaultProps} selectedSource="trustpilot" />)
-    expect(screen.getAllByText('trustpilot')).toHaveLength(2) // dropdown + badge
+    render(<SourceFilter {...defaultProps} selectedSource="manual_import" />)
+    expect(screen.getAllByText('manual_import')).toHaveLength(2) // dropdown + badge
   })
 })

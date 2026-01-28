@@ -137,14 +137,15 @@ describe('WebhookInfoSchema', () => {
   });
 });
 
+
 describe('SetupSchema', () => {
   it('accepts valid setup info', () => {
     const setup = {
-      title: 'Trustpilot Setup',
+      title: 'Web Scraper Setup',
       steps: [
-        'Log in to your Trustpilot Business Portal',
-        'Go to Integrations → API',
-        'Copy your API Key',
+        'Configure scrapers via the Scrapers page',
+        'Each scraper can use CSS selectors',
+        'Test scrapers before enabling them',
       ],
     };
 
@@ -155,8 +156,8 @@ describe('SetupSchema', () => {
 
   it('accepts setup with color', () => {
     const setup = {
-      title: 'Yelp Setup',
-      color: 'orange',
+      title: 'Plugin Setup',
+      color: 'gray',
       steps: ['Step 1', 'Step 2'],
     };
 
@@ -164,7 +165,7 @@ describe('SetupSchema', () => {
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.color).toBe('orange');
+      expect(result.data.color).toBe('gray');
     }
   });
 
@@ -183,16 +184,16 @@ describe('SetupSchema', () => {
 
 describe('PluginManifestSchema', () => {
   const validManifest = {
-    id: 'trustpilot',
-    name: 'Trustpilot',
-    icon: '⭐',
-    description: 'Service reviews via webhook and API polling',
-    category: 'reviews',
+    id: 'webscraper',
+    name: 'Web Scraper',
+    icon: '🕷️',
+    description: 'Configurable scraper for extracting feedback from websites',
+    category: 'import',
     config: [
-      { key: 'api_key', label: 'API Key', type: 'password' },
+      { key: 'configs', label: 'Scraper Configurations', type: 'textarea' },
     ],
     hasIngestor: true,
-    hasWebhook: true,
+    hasWebhook: false,
     hasS3Trigger: false,
     enabled: true,
     version: '1.0.0',
@@ -203,10 +204,11 @@ describe('PluginManifestSchema', () => {
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.id).toBe('trustpilot');
+      expect(result.data.id).toBe('webscraper');
       expect(result.data.hasIngestor).toBe(true);
     }
   });
+
 
   it('accepts manifest with webhooks array', () => {
     const manifest = {
@@ -228,8 +230,8 @@ describe('PluginManifestSchema', () => {
     const manifest = {
       ...validManifest,
       setup: {
-        title: 'Trustpilot Setup',
-        color: 'blue',
+        title: 'Web Scraper Setup',
+        color: 'gray',
         steps: ['Step 1', 'Step 2'],
       },
     };
@@ -238,7 +240,7 @@ describe('PluginManifestSchema', () => {
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.setup?.title).toBe('Trustpilot Setup');
+      expect(result.data.setup?.title).toBe('Web Scraper Setup');
     }
   });
 
@@ -270,19 +272,19 @@ describe('PluginManifestsSchema', () => {
   it('accepts array of valid manifests', () => {
     const manifests = [
       {
-        id: 'trustpilot',
-        name: 'Trustpilot',
-        icon: '⭐',
+        id: 'webscraper',
+        name: 'Web Scraper',
+        icon: '🕷️',
         config: [],
         hasIngestor: true,
-        hasWebhook: true,
+        hasWebhook: false,
         hasS3Trigger: false,
         enabled: true,
       },
       {
-        id: 'yelp',
-        name: 'Yelp',
-        icon: '🍽️',
+        id: 'manual_import',
+        name: 'Manual Import',
+        icon: '📝',
         config: [],
         hasIngestor: true,
         hasWebhook: false,
@@ -298,6 +300,7 @@ describe('PluginManifestsSchema', () => {
       expect(result.data).toHaveLength(2);
     }
   });
+
 
   it('accepts empty array', () => {
     const result = PluginManifestsSchema.safeParse([]);
@@ -369,6 +372,7 @@ describe('Type Guards', () => {
     });
   });
 
+
   describe('isPluginManifestArray', () => {
     it('returns true for valid manifest array', () => {
       const manifests = [
@@ -427,25 +431,25 @@ describe('Type Guards', () => {
 });
 
 describe('Validation Functions', () => {
+  const validManifest = {
+    id: 'webscraper',
+    name: 'Web Scraper',
+    icon: '🕷️',
+    config: [],
+    hasIngestor: true,
+    hasWebhook: false,
+    hasS3Trigger: false,
+    enabled: true,
+  };
+
   describe('validateManifests', () => {
     it('returns validated manifests for valid input', () => {
-      const manifests = [
-        {
-          id: 'trustpilot',
-          name: 'Trustpilot',
-          icon: '⭐',
-          config: [],
-          hasIngestor: true,
-          hasWebhook: true,
-          hasS3Trigger: false,
-          enabled: true,
-        },
-      ];
+      const manifests = [validManifest];
 
       const result = validateManifests(manifests);
 
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('trustpilot');
+      expect(result[0].id).toBe('webscraper');
     });
 
     it('throws for invalid input', () => {
@@ -453,27 +457,22 @@ describe('Validation Functions', () => {
 
       expect(() => validateManifests(invalid)).toThrow();
     });
+
+    it('throws for non-array input', () => {
+      expect(() => validateManifests({})).toThrow();
+      expect(() => validateManifests(null)).toThrow();
+    });
   });
 
   describe('safeValidateManifests', () => {
-    it('returns manifests for valid input', () => {
-      const manifests = [
-        {
-          id: 'yelp',
-          name: 'Yelp',
-          icon: '🍽️',
-          config: [],
-          hasIngestor: true,
-          hasWebhook: false,
-          hasS3Trigger: false,
-          enabled: true,
-        },
-      ];
+    it('returns validated manifests for valid input', () => {
+      const manifests = [validManifest];
 
       const result = safeValidateManifests(manifests);
 
       expect(result).not.toBeNull();
       expect(result).toHaveLength(1);
+      expect(result![0].id).toBe('webscraper');
     });
 
     it('returns null for invalid input', () => {
@@ -485,50 +484,46 @@ describe('Validation Functions', () => {
     });
 
     it('returns null for non-array input', () => {
-      const result = safeValidateManifests({ id: 'test' });
+      expect(safeValidateManifests({})).toBeNull();
+      expect(safeValidateManifests('string')).toBeNull();
+    });
 
-      expect(result).toBeNull();
+    it('returns empty array for empty input', () => {
+      const result = safeValidateManifests([]);
+
+      expect(result).toEqual([]);
     });
   });
 });
 
 describe('Real-World Manifest Examples', () => {
-  it('validates Trustpilot manifest structure', () => {
-    const trustpilotManifest = {
-      id: 'trustpilot',
-      name: 'Trustpilot',
-      icon: '⭐',
-      description: 'Service reviews via webhook and API polling',
-      category: 'reviews',
+  it('validates Web Scraper manifest structure', () => {
+    const webscraperManifest = {
+      id: 'webscraper',
+      name: 'Web Scraper',
+      icon: '🕷️',
+      description: 'Configurable scraper for extracting feedback from websites',
+      category: 'import',
       config: [
-        { key: 'api_key', label: 'API Key', type: 'password', required: true, secret: true },
-        { key: 'api_secret', label: 'API Secret', type: 'password', required: true, secret: true },
-        { key: 'business_unit_id', label: 'Business Unit ID', type: 'text', placeholder: 'e.g., 5a7b8c9d0e1f2a3b4c5d6e7f' },
-      ],
-      webhooks: [
-        {
-          name: 'Service Reviews',
-          events: ['service-review-created', 'service-review-updated', 'service-review-deleted'],
-          docUrl: 'https://support.trustpilot.com/hc/en-us/articles/360001108568-Webhooks',
-        },
+        { key: 'configs', label: 'Scraper Configurations (JSON)', type: 'textarea', required: false, secret: false },
       ],
       setup: {
-        title: 'Trustpilot Setup',
-        color: 'blue',
+        title: 'Web Scraper Setup',
+        color: 'gray',
         steps: [
-          'Log in to your Trustpilot Business Portal',
-          'Go to Integrations → API to get your API Key and Secret',
-          'Copy your Business Unit ID from the URL',
+          'Configure scrapers via the Scrapers page in the dashboard',
+          'Each scraper can use CSS selectors or JSON-LD extraction',
+          'Test scrapers before enabling them',
         ],
       },
       hasIngestor: true,
-      hasWebhook: true,
+      hasWebhook: false,
       hasS3Trigger: false,
       enabled: true,
       version: '1.0.0',
     };
 
-    const result = PluginManifestSchema.safeParse(trustpilotManifest);
+    const result = PluginManifestSchema.safeParse(webscraperManifest);
 
     expect(result.success).toBe(true);
   });

@@ -14,7 +14,7 @@ const mockProblemGroup = {
   items: [
     {
       feedback_id: 'f1',
-      source_platform: 'twitter',
+      source_platform: 'webscraper',
       brand_name: 'TestBrand',
       original_text: 'The delivery was very slow',
       category: 'delivery',
@@ -33,7 +33,7 @@ const mockProblemGroup = {
     },
     {
       feedback_id: 'f2',
-      source_platform: 'trustpilot',
+      source_platform: 'manual_import',
       brand_name: 'TestBrand',
       original_text: 'Shipping took forever',
       category: 'delivery',

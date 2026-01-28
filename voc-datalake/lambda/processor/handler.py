@@ -495,7 +495,7 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
     urgency = insights.get('urgency', 'low')
     sentiment_score = insights.get('sentiment_score', sentiment['score'])
     
-    # Use brand_name for source display (e.g., "Gucci - Trustpilot"), fallback to source_platform
+    # Use brand_name for source display (e.g., "Acme Corp - webscraper"), fallback to source_platform
     brand_name = raw_record.get('brand_name', '')
     source_display = brand_name if brand_name else source_platform
     

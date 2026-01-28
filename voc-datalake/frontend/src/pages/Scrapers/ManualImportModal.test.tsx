@@ -61,7 +61,7 @@ describe('ManualImportModal', () => {
     it('renders source URL input field', () => {
       render(<ManualImportModal />)
 
-      expect(screen.getByPlaceholderText(/trustpilot.com/i)).toBeInTheDocument()
+      expect(screen.getByPlaceholderText(/example.com\/reviews/i)).toBeInTheDocument()
     })
 
     it('renders paste reviews textarea', () => {
@@ -90,10 +90,10 @@ describe('ManualImportModal', () => {
       const user = userEvent.setup()
       render(<ManualImportModal />)
 
-      const urlInput = screen.getByPlaceholderText(/trustpilot.com/i)
-      await user.type(urlInput, 'https://trustpilot.com/review/example.com')
+      const urlInput = screen.getByPlaceholderText(/example.com\/reviews/i)
+      await user.type(urlInput, 'https://g2.com/products/example/reviews')
 
-      expect(screen.getByText(/Detected: Trustpilot/i)).toBeInTheDocument()
+      expect(screen.getByText(/Detected: G2/i)).toBeInTheDocument()
     })
 
     it('disables Parse button when URL is empty', () => {
@@ -183,7 +183,7 @@ describe('ManualImportModal', () => {
         isModalOpen: true,
         step: 'preview',
         jobId: 'test-job-123',
-        sourceOrigin: 'trustpilot',
+        sourceOrigin: 'webscraper',
         parsedReviews: [
           { text: 'Great product!', rating: 5, author: 'John', date: '2026-01-05', title: 'Amazing' },
           { text: 'Good service', rating: 4, author: 'Jane', date: '2026-01-04', title: null },
@@ -201,7 +201,7 @@ describe('ManualImportModal', () => {
     it('shows source origin', () => {
       render(<ManualImportModal />)
 
-      expect(screen.getByText(/Source: trustpilot/i)).toBeInTheDocument()
+      expect(screen.getByText(/Source: webscraper/i)).toBeInTheDocument()
     })
 
     it('renders review cards', () => {
@@ -268,7 +268,7 @@ describe('ManualImportModal', () => {
       useManualImportStore.setState({
         isModalOpen: true,
         step: 'input',
-        sourceUrl: 'https://trustpilot.com/review/example.com',
+        sourceUrl: 'https://example.com/reviews',
         rawText: 'Great product! 5 stars',
       })
     })
@@ -278,7 +278,7 @@ describe('ManualImportModal', () => {
       mockStartManualImportParse.mockResolvedValue({
         success: true,
         job_id: 'job-123',
-        source_origin: 'trustpilot',
+        source_origin: 'webscraper',
       })
 
       render(<ManualImportModal />)
@@ -287,7 +287,7 @@ describe('ManualImportModal', () => {
       await user.click(parseButton)
 
       expect(mockStartManualImportParse).toHaveBeenCalledWith(
-        'https://trustpilot.com/review/example.com',
+        'https://example.com/reviews',
         'Great product! 5 stars'
       )
     })
@@ -330,7 +330,7 @@ describe('ManualImportModal', () => {
         isModalOpen: true,
         step: 'preview',
         jobId: 'job-123',
-        sourceOrigin: 'trustpilot',
+        sourceOrigin: 'webscraper',
         parsedReviews: [
           { text: 'Great product!', rating: 5, author: 'John', date: '2026-01-05', title: 'Amazing' },
         ],
@@ -459,7 +459,7 @@ describe('ManualImportModal', () => {
         status: 'completed',
         reviews: [{ text: 'Parsed review', rating: 5, author: null, date: null, title: null }],
         unparsed_sections: [],
-        source_origin: 'trustpilot',
+        source_origin: 'webscraper',
       })
       useManualImportStore.setState({
         isModalOpen: true,

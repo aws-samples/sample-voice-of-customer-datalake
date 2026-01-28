@@ -160,7 +160,6 @@ lambda/api/
 ├── projects_handler.py      # /projects/*
 ├── users_handler.py         # /users/* (Cognito admin)
 ├── feedback_form_handler.py # /feedback-form/*, /feedback-forms/*
-├── s3_import_handler.py     # /s3-import/*
 ├── data_explorer_handler.py # /data-explorer/* (S3 raw data & DynamoDB browser)
 └── projects.py              # Shared business logic for projects
 ```
@@ -178,9 +177,7 @@ lambda/api/
 | Projects | `projects_handler.py` | DynamoDB (projects, jobs), Step Functions, Bedrock, S3 |
 | Users | `users_handler.py` | Cognito admin |
 | Feedback Forms | `feedback_form_handler.py` | DynamoDB (aggregates), SQS |
-| S3 Import | `s3_import_handler.py` | S3 bucket only |
 | Data Explorer | `data_explorer_handler.py` | S3, DynamoDB (feedback) |
-| Webhook | `webhooks/trustpilot/handler.py` | DynamoDB, SQS, Secrets Manager |
 
 **When adding new API endpoints:**
 
@@ -351,15 +348,7 @@ const feedbackFormLambda = new lambda.Function(this, 'FeedbackFormApi', {
 aggregatesTable.grantReadWriteData(feedbackFormRole);
 // + SQS for processing queue
 
-// 9. S3 Import Lambda - file explorer
-const s3ImportLambda = new lambda.Function(this, 'S3ImportApi', {
-  handler: 's3_import_handler.lambda_handler',
-  // ...
-});
-s3ImportBucket.grantReadWrite(s3ImportRole);
-// S3 only - minimal permissions
-
-// 10. Data Explorer Lambda - S3 raw data and DynamoDB browser
+// 9. Data Explorer Lambda - S3 raw data and DynamoDB browser
 const dataExplorerLambda = new lambda.Function(this, 'DataExplorerApi', {
   handler: 'data_explorer_handler.lambda_handler',
   // ...
@@ -519,7 +508,7 @@ PK: TYPE#identifier
 SK: SUBTYPE#identifier
 
 # Examples:
-PK: SOURCE#twitter       SK: FEEDBACK#abc123
+PK: SOURCE#webscraper       SK: FEEDBACK#abc123
 PK: DATE#2024-01-15      SK: 1705312800#abc123
 PK: CATEGORY#delivery    SK: -0.75#1705312800
 PK: METRIC#daily_total   SK: 2024-01-15
@@ -539,7 +528,7 @@ PK: METRIC#daily_total   SK: 2024-01-15
 raw/{source}/{year}/{month}/{day}/{id}.json
 
 # Examples:
-raw/trustpilot/2025/11/28/abc123.json
+raw/webscraper/2025/11/28/abc123.json
 raw/webscraper/2025/11/28/def456.json
 ```
 
@@ -566,9 +555,9 @@ def store_raw_to_s3(item: dict, raw_content: str = None) -> str | None:
 # Normalized item includes s3_raw_uri for processor to fetch raw data if needed
 {
     'id': 'abc123',
-    'source_platform': 'trustpilot',
+    'source_platform': 'webscraper',
     'text': 'Review text...',
-    's3_raw_uri': 's3://voc-raw-data-123456789-us-east-1/raw/trustpilot/2025/11/28/abc123.json',
+    's3_raw_uri': 's3://voc-raw-data-123456789-us-east-1/raw/webscraper/2025/11/28/abc123.json',
     'raw_data': None  # Only populated if S3 storage failed
 }
 ```
@@ -597,7 +586,7 @@ table.update_item(
 
 ```
 # Feedback
-GET  /feedback                    # List with filters (?days=7&source=twitter&category=delivery)
+GET  /feedback                    # List with filters (?days=7&source=webscraper&category=delivery)
 GET  /feedback/{id}               # Single item
 GET  /feedback/{id}/similar       # Similar feedback items
 GET  /feedback/urgent             # Urgent items only

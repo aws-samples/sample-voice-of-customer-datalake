@@ -36,11 +36,9 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-settings-api` | `settings_handler.py` | `/settings/*` | DynamoDB, Bedrock |
 | `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB, Step Functions, Bedrock |
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
-| `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 | `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*` | DynamoDB, SQS |
 | `voc-users-api` | `users_handler.py` | `/users/*` | Cognito, DynamoDB |
-| `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS |
 
 ### DynamoDB Tables
 | Table | PK | SK | Purpose |
@@ -52,8 +50,8 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | Async job tracking |
 | `voc-conversations` | `USER#{id}` | `CONV#{id}` | Chat history |
 
-### Data Sources (16)
-Trustpilot, Google Reviews, Twitter/X, Instagram, Facebook, Reddit, Tavily, Apple App Store, Google Play Store, Huawei AppGallery, Yelp, Web Scraper, LinkedIn, TikTok, YouTube, S3 Import
+### Data Sources
+Web Scraper (plugin-based), Feedback Forms
 
 ## Audit Process
 
@@ -69,30 +67,15 @@ voc-datalake/
 │   ├── auth-stack.ts             # Cognito User Pool, Identity Pool
 │   ├── research-stack.ts         # Step Functions
 │   └── frontend-stack.ts         # S3 + CloudFront
+├── plugins/                      # Data source plugins
+│   ├── _shared/                  # Shared plugin utilities
+│   ├── _template/                # Template for new plugins
+│   └── webscraper/               # Web scraper plugin
 ├── lambda/
-│   ├── ingestors/                # 16 source ingestors
-│   │   ├── base_ingestor.py      # Abstract base class
-│   │   ├── trustpilot/           # Trustpilot reviews
-│   │   ├── google_reviews/       # Google Reviews
-│   │   ├── twitter/              # Twitter/X
-│   │   ├── instagram/            # Instagram
-│   │   ├── facebook/             # Facebook
-│   │   ├── reddit/               # Reddit
-│   │   ├── tavily/               # Tavily web search
-│   │   ├── appstore_apple/       # Apple App Store
-│   │   ├── appstore_google/      # Google Play Store
-│   │   ├── appstore_huawei/      # Huawei AppGallery
-│   │   ├── yelp/                 # Yelp reviews
-│   │   ├── webscraper/           # Custom web scraper
-│   │   ├── linkedin/             # LinkedIn
-│   │   ├── tiktok/               # TikTok
-│   │   ├── youtube/              # YouTube
-│   │   └── s3_import/            # S3 file import
-│   ├── webhooks/trustpilot/      # Webhook receiver
 │   ├── processor/handler.py      # SQS consumer
 │   ├── aggregator/handler.py     # DynamoDB Streams consumer
 │   ├── research/                 # Step Functions tasks
-│   ├── api/                      # Split API handlers (12 files)
+│   ├── api/                      # Split API handlers
 │   │   ├── metrics_handler.py    # /feedback/*, /metrics/*
 │   │   ├── chat_handler.py       # /chat/*
 │   │   ├── chat_stream_handler.py # Streaming chat (Function URL)
@@ -100,7 +83,6 @@ voc-datalake/
 │   │   ├── scrapers_handler.py   # /scrapers/*
 │   │   ├── settings_handler.py   # /settings/*
 │   │   ├── projects_handler.py   # /projects/*
-│   │   ├── s3_import_handler.py  # /s3-import/*
 │   │   ├── data_explorer_handler.py # /data-explorer/*
 │   │   ├── feedback_form_handler.py # /feedback-form/*
 │   │   ├── users_handler.py      # /users/*
@@ -124,9 +106,8 @@ voc-datalake/
 - `lambda/api/*.py` - All 11 API handlers (check IAM policy isolation)
 - `lambda/processor/handler.py` - SQS batch processing, Bedrock invocation
 - `lambda/aggregator/handler.py` - DynamoDB Streams processing
-- `lambda/ingestors/base_ingestor.py` - Base class patterns
-- `lambda/ingestors/*/handler.py` - Source-specific ingestors (16 sources)
-- `lambda/webhooks/trustpilot/handler.py` - Webhook validation
+- `plugins/_shared/base_ingestor.py` - Base class patterns for plugins
+- `plugins/webscraper/ingestor/handler.py` - Web scraper plugin
 - `lambda/research/*.py` - Step Functions task handlers
 
 **Priority 3 - Frontend:**
@@ -184,7 +165,6 @@ anthropic\.claude-3
 - [ ] Secrets in Secrets Manager (not hardcoded)
 - [ ] KMS customer-managed key for encryption at rest
 - [ ] CORS properly configured (not `*` in production)
-- [ ] Webhook signature validation (Trustpilot)
 - [ ] Input validation and sanitization in API handlers
 - [ ] No sensitive data in CloudWatch logs
 - [ ] S3 bucket policies (BlockPublicAccess)
@@ -195,8 +175,8 @@ anthropic\.claude-3
 - [ ] SQS Dead Letter Queue configured
 - [ ] DynamoDB Point-in-Time Recovery enabled
 - [ ] Retry logic with exponential backoff (Bedrock, external APIs)
-- [ ] Circuit breakers for external API calls (12+ data sources)
-- [ ] Idempotent ingestors (watermark-based deduplication)
+- [ ] Circuit breakers for external API calls
+- [ ] Idempotent plugin ingestors (watermark-based deduplication)
 - [ ] Lambda reserved concurrency limits
 - [ ] Step Functions error handling and retries
 - [ ] DynamoDB Streams failure handling
@@ -255,7 +235,7 @@ For each finding:
 ### Critical Issues
 ```python
 # Hard-coded API credentials
-TRUSTPILOT_API_KEY = "abc123"  # CRITICAL: Use Secrets Manager
+API_KEY = "abc123"  # CRITICAL: Use Secrets Manager
 ```
 
 ```typescript

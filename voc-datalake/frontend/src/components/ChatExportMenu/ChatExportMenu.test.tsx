@@ -73,7 +73,7 @@ describe('ChatExportMenu', () => {
           {
             feedback_id: 'fb1',
             source_id: 's1',
-            source_platform: 'twitter',
+            source_platform: 'webscraper',
             source_channel: 'social',
             brand_name: 'TestBrand',
             source_created_at: '2025-01-10T00:00:00Z',

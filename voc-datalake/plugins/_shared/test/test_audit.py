@@ -16,14 +16,14 @@ class TestAuditEvent:
         event = AuditEvent(
             timestamp='2025-01-01T12:00:00Z',
             action='plugin.invoked',
-            plugin_id='trustpilot',
+            plugin_id='webscraper',
             success=True,
             details={'items': 10}
         )
         
         assert event.timestamp == '2025-01-01T12:00:00Z'
         assert event.action == 'plugin.invoked'
-        assert event.plugin_id == 'trustpilot'
+        assert event.plugin_id == 'webscraper'
         assert event.success is True
         assert event.details == {'items': 10}
 
@@ -34,7 +34,7 @@ class TestAuditEvent:
         event = AuditEvent(
             timestamp='2025-01-01T12:00:00Z',
             action='webhook.received',
-            plugin_id='trustpilot',
+            plugin_id='webscraper',
             success=True,
             details={},
             request_id='req-123',
@@ -53,7 +53,7 @@ class TestAuditEvent:
         event = AuditEvent(
             timestamp='2025-01-01T12:00:00Z',
             action='plugin.completed',
-            plugin_id='yelp',
+            plugin_id='webscraper',
             success=True,
             details={'items_processed': 25}
         )
@@ -63,7 +63,7 @@ class TestAuditEvent:
         assert isinstance(result, dict)
         assert result['timestamp'] == '2025-01-01T12:00:00Z'
         assert result['action'] == 'plugin.completed'
-        assert result['plugin_id'] == 'yelp'
+        assert result['plugin_id'] == 'webscraper'
         assert result['success'] is True
         assert result['details'] == {'items_processed': 25}
 
@@ -78,7 +78,7 @@ class TestEmitAuditEvent:
         
         emit_audit_event(
             action='plugin.invoked',
-            plugin_id='trustpilot',
+            plugin_id='webscraper',
             success=True,
             details={'test': 'data'}
         )
@@ -95,7 +95,7 @@ class TestEmitAuditEvent:
         
         emit_audit_event(
             action='plugin.completed',
-            plugin_id='yelp',
+            plugin_id='webscraper',
             success=True
         )
         
@@ -112,7 +112,7 @@ class TestEmitAuditEvent:
         
         emit_audit_event(
             action='plugin.failed',
-            plugin_id='twitter',
+            plugin_id='webscraper',
             success=False
         )
         
@@ -132,7 +132,7 @@ class TestEmitAuditEvent:
         
         emit_audit_event(
             action='webhook.received',
-            plugin_id='trustpilot',
+            plugin_id='webscraper',
             success=True,
             details={'items': 5}
         )
@@ -143,7 +143,7 @@ class TestEmitAuditEvent:
         assert call_args[0][0] == 'AUDIT'
         audit_event = call_args[1]['extra']['audit_event']
         assert audit_event['action'] == 'webhook.received'
-        assert audit_event['plugin_id'] == 'trustpilot'
+        assert audit_event['plugin_id'] == 'webscraper'
 
     @patch('_shared.audit.AUDIT_EVENT_BUS', '')
     @patch('_shared.audit.logger')
@@ -154,7 +154,7 @@ class TestEmitAuditEvent:
         # Should not raise even without EventBridge
         emit_audit_event(
             action='plugin.invoked',
-            plugin_id='reddit',
+            plugin_id='webscraper',
             success=True
         )
         
@@ -170,7 +170,7 @@ class TestEmitAuditEvent:
         # When HAS_EVENTBRIDGE is False, should still log without error
         emit_audit_event(
             action='plugin.completed',
-            plugin_id='instagram',
+            plugin_id='webscraper',
             success=True
         )
         
@@ -212,7 +212,7 @@ class TestAuditActions:
         """Accepts webhook.received action."""
         from _shared.audit import emit_audit_event
         
-        emit_audit_event('webhook.received', 'trustpilot', True, {'ip_address': '1.2.3.4'})
+        emit_audit_event('webhook.received', 'webscraper', True, {'ip_address': '1.2.3.4'})
         assert mock_logger.info.called
 
     @patch('_shared.audit.logger')
@@ -220,7 +220,7 @@ class TestAuditActions:
         """Accepts webhook.rejected action."""
         from _shared.audit import emit_audit_event
         
-        emit_audit_event('webhook.rejected', 'trustpilot', False, {'reason': 'invalid_signature'})
+        emit_audit_event('webhook.rejected', 'webscraper', False, {'reason': 'invalid_signature'})
         assert mock_logger.info.called
 
     @patch('_shared.audit.logger')
@@ -228,5 +228,5 @@ class TestAuditActions:
         """Accepts message.ingested action."""
         from _shared.audit import emit_audit_event
         
-        emit_audit_event('message.ingested', 'yelp', True, {'message_id': 'msg-123'})
+        emit_audit_event('message.ingested', 'webscraper', True, {'message_id': 'msg-123'})
         assert mock_logger.info.called

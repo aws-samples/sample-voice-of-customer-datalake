@@ -64,7 +64,7 @@ vi.mock('../../components/ChatMessage', () => ({
 vi.mock('../../components/ChatFilters', () => ({
   default: ({ filters, onChange }: { filters: object; onChange: (f: object) => void }) => (
     <div data-testid="chat-filters">
-      <button onClick={() => onChange({ source: 'twitter' })}>Set Twitter Filter</button>
+      <button onClick={() => onChange({ source: 'webscraper' })}>Set Source Filter</button>
     </div>
   ),
 }))

@@ -57,13 +57,13 @@ describe('Plugin Loader', () => {
         return false;
       });
 
-      mockFs.readdirSync.mockReturnValue(mockDirents('trustpilot'));
+      mockFs.readdirSync.mockReturnValue(mockDirents('webscraper'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
-        id: 'trustpilot',
-        name: 'Trustpilot',
-        icon: '⭐',
-        description: 'Service reviews',
+        id: 'webscraper',
+        name: 'Web Scraper',
+        icon: '🌐',
+        description: 'Web scraping plugin',
         infrastructure: {
           ingestor: { enabled: true, schedule: 'rate(5 minutes)', timeout: 120, memory: 256 },
         },
@@ -74,27 +74,27 @@ describe('Plugin Loader', () => {
       const result = loadPlugins('/test/plugins');
 
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('trustpilot');
-      expect(result[0].name).toBe('Trustpilot');
+      expect(result[0].id).toBe('webscraper');
+      expect(result[0].name).toBe('Web Scraper');
     });
 
     it('skips directories starting with underscore', async () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockReturnValue(mockDirents('_shared', '_template', 'trustpilot'));
+      mockFs.readdirSync.mockReturnValue(mockDirents('_shared', '_template', 'webscraper'));
 
       mockFs.readFileSync.mockReturnValue(JSON.stringify({
-        id: 'trustpilot',
-        name: 'Trustpilot',
-        icon: '⭐',
+        id: 'webscraper',
+        name: 'Web Scraper',
+        icon: '🌐',
         infrastructure: { ingestor: { enabled: true } },
       }));
 
       const { loadPlugins } = await import('./plugin-loader');
       const result = loadPlugins('/test/plugins');
 
-      // Should only load trustpilot, not _shared or _template
+      // Should only load webscraper, not _shared or _template
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('trustpilot');
+      expect(result[0].id).toBe('webscraper');
     });
 
     it('skips directories without manifest.json', async () => {
@@ -302,41 +302,41 @@ describe('Plugin Loader', () => {
       const { aggregateSecrets } = await import('./plugin-loader');
 
       const plugins = [
-        { id: 'trustpilot', secrets: { api_key: '', api_secret: '' } },
-        { id: 'yelp', secrets: { api_key: '' } },
+        { id: 'webscraper', secrets: { api_key: '', configs: '' } },
+        { id: 'custom_source', secrets: { api_key: '' } },
       ] as unknown as Parameters<typeof aggregateSecrets>[0];
 
       const result = aggregateSecrets(plugins);
 
-      expect(result).toHaveProperty('trustpilot_api_key');
-      expect(result).toHaveProperty('trustpilot_api_secret');
-      expect(result).toHaveProperty('yelp_api_key');
+      expect(result).toHaveProperty('webscraper_api_key');
+      expect(result).toHaveProperty('webscraper_configs');
+      expect(result).toHaveProperty('custom_source_api_key');
     });
 
     it('getEnabledPlugins filters by enabled sources', async () => {
       const { getEnabledPlugins } = await import('./plugin-loader');
 
       const plugins = [
-        { id: 'trustpilot' },
-        { id: 'yelp' },
-        { id: 'twitter' },
+        { id: 'webscraper' },
+        { id: 'custom_source' },
+        { id: 'another_plugin' },
       ] as Parameters<typeof getEnabledPlugins>[0];
 
-      const enabledSources = ['trustpilot', 'twitter'];
+      const enabledSources = ['webscraper', 'another_plugin'];
       const result = getEnabledPlugins(plugins, enabledSources);
 
       expect(result).toHaveLength(2);
-      expect(result.map(p => p.id)).toContain('trustpilot');
-      expect(result.map(p => p.id)).toContain('twitter');
-      expect(result.map(p => p.id)).not.toContain('yelp');
+      expect(result.map(p => p.id)).toContain('webscraper');
+      expect(result.map(p => p.id)).toContain('another_plugin');
+      expect(result.map(p => p.id)).not.toContain('custom_source');
     });
 
     it('capitalize converts snake_case to PascalCase', async () => {
       const { capitalize } = await import('./plugin-loader');
 
-      expect(capitalize('trustpilot')).toBe('Trustpilot');
-      expect(capitalize('google_reviews')).toBe('GoogleReviews');
-      expect(capitalize('appstore_apple')).toBe('AppstoreApple');
+      expect(capitalize('webscraper')).toBe('Webscraper');
+      expect(capitalize('custom_source')).toBe('CustomSource');
+      expect(capitalize('my_plugin')).toBe('MyPlugin');
     });
   });
 });

@@ -36,22 +36,7 @@ triggers: ["tech stack", "dependency", "version", "library", "package", "aws ser
 
 | Source | Type | Auth | Schedule |
 |--------|------|------|----------|
-| Trustpilot | API + Webhook | OAuth2 | 5 min + real-time |
-| Google Reviews | API | API Key | 15 min |
-| Twitter/X | API | Bearer Token | 1 min |
-| Instagram | API | Meta Access Token | 5 min |
-| Facebook | API | Meta Access Token | 5 min |
-| Reddit | API | OAuth2 | 5 min |
-| LinkedIn | API | OAuth2 | 15 min |
-| TikTok | API | OAuth2 | 15 min |
-| YouTube | API | API Key | 15 min |
-| Tavily | API | API Key | 30 min |
-| Apple App Store | RSS Feed | None | 15 min |
-| Google Play Store | API | Service Account | 15 min |
-| Huawei AppGallery | API | OAuth2 | 15 min |
-| Yelp | API | API Key | 30 min |
 | Web Scraper | HTTP | None | Configurable |
-| S3 Import | S3 | IAM | On-demand |
 | Feedback Forms | API | None (public) | Real-time |
 
 ## Backend (Lambda - Python)
@@ -80,11 +65,9 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-users-api` | `users_handler.py` | `/users/*` | Cognito admin |
 | `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*`, `/feedback-forms/*` | DynamoDB (aggregates), SQS |
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
-| `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 | `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read |
 | `voc-manual-import-api` | `manual_import_handler.py` | `/manual-import/*` | DynamoDB, SQS, S3 |
-| `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS, Secrets Manager |
 
 **Benefits:**
 - Each Lambda stays under 20KB policy limit
@@ -207,27 +190,6 @@ npm run generate:menu       # Generate menu config only
 
 ```json
 {
-  "trustpilot_api_key": "",
-  "trustpilot_api_secret": "",
-  "trustpilot_business_unit_id": "",
-  "trustpilot_webhook_secret": "",
-  "google_api_key": "",
-  "twitter_bearer_token": "",
-  "meta_access_token": "",
-  "reddit_client_id": "",
-  "reddit_client_secret": "",
-  "linkedin_access_token": "",
-  "tiktok_access_token": "",
-  "youtube_api_key": "",
-  "tavily_api_key": "",
-  "apple_app_id": "",
-  "apple_country_codes": "us,gb,de",
-  "google_play_package_name": "",
-  "google_play_service_account": "",
-  "huawei_client_id": "",
-  "huawei_client_secret": "",
-  "huawei_app_id": "",
-  "yelp_api_key": "",
   "webscraper_configs": "[]"
 }
 ```

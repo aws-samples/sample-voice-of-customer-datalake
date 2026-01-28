@@ -2,7 +2,7 @@
  * @fileoverview Chat filter controls component.
  *
  * Provides filter dropdowns for scoping chat queries:
- * - Source filter (Trustpilot, Twitter, etc.)
+ * - Source filter (Webscraper, Manual Import, etc.)
  * - Category filter
  * - Sentiment filter
  *
@@ -19,9 +19,9 @@ import clsx from 'clsx'
 // Default options as fallback
 const defaultSources = [
   { value: '', label: 'All Sources' },
-  { value: 'trustpilot', label: 'Trustpilot' },
-  { value: 'google_reviews', label: 'Google Reviews' },
-  { value: 'twitter', label: 'Twitter/X' },
+  { value: 'webscraper', label: 'Web Scraper' },
+  { value: 'manual_import', label: 'Manual Import' },
+  { value: 's3_import', label: 'S3 Import' },
 ]
 
 const defaultCategories = [

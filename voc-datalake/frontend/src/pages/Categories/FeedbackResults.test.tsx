@@ -9,7 +9,7 @@ import type { SentimentFilter, ViewMode } from './types'
 const mockFeedback: FeedbackItem[] = [
   {
     feedback_id: '1',
-    source_platform: 'twitter',
+    source_platform: 'webscraper',
     original_text: 'Great delivery service!',
     sentiment_label: 'positive',
     sentiment_score: 0.9,
@@ -32,7 +32,7 @@ const mockFeedback: FeedbackItem[] = [
   },
   {
     feedback_id: '2',
-    source_platform: 'trustpilot',
+    source_platform: 'manual_import',
     original_text: 'Slow support response',
     sentiment_label: 'negative',
     sentiment_score: -0.7,
@@ -85,8 +85,8 @@ describe('FeedbackResults', () => {
     })
 
     it('shows selected source in subtitle', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} selectedSource="twitter" />)
-      expect(screen.getByText(/Source: twitter/)).toBeInTheDocument()
+      renderWithRouter(<FeedbackResults {...defaultProps} selectedSource="webscraper" />)
+      expect(screen.getByText(/Source: webscraper/)).toBeInTheDocument()
     })
 
     it('shows selected keywords in subtitle', () => {

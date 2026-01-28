@@ -54,7 +54,7 @@ export interface SourceBreakdown {
 }
 
 export interface IntegrationStatus {
-  trustpilot: {
+  webscraper: {
     configured: boolean
     webhook_url: string
     last_webhook_received?: string

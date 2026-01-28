@@ -25,7 +25,7 @@
     },
     "source_platform": {
       "type": "string",
-      "enum": ["trustpilot", "google_reviews", "twitter", "instagram", "facebook", "reddit", "tavily", "web", "other"],
+      "enum": ["webscraper", "manual_import", "s3_import", "web", "other"],
       "description": "Platform where feedback originated"
     },
     "source_channel": {

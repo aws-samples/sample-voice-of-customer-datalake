@@ -51,11 +51,7 @@ def mock_secrets():
     return {
         'test_source_api_key': 'test-api-key-123',
         'test_source_api_secret': 'test-api-secret-456',
-        'trustpilot_api_key': 'tp-key',
-        'trustpilot_api_secret': 'tp-secret',
-        'trustpilot_business_unit_id': 'tp-buid',
-        'yelp_api_key': 'yelp-key',
-        'yelp_business_ids': 'biz1,biz2',
+        'webscraper_configs': '[]',
     }
 
 
@@ -112,7 +108,7 @@ def sample_feedback_item():
 def sample_webhook_payload():
     """Create a sample webhook payload."""
     return {
-        'eventType': 'service-review-created',
+        'eventType': 'review-created',
         'review': {
             'id': 'webhook-review-123',
             'text': 'Webhook review text',
@@ -120,6 +116,6 @@ def sample_webhook_payload():
             'createdAt': '2025-01-02T10:00:00Z',
             'consumer': {'displayName': 'Webhook User'},
             'title': 'Good service',
-            'links': [{'href': 'https://trustpilot.com/review/123'}]
+            'links': [{'href': 'https://example.com/review/123'}]
         }
     }

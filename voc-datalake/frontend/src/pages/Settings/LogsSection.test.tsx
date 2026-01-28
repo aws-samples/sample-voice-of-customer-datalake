@@ -96,7 +96,7 @@ describe('LogsSection', () => {
     it('displays validation failure count when logs exist', async () => {
       mockGetLogsSummary.mockResolvedValue({
         summary: {
-          validation_failures: { twitter: 5, trustpilot: 3 },
+          validation_failures: { webscraper: 5, manual_import: 3 },
           processing_errors: {},
           total_validation_failures: 8,
           total_processing_errors: 0,
@@ -115,7 +115,7 @@ describe('LogsSection', () => {
       mockGetLogsSummary.mockResolvedValue({
         summary: {
           validation_failures: {},
-          processing_errors: { twitter: 2 },
+          processing_errors: { webscraper: 2 },
           total_validation_failures: 0,
           total_processing_errors: 2,
         },
@@ -193,7 +193,7 @@ describe('LogsSection', () => {
       mockGetValidationLogs.mockResolvedValue({
         logs: [
           {
-            source_platform: 'twitter',
+            source_platform: 'webscraper',
             message_id: 'msg-123',
             timestamp: '2025-01-01T12:00:00Z',
             errors: ['Missing required field: text'],
@@ -207,7 +207,7 @@ describe('LogsSection', () => {
       render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByText('twitter')).toBeInTheDocument()
+        expect(screen.getByText('webscraper')).toBeInTheDocument()
         expect(screen.getByText('1 failures')).toBeInTheDocument()
       })
     })
@@ -217,7 +217,7 @@ describe('LogsSection', () => {
       mockGetValidationLogs.mockResolvedValue({
         logs: [
           {
-            source_platform: 'twitter',
+            source_platform: 'webscraper',
             message_id: 'msg-123',
             timestamp: '2025-01-01T12:00:00Z',
             errors: ['Missing required field: text'],
@@ -263,7 +263,7 @@ describe('LogsSection', () => {
       mockGetProcessingLogs.mockResolvedValue({
         logs: [
           {
-            source_platform: 'trustpilot',
+            source_platform: 'webscraper',
             message_id: 'msg-456',
             timestamp: '2025-01-01T12:00:00Z',
             error_type: 'BedrockError',
@@ -280,7 +280,7 @@ describe('LogsSection', () => {
       await user.click(screen.getByRole('button', { name: /processing errors/i }))
 
       await waitFor(() => {
-        expect(screen.getByText('trustpilot')).toBeInTheDocument()
+        expect(screen.getByText('webscraper')).toBeInTheDocument()
         expect(screen.getByText('BedrockError')).toBeInTheDocument()
       })
     })

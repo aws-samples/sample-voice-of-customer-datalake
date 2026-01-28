@@ -12,9 +12,9 @@ class TestCircuitBreakerInit:
         """Creates circuit breaker with correct plugin ID."""
         from _shared.circuit_breaker import CircuitBreaker
         
-        cb = CircuitBreaker('trustpilot')
+        cb = CircuitBreaker('webscraper')
         
-        assert cb.plugin_id == 'trustpilot'
+        assert cb.plugin_id == 'webscraper'
 
     def test_lazy_loads_dynamodb_table(self):
         """Does not connect to DynamoDB until table property accessed."""

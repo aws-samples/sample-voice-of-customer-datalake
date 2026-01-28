@@ -20,8 +20,8 @@ class TestListSourcesEndpoint:
         
         mock_s3.list_objects_v2.return_value = {
             'CommonPrefixes': [
-                {'Prefix': 'twitter/'},
-                {'Prefix': 'trustpilot/'},
+                {'Prefix': 'webscraper/'},
+                {'Prefix': 'g2/'},
                 {'Prefix': 'processed/'}  # Should be excluded
             ]
         }
@@ -138,8 +138,8 @@ class TestListFilesEndpoint:
         paginator.paginate.return_value = [
             {
                 'Contents': [
-                    {'Key': 'twitter/data.json', 'Size': 1024, 'LastModified': datetime.now(timezone.utc)},
-                    {'Key': 'twitter/reviews.csv', 'Size': 2048, 'LastModified': datetime.now(timezone.utc)}
+                    {'Key': 'webscraper/data.json', 'Size': 1024, 'LastModified': datetime.now(timezone.utc)},
+                    {'Key': 'webscraper/reviews.csv', 'Size': 2048, 'LastModified': datetime.now(timezone.utc)}
                 ]
             }
         ]
@@ -150,7 +150,7 @@ class TestListFilesEndpoint:
         event = api_gateway_event(
             method='GET',
             path='/s3-import/files',
-            query_params={'source': 'twitter'}
+            query_params={'source': 'webscraper'}
         )
         
         response = lambda_handler(event, lambda_context)
@@ -211,7 +211,7 @@ class TestGetUploadUrlEndpoint:
         event = api_gateway_event(
             method='POST',
             path='/s3-import/upload-url',
-            body={'filename': 'data.json', 'source': 'twitter'}
+            body={'filename': 'data.json', 'source': 'webscraper'}
         )
         
         response = lambda_handler(event, lambda_context)
@@ -229,7 +229,7 @@ class TestGetUploadUrlEndpoint:
         event = api_gateway_event(
             method='POST',
             path='/s3-import/upload-url',
-            body={'source': 'twitter'}
+            body={'source': 'webscraper'}
         )
         
         response = lambda_handler(event, lambda_context)
@@ -246,7 +246,7 @@ class TestGetUploadUrlEndpoint:
         event = api_gateway_event(
             method='POST',
             path='/s3-import/upload-url',
-            body={'filename': 'data.txt', 'source': 'twitter'}
+            body={'filename': 'data.txt', 'source': 'webscraper'}
         )
         
         response = lambda_handler(event, lambda_context)
@@ -267,8 +267,8 @@ class TestDeleteFileEndpoint:
         
         event = api_gateway_event(
             method='DELETE',
-            path='/s3-import/file/twitter%2Fdata.json',
-            path_params={'key': 'twitter%2Fdata.json'}
+            path='/s3-import/file/webscraper%2Fdata.json',
+            path_params={'key': 'webscraper%2Fdata.json'}
         )
         
         response = lambda_handler(event, lambda_context)
@@ -287,8 +287,8 @@ class TestDeleteFileEndpoint:
         
         event = api_gateway_event(
             method='DELETE',
-            path='/s3-import/file/twitter%2Fdata.json',
-            path_params={'key': 'twitter%2Fdata.json'}
+            path='/s3-import/file/webscraper%2Fdata.json',
+            path_params={'key': 'webscraper%2Fdata.json'}
         )
         
         response = lambda_handler(event, lambda_context)

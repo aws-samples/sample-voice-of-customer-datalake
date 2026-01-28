@@ -41,9 +41,9 @@ const mockFeedbackItems = [
   {
     feedback_id: 'fb-1',
     source_id: 'src-1',
-    source_platform: 'trustpilot',
+    source_platform: 'webscraper',
     source_channel: 'reviews',
-    source_url: 'https://trustpilot.com/review/1',
+    source_url: 'https://example.com/review/1',
     brand_name: 'TestBrand',
     source_created_at: '2025-01-15T10:00:00Z',
     processed_at: '2025-01-15T10:05:00Z',
@@ -60,7 +60,7 @@ const mockFeedbackItems = [
   {
     feedback_id: 'fb-2',
     source_id: 'src-2',
-    source_platform: 'twitter',
+    source_platform: 'manual_import',
     source_channel: 'mentions',
     brand_name: 'TestBrand',
     source_created_at: '2025-01-14T15:00:00Z',
@@ -90,7 +90,7 @@ describe('SocialFeed', () => {
     })
     ;(api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue({
       period_days: 7,
-      sources: { trustpilot: 10, twitter: 5 },
+      sources: { webscraper: 10, manual_import: 5 },
     })
   })
 
@@ -119,9 +119,9 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
-        expect(screen.getByText('trustpilot')).toBeInTheDocument()
+        expect(screen.getByText('webscraper')).toBeInTheDocument()
       })
-      expect(screen.getByText('⭐')).toBeInTheDocument()
+      expect(screen.getByText('🌐')).toBeInTheDocument()
     })
 
     it('displays sentiment badge', async () => {
@@ -167,8 +167,8 @@ describe('SocialFeed', () => {
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /all/i })).toBeInTheDocument()
       })
-      expect(screen.getByRole('button', { name: /trustpilot/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /twitter/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /webscraper/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /manual import/i })).toBeInTheDocument()
     })
 
     it('does not render filters when showFilters is false', async () => {
@@ -194,14 +194,14 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed showFilters={true} />)
       
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /trustpilot/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /webscraper/i })).toBeInTheDocument()
       })
       
-      await user.click(screen.getByRole('button', { name: /trustpilot/i }))
+      await user.click(screen.getByRole('button', { name: /webscraper/i }))
       
       await waitFor(() => {
         expect(api.getFeedback).toHaveBeenCalledWith(
-          expect.objectContaining({ source: 'trustpilot' })
+          expect.objectContaining({ source: 'webscraper' })
         )
       })
     })
@@ -245,21 +245,21 @@ describe('SocialFeed', () => {
   })
 
   describe('source styling', () => {
-    it('applies correct border color for trustpilot', async () => {
+    it('applies correct border color for webscraper', async () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
-        const trustpilotCard = document.querySelector('.border-l-green-500')
-        expect(trustpilotCard).toBeInTheDocument()
+        const webscraperCard = document.querySelector('.border-l-blue-500')
+        expect(webscraperCard).toBeInTheDocument()
       })
     })
 
-    it('applies correct border color for twitter', async () => {
+    it('applies correct border color for manual_import', async () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
-        const twitterCard = document.querySelector('.border-l-gray-800')
-        expect(twitterCard).toBeInTheDocument()
+        const manualImportCard = document.querySelector('.border-l-purple-500')
+        expect(manualImportCard).toBeInTheDocument()
       })
     })
   })

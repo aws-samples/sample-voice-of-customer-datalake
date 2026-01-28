@@ -42,7 +42,7 @@ function createWrapper() {
 const mockFeedbackItems = [
   {
     feedback_id: 'f1',
-    source_platform: 'twitter',
+    source_platform: 'webscraper',
     brand_name: 'TestBrand',
     original_text: 'The delivery was very slow',
     category: 'delivery',
@@ -56,7 +56,7 @@ const mockFeedbackItems = [
   },
   {
     feedback_id: 'f2',
-    source_platform: 'trustpilot',
+    source_platform: 'manual_import',
     brand_name: 'TestBrand',
     original_text: 'Shipping took forever',
     category: 'delivery',
@@ -73,7 +73,7 @@ const mockFeedbackItems = [
 const mockEntities = {
   entities: {
     categories: { delivery: 10, product: 5 },
-    sources: { twitter: 15, trustpilot: 8 },
+    sources: { webscraper: 15, manual_import: 8 },
   },
 }
 

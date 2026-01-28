@@ -24,9 +24,9 @@ class TestParseContextFilters:
         """Parses source filter from context hint."""
         from chat_stream_handler import parse_context_filters
         
-        result = parse_context_filters('Source: trustpilot. Category: delivery.')
+        result = parse_context_filters('Source: webscraper. Category: delivery.')
         
-        assert result['source'] == 'trustpilot'
+        assert result['source'] == 'webscraper'
         assert result['category'] == 'delivery'
 
     def test_returns_empty_dict_for_empty_input(self):
@@ -41,9 +41,9 @@ class TestParseContextFilters:
         """Handles context hint with only some filters."""
         from chat_stream_handler import parse_context_filters
         
-        result = parse_context_filters('Source: twitter.')
+        result = parse_context_filters('Source: webscraper.')
         
-        assert result.get('source') == 'twitter'
+        assert result.get('source') == 'webscraper'
         assert 'category' not in result
 
 
@@ -56,7 +56,7 @@ class TestMatchesFeedbackItem:
         
         item = {
             'date': '2026-01-09',
-            'source_platform': 'twitter',
+            'source_platform': 'webscraper',
             'sentiment_label': 'positive',
             'category': 'delivery',
             'original_text': 'Great delivery!'
@@ -72,12 +72,12 @@ class TestMatchesFeedbackItem:
         
         item = {
             'date': '2026-01-09',
-            'source_platform': 'twitter',
+            'source_platform': 'webscraper',
             'original_text': 'Test'
         }
         
-        assert matches_feedback_item(item, '', {'source': 'twitter'}, '2026-01-01') is True
-        assert matches_feedback_item(item, '', {'source': 'facebook'}, '2026-01-01') is False
+        assert matches_feedback_item(item, '', {'source': 'webscraper'}, '2026-01-01') is True
+        assert matches_feedback_item(item, '', {'source': 'manual_import'}, '2026-01-01') is False
 
     def test_filters_by_query(self):
         """Filters item by text query."""
@@ -114,7 +114,7 @@ class TestFormatToolResults:
         
         items = [
             {
-                'source_platform': 'trustpilot',
+                'source_platform': 'webscraper',
                 'source_created_at': '2026-01-09T10:00:00Z',
                 'sentiment_label': 'positive',
                 'sentiment_score': 0.85,
@@ -127,7 +127,7 @@ class TestFormatToolResults:
         result = format_tool_results(items)
         
         assert 'Found 1 relevant feedback' in result
-        assert 'trustpilot' in result
+        assert 'webscraper' in result
         assert 'positive' in result
         assert 'Great service!' in result
 

@@ -180,7 +180,7 @@ def get_voc_chat_context(body: dict) -> tuple[str, str, dict]:
     
     system_prompt = """You are a Voice of the Customer (VoC) analytics assistant. You help analyze customer feedback data and provide actionable insights.
 
-You have access to a tool called "search_feedback" that lets you search and retrieve customer feedback from various sources (Trustpilot, Google Reviews, Twitter, Instagram, Facebook, Reddit, app stores, etc.).
+You have access to a tool called "search_feedback" that lets you search and retrieve customer feedback from various sources (web scrapers, manual imports, S3 imports, etc.).
 
 IMPORTANT GUIDELINES:
 1. ONLY use the search_feedback tool when the user's question is specifically about customer feedback, reviews, or customer opinions

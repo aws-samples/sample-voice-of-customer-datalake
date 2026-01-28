@@ -96,7 +96,7 @@ describe('S3ImportExplorer', () => {
       mockGetS3ImportSources.mockResolvedValue({
         bucket: 'test-bucket',
         sources: [
-          { name: 'twitter', display_name: 'Twitter' },
+          { name: 'webscraper', display_name: 'Web Scraper' },
           { name: 'reviews', display_name: 'Reviews' },
         ],
       })
@@ -109,7 +109,7 @@ describe('S3ImportExplorer', () => {
       })
       
       const options = screen.getAllByRole('option')
-      expect(options.map(o => o.textContent)).toContain('Twitter')
+      expect(options.map(o => o.textContent)).toContain('Web Scraper')
       expect(options.map(o => o.textContent)).toContain('Reviews')
     })
   })

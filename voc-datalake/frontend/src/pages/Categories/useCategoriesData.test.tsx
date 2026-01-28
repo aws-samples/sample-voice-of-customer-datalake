@@ -45,7 +45,7 @@ const mockEntitiesResponse = {
   entities: {
     issues: { 'slow delivery': 20, 'damaged package': 15 },
     categories: { delivery: 50, pricing: 20 },
-    sources: { twitter: 40, trustpilot: 30, google_reviews: 10 },
+    sources: { webscraper: 40, manual_import: 30, s3_import: 10 },
   },
 }
 
@@ -53,22 +53,22 @@ const mockFeedbackResponse = {
   items: [
     {
       feedback_id: '1',
-      source_platform: 'twitter',
+      source_platform: 'webscraper',
       original_text: 'Great delivery!',
       sentiment_label: 'positive',
       category: 'delivery',
       rating: 5,
-      brand_name: 'twitter',
+      brand_name: 'BrandA',
       problem_summary: null,
     },
     {
       feedback_id: '2',
-      source_platform: 'trustpilot',
+      source_platform: 'manual_import',
       original_text: 'Slow support',
       sentiment_label: 'negative',
       category: 'customer_support',
       rating: 2,
-      brand_name: 'trustpilot',
+      brand_name: 'BrandB',
       problem_summary: 'slow response time',
     },
   ],
@@ -160,7 +160,7 @@ describe('useCategoriesData', () => {
       expect(result.current.isLoading).toBe(false)
     })
 
-    expect(result.current.allSources).toEqual(['twitter', 'trustpilot', 'google_reviews'])
+    expect(result.current.allSources).toEqual(['webscraper', 'manual_import', 's3_import'])
   })
 
   it('builds word cloud data from issues and categories', async () => {
@@ -179,13 +179,13 @@ describe('useCategoriesData', () => {
   })
 
   it('filters by source when provided', async () => {
-    renderHook(() => useCategoriesData(7, 'twitter', 'https://api.example.com'), {
+    renderHook(() => useCategoriesData(7, 'webscraper', 'https://api.example.com'), {
       wrapper: createWrapper(),
     })
 
     await waitFor(() => {
-      expect(mockGetCategories).toHaveBeenCalledWith(7, 'twitter')
-      expect(mockGetSentiment).toHaveBeenCalledWith(7, 'twitter')
+      expect(mockGetCategories).toHaveBeenCalledWith(7, 'webscraper')
+      expect(mockGetSentiment).toHaveBeenCalledWith(7, 'webscraper')
     })
   })
 
@@ -284,7 +284,7 @@ describe('useFeedbackData', () => {
 
   it('filters by source', async () => {
     const { result } = renderHook(
-      () => useFeedbackData(7, 'twitter', ['delivery'], 'all', [], 0, 'https://api.example.com', true),
+      () => useFeedbackData(7, 'BrandA', ['delivery'], 'all', [], 0, 'https://api.example.com', true),
       { wrapper: createWrapper() }
     )
 
@@ -292,9 +292,9 @@ describe('useFeedbackData', () => {
       expect(result.current.isLoading).toBe(false)
     })
 
-    // Only twitter source should pass
+    // Only items with brand_name 'BrandA' should pass (the hook filters by brand_name)
     expect(result.current.filteredFeedback).toHaveLength(1)
-    expect(result.current.filteredFeedback[0].source_platform).toBe('twitter')
+    expect(result.current.filteredFeedback[0].brand_name).toBe('BrandA')
   })
 
   it('passes sentiment filter to API', async () => {

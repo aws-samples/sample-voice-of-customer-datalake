@@ -1,14 +1,8 @@
 // Shared filter constants for feedback data
 export const SOURCES = [
-  'trustpilot',
-  'google_reviews',
-  'twitter',
-  'instagram',
-  'facebook',
-  'reddit',
-  'appstore_apple',
-  'appstore_google',
   'webscraper',
+  'manual_import',
+  's3_import',
 ]
 
 export const CATEGORIES = [

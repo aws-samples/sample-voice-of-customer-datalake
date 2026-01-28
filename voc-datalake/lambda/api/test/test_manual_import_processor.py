@@ -65,7 +65,7 @@ class TestProcessJob:
         mock_table.get_item.return_value = {
             'Item': {
                 'raw_text': 'Great product! 5 stars. - John',
-                'source_origin': 'trustpilot'
+                'source_origin': 'g2'
             }
         }
         mock_bedrock.invoke_model.return_value = {
@@ -102,7 +102,7 @@ class TestProcessJob:
         mock_table.get_item.return_value = {
             'Item': {
                 'raw_text': '',
-                'source_origin': 'trustpilot'
+                'source_origin': 'g2'
             }
         }
         
@@ -121,7 +121,7 @@ class TestProcessJob:
         mock_table.get_item.return_value = {
             'Item': {
                 'raw_text': 'Some review text',
-                'source_origin': 'trustpilot'
+                'source_origin': 'g2'
             }
         }
         mock_bedrock.invoke_model.side_effect = Exception('Bedrock unavailable')

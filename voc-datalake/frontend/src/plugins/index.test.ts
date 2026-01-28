@@ -7,29 +7,27 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('./manifests.json', () => ({
   default: [
     {
-      id: 'trustpilot',
-      name: 'Trustpilot',
-      icon: '⭐',
-      description: 'Service reviews via webhook and API polling',
-      category: 'reviews',
+      id: 'webscraper',
+      name: 'Web Scraper',
+      icon: '🕷️',
+      description: 'Configurable scraper for extracting feedback from websites',
+      category: 'import',
       config: [
-        { key: 'api_key', label: 'API Key', type: 'password', required: true, secret: true },
+        { key: 'configs', label: 'Scraper Configurations (JSON)', type: 'textarea', required: false, secret: false },
       ],
       hasIngestor: true,
-      hasWebhook: true,
+      hasWebhook: false,
       hasS3Trigger: false,
       version: '1.0.0',
       enabled: true,
     },
     {
-      id: 'yelp',
-      name: 'Yelp Fusion API',
-      icon: '🍽️',
-      description: 'Business reviews via official Yelp API',
-      category: 'reviews',
-      config: [
-        { key: 'api_key', label: 'API Key', type: 'password', required: true, secret: true },
-      ],
+      id: 'manual_import',
+      name: 'Manual Import',
+      icon: '📝',
+      description: 'Manually import feedback data',
+      category: 'import',
+      config: [],
       hasIngestor: true,
       hasWebhook: false,
       hasS3Trigger: false,
@@ -49,19 +47,6 @@ vi.mock('./manifests.json', () => ({
       version: '1.0.0',
       enabled: true,
     },
-    {
-      id: 'twitter',
-      name: 'Twitter/X',
-      icon: '🐦',
-      description: 'Brand mentions via Twitter API',
-      category: 'social',
-      config: [],
-      hasIngestor: true,
-      hasWebhook: false,
-      hasS3Trigger: false,
-      version: '1.0.0',
-      enabled: true,
-    },
   ],
 }));
 
@@ -76,24 +61,23 @@ describe('Plugin Manifest Loader', () => {
 
       const manifests = getPluginManifests();
 
-      expect(manifests).toHaveLength(4);
-      expect(manifests.map(m => m.id)).toContain('trustpilot');
-      expect(manifests.map(m => m.id)).toContain('yelp');
+      expect(manifests).toHaveLength(3);
+      expect(manifests.map(m => m.id)).toContain('webscraper');
+      expect(manifests.map(m => m.id)).toContain('manual_import');
       expect(manifests.map(m => m.id)).toContain('s3_import');
-      expect(manifests.map(m => m.id)).toContain('twitter');
     });
 
     it('returns manifests with correct structure', async () => {
       const { getPluginManifests } = await import('./index');
 
       const manifests = getPluginManifests();
-      const trustpilot = manifests.find(m => m.id === 'trustpilot');
+      const webscraper = manifests.find(m => m.id === 'webscraper');
 
-      expect(trustpilot).toBeDefined();
-      expect(trustpilot?.name).toBe('Trustpilot');
-      expect(trustpilot?.icon).toBe('⭐');
-      expect(trustpilot?.hasIngestor).toBe(true);
-      expect(trustpilot?.hasWebhook).toBe(true);
+      expect(webscraper).toBeDefined();
+      expect(webscraper?.name).toBe('Web Scraper');
+      expect(webscraper?.icon).toBe('🕷️');
+      expect(webscraper?.hasIngestor).toBe(true);
+      expect(webscraper?.hasWebhook).toBe(false);
     });
   });
 
@@ -101,11 +85,11 @@ describe('Plugin Manifest Loader', () => {
     it('returns manifest for existing plugin', async () => {
       const { getPluginById } = await import('./index');
 
-      const manifest = getPluginById('trustpilot');
+      const manifest = getPluginById('webscraper');
 
       expect(manifest).toBeDefined();
-      expect(manifest?.id).toBe('trustpilot');
-      expect(manifest?.name).toBe('Trustpilot');
+      expect(manifest?.id).toBe('webscraper');
+      expect(manifest?.name).toBe('Web Scraper');
     });
 
     it('returns undefined for non-existent plugin', async () => {
@@ -119,7 +103,7 @@ describe('Plugin Manifest Loader', () => {
     it('is case-sensitive', async () => {
       const { getPluginById } = await import('./index');
 
-      const manifest = getPluginById('Trustpilot');  // Wrong case
+      const manifest = getPluginById('Webscraper');  // Wrong case
 
       expect(manifest).toBeUndefined();
     });
@@ -129,11 +113,12 @@ describe('Plugin Manifest Loader', () => {
     it('returns plugins filtered by category', async () => {
       const { getPluginsByCategory } = await import('./index');
 
-      const reviewPlugins = getPluginsByCategory('reviews');
+      const importPlugins = getPluginsByCategory('import');
 
-      expect(reviewPlugins).toHaveLength(2);
-      expect(reviewPlugins.map(p => p.id)).toContain('trustpilot');
-      expect(reviewPlugins.map(p => p.id)).toContain('yelp');
+      expect(importPlugins).toHaveLength(3);
+      expect(importPlugins.map(p => p.id)).toContain('webscraper');
+      expect(importPlugins.map(p => p.id)).toContain('manual_import');
+      expect(importPlugins.map(p => p.id)).toContain('s3_import');
     });
 
     it('returns empty array for non-existent category', async () => {
@@ -142,24 +127,6 @@ describe('Plugin Manifest Loader', () => {
       const plugins = getPluginsByCategory('nonexistent');
 
       expect(plugins).toHaveLength(0);
-    });
-
-    it('returns import category plugins', async () => {
-      const { getPluginsByCategory } = await import('./index');
-
-      const importPlugins = getPluginsByCategory('import');
-
-      expect(importPlugins).toHaveLength(1);
-      expect(importPlugins[0].id).toBe('s3_import');
-    });
-
-    it('returns social category plugins', async () => {
-      const { getPluginsByCategory } = await import('./index');
-
-      const socialPlugins = getPluginsByCategory('social');
-
-      expect(socialPlugins).toHaveLength(1);
-      expect(socialPlugins[0].id).toBe('twitter');
     });
   });
 
@@ -170,7 +137,7 @@ describe('Plugin Manifest Loader', () => {
       const plugins = getPluginsWithIngestor();
 
       // All mock plugins have ingestors
-      expect(plugins).toHaveLength(4);
+      expect(plugins).toHaveLength(3);
       plugins.forEach(p => {
         expect(p.hasIngestor).toBe(true);
       });
@@ -183,9 +150,8 @@ describe('Plugin Manifest Loader', () => {
 
       const plugins = getPluginsWithWebhook();
 
-      expect(plugins).toHaveLength(1);
-      expect(plugins[0].id).toBe('trustpilot');
-      expect(plugins[0].hasWebhook).toBe(true);
+      // No mock plugins have webhooks
+      expect(plugins).toHaveLength(0);
     });
   });
 
@@ -242,7 +208,7 @@ describe('Type Exports', () => {
 
   it('exports ConfigField type through manifest config', async () => {
     const { getPluginById } = await import('./index');
-    const manifest = getPluginById('trustpilot');
+    const manifest = getPluginById('webscraper');
 
     expect(manifest?.config).toBeDefined();
     expect(Array.isArray(manifest?.config)).toBe(true);
@@ -263,7 +229,7 @@ describe('getEnabledPlugins', () => {
     const plugins = getEnabledPlugins();
 
     // All mock plugins are enabled
-    expect(plugins).toHaveLength(4);
+    expect(plugins).toHaveLength(3);
     plugins.forEach(p => {
       expect(p.enabled).toBe(true);
     });

@@ -213,7 +213,7 @@ Act as a virtual AWS security architect performing pre-deployment and continuous
 When reviewing this project, be aware of the following architecture:
 
 ### Architecture Overview
-VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, and analyzing customer feedback from 16+ data sources in near real-time.
+VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, and analyzing customer feedback from multiple data sources in near real-time.
 
 ### AWS Services in Use
 | Service | Purpose | Security Considerations |
@@ -224,7 +224,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | API Gateway | REST API with split Lambda backends | Throttling, CORS, Cognito auth |
 | SQS | Processing queue with DLQ | Visibility timeout, batch processing |
 | EventBridge | Scheduled ingestion (1-30 min intervals) | Rate expressions |
-| Secrets Manager | API credentials for 16 data sources | Auto-rotation capable |
+| Secrets Manager | API credentials for data source plugins | Auto-rotation capable |
 | KMS | Customer-managed encryption key | Key rotation enabled |
 | Bedrock | Claude Sonnet 4.5 (global inference profile) | Model ARN scoping |
 | Comprehend | Sentiment, language detection, key phrases | - |
@@ -246,9 +246,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-users-api` | `users_handler.py` | `/users/*` | Cognito admin |
 | `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*`, `/feedback-forms/*` | DynamoDB, SQS |
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
-| `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 bucket only |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
-| `voc-webhook-trustpilot` | `handler.py` | `/webhooks/trustpilot` | DynamoDB, SQS, Secrets Manager |
 
 ### Known Security Status
 
@@ -263,12 +261,9 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 - IAM roles split by domain (20KB policy limit compliance)
 - Bedrock permissions scoped to global inference profile
 - SQS Dead Letter Queue for failed processing
-- Webhook signature validation (Trustpilot)
 - Lambda Powertools (Logger, Tracer, Metrics) on all functions
 
 #### ⚠️ Known Considerations (Document but assess carefully)
-- **Public Webhook Endpoints**: `/webhooks/trustpilot` is public (required for webhook delivery)
-  - Mitigated by: Signature validation using webhook secret
 - **Public Feedback Form Endpoints**: `/feedback-form/submit` is public (required for form submissions)
   - Mitigated by: Rate limiting, input validation
 - **Bedrock Global Inference Profile**: Uses cross-region inference for availability
@@ -286,30 +281,17 @@ voc-datalake/
 │   ├── analytics-stack.ts            # API Gateway, Split API Lambdas, WAF
 │   ├── research-stack.ts             # Step Functions
 │   └── frontend-stack.ts             # S3 + CloudFront
+├── plugins/                          # Data source plugins
+│   ├── _shared/                      # Shared plugin utilities
+│   │   └── base_ingestor.py          # Abstract base class
+│   ├── _template/                    # Template for new plugins
+│   └── webscraper/                   # Web scraper plugin
+│       └── ingestor/handler.py
 ├── lambda/
-│   ├── ingestors/                    # 16 source ingestors
-│   │   ├── base_ingestor.py          # Abstract base class
-│   │   ├── trustpilot/handler.py
-│   │   ├── google_reviews/handler.py
-│   │   ├── twitter/handler.py
-│   │   ├── instagram/handler.py
-│   │   ├── facebook/handler.py
-│   │   ├── reddit/handler.py
-│   │   ├── linkedin/handler.py
-│   │   ├── tiktok/handler.py
-│   │   ├── youtube/handler.py
-│   │   ├── tavily/handler.py
-│   │   ├── appstore_apple/handler.py
-│   │   ├── appstore_google/handler.py
-│   │   ├── appstore_huawei/handler.py
-│   │   ├── yelp/handler.py
-│   │   ├── webscraper/handler.py
-│   │   └── s3_import/handler.py
-│   ├── webhooks/trustpilot/handler.py # Webhook receiver
 │   ├── processor/handler.py          # SQS consumer
 │   ├── aggregator/handler.py         # DynamoDB Streams consumer
 │   ├── research/                     # Step Functions tasks
-│   ├── api/                          # Split API handlers (12 files)
+│   ├── api/                          # Split API handlers
 │   │   ├── metrics_handler.py
 │   │   ├── chat_handler.py
 │   │   ├── chat_stream_handler.py
@@ -319,7 +301,6 @@ voc-datalake/
 │   │   ├── projects_handler.py
 │   │   ├── users_handler.py
 │   │   ├── feedback_form_handler.py
-│   │   ├── s3_import_handler.py
 │   │   ├── data_explorer_handler.py
 │   │   └── projects.py               # Shared business logic
 │   └── layers/                       # Lambda layers
@@ -347,22 +328,9 @@ voc-datalake/
 | `voc-raw-data-*` | Persona avatars | Blocked | KMS | `avatars/{project_id}/` |
 | Frontend bucket | React dashboard | Blocked (CloudFront OAC) | S3-managed | - |
 
-### External API Integrations (16 Data Sources)
-| Source | Auth Type | Secrets Manager Key |
-|--------|-----------|---------------------|
-| Trustpilot | OAuth2 + Webhook | `trustpilot_api_key`, `trustpilot_webhook_secret` |
-| Google Reviews | API Key | `google_api_key` |
-| Twitter/X | Bearer Token | `twitter_bearer_token` |
-| Meta (Instagram/Facebook) | Access Token | `meta_access_token` |
-| Reddit | OAuth2 | `reddit_client_id`, `reddit_client_secret` |
-| LinkedIn | OAuth2 | `linkedin_access_token` |
-| TikTok | OAuth2 | `tiktok_access_token` |
-| YouTube | API Key | `youtube_api_key` |
-| Tavily | API Key | `tavily_api_key` |
-| Apple App Store | RSS Feed | `apple_app_id` |
-| Google Play Store | Service Account | `google_play_service_account` |
-| Huawei AppGallery | OAuth2 | `huawei_client_id`, `huawei_client_secret` |
-| Yelp | API Key | `yelp_api_key` |
+### External API Integrations (Plugin-Based)
+
+Data source plugins store their credentials in Secrets Manager. The webscraper plugin stores scraper configurations.
 
 **Security considerations**: All API keys stored in Secrets Manager, retrieved at runtime with caching.
 
@@ -488,41 +456,6 @@ Ask for the format you need:
 The VoC Data Lake demonstrates strong security posture with Cognito authentication, WAF protection, KMS encryption, and domain-isolated Lambda functions (20KB IAM policy compliance). The architecture follows AWS Well-Architected principles with proper secrets management and least-privilege IAM roles.
 
 ### Findings
-
-**Finding**: Public webhook endpoint without rate limiting
-**Severity**: Medium
-**Location**: `lib/stacks/analytics-stack.ts` - Trustpilot webhook route
-**Impact**: Webhook endpoint could be abused for denial of service
-**Principle Violated**: Resilience - Protection against common attack vectors
-**Remediation**: 
-- Webhook signature validation is implemented (good)
-- Consider adding WAF rate limiting specifically for webhook endpoints
-- Monitor CloudWatch for unusual webhook traffic patterns
-```typescript
-// Example: Add specific rate limit for webhooks
-const webhookRateRule = new wafv2.CfnWebACL.RuleProperty({
-  name: 'WebhookRateLimit',
-  priority: 1,
-  statement: {
-    rateBasedStatement: {
-      limit: 100,
-      aggregateKeyType: 'IP',
-      scopeDownStatement: {
-        byteMatchStatement: {
-          searchString: '/webhooks/',
-          fieldToMatch: { uriPath: {} },
-          positionalConstraint: 'CONTAINS',
-          textTransformations: [{ priority: 0, type: 'NONE' }]
-        }
-      }
-    }
-  },
-  action: { block: {} },
-  visibilityConfig: { sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: 'WebhookRateLimit' }
-});
-```
-
----
 
 **Finding**: Feedback form submission endpoint is public
 **Severity**: Low
