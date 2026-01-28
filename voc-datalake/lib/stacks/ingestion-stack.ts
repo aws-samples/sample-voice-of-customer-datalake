@@ -141,7 +141,8 @@ export class VocIngestionStack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
       versioned: false,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
       serverAccessLogsBucket: accessLogsBucket,
       serverAccessLogsPrefix: 's3-import-bucket/',
       cors: [
@@ -183,6 +184,7 @@ export class VocIngestionStack extends cdk.Stack {
         }),
         generateStringKey: 'placeholder',
       },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
   }
 
@@ -192,6 +194,7 @@ export class VocIngestionStack extends cdk.Stack {
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
       retentionPeriod: cdk.Duration.days(14),
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
   }
 
@@ -202,6 +205,7 @@ export class VocIngestionStack extends cdk.Stack {
       encryptionMasterKey: kmsKey,
       visibilityTimeout: cdk.Duration.minutes(6),
       deadLetterQueue: { queue: dlq, maxReceiveCount: 3 },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
   }
 
