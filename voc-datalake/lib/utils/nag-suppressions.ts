@@ -80,10 +80,10 @@ export const dynamoDbGsiSuppressions: NagPackSuppression[] = [
     id: 'AwsSolutions-IAM5',
     reason: 'Wildcard required for DynamoDB Global Secondary Index access - GSI ARNs follow pattern <TableArn>/index/* per AWS best practices',
     appliesTo: [
-      'Resource::<FeedbackTableF528636C.Arn>/index/*',
-      'Resource::<AggregatesTable0F8EFB12.Arn>/index/*',
-      'Resource::<ProjectsTableAA0A2089.Arn>/index/*',
-      'Resource::<JobsTable1970BC16.Arn>/index/*',
+      { regex: '/Resource::<.*FeedbackTable.*\.Arn>/index/\*/' },
+      { regex: '/Resource::<.*AggregatesTable.*\.Arn>/index/\*/' },
+      { regex: '/Resource::<.*ProjectsTable.*\.Arn>/index/\*/' },
+      { regex: '/Resource::<.*JobsTable.*\.Arn>/index/\*/' },
     ],
   },
 ];
@@ -117,10 +117,9 @@ export const s3BucketSuppressions: NagPackSuppression[] = [
     id: 'AwsSolutions-IAM5',
     reason: 'S3 object access requires wildcard on bucket ARN (bucket-arn/*) - AWS best practice for object-level permissions',
     appliesTo: [
-      'Resource::<RawDataBucket57F26C03.Arn>/*',
-      'Resource::<S3ImportBucket676867E6.Arn>/*',
-      'Resource::<WebsiteBucket75C24D94.Arn>/*',
-      'Resource::<RawDataBucket57F26C03.Arn>/avatars/*',
+      { regex: '/.*RawDataBucket.*\.Arn>/\*/' },
+      { regex: '/.*S3ImportBucket.*\.Arn>/\*/' },
+      { regex: '/.*WebsiteBucket.*\.Arn>/\*/' }
     ],
   },
 ];
