@@ -5,6 +5,8 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { z } from 'zod';
+import { NagSuppressions } from 'cdk-nag';
+import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
 
 /**
  * Valid industry options for Anthropic use case form.
@@ -161,13 +163,42 @@ export class BedrockAccessStack extends cdk.Stack {
       logGroup,
       installLatestAwsSdk: true,
     });
+    
+    // Suppress CDK custom resource Lambda runtime warnings for AwsCustomResource
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/SubmitAnthropicUseCase/CustomResourcePolicy/Resource`,
+      cdkCustomResourceSuppressions
+    );
+    
+    // The AwsCustomResource construct creates a singleton Lambda with a deterministic UUID
+    const customResourceId = `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
+    const customResourceSuppressPaths = new Set([
+      `/${this.stackName}/${customResourceId}/ServiceRole/Resource`,
+      `/${this.stackName}/${customResourceId}/Resource`,
+    ]);
+    
+    const allExistingPaths = new Set(
+      this.node.findAll().map((node) => `/${node.node.path}`)
+    );
+    
+    for (const path of customResourceSuppressPaths) {
+      if (allExistingPaths.has(path)) {
+        NagSuppressions.addResourceSuppressionsByPath(
+          this,
+          path,
+          [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
+          true
+        );
+      }
+    }
 
     // ============================================
     // Step 2: Create Model Agreements (accepts EULA)
     // ============================================
     // Lambda function to fetch offer token and create agreement
     const modelAgreementLambda = new lambda.Function(this, 'ModelAgreementLambda', {
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'index.handler',
       timeout: cdk.Duration.minutes(2),
@@ -203,6 +234,21 @@ export class BedrockAccessStack extends cdk.Stack {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
+    
+    // Suppress CDK custom resource Lambda runtime warnings for Provider
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/ModelAgreementProvider/framework-onEvent`,
+      [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
+      true
+    );
+    
+    // Suppress for ModelAgreementLambda
+    NagSuppressions.addResourceSuppressions(
+      modelAgreementLambda,
+      lambdaBasicExecutionRoleSuppressions,
+      true
+    );
 
     // Create model agreements for each required model
     REQUIRED_MODELS.forEach((modelId, index) => {

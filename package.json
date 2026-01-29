@@ -5,35 +5,27 @@
   "private": true,
   "scripts": {
     "install:all": "npm install && npm install --prefix voc-datalake && npm install --prefix voc-datalake/frontend",
-    
     "build:layers": "cd voc-datalake && chmod +x scripts/build-layers.sh && ./scripts/build-layers.sh",
-    
     "dev": "npm run dev --prefix voc-datalake/frontend",
     "build": "npm run build --prefix voc-datalake/frontend",
-    
     "lint": "npm run lint --prefix voc-datalake/frontend",
     "typecheck": "npm run typecheck --prefix voc-datalake/frontend",
     "test": "npm run test --prefix voc-datalake/frontend -- --run",
     "test:watch": "npm run test:watch --prefix voc-datalake/frontend",
     "test:coverage": "npm run test:coverage --prefix voc-datalake/frontend",
-    
     "check": "npm run lint && npm run typecheck && npm run test",
-    
     "generate:manifests": "npm run generate:manifests --prefix voc-datalake",
     "generate:menu": "npm run generate:menu --prefix voc-datalake",
     "generate:config": "npm run generate:manifests && npm run generate:menu",
-    
     "validate:plugins": "npm run validate:plugins --prefix voc-datalake",
-    
     "cdk": "npm run cdk --prefix voc-datalake --",
+    "cdk:nag": "npm run cdk:nag --prefix voc-datalake",
     "cdk:diff": "npm run cdk --prefix voc-datalake -- diff",
     "cdk:synth": "npm run cdk --prefix voc-datalake -- synth",
     "cdk:bootstrap": "npm run cdk --prefix voc-datalake -- bootstrap",
-    
     "deploy:infra": "npm run cdk --prefix voc-datalake -- deploy --all --require-approval never",
     "deploy:frontend": "npm run deploy:frontend --prefix voc-datalake/frontend",
     "deploy:all": "npm run check && npm run deploy:infra && npm run deploy:frontend",
-    
     "destroy": "npm run cdk --prefix voc-datalake -- destroy --all"
   },
   "keywords": [

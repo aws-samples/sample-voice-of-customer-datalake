@@ -22,6 +22,8 @@ import {
   type PluginManifest,
 } from '../plugin-loader';
 import { uniqueName } from '../utils/naming';
+import { NagSuppressions } from 'cdk-nag';
+import { apiSecretsSuppressions } from '../utils/nag-suppressions';
 
 export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -174,7 +176,7 @@ export class VocIngestionStack extends cdk.Stack {
       webscraper_configs: '[]',
     };
 
-    return new secretsmanager.Secret(this, 'VocApiSecrets', {
+    const secret = new secretsmanager.Secret(this, 'VocApiSecrets', {
       secretName: uniqueName('voc-datalake/api-credentials'),
       description: 'API credentials for VoC data sources',
       generateSecretString: {
@@ -186,20 +188,37 @@ export class VocIngestionStack extends cdk.Stack {
       },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+    
+    NagSuppressions.addResourceSuppressions(secret, apiSecretsSuppressions);
+    return secret;
   }
 
   private createDLQ(kmsKey: kms.Key): sqs.Queue {
-    return new sqs.Queue(this, 'ProcessingDLQ', {
+    const dlq = new sqs.Queue(this, 'ProcessingDLQ', {
       queueName: uniqueName('voc-processing-dlq'),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
       retentionPeriod: cdk.Duration.days(14),
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+    
+    // Enforce SSL/TLS for queue access
+    dlq.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'DenyInsecureTransport',
+      effect: iam.Effect.DENY,
+      principals: [new iam.AnyPrincipal()],
+      actions: ['sqs:*'],
+      resources: [dlq.queueArn],
+      conditions: {
+        Bool: { 'aws:SecureTransport': 'false' },
+      },
+    }));
+    
+    return dlq;
   }
 
   private createProcessingQueue(kmsKey: kms.Key, dlq: sqs.Queue): sqs.Queue {
-    return new sqs.Queue(this, 'ProcessingQueue', {
+    const queue = new sqs.Queue(this, 'ProcessingQueue', {
       queueName: uniqueName('voc-processing-queue'),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
@@ -207,6 +226,20 @@ export class VocIngestionStack extends cdk.Stack {
       deadLetterQueue: { queue: dlq, maxReceiveCount: 3 },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+    
+    // Enforce SSL/TLS for queue access
+    queue.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'DenyInsecureTransport',
+      effect: iam.Effect.DENY,
+      principals: [new iam.AnyPrincipal()],
+      actions: ['sqs:*'],
+      resources: [queue.queueArn],
+      conditions: {
+        Bool: { 'aws:SecureTransport': 'false' },
+      },
+    }));
+    
+    return queue;
   }
 
   private createIngestionRole(
@@ -255,7 +288,7 @@ export class VocIngestionStack extends cdk.Stack {
   private createDependenciesLayer(): lambda.LayerVersion {
     return new lambda.LayerVersion(this, 'IngestionDepsLayer', {
       code: lambda.Code.fromAsset('lambda/layers/ingestion-deps'),
-      compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
       description: 'Common dependencies for ingestion lambdas (ARM64/Graviton)',
     });
@@ -291,7 +324,7 @@ export class VocIngestionStack extends cdk.Stack {
 
     const fn = new lambda.Function(this, `Ingestor${capitalize(plugin.id)}`, {
       functionName: uniqueName(`voc-ingestor-${plugin.id}`),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: ingestorCode,
@@ -324,7 +357,7 @@ export class VocIngestionStack extends cdk.Stack {
     return lambda.Code.fromAsset('.', {
       exclude: ['**/__pycache__', '*.pyc', 'plugins/_template/**', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md', 'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**'],
       bundling: {
-        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: [
           'bash', '-c', [
             'mkdir -p /asset-output',

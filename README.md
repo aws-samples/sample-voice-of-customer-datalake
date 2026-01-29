@@ -116,7 +116,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 
 | Layer | Technologies |
 |-------|-------------|
-| Infrastructure | AWS CDK, Lambda (Python 3.12), DynamoDB, S3, SQS, API Gateway |
+| Infrastructure | AWS CDK, Lambda (Python 3.14), DynamoDB, S3, SQS, API Gateway |
 | AI/ML | Amazon Bedrock (Claude), Comprehend, Translate |
 | Frontend | React 19, Vite 7, Tailwind CSS 4, Zustand, TanStack Query |
 | Security | Cognito, WAF, KMS, Secrets Manager |

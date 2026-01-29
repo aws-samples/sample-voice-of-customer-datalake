@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-import { Tags } from 'aws-cdk-lib';
+import { Tags, Aspects } from 'aws-cdk-lib';
+import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
 import { VocCoreStack } from '../lib/stacks/core-stack';
 import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
 import { VocApiStack } from '../lib/stacks/api-stack';
 import { BedrockAccessStack, AnthropicUseCaseSchema } from '../lib/stacks/bedrock-access-stack';
+import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, comprehendSuppressions, translateSuppressions } from '../lib/utils/nag-suppressions';
 
 const app = new cdk.App();
 
@@ -42,13 +44,14 @@ const env = {
 // Submits Anthropic use case for first-time access
 // ============================================
 const anthropicUseCaseRaw = app.node.tryGetContext('anthropicUseCase');
+let bedrockAccessStack: BedrockAccessStack | undefined;
 
 if (anthropicUseCaseRaw) {
   // Validate the config using Zod schema
   const parseResult = AnthropicUseCaseSchema.safeParse(anthropicUseCaseRaw);
   
   if (parseResult.success) {
-    const bedrockAccessStack = new BedrockAccessStack(app, 'BedrockAccessStack', {
+    bedrockAccessStack = new BedrockAccessStack(app, 'BedrockAccessStack', {
       env,
       description: 'VoC Data Lake - Bedrock Access (Anthropic Use Case & Model Agreements)',
       anthropicUseCase: parseResult.data,
@@ -144,5 +147,18 @@ apiStack.addDependency(coreStack);
 apiStack.addDependency(ingestionStack);
 apiStack.addDependency(processingStack);
 tagStack(apiStack, 'Api');
+
+// Apply cdk-nag checks
+Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
+
+// Global suppressions
+if (bedrockAccessStack) {
+  NagSuppressions.addStackSuppressions(bedrockAccessStack, [...pluginSystemSuppressions, ...comprehendSuppressions, ...translateSuppressions], true);
+}
+NagSuppressions.addStackSuppressions(coreStack, [...lambdaBasicExecutionRoleSuppressions, ...cdkAssetsSuppressions], true);
+// Apply stack-level suppressions
+NagSuppressions.addStackSuppressions(ingestionStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions], true);
+NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions, ...comprehendSuppressions, ...translateSuppressions], true);
+NagSuppressions.addStackSuppressions(apiStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions, ...cdkAssetsSuppressions, ...comprehendSuppressions, ...translateSuppressions], true);
 
 app.synth();
