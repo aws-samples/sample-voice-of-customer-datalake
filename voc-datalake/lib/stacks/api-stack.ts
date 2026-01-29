@@ -733,12 +733,12 @@ export class VocApiStack extends cdk.Stack {
     });
     
     // Suppress CDK custom resource Lambda runtime warnings for BucketDeployment
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      `${this.stackName}/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C`,
-      cdkCustomResourceSuppressions,
-      true
-    );
+    // Find and suppress the CDK-managed custom resource (hash-based ID)
+    for (const child of this.node.findAll()) {
+      if (child.node.id.startsWith('Custom::CDKBucketDeployment')) {
+        NagSuppressions.addResourceSuppressions(child, cdkCustomResourceSuppressions, true);
+      }
+    }
 
     // ============================================
     // OUTPUTS

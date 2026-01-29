@@ -170,12 +170,28 @@ export class BedrockAccessStack extends cdk.Stack {
       `${this.stackName}/SubmitAnthropicUseCase/CustomResourcePolicy/Resource`,
       cdkCustomResourceSuppressions
     );
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      `${this.stackName}/AWS679f53fac002430cb0da5b7982bd2287`,
-      [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
-      true
+    
+    // The AwsCustomResource construct creates a singleton Lambda with a deterministic UUID
+    const customResourceId = `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
+    const customResourceSuppressPaths = new Set([
+      `/${this.stackName}/${customResourceId}/ServiceRole/Resource`,
+      `/${this.stackName}/${customResourceId}/Resource`,
+    ]);
+    
+    const allExistingPaths = new Set(
+      this.node.findAll().map((node) => `/${node.node.path}`)
     );
+    
+    for (const path of customResourceSuppressPaths) {
+      if (allExistingPaths.has(path)) {
+        NagSuppressions.addResourceSuppressionsByPath(
+          this,
+          path,
+          [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
+          true
+        );
+      }
+    }
 
     // ============================================
     // Step 2: Create Model Agreements (accepts EULA)
