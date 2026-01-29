@@ -52,7 +52,7 @@ export class VocProcessingStack extends cdk.Stack {
     // Shared Lambda Layer
     const processingLayer = new lambda.LayerVersion(this, 'ProcessingDepsLayer', {
       code: lambda.Code.fromAsset('lambda/layers/processing-deps'),
-      compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
       description: 'Dependencies for processing lambdas (ARM64/Graviton)',
     });
@@ -105,7 +105,7 @@ export class VocProcessingStack extends cdk.Stack {
     const processorCode = lambda.Code.fromAsset('lambda', {
       exclude: ['**/__pycache__', '*.pyc', 'api/**', 'ingestors/**', 'webhooks/**', 'research/**', 'layers/**', 'aggregator/**'],
       bundling: {
-        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/processor/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
         platform: 'linux/arm64',
       },
@@ -113,7 +113,7 @@ export class VocProcessingStack extends cdk.Stack {
 
     this.processingLambda = new lambda.Function(this, 'FeedbackProcessor', {
       functionName: uniqueName('voc-feedback-processor'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: processorCode,
@@ -152,7 +152,7 @@ export class VocProcessingStack extends cdk.Stack {
     const aggregatorCode = lambda.Code.fromAsset('lambda', {
       exclude: ['**/__pycache__', '*.pyc', 'api/**', 'ingestors/**', 'webhooks/**', 'research/**', 'layers/**', 'processor/**'],
       bundling: {
-        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/aggregator/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
         platform: 'linux/arm64',
       },
@@ -160,7 +160,7 @@ export class VocProcessingStack extends cdk.Stack {
 
     this.aggregationLambda = new lambda.Function(this, 'AggregationProcessor', {
       functionName: uniqueName('voc-aggregation-processor'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: aggregatorCode,
@@ -214,7 +214,7 @@ export class VocProcessingStack extends cdk.Stack {
     const researchCode = lambda.Code.fromAsset('.', {
       exclude: ['**/__pycache__', '*.pyc', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md', 'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**', 'plugins/**', 'lambda/api/**', 'lambda/processor/**', 'lambda/ingestors/**', 'lambda/aggregator/**', 'lambda/webhooks/**', 'lambda/layers/**'],
       bundling: {
-        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/lambda/research/* /asset-output/ && cp -r /asset-input/lambda/shared /asset-output/'],
         platform: 'linux/arm64',
       },
@@ -222,7 +222,7 @@ export class VocProcessingStack extends cdk.Stack {
 
     const researchStepLambda = new lambda.Function(this, 'ResearchStepLambda', {
       functionName: uniqueName('voc-research-step'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'research_step_handler.lambda_handler',
       code: researchCode,

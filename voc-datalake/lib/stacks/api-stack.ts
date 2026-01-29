@@ -12,8 +12,10 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as path from 'path';
 import { Construct } from 'constructs';
+import { NagSuppressions } from 'cdk-nag';
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
 import { uniqueName } from '../utils/naming';
+import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions } from '../utils/nag-suppressions';
 
 export interface VocApiStackProps extends cdk.StackProps {
   // Core stack resources
@@ -78,7 +80,7 @@ export class VocApiStack extends cdk.Stack {
     // Shared Lambda Layer
     const apiLayer = new lambda.LayerVersion(this, 'ApiDepsLayer', {
       code: lambda.Code.fromAsset('lambda/layers/processing-deps'),
-      compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
       description: 'Dependencies for API lambdas (ARM64/Graviton)',
     });
@@ -86,7 +88,7 @@ export class VocApiStack extends cdk.Stack {
     // Bundled Lambda code
     const apiCodeWithShared = lambda.Code.fromAsset('lambda', {
       bundling: {
-        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/api/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
         platform: 'linux/arm64',
       },
@@ -104,7 +106,7 @@ export class VocApiStack extends cdk.Stack {
 
     const metricsLambda = new lambda.Function(this, 'MetricsApi', {
       functionName: uniqueName('voc-metrics-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'metrics_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -135,7 +137,7 @@ export class VocApiStack extends cdk.Stack {
 
     const integrationsLambda = new lambda.Function(this, 'IntegrationsApi', {
       functionName: uniqueName('voc-integrations-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'integrations_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -174,7 +176,7 @@ export class VocApiStack extends cdk.Stack {
 
     const scrapersLambda = new lambda.Function(this, 'ScrapersApi', {
       functionName: uniqueName('voc-scrapers-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'scrapers_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -197,7 +199,7 @@ export class VocApiStack extends cdk.Stack {
 
     const manualImportLambda = new lambda.Function(this, 'ManualImportApi', {
       functionName: uniqueName('voc-manual-import-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'manual_import_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -228,7 +230,7 @@ export class VocApiStack extends cdk.Stack {
 
     new lambda.Function(this, 'ManualImportProcessor', {
       functionName: uniqueName('voc-manual-import-processor'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'manual_import_processor.lambda_handler',
       code: apiCodeWithShared,
@@ -251,7 +253,7 @@ export class VocApiStack extends cdk.Stack {
 
     const settingsLambda = new lambda.Function(this, 'SettingsApi', {
       functionName: uniqueName('voc-settings-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'settings_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -270,7 +272,7 @@ export class VocApiStack extends cdk.Stack {
 
     const logsLambda = new lambda.Function(this, 'LogsApi', {
       functionName: uniqueName('voc-logs-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'logs_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -291,7 +293,7 @@ export class VocApiStack extends cdk.Stack {
 
     const usersLambda = new lambda.Function(this, 'UsersApi', {
       functionName: uniqueName('voc-users-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'users_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -312,7 +314,7 @@ export class VocApiStack extends cdk.Stack {
 
     const feedbackFormLambda = new lambda.Function(this, 'FeedbackFormApi', {
       functionName: uniqueName('voc-feedback-form-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'feedback_form_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -337,7 +339,7 @@ export class VocApiStack extends cdk.Stack {
 
     const chatLambda = new lambda.Function(this, 'ChatApi', {
       functionName: uniqueName('voc-chat-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'chat_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -371,7 +373,7 @@ export class VocApiStack extends cdk.Stack {
 
     const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
       functionName: uniqueName('voc-projects-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'projects_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -407,7 +409,7 @@ export class VocApiStack extends cdk.Stack {
 
     const chatStreamLambda = new lambda.Function(this, 'ChatStreamApi', {
       functionName: uniqueName('voc-chat-stream'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'chat_stream_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -440,7 +442,7 @@ export class VocApiStack extends cdk.Stack {
 
     const s3ImportLambda = new lambda.Function(this, 'S3ImportApi', {
       functionName: uniqueName('voc-s3-import-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 's3_import_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -461,7 +463,7 @@ export class VocApiStack extends cdk.Stack {
 
     const dataExplorerLambda = new lambda.Function(this, 'DataExplorerApi', {
       functionName: uniqueName('voc-data-explorer-api'),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'data_explorer_handler.lambda_handler',
       code: apiCodeWithShared,
@@ -504,10 +506,27 @@ export class VocApiStack extends cdk.Stack {
     // ============================================
     // API GATEWAY
     // ============================================
+    
+    // API Gateway CloudWatch Logs
+    const apiLogGroup = new logs.LogGroup(this, 'ApiGatewayLogs', {
+      logGroupName: `/aws/apigateway/${uniqueName('voc-analytics-api')}`,
+      retention: logs.RetentionDays.TWO_WEEKS,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    
     this.api = new apigateway.RestApi(this, 'VocAnalyticsApi', {
       restApiName: uniqueName('voc-analytics-api'),
       description: 'Voice of the Customer Analytics API',
-      deployOptions: { stageName: 'v1', throttlingRateLimit: 100, throttlingBurstLimit: 200, metricsEnabled: true },
+      deployOptions: {
+        stageName: 'v1',
+        throttlingRateLimit: 100,
+        throttlingBurstLimit: 200,
+        metricsEnabled: true,
+        loggingLevel: apigateway.MethodLoggingLevel.INFO,
+        dataTraceEnabled: false,
+        accessLogDestination: new apigateway.LogGroupLogDestination(apiLogGroup),
+        accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields(),
+      },
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
@@ -515,6 +534,8 @@ export class VocApiStack extends cdk.Stack {
         exposeHeaders: ['Content-Type'],
       },
     });
+    
+    NagSuppressions.addResourceSuppressions(this.api, apiGatewayRequestValidationSuppressions, true);
 
     // Gateway responses for CORS on errors
     this.api.addGatewayResponse('Default4XX', {
@@ -650,17 +671,23 @@ export class VocApiStack extends cdk.Stack {
     // /feedback-form/* (legacy single form - public endpoints)
     const feedbackFormResource = this.api.root.addResource('feedback-form');
     const feedbackFormConfigResource = feedbackFormResource.addResource('config');
-    feedbackFormConfigResource.addMethod('GET', feedbackFormIntegration);
+    const feedbackFormConfigGet = feedbackFormConfigResource.addMethod('GET', feedbackFormIntegration);
     feedbackFormConfigResource.addMethod('PUT', feedbackFormIntegration, authMethodOptions);
-    feedbackFormResource.addResource('submit').addMethod('POST', feedbackFormIntegration);
-    feedbackFormResource.addResource('embed').addMethod('GET', feedbackFormIntegration);
-    feedbackFormResource.addResource('iframe').addMethod('GET', feedbackFormIntegration);
+    const feedbackFormSubmit = feedbackFormResource.addResource('submit').addMethod('POST', feedbackFormIntegration);
+    const feedbackFormEmbed = feedbackFormResource.addResource('embed').addMethod('GET', feedbackFormIntegration);
+    const feedbackFormIframe = feedbackFormResource.addResource('iframe').addMethod('GET', feedbackFormIntegration);
+    
+    NagSuppressions.addResourceSuppressions(feedbackFormConfigGet, publicFeedbackEndpointSuppressions);
+    NagSuppressions.addResourceSuppressions(feedbackFormSubmit, publicFeedbackEndpointSuppressions);
+    NagSuppressions.addResourceSuppressions(feedbackFormEmbed, publicFeedbackEndpointSuppressions);
+    NagSuppressions.addResourceSuppressions(feedbackFormIframe, publicFeedbackEndpointSuppressions);
 
     // /feedback-forms/* (multiple forms)
     const feedbackFormsResource = this.api.root.addResource('feedback-forms');
     feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);
     feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions);
-    feedbackFormsResource.addProxy({ defaultIntegration: feedbackFormIntegration, anyMethod: true });
+    const feedbackFormsProxy = feedbackFormsResource.addProxy({ defaultIntegration: feedbackFormIntegration, anyMethod: true });
+    NagSuppressions.addResourceSuppressions(feedbackFormsProxy, publicFeedbackEndpointSuppressions, true);
 
     // /projects/*
     const projectsResource = this.api.root.addResource('projects');
@@ -695,7 +722,7 @@ export class VocApiStack extends cdk.Stack {
       },
     };
 
-    new s3deploy.BucketDeployment(this, 'DeployWebsite', {
+    const websiteDeployment = new s3deploy.BucketDeployment(this, 'DeployWebsite', {
       sources: [
         s3deploy.Source.asset('frontend/dist'),
         s3deploy.Source.data('config.json', JSON.stringify(runtimeConfig, null, 2)),
@@ -704,6 +731,14 @@ export class VocApiStack extends cdk.Stack {
       distribution: frontendDistribution,
       distributionPaths: ['/*'],
     });
+    
+    // Suppress CDK custom resource Lambda runtime warnings for BucketDeployment
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C`,
+      cdkCustomResourceSuppressions,
+      true
+    );
 
     // ============================================
     // OUTPUTS
@@ -747,7 +782,7 @@ export class VocApiStack extends cdk.Stack {
     const webhookCode = lambda.Code.fromAsset('plugins', {
       exclude: ['**/__pycache__', '*.pyc', '_template/**'],
       bundling: {
-        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', `mkdir -p /asset-output && cp -r /asset-input/${plugin.id}/webhook/* /asset-output/ && cp -r /asset-input/_shared /asset-output/`],
         platform: 'linux/arm64',
       },
@@ -757,7 +792,7 @@ export class VocApiStack extends cdk.Stack {
 
     return new lambda.Function(this, `${pascalPluginId}Webhook`, {
       functionName: uniqueName(`voc-webhook-${plugin.id}`),
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: webhookCode,

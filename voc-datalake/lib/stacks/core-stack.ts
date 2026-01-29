@@ -11,6 +11,8 @@ import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 import { uniqueName } from '../utils/naming';
+import { NagSuppressions } from 'cdk-nag';
+import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
 
 export interface VocCoreStackProps extends cdk.StackProps {
   brandName: string;
@@ -110,6 +112,7 @@ export class VocCoreStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
+    NagSuppressions.addResourceSuppressions(this.websiteBucket, websiteBucketSuppressions);
 
     // ============================================
     // CLOUDFRONT DISTRIBUTIONS
@@ -142,8 +145,12 @@ export class VocCoreStack extends cdk.Stack {
       },
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       comment: 'VoC Persona Avatars CDN',
+      enableLogging: true,
+      logBucket: this.accessLogsBucket,
+      logFilePrefix: 'cloudfront-avatars/',
     });
     cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
+    NagSuppressions.addResourceSuppressions(avatarsDistribution, cloudfrontDefaultCertSuppressions);
     this.avatarsCdnUrl = `https://${avatarsDistribution.distributionDomainName}`;
 
     // Frontend hosting distribution
@@ -162,7 +169,11 @@ export class VocCoreStack extends cdk.Stack {
         { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.minutes(5) },
       ],
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      enableLogging: true,
+      logBucket: this.accessLogsBucket,
+      logFilePrefix: 'cloudfront-frontend/',
     });
+    NagSuppressions.addResourceSuppressions(this.frontendDistribution, cloudfrontDefaultCertSuppressions);
     this.frontendDomainName = this.frontendDistribution.distributionDomainName;
 
 
@@ -305,6 +316,7 @@ export class VocCoreStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       timeToLiveAttribute: 'expiration',
     });
+    NagSuppressions.addResourceSuppressions(this.idempotencyTable, idempotencyTableSuppressions);
 
 
     // ============================================
@@ -322,7 +334,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Custom Message Lambda Trigger
     const customMessageLambda = new lambda.Function(this, 'CustomMessageLambda', {
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'index.handler',
       code: lambda.Code.fromInline(this.getCustomMessageLambdaCode(signInUrl)),
@@ -349,7 +361,7 @@ export class VocCoreStack extends cdk.Stack {
         requireLowercase: true,
         requireUppercase: true,
         requireDigits: true,
-        requireSymbols: false,
+        requireSymbols: true,
       },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -377,6 +389,7 @@ The VoC Analytics Team`,
       },
       lambdaTriggers: { customMessage: customMessageLambda },
     });
+    NagSuppressions.addResourceSuppressions(this.userPool, cognitoSecuritySuppressions);
 
     // User Pool Client
     this.userPoolClient = this.userPool.addClient('VocWebClient', {
@@ -489,6 +502,14 @@ The VoC Analytics Team`,
       ]),
     });
     addAdminToGroup.node.addDependency(setAdminPassword);
+    
+    // Suppress CDK custom resource Lambda runtime warnings
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/AWS679f53fac002430cb0da5b7982bd2287`,
+      [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
+      true
+    );
 
     // ============================================
     // OUTPUTS
