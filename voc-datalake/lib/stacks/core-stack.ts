@@ -57,7 +57,8 @@ export class VocCoreStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocCoreStackProps) {
     super(scope, id, props);
 
-    const corsAllowedOrigins = ['http://localhost:5173', 'http://localhost:3000'];
+    // Base CORS origins for localhost development
+    const corsAllowedOriginsBase = ['http://localhost:5173', 'http://localhost:3000'];
 
     // ============================================
     // KMS KEY
@@ -96,7 +97,7 @@ export class VocCoreStack extends cdk.Stack {
       serverAccessLogsPrefix: 'raw-data-bucket/',
       cors: [{
         allowedMethods: [s3.HttpMethods.GET],
-        allowedOrigins: corsAllowedOrigins,
+        allowedOrigins: corsAllowedOriginsBase,
         allowedHeaders: ['*'],
         maxAge: 3600,
       }],
@@ -118,7 +119,36 @@ export class VocCoreStack extends cdk.Stack {
     // CLOUDFRONT DISTRIBUTIONS
     // ============================================
     
-    // Avatars CDN
+    // Frontend hosting distribution (created first so we can use its domain for CORS)
+    this.frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
+      defaultBehavior: {
+        origin: origins.S3BucketOrigin.withOriginAccessControl(this.websiteBucket),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
+        compress: true,
+        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+      },
+      defaultRootObject: 'index.html',
+      errorResponses: [
+        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.minutes(5) },
+        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.minutes(5) },
+      ],
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      enableLogging: true,
+      logBucket: this.accessLogsBucket,
+      logFilePrefix: 'cloudfront-frontend/',
+    });
+    NagSuppressions.addResourceSuppressions(this.frontendDistribution, cloudfrontDefaultCertSuppressions);
+    this.frontendDomainName = this.frontendDistribution.distributionDomainName;
+
+    // CORS origins including the production frontend domain
+    const corsAllowedOrigins = [
+      ...corsAllowedOriginsBase,
+      `https://${this.frontendDomainName}`,
+    ];
+    
+    // Avatars CDN (created after frontend so we can include its domain in CORS)
     const avatarsCorsPolicy = new cloudfront.ResponseHeadersPolicy(this, 'AvatarsCorsPolicy', {
       responseHeadersPolicyName: uniqueName('voc-avatars-cors-policy'),
       corsBehavior: {
@@ -152,29 +182,6 @@ export class VocCoreStack extends cdk.Stack {
     cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
     NagSuppressions.addResourceSuppressions(avatarsDistribution, cloudfrontDefaultCertSuppressions);
     this.avatarsCdnUrl = `https://${avatarsDistribution.distributionDomainName}`;
-
-    // Frontend hosting distribution
-    this.frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
-      defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(this.websiteBucket),
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
-        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
-        compress: true,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-      },
-      defaultRootObject: 'index.html',
-      errorResponses: [
-        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.minutes(5) },
-        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.minutes(5) },
-      ],
-      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-      enableLogging: true,
-      logBucket: this.accessLogsBucket,
-      logFilePrefix: 'cloudfront-frontend/',
-    });
-    NagSuppressions.addResourceSuppressions(this.frontendDistribution, cloudfrontDefaultCertSuppressions);
-    this.frontendDomainName = this.frontendDistribution.distributionDomainName;
 
 
     // ============================================
