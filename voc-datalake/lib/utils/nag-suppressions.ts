@@ -38,6 +38,15 @@ export const lambdaBasicExecutionRoleSuppressions: NagPackSuppression[] = [
   },
 ];
 
+// AmazonAPIGatewayPushToCloudWatchLogs - AWS managed policy for API Gateway to publish logs to CloudWatch 
+export const apiGatewayPushToCloudwatchLogsRoleSuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-IAM4',
+    reason: 'AmazonAPIGatewayPushToCloudWatchLogs is AWS-recommended managed policy for API Gateway to push to CloudWatch logging with minimal permissions',
+    appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs'],
+  },
+];
+
 // CloudFront distributions using default certificate
 export const cloudfrontDefaultCertSuppressions: NagPackSuppression[] = [
   {

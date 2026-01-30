@@ -26,9 +26,9 @@
     "generate:menu": "ts-node scripts/generate-menu-config.ts",
     "generate:config": "npm run generate:manifests && npm run generate:menu",
     "generate:integrity": "ts-node scripts/generate-integrity.ts",
+    "generate:workshop-artifacts": "rm -rf cdk.out && rm -rf Workshop && npx cdk synth --all && node scripts/convert-template.mjs VocCoreStack VocIngestionStack  VocProcessingStack VocApiStack BedrockAccessStack",
     "validate:plugins": "ts-node scripts/validate-plugins.ts",
-    "prebuild:frontend": "npm run generate:config",
-    "convert:templates": "node scripts/convert-template.mjs VocCoreStack VocIngestionStack  VocProcessingStack VocApiStack BedrockAccessStack"
+    "prebuild:frontend": "npm run generate:config"
   },
   "keywords": [
     "aws",

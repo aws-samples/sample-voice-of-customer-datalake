@@ -82,6 +82,7 @@ export class VocCoreStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       lifecycleRules: [{ expiration: cdk.Duration.days(90) }],
+      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
     });
 
     this.rawDataBucket = new s3.Bucket(this, 'RawDataBucket', {
@@ -563,10 +564,6 @@ The VoC Analytics Team`,
     new cdk.CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID for frontend' });
     new cdk.CfnOutput(this, 'UserPoolDomain', { value: `${domainPrefix}.auth.${this.region}.amazoncognito.com`, description: 'Cognito User Pool Domain' });
     new cdk.CfnOutput(this, 'CognitoRegion', { value: this.region, description: 'AWS Region for Cognito' });
-    
-    // Initial admin credentials (for reference)
-    new cdk.CfnOutput(this, 'InitialAdminUsername', { value: initialAdminUsername, description: 'Initial admin username' });
-    new cdk.CfnOutput(this, 'InitialAdminPassword', { value: initialAdminPassword, description: 'Initial admin password (change after first login)' });
   }
 
   private getCustomMessageLambdaCode(signInUrl: string): string {
