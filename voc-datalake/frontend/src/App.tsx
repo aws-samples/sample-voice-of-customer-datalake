@@ -7,6 +7,7 @@ import AdminRoute from './components/AdminRoute'
 import PageLoader from './components/PageLoader'
 import Login from './pages/Login'
 import { loadRuntimeConfig, isConfigLoaded } from './runtimeConfig'
+import { useConfigStore } from './store/configStore'
 
 // Lazy load pages for better code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -68,17 +69,23 @@ const router = createBrowserRouter([
 export default function App() {
   const [configReady, setConfigReady] = useState(isConfigLoaded())
   const [error, setError] = useState<string | null>(null)
+  const syncWithRuntimeConfig = useConfigStore((state) => state.syncWithRuntimeConfig)
 
   useEffect(() => {
     if (!configReady) {
       loadRuntimeConfig()
-        .then(() => setConfigReady(true))
+        .then(() => {
+          // Sync the config store with runtime config to ensure
+          // first-time users get the correct API endpoint
+          syncWithRuntimeConfig()
+          setConfigReady(true)
+        })
         .catch((err) => {
           console.error('Failed to load config:', err)
           setError('Failed to load application configuration')
         })
     }
-  }, [configReady])
+  }, [configReady, syncWithRuntimeConfig])
 
   if (error) {
     return (
