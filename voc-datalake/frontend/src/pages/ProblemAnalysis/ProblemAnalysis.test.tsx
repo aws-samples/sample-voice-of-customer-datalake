@@ -149,6 +149,24 @@ describe('ProblemAnalysis', () => {
       expect(expandButton).toBeTruthy()
     })
   })
+describe('source filtering', () => {
+    it('renders source filter dropdown with available sources', async () => {
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      // Wait for loading to complete
+      await waitFor(() => {
+        expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
+      })
+
+      // The source filter dropdown should be present with "All Sources" option
+      const sourceSelects = document.querySelectorAll('select')
+      expect(sourceSelects.length).toBeGreaterThan(0)
+      
+      // First select should have "All Sources" option
+      const firstSelect = sourceSelects[0]
+      expect(firstSelect.querySelector('option[value=""]')).toBeTruthy()
+    })
+  })
 })
 
 // Note: Testing "not configured" state requires module re-mocking which is complex
