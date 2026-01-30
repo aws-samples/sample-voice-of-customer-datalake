@@ -246,7 +246,7 @@ export default function ProblemAnalysis() {
       .filter(item => !showUrgentOnly || item.urgency === 'high')
       .filter(item => !selectedCategory || item.category === selectedCategory)
       .filter(item => !selectedSubcategory || item.subcategory === selectedSubcategory)
-      .filter(item => !selectedSource || item.brand_name === selectedSource)
+      .filter(item => !selectedSource || item.source_platform === selectedSource)
 
     for (const item of filteredItems) {
       const category = item.category || 'uncategorized'

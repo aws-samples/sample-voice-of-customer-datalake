@@ -133,7 +133,7 @@ export function useFeedbackData(
     return feedbackData.items.filter(item => {
       if (minRating > 0 && (!item.rating || item.rating < minRating)) return false
       if (selectedCategories.length > 1 && !selectedCategories.includes(item.category)) return false
-      if (selectedSource && item.brand_name !== selectedSource) return false
+      if (selectedSource && item.source_platform !== selectedSource) return false
       if (selectedKeywords.length > 0) {
         const text = (item.original_text + ' ' + (item.problem_summary || '')).toLowerCase()
         const hasKeyword = selectedKeywords.some(kw => text.includes(kw.toLowerCase()))

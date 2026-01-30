@@ -282,9 +282,9 @@ describe('useFeedbackData', () => {
     expect(result.current.filteredFeedback[0].feedback_id).toBe('2')
   })
 
-  it('filters by source', async () => {
+  it('filters by source_platform (not brand_name)', async () => {
     const { result } = renderHook(
-      () => useFeedbackData(7, 'BrandA', ['delivery'], 'all', [], 0, 'https://api.example.com', true),
+      () => useFeedbackData(7, 'webscraper', ['delivery'], 'all', [], 0, 'https://api.example.com', true),
       { wrapper: createWrapper() }
     )
 
@@ -292,9 +292,27 @@ describe('useFeedbackData', () => {
       expect(result.current.isLoading).toBe(false)
     })
 
-    // Only items with brand_name 'BrandA' should pass (the hook filters by brand_name)
+    // Should filter by source_platform, not brand_name
     expect(result.current.filteredFeedback).toHaveLength(1)
-    expect(result.current.filteredFeedback[0].brand_name).toBe('BrandA')
+    expect(result.current.filteredFeedback[0].source_platform).toBe('webscraper')
+  })
+
+  it('does not filter by brand_name when source is selected', async () => {
+    // This test ensures we're filtering by source_platform, not brand_name
+    // If we filtered by brand_name, selecting 'webscraper' would return 0 results
+    // because no item has brand_name === 'webscraper'
+    const { result } = renderHook(
+      () => useFeedbackData(7, 'webscraper', [], 'all', [], 0, 'https://api.example.com', true),
+      { wrapper: createWrapper() }
+    )
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    // Should find the item with source_platform 'webscraper'
+    expect(result.current.filteredFeedback.length).toBeGreaterThan(0)
+    expect(result.current.filteredFeedback.every(item => item.source_platform === 'webscraper')).toBe(true)
   })
 
   it('passes sentiment filter to API', async () => {
