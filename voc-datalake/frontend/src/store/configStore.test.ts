@@ -1,8 +1,18 @@
 /**
  * @fileoverview Tests for configStore Zustand store.
  */
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useConfigStore } from './configStore'
+import * as runtimeConfig from '../runtimeConfig'
+
+// Mock the runtimeConfig module
+vi.mock('../runtimeConfig', () => ({
+  isConfigLoaded: vi.fn(() => false),
+  getRuntimeConfig: vi.fn(() => ({
+    apiEndpoint: 'https://runtime-api.example.com',
+    cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+  }))
+}))
 
 describe('configStore', () => {
   beforeEach(() => {
@@ -105,6 +115,52 @@ describe('configStore', () => {
 
       const { customDateRange } = useConfigStore.getState()
       expect(customDateRange).toBeNull()
+    })
+  })
+
+  describe('syncWithRuntimeConfig', () => {
+    it('updates apiEndpoint from runtime config when config is loaded', () => {
+      // Mock isConfigLoaded to return true
+      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        apiEndpoint: 'https://runtime-api.example.com',
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+      })
+
+      const { syncWithRuntimeConfig } = useConfigStore.getState()
+      syncWithRuntimeConfig()
+
+      const { config } = useConfigStore.getState()
+      expect(config.apiEndpoint).toBe('https://runtime-api.example.com')
+    })
+
+    it('does not update apiEndpoint when runtime config is not loaded', () => {
+      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(false)
+
+      const { syncWithRuntimeConfig, setConfig } = useConfigStore.getState()
+      setConfig({ apiEndpoint: 'https://local-api.example.com' })
+      syncWithRuntimeConfig()
+
+      const { config } = useConfigStore.getState()
+      expect(config.apiEndpoint).toBe('https://local-api.example.com')
+    })
+
+    it('does not update when runtime endpoint matches store endpoint', () => {
+      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        apiEndpoint: 'https://same-api.example.com',
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+      })
+
+      const { syncWithRuntimeConfig, setConfig } = useConfigStore.getState()
+      setConfig({ apiEndpoint: 'https://same-api.example.com' })
+      
+      const setStateSpy = vi.spyOn(useConfigStore, 'setState')
+      syncWithRuntimeConfig()
+
+      // setState should not be called since endpoints match
+      expect(setStateSpy).not.toHaveBeenCalled()
+      setStateSpy.mockRestore()
     })
   })
 })
