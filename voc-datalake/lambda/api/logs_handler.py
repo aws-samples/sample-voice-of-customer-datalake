@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource
 from shared.api import create_api_resolver, api_handler
+from shared.exceptions import ConfigurationError, ServiceError
 
 from boto3.dynamodb.conditions import Key, Attr
 
@@ -36,7 +37,7 @@ def get_validation_logs():
     - limit: Max number of logs to return (default: 100)
     """
     if not aggregates_table:
-        return {'logs': [], 'error': 'Aggregates table not configured'}
+        raise ConfigurationError('Aggregates table not configured')
     
     params = app.current_event.query_string_parameters or {}
     source = params.get('source')
@@ -67,9 +68,11 @@ def get_validation_logs():
             'count': len(logs),
             'days': days,
         }
+    except ConfigurationError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to get validation logs: {e}")
-        return {'logs': [], 'error': 'Failed to retrieve logs'}
+        raise ServiceError('Failed to retrieve logs')
 
 
 @app.get("/logs/processing")
@@ -84,7 +87,7 @@ def get_processing_logs():
     - limit: Max number of logs to return (default: 100)
     """
     if not aggregates_table:
-        return {'logs': [], 'error': 'Aggregates table not configured'}
+        raise ConfigurationError('Aggregates table not configured')
     
     params = app.current_event.query_string_parameters or {}
     source = params.get('source')
@@ -112,9 +115,11 @@ def get_processing_logs():
             'count': len(logs),
             'days': days,
         }
+    except ConfigurationError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to get processing logs: {e}")
-        return {'logs': [], 'error': 'Failed to retrieve logs'}
+        raise ServiceError('Failed to retrieve logs')
 
 
 @app.get("/logs/scraper/<scraper_id>")
@@ -128,7 +133,7 @@ def get_scraper_logs(scraper_id: str):
     - limit: Max number of logs to return (default: 50)
     """
     if not aggregates_table:
-        return {'logs': [], 'error': 'Aggregates table not configured'}
+        raise ConfigurationError('Aggregates table not configured')
     
     params = app.current_event.query_string_parameters or {}
     days = int(params.get('days', '7'))
@@ -161,9 +166,11 @@ def get_scraper_logs(scraper_id: str):
             'logs': logs,
             'count': len(logs),
         }
+    except ConfigurationError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to get scraper logs: {e}")
-        return {'logs': [], 'error': 'Failed to retrieve logs'}
+        raise ServiceError('Failed to retrieve logs')
 
 
 @app.get("/logs/summary")
@@ -175,7 +182,7 @@ def get_logs_summary():
     Returns counts of validation failures and processing errors per source.
     """
     if not aggregates_table:
-        return {'summary': {}, 'error': 'Aggregates table not configured'}
+        raise ConfigurationError('Aggregates table not configured')
     
     params = app.current_event.query_string_parameters or {}
     days = int(params.get('days', '7'))
@@ -208,9 +215,11 @@ def get_logs_summary():
             'summary': summary,
             'days': days,
         }
+    except ConfigurationError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to get logs summary: {e}")
-        return {'summary': {}, 'error': 'Failed to retrieve summary'}
+        raise ServiceError('Failed to retrieve summary')
 
 
 @app.delete("/logs/validation/<source>")
@@ -218,7 +227,7 @@ def get_logs_summary():
 def clear_validation_logs(source: str):
     """Clear validation logs for a specific source."""
     if not aggregates_table:
-        return {'success': False, 'message': 'Aggregates table not configured'}
+        raise ConfigurationError('Aggregates table not configured')
     
     try:
         # Query and delete logs
@@ -234,9 +243,11 @@ def clear_validation_logs(source: str):
                 deleted += 1
         
         return {'success': True, 'deleted': deleted}
+    except ConfigurationError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to clear validation logs: {e}")
-        return {'success': False, 'message': 'Failed to clear logs'}
+        raise ServiceError('Failed to clear logs')
 
 
 def _query_logs_for_source(log_type: str, source: str, days: int, limit: int) -> list:

@@ -290,7 +290,7 @@ export default function ManualImportModal() {
       const result = await api.startManualImportParse(sourceUrl, rawText)
       
       if (!result.success) {
-        setProcessingError(result.message ?? 'Failed to start parsing')
+        setProcessingError(result.error ?? 'Failed to start parsing')
         setStep('input')
         return
       }
@@ -318,7 +318,7 @@ export default function ManualImportModal() {
         // Could show success toast here
         window.location.reload() // Refresh to show new feedback
       } else {
-        setProcessingError(result.message ?? 'Failed to import reviews')
+        setProcessingError(result.error ?? 'Failed to import reviews')
       }
     } catch {
       setProcessingError('Failed to import reviews')

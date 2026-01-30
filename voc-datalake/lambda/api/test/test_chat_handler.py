@@ -254,6 +254,7 @@ class TestSaveConversation:
     def test_returns_error_when_table_not_configured(self):
         """Returns error when conversations table not configured."""
         import chat_handler
+        from shared.exceptions import ConfigurationError
         
         original_table = chat_handler.conversations_table
         chat_handler.conversations_table = None
@@ -264,9 +265,8 @@ class TestSaveConversation:
             mock_event.json_body = {'title': 'New Conversation', 'messages': []}
             
             with patch.object(chat_handler.app, 'current_event', mock_event):
-                result = chat_handler.save_conversation(proxy='new')
-            
-            assert result['success'] is False
+                with pytest.raises(ConfigurationError):
+                    chat_handler.save_conversation(proxy='new')
         finally:
             chat_handler.conversations_table = original_table
 

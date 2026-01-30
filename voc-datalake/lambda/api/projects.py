@@ -13,6 +13,12 @@ from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
 from shared.api import validate_days
 from shared.converse import converse, converse_chain
+from shared.exceptions import (
+    ConfigurationError,
+    NotFoundError,
+    ValidationError,
+    ServiceError,
+)
 from shared.prompts import (
     get_persona_generation_steps,
     get_prd_generation_steps,
@@ -117,7 +123,7 @@ def list_projects() -> dict:
 def create_project(body: dict) -> dict:
     """Create a new project."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     project_id = f"proj_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     now = datetime.now(timezone.utc).isoformat()
@@ -148,7 +154,7 @@ def create_project(body: dict) -> dict:
 def get_project(project_id: str) -> dict:
     """Get a project with all its data."""
     if not projects_table:
-        return {'error': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     # Get all items for this project
     response = projects_table.query(
@@ -157,7 +163,7 @@ def get_project(project_id: str) -> dict:
     
     items = response.get('Items', [])
     if not items:
-        return {'error': 'Project not found'}
+        raise NotFoundError('Project not found')
     
     project = None
     personas = []
@@ -176,7 +182,7 @@ def get_project(project_id: str) -> dict:
             documents.append(item)
     
     if not project:
-        return {'error': 'Project metadata not found'}
+        raise NotFoundError('Project metadata not found')
     
     return {
         'project': project,
@@ -189,7 +195,7 @@ def get_project(project_id: str) -> dict:
 def update_project(project_id: str, body: dict) -> dict:
     """Update a project."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     now = datetime.now(timezone.utc).isoformat()
     
@@ -232,7 +238,7 @@ def update_project(project_id: str, body: dict) -> dict:
 def delete_project(project_id: str) -> dict:
     """Delete a project and all its data."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     # Get all items for this project
     response = projects_table.query(
@@ -281,7 +287,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     
     if not projects_table:
         logger.error("[PERSONA] Projects table not configured")
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     # Extract filter parameters
     persona_count = filters.get('persona_count', 3)
@@ -302,7 +308,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     
     if not feedback_items:
         logger.warning("[PERSONA] No feedback data found for filters")
-        return {'success': False, 'message': 'No feedback data found for the given filters'}
+        raise ValidationError('No feedback data found for the given filters')
     
     logger.info(f"[PERSONA] Step 2/6: Formatting feedback data for LLM...")
     update_progress(10, 'formatting_data')
@@ -374,11 +380,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         
         if not personas_data:
             logger.error("[PERSONA] Failed to parse personas from any LLM output")
-            return {
-                'success': False,
-                'message': 'Failed to parse persona data from LLM response',
-                'raw_output': results[1][:2000] if results else 'No results'
-            }
+            raise ServiceError('Failed to parse persona data from LLM response')
         
         logger.info("[PERSONA] Step 6/6: Saving personas to database...")
         update_progress(80, 'saving_personas')
@@ -474,19 +476,17 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     except Exception as e:
         overall_elapsed = time.time() - overall_start
         logger.exception(f"[PERSONA] FAILED after {overall_elapsed:.2f}s: {type(e).__name__}: {e}")
-        return {'success': False, 'message': 'Failed to generate personas. Please try again.'}
+        raise ServiceError('Failed to generate personas. Please try again.')
 
 
 @tracer.capture_method
 def generate_prd(project_id: str, body: dict) -> dict:
     """Generate a Product Requirements Document using multi-step LLM chain."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
-    # Get project data including personas
+    # Get project data including personas - exceptions will propagate
     project_data = get_project(project_id)
-    if 'error' in project_data:
-        return {'success': False, 'message': project_data['error']}
     
     personas = project_data.get('personas', [])
     filters = project_data.get('project', {}).get('filters', {})
@@ -550,19 +550,17 @@ def generate_prd(project_id: str, body: dict) -> dict:
         
     except Exception as e:
         logger.exception(f"PRD generation failed: {e}")
-        return {'success': False, 'message': 'Failed to generate PRD. Please try again.'}
+        raise ServiceError('Failed to generate PRD. Please try again.')
 
 
 @tracer.capture_method
 def generate_prfaq(project_id: str, body: dict) -> dict:
     """Generate an Amazon-style PR/FAQ document using multi-step LLM chain."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
-    # Get project data including personas
+    # Get project data including personas - exceptions will propagate
     project_data = get_project(project_id)
-    if 'error' in project_data:
-        return {'success': False, 'message': project_data['error']}
     
     personas = project_data.get('personas', [])
     filters = project_data.get('project', {}).get('filters', {})
@@ -646,7 +644,7 @@ Quote: "{p.get('quote', '')}"
         
     except Exception as e:
         logger.exception(f"PR/FAQ generation failed: {e}")
-        return {'success': False, 'message': 'Failed to generate PR/FAQ. Please try again.'}
+        raise ServiceError('Failed to generate PR/FAQ. Please try again.')
 
 
 
@@ -660,13 +658,13 @@ def project_chat(project_id: str, body: dict) -> dict:
     from shared.project_chat import build_chat_context
     
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     message = body.get('message', '')
     if not message:
-        return {'success': False, 'message': 'Message is required'}
+        raise ValidationError('Message is required')
     
-    # Build chat context using shared helper
+    # Build chat context using shared helper - exceptions will propagate
     system_prompt, user_message, metadata = build_chat_context(
         projects_table,
         feedback_table,
@@ -675,9 +673,6 @@ def project_chat(project_id: str, body: dict) -> dict:
         selected_persona_ids=body.get('selected_personas', []),
         selected_document_ids=body.get('selected_documents', []),
     )
-    
-    if system_prompt is None:
-        return {'success': False, 'message': metadata.get('error', 'Project not found')}
     
     try:
         response = converse(prompt=user_message, system_prompt=system_prompt, max_tokens=3000)
@@ -690,21 +685,21 @@ def project_chat(project_id: str, body: dict) -> dict:
         
     except Exception as e:
         logger.exception(f"Project chat failed: {e}")
-        return {'success': False, 'message': 'Failed to process chat request. Please try again.'}
+        raise ServiceError('Failed to process chat request. Please try again.')
 
 
 @tracer.capture_method
 def create_document(project_id: str, body: dict) -> dict:
     """Create a custom document in the project."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     title = body.get('title', 'Untitled Document')
     content = body.get('content', '')
     document_type = body.get('document_type', 'custom')
     
     if not content:
-        return {'success': False, 'message': 'Content is required'}
+        raise ValidationError('Content is required')
     
     now = datetime.now(timezone.utc).isoformat()
     doc_id = f"doc_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -740,7 +735,7 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
     from boto3.dynamodb.conditions import Attr
     
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     now = datetime.now(timezone.utc).isoformat()
     
@@ -764,7 +759,7 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
     
     items = response.get('Items', [])
     if not items:
-        return {'success': False, 'message': 'Document not found'}
+        raise NotFoundError('Document not found')
     
     sk = items[0].get('sk')
     
@@ -787,7 +782,7 @@ def delete_document(project_id: str, document_id: str) -> dict:
     from boto3.dynamodb.conditions import Attr
     
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     # Find the SK for this document
     response = projects_table.query(
@@ -797,7 +792,7 @@ def delete_document(project_id: str, document_id: str) -> dict:
     
     items = response.get('Items', [])
     if not items:
-        return {'success': False, 'message': 'Document not found'}
+        raise NotFoundError('Document not found')
     
     sk = items[0].get('sk')
     
@@ -822,7 +817,7 @@ def delete_document(project_id: str, document_id: str) -> dict:
 def create_persona(project_id: str, body: dict) -> dict:
     """Create a new persona manually."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     name = body.get('name', 'New Persona')
     
@@ -865,7 +860,7 @@ def create_persona(project_id: str, body: dict) -> dict:
 def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
     """Update a persona with support for all 8 sections."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     # Fix persona name if provided
     if 'name' in body and body['name']:
@@ -906,18 +901,18 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to update persona: {e}")
-        return {'success': False, 'message': 'Failed to update persona'}
+        raise ServiceError('Failed to update persona')
 
 
 @tracer.capture_method
 def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
     """Add a research note to a persona."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     note_text = body.get('text', '')
     if not note_text:
-        return {'success': False, 'message': 'Note text is required'}
+        raise ValidationError('Note text is required')
     
     now = datetime.now(timezone.utc).isoformat()
     note_id = f"note_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -944,14 +939,14 @@ def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
         return {'success': True, 'note': new_note}
     except Exception as e:
         logger.exception(f"Failed to add persona note: {e}")
-        return {'success': False, 'message': 'Failed to add note'}
+        raise ServiceError('Failed to add note')
 
 
 @tracer.capture_method
 def update_persona_note(project_id: str, persona_id: str, note_id: str, body: dict) -> dict:
     """Update a research note on a persona."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     # Get current persona to find the note index
     response = projects_table.get_item(
@@ -960,7 +955,7 @@ def update_persona_note(project_id: str, persona_id: str, note_id: str, body: di
     
     item = response.get('Item')
     if not item:
-        return {'success': False, 'message': 'Persona not found'}
+        raise NotFoundError('Persona not found')
     
     notes = item.get('research_notes', [])
     note_index = None
@@ -971,7 +966,7 @@ def update_persona_note(project_id: str, persona_id: str, note_id: str, body: di
             break
     
     if note_index is None:
-        return {'success': False, 'message': 'Note not found'}
+        raise NotFoundError('Note not found')
     
     now = datetime.now(timezone.utc).isoformat()
     
@@ -1001,14 +996,14 @@ def update_persona_note(project_id: str, persona_id: str, note_id: str, body: di
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to update persona note: {e}")
-        return {'success': False, 'message': 'Failed to update note'}
+        raise ServiceError('Failed to update note')
 
 
 @tracer.capture_method
 def delete_persona_note(project_id: str, persona_id: str, note_id: str) -> dict:
     """Delete a research note from a persona."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     # Get current persona to find the note index
     response = projects_table.get_item(
@@ -1017,7 +1012,7 @@ def delete_persona_note(project_id: str, persona_id: str, note_id: str) -> dict:
     
     item = response.get('Item')
     if not item:
-        return {'success': False, 'message': 'Persona not found'}
+        raise NotFoundError('Persona not found')
     
     notes = item.get('research_notes', [])
     note_index = None
@@ -1028,7 +1023,7 @@ def delete_persona_note(project_id: str, persona_id: str, note_id: str) -> dict:
             break
     
     if note_index is None:
-        return {'success': False, 'message': 'Note not found'}
+        raise NotFoundError('Note not found')
     
     now = datetime.now(timezone.utc).isoformat()
     
@@ -1041,14 +1036,14 @@ def delete_persona_note(project_id: str, persona_id: str, note_id: str) -> dict:
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to delete persona note: {e}")
-        return {'success': False, 'message': 'Failed to delete note'}
+        raise ServiceError('Failed to delete note')
 
 
 @tracer.capture_method
 def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
     """Regenerate the avatar for a persona."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     # Get persona data
     response = projects_table.get_item(
@@ -1057,13 +1052,13 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
     
     item = response.get('Item')
     if not item:
-        return {'success': False, 'message': 'Persona not found'}
+        raise NotFoundError('Persona not found')
     
     # Generate new avatar
     avatar_result = generate_persona_avatar(item)
     
     if not avatar_result.get('avatar_url'):
-        return {'success': False, 'message': 'Avatar generation failed'}
+        raise ServiceError('Avatar generation failed')
     
     # Update persona with new avatar
     now = datetime.now(timezone.utc).isoformat()
@@ -1088,7 +1083,7 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
 def delete_persona(project_id: str, persona_id: str) -> dict:
     """Delete a persona."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     try:
         projects_table.delete_item(
@@ -1106,21 +1101,19 @@ def delete_persona(project_id: str, persona_id: str) -> dict:
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to delete persona: {e}")
-        return {'success': False, 'message': 'Failed to delete persona'}
+        raise ServiceError('Failed to delete persona')
 
 
 @tracer.capture_method
 def run_research(project_id: str, body: dict) -> dict:
     """Run deep research analysis on feedback data."""
     if not projects_table:
-        return {'success': False, 'message': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     research_question = body.get('question', 'What are the main customer pain points?')
     
-    # Get project data
+    # Get project data - exceptions will propagate
     project_data = get_project(project_id)
-    if 'error' in project_data:
-        return {'success': False, 'message': project_data['error']}
     
     # Use filters from request body, fallback to project filters
     filters = {
@@ -1139,7 +1132,7 @@ def run_research(project_id: str, body: dict) -> dict:
     logger.info(f"Found {len(feedback_items)} feedback items for research")
     
     if not feedback_items:
-        return {'success': False, 'message': 'No feedback data found matching the filters. Try adjusting your filter criteria.'}
+        raise ValidationError('No feedback data found matching the filters. Try adjusting your filter criteria.')
     
     feedback_context = format_feedback_for_llm(feedback_items)
     feedback_stats = get_feedback_statistics(feedback_items)
@@ -1219,4 +1212,4 @@ def run_research(project_id: str, body: dict) -> dict:
         
     except Exception as e:
         logger.exception(f"Research failed: {e}")
-        return {'success': False, 'message': 'Failed to run research. Please try again.'}
+        raise ServiceError('Failed to run research. Please try again.')

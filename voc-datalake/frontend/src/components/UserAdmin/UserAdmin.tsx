@@ -186,7 +186,7 @@ function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
         onSuccess()
         onClose()
       } else {
-        setError(data.message || 'Failed to create user')
+        setError(data.error || 'Failed to create user')
       }
     },
     onError: (err: Error) => setError(err.message),

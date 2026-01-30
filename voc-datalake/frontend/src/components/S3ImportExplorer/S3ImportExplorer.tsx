@@ -189,7 +189,7 @@ export default function S3ImportExplorer() {
     const result = await api.getS3UploadUrl(file.name, source, contentType)
       .then(async (urlResponse) => {
         if (!urlResponse.success || !urlResponse.upload_url) {
-          throw new Error(urlResponse.message || 'Failed to get upload URL')
+          throw new Error(urlResponse.error || 'Failed to get upload URL')
         }
         await fetch(urlResponse.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': contentType } })
         return true

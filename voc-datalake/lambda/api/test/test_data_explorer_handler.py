@@ -169,8 +169,8 @@ class TestPreviewS3File:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
+        # Assert - now returns 404 with error key
+        assert response['statusCode'] == 404
         assert 'error' in body
 
 
@@ -317,10 +317,10 @@ class TestSaveFeedback:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
-        assert 'required' in body['message'].lower()
+        # Assert - now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'required' in body['error'].lower()
 
 
 class TestDeleteFeedback:
@@ -375,10 +375,10 @@ class TestDeleteFeedback:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
-        assert 'not found' in body['message'].lower()
+        # Assert - now returns 404 with error key
+        assert response['statusCode'] == 404
+        assert 'error' in body
+        assert 'not found' in body['error'].lower()
 
 
 class TestListBuckets:

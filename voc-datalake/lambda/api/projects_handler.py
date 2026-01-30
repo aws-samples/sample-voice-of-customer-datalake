@@ -16,6 +16,7 @@ from shared.aws import (
 )
 from shared.api import create_api_resolver, validate_days, validate_int, api_handler, DecimalEncoder
 from shared.converse import converse
+from shared.exceptions import NotFoundError, ServiceError
 
 from boto3.dynamodb.conditions import Key
 import boto3
@@ -319,7 +320,7 @@ def api_get_job_status(project_id: str, job_id: str):
     response = get_jobs_table().get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'})
     item = response.get('Item')
     if not item:
-        return {'success': False, 'message': 'Job not found'}
+        raise NotFoundError('Job not found')
     return {
         'success': True, 'job_id': job_id, 'status': item.get('status'),
         'progress': item.get('progress', 0), 'current_step': item.get('current_step'),
@@ -380,7 +381,7 @@ def api_save_prioritization_scores():
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to save prioritization scores: {e}")
-        return {'success': False, 'message': 'Failed to save prioritization scores'}
+        raise ServiceError('Failed to save prioritization scores')
 
 
 @app.patch("/projects/prioritization")
@@ -403,7 +404,7 @@ def api_patch_prioritization_scores():
         return {'success': True, 'updated_count': len(changed_scores)}
     except Exception as e:
         logger.exception(f"Failed to patch prioritization scores: {e}")
-        return {'success': False, 'message': 'Failed to save prioritization scores'}
+        raise ServiceError('Failed to save prioritization scores')
 
 
 # ============================================
@@ -471,13 +472,13 @@ def handle_generate_personas_job(event: dict) -> dict:
         
         update_job_status(project_id, job_id, 'completed', 100, 'complete', result=result)
         logger.info(f"[JOB] ========== ASYNC PERSONA JOB COMPLETED ==========")
-        return {'statusCode': 200, 'body': json.dumps({'success': True})}
+        return {'success': True}
     except Exception as e:
         job_elapsed = time.time() - job_start
         logger.exception(f"[JOB] Persona generation FAILED after {job_elapsed:.2f}s: {type(e).__name__}: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error=f'Job execution failed: {str(e)[:200]}')
         logger.info(f"[JOB] ========== ASYNC PERSONA JOB FAILED ==========")
-        return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': 'Job execution failed'})}
+        return {'success': False, 'error': 'Job execution failed'}
 
 
 def handle_generate_document_job(event: dict) -> dict:
@@ -595,12 +596,12 @@ Create a comprehensive PRD that includes: Problem Statement, Goals & Success Met
         )
         
         update_job_status(project_id, job_id, 'completed', 100, 'complete', result={'document_id': doc_id, 'title': title})
-        return {'statusCode': 200, 'body': json.dumps({'success': True, 'document_id': doc_id})}
+        return {'success': True, 'document_id': doc_id}
         
     except Exception as e:
         logger.exception(f"Document generation failed: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error='Document generation failed')
-        return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': 'Document generation failed'})}
+        return {'success': False, 'error': 'Document generation failed'}
 
 
 def handle_merge_documents_job(event: dict) -> dict:
@@ -715,12 +716,12 @@ def handle_merge_documents_job(event: dict) -> dict:
         )
         
         update_job_status(project_id, job_id, 'completed', 100, 'complete', result={'document_id': doc_id, 'title': title})
-        return {'statusCode': 200, 'body': json.dumps({'success': True, 'document_id': doc_id})}
+        return {'success': True, 'document_id': doc_id}
         
     except Exception as e:
         logger.exception(f"Document merge failed: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error='Document merge failed')
-        return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': 'Document merge failed'})}
+        return {'success': False, 'error': 'Document merge failed'}
 
 
 def handle_import_persona_job(event: dict) -> dict:
@@ -829,16 +830,16 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
         
         update_job_status(project_id, job_id, 'completed', 100, 'complete', result={'persona_id': persona_id, 'title': f'Imported: {persona_name}'})
         logger.info(f"[IMPORT_PERSONA_JOB] Successfully imported persona: {persona_name}")
-        return {'statusCode': 200, 'body': json.dumps({'success': True, 'persona_id': persona_id})}
+        return {'success': True, 'persona_id': persona_id}
         
     except json.JSONDecodeError as e:
         logger.error(f"[IMPORT_PERSONA_JOB] Failed to parse JSON: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error='Failed to parse persona data')
-        return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': 'Failed to parse persona data'})}
+        return {'success': False, 'error': 'Failed to parse persona data'}
     except Exception as e:
         logger.exception(f"[IMPORT_PERSONA_JOB] Import failed: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error='Persona import failed')
-        return {'statusCode': 500, 'body': json.dumps({'success': False, 'error': 'Persona import failed'})}
+        return {'success': False, 'error': 'Persona import failed'}
 
 
 # ============================================
