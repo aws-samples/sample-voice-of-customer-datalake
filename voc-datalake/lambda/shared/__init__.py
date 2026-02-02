@@ -32,6 +32,19 @@ from shared.idempotency import (
     IdempotencyAlreadyInProgressError,
     IdempotencyItemAlreadyExistsError,
 )
+from shared.tables import (
+    get_jobs_table,
+    get_aggregates_table,
+    get_feedback_table,
+    get_projects_table,
+    clear_table_cache,
+)
+from shared.jobs import (
+    create_job,
+    update_job_status,
+    get_job,
+)
+from shared.api import decimal_default
 
 __all__ = [
     # Logging
@@ -71,4 +84,16 @@ __all__ = [
     "idempotent_function",
     "IdempotencyAlreadyInProgressError",
     "IdempotencyItemAlreadyExistsError",
+    # Tables
+    "get_jobs_table",
+    "get_aggregates_table",
+    "get_feedback_table",
+    "get_projects_table",
+    "clear_table_cache",
+    # Jobs
+    "create_job",
+    "update_job_status",
+    "get_job",
+    # API utilities
+    "decimal_default",
 ]

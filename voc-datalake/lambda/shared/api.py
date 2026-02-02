@@ -22,6 +22,25 @@ class DecimalEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def decimal_default(obj):
+    """JSON serializer for Decimal types.
+    
+    Use with json.dumps: json.dumps(data, default=decimal_default)
+    
+    Args:
+        obj: Object to serialize
+        
+    Returns:
+        float if obj is Decimal
+        
+    Raises:
+        TypeError: If obj is not a Decimal
+    """
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
 def validate_days(
     value: str | int | None,
     default: int = 7,

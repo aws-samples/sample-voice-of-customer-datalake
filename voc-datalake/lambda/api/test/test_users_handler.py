@@ -158,7 +158,7 @@ class TestCreateUser:
             body={
                 'email': 'newuser@example.com',
                 'name': 'New User',
-                'group': 'viewers'
+                'group': 'users'  # Valid group: 'admins' or 'users'
             }
         )
         event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
@@ -232,7 +232,7 @@ class TestCreateUser:
         event = api_gateway_event(
             method='POST',
             path='/users',
-            body={'email': 'existing@example.com', 'group': 'viewers'}
+            body={'email': 'existing@example.com', 'group': 'users'}  # Valid group: 'admins' or 'users'
         )
         event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
         
@@ -253,10 +253,10 @@ class TestUpdateUserGroup:
     def test_updates_user_group_successfully(
         self, mock_cognito, api_gateway_event, lambda_context
     ):
-        """Updates user group from viewers to admins."""
-        # Arrange
+        """Updates user group from users to admins."""
+        # Arrange - use 'users' as current group since handler only removes 'admins' or 'users'
         mock_cognito.admin_list_groups_for_user.return_value = {
-            'Groups': [{'GroupName': 'viewers'}]
+            'Groups': [{'GroupName': 'users'}]
         }
         mock_cognito.admin_remove_user_from_group.return_value = {}
         mock_cognito.admin_add_user_to_group.return_value = {}

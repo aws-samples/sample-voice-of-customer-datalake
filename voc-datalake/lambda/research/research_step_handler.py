@@ -23,19 +23,36 @@ from shared.feedback import (
     format_feedback_for_llm,
     get_feedback_statistics,
 )
+from shared.tables import get_projects_table, get_feedback_table
+from shared.jobs import update_job_status
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
-JOBS_TABLE = os.environ.get('JOBS_TABLE', '')
 
-feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
-projects_table = dynamodb.Table(PROJECTS_TABLE) if PROJECTS_TABLE else None
-jobs_table = dynamodb.Table(JOBS_TABLE) if JOBS_TABLE else None
+# Use shared table accessors - these will be initialized on first use
+feedback_table = None
+projects_table = None
 
 MODEL_ID = BEDROCK_MODEL_ID
+
+
+def _get_feedback_table():
+    """Get feedback table, initializing if needed."""
+    global feedback_table
+    if feedback_table is None:
+        feedback_table = get_feedback_table()
+    return feedback_table
+
+
+def _get_projects_table():
+    """Get projects table, initializing if needed."""
+    global projects_table
+    if projects_table is None:
+        projects_table = get_projects_table()
+    return projects_table
 
 
 # Alias for backward compatibility with Step Functions error handling
@@ -53,53 +70,10 @@ def invoke_bedrock_with_retry(system_prompt: str, user_message: str, max_tokens:
     )
 
 
-def update_job_status(project_id: str, job_id: str, status: str, progress: int, 
-                      current_step: str = None, error: str = None, result: dict = None):
-    """Update job status in DynamoDB."""
-    if not jobs_table:
-        return
-    
-    now = datetime.now(timezone.utc).isoformat()
-    
-    update_expr = 'SET #status = :status, progress = :progress, updated_at = :now'
-    expr_values = {':status': status, ':progress': progress, ':now': now}
-    expr_names = {'#status': 'status'}
-    
-    if current_step:
-        update_expr += ', current_step = :step'
-        expr_values[':step'] = current_step
-    
-    if error:
-        update_expr += ', #error = :error, completed_at = :now, #ttl = :ttl'
-        expr_values[':error'] = error
-        expr_names['#error'] = 'error'
-        expr_names['#ttl'] = 'ttl'
-        # Extend TTL to 7 days for failed jobs (for debugging)
-        expr_values[':ttl'] = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
-    
-    if result:
-        update_expr += ', #result = :result, completed_at = :now, #ttl = :ttl'
-        expr_values[':result'] = result
-        expr_names['#result'] = 'result'
-        expr_names['#ttl'] = 'ttl'
-        # Extend TTL to 7 days for completed jobs
-        expr_values[':ttl'] = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
-    
-    try:
-        jobs_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
-            UpdateExpression=update_expr,
-            ExpressionAttributeValues=expr_values,
-            ExpressionAttributeNames=expr_names
-        )
-    except Exception as e:
-        logger.error(f"Failed to update job status: {e}")
-
-
 # Wrapper function to pass module-level table reference to shared function
 def get_feedback_context(filters: dict, limit: int = 100) -> list[dict]:
     """Get feedback items based on filters for LLM context."""
-    return _get_feedback_context(feedback_table, filters, limit)
+    return _get_feedback_context(_get_feedback_table(), filters, limit)
 
 
 @tracer.capture_method
@@ -140,9 +114,10 @@ def step_initialize(event: dict) -> dict:
     # Optional: Get selected personas context
     personas_context = ""
     selected_persona_ids = config.get('selected_persona_ids', [])
-    if selected_persona_ids and projects_table:
+    proj_table = _get_projects_table()
+    if selected_persona_ids and proj_table:
         update_job_status(project_id, job_id, 'running', 17, 'fetching_personas')
-        response = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
+        response = proj_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
         all_personas = [i for i in response.get('Items', []) if i.get('sk', '').startswith('PERSONA#')]
         selected_personas = [p for p in all_personas if p.get('persona_id') in selected_persona_ids]
         
@@ -157,9 +132,9 @@ def step_initialize(event: dict) -> dict:
     # Optional: Get selected documents context
     documents_context = ""
     selected_document_ids = config.get('selected_document_ids', [])
-    if selected_document_ids and projects_table:
+    if selected_document_ids and proj_table:
         update_job_status(project_id, job_id, 'running', 18, 'fetching_documents')
-        response = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
+        response = proj_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
         all_docs = [i for i in response.get('Items', []) if i.get('sk', '').startswith(('DOC#', 'RESEARCH#', 'PRD#', 'PRFAQ#'))]
         selected_docs = [d for d in all_docs if d.get('document_id') in selected_document_ids]
         
@@ -360,7 +335,8 @@ def step_save(event: dict) -> dict:
         full_report = full_report[:max_content_size] + "\n\n---\n\n*[Report truncated due to size limits]*"
     
     # Save to projects table
-    if projects_table:
+    proj_table = _get_projects_table()
+    if proj_table:
         item = {
             'pk': f'PROJECT#{project_id}',
             'sk': f'RESEARCH#{research_id}',
@@ -375,10 +351,10 @@ def step_save(event: dict) -> dict:
             'job_id': job_id,
             'created_at': now,
         }
-        projects_table.put_item(Item=item)
+        proj_table.put_item(Item=item)
         
         # Update document count
-        projects_table.update_item(
+        proj_table.update_item(
             Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
             UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
             ExpressionAttributeValues={':one': 1, ':now': now}

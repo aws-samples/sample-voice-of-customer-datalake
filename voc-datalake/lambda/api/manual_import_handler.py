@@ -9,7 +9,6 @@ import sys
 import uuid
 import time
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Any
 from urllib.parse import urlparse
 
@@ -17,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_sqs_client, get_s3_client
-from shared.api import create_api_resolver, api_handler
+from shared.api import create_api_resolver, api_handler, decimal_default
 
 import boto3
 
@@ -103,13 +102,6 @@ def extract_source_from_url(url: str) -> str:
         return hostname.replace('www.', '')
     except Exception:
         return "unknown"
-
-
-def decimal_default(obj):
-    """JSON serializer for Decimal types."""
-    if isinstance(obj, Decimal):
-        return float(obj)
-    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
 @app.post("/scrapers/manual/parse")
