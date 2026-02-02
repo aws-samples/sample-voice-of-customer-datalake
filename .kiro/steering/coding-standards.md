@@ -727,6 +727,6 @@ curl -X POST "$STREAM_URL/chat/stream" \
 | Issue | Cause | Solution |
 |-------|-------|----------|
 | `No module named 'pydantic_core._pydantic_core'` | Layer built for wrong architecture | Rebuild with `./scripts/build-layers.sh` (uses ARM64) |
-| `No module named 'shared'` | Lambda code bundling issue | Check `apiCodeWithShared` bundling in analytics-stack.ts |
+| `No module named 'shared'` | Lambda code bundling issue | Check `createApiLambdaCode` bundling in api-stack.ts |
 | 502 errors | Lambda import/runtime error | Check CloudWatch logs for specific error |
 | CORS errors on 4XX/5XX | Missing gateway responses | Ensure `addGatewayResponse` for DEFAULT_4XX/5XX |
