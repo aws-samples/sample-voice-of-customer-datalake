@@ -80,7 +80,7 @@ The processor prevents duplicate entries using deterministic IDs.
 feedback_id = hash(f"{source_platform}:{source_id}")
 
 # Fallback for scraped content
-text_hash = md5(text[:500])
+text_hash = sha256(text[:500])
 feedback_id = hash(f"{source_platform}:{created_at}:{text_hash}:{url}")
 ```
 
