@@ -21,7 +21,7 @@ triggers: ["tech stack", "dependency", "version", "library", "package", "aws ser
 | **Lambda** | Compute | Python 3.12, ARM64 (Graviton), Powertools |
 | **SQS** | Processing queue | DLQ, visibility timeout, batch processing |
 | **API Gateway** | REST API | Throttling, CORS, Cognito auth |
-| **Cognito** | Authentication | User Pool, admin/viewer groups |
+| **Cognito** | Authentication | User Pool, admins/users groups |
 | **WAF** | API protection | Rate limiting, SQL injection, XSS protection |
 | **EventBridge** | Scheduled ingestion | Rate expressions (1-30 min) |
 | **Secrets Manager** | API credentials | Auto-rotation capable |
@@ -110,7 +110,6 @@ def lambda_handler(event, context):
 | react-markdown | ^10.1.0 | Markdown rendering |
 | remark-gfm | ^4.0.1 | GitHub Flavored Markdown |
 | amazon-cognito-identity-js | ^6.3.12 | Cognito authentication |
-| jspdf + html2canvas | ^3.0.4/^1.4.1 | PDF export |
 | Zod | ^4.3.5 | Runtime validation (frontend) |
 | TypeScript | ~5.9.3 | Type safety |
 | Vitest | ^3.2.3 | Testing framework (frontend) |
@@ -196,7 +195,7 @@ npm run generate:menu       # Generate menu config only
 
 ## Security & Cost Best Practices
 
-- **Authentication**: Cognito User Pool with admin/viewer groups
+- **Authentication**: Cognito User Pool with admins/users groups
 - **API Protection**: WAF with rate limiting, SQL injection, XSS protection
 - **Encryption**: KMS at rest, TLS in transit
 - **IAM**: Least-privilege per Lambda

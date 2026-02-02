@@ -8,21 +8,8 @@ import userEvent from '@testing-library/user-event'
 import type { Conversation } from '../../store/chatStore'
 
 // Mock heavy dependencies to prevent test stalls
-vi.mock('jspdf', () => ({
-  default: vi.fn().mockImplementation(() => ({
-    internal: { pageSize: { getWidth: () => 210, getHeight: () => 297 } },
-    addPage: vi.fn(),
-    addImage: vi.fn(),
-    save: vi.fn(),
-  })),
-}))
-
-vi.mock('html2canvas', () => ({
-  default: vi.fn().mockResolvedValue({
-    width: 800,
-    height: 600,
-    toDataURL: vi.fn().mockReturnValue('data:image/jpeg;base64,mock'),
-  }),
+vi.mock('../../utils/printUtils', () => ({
+  openPrintWindow: vi.fn().mockReturnValue({ print: vi.fn() }),
 }))
 
 vi.mock('react-markdown', () => ({

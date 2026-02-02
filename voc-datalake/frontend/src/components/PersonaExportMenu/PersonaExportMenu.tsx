@@ -43,7 +43,6 @@ function downloadFile(content: string, filename: string, mimeType: string): void
 export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [exporting, setExporting] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -76,16 +75,14 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
     setIsOpen(false)
   }
 
-  const downloadAsPDF = async () => {
-    setExporting(true)
+  const downloadAsPDF = () => {
     try {
-      await generatePersonaPDF(persona, `${sanitizeFilename(persona.name)}_persona.pdf`)
+      generatePersonaPDF(persona)
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error('PDF export failed:', error)
       }
     } finally {
-      setExporting(false)
       setIsOpen(false)
     }
   }
@@ -131,12 +128,11 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
 
           <button
             onClick={downloadAsPDF}
-            disabled={exporting}
-            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50"
+            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
             role="menuitem"
           >
             <FileDown size={16} className="flex-shrink-0" />
-            <span className="truncate">{exporting ? 'Generating PDF...' : 'Download as PDF'}</span>
+            <span className="truncate">Download as PDF</span>
           </button>
 
           <button

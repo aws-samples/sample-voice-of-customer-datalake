@@ -4,40 +4,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Conversation } from '../../store/chatStore'
 
-// Mock jsPDF
-const mockSave = vi.fn()
-const mockAddPage = vi.fn()
-const mockAddImage = vi.fn()
-
-vi.mock('jspdf', () => ({
-  default: vi.fn().mockImplementation(() => ({
-    internal: {
-      pageSize: {
-        getWidth: () => 210,
-        getHeight: () => 297,
-      },
-    },
-    addPage: mockAddPage,
-    addImage: mockAddImage,
-    save: mockSave,
-  })),
-}))
-
-// Mock html2canvas
-vi.mock('html2canvas', () => ({
-  default: vi.fn().mockResolvedValue({
-    width: 800,
-    height: 1200,
-    toDataURL: vi.fn().mockReturnValue('data:image/jpeg;base64,mockdata'),
-  }),
-}))
-
-// Mock react-dom/client
-vi.mock('react-dom/client', () => ({
-  createRoot: vi.fn().mockReturnValue({
-    render: vi.fn(),
-    unmount: vi.fn(),
-  }),
+// Mock the printUtils module
+const mockOpenPrintWindow = vi.fn()
+vi.mock('../../utils/printUtils', () => ({
+  openPrintWindow: (options: unknown) => mockOpenPrintWindow(options),
 }))
 
 // Mock react-markdown
@@ -64,6 +34,7 @@ describe('chatPdfGenerator', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockOpenPrintWindow.mockReturnValue({ print: vi.fn() })
   })
 
   describe('generateChatPDF', () => {
@@ -71,23 +42,39 @@ describe('chatPdfGenerator', () => {
       const { generateChatPDF } = await import('./chatPdfGenerator')
       expect(typeof generateChatPDF).toBe('function')
     })
-  })
 
-  describe('PDF configuration', () => {
-    it('creates PDF with correct format settings', async () => {
-      const jsPDF = (await import('jspdf')).default
+    it('calls openPrintWindow with correct title', async () => {
+      const { generateChatPDF } = await import('./chatPdfGenerator')
       
-      // Just verify the mock is set up correctly
-      expect(jsPDF).toBeDefined()
+      generateChatPDF(mockConversation)
+      
+      expect(mockOpenPrintWindow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Test Conversation',
+        })
+      )
     })
-  })
 
-  describe('canvas rendering options', () => {
-    it('html2canvas is configured correctly', async () => {
-      const html2canvas = (await import('html2canvas')).default
+    it('passes content to openPrintWindow', async () => {
+      const { generateChatPDF } = await import('./chatPdfGenerator')
       
-      // Verify mock is set up
-      expect(html2canvas).toBeDefined()
+      generateChatPDF(mockConversation)
+      
+      expect(mockOpenPrintWindow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.anything(),
+        })
+      )
+    })
+
+    it('throws error when print window fails to open', async () => {
+      mockOpenPrintWindow.mockReturnValue(null)
+      
+      const { generateChatPDF } = await import('./chatPdfGenerator')
+      
+      expect(() => generateChatPDF(mockConversation)).toThrow(
+        'Failed to open print window'
+      )
     })
   })
 })

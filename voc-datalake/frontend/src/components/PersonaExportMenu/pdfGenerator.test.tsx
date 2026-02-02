@@ -3,18 +3,61 @@
  * Tests the helper functions and structure without full PDF generation
  * @module components/PersonaExportMenu/pdfGenerator.test
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ProjectPersona } from '../../api/client'
 
-// Test the module structure and exports
+// Mock the printUtils module
+const mockOpenPrintWindow = vi.fn()
+vi.mock('../../utils/printUtils', () => ({
+  openPrintWindow: (options: unknown) => mockOpenPrintWindow(options),
+}))
+
 describe('pdfGenerator module', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockOpenPrintWindow.mockReturnValue({ print: vi.fn() })
+  })
+
   it('exports generatePersonaPDF function', async () => {
     const module = await import('./pdfGenerator')
     expect(typeof module.generatePersonaPDF).toBe('function')
   })
+
+  it('calls openPrintWindow with persona name as title', async () => {
+    const { generatePersonaPDF } = await import('./pdfGenerator')
+    const persona: ProjectPersona = {
+      persona_id: 'test-1',
+      name: 'Test User',
+      tagline: 'Test tagline',
+      created_at: '2025-01-01T00:00:00Z',
+    }
+
+    generatePersonaPDF(persona)
+
+    expect(mockOpenPrintWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Test User',
+      })
+    )
+  })
+
+  it('throws error when print window fails to open', async () => {
+    mockOpenPrintWindow.mockReturnValue(null)
+    
+    const { generatePersonaPDF } = await import('./pdfGenerator')
+    const persona: ProjectPersona = {
+      persona_id: 'test-1',
+      name: 'Test User',
+      tagline: 'Test tagline',
+      created_at: '2025-01-01T00:00:00Z',
+    }
+
+    expect(() => generatePersonaPDF(persona)).toThrow(
+      'Failed to open print window'
+    )
+  })
 })
 
-// Test PersonaPDFContent rendering (which is used by pdfGenerator)
 describe('PersonaPDFContent for PDF generation', () => {
   const createTestPersona = (): ProjectPersona => ({
     persona_id: 'test-persona',
@@ -89,43 +132,8 @@ describe('PersonaPDFContent for PDF generation', () => {
     expect(persona.goals_motivations).toBeUndefined()
     expect(persona.pain_points).toBeUndefined()
   })
-
-  it('handles behaviors object', () => {
-    const persona = createTestPersona()
-    persona.behaviors = {
-      current_solutions: ['Solution 1'],
-      tools_used: ['Tool 1'],
-      tech_savviness: 'High',
-    }
-
-    expect(persona.behaviors.tech_savviness).toBe('High')
-  })
-
-  it('handles scenario object', () => {
-    const persona = createTestPersona()
-    persona.scenario = {
-      title: 'Scenario Title',
-      narrative: 'Scenario narrative',
-      trigger: 'Trigger event',
-      outcome: 'Expected outcome',
-    }
-
-    expect(persona.scenario.title).toBe('Scenario Title')
-  })
-
-  it('handles research notes as objects', () => {
-    const persona = createTestPersona()
-    persona.research_notes = [
-      { text: 'Note 1', author: 'Author 1' },
-      { note_id: '2', text: 'Note 2' },
-    ]
-
-    expect(persona.research_notes).toHaveLength(2)
-    expect((persona.research_notes[0] as { text: string }).text).toBe('Note 1')
-  })
 })
 
-// Test filename generation
 describe('PDF filename generation', () => {
   it('generates valid filename from persona name', () => {
     const personaName = 'Test User'

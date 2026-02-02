@@ -4,7 +4,7 @@
  * Export options for PRDs, PR/FAQs, and research documents:
  * - Copy as Markdown
  * - Copy as Kiro prompt (with project context)
- * - Download as PDF
+ * - Download as PDF (via browser print)
  *
  * @module components/DocumentExportMenu
  */
@@ -12,11 +12,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { Copy, Check, FileDown, MoreVertical, FileText, FileType, Sparkles } from 'lucide-react'
 import type { ProjectDocument, Project } from '../../api/client'
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { createRoot } from 'react-dom/client'
+import { openPrintWindow } from '../../utils/printUtils'
+import DocumentPDFContent from './DocumentPDFContent'
 
 interface DocumentExportMenuProps {
   document: ProjectDocument | null
@@ -54,7 +51,6 @@ function stripMarkdownLinks(text: string): string {
   
   const initialState: { parts: string[]; lastEnd: number } = { parts: [], lastEnd: 0 }
   
-  // Use reduce to avoid let mutation
   const { parts, lastEnd } = links.reduce(
     (acc, link) => {
       if (link.start < acc.lastEnd) return acc // skip overlapping
@@ -73,11 +69,14 @@ function stripMarkdownLinks(text: string): string {
   return [...parts, text.slice(lastEnd)].join('')
 }
 
+function sanitizeFilename(name: string): string {
+  return name.replace(/[^a-z0-9]/gi, '_')
+}
+
 export default function DocumentExportMenu({ document: doc, project }: Readonly<DocumentExportMenuProps>) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copiedKiro, setCopiedKiro] = useState(false)
-  const [exporting, setExporting] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -93,8 +92,6 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
 
   if (!doc) return null
 
-  const sanitizeFilename = (name: string) => name.replace(/[^a-z0-9]/gi, '_')
-
   const copyContent = async () => {
     await navigator.clipboard.writeText(doc.content)
     setCopied(true)
@@ -102,7 +99,6 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
   }
 
   const copyToKiro = async () => {
-    // Build the Kiro export content: prompt + PRD
     const kiroPrompt = project?.kiro_export_prompt || ''
     const separator = kiroPrompt ? '\n\n---\n\n' : ''
     const prdSection = `# ${doc.title}\n\n${doc.content}`
@@ -128,15 +124,14 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
   }
 
   const downloadAsTxt = () => {
-    // Strip markdown formatting for plain text using safe patterns
     const plainText = stripMarkdownLinks(doc.content)
-      .replace(/#{1,6}\s/g, '') // Remove headers
-      .replace(/\*\*(.+?)\*\*/g, '$1') // Remove bold (non-greedy)
-      .replace(/\*(.+?)\*/g, '$1') // Remove italic (non-greedy)
-      .replace(/`(.+?)`/g, '$1') // Remove inline code (non-greedy)
-      .replace(/```/g, '') // Remove code block markers
-      .replace(/^[-*+]\s/gm, '• ') // Convert list markers
-      .replace(/^\d+\.\s+/gm, '') // Remove numbered list markers
+      .replace(/#{1,6}\s/g, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/`(.+?)`/g, '$1')
+      .replace(/```/g, '')
+      .replace(/^[-*+]\s/gm, '• ')
+      .replace(/^\d+\.\s+/gm, '')
     
     const blob = new Blob([plainText], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -148,140 +143,23 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
     setIsOpen(false)
   }
 
-
-  const downloadAsPDF = async () => {
-    setExporting(true)
+  const downloadAsPDF = () => {
     try {
-      // Create an iframe for complete style isolation
-      const iframe = window.document.createElement('iframe')
-      iframe.style.position = 'absolute'
-      iframe.style.left = '-9999px'
-      iframe.style.top = '0'
-      iframe.style.width = '800px'
-      iframe.style.height = '10000px'
-      iframe.style.border = 'none'
-      window.document.body.appendChild(iframe)
-
-      await new Promise<void>((resolve) => {
-        iframe.onload = () => resolve()
-        iframe.src = 'about:blank'
+      const printWindow = openPrintWindow({
+        title: doc.title,
+        content: <DocumentPDFContent document={doc} />,
       })
 
-      const iframeDoc = iframe.contentDocument
-      if (!iframeDoc) {
-        throw new Error('Failed to create iframe document')
+      if (!printWindow) {
+        if (import.meta.env.DEV) {
+          console.error('Failed to open print window. Popups may be blocked.')
+        }
       }
-      const container = iframeDoc.createElement('div')
-      container.style.width = '800px'
-      container.style.backgroundColor = '#ffffff'
-      container.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
-      container.style.color = '#000000'
-      iframeDoc.body.appendChild(container)
-      iframeDoc.body.style.margin = '0'
-      iframeDoc.body.style.padding = '0'
-      iframeDoc.body.style.backgroundColor = '#ffffff'
-
-      const root = createRoot(container)
-      
-      const PDFContent = () => (
-        <div style={{ padding: '40px', backgroundColor: 'white' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px', color: '#111827' }}>
-            {doc.title}
-          </h1>
-          <p style={{ color: '#6b7280', fontSize: '12px', marginBottom: '24px' }}>
-            Type: {doc.document_type.toUpperCase()} | Generated: {new Date(doc.created_at).toLocaleDateString()}
-          </p>
-          <hr style={{ border: 'none', borderTop: '2px solid #e5e7eb', marginBottom: '24px' }} />
-          
-          <div style={{ fontSize: '13px', lineHeight: '1.7', color: '#1f2937' }}>
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                h1: ({ children }) => <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#111827', marginTop: '16px', marginBottom: '8px' }}>{children}</h1>,
-                h2: ({ children }) => <h2 style={{ fontSize: '17px', fontWeight: '600', color: '#1f2937', marginTop: '14px', marginBottom: '6px' }}>{children}</h2>,
-                h3: ({ children }) => <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#374151', marginTop: '12px', marginBottom: '4px' }}>{children}</h3>,
-                p: ({ children }) => <p style={{ marginTop: '8px', marginBottom: '8px', color: '#374151' }}>{children}</p>,
-                ul: ({ children }) => <ul style={{ listStyleType: 'disc', paddingLeft: '20px', marginTop: '8px', marginBottom: '8px' }}>{children}</ul>,
-                ol: ({ children }) => <ol style={{ listStyleType: 'decimal', paddingLeft: '20px', marginTop: '8px', marginBottom: '8px' }}>{children}</ol>,
-                li: ({ children }) => <li style={{ marginTop: '4px', marginBottom: '4px', color: '#374151' }}>{children}</li>,
-                strong: ({ children }) => <strong style={{ fontWeight: '600', color: '#111827' }}>{children}</strong>,
-                em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
-                code: ({ children }) => <code style={{ backgroundColor: '#f3f4f6', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace' }}>{children}</code>,
-                pre: ({ children }) => <pre style={{ backgroundColor: '#1f2937', color: '#f9fafb', padding: '12px', borderRadius: '8px', overflow: 'auto', fontSize: '12px', marginTop: '8px', marginBottom: '8px' }}>{children}</pre>,
-                blockquote: ({ children }) => <blockquote style={{ borderLeft: '4px solid #93c5fd', paddingLeft: '12px', fontStyle: 'italic', color: '#4b5563', marginTop: '8px', marginBottom: '8px' }}>{children}</blockquote>,
-                table: ({ children }) => <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '8px', marginBottom: '8px' }}>{children}</table>,
-                th: ({ children }) => <th style={{ border: '1px solid #e5e7eb', backgroundColor: '#f9fafb', padding: '8px', textAlign: 'left', fontWeight: '600', fontSize: '12px' }}>{children}</th>,
-                td: ({ children }) => <td style={{ border: '1px solid #e5e7eb', padding: '8px', fontSize: '12px' }}>{children}</td>,
-                a: ({ href, children }) => <a href={href} style={{ color: '#2563eb', textDecoration: 'underline' }}>{children}</a>,
-              }}
-            >
-              {doc.content}
-            </ReactMarkdown>
-          </div>
-        </div>
-      )
-
-      await new Promise<void>((resolve) => {
-        root.render(<PDFContent />)
-        setTimeout(resolve, 200)
-      })
-
-      const canvas = await html2canvas(container, {
-        scale: 1.5,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-      })
-
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      })
-
-      const pageWidth = pdf.internal.pageSize.getWidth()
-      const pageHeight = pdf.internal.pageSize.getHeight()
-      const margin = 10
-      const contentWidth = pageWidth - (margin * 2)
-      const contentHeight = pageHeight - (margin * 2)
-      
-      const imgWidthMM = contentWidth
-      const imgHeightMM = (canvas.height * imgWidthMM) / canvas.width
-      const totalPages = Math.ceil(imgHeightMM / contentHeight)
-      
-      Array.from({ length: totalPages }).forEach((_, page) => {
-        if (page > 0) pdf.addPage()
-        
-        const sourceY = (page * contentHeight / imgHeightMM) * canvas.height
-        const sourceHeight = Math.min(
-          (contentHeight / imgHeightMM) * canvas.height,
-          canvas.height - sourceY
-        )
-        
-        const pageCanvas = window.document.createElement('canvas')
-        pageCanvas.width = canvas.width
-        pageCanvas.height = sourceHeight
-        const ctx = pageCanvas.getContext('2d')
-        if (!ctx) return
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height)
-        ctx.drawImage(canvas, 0, sourceY, canvas.width, sourceHeight, 0, 0, canvas.width, sourceHeight)
-        
-        const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.85)
-        const pageImgHeightMM = (sourceHeight * imgWidthMM) / canvas.width
-        
-        pdf.addImage(pageImgData, 'JPEG', margin, margin, imgWidthMM, pageImgHeightMM)
-      })
-
-      root.unmount()
-      window.document.body.removeChild(iframe)
-      pdf.save(`${sanitizeFilename(doc.title)}.pdf`)
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error('PDF export failed:', error)
       }
     } finally {
-      setExporting(false)
       setIsOpen(false)
     }
   }
@@ -327,12 +205,11 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
 
           <button
             onClick={downloadAsPDF}
-            disabled={exporting}
-            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50"
+            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
             role="menuitem"
           >
             <FileDown size={16} className="flex-shrink-0" />
-            <span className="truncate">{exporting ? 'Generating PDF...' : 'Download as PDF'}</span>
+            <span className="truncate">Download as PDF</span>
           </button>
 
           <button
