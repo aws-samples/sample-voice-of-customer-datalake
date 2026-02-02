@@ -425,7 +425,7 @@ class TestBaseIngestorGenerateDeterministicId:
         result = ingestor._generate_deterministic_id(item)
         
         # Should generate deterministic SHA-256 hash (32 hex chars)
-        assert result == '6f8bcf85bf9acfa69ffa24b8754a38c1'
+        assert result == '4f06ec9dc8d32cd7b2585b137a910cd5'
 
     @patch('_shared.base_ingestor.get_dynamodb_resource')
     @patch('_shared.base_ingestor.get_s3_client')

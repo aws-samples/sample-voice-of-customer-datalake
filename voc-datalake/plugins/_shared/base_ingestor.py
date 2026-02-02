@@ -135,7 +135,7 @@ class BaseIngestor(ABC):
         created_at = item.get("created_at", "")
         url = item.get("url", "")
         
-        text_hash = hashlib.md5(text[:500].encode()).hexdigest()[:16] if text else ""
+        text_hash = hashlib.sha256(text[:500].encode()).hexdigest()[:16] if text else ""
         content = f"{created_at}:{text_hash}:{url}"
         return hashlib.sha256(content.encode()).hexdigest()[:32]
 

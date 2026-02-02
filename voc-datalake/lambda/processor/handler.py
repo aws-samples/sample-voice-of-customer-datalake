@@ -428,7 +428,7 @@ def generate_deterministic_id(source_platform: str, source_id: str, text: str = 
     else:
         # Fallback: generate ID from content signature
         # Use text hash (first 500 chars to handle minor variations)
-        text_hash = hashlib.md5(text[:500].encode()).hexdigest()[:16] if text else ''
+        text_hash = hashlib.sha256(text[:500].encode()).hexdigest()[:16] if text else ''
         # Include created_at (review date) to differentiate reviews with similar text
         # Include URL for additional uniqueness
         content = f"{source_platform}:{created_at}:{text_hash}:{url}"
