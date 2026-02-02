@@ -263,21 +263,11 @@ def api_run_research(project_id: str):
 @app.post("/projects/<project_id>/document")
 @tracer.capture_method
 def api_generate_document(project_id: str):
-    """Generate PRD or PR-FAQ document."""
+    """Generate PRD or PR-FAQ document via async Lambda invocation."""
     body = app.current_event.json_body or {}
     doc_type = body.get('doc_type', 'prd')
     job_id, _ = create_job(project_id, f'generate_{doc_type}', 'doc_config', body, status='pending')
-    
-    state_machine_arn = os.environ.get('DOCUMENT_STATE_MACHINE_ARN', '')
-    if state_machine_arn:
-        boto3.client('stepfunctions').start_execution(
-            stateMachineArn=state_machine_arn,
-            name=job_id,
-            input=json.dumps({'job_id': job_id, 'project_id': project_id, 'doc_config': body})
-        )
-    else:
-        invoke_self_async({'job_type': f'generate_{doc_type}', 'project_id': project_id, 'job_id': job_id, 'doc_config': body})
-    
+    invoke_self_async({'job_type': f'generate_{doc_type}', 'project_id': project_id, 'job_id': job_id, 'doc_config': body})
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': f'{doc_type.upper()} generation started.'}
 
 
