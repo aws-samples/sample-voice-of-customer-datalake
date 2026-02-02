@@ -33,6 +33,7 @@ npm-debug.log*
 # Test coverage
 coverage/
 .coverage
+htmlcov/
 
 # Secrets (never commit)
 secrets.json

@@ -38,3 +38,9 @@ npm-debug.log*
 *.bak
 
 .threat-composer
+*.bak
+
+# Test coverage
+.coverage
+coverage/
+htmlcov/
