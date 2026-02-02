@@ -17,6 +17,7 @@
     "generate:manifests": "npm run generate:manifests --prefix voc-datalake",
     "generate:menu": "npm run generate:menu --prefix voc-datalake",
     "generate:config": "npm run generate:manifests && npm run generate:menu",
+    "generate:workshop-artifacts": "npm run generate:workshop-artifacts --prefix voc-datalake",
     "validate:plugins": "npm run validate:plugins --prefix voc-datalake",
     "cdk": "npm run cdk --prefix voc-datalake --",
     "cdk:nag": "npm run cdk:nag --prefix voc-datalake",
