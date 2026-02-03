@@ -32,16 +32,16 @@ export interface VocApiStackProps extends cdk.StackProps {
   frontendDomainName: string;
   userPool: cognito.UserPool;
   userPoolClient: cognito.UserPoolClient;
-  
+
   // Ingestion stack resources
   processingQueueUrl: string;
   processingQueueArn: string;
   secretsArn: string;
   s3ImportBucket: s3.Bucket;
-  
+
   // Processing stack resources
   researchStateMachine: sfn.StateMachine;
-  
+
   // Config
   brandName: string;
   enabledSources: string[];  // Plugin IDs enabled in pluginStatus
@@ -79,7 +79,16 @@ export class VocApiStack extends cdk.Stack {
 
     // Shared Lambda Layer
     const apiLayer = new lambda.LayerVersion(this, 'ApiDepsLayer', {
-      code: lambda.Code.fromAsset('lambda/layers/processing-deps'),
+      code: lambda.Code.fromAsset('lambda/layers/processing-deps', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_14.bundlingImage,
+          platform: 'linux/arm64',
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output/python && cp -r . /asset-output/python/'
+          ],
+        },
+      }),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
       description: 'Dependencies for API lambdas (ARM64/Graviton)',
@@ -506,14 +515,14 @@ export class VocApiStack extends cdk.Stack {
     // ============================================
     // API GATEWAY
     // ============================================
-    
+
     // API Gateway CloudWatch Logs
     const apiLogGroup = new logs.LogGroup(this, 'ApiGatewayLogs', {
       logGroupName: `/aws/apigateway/${uniqueName('voc-analytics-api')}`,
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
-    
+
     this.api = new apigateway.RestApi(this, 'VocAnalyticsApi', {
       restApiName: uniqueName('voc-analytics-api'),
       description: 'Voice of the Customer Analytics API',
@@ -534,7 +543,7 @@ export class VocApiStack extends cdk.Stack {
         exposeHeaders: ['Content-Type'],
       },
     });
-    
+
     NagSuppressions.addResourceSuppressions(this.api, apiGatewayRequestValidationSuppressions, true);
 
     // Gateway responses for CORS on errors
@@ -676,7 +685,7 @@ export class VocApiStack extends cdk.Stack {
     const feedbackFormSubmit = feedbackFormResource.addResource('submit').addMethod('POST', feedbackFormIntegration);
     const feedbackFormEmbed = feedbackFormResource.addResource('embed').addMethod('GET', feedbackFormIntegration);
     const feedbackFormIframe = feedbackFormResource.addResource('iframe').addMethod('GET', feedbackFormIntegration);
-    
+
     NagSuppressions.addResourceSuppressions(feedbackFormConfigGet, publicFeedbackEndpointSuppressions);
     NagSuppressions.addResourceSuppressions(feedbackFormSubmit, publicFeedbackEndpointSuppressions);
     NagSuppressions.addResourceSuppressions(feedbackFormEmbed, publicFeedbackEndpointSuppressions);
@@ -731,7 +740,7 @@ export class VocApiStack extends cdk.Stack {
       distribution: frontendDistribution,
       distributionPaths: ['/*'],
     });
-    
+
     // Suppress CDK custom resource Lambda runtime warnings for BucketDeployment
     // Find and suppress the CDK-managed custom resource (hash-based ID)
     for (const child of this.node.findAll()) {

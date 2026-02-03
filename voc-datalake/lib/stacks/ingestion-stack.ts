@@ -188,7 +188,7 @@ export class VocIngestionStack extends cdk.Stack {
       },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
-    
+
     NagSuppressions.addResourceSuppressions(secret, apiSecretsSuppressions);
     return secret;
   }
@@ -201,7 +201,7 @@ export class VocIngestionStack extends cdk.Stack {
       retentionPeriod: cdk.Duration.days(14),
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
-    
+
     // Enforce SSL/TLS for queue access
     dlq.addToResourcePolicy(new iam.PolicyStatement({
       sid: 'DenyInsecureTransport',
@@ -213,7 +213,7 @@ export class VocIngestionStack extends cdk.Stack {
         Bool: { 'aws:SecureTransport': 'false' },
       },
     }));
-    
+
     return dlq;
   }
 
@@ -226,7 +226,7 @@ export class VocIngestionStack extends cdk.Stack {
       deadLetterQueue: { queue: dlq, maxReceiveCount: 3 },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
-    
+
     // Enforce SSL/TLS for queue access
     queue.addToResourcePolicy(new iam.PolicyStatement({
       sid: 'DenyInsecureTransport',
@@ -238,7 +238,7 @@ export class VocIngestionStack extends cdk.Stack {
         Bool: { 'aws:SecureTransport': 'false' },
       },
     }));
-    
+
     return queue;
   }
 
@@ -287,7 +287,16 @@ export class VocIngestionStack extends cdk.Stack {
 
   private createDependenciesLayer(): lambda.LayerVersion {
     return new lambda.LayerVersion(this, 'IngestionDepsLayer', {
-      code: lambda.Code.fromAsset('lambda/layers/ingestion-deps'),
+      code: lambda.Code.fromAsset('lambda/layers/ingestion-deps', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_14.bundlingImage,
+          platform: 'linux/arm64',
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output/python && cp -r . /asset-output/python/'
+          ],
+        },
+      }),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
       description: 'Common dependencies for ingestion lambdas (ARM64/Graviton)',
