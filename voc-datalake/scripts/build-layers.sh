@@ -11,8 +11,8 @@ LAYERS_DIR="$PROJECT_ROOT/lambda/layers"
 echo "Building Lambda layers using Docker (ARM64/Graviton for Lambda)..."
 echo "Project root: $PROJECT_ROOT"
 
-# Use the official AWS Lambda Python 3.12 image with ARM64 platform
-DOCKER_IMAGE="public.ecr.aws/sam/build-python3.12:latest"
+# Use the official AWS Lambda Python 3.14 image with ARM64 platform
+DOCKER_IMAGE="public.ecr.aws/sam/build-python3.14:latest"
 PLATFORM="linux/arm64"
 
 # Build processing-deps layer
