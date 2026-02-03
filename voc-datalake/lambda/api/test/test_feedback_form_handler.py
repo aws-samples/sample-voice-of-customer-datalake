@@ -154,7 +154,9 @@ class TestGetForm:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
+        # Now returns 404 with error key
+        assert response['statusCode'] == 404
+        assert 'error' in body
         assert 'not found' in body['error'].lower()
 
     @patch('feedback_form_handler.aggregates_table')
@@ -215,7 +217,9 @@ class TestUpdateForm:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
         assert 'No fields to update' in body['error']
 
     @patch('feedback_form_handler.aggregates_table')
@@ -308,7 +312,9 @@ class TestSubmitFormFeedback:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
         assert 'required' in body['error'].lower()
 
     @patch('feedback_form_handler.sqs')
@@ -334,7 +340,9 @@ class TestSubmitFormFeedback:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
+        # Now returns 404 with error key
+        assert response['statusCode'] == 404
+        assert 'error' in body
         assert 'not found' in body['error'].lower()
 
     @patch('feedback_form_handler.sqs')
@@ -362,7 +370,9 @@ class TestSubmitFormFeedback:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
         assert 'not enabled' in body['error'].lower()
 
     @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')

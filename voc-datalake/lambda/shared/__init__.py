@@ -32,6 +32,15 @@ from shared.idempotency import (
     IdempotencyAlreadyInProgressError,
     IdempotencyItemAlreadyExistsError,
 )
+from shared.exceptions import (
+    ApiError,
+    ValidationError,
+    NotFoundError,
+    ConfigurationError,
+    ServiceError,
+    AuthorizationError,
+    ConflictError,
+)
 
 __all__ = [
     # Logging
@@ -71,4 +80,12 @@ __all__ = [
     "idempotent_function",
     "IdempotencyAlreadyInProgressError",
     "IdempotencyItemAlreadyExistsError",
+    # Exceptions
+    "ApiError",
+    "ValidationError",
+    "NotFoundError",
+    "ConfigurationError",
+    "ServiceError",
+    "AuthorizationError",
+    "ConflictError",
 ]

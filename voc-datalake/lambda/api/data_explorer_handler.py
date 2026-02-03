@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer
 from shared.aws import get_s3_client, get_dynamodb_resource, get_sqs_client
 from shared.api import create_api_resolver, api_handler, DecimalEncoder
+from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
 
 s3_client = get_s3_client()
 dynamodb = get_dynamodb_resource()
@@ -119,7 +120,7 @@ def list_s3_objects():
         
     except Exception as e:
         logger.exception(f"Failed to list S3 objects: {e}")
-        return {'objects': [], 'bucket': bucket_name, 'bucketId': bucket_id, 'prefix': prefix, 'error': str(e)}
+        raise ServiceError(f'Failed to list S3 objects: {str(e)}')
 
 
 @app.get("/data-explorer/s3/preview")
@@ -139,10 +140,10 @@ def preview_s3_file():
     bucket_name = bucket_config.get('name', '')
     
     if not bucket_name:
-        return {'content': None, 'error': 'Bucket not configured'}
+        raise ConfigurationError('Bucket not configured')
     
     if not key:
-        return {'content': None, 'error': 'File key is required'}
+        raise ValidationError('File key is required')
     
     try:
         head_response = s3_client.head_object(Bucket=bucket_name, Key=key)
@@ -187,10 +188,10 @@ def preview_s3_file():
             return {'content': content, 'size': size, 'contentType': content_type, 'key': key}
             
     except s3_client.exceptions.NoSuchKey:
-        return {'content': None, 'error': 'File not found', 'key': key}
+        raise NotFoundError('File not found')
     except Exception as e:
         logger.exception(f"Failed to preview S3 file: {e}")
-        return {'content': None, 'error': str(e), 'key': key}
+        raise ServiceError(f'Failed to preview file: {str(e)}')
 
 
 @app.put("/data-explorer/s3")
@@ -208,10 +209,10 @@ def save_s3_file():
     bucket_name = bucket_config.get('name', '')
     
     if not bucket_name:
-        return {'success': False, 'message': 'Bucket not configured'}
+        raise ConfigurationError('Bucket not configured')
     
     if not key:
-        return {'success': False, 'message': 'File key is required'}
+        raise ValidationError('File key is required')
     
     try:
         # Ensure content is a string
@@ -245,7 +246,7 @@ def save_s3_file():
         
     except Exception as e:
         logger.exception(f"Failed to save S3 file: {e}")
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(f'Failed to save file: {str(e)}')
 
 
 @app.delete("/data-explorer/s3")
@@ -261,17 +262,17 @@ def delete_s3_file():
     bucket_name = bucket_config.get('name', '')
     
     if not bucket_name:
-        return {'success': False, 'message': 'Bucket not configured'}
+        raise ConfigurationError('Bucket not configured')
     
     if not key:
-        return {'success': False, 'message': 'File key is required'}
+        raise ValidationError('File key is required')
     
     try:
         s3_client.delete_object(Bucket=bucket_name, Key=key)
         return {'success': True, 'message': 'File deleted', 'key': key}
     except Exception as e:
         logger.exception(f"Failed to delete S3 file: {e}")
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(f'Failed to delete file: {str(e)}')
 
 
 # ============================================
@@ -283,7 +284,7 @@ def delete_s3_file():
 def save_feedback():
     """Update a feedback record in DynamoDB."""
     if not FEEDBACK_TABLE:
-        return {'success': False, 'message': 'Feedback table not configured'}
+        raise ConfigurationError('Feedback table not configured')
     
     body = app.current_event.json_body
     feedback_id = body.get('feedback_id', '')
@@ -291,7 +292,7 @@ def save_feedback():
     sync_to_s3 = body.get('sync_to_s3', False)
     
     if not feedback_id:
-        return {'success': False, 'message': 'Feedback ID is required'}
+        raise ValidationError('Feedback ID is required')
     
     try:
         table = dynamodb.Table(FEEDBACK_TABLE)
@@ -324,7 +325,7 @@ def save_feedback():
                 expr_values[f":{field}"] = value
         
         if not update_parts:
-            return {'success': False, 'message': 'No fields to update'}
+            raise ValidationError('No fields to update')
         
         # Add updated_at timestamp
         update_parts.append("#updated_at = :updated_at")
@@ -362,7 +363,7 @@ def save_feedback():
                     ExpressionAttributeValues=expr_values
                 )
             else:
-                return {'success': False, 'message': 'Feedback not found'}
+                raise NotFoundError('Feedback not found')
         
         synced = False
         if sync_to_s3 and RAW_DATA_BUCKET:
@@ -390,7 +391,7 @@ def save_feedback():
         
     except Exception as e:
         logger.exception(f"Failed to update feedback: {e}")
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(f'Failed to update feedback: {str(e)}')
 
 
 @app.delete("/data-explorer/feedback")
@@ -398,13 +399,13 @@ def save_feedback():
 def delete_feedback():
     """Delete a feedback record from DynamoDB."""
     if not FEEDBACK_TABLE:
-        return {'success': False, 'message': 'Feedback table not configured'}
+        raise ConfigurationError('Feedback table not configured')
     
     params = app.current_event.query_string_parameters or {}
     feedback_id = params.get('feedback_id', '')
     
     if not feedback_id:
-        return {'success': False, 'message': 'Feedback ID is required'}
+        raise ValidationError('Feedback ID is required')
     
     try:
         table = dynamodb.Table(FEEDBACK_TABLE)
@@ -418,7 +419,7 @@ def delete_feedback():
         )
         
         if not response.get('Items'):
-            return {'success': False, 'message': 'Feedback not found'}
+            raise NotFoundError('Feedback not found')
         
         item = response['Items'][0]
         
@@ -427,9 +428,11 @@ def delete_feedback():
         
         return {'success': True, 'message': 'Feedback deleted', 'feedback_id': feedback_id}
         
+    except NotFoundError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to delete feedback: {e}")
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(f'Failed to delete feedback: {str(e)}')
 
 
 @app.get("/data-explorer/buckets")

@@ -74,8 +74,8 @@ class TestGetIntegrationStatus:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
+        # Assert - now returns 500 with error key
+        assert response['statusCode'] == 500
         assert 'error' in body
 
 
@@ -165,9 +165,9 @@ class TestUpdateCredentials:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
+        # Assert - now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body
 
 
 class TestTestIntegration:
@@ -296,9 +296,9 @@ class TestEnableSource:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
+        # Assert - now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body
 
 
 class TestDisableSource:

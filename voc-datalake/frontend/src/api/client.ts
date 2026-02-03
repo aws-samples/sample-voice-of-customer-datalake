@@ -300,7 +300,7 @@ export const api = {
     }),
   
   testIntegration: (source: string) => 
-    fetchApi<{ success: boolean; message: string; details?: Record<string, unknown> }>(`/integrations/${source}/test`, {
+    fetchApi<{ success: boolean; message?: string; error?: string; details?: Record<string, unknown> }>(`/integrations/${source}/test`, {
       method: 'POST'
     }),
 
@@ -334,7 +334,8 @@ export const api = {
         notes?: string
         warnings?: string[]
       }
-      message?: string 
+      message?: string
+      error?: string 
     }>('/scrapers/analyze-url', {
       method: 'POST',
       body: JSON.stringify({ url })
@@ -360,7 +361,7 @@ export const api = {
 
   // Manual Import
   startManualImportParse: (sourceUrl: string, rawText: string) =>
-    fetchApi<{ success: boolean; job_id: string; source_origin?: string; message?: string }>('/scrapers/manual/parse', {
+    fetchApi<{ success: boolean; job_id: string; source_origin?: string; message?: string; error?: string }>('/scrapers/manual/parse', {
       method: 'POST',
       body: JSON.stringify({ source_url: sourceUrl, raw_text: rawText })
     }),
@@ -376,7 +377,7 @@ export const api = {
     }>(`/scrapers/manual/parse/${jobId}`),
 
   confirmManualImport: (jobId: string, reviews: Array<{ text: string; rating: number | null; author: string | null; date: string | null; title: string | null }>) =>
-    fetchApi<{ success: boolean; imported_count?: number; s3_uri?: string; message?: string; errors?: string[] }>('/scrapers/manual/confirm', {
+    fetchApi<{ success: boolean; imported_count?: number; s3_uri?: string; message?: string; error?: string; errors?: string[] }>('/scrapers/manual/confirm', {
       method: 'POST',
       body: JSON.stringify({ job_id: jobId, reviews })
     }),
@@ -459,7 +460,7 @@ export const api = {
   },
   
   getS3UploadUrl: (filename: string, source: string, contentType?: string) =>
-    fetchApi<{ success: boolean; upload_url?: string; key?: string; message?: string }>('/s3-import/upload-url', {
+    fetchApi<{ success: boolean; upload_url?: string; key?: string; error?: string }>('/s3-import/upload-url', {
       method: 'POST',
       body: JSON.stringify({ filename, source, content_type: contentType || 'application/octet-stream' })
     }),
@@ -585,7 +586,7 @@ export const api = {
   getUsers: () => fetchApi<{ success: boolean; users: CognitoUser[]; message?: string }>('/users'),
   
   createUser: (data: { username: string; email: string; name?: string; group: 'admins' | 'users' }) =>
-    fetchApi<{ success: boolean; message: string; user?: CognitoUser }>('/users', {
+    fetchApi<{ success: boolean; message?: string; error?: string; user?: CognitoUser }>('/users', {
       method: 'POST',
       body: JSON.stringify(data)
     }),

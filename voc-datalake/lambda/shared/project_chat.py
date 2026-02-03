@@ -7,6 +7,7 @@ import re
 from boto3.dynamodb.conditions import Key
 
 from shared.logging import logger
+from shared.exceptions import ConfigurationError, NotFoundError
 
 
 def get_project_data(projects_table, project_id: str) -> dict:
@@ -18,10 +19,14 @@ def get_project_data(projects_table, project_id: str) -> dict:
         project_id: The project ID
     
     Returns:
-        Dict with 'project', 'personas', 'documents' keys, or 'error' key on failure
+        Dict with 'project', 'personas', 'documents' keys
+        
+    Raises:
+        ConfigurationError: If projects_table is not configured
+        NotFoundError: If project doesn't exist
     """
     if not projects_table:
-        return {'error': 'Projects table not configured'}
+        raise ConfigurationError('Projects table not configured')
     
     response = projects_table.query(
         KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}')
@@ -29,7 +34,7 @@ def get_project_data(projects_table, project_id: str) -> dict:
     
     items = response.get('Items', [])
     if not items:
-        return {'error': 'Project not found'}
+        raise NotFoundError('Project not found')
     
     project = None
     personas = []
@@ -75,7 +80,7 @@ def get_project_data(projects_table, project_id: str) -> dict:
             })
     
     if not project:
-        return {'error': 'Project metadata not found'}
+        raise NotFoundError('Project metadata not found')
     
     return {'project': project, 'personas': personas, 'documents': documents}
 
@@ -208,14 +213,16 @@ def build_chat_context(
     
     Returns:
         Tuple of (system_prompt, user_message, metadata)
-        - system_prompt is None if project not found (check metadata['error'])
+        
+    Raises:
+        ConfigurationError: If projects_table is not configured
+        NotFoundError: If project doesn't exist
     """
     selected_persona_ids = selected_persona_ids or []
     selected_document_ids = selected_document_ids or []
     
+    # This will raise ConfigurationError or NotFoundError if needed
     project_data = get_project_data(projects_table, project_id)
-    if 'error' in project_data:
-        return None, None, {'error': project_data['error']}
     
     project = project_data.get('project', {})
     personas = project_data.get('personas', [])

@@ -92,10 +92,10 @@ class TestCreateProject:
     def test_returns_error_when_table_not_configured(self):
         """Returns error when table not configured."""
         from projects import create_project
+        from shared.exceptions import ConfigurationError
         
-        result = create_project({'name': 'Test'})
-        
-        assert result['success'] is False
+        with pytest.raises(ConfigurationError):
+            create_project({'name': 'Test'})
 
 
 class TestGetProject:
@@ -126,10 +126,10 @@ class TestGetProject:
         mock_table.query.return_value = {'Items': []}
         
         from projects import get_project
+        from shared.exceptions import NotFoundError
         
-        result = get_project('nonexistent')
-        
-        assert 'error' in result
+        with pytest.raises(NotFoundError):
+            get_project('nonexistent')
 
 
 class TestUpdateProject:
@@ -149,10 +149,10 @@ class TestUpdateProject:
     def test_returns_error_when_table_not_configured(self):
         """Returns error when table not configured."""
         from projects import update_project
+        from shared.exceptions import ConfigurationError
         
-        result = update_project('proj-1', {'name': 'Test'})
-        
-        assert result['success'] is False
+        with pytest.raises(ConfigurationError):
+            update_project('proj-1', {'name': 'Test'})
 
 
 class TestDeleteProject:
@@ -180,10 +180,10 @@ class TestDeleteProject:
     def test_returns_error_when_table_not_configured(self):
         """Returns error when table not configured."""
         from projects import delete_project
+        from shared.exceptions import ConfigurationError
         
-        result = delete_project('proj-1')
-        
-        assert result['success'] is False
+        with pytest.raises(ConfigurationError):
+            delete_project('proj-1')
 
 
 class TestGetAvatarCdnUrl:

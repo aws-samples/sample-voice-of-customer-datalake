@@ -9,9 +9,18 @@ import functools
 from decimal import Decimal
 from datetime import datetime, timezone
 
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig, Response, content_types
 
 from shared.logging import logger, tracer, metrics
+from shared.exceptions import (
+    ApiError,
+    ValidationError,
+    NotFoundError,
+    ConfigurationError,
+    ServiceError,
+    AuthorizationError,
+    ConflictError,
+)
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -93,16 +102,97 @@ def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
 
 def create_api_resolver(allowed_origin: str | None = None) -> APIGatewayRestResolver:
     """
-    Create pre-configured API Gateway resolver with standard CORS.
+    Create pre-configured API Gateway resolver with standard CORS and exception handlers.
     
     Args:
         allowed_origin: Override origin, defaults to ALLOWED_ORIGIN env var
     
     Returns:
-        Configured APIGatewayRestResolver instance
+        Configured APIGatewayRestResolver instance with exception handlers registered
     """
     cors_config = create_cors_config(allowed_origin)
-    return APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+    app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
+    
+    # Register exception handlers for consistent error responses
+    _register_exception_handlers(app)
+    
+    return app
+
+
+def _register_exception_handlers(app: APIGatewayRestResolver) -> None:
+    """
+    Register exception handlers for all custom API exceptions.
+    
+    This ensures all API errors return a consistent format:
+    {
+        "success": false,
+        "error": "Human-readable error message"
+    }
+    """
+    
+    @app.exception_handler(ValidationError)
+    def handle_validation_error(ex: ValidationError):
+        logger.warning(f"Validation error: {ex.message}")
+        return Response(
+            status_code=400,
+            content_type=content_types.APPLICATION_JSON,
+            body=json.dumps({'success': False, 'error': ex.message})
+        )
+    
+    @app.exception_handler(NotFoundError)
+    def handle_not_found_error(ex: NotFoundError):
+        logger.warning(f"Not found: {ex.message}")
+        return Response(
+            status_code=404,
+            content_type=content_types.APPLICATION_JSON,
+            body=json.dumps({'success': False, 'error': ex.message})
+        )
+    
+    @app.exception_handler(ConfigurationError)
+    def handle_configuration_error(ex: ConfigurationError):
+        logger.error(f"Configuration error: {ex.message}")
+        return Response(
+            status_code=500,
+            content_type=content_types.APPLICATION_JSON,
+            body=json.dumps({'success': False, 'error': ex.message})
+        )
+    
+    @app.exception_handler(ServiceError)
+    def handle_service_error(ex: ServiceError):
+        logger.exception(f"Service error: {ex.message}")
+        return Response(
+            status_code=500,
+            content_type=content_types.APPLICATION_JSON,
+            body=json.dumps({'success': False, 'error': ex.message})
+        )
+    
+    @app.exception_handler(AuthorizationError)
+    def handle_authorization_error(ex: AuthorizationError):
+        logger.warning(f"Authorization error: {ex.message}")
+        return Response(
+            status_code=403,
+            content_type=content_types.APPLICATION_JSON,
+            body=json.dumps({'success': False, 'error': ex.message})
+        )
+    
+    @app.exception_handler(ConflictError)
+    def handle_conflict_error(ex: ConflictError):
+        logger.warning(f"Conflict error: {ex.message}")
+        return Response(
+            status_code=409,
+            content_type=content_types.APPLICATION_JSON,
+            body=json.dumps({'success': False, 'error': ex.message})
+        )
+    
+    @app.exception_handler(ApiError)
+    def handle_api_error(ex: ApiError):
+        """Catch-all for any ApiError subclass not explicitly handled."""
+        logger.exception(f"API error: {ex.message}")
+        return Response(
+            status_code=ex.status_code,
+            content_type=content_types.APPLICATION_JSON,
+            body=json.dumps({'success': False, 'error': ex.message})
+        )
 
 
 def api_handler(func):
@@ -156,8 +246,39 @@ def error_response(message: str, status_code: int = 400) -> dict:
     
     Returns:
         Lambda response dict
+    
+    Note:
+        Prefer raising exceptions (ValidationError, NotFoundError, etc.)
+        over using this function directly. The exception handlers will
+        create consistent error responses automatically.
     """
-    return json_response({'error': message}, status_code)
+    return json_response({'success': False, 'error': message}, status_code)
+
+
+# Re-export exceptions for convenience
+__all__ = [
+    'DecimalEncoder',
+    'validate_days',
+    'validate_limit', 
+    'validate_int',
+    'create_cors_config',
+    'create_api_resolver',
+    'api_handler',
+    'json_response',
+    'error_response',
+    'get_configured_categories',
+    'clear_categories_cache',
+    'sum_daily_metric',
+    'DEFAULT_CATEGORIES',
+    # Exceptions
+    'ApiError',
+    'ValidationError',
+    'NotFoundError',
+    'ConfigurationError',
+    'ServiceError',
+    'AuthorizationError',
+    'ConflictError',
+]
 
 
 # Default categories fallback (used when settings not configured)

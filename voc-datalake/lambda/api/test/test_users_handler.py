@@ -122,7 +122,7 @@ class TestListUsers:
     def test_returns_unauthorized_for_non_admins(
         self, mock_cognito, api_gateway_event, lambda_context
     ):
-        """Returns 401 for non-admin callers."""
+        """Returns 403 for non-admin callers."""
         # Arrange
         from users_handler import lambda_handler
         event = api_gateway_event(method='GET', path='/users')
@@ -131,8 +131,8 @@ class TestListUsers:
         # Act
         response = lambda_handler(event, lambda_context)
         
-        # Assert
-        assert response['statusCode'] == 401
+        # Assert - now returns 403 Forbidden (AuthorizationError)
+        assert response['statusCode'] == 403
 
 
 class TestCreateUser:
@@ -158,7 +158,7 @@ class TestCreateUser:
             body={
                 'email': 'newuser@example.com',
                 'name': 'New User',
-                'group': 'viewers'
+                'group': 'users'  # Use 'users' instead of 'viewers' to match valid groups
             }
         )
         event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
@@ -232,7 +232,7 @@ class TestCreateUser:
         event = api_gateway_event(
             method='POST',
             path='/users',
-            body={'email': 'existing@example.com', 'group': 'viewers'}
+            body={'email': 'existing@example.com', 'group': 'users'}
         )
         event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
         
@@ -240,10 +240,10 @@ class TestCreateUser:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
-        assert 'already exists' in body['message']
+        # Assert - now returns 409 Conflict with error key
+        assert response['statusCode'] == 409
+        assert 'error' in body
+        assert 'already exists' in body['error']
 
 
 class TestUpdateUserGroup:
@@ -253,10 +253,10 @@ class TestUpdateUserGroup:
     def test_updates_user_group_successfully(
         self, mock_cognito, api_gateway_event, lambda_context
     ):
-        """Updates user group from viewers to admins."""
+        """Updates user group from users to admins."""
         # Arrange
         mock_cognito.admin_list_groups_for_user.return_value = {
-            'Groups': [{'GroupName': 'viewers'}]
+            'Groups': [{'GroupName': 'users'}]
         }
         mock_cognito.admin_remove_user_from_group.return_value = {}
         mock_cognito.admin_add_user_to_group.return_value = {}
@@ -305,10 +305,10 @@ class TestUpdateUserGroup:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
-        assert 'not found' in body['message'].lower()
+        # Assert - now returns 404 with error key
+        assert response['statusCode'] == 404
+        assert 'error' in body
+        assert 'not found' in body['error'].lower()
 
 
 class TestResetUserPassword:
@@ -449,7 +449,7 @@ class TestDeleteUser:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
-        assert 'not found' in body['message'].lower()
+        # Assert - now returns 404 with error key
+        assert response['statusCode'] == 404
+        assert 'error' in body
+        assert 'not found' in body['error'].lower()

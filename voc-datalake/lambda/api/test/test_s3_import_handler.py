@@ -63,7 +63,8 @@ class TestListSourcesEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['sources'] == []
+        # Now returns 500 with error key
+        assert response['statusCode'] == 500
         assert 'error' in body
 
 
@@ -103,8 +104,10 @@ class TestCreateSourceEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'required' in body['message'].lower()
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'required' in body['error'].lower()
 
     @patch('s3_import_handler.s3_client')
     @patch('s3_import_handler.S3_IMPORT_BUCKET', 'test-bucket')
@@ -235,8 +238,10 @@ class TestGetUploadUrlEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'required' in body['message'].lower()
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'required' in body['error'].lower()
 
     @patch('s3_import_handler.S3_IMPORT_BUCKET', 'test-bucket')
     def test_rejects_unsupported_file_types(self, api_gateway_event, lambda_context):
@@ -252,8 +257,10 @@ class TestGetUploadUrlEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'supported' in body['message'].lower()
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'supported' in body['error'].lower()
 
 
 class TestDeleteFileEndpoint:
@@ -294,7 +301,9 @@ class TestDeleteFileEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
+        # Now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body
 
     @patch('s3_import_handler.S3_IMPORT_BUCKET', '')
     def test_returns_error_when_bucket_not_configured(self, api_gateway_event, lambda_context):
@@ -310,4 +319,6 @@ class TestDeleteFileEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
+        # Now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body

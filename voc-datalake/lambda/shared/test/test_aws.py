@@ -146,7 +146,10 @@ class TestGetBedrockClient:
         from shared.aws import get_bedrock_client
         result = get_bedrock_client()
         
-        mock_boto_client.assert_called_once_with('bedrock-runtime')
+        # Verify bedrock-runtime client was created (may include config)
+        mock_boto_client.assert_called_once()
+        call_args = mock_boto_client.call_args
+        assert call_args[0][0] == 'bedrock-runtime'
         assert result == mock_client
 
 

@@ -17,6 +17,7 @@ from boto3.dynamodb.conditions import Key
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_sqs_client
 from shared.api import create_api_resolver, api_handler, validate_limit
+from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
 
 # AWS Clients
 dynamodb = get_dynamodb_resource()
@@ -189,7 +190,7 @@ def list_forms():
         return {'success': True, 'forms': forms}
     except Exception as e:
         logger.error(f"Error listing forms: {e}")
-        return {'success': False, 'error': 'Failed to list forms', 'forms': []}
+        raise ServiceError('Failed to list forms')
 
 
 @app.post("/feedback-forms")
@@ -205,7 +206,7 @@ def create_form():
         return {'success': True, 'form': item_to_form(item)}
     except Exception as e:
         logger.error(f"Error creating form: {e}")
-        return {'success': False, 'error': 'Failed to create form'}
+        raise ServiceError('Failed to create form')
 
 
 @app.get("/feedback-forms/<form_id>")
@@ -219,12 +220,14 @@ def get_form(form_id: str):
         item = response.get('Item')
         
         if not item:
-            return {'success': False, 'error': 'Form not found'}
+            raise NotFoundError('Form not found')
         
         return {'success': True, 'form': item_to_form(item)}
+    except NotFoundError:
+        raise
     except Exception as e:
         logger.error(f"Error getting form: {e}")
-        return {'success': False, 'error': 'Failed to get form'}
+        raise ServiceError('Failed to get form')
 
 
 @app.put("/feedback-forms/<form_id>")
@@ -246,7 +249,7 @@ def update_form(form_id: str):
             expr_values[f':{field}'] = body[field]
     
     if not update_parts:
-        return {'success': False, 'error': 'No fields to update'}
+        raise ValidationError('No fields to update')
     
     update_parts.append('#updated_at = :updated_at')
     
@@ -262,7 +265,7 @@ def update_form(form_id: str):
         return {'success': True, 'form': item_to_form(response.get('Attributes', {}))}
     except Exception as e:
         logger.error(f"Error updating form: {e}")
-        return {'success': False, 'error': 'Failed to update form'}
+        raise ServiceError('Failed to update form')
 
 
 @app.delete("/feedback-forms/<form_id>")
@@ -277,7 +280,7 @@ def delete_form(form_id: str):
         return {'success': True}
     except Exception as e:
         logger.error(f"Error deleting form: {e}")
-        return {'success': False, 'error': 'Failed to delete form'}
+        raise ServiceError('Failed to delete form')
 
 
 # ============================================
@@ -295,12 +298,14 @@ def get_form_config_by_id(form_id: str):
         item = response.get('Item')
         
         if not item:
-            return {'success': False, 'error': 'Form not found'}
+            raise NotFoundError('Form not found')
         
         return {'success': True, 'config': item_to_form(item)}
+    except NotFoundError:
+        raise
     except Exception as e:
         logger.error(f"Error getting form config: {e}")
-        return {'success': False, 'error': 'Failed to get form configuration'}
+        raise ServiceError('Failed to get form configuration')
 
 
 @app.post("/feedback-forms/<form_id>/submit")
@@ -311,7 +316,7 @@ def submit_form_feedback(form_id: str):
     
     text = body.get('text', '').strip()
     if not text:
-        return {'success': False, 'error': 'Feedback text is required'}
+        raise ValidationError('Feedback text is required')
     
     # Get form config
     try:
@@ -321,13 +326,15 @@ def submit_form_feedback(form_id: str):
         form = response.get('Item')
         
         if not form:
-            return {'success': False, 'error': 'Form not found'}
+            raise NotFoundError('Form not found')
         
         if not form.get('enabled', False):
-            return {'success': False, 'error': 'This form is not enabled'}
+            raise ValidationError('This form is not enabled')
+    except (NotFoundError, ValidationError):
+        raise
     except Exception as e:
         logger.error(f"Error fetching form: {e}")
-        return {'success': False, 'error': 'Failed to load form configuration'}
+        raise ServiceError('Failed to load form configuration')
     
     now = datetime.now(timezone.utc)
     feedback_id = str(uuid.uuid4())
@@ -373,7 +380,7 @@ def submit_form_feedback(form_id: str):
         }
     except Exception as e:
         logger.error(f"Error submitting feedback: {e}")
-        return {'success': False, 'error': 'Failed to submit feedback. Please try again.'}
+        raise ServiceError('Failed to submit feedback. Please try again.')
 
 
 @app.get("/feedback-forms/<form_id>/iframe")
@@ -442,7 +449,7 @@ def get_form_submissions(form_id: str):
     limit = validate_limit(params.get('limit'), default=50, max_val=100)
     
     if not feedback_table:
-        return {'success': False, 'error': 'Feedback table not configured'}
+        raise ConfigurationError('Feedback table not configured')
     
     # Verify form exists
     try:
@@ -450,10 +457,12 @@ def get_form_submissions(form_id: str):
             Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
         )
         if not response.get('Item'):
-            return {'success': False, 'error': 'Form not found'}
+            raise NotFoundError('Form not found')
+    except NotFoundError:
+        raise
     except Exception as e:
         logger.error(f"Error fetching form: {e}")
-        return {'success': False, 'error': 'Failed to fetch form'}
+        raise ServiceError('Failed to fetch form')
     
     source_channel = f'form_{form_id}'
     source_pk = _get_form_source_pk(form_id)
@@ -507,7 +516,7 @@ def get_form_submissions(form_id: str):
         }
     except Exception as e:
         logger.error(f"Error fetching submissions: {e}")
-        return {'success': False, 'error': 'Failed to fetch submissions'}
+        raise ServiceError('Failed to fetch submissions')
 
 
 @app.get("/feedback-forms/<form_id>/stats")

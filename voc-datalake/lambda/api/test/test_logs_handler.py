@@ -107,9 +107,8 @@ class TestGetValidationLogs:
             response = lambda_handler(event, lambda_context)
             body = json.loads(response['body'])
             
-            # Assert
-            assert response['statusCode'] == 200
-            assert body['logs'] == []
+            # Assert - now returns 500 with error key
+            assert response['statusCode'] == 500
             assert 'error' in body
 
 
@@ -379,10 +378,9 @@ class TestClearValidationLogs:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
-        assert 'message' in body
+        # Assert - now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body
 
 
 class TestCorsHeaders:

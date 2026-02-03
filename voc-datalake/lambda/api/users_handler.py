@@ -21,8 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer
 from shared.api import create_api_resolver, api_handler
-
-from aws_lambda_powertools.event_handler.exceptions import UnauthorizedError, BadRequestError
+from shared.exceptions import ValidationError, NotFoundError, ServiceError, ConflictError, AuthorizationError
 
 # AWS Clients
 cognito = boto3.client('cognito-idp')
@@ -58,7 +57,7 @@ def require_admin(event: dict) -> None:
     """Verify caller is in admins group."""
     groups = get_caller_groups(event)
     if 'admins' not in groups:
-        raise UnauthorizedError('Admin access required')
+        raise AuthorizationError('Admin access required')
 
 
 @app.get('/users')
@@ -111,7 +110,7 @@ def list_users():
     
     except Exception as e:
         logger.exception(f'Error listing users: {e}')
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(str(e))
 
 
 @app.post('/users')
@@ -126,10 +125,10 @@ def create_user():
     group = body.get('group', 'users')  # Default to users
     
     if not email:
-        raise BadRequestError('Email is required')
+        raise ValidationError('Email is required')
     
     if group not in ['admins', 'users']:
-        raise BadRequestError('Group must be "admins" or "users"')
+        raise ValidationError('Group must be "admins" or "users"')
     
     try:
         # Create user with temporary password (they'll be forced to change on first login)
@@ -169,10 +168,10 @@ def create_user():
         }
     
     except cognito.exceptions.UsernameExistsException:
-        return {'success': False, 'message': 'A user with this email already exists'}
+        raise ConflictError('A user with this email already exists')
     except Exception as e:
         logger.exception(f'Error creating user: {e}')
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(str(e))
 
 
 @app.put('/users/<username>/group')
@@ -185,7 +184,7 @@ def update_user_group(username: str):
     new_group = body.get('group', '').strip()
     
     if new_group not in ['admins', 'users']:
-        raise BadRequestError('Group must be "admins" or "users"')
+        raise ValidationError('Group must be "admins" or "users"')
     
     try:
         # Get current groups
@@ -219,10 +218,10 @@ def update_user_group(username: str):
         }
     
     except cognito.exceptions.UserNotFoundException:
-        return {'success': False, 'message': 'User not found'}
+        raise NotFoundError('User not found')
     except Exception as e:
         logger.exception(f'Error updating user group: {e}')
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(str(e))
 
 
 @app.post('/users/<username>/reset-password')
@@ -244,10 +243,10 @@ def reset_user_password(username: str):
         }
     
     except cognito.exceptions.UserNotFoundException:
-        return {'success': False, 'message': 'User not found'}
+        raise NotFoundError('User not found')
     except Exception as e:
         logger.exception(f'Error resetting password: {e}')
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(str(e))
 
 
 @app.put('/users/<username>/enable')
@@ -269,10 +268,10 @@ def enable_user(username: str):
         }
     
     except cognito.exceptions.UserNotFoundException:
-        return {'success': False, 'message': 'User not found'}
+        raise NotFoundError('User not found')
     except Exception as e:
         logger.exception(f'Error enabling user: {e}')
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(str(e))
 
 
 @app.put('/users/<username>/disable')
@@ -294,10 +293,10 @@ def disable_user(username: str):
         }
     
     except cognito.exceptions.UserNotFoundException:
-        return {'success': False, 'message': 'User not found'}
+        raise NotFoundError('User not found')
     except Exception as e:
         logger.exception(f'Error disabling user: {e}')
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(str(e))
 
 
 @app.delete('/users/<username>')
@@ -319,10 +318,10 @@ def delete_user(username: str):
         }
     
     except cognito.exceptions.UserNotFoundException:
-        return {'success': False, 'message': 'User not found'}
+        raise NotFoundError('User not found')
     except Exception as e:
         logger.exception(f'Error deleting user: {e}')
-        return {'success': False, 'message': str(e)}
+        raise ServiceError(str(e))
 
 
 @api_handler

@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_secrets_client
 from shared.api import create_api_resolver, api_handler
+from shared.exceptions import ConfigurationError, ServiceError
 
 import boto3
 
@@ -31,7 +32,7 @@ app = create_api_resolver()
 def get_integration_status():
     """Get status of all integrations."""
     if not SECRETS_ARN:
-        return {'error': 'Secrets not configured'}
+        raise ConfigurationError('Secrets not configured')
     
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
@@ -47,9 +48,11 @@ def get_integration_status():
             status[source] = {'configured': len(configured_keys) == len(keys), 'credentials_set': configured_keys}
         
         return status
+    except ConfigurationError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to get integration status: {e}")
-        return {'error': 'Failed to retrieve integration status'}
+        raise ServiceError('Failed to retrieve integration status')
 
 
 @app.put("/integrations/<source>/credentials")
@@ -57,7 +60,7 @@ def get_integration_status():
 def update_credentials(source: str):
     """Update credentials for an integration."""
     if not SECRETS_ARN:
-        return {'success': False, 'message': 'Secrets not configured'}
+        raise ConfigurationError('Secrets not configured')
     
     body = app.current_event.json_body
     
@@ -71,9 +74,11 @@ def update_credentials(source: str):
         
         secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
         return {'success': True, 'message': f'Credentials updated for {source}'}
+    except ConfigurationError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to update credentials: {e}")
-        return {'success': False, 'message': 'Failed to update credentials'}
+        raise ServiceError('Failed to update credentials')
 
 
 @app.post("/integrations/<source>/test")
@@ -123,7 +128,7 @@ def enable_source(source: str):
         return {'success': True, 'source': source, 'enabled': True}
     except Exception as e:
         logger.exception(f"Failed to enable source {source}: {e}")
-        return {'success': False, 'message': 'Failed to enable data source'}
+        raise ServiceError('Failed to enable data source')
 
 
 @app.put("/sources/<source>/disable")
@@ -137,7 +142,7 @@ def disable_source(source: str):
         return {'success': True, 'source': source, 'enabled': False}
     except Exception as e:
         logger.exception(f"Failed to disable source {source}: {e}")
-        return {'success': False, 'message': 'Failed to disable data source'}
+        raise ServiceError('Failed to disable data source')
 
 
 @api_handler

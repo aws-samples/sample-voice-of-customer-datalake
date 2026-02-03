@@ -16,10 +16,9 @@ from urllib.parse import urlparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_sqs_client, get_s3_client
+from shared.aws import get_dynamodb_resource, get_sqs_client, get_s3_client, invoke_lambda_async
 from shared.api import create_api_resolver, api_handler
-
-import boto3
+from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
 
 dynamodb = get_dynamodb_resource()
 sqs = get_sqs_client()
@@ -43,6 +42,13 @@ DOMAIN_TO_SOURCE = {
     'capterra.com': 'capterra',
     'www.capterra.com': 'capterra',
 }
+
+MANUAL_IMPORT_PROCESSOR_FUNCTION = os.environ.get('MANUAL_IMPORT_PROCESSOR_FUNCTION', '')
+
+
+def _job_key(job_id: str) -> dict:
+    """Generate DynamoDB key for a manual import job."""
+    return {'pk': f'MANUAL_IMPORT#{job_id}', 'sk': 'JOB'}
 
 PARSE_SYSTEM_PROMPT = """You are a review parser. Your job is to extract individual reviews from raw pasted text.
 
@@ -101,7 +107,8 @@ def extract_source_from_url(url: str) -> str:
         
         # Return sanitized domain for unknown sources
         return hostname.replace('www.', '')
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to parse URL '{url}': {e}")
         return "unknown"
 
 
@@ -116,18 +123,24 @@ def decimal_default(obj):
 @tracer.capture_method
 def start_parse():
     """Start async parse job."""
+    if not aggregates_table:
+        raise ConfigurationError('AGGREGATES_TABLE not configured')
+    
+    if not MANUAL_IMPORT_PROCESSOR_FUNCTION:
+        raise ConfigurationError('MANUAL_IMPORT_PROCESSOR_FUNCTION not configured')
+    
     body = app.current_event.json_body
     source_url = body.get('source_url', '').strip()
     raw_text = body.get('raw_text', '').strip()
     
     if not source_url:
-        return {'success': False, 'message': 'Source URL is required'}
+        raise ValidationError('Source URL is required')
     
     if not raw_text:
-        return {'success': False, 'message': 'Raw text is required'}
+        raise ValidationError('Raw text is required')
     
     if len(raw_text) > MAX_CHARACTERS:
-        return {'success': False, 'message': f'Text exceeds maximum of {MAX_CHARACTERS} characters'}
+        raise ValidationError(f'Text exceeds maximum of {MAX_CHARACTERS} characters')
     
     source_origin = extract_source_from_url(source_url)
     job_id = str(uuid.uuid4())
@@ -135,40 +148,33 @@ def start_parse():
     ttl = int(time.time()) + JOB_TTL_SECONDS
     
     # Create job record
-    if aggregates_table:
-        aggregates_table.put_item(Item={
-            'pk': f'MANUAL_IMPORT#{job_id}',
-            'sk': 'JOB',
-            'status': 'processing',
-            'source_url': source_url,
-            'source_origin': source_origin,
-            'raw_text': raw_text,
-            'reviews': [],
-            'unparsed_sections': [],
-            'error': None,
-            'created_at': now.isoformat(),
-            'ttl': ttl
-        })
+    aggregates_table.put_item(Item={
+        'pk': _job_key(job_id)['pk'],
+        'sk': 'JOB',
+        'status': 'processing',
+        'source_url': source_url,
+        'source_origin': source_origin,
+        'raw_text': raw_text,
+        'reviews': [],
+        'unparsed_sections': [],
+        'error': None,
+        'created_at': now.isoformat(),
+        'ttl': ttl
+    })
     
     # Invoke async processing
-    lambda_client = boto3.client('lambda')
     try:
-        lambda_client.invoke(
-            FunctionName=os.environ.get('MANUAL_IMPORT_PROCESSOR_FUNCTION', 'voc-manual-import-processor'),
-            InvocationType='Event',
-            Payload=json.dumps({'job_id': job_id})
-        )
+        invoke_lambda_async(MANUAL_IMPORT_PROCESSOR_FUNCTION, {'job_id': job_id})
     except Exception as e:
         logger.exception(f"Failed to invoke processor: {e}")
         # Update job status to failed
-        if aggregates_table:
-            aggregates_table.update_item(
-                Key={'pk': f'MANUAL_IMPORT#{job_id}', 'sk': 'JOB'},
-                UpdateExpression='SET #status = :status, #error = :error',
-                ExpressionAttributeNames={'#status': 'status', '#error': 'error'},
-                ExpressionAttributeValues={':status': 'failed', ':error': str(e)}
-            )
-        return {'success': False, 'message': 'Failed to start processing'}
+        aggregates_table.update_item(
+            Key=_job_key(job_id),
+            UpdateExpression='SET #status = :status, #error = :error',
+            ExpressionAttributeNames={'#status': 'status', '#error': 'error'},
+            ExpressionAttributeValues={':status': 'failed', ':error': str(e)}
+        )
+        raise ServiceError('Failed to start processing')
     
     return {'success': True, 'job_id': job_id, 'source_origin': source_origin}
 
@@ -178,16 +184,14 @@ def start_parse():
 def get_parse_status(job_id: str):
     """Get parse job status."""
     if not aggregates_table:
-        return {'status': 'error', 'error': 'Table not configured'}
+        raise ConfigurationError('Table not configured')
     
     try:
-        response = aggregates_table.get_item(
-            Key={'pk': f'MANUAL_IMPORT#{job_id}', 'sk': 'JOB'}
-        )
+        response = aggregates_table.get_item(Key=_job_key(job_id))
         item = response.get('Item')
         
         if not item:
-            return {'status': 'not_found', 'error': 'Job not found'}
+            raise NotFoundError(f'Job {job_id} not found')
         
         result = {
             'status': item.get('status', 'unknown'),
@@ -202,9 +206,11 @@ def get_parse_status(job_id: str):
             result['error'] = item.get('error', 'Unknown error')
         
         return result
+    except (ConfigurationError, NotFoundError):
+        raise
     except Exception as e:
         logger.exception(f"Failed to get job status: {e}")
-        return {'status': 'error', 'error': 'Failed to retrieve job status'}
+        raise ServiceError('Failed to retrieve job status')
 
 
 @app.post("/scrapers/manual/confirm")
@@ -216,10 +222,10 @@ def confirm_import():
     reviews = body.get('reviews', [])
     
     if not job_id:
-        return {'success': False, 'message': 'Job ID is required'}
+        raise ValidationError('Job ID is required')
     
     if not reviews:
-        return {'success': False, 'message': 'No reviews to import'}
+        raise ValidationError('No reviews to import')
     
     # Validate all reviews have dates
     reviews_missing_dates = []
@@ -229,22 +235,20 @@ def confirm_import():
     
     if reviews_missing_dates:
         if len(reviews_missing_dates) == 1:
-            return {'success': False, 'message': f'Review {reviews_missing_dates[0]} is missing a date. All reviews must have a date.'}
+            raise ValidationError(f'Review {reviews_missing_dates[0]} is missing a date. All reviews must have a date.')
         else:
-            return {'success': False, 'message': f'Reviews {", ".join(map(str, reviews_missing_dates))} are missing dates. All reviews must have a date.'}
+            raise ValidationError(f'Reviews {", ".join(map(str, reviews_missing_dates))} are missing dates. All reviews must have a date.')
     
     # Get job details
     if not aggregates_table:
-        return {'success': False, 'message': 'Table not configured'}
+        raise ConfigurationError('Table not configured')
     
     try:
-        response = aggregates_table.get_item(
-            Key={'pk': f'MANUAL_IMPORT#{job_id}', 'sk': 'JOB'}
-        )
+        response = aggregates_table.get_item(Key=_job_key(job_id))
         job = response.get('Item')
         
         if not job:
-            return {'success': False, 'message': 'Job not found'}
+            raise NotFoundError('Job not found')
         
         source_origin = job.get('source_origin', 'unknown')
         source_url = job.get('source_url', '')
@@ -323,7 +327,7 @@ def confirm_import():
         
         # Update job status
         aggregates_table.update_item(
-            Key={'pk': f'MANUAL_IMPORT#{job_id}', 'sk': 'JOB'},
+            Key=_job_key(job_id),
             UpdateExpression='SET #status = :status, imported_count = :count, imported_at = :at',
             ExpressionAttributeNames={'#status': 'status'},
             ExpressionAttributeValues={
@@ -344,9 +348,11 @@ def confirm_import():
         
         return result
         
+    except (ValidationError, ConfigurationError, NotFoundError):
+        raise
     except Exception as e:
         logger.exception(f"Failed to confirm import: {e}")
-        return {'success': False, 'message': 'Failed to import reviews'}
+        raise ServiceError('Failed to import reviews')
 
 
 @api_handler
