@@ -46,10 +46,11 @@ class TestExtractSourceFromUrl:
 class TestStartParseEndpoint:
     """Tests for POST /scrapers/manual/parse endpoint."""
 
-    @patch('manual_import_handler.boto3.client')
+    @patch('manual_import_handler.invoke_lambda_async')
     @patch('manual_import_handler.aggregates_table')
+    @patch('manual_import_handler.MANUAL_IMPORT_PROCESSOR_FUNCTION', 'test-processor')
     def test_returns_error_when_source_url_missing(
-        self, mock_table, mock_boto_client, api_gateway_event, lambda_context
+        self, mock_table, mock_invoke, api_gateway_event, lambda_context
     ):
         """Returns error when source_url is not provided."""
         from manual_import_handler import lambda_handler
@@ -63,13 +64,16 @@ class TestStartParseEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'Source URL is required' in body['message']
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'Source URL is required' in body['error']
 
-    @patch('manual_import_handler.boto3.client')
+    @patch('manual_import_handler.invoke_lambda_async')
     @patch('manual_import_handler.aggregates_table')
+    @patch('manual_import_handler.MANUAL_IMPORT_PROCESSOR_FUNCTION', 'test-processor')
     def test_returns_error_when_raw_text_missing(
-        self, mock_table, mock_boto_client, api_gateway_event, lambda_context
+        self, mock_table, mock_invoke, api_gateway_event, lambda_context
     ):
         """Returns error when raw_text is not provided."""
         from manual_import_handler import lambda_handler
@@ -83,13 +87,16 @@ class TestStartParseEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'Raw text is required' in body['message']
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'Raw text is required' in body['error']
 
-    @patch('manual_import_handler.boto3.client')
+    @patch('manual_import_handler.invoke_lambda_async')
     @patch('manual_import_handler.aggregates_table')
+    @patch('manual_import_handler.MANUAL_IMPORT_PROCESSOR_FUNCTION', 'test-processor')
     def test_returns_error_when_text_exceeds_max_characters(
-        self, mock_table, mock_boto_client, api_gateway_event, lambda_context
+        self, mock_table, mock_invoke, api_gateway_event, lambda_context
     ):
         """Returns error when raw_text exceeds maximum character limit."""
         from manual_import_handler import lambda_handler, MAX_CHARACTERS
@@ -106,18 +113,18 @@ class TestStartParseEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'exceeds maximum' in body['message']
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'exceeds maximum' in body['error']
 
-    @patch('manual_import_handler.boto3.client')
+    @patch('manual_import_handler.invoke_lambda_async')
     @patch('manual_import_handler.aggregates_table')
+    @patch('manual_import_handler.MANUAL_IMPORT_PROCESSOR_FUNCTION', 'test-processor')
     def test_creates_job_and_invokes_processor(
-        self, mock_table, mock_boto_client, api_gateway_event, lambda_context
+        self, mock_table, mock_invoke, api_gateway_event, lambda_context
     ):
         """Creates job record and invokes async processor."""
-        mock_lambda = MagicMock()
-        mock_boto_client.return_value = mock_lambda
-        
         from manual_import_handler import lambda_handler
         
         event = api_gateway_event(
@@ -136,13 +143,14 @@ class TestStartParseEndpoint:
         assert 'job_id' in body
         assert body['source_origin'] == 'g2'
         mock_table.put_item.assert_called_once()
-        mock_lambda.invoke.assert_called_once()
+        mock_invoke.assert_called_once()
 
 
 class TestGetParseStatusEndpoint:
     """Tests for GET /scrapers/manual/parse/<job_id> endpoint."""
 
     @patch('manual_import_handler.aggregates_table')
+    @patch('manual_import_handler.MANUAL_IMPORT_PROCESSOR_FUNCTION', 'test-processor')
     def test_returns_not_found_for_missing_job(
         self, mock_table, api_gateway_event, lambda_context
     ):
@@ -160,7 +168,9 @@ class TestGetParseStatusEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['status'] == 'not_found'
+        # Now returns 404 with error key
+        assert response['statusCode'] == 404
+        assert 'error' in body
 
     @patch('manual_import_handler.aggregates_table')
     def test_returns_processing_status(
@@ -271,8 +281,10 @@ class TestConfirmImportEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'Job ID is required' in body['message']
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'Job ID is required' in body['error']
 
     @patch('manual_import_handler.sqs')
     @patch('manual_import_handler.s3')
@@ -292,8 +304,10 @@ class TestConfirmImportEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'No reviews to import' in body['message']
+        # Now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'No reviews to import' in body['error']
 
     @patch('manual_import_handler.sqs')
     @patch('manual_import_handler.s3')
@@ -318,8 +332,10 @@ class TestConfirmImportEndpoint:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'Job not found' in body['message']
+        # Now returns 404 with error key
+        assert response['statusCode'] == 404
+        assert 'error' in body
+        assert 'Job not found' in body['error']
 
     @patch('manual_import_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
     @patch('manual_import_handler.RAW_DATA_BUCKET', 'test-bucket')
@@ -366,15 +382,14 @@ class TestConfirmImportEndpoint:
 class TestStartParseEndpointAdditional:
     """Additional tests for POST /scrapers/manual/parse endpoint."""
 
-    @patch('manual_import_handler.boto3.client')
+    @patch('manual_import_handler.invoke_lambda_async')
     @patch('manual_import_handler.aggregates_table')
+    @patch('manual_import_handler.MANUAL_IMPORT_PROCESSOR_FUNCTION', 'test-processor')
     def test_handles_lambda_invoke_failure(
-        self, mock_table, mock_boto_client, api_gateway_event, lambda_context
+        self, mock_table, mock_invoke, api_gateway_event, lambda_context
     ):
         """Handles Lambda invoke failure gracefully."""
-        mock_lambda = MagicMock()
-        mock_lambda.invoke.side_effect = Exception('Lambda invoke failed')
-        mock_boto_client.return_value = mock_lambda
+        mock_invoke.side_effect = Exception('Lambda invoke failed')
         
         from manual_import_handler import lambda_handler
         
@@ -390,20 +405,20 @@ class TestStartParseEndpointAdditional:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'Failed to start processing' in body['message']
+        # Now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body
+        assert 'Failed to start processing' in body['error']
         # Verify job status was updated to failed
         mock_table.update_item.assert_called_once()
 
-    @patch('manual_import_handler.boto3.client')
+    @patch('manual_import_handler.invoke_lambda_async')
     @patch('manual_import_handler.aggregates_table')
+    @patch('manual_import_handler.MANUAL_IMPORT_PROCESSOR_FUNCTION', 'test-processor')
     def test_trims_whitespace_from_inputs(
-        self, mock_table, mock_boto_client, api_gateway_event, lambda_context
+        self, mock_table, mock_invoke, api_gateway_event, lambda_context
     ):
         """Trims whitespace from source_url and raw_text."""
-        mock_lambda = MagicMock()
-        mock_boto_client.return_value = mock_lambda
-        
         from manual_import_handler import lambda_handler
         
         event = api_gateway_event(
@@ -430,6 +445,7 @@ class TestGetParseStatusEndpointAdditional:
     """Additional tests for GET /scrapers/manual/parse/<job_id> endpoint."""
 
     @patch('manual_import_handler.aggregates_table')
+    @patch('manual_import_handler.MANUAL_IMPORT_PROCESSOR_FUNCTION', 'test-processor')
     def test_handles_dynamodb_exception(
         self, mock_table, api_gateway_event, lambda_context
     ):
@@ -447,10 +463,12 @@ class TestGetParseStatusEndpointAdditional:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['status'] == 'error'
-        assert 'Failed to retrieve job status' in body['error']
+        # Now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body
 
     @patch('manual_import_handler.aggregates_table', None)
+    @patch('manual_import_handler.MANUAL_IMPORT_PROCESSOR_FUNCTION', 'test-processor')
     def test_returns_error_when_table_not_configured(
         self, api_gateway_event, lambda_context
     ):
@@ -466,8 +484,9 @@ class TestGetParseStatusEndpointAdditional:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['status'] == 'error'
-        assert 'Table not configured' in body['error']
+        # Now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body
 
 
 class TestConfirmImportEndpointAdditional:
@@ -571,8 +590,10 @@ class TestConfirmImportEndpointAdditional:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'Table not configured' in body['message']
+        # Now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body
+        assert 'Table not configured' in body['error']
 
     @patch('manual_import_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
     @patch('manual_import_handler.RAW_DATA_BUCKET', 'test-bucket')
@@ -599,8 +620,10 @@ class TestConfirmImportEndpointAdditional:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        assert body['success'] is False
-        assert 'Failed to import reviews' in body['message']
+        # Now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body
+        assert 'Failed to import reviews' in body['error']
 
 
 class TestDecimalDefault:

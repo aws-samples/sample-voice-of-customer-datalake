@@ -266,7 +266,7 @@ interface CredentialsSectionProps {
   readonly showSecrets: boolean
   readonly sourceStatus: { configured?: boolean } | undefined
   readonly saveSuccess: boolean
-  readonly testMutation: { isPending: boolean; data?: { success: boolean; message: string }; mutate: () => void }
+  readonly testMutation: { isPending: boolean; data?: { success: boolean; message?: string; error?: string }; mutate: () => void }
   readonly updateCredentialsMutation: { isPending: boolean; mutate: (creds: Record<string, string>) => void }
   readonly onCredentialsChange: (creds: Record<string, string>) => void
   readonly onToggleSecrets: () => void
@@ -323,7 +323,7 @@ function CredentialsSection({
         </div>
 
         {testMutation.data && (
-          <TestResultMessage success={testMutation.data.success} message={testMutation.data.message} />
+          <TestResultMessage success={testMutation.data.success} message={testMutation.data.message || testMutation.data.error || 'Unknown result'} />
         )}
       </div>
     </div>

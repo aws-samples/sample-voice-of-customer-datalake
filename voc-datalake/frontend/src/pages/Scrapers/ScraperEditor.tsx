@@ -95,7 +95,7 @@ export default function ScraperEditor({ scraper, template, onSave, onClose }: Sc
           warnings: selectors.warnings
         })
       } else {
-        setAnalyzeResult({ success: false, message: result.message ?? 'Could not detect selectors' })
+        setAnalyzeResult({ success: false, message: result.error ?? 'Could not detect selectors' })
       }
     } catch {
       setAnalyzeResult({ success: false, message: 'Failed to analyze URL' })

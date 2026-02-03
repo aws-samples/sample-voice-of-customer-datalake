@@ -83,8 +83,8 @@ class TestGetBrandSettings:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
+        # Assert - now returns 500 with error key
+        assert response['statusCode'] == 500
         assert 'error' in body
 
 
@@ -165,9 +165,9 @@ class TestSaveBrandSettings:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
+        # Assert - now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body
 
 
 class TestGetCategoriesConfig:
@@ -302,10 +302,10 @@ class TestGenerateCategories:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
-        assert 'required' in body['message'].lower()
+        # Assert - now returns 400 with error key
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'required' in body['error'].lower()
 
     @patch('shared.converse.converse')
     @patch('settings_handler.aggregates_table')
@@ -327,6 +327,6 @@ class TestGenerateCategories:
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is False
+        # Assert - now returns 500 with error key
+        assert response['statusCode'] == 500
+        assert 'error' in body

@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_s3_client
 from shared.api import create_api_resolver, api_handler
+from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 
 s3_client = get_s3_client()
 S3_IMPORT_BUCKET = os.environ.get("S3_IMPORT_BUCKET", "")
@@ -41,7 +42,7 @@ def list_sources():
         return {'sources': sources, 'bucket': S3_IMPORT_BUCKET}
     except Exception as e:
         logger.exception(f"Failed to list S3 sources: {e}")
-        return {'sources': [], 'error': 'Failed to list sources'}
+        raise ServiceError('Failed to list sources')
 
 
 @app.post("/s3-import/sources")
@@ -49,13 +50,13 @@ def list_sources():
 def create_source():
     """Create a new source folder in the S3 import bucket."""
     if not S3_IMPORT_BUCKET:
-        return {'success': False, 'message': 'S3 import bucket not configured'}
+        raise ConfigurationError('S3 import bucket not configured')
     
     body = app.current_event.json_body
     source_name = body.get('name', '').strip()
     
     if not source_name:
-        return {'success': False, 'message': 'Source name is required'}
+        raise ValidationError('Source name is required')
     
     safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', source_name)
     
@@ -64,7 +65,7 @@ def create_source():
         return {'success': True, 'source': {'name': safe_name, 'display_name': f"S3 - {safe_name}"}}
     except Exception as e:
         logger.exception(f"Failed to create source folder: {e}")
-        return {'success': False, 'message': 'Failed to create source folder'}
+        raise ServiceError('Failed to create source folder')
 
 
 @app.get("/s3-import/files")
@@ -104,7 +105,7 @@ def list_files():
         return {'files': files, 'bucket': S3_IMPORT_BUCKET}
     except Exception as e:
         logger.exception(f"Failed to list S3 files: {e}")
-        return {'files': [], 'error': 'Failed to list files'}
+        raise ServiceError('Failed to list files')
 
 
 @app.post("/s3-import/upload-url")
@@ -112,7 +113,7 @@ def list_files():
 def get_upload_url():
     """Generate a presigned URL for uploading a file to S3."""
     if not S3_IMPORT_BUCKET:
-        return {'success': False, 'message': 'S3 import bucket not configured'}
+        raise ConfigurationError('S3 import bucket not configured')
     
     body = app.current_event.json_body
     filename = body.get('filename', '').strip()
@@ -120,10 +121,10 @@ def get_upload_url():
     content_type = body.get('content_type', 'application/octet-stream')
     
     if not filename:
-        return {'success': False, 'message': 'Filename is required'}
+        raise ValidationError('Filename is required')
     
     if not filename.endswith(('.csv', '.json', '.jsonl')):
-        return {'success': False, 'message': 'Only CSV, JSON, and JSONL files are supported'}
+        raise ValidationError('Only CSV, JSON, and JSONL files are supported')
     
     safe_source = re.sub(r'[^a-zA-Z0-9_-]', '_', source)
     safe_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
@@ -138,7 +139,7 @@ def get_upload_url():
         return {'success': True, 'upload_url': url, 'key': key, 'bucket': S3_IMPORT_BUCKET, 'expires_in': 3600}
     except Exception as e:
         logger.exception(f"Failed to generate upload URL: {e}")
-        return {'success': False, 'message': 'Failed to generate upload URL'}
+        raise ServiceError('Failed to generate upload URL')
 
 
 @app.delete("/s3-import/file/<key>")
@@ -146,7 +147,7 @@ def get_upload_url():
 def delete_file(key: str):
     """Delete a file from the S3 import bucket."""
     if not S3_IMPORT_BUCKET:
-        return {'success': False, 'message': 'S3 import bucket not configured'}
+        raise ConfigurationError('S3 import bucket not configured')
     
     decoded_key = urllib.parse.unquote(key)
     
@@ -155,7 +156,7 @@ def delete_file(key: str):
         return {'success': True, 'deleted_key': decoded_key}
     except Exception as e:
         logger.exception(f"Failed to delete file: {e}")
-        return {'success': False, 'message': 'Failed to delete file'}
+        raise ServiceError('Failed to delete file')
 
 
 @api_handler

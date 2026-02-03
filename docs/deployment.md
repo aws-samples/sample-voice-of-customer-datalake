@@ -62,8 +62,29 @@ npm run check        # lint + typecheck + test
 |---------|-------------|
 | `npm run lint` | Runs ESLint to catch code quality issues |
 | `npm run typecheck` | Runs TypeScript compiler to verify types |
-| `npm run test` | Runs Vitest test suite |
+| `npm run test` | Runs Vitest test suite (frontend + CDK) |
 | `npm run test:coverage` | Runs tests with coverage report |
+
+### Python Lambda Tests
+
+Lambda handlers have their own test suite using pytest:
+
+```bash
+cd voc-datalake
+
+# Run all Lambda tests
+pytest
+
+# Run with coverage report
+pytest --cov=lambda --cov-report=html:coverage_html
+
+# Run specific handler tests
+pytest lambda/processor/test/
+pytest lambda/aggregator/test/
+pytest lambda/api/test/
+```
+
+Test coverage reports are generated in `voc-datalake/coverage_html/`.
 
 ## Anthropic Model Access (First-Time Setup)
 

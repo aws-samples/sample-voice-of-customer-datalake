@@ -48,25 +48,27 @@ class TestGetProjectData:
         assert result['documents'][0]['title'] == 'Research Doc'
 
     def test_returns_error_when_no_items(self):
-        """Returns error when project not found."""
+        """Raises NotFoundError when project not found."""
         from shared.project_chat import get_project_data
+        from shared.exceptions import NotFoundError
         
         mock_table = MagicMock()
         mock_table.query.return_value = {'Items': []}
         
-        result = get_project_data(mock_table, 'nonexistent')
+        with pytest.raises(NotFoundError) as exc_info:
+            get_project_data(mock_table, 'nonexistent')
         
-        assert 'error' in result
-        assert result['error'] == 'Project not found'
+        assert 'Project not found' in str(exc_info.value)
 
     def test_returns_error_when_table_none(self):
-        """Returns error when table not configured."""
+        """Raises ConfigurationError when table not configured."""
         from shared.project_chat import get_project_data
+        from shared.exceptions import ConfigurationError
         
-        result = get_project_data(None, 'proj-123')
+        with pytest.raises(ConfigurationError) as exc_info:
+            get_project_data(None, 'proj-123')
         
-        assert 'error' in result
-        assert 'not configured' in result['error']
+        assert 'not configured' in str(exc_info.value)
 
 
 class TestGetFeedbackForChat:
@@ -199,21 +201,22 @@ class TestBuildChatContext:
         assert 'context' in metadata
 
     def test_returns_error_when_project_not_found(self):
-        """Returns None system_prompt when project not found."""
+        """Raises NotFoundError when project not found."""
         from shared.project_chat import build_chat_context
+        from shared.exceptions import NotFoundError
         
         mock_projects_table = MagicMock()
         mock_projects_table.query.return_value = {'Items': []}
         
-        system_prompt, user_message, metadata = build_chat_context(
-            mock_projects_table,
-            None,
-            'nonexistent',
-            'Hello'
-        )
+        with pytest.raises(NotFoundError) as exc_info:
+            build_chat_context(
+                mock_projects_table,
+                None,
+                'nonexistent',
+                'Hello'
+            )
         
-        assert system_prompt is None
-        assert 'error' in metadata
+        assert 'Project not found' in str(exc_info.value)
 
     def test_detects_persona_mentions(self):
         """Detects @mentions in message and includes persona."""

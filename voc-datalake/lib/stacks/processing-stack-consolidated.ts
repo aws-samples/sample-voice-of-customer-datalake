@@ -51,7 +51,16 @@ export class VocProcessingStack extends cdk.Stack {
 
     // Shared Lambda Layer
     const processingLayer = new lambda.LayerVersion(this, 'ProcessingDepsLayer', {
-      code: lambda.Code.fromAsset('lambda/layers/processing-deps'),
+      code: lambda.Code.fromAsset('lambda/layers/processing-deps', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_14.bundlingImage,
+          platform: 'linux/arm64',
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output/python && cp -r . /asset-output/python/'
+          ],
+        },
+      }),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
       description: 'Dependencies for processing lambdas (ARM64/Graviton)',

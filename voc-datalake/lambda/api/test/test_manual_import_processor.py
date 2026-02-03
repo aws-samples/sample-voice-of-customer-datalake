@@ -163,15 +163,16 @@ class TestLambdaHandler:
         mock_process_job.assert_called_once_with('job-123')
 
     @patch('manual_import_processor.process_job')
-    def test_returns_error_when_job_id_missing(self, mock_process_job):
-        """Returns error when job_id not in event."""
+    def test_raises_error_when_job_id_missing(self, mock_process_job):
+        """Raises ValidationError when job_id not in event."""
         from manual_import_processor import lambda_handler
+        from shared.exceptions import ValidationError
         
         event = {}
         context = MagicMock()
         
-        result = lambda_handler(event, context)
+        with pytest.raises(ValidationError) as exc_info:
+            lambda_handler(event, context)
         
-        assert result['success'] is False
-        assert 'No job_id' in result['error']
+        assert 'No job_id' in str(exc_info.value)
         mock_process_job.assert_not_called()

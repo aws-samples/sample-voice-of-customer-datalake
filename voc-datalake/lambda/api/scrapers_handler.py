@@ -21,6 +21,7 @@ from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_secrets_client, get_bedrock_client, BEDROCK_MODEL_ID
 from shared.api import create_api_resolver, api_handler
 from shared.tables import get_aggregates_table
+from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Key
@@ -124,12 +125,12 @@ def list_scrapers():
 def save_scraper():
     """Save a scraper configuration."""
     if not SECRETS_ARN:
-        return {'success': False, 'message': 'Secrets not configured'}
+        raise ConfigurationError('Secrets not configured')
     
     body = app.current_event.json_body
     scraper = body.get('scraper')
     if not scraper:
-        return {'success': False, 'message': 'No scraper config provided'}
+        raise ValidationError('No scraper config provided')
 
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
@@ -147,7 +148,7 @@ def save_scraper():
         return {'success': True, 'scraper': scraper}
     except Exception as e:
         logger.exception(f"Failed to save scraper: {e}")
-        return {'success': False, 'message': 'Failed to save scraper configuration'}
+        raise ServiceError('Failed to save scraper configuration')
 
 
 @app.delete("/scrapers/<scraper_id>")
@@ -155,7 +156,7 @@ def save_scraper():
 def delete_scraper(scraper_id: str):
     """Delete a scraper configuration."""
     if not SECRETS_ARN:
-        return {'success': False, 'message': 'Secrets not configured'}
+        raise ConfigurationError('Secrets not configured')
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
@@ -166,7 +167,7 @@ def delete_scraper(scraper_id: str):
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to delete scraper: {e}")
-        return {'success': False, 'message': 'Failed to delete scraper configuration'}
+        raise ServiceError('Failed to delete scraper configuration')
 
 
 @app.get("/scrapers/templates")
@@ -225,7 +226,7 @@ def run_scraper(scraper_id: str):
         return {'success': True, 'execution_id': execution_id, 'status': 'running'}
     except Exception as e:
         logger.exception(f"Failed to run scraper: {e}")
-        return {'success': False, 'message': 'Failed to start scraper run'}
+        raise ServiceError('Failed to start scraper run')
 
 
 @app.get("/scrapers/<scraper_id>/status")
@@ -274,7 +275,7 @@ def analyze_url():
     # Validate URL to prevent SSRF
     is_valid, error_message = validate_url(url)
     if not is_valid:
-        return {'success': False, 'message': error_message}
+        raise ValidationError(error_message)
     
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36', 'Accept': 'text/html,application/xhtml+xml'}
@@ -289,13 +290,15 @@ def analyze_url():
         response_text = converse(prompt=prompt, max_tokens=1000)
         
         json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
-        if json_match:
-            selectors = json.loads(json_match.group())
-            return {'success': True, 'selectors': selectors}
-        return {'success': False, 'message': 'Could not parse selectors from response'}
+        if not json_match:
+            raise ServiceError('Could not parse selectors from response')
+        selectors = json.loads(json_match.group())
+        return {'success': True, 'selectors': selectors}
+    except (ValidationError, ServiceError):
+        raise
     except Exception as e:
         logger.exception(f"Failed to analyze URL: {e}")
-        return {'success': False, 'message': 'Failed to analyze URL'}
+        raise ServiceError('Failed to analyze URL')
 
 
 @api_handler

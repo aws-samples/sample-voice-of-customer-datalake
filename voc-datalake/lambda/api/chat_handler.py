@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource
 from shared.api import create_api_resolver, api_handler, validate_days, get_configured_categories
+from shared.exceptions import ConfigurationError, NotFoundError as AppNotFoundError
 
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Key
@@ -214,7 +215,7 @@ def get_conversations(proxy: str = ""):
 def save_conversation(proxy: str = ""):
     """Save a chat conversation."""
     if not conversations_table:
-        return {'success': False, 'message': 'Conversations not configured'}
+        raise ConfigurationError('Conversations not configured')
     
     body = app.current_event.json_body
     conversation_id = body.get('id') or f"conv-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
@@ -238,8 +239,10 @@ def save_conversation(proxy: str = ""):
 @tracer.capture_method
 def delete_conversation(proxy: str):
     """Delete a chat conversation."""
-    if not conversations_table or not proxy:
-        return {'success': False}
+    if not conversations_table:
+        raise ConfigurationError('Conversations table not configured')
+    if not proxy:
+        raise AppNotFoundError('Conversation ID is required')
     
     conversations_table.delete_item(Key={'pk': 'USER#default', 'sk': f'CONV#{proxy}'})
     return {'success': True}

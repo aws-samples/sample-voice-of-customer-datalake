@@ -296,7 +296,7 @@ describe('ManualImportModal', () => {
       const user = userEvent.setup()
       mockStartManualImportParse.mockResolvedValue({
         success: false,
-        message: 'Invalid URL',
+        error: 'Source URL is required',
       })
 
       render(<ManualImportModal />)
@@ -305,7 +305,7 @@ describe('ManualImportModal', () => {
       await user.click(parseButton)
 
       await waitFor(() => {
-        expect(screen.getByText(/invalid url/i)).toBeInTheDocument()
+        expect(screen.getByText(/source url is required/i)).toBeInTheDocument()
       })
     })
 
@@ -365,7 +365,7 @@ describe('ManualImportModal', () => {
       const user = userEvent.setup()
       mockConfirmManualImport.mockResolvedValue({
         success: false,
-        message: 'Import failed',
+        error: 'Failed to import reviews',
       })
 
       render(<ManualImportModal />)
@@ -374,7 +374,7 @@ describe('ManualImportModal', () => {
       await user.click(importButton)
 
       await waitFor(() => {
-        expect(useManualImportStore.getState().processingError).toBe('Import failed')
+        expect(useManualImportStore.getState().processingError).toBe('Failed to import reviews')
       })
     })
 

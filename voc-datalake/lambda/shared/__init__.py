@@ -45,6 +45,15 @@ from shared.jobs import (
     get_job,
 )
 from shared.api import decimal_default
+from shared.exceptions import (
+    ApiError,
+    ValidationError,
+    NotFoundError,
+    ConfigurationError,
+    ServiceError,
+    AuthorizationError,
+    ConflictError,
+)
 
 __all__ = [
     # Logging
@@ -96,4 +105,12 @@ __all__ = [
     "get_job",
     # API utilities
     "decimal_default",
+    # Exceptions
+    "ApiError",
+    "ValidationError",
+    "NotFoundError",
+    "ConfigurationError",
+    "ServiceError",
+    "AuthorizationError",
+    "ConflictError",
 ]
