@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.exceptions import ValidationError
 
 dynamodb = get_dynamodb_resource()
 bedrock = get_bedrock_client()
@@ -219,7 +220,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
     
     if not job_id:
         logger.error("No job_id in event")
-        return {'success': False, 'error': 'No job_id provided'}
+        raise ValidationError('No job_id provided')
     
     process_job(job_id)
     

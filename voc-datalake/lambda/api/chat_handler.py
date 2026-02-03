@@ -239,8 +239,10 @@ def save_conversation(proxy: str = ""):
 @tracer.capture_method
 def delete_conversation(proxy: str):
     """Delete a chat conversation."""
-    if not conversations_table or not proxy:
-        return {'success': False}
+    if not conversations_table:
+        raise ConfigurationError('Conversations table not configured')
+    if not proxy:
+        raise AppNotFoundError('Conversation ID is required')
     
     conversations_table.delete_item(Key={'pk': 'USER#default', 'sk': f'CONV#{proxy}'})
     return {'success': True}

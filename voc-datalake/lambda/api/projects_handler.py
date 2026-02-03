@@ -478,7 +478,7 @@ def handle_generate_personas_job(event: dict) -> dict:
         logger.exception(f"[JOB] Persona generation FAILED after {job_elapsed:.2f}s: {type(e).__name__}: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error=f'Job execution failed: {str(e)[:200]}')
         logger.info(f"[JOB] ========== ASYNC PERSONA JOB FAILED ==========")
-        return {'success': False, 'error': 'Job execution failed'}
+        raise ServiceError('Job execution failed')
 
 
 def handle_generate_document_job(event: dict) -> dict:
@@ -601,7 +601,7 @@ Create a comprehensive PRD that includes: Problem Statement, Goals & Success Met
     except Exception as e:
         logger.exception(f"Document generation failed: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error='Document generation failed')
-        return {'success': False, 'error': 'Document generation failed'}
+        raise ServiceError('Document generation failed')
 
 
 def handle_merge_documents_job(event: dict) -> dict:
@@ -721,7 +721,7 @@ def handle_merge_documents_job(event: dict) -> dict:
     except Exception as e:
         logger.exception(f"Document merge failed: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error='Document merge failed')
-        return {'success': False, 'error': 'Document merge failed'}
+        raise ServiceError('Document merge failed')
 
 
 def handle_import_persona_job(event: dict) -> dict:
@@ -835,11 +835,11 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
     except json.JSONDecodeError as e:
         logger.error(f"[IMPORT_PERSONA_JOB] Failed to parse JSON: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error='Failed to parse persona data')
-        return {'success': False, 'error': 'Failed to parse persona data'}
+        raise ServiceError('Failed to parse persona data')
     except Exception as e:
         logger.exception(f"[IMPORT_PERSONA_JOB] Import failed: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error='Persona import failed')
-        return {'success': False, 'error': 'Persona import failed'}
+        raise ServiceError('Persona import failed')
 
 
 # ============================================

@@ -325,17 +325,19 @@ class TestSaveConversation:
 class TestDeleteConversation:
     """Tests for DELETE /chat/conversations/* endpoint."""
 
-    def test_returns_false_when_table_not_configured(self):
-        """Returns false when conversations table not configured."""
+    def test_raises_error_when_table_not_configured(self):
+        """Raises ConfigurationError when conversations table not configured."""
         import chat_handler
+        from shared.exceptions import ConfigurationError
         
         original_table = chat_handler.conversations_table
         chat_handler.conversations_table = None
         
         try:
-            result = chat_handler.delete_conversation(proxy='conv-123')
+            with pytest.raises(ConfigurationError) as exc_info:
+                chat_handler.delete_conversation(proxy='conv-123')
             
-            assert result['success'] is False
+            assert 'not configured' in str(exc_info.value)
         finally:
             chat_handler.conversations_table = original_table
 
