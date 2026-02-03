@@ -94,14 +94,27 @@ export class VocApiStack extends cdk.Stack {
       description: 'Dependencies for API lambdas (ARM64/Graviton)',
     });
 
-    // Bundled Lambda code
-    const apiCodeWithShared = lambda.Code.fromAsset('lambda', {
-      bundling: {
-        image: lambda.Runtime.PYTHON_3_14.bundlingImage,
-        command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/api/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
-        platform: 'linux/arm64',
-      },
-    });
+    /**
+     * Creates an optimized Lambda code bundle containing only the specified handler
+     * and the shared modules. This reduces deployment size and improves cold start times.
+     * 
+     * @param handlerFileName - The handler file name (e.g., 'metrics_handler.py')
+     * @returns Lambda Code asset with only the required files
+     */
+    const createApiLambdaCode = (handlerFileName: string): lambda.Code => {
+      return lambda.Code.fromAsset('lambda', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_14.bundlingImage,
+          command: [
+            'bash', '-c',
+            `mkdir -p /asset-output && ` +
+            `cp /asset-input/api/${handlerFileName} /asset-output/ && ` +
+            `cp -r /asset-input/shared /asset-output/`
+          ],
+          platform: 'linux/arm64',
+        },
+      });
+    };
 
     // ============================================
     // LAMBDA FUNCTIONS
@@ -118,7 +131,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'metrics_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('metrics_handler.py'),
       role: metricsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
@@ -149,7 +162,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'integrations_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('integrations_handler.py'),
       role: integrationsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -188,7 +201,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'scrapers_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('scrapers_handler.py'),
       role: scrapersRole,
       timeout: cdk.Duration.seconds(60),
       memorySize: 512,
@@ -211,7 +224,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'manual_import_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('manual_import_handler.py'),
       role: manualImportRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -242,7 +255,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'manual_import_processor.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('manual_import_processor.py'),
       role: manualImportProcessorRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 1024,
@@ -265,7 +278,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'settings_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('settings_handler.py'),
       role: settingsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -284,7 +297,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'logs_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('logs_handler.py'),
       role: logsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -305,7 +318,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'users_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('users_handler.py'),
       role: usersRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -326,7 +339,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'feedback_form_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('feedback_form_handler.py'),
       role: feedbackFormRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -351,7 +364,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'chat_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('chat_handler.py'),
       role: chatRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
@@ -385,7 +398,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'projects_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('projects_handler.py'),
       role: projectsRole,
       timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
@@ -421,7 +434,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'chat_stream_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('chat_stream_handler.py'),
       role: chatStreamRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 1024,
@@ -454,7 +467,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 's3_import_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('s3_import_handler.py'),
       role: s3ImportRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -475,7 +488,7 @@ export class VocApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'data_explorer_handler.lambda_handler',
-      code: apiCodeWithShared,
+      code: createApiLambdaCode('data_explorer_handler.py'),
       role: dataExplorerRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
