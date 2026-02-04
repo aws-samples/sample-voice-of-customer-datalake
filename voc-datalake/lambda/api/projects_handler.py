@@ -6,7 +6,6 @@ Separate Lambda to handle projects endpoints and avoid policy size limits.
 import json
 import os
 import base64
-import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -16,6 +15,8 @@ from shared.aws import (
 )
 from shared.api import create_api_resolver, validate_days, validate_int, api_handler, DecimalEncoder
 from shared.converse import converse
+from shared.tables import get_jobs_table, get_aggregates_table
+from shared.jobs import create_job, update_job_status
 from shared.exceptions import NotFoundError, ServiceError
 
 from boto3.dynamodb.conditions import Key
@@ -34,71 +35,13 @@ from projects import (
 app = create_api_resolver()
 
 # Environment
-JOBS_TABLE = os.environ.get('JOBS_TABLE', '')
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
-AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
-
-# Cached table references
-_jobs_table = None
-_aggregates_table = None
-
-
-def get_jobs_table():
-    """Get jobs table resource with connection reuse."""
-    global _jobs_table
-    if _jobs_table is None:
-        _jobs_table = get_dynamodb_resource().Table(JOBS_TABLE)
-    return _jobs_table
-
-
-def get_aggregates_table():
-    """Get aggregates table resource with connection reuse."""
-    global _aggregates_table
-    if _aggregates_table is None:
-        _aggregates_table = get_dynamodb_resource().Table(AGGREGATES_TABLE)
-    return _aggregates_table
-
 
 def validate_persona_count(value, default=3):
     """Validate persona count parameter."""
     return validate_int(value, default=default, min_val=1, max_val=10)
-
-
-def create_job(project_id: str, job_type: str, config_key: str, config: dict, ttl_minutes: int = 30, status: str = 'running') -> tuple[str, str]:
-    """Create a job record and return (job_id, now).
-    
-    Args:
-        project_id: Project ID
-        job_type: Type of job (e.g., 'generate_personas', 'research')
-        config_key: Key name for the config in the item (e.g., 'filters', 'doc_config')
-        config: Configuration dict for the job
-        ttl_minutes: TTL in minutes (default 30)
-        status: Initial status ('running' or 'pending')
-    """
-    job_id = f"job_{uuid.uuid4().hex[:16]}"
-    now = datetime.now(timezone.utc).isoformat()
-    ttl = int((datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)).timestamp())
-    
-    item = {
-        'pk': f'PROJECT#{project_id}',
-        'sk': f'JOB#{job_id}',
-        'gsi1pk': f'STATUS#{status}',
-        'gsi1sk': now,
-        'job_id': job_id,
-        'project_id': project_id,
-        'job_type': job_type,
-        'status': status,
-        'progress': 0,
-        'current_step': 'queued' if status == 'pending' else 'starting',
-        'created_at': now,
-        'updated_at': now,
-        'ttl': ttl,
-        config_key: config
-    }
-    get_jobs_table().put_item(Item=item)
-    return job_id, now
 
 
 # ============================================
@@ -400,34 +343,6 @@ def api_patch_prioritization_scores():
 # ============================================
 # Async Job Handlers
 # ============================================
-
-def update_job_status(project_id: str, job_id: str, status: str, progress: int, step: str, error: str = None, result: dict = None):
-    """Update job status in DynamoDB."""
-    now = datetime.now(timezone.utc).isoformat()
-    update_expr = 'SET #status = :status, progress = :progress, current_step = :step, updated_at = :now, gsi1pk = :gsi1pk'
-    expr_values = {':status': status, ':progress': progress, ':step': step, ':now': now, ':gsi1pk': f'STATUS#{status}'}
-    expr_names = {'#status': 'status'}
-    
-    if error:
-        update_expr += ', #error = :error, completed_at = :now, #ttl = :ttl'
-        expr_values[':error'] = error
-        expr_names['#error'] = 'error'
-        expr_names['#ttl'] = 'ttl'
-        expr_values[':ttl'] = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
-    if result:
-        update_expr += ', #result = :result, completed_at = :now, #ttl = :ttl'
-        expr_values[':result'] = result
-        expr_names['#result'] = 'result'
-        expr_names['#ttl'] = 'ttl'
-        expr_values[':ttl'] = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
-    
-    get_jobs_table().update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
-        UpdateExpression=update_expr,
-        ExpressionAttributeValues=expr_values,
-        ExpressionAttributeNames=expr_names
-    )
-
 
 def handle_generate_personas_job(event: dict) -> dict:
     """Handle async persona generation job."""

@@ -158,7 +158,7 @@ class TestCreateUser:
             body={
                 'email': 'newuser@example.com',
                 'name': 'New User',
-                'group': 'users'  # Use 'users' instead of 'viewers' to match valid groups
+                'group': 'users'  # Valid group: 'admins' or 'users'
             }
         )
         event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
@@ -254,7 +254,7 @@ class TestUpdateUserGroup:
         self, mock_cognito, api_gateway_event, lambda_context
     ):
         """Updates user group from users to admins."""
-        # Arrange
+        # Arrange - use 'users' as current group since handler only removes 'admins' or 'users'
         mock_cognito.admin_list_groups_for_user.return_value = {
             'Groups': [{'GroupName': 'users'}]
         }

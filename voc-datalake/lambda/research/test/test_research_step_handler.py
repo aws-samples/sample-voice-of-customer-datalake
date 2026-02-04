@@ -137,53 +137,70 @@ class TestInvokeBedrockWithRetry:
 
 
 class TestUpdateJobStatus:
-    """Tests for update_job_status function."""
+    """Tests for update_job_status function.
     
-    @patch('research_step_handler.jobs_table')
-    def test_updates_basic_status(self, mock_jobs_table):
+    Now uses shared.jobs module, so we mock that instead.
+    """
+    
+    @patch('shared.jobs.get_jobs_table')
+    def test_updates_basic_status(self, mock_get_jobs_table):
         """Updates job status with basic fields."""
         from research_step_handler import update_job_status
         
+        mock_table = MagicMock()
+        mock_get_jobs_table.return_value = mock_table
+        
         update_job_status('proj_123', 'job_456', 'running', 50, 'analyzing')
         
-        mock_jobs_table.update_item.assert_called_once()
-        call_args = mock_jobs_table.update_item.call_args
+        mock_table.update_item.assert_called_once()
+        call_args = mock_table.update_item.call_args
         
         assert call_args.kwargs['Key'] == {'pk': 'PROJECT#proj_123', 'sk': 'JOB#job_456'}
         assert ':status' in call_args.kwargs['ExpressionAttributeValues']
         assert call_args.kwargs['ExpressionAttributeValues'][':status'] == 'running'
         assert call_args.kwargs['ExpressionAttributeValues'][':progress'] == 50
     
-    @patch('research_step_handler.jobs_table')
-    def test_updates_with_error(self, mock_jobs_table):
+    @patch('shared.jobs.get_jobs_table')
+    def test_updates_with_error(self, mock_get_jobs_table):
         """Updates job status with error message."""
         from research_step_handler import update_job_status
         
+        mock_table = MagicMock()
+        mock_get_jobs_table.return_value = mock_table
+        
         update_job_status('proj_123', 'job_456', 'failed', 0, 'error', error='Something went wrong')
         
-        call_args = mock_jobs_table.update_item.call_args
+        call_args = mock_table.update_item.call_args
         assert ':error' in call_args.kwargs['ExpressionAttributeValues']
         assert call_args.kwargs['ExpressionAttributeValues'][':error'] == 'Something went wrong'
     
-    @patch('research_step_handler.jobs_table')
-    def test_updates_with_result(self, mock_jobs_table):
+    @patch('shared.jobs.get_jobs_table')
+    def test_updates_with_result(self, mock_get_jobs_table):
         """Updates job status with result."""
         from research_step_handler import update_job_status
+        
+        mock_table = MagicMock()
+        mock_get_jobs_table.return_value = mock_table
         
         result = {'document_id': 'doc_123', 'title': 'Test Research'}
         update_job_status('proj_123', 'job_456', 'completed', 100, 'complete', result=result)
         
-        call_args = mock_jobs_table.update_item.call_args
+        call_args = mock_table.update_item.call_args
         assert ':result' in call_args.kwargs['ExpressionAttributeValues']
         assert call_args.kwargs['ExpressionAttributeValues'][':result'] == result
     
-    @patch('research_step_handler.jobs_table', None)
-    def test_handles_missing_table_gracefully(self):
+    @patch('shared.jobs.get_jobs_table')
+    @patch('shared.jobs.logger')
+    def test_handles_missing_table_gracefully(self, mock_logger, mock_get_jobs_table):
         """Does not raise when jobs_table is None."""
         from research_step_handler import update_job_status
         
+        mock_get_jobs_table.return_value = None
+        
         # Should not raise
         update_job_status('proj_123', 'job_456', 'running', 50)
+        
+        mock_logger.warning.assert_called_once()
 
 
 class TestLambdaHandler:

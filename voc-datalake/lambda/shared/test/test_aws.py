@@ -136,7 +136,7 @@ class TestGetBedrockClient:
     @patch('shared.aws._bedrock_client', None)
     @patch('boto3.client')
     def test_creates_bedrock_client(self, mock_boto_client):
-        """Creates Bedrock Runtime client on first call."""
+        """Creates Bedrock Runtime client on first call with extended timeout config."""
         mock_client = MagicMock()
         mock_boto_client.return_value = mock_client
         
@@ -146,10 +146,11 @@ class TestGetBedrockClient:
         from shared.aws import get_bedrock_client
         result = get_bedrock_client()
         
-        # Verify bedrock-runtime client was created (may include config)
+        # Verify client was created with bedrock-runtime and a config
         mock_boto_client.assert_called_once()
         call_args = mock_boto_client.call_args
         assert call_args[0][0] == 'bedrock-runtime'
+        assert 'config' in call_args[1]
         assert result == mock_client
 
 

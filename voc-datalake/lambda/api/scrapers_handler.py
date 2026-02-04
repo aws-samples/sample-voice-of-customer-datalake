@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_secrets_client, get_bedrock_client, BEDROCK_MODEL_ID
 from shared.api import create_api_resolver, api_handler
+from shared.tables import get_aggregates_table
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
@@ -28,23 +29,9 @@ import boto3
 
 secretsmanager = get_secrets_client()
 lambda_client = boto3.client("lambda")
-dynamodb = get_dynamodb_resource()
 
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
-AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
 WEBSCRAPER_FUNCTION_NAME = os.environ.get("WEBSCRAPER_FUNCTION_NAME", "")
-
-# Lazy table initialization
-_aggregates_table = None
-
-
-def get_aggregates_table():
-    """Get aggregates table if configured."""
-    global _aggregates_table
-    if _aggregates_table is None and AGGREGATES_TABLE:
-        _aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
-    return _aggregates_table
-
 
 def require_webscraper_function():
     """Validate WEBSCRAPER_FUNCTION_NAME is configured."""

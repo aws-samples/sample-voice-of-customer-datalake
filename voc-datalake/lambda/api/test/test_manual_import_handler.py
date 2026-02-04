@@ -632,14 +632,14 @@ class TestDecimalDefault:
     def test_converts_decimal_to_float(self):
         """Converts Decimal to float for JSON serialization."""
         from decimal import Decimal
-        from manual_import_handler import decimal_default
+        from shared.api import decimal_default
         
         assert decimal_default(Decimal('3.14')) == 3.14
         assert decimal_default(Decimal('100')) == 100.0
 
     def test_raises_type_error_for_non_decimal(self):
         """Raises TypeError for non-Decimal types."""
-        from manual_import_handler import decimal_default
+        from shared.api import decimal_default
         
         with pytest.raises(TypeError):
             decimal_default({'key': 'value'})
