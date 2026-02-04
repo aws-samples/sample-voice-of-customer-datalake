@@ -390,7 +390,6 @@ export class VocApiStack extends cdk.Stack {
         'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
     }));
-    projectsRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-projects-api-*`] }));
     rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
 
     const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
@@ -400,8 +399,8 @@ export class VocApiStack extends cdk.Stack {
       handler: 'projects_handler.lambda_handler',
       code: createApiLambdaCode('projects_handler.py'),
       role: projectsRole,
-      timeout: cdk.Duration.minutes(15),
-      memorySize: 1024,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -417,6 +416,186 @@ export class VocApiStack extends cdk.Stack {
       layers: [apiLayer],
       logGroup: this.createLogGroup('ProjectsApiLogs', uniqueName('voc-projects-api')),
     });
+
+    // ============================================
+    // JOB LAMBDAS (Async Background Processing)
+    // ============================================
+
+    /**
+     * Creates an optimized Lambda code bundle for job handlers.
+     * Includes the job handler, shared modules, and api/projects.py for business logic.
+     */
+    const createJobLambdaCode = (jobFolder: string): lambda.Code => {
+      return lambda.Code.fromAsset('lambda', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_14.bundlingImage,
+          command: [
+            'bash', '-c',
+            `mkdir -p /asset-output/api && ` +
+            `cp /asset-input/jobs/${jobFolder}/handler.py /asset-output/ && ` +
+            `cp -r /asset-input/shared /asset-output/ && ` +
+            `cp /asset-input/api/projects.py /asset-output/api/`
+          ],
+          platform: 'linux/arm64',
+        },
+      });
+    };
+
+    // Persona Generator Job Lambda
+    const personaGeneratorRole = this.createLambdaRole('PersonaGeneratorRole');
+    feedbackTable.grantReadData(personaGeneratorRole);
+    projectsTable.grantReadWriteData(personaGeneratorRole);
+    jobsTable.grantReadWriteData(personaGeneratorRole);
+    aggregatesTable.grantReadData(personaGeneratorRole);
+    kmsKey.grantEncryptDecrypt(personaGeneratorRole);
+    personaGeneratorRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+      resources: [
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
+      ],
+    }));
+    rawDataBucket.grantReadWrite(personaGeneratorRole, 'avatars/*');
+
+    const personaGeneratorLambda = new lambda.Function(this, 'PersonaGeneratorJob', {
+      functionName: uniqueName('voc-job-persona-generator'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code: createJobLambdaCode('persona_generator'),
+      role: personaGeneratorRole,
+      timeout: cdk.Duration.minutes(15),
+      memorySize: 1024,
+      environment: {
+        PROJECTS_TABLE: projectsTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        JOBS_TABLE: jobsTable.tableName,
+        RAW_DATA_BUCKET: rawDataBucket.bucketName,
+        AVATARS_CDN_URL: avatarsCdnUrl,
+        POWERTOOLS_SERVICE_NAME: 'voc-job-persona-generator',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('PersonaGeneratorJobLogs', uniqueName('voc-job-persona-generator')),
+    });
+
+    // Document Generator Job Lambda (PRD/PRFAQ)
+    const documentGeneratorRole = this.createLambdaRole('DocumentGeneratorRole');
+    feedbackTable.grantReadData(documentGeneratorRole);
+    projectsTable.grantReadWriteData(documentGeneratorRole);
+    jobsTable.grantReadWriteData(documentGeneratorRole);
+    kmsKey.grantEncryptDecrypt(documentGeneratorRole);
+    documentGeneratorRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+      ],
+    }));
+
+    const documentGeneratorLambda = new lambda.Function(this, 'DocumentGeneratorJob', {
+      functionName: uniqueName('voc-job-document-generator'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code: createJobLambdaCode('document_generator'),
+      role: documentGeneratorRole,
+      timeout: cdk.Duration.minutes(10),
+      memorySize: 1024,
+      environment: {
+        PROJECTS_TABLE: projectsTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        JOBS_TABLE: jobsTable.tableName,
+        POWERTOOLS_SERVICE_NAME: 'voc-job-document-generator',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('DocumentGeneratorJobLogs', uniqueName('voc-job-document-generator')),
+    });
+
+    // Document Merger Job Lambda
+    const documentMergerRole = this.createLambdaRole('DocumentMergerRole');
+    feedbackTable.grantReadData(documentMergerRole);
+    projectsTable.grantReadWriteData(documentMergerRole);
+    jobsTable.grantReadWriteData(documentMergerRole);
+    kmsKey.grantEncryptDecrypt(documentMergerRole);
+    documentMergerRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+      ],
+    }));
+
+    const documentMergerLambda = new lambda.Function(this, 'DocumentMergerJob', {
+      functionName: uniqueName('voc-job-document-merger'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code: createJobLambdaCode('document_merger'),
+      role: documentMergerRole,
+      timeout: cdk.Duration.minutes(10),
+      memorySize: 1024,
+      environment: {
+        PROJECTS_TABLE: projectsTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        JOBS_TABLE: jobsTable.tableName,
+        POWERTOOLS_SERVICE_NAME: 'voc-job-document-merger',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('DocumentMergerJobLogs', uniqueName('voc-job-document-merger')),
+    });
+
+    // Persona Importer Job Lambda
+    const personaImporterRole = this.createLambdaRole('PersonaImporterRole');
+    projectsTable.grantReadWriteData(personaImporterRole);
+    jobsTable.grantReadWriteData(personaImporterRole);
+    kmsKey.grantEncryptDecrypt(personaImporterRole);
+    personaImporterRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
+      ],
+    }));
+    rawDataBucket.grantReadWrite(personaImporterRole, 'avatars/*');
+
+    const personaImporterLambda = new lambda.Function(this, 'PersonaImporterJob', {
+      functionName: uniqueName('voc-job-persona-importer'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code: createJobLambdaCode('persona_importer'),
+      role: personaImporterRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        PROJECTS_TABLE: projectsTable.tableName,
+        JOBS_TABLE: jobsTable.tableName,
+        RAW_DATA_BUCKET: rawDataBucket.bucketName,
+        AVATARS_CDN_URL: avatarsCdnUrl,
+        POWERTOOLS_SERVICE_NAME: 'voc-job-persona-importer',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('PersonaImporterJobLogs', uniqueName('voc-job-persona-importer')),
+    });
+
+    // Add job Lambda function names to Projects API environment
+    projectsLambda.addEnvironment('PERSONA_GENERATOR_FUNCTION', personaGeneratorLambda.functionName);
+    projectsLambda.addEnvironment('DOCUMENT_GENERATOR_FUNCTION', documentGeneratorLambda.functionName);
+    projectsLambda.addEnvironment('DOCUMENT_MERGER_FUNCTION', documentMergerLambda.functionName);
+    projectsLambda.addEnvironment('PERSONA_IMPORTER_FUNCTION', personaImporterLambda.functionName);
+
+    // Grant Projects API permission to invoke job Lambdas
+    personaGeneratorLambda.grantInvoke(projectsRole);
+    documentGeneratorLambda.grantInvoke(projectsRole);
+    documentMergerLambda.grantInvoke(projectsRole);
+    personaImporterLambda.grantInvoke(projectsRole);
 
     // Chat Stream (Function URL)
     const chatStreamRole = this.createLambdaRole('ChatStreamLambdaRole');
