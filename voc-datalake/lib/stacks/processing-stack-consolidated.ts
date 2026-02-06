@@ -9,7 +9,9 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
+import { NagSuppressions } from 'cdk-nag';
 import { uniqueName } from '../utils/naming';
+import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 
 export interface VocProcessingStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -255,6 +257,7 @@ export class VocProcessingStack extends cdk.Stack {
 
     // Step Functions workflow
     this.researchStateMachine = this.createResearchStateMachine(researchStepLambda);
+    NagSuppressions.addResourceSuppressions(this.researchStateMachine, pluginSystemSuppressions, true);
 
     // ============================================
     // OUTPUTS

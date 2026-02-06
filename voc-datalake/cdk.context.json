@@ -19,6 +19,7 @@
     "feedback-forms": true,
     "settings": true
   },
+  "skipUseCaseSubmission": true,
   "anthropicUseCase": {
     "companyName": "Amazon Web Services",
     "companyWebsite": "https://aws.amazon.com",

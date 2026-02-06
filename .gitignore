@@ -36,3 +36,5 @@ npm-debug.log*
 # Temporary files
 *.tmp
 *.bak
+
+.threat-composer

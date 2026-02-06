@@ -6,7 +6,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { z } from 'zod';
 import { NagSuppressions } from 'cdk-nag';
-import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions } from '../utils/nag-suppressions';
 
 /**
  * Valid industry options for Anthropic use case form.
@@ -69,6 +69,12 @@ export interface BedrockAccessStackProps extends cdk.StackProps {
    * Defaults to us-west-2.
    */
   modelRegion?: string;
+  
+  /**
+   * Skip the use case submission step.
+   * @default false
+   */
+  skipUseCaseSubmission?: boolean;
 }
 
 /**
@@ -141,55 +147,61 @@ export class BedrockAccessStack extends cdk.Stack {
 
     // ============================================
     // Step 1: Submit Anthropic Use Case (us-east-1 only)
+    // Skip for internal accounts
     // ============================================
-    const submitUseCase = new cr.AwsCustomResource(this, 'SubmitAnthropicUseCase', {
-      onCreate: {
-        service: 'Bedrock',
-        action: 'putUseCaseForModelAccess',
-        parameters: {
-          formData: formDataJson,
+    const skipUseCaseSubmission = props?.skipUseCaseSubmission ?? false;
+    let submitUseCase: cr.AwsCustomResource | undefined;
+    
+    if (!skipUseCaseSubmission) {
+      submitUseCase = new cr.AwsCustomResource(this, 'SubmitAnthropicUseCase', {
+        onCreate: {
+          service: 'Bedrock',
+          action: 'putUseCaseForModelAccess',
+          parameters: {
+            formData: formDataJson,
+          },
+          physicalResourceId: cr.PhysicalResourceId.of('anthropic-use-case-submission'),
+          region: 'us-east-1',
         },
-        physicalResourceId: cr.PhysicalResourceId.of('anthropic-use-case-submission'),
-        region: 'us-east-1',
-      },
-      onUpdate: undefined,
-      onDelete: undefined,
-      policy: cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: ['bedrock:PutUseCaseForModelAccess'],
-          resources: ['*'],
-        }),
-      ]),
-      logGroup,
-      installLatestAwsSdk: true,
-    });
-    
-    // Suppress CDK custom resource Lambda runtime warnings for AwsCustomResource
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      `${this.stackName}/SubmitAnthropicUseCase/CustomResourcePolicy/Resource`,
-      cdkCustomResourceSuppressions
-    );
-    
-    // The AwsCustomResource construct creates a singleton Lambda with a deterministic UUID
-    const customResourceId = `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
-    const customResourceSuppressPaths = new Set([
-      `/${this.stackName}/${customResourceId}/ServiceRole/Resource`,
-      `/${this.stackName}/${customResourceId}/Resource`,
-    ]);
-    
-    const allExistingPaths = new Set(
-      this.node.findAll().map((node) => `/${node.node.path}`)
-    );
-    
-    for (const path of customResourceSuppressPaths) {
-      if (allExistingPaths.has(path)) {
-        NagSuppressions.addResourceSuppressionsByPath(
-          this,
-          path,
-          [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
-          true
-        );
+        onUpdate: undefined,
+        onDelete: undefined,
+        policy: cr.AwsCustomResourcePolicy.fromStatements([
+          new iam.PolicyStatement({
+            actions: ['bedrock:PutUseCaseForModelAccess'],
+            resources: ['*'],
+          }),
+        ]),
+        logGroup,
+        installLatestAwsSdk: true,
+      });
+      
+      // Suppress CDK custom resource Lambda runtime warnings for AwsCustomResource
+      NagSuppressions.addResourceSuppressionsByPath(
+        this,
+        `${this.stackName}/SubmitAnthropicUseCase/CustomResourcePolicy/Resource`,
+        cdkCustomResourceSuppressions
+      );
+      
+      // The AwsCustomResource construct creates a singleton Lambda with a deterministic UUID
+      const customResourceId = `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
+      const customResourceSuppressPaths = new Set([
+        `/${this.stackName}/${customResourceId}/ServiceRole/Resource`,
+        `/${this.stackName}/${customResourceId}/Resource`,
+      ]);
+      
+      const allExistingPaths = new Set(
+        this.node.findAll().map((node) => `/${node.node.path}`)
+      );
+      
+      for (const path of customResourceSuppressPaths) {
+        if (allExistingPaths.has(path)) {
+          NagSuppressions.addResourceSuppressionsByPath(
+            this,
+            path,
+            [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
+            true
+          );
+        }
       }
     }
 
@@ -239,7 +251,7 @@ export class BedrockAccessStack extends cdk.Stack {
     NagSuppressions.addResourceSuppressionsByPath(
       this,
       `${this.stackName}/ModelAgreementProvider/framework-onEvent`,
-      [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
+      [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions, ...pluginSystemSuppressions],
       true
     );
     
@@ -260,8 +272,10 @@ export class BedrockAccessStack extends cdk.Stack {
         },
       });
       
-      // Ensure use case is submitted before creating agreements
-      agreement.node.addDependency(submitUseCase);
+      // Ensure use case is submitted before creating agreements (if not skipped)
+      if (submitUseCase) {
+        agreement.node.addDependency(submitUseCase);
+      }
     });
 
     this.accessGranted = true;
