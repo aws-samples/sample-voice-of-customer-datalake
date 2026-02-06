@@ -15,7 +15,7 @@ import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
 import { uniqueName } from '../utils/naming';
-import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions } from '../utils/nag-suppressions';
 
 export interface VocApiStackProps extends cdk.StackProps {
   // Core stack resources
@@ -109,7 +109,10 @@ export class VocApiStack extends cdk.Stack {
             'bash', '-c',
             `mkdir -p /asset-output && ` +
             `cp /asset-input/api/${handlerFileName} /asset-output/ && ` +
-            `cp -r /asset-input/shared /asset-output/`
+            `cp -r /asset-input/shared /asset-output/ && ` +
+            `if [ -f /asset-input/api/projects.py ]; then cp /asset-input/api/projects.py /asset-output/; fi && ` +
+            `if [ -d /asset-input/api/prompts ]; then cp -r /asset-input/api/prompts /asset-output/; fi && ` +
+            `if [ -d /asset-input/api/static ]; then cp -r /asset-input/api/static /asset-output/; fi`
           ],
           platform: 'linux/arm64',
         },
@@ -156,6 +159,7 @@ export class VocApiStack extends cdk.Stack {
       actions: ['events:EnableRule', 'events:DisableRule', 'events:DescribeRule'],
       resources: [`arn:aws:events:${this.region}:${this.account}:rule/voc-ingest-*-schedule`],
     }));
+    NagSuppressions.addResourceSuppressions(integrationsRole, pluginSystemSuppressions, true);
 
     const integrationsLambda = new lambda.Function(this, 'IntegrationsApi', {
       functionName: uniqueName('voc-integrations-api'),
@@ -183,6 +187,7 @@ export class VocApiStack extends cdk.Stack {
       actions: ['lambda:InvokeFunction'],
       resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-ingestor-webscraper-*`],
     }));
+    NagSuppressions.addResourceSuppressions(scrapersRole, pluginSystemSuppressions, true);
     scrapersRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
@@ -217,6 +222,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(manualImportRole);
     manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
     manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-manual-import-processor-*`] }));
+    NagSuppressions.addResourceSuppressions(manualImportRole, pluginSystemSuppressions, true);
     rawDataBucket.grantReadWrite(manualImportRole);
 
     const manualImportLambda = new lambda.Function(this, 'ManualImportApi', {
@@ -391,6 +397,7 @@ export class VocApiStack extends cdk.Stack {
       ],
     }));
     projectsRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-projects-api-*`] }));
+    NagSuppressions.addResourceSuppressions(projectsRole, pluginSystemSuppressions, true);
     rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
 
     const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
@@ -758,7 +765,7 @@ export class VocApiStack extends cdk.Stack {
     // Find and suppress the CDK-managed custom resource (hash-based ID)
     for (const child of this.node.findAll()) {
       if (child.node.id.startsWith('Custom::CDKBucketDeployment')) {
-        NagSuppressions.addResourceSuppressions(child, cdkCustomResourceSuppressions, true);
+        NagSuppressions.addResourceSuppressions(child, [...cdkCustomResourceSuppressions, ...cdkAssetsSuppressions], true);
       }
     }
 

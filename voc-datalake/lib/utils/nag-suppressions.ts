@@ -151,18 +151,18 @@ export const pluginSystemSuppressions: NagPackSuppression[] = [
     id: 'AwsSolutions-IAM5',
     reason: 'Plugin system requires wildcards for dynamic Lambda function names and EventBridge rules created at runtime',
     appliesTo: [
-      'Resource::arn:aws:lambda:us-east-1:<AWS::AccountId>:function:voc-ingestor-webscraper-*',
-      'Resource::arn:aws:lambda:us-east-1:<AWS::AccountId>:function:voc-manual-import-processor-*',
-      'Resource::arn:aws:lambda:us-east-1:<AWS::AccountId>:function:voc-projects-api-*',
-      'Resource::arn:aws:events:us-east-1:<AWS::AccountId>:rule/voc-ingest-*-schedule',
+      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-ingestor-webscraper-\*/' },
+      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-manual-import-processor-\*/' },
+      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-projects-api-\*/' },
+      { regex: '/Resource::arn:aws:events:.*:.*:rule.voc-ingest-.*-schedule/' },
     ],
   },
   {
     id: 'AwsSolutions-IAM5',
-    reason: 'Lambda version/alias wildcard required for function invocations',
+    reason: 'Lambda version/alias wildcard required for Step Functions state machine invocations',
     appliesTo: [
-      'Resource::<ResearchStepLambdaDB89028D.Arn>:*',
-      'Resource::<ModelAgreementLambda98DD007E.Arn>:*',
+      { regex: '/Resource::<.*ResearchStepLambda.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*ModelAgreementLambda.*\.Arn>:\*/' },
     ],
   },
 ];
@@ -173,7 +173,7 @@ export const cdkAssetsSuppressions: NagPackSuppression[] = [
     id: 'AwsSolutions-IAM5',
     reason: 'CDK bootstrap bucket wildcard required for deployment assets',
     appliesTo: [
-      'Resource::arn:aws:s3:::cdk-hnb659fds-assets-<AWS::AccountId>-us-east-1/*',
+      { regex: '/Resource::arn:aws:s3:::cdk-.*-assets-.*/' },
     ],
   },
 ];

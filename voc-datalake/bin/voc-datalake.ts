@@ -49,6 +49,7 @@ let bedrockAccessStack: BedrockAccessStack | undefined;
 if (anthropicUseCaseRaw) {
   // Validate the config using Zod schema
   const parseResult = AnthropicUseCaseSchema.safeParse(anthropicUseCaseRaw);
+  const skipUseCaseSubmission = app.node.tryGetContext('skipUseCaseSubmission') === true;
   
   if (parseResult.success) {
     bedrockAccessStack = new BedrockAccessStack(app, 'BedrockAccessStack', {
@@ -56,6 +57,7 @@ if (anthropicUseCaseRaw) {
       description: 'VoC Data Lake - Bedrock Access (Anthropic Use Case & Model Agreements)',
       anthropicUseCase: parseResult.data,
       modelRegion: env.region, // Create model agreements in the same region as other stacks
+      skipUseCaseSubmission,
     });
     tagStack(bedrockAccessStack, 'BedrockAccess');
   } else {

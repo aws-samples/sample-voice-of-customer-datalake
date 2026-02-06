@@ -124,7 +124,7 @@ export class VocCoreStack extends cdk.Stack {
     const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeadersPolicy', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          contentSecurityPolicy: "default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; connect-src https://*.amazoncognito.com https://*.amazonaws.com; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';",
+          contentSecurityPolicy: "default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';",
           override: true,
         },
         contentTypeOptions: { override: true },
