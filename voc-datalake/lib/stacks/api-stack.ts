@@ -32,6 +32,7 @@ export interface VocApiStackProps extends cdk.StackProps {
   frontendDomainName: string;
   userPool: cognito.UserPool;
   userPoolClient: cognito.UserPoolClient;
+  authenticatedRole: iam.Role;
 
   // Ingestion stack resources
   processingQueueUrl: string;
@@ -73,9 +74,16 @@ export class VocApiStack extends cdk.Stack {
 
 
 
-    // CORS configuration
-    const corsAllowedOrigins = [`https://${frontendDomainName}`, 'http://localhost:5173', 'http://localhost:3000'];
-    const allowedOrigin = `https://${frontendDomainName}`;
+    // CORS configuration - defaults to production
+    // Set context environment=dev to allow localhost for local development
+    const environment = this.node.tryGetContext('environment') || 'production'
+    const isDev = environment === 'dev' || environment === 'development'
+    
+    if (isDev) {
+      console.log('WARNING: Deploying in DEV mode with CORS=* for local development')
+    }
+    
+    const allowedOrigin = isDev ? '*' : `https://${frontendDomainName}`; 
 
     // Shared Lambda Layer
     const apiLayer = new lambda.LayerVersion(this, 'ApiDepsLayer', {
@@ -450,6 +458,7 @@ export class VocApiStack extends cdk.Stack {
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
         USER_POOL_ID: userPool.userPoolId,
+        ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-chat-stream',
         LOG_LEVEL: 'INFO',
       },
@@ -458,9 +467,16 @@ export class VocApiStack extends cdk.Stack {
     });
 
     const chatStreamUrl = chatStreamLambda.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.NONE,
-      cors: { allowedOrigins: corsAllowedOrigins, allowedMethods: [lambda.HttpMethod.POST], allowedHeaders: ['Content-Type', 'Authorization'] },
+      authType: lambda.FunctionUrlAuthType.AWS_IAM,
+      cors: { 
+        allowedOrigins: [allowedOrigin],
+        allowedMethods: [lambda.HttpMethod.ALL],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Amz-Date', 'X-Amz-Security-Token', 'X-Amz-Content-Sha256'],
+        maxAge: cdk.Duration.seconds(0),
+      },
     });
+
+    // Permission to invoke is granted in CoreStack to avoid circular dependency
 
     projectsLambda.addEnvironment('CHAT_STREAM_URL', chatStreamUrl.url);
 

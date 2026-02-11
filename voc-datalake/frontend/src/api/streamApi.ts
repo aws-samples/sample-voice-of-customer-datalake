@@ -1,32 +1,16 @@
-// Streaming API - extracted from client.ts to reduce file size
-import { authService } from '../services/auth'
+// Streaming API with AWS IAM authentication
+import { fetchAuthSession } from 'aws-amplify/auth'
+import { SignatureV4 } from '@aws-sdk/signature-v4'
+import { HttpRequest } from '@aws-sdk/protocol-http'
+import { Sha256 } from '@aws-crypto/sha256-js'
+import { getConfig } from '../config'
+import { parseJsonResponse } from './client'
 import type { FeedbackItem } from './types'
-import { z } from 'zod'
 
-const getAuthToken = async (): Promise<string | null> => {
-  if (!authService.isConfigured()) return null
-  try {
-    return await authService.getAccessToken()
-  } catch {
-    return null
-  }
-}
-
-// Helper to strip trailing slashes without regex backtracking
 function stripTrailingSlashes(url: string): string {
   const trimmed = url.trimEnd()
   const lastNonSlash = trimmed.length - [...trimmed].reverse().findIndex(c => c !== '/')
   return trimmed.slice(0, lastNonSlash)
-}
-
-// API response parser using Zod for runtime validation
-const unknownSchema = z.unknown()
-
-async function parseJsonResponse<T>(response: Response): Promise<T> {
-  const rawJson: unknown = await response.json()
-  const validated = unknownSchema.parse(rawJson)
-  const typedSchema = z.custom<T>(() => true)
-  return typedSchema.parse(validated)
 }
 
 async function fetchStream<T>(
@@ -34,26 +18,73 @@ async function fetchStream<T>(
   path: string,
   body: Record<string, unknown>
 ): Promise<T> {
-  const authToken = await getAuthToken()
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (authToken) {
-    headers['Authorization'] = `Bearer ${authToken}`
-  }
+  const url = `${stripTrailingSlashes(streamEndpoint)}${path}`
   
-  const response = await fetch(`${stripTrailingSlashes(streamEndpoint)}${path}`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body)
-  })
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Stream API Error: 401 Unauthorized - Please sign in again')
+  try {
+    const session = await fetchAuthSession()
+    
+    if (!session.credentials) {
+      throw new Error('Not authenticated - please sign in')
     }
-    throw new Error(`Stream API Error: ${response.status}`)
+
+    const cfg = getConfig()
+    const urlObj = new URL(url)
+    const bodyStr = JSON.stringify(body)
+
+    const request = new HttpRequest({
+      method: 'POST',
+      protocol: urlObj.protocol,
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      headers: {
+        'Content-Type': 'application/json',
+        host: urlObj.hostname,
+      },
+      body: bodyStr,
+    })
+
+    const signer = new SignatureV4({
+      credentials: {
+        accessKeyId: session.credentials.accessKeyId,
+        secretAccessKey: session.credentials.secretAccessKey,
+        sessionToken: session.credentials.sessionToken,
+      },
+      region: cfg.cognito.region,
+      service: 'lambda',
+      sha256: Sha256,
+    })
+
+    const signedRequest = await signer.sign(request)
+
+    const response = await fetch(url, {
+      method: signedRequest.method,
+      headers: signedRequest.headers,
+      body: bodyStr,
+    })
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error('Stream API Error: 403 Forbidden - Please sign in again')
+      }
+      if (response.status === 401) {
+        throw new Error('Stream API Error: 401 Unauthorized - Session expired')
+      }
+      throw new Error(`Stream API Error: ${response.status}`)
+    }
+
+    return parseJsonResponse<T>(response)
+    
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes('No credentials')) {
+        throw new Error('Authentication required - please sign in')
+      }
+      if (error.message.includes('expired')) {
+        throw new Error('Session expired - please sign in again')
+      }
+    }
+    throw error
   }
-  
-  return parseJsonResponse<T>(response)
 }
 
 export interface ChatStreamResponse {

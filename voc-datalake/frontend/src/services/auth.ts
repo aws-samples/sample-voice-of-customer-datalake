@@ -22,6 +22,7 @@ import {
   CognitoUserSession,
   CognitoRefreshToken,
 } from 'amazon-cognito-identity-js'
+import { fetchAuthSession } from 'aws-amplify/auth'
 import { getConfig } from '../config'
 import { useAuthStore } from '../store/authStore'
 import type { User } from '../store/authStore'
@@ -118,6 +119,25 @@ export const authService = {
   },
 
   /**
+   * Syncs the current Cognito session with Amplify.
+   * This allows Amplify to exchange JWT tokens for AWS credentials.
+   * 
+   * Call this after:
+   * - Successful sign in
+   * - Token refresh
+   */
+  syncAmplifySession: async (): Promise<void> => {
+    try {
+      // Force Amplify to fetch fresh credentials from Identity Pool
+      await fetchAuthSession({ forceRefresh: true })
+      console.log('Amplify session synced')
+    } catch (error) {
+      console.error('Failed to sync Amplify session:', error)
+      // Non-fatal - streaming API will fail but rest of app works
+    }
+  },
+
+  /**
    * Authenticates a user with username and password.
    * On success, stores tokens in authStore and returns the session.
    * 
@@ -146,7 +166,7 @@ export const authService = {
       })
 
       cognitoUser.authenticateUser(authDetails, {
-        onSuccess: (session) => {
+        onSuccess: async (session) => {
           const idToken = session.getIdToken().getJwtToken()
           const accessToken = session.getAccessToken().getJwtToken()
           const refreshToken = session.getRefreshToken().getToken()
@@ -155,6 +175,9 @@ export const authService = {
           
           useAuthStore.getState().setTokens({ accessToken, idToken, refreshToken })
           useAuthStore.getState().setUser(user)
+          
+          // Sync session with Amplify for IAM signing
+          await authService.syncAmplifySession()
           
           resolve(session)
         },
@@ -250,7 +273,7 @@ export const authService = {
 
       cognitoUser.refreshSession(
         new CognitoRefreshToken({ RefreshToken: refreshToken }),
-        (err: Error | null, session: CognitoUserSession | null) => {
+        async (err: Error | null, session: CognitoUserSession | null) => {
           if (err || !session) {
             useAuthStore.getState().logout()
             reject(err ?? new Error('Session refresh failed'))
@@ -269,6 +292,9 @@ export const authService = {
             refreshToken: newRefreshToken 
           })
           useAuthStore.getState().setUser(user)
+          
+          // Sync with Amplify after refresh
+          await authService.syncAmplifySession()
           
           resolve(session)
         }

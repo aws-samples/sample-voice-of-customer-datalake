@@ -86,7 +86,7 @@ import { z } from 'zod'
 // This satisfies the no-type-assertions rule
 const unknownSchema = z.unknown()
 
-async function parseJsonResponse<T>(response: Response): Promise<T> {
+export async function parseJsonResponse<T>(response: Response): Promise<T> {
   // Use unknownSchema to safely parse the JSON response
   const rawJson: unknown = await response.json()
   const validated = unknownSchema.parse(rawJson)

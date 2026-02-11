@@ -45,27 +45,57 @@ echo "Step 2: Fetching runtime configuration..."
 API_ENDPOINT=$(aws cloudformation describe-stacks \
   --stack-name VocApiStack \
   --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
-  --output text 2>/dev/null)
+  --output text 2>&1)
+
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to fetch API endpoint from VocApiStack"
+  echo "$API_ENDPOINT"
+  exit 1
+fi
 
 COGNITO_USER_POOL_ID=$(aws cloudformation describe-stacks \
   --stack-name VocCoreStack \
   --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" \
-  --output text 2>/dev/null)
+  --output text 2>&1)
+
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to fetch User Pool ID from VocCoreStack"
+  echo "$COGNITO_USER_POOL_ID"
+  exit 1
+fi
 
 COGNITO_CLIENT_ID=$(aws cloudformation describe-stacks \
   --stack-name VocCoreStack \
   --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" \
-  --output text 2>/dev/null)
+  --output text 2>&1)
+
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to fetch Client ID from VocCoreStack"
+  echo "$COGNITO_CLIENT_ID"
+  exit 1
+fi
 
 COGNITO_REGION=$(aws cloudformation describe-stacks \
   --stack-name VocCoreStack \
   --query "Stacks[0].Outputs[?OutputKey=='CognitoRegion'].OutputValue" \
-  --output text 2>/dev/null || echo "us-west-2")
+  --output text 2>&1 || echo "us-west-2")
+
+IDENTITY_POOL_ID=$(aws cloudformation describe-stacks \
+  --stack-name VocCoreStack \
+  --query "Stacks[0].Outputs[?OutputKey=='IdentityPoolId'].OutputValue" \
+  --output text 2>&1)
+
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to fetch Identity Pool ID from VocCoreStack"
+  echo "$IDENTITY_POOL_ID"
+  exit 1
+fi
 
 echo "  API Endpoint: $API_ENDPOINT"
 echo "  Cognito Pool: $COGNITO_USER_POOL_ID"
 echo "  Cognito Client: $COGNITO_CLIENT_ID"
 echo "  Cognito Region: $COGNITO_REGION"
+echo "  Identity Pool: $IDENTITY_POOL_ID"
 
 # Step 3: Build the frontend
 echo ""
@@ -82,12 +112,14 @@ jq -n \
   --arg userPoolId "$COGNITO_USER_POOL_ID" \
   --arg clientId "$COGNITO_CLIENT_ID" \
   --arg region "$COGNITO_REGION" \
+  --arg identityPoolId "$IDENTITY_POOL_ID" \
   '{
     apiEndpoint: $apiEndpoint,
     cognito: {
       userPoolId: $userPoolId,
       clientId: $clientId,
-      region: $region
+      region: $region,
+      identityPoolId: $identityPoolId
     }
   }' > dist/config.json
 

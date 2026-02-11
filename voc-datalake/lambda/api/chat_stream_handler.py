@@ -11,7 +11,6 @@ from boto3.dynamodb.conditions import Key
 # Shared module imports
 from shared.logging import logger
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
-from shared.auth import validate_auth, unauthorized_response
 from shared.api import (
     validate_days, get_configured_categories, sum_daily_metric,
     api_handler, json_response, error_response
@@ -470,11 +469,8 @@ def voc_chat_handler(event, context):
 @api_handler
 def combined_handler(event, context):
     """Combined handler that routes based on path."""
-    # Validate authentication first
-    is_valid, error_msg = validate_auth(event)
-    if not is_valid:
-        logger.warning(f"Authentication failed: {error_msg}")
-        return unauthorized_response(error_msg)
+    # AWS IAM auth validates the request signature at the Function URL level
+    # No need for custom JWT validation
     
     # Get path from Lambda Function URL event
     path = (
