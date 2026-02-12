@@ -4,21 +4,58 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// Mock auth service before importing
-vi.mock('../services/auth', () => ({
-  authService: {
-    isConfigured: vi.fn(() => true),
-    getAccessToken: vi.fn(() => Promise.resolve('mock-access-token')),
+// Mock Amplify auth
+vi.mock('aws-amplify/auth', () => ({
+  fetchAuthSession: vi.fn(() =>
+    Promise.resolve({
+      credentials: {
+        accessKeyId: 'mock-access-key',
+        secretAccessKey: 'mock-secret-key',
+        sessionToken: 'mock-session-token',
+      },
+    })
+  ),
+}))
+
+// Mock SignatureV4
+const mockSign = vi.fn()
+
+vi.mock('@aws-sdk/signature-v4', () => ({
+  SignatureV4: class MockSignatureV4 {
+    sign = mockSign
   },
 }))
 
+// Mock config
+vi.mock('../config', () => ({
+  getConfig: vi.fn(() => ({
+    cognito: {
+      region: 'us-east-1',
+      userPoolId: 'us-east-1_test',
+      userPoolClientId: 'test-client-id',
+    },
+    apiEndpoint: 'https://api.example.com',
+    streamEndpoint: 'https://stream.example.com',
+  })),
+}))
+
 import { streamApi } from './streamApi'
-import { authService } from '../services/auth'
+import { fetchAuthSession } from 'aws-amplify/auth'
 
 describe('streamApi', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     global.fetch = vi.fn()
+    mockSign.mockImplementation((request) =>
+      Promise.resolve({
+        ...request,
+        headers: {
+          ...request.headers,
+          Authorization: 'AWS4-HMAC-SHA256 mock-signature',
+          'X-Amz-Date': '20260211T120000Z',
+        },
+      })
+    )
   })
 
   afterEach(() => {
@@ -26,7 +63,7 @@ describe('streamApi', () => {
   })
 
   describe('chatStream', () => {
-    it('sends chat message with auth token', async () => {
+    it('sends chat message with SigV4 signature', async () => {
       const mockResponse = {
         response: 'AI response text',
         sources: [{ feedback_id: 'fb-1' }],
@@ -45,14 +82,15 @@ describe('streamApi', () => {
       )
 
       expect(result).toEqual(mockResponse)
+      expect(fetchAuthSession).toHaveBeenCalled()
       expect(global.fetch).toHaveBeenCalledWith(
         'https://stream.example.com/chat/stream',
         expect.objectContaining({
           method: 'POST',
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-            Authorization: 'Bearer mock-access-token',
-          },
+            Authorization: expect.stringContaining('AWS4-HMAC-SHA256'),
+          }),
           body: JSON.stringify({
             message: 'What do customers think?',
             context: 'context info',
@@ -90,7 +128,18 @@ describe('streamApi', () => {
 
       await expect(
         streamApi.chatStream('https://stream.example.com', 'test')
-      ).rejects.toThrow('Stream API Error: 401 Unauthorized - Please sign in again')
+      ).rejects.toThrow('Session expired - please sign in again')
+    })
+
+    it('throws error on 403 forbidden', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+      })
+
+      await expect(
+        streamApi.chatStream('https://stream.example.com', 'test')
+      ).rejects.toThrow('Stream API Error: 403 Forbidden - Please sign in again')
     })
 
     it('throws error on other non-ok responses', async () => {
@@ -102,40 +151,6 @@ describe('streamApi', () => {
       await expect(
         streamApi.chatStream('https://stream.example.com', 'test')
       ).rejects.toThrow('Stream API Error: 500')
-    })
-
-    it('works without auth when not configured', async () => {
-      vi.mocked(authService.isConfigured).mockReturnValue(false)
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ response: 'test' }),
-      })
-
-      await streamApi.chatStream('https://stream.example.com', 'test')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-    })
-
-    it('handles auth token retrieval failure gracefully', async () => {
-      vi.mocked(authService.getAccessToken).mockRejectedValueOnce(new Error('Token expired'))
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ response: 'test' }),
-      })
-
-      await streamApi.chatStream('https://stream.example.com', 'test')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
     })
   })
 

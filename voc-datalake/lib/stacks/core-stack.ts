@@ -53,6 +53,8 @@ export class VocCoreStack extends cdk.Stack {
   public readonly userPool: cognito.UserPool;
   public readonly userPoolClient: cognito.UserPoolClient;
   public readonly userPoolDomain: cognito.UserPoolDomain;
+  public readonly identityPool: cognito.CfnIdentityPool;
+  public readonly authenticatedRole: iam.Role;
 
   constructor(scope: Construct, id: string, props: VocCoreStackProps) {
     super(scope, id, props);
@@ -124,7 +126,7 @@ export class VocCoreStack extends cdk.Stack {
     const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeadersPolicy', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          contentSecurityPolicy: "default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';",
+          contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com https://*.lambda-url.${cdk.Stack.of(this).region}.on.aws; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
           override: true,
         },
         contentTypeOptions: { override: true },
@@ -531,6 +533,62 @@ The VoC Analytics Team`,
       ]),
     });
     addAdminToGroup.node.addDependency(setAdminPassword);
+
+    // ============================================
+    // COGNITO IDENTITY POOL (for AWS IAM authentication)
+    // ============================================
+    this.identityPool = new cognito.CfnIdentityPool(this, 'VocIdentityPool', {
+      identityPoolName: uniqueName('voc-identity-pool'),
+      allowUnauthenticatedIdentities: false,
+      cognitoIdentityProviders: [{
+        clientId: this.userPoolClient.userPoolClientId,
+        providerName: this.userPool.userPoolProviderName,
+      }],
+    });
+
+    // Create authenticated role for Identity Pool users
+    this.authenticatedRole = new iam.Role(this, 'CognitoAuthenticatedRole', {
+      assumedBy: new iam.FederatedPrincipal(
+        'cognito-identity.amazonaws.com',
+        {
+          StringEquals: {
+            'cognito-identity.amazonaws.com:aud': this.identityPool.ref,
+          },
+          'ForAnyValue:StringLike': {
+            'cognito-identity.amazonaws.com:amr': 'authenticated',
+          },
+        },
+        'sts:AssumeRoleWithWebIdentity'
+      ),
+      description: 'Role for authenticated Cognito Identity Pool users',
+    });
+
+    // Grant permission to invoke chat stream Lambda Function URL
+    // Use wildcard to avoid circular dependency (specific Lambda is in ApiStack)
+    this.authenticatedRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunctionUrl', 'lambda:InvokeFunction'],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*voc-chat-stream*`],
+    }));
+
+    // Suppress wildcard warning - necessary to avoid circular dependency
+    NagSuppressions.addResourceSuppressions(
+      this.authenticatedRole,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'Wildcard required to avoid circular dependency between CoreStack and ApiStack. Lambda name pattern ensures least-privilege.',
+        },
+      ],
+      true
+    );
+
+    // Attach role to Identity Pool
+    new cognito.CfnIdentityPoolRoleAttachment(this, 'IdentityPoolRoleAttachment', {
+      identityPoolId: this.identityPool.ref,
+      roles: {
+        authenticated: this.authenticatedRole.roleArn,
+      },
+    });
     
     // Suppress CDK custom resource Lambda runtime warnings
     // The AwsCustomResource construct creates a singleton Lambda with a deterministic UUID
@@ -585,6 +643,7 @@ The VoC Analytics Team`,
     new cdk.CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID for frontend' });
     new cdk.CfnOutput(this, 'UserPoolDomain', { value: `${domainPrefix}.auth.${this.region}.amazoncognito.com`, description: 'Cognito User Pool Domain' });
     new cdk.CfnOutput(this, 'CognitoRegion', { value: this.region, description: 'AWS Region for Cognito' });
+    new cdk.CfnOutput(this, 'IdentityPoolId', { value: this.identityPool.ref, description: 'Cognito Identity Pool ID for AWS IAM auth' });
   }
 
   private getCustomMessageLambdaCode(signInUrl: string): string {

@@ -8,6 +8,7 @@ import PageLoader from './components/PageLoader'
 import Login from './pages/Login'
 import { loadRuntimeConfig, isConfigLoaded } from './runtimeConfig'
 import { useConfigStore } from './store/configStore'
+import { configureAmplify } from './lib/amplify-config'
 
 // Lazy load pages for better code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -78,6 +79,10 @@ export default function App() {
           // Sync the config store with runtime config to ensure
           // first-time users get the correct API endpoint
           syncWithRuntimeConfig()
+          
+          // Configure Amplify after runtime config is loaded
+          configureAmplify()
+          
           setConfigReady(true)
         })
         .catch((err) => {

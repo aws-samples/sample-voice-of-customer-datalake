@@ -2,6 +2,7 @@
   "acknowledged-issue-numbers": [
     34892
   ],
+  "environment": "production",
   "brandName": "VoC Analytics",
   "pluginStatus": {
     "webscraper": true
