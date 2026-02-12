@@ -8,29 +8,19 @@ import userEvent from '@testing-library/user-event'
 import DocumentExportMenu from './DocumentExportMenu'
 import type { ProjectDocument, Project } from '../../api/client'
 
-// Mock jsPDF and html2canvas to avoid complex PDF generation
-vi.mock('jspdf', () => ({
-  default: vi.fn().mockImplementation(() => ({
-    internal: { pageSize: { getWidth: () => 210, getHeight: () => 297 } },
-    addPage: vi.fn(),
-    addImage: vi.fn(),
-    save: vi.fn(),
-  })),
+// Mock printUtils
+const mockOpenPrintWindow = vi.fn()
+vi.mock('../../utils/printUtils', () => ({
+  openPrintWindow: (options: unknown) => mockOpenPrintWindow(options),
 }))
 
-vi.mock('html2canvas', () => ({
-  default: vi.fn().mockResolvedValue({
-    width: 800,
-    height: 1000,
-    toDataURL: () => 'data:image/jpeg;base64,test',
-  }),
+// Mock react-markdown for DocumentPDFContent
+vi.mock('react-markdown', () => ({
+  default: ({ children }: { children: string }) => children,
 }))
 
-vi.mock('react-dom/client', () => ({
-  createRoot: vi.fn(() => ({
-    render: vi.fn(),
-    unmount: vi.fn(),
-  })),
+vi.mock('remark-gfm', () => ({
+  default: vi.fn(),
 }))
 
 const mockDocument: ProjectDocument = {
@@ -56,6 +46,7 @@ const mockProject: Project = {
 describe('DocumentExportMenu', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockOpenPrintWindow.mockReturnValue({ print: vi.fn() })
   })
 
   describe('Rendering', () => {
@@ -115,7 +106,6 @@ describe('DocumentExportMenu', () => {
 
       await user.click(screen.getByRole('button', { name: /download options/i }))
 
-      // Use getAllByRole and check the first one is the plain copy
       const copyButtons = screen.getAllByRole('menuitem').filter(el => el.textContent === 'Copy')
       expect(copyButtons.length).toBeGreaterThanOrEqual(1)
     })
@@ -221,18 +211,6 @@ describe('DocumentExportMenu', () => {
 
       expect(writeTextSpy).toHaveBeenCalled()
     })
-
-    it('shows copied feedback after copying to Kiro', async () => {
-      const writeTextSpy = vi.spyOn(navigator.clipboard, 'writeText')
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} project={mockProject} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
-      await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
-
-      // Menu closes after action, so we check clipboard was called
-      expect(writeTextSpy).toHaveBeenCalled()
-    })
   })
 
   describe('Download Actions', () => {
@@ -268,6 +246,20 @@ describe('DocumentExportMenu', () => {
       expect(pdfOption).toBeInTheDocument()
       expect(pdfOption).not.toBeDisabled()
     })
+
+    it('calls openPrintWindow when PDF option is clicked', async () => {
+      const user = userEvent.setup()
+      render(<DocumentExportMenu document={mockDocument} />)
+
+      await user.click(screen.getByRole('button', { name: /download options/i }))
+      await user.click(screen.getByRole('menuitem', { name: /download as pdf/i }))
+
+      expect(mockOpenPrintWindow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: mockDocument.title,
+        })
+      )
+    })
   })
 
   describe('Click Outside', () => {
@@ -293,7 +285,6 @@ describe('DocumentExportMenu', () => {
 })
 
 describe('stripMarkdownLinks helper', () => {
-  // Test the link stripping logic indirectly through TXT download
   it('handles document with markdown links in TXT export', async () => {
     const user = userEvent.setup()
     const docWithLinks: ProjectDocument = {
@@ -305,7 +296,6 @@ describe('stripMarkdownLinks helper', () => {
 
     await user.click(screen.getByRole('button', { name: /download options/i }))
     
-    // Just verify the TXT option is available for documents with links
     expect(screen.getByRole('menuitem', { name: /download as txt/i })).toBeInTheDocument()
   })
 })
