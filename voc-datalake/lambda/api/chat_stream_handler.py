@@ -469,8 +469,6 @@ def voc_chat_handler(event, context):
 @api_handler
 def combined_handler(event, context):
     """Combined handler that routes based on path."""
-    # AWS IAM auth validates the request signature at the Function URL level
-    # No need for custom JWT validation
     
     # Get path from Lambda Function URL event
     path = (
