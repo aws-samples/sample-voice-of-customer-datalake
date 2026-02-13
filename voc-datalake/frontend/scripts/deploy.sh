@@ -45,6 +45,8 @@ COGNITO_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="User
 COGNITO_REGION=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoRegion") | .OutputValue // "us-west-2"')
 IDENTITY_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="IdentityPoolId") | .OutputValue')
 API_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')
+STREAM_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ChatStreamUrl") | .OutputValue // empty')
+AVATARS_CDN_URL=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="AvatarsCdnUrl") | .OutputValue // empty')
 
 # Validate required values
 if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "null" ]; then
@@ -69,6 +71,8 @@ echo "  Cognito Pool: $COGNITO_USER_POOL_ID"
 echo "  Cognito Client: $COGNITO_CLIENT_ID"
 echo "  Cognito Region: $COGNITO_REGION"
 echo "  Identity Pool: $IDENTITY_POOL_ID"
+echo "  Stream Endpoint: $STREAM_ENDPOINT"
+echo "  Avatars CDN: $AVATARS_CDN_URL"
 
 # Step 2: Build the frontend
 echo ""
@@ -82,12 +86,16 @@ echo "Step 4: Generating runtime config.json..."
 # Use jq to properly escape values and generate valid JSON
 jq -n \
   --arg apiEndpoint "$API_ENDPOINT" \
+  --arg streamEndpoint "$STREAM_ENDPOINT" \
+  --arg avatarsCdnUrl "$AVATARS_CDN_URL" \
   --arg userPoolId "$COGNITO_USER_POOL_ID" \
   --arg clientId "$COGNITO_CLIENT_ID" \
   --arg region "$COGNITO_REGION" \
   --arg identityPoolId "$IDENTITY_POOL_ID" \
   '{
     apiEndpoint: $apiEndpoint,
+    streamEndpoint: $streamEndpoint,
+    avatarsCdnUrl: $avatarsCdnUrl,
     cognito: {
       userPoolId: $userPoolId,
       clientId: $clientId,
