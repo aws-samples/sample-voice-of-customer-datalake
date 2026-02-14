@@ -1,8 +1,3 @@
----
-inclusion: conditional
-triggers: ["project structure", "folder", "directory", "where is", "file location", "api endpoint", "route", "layout"]
----
-
 # VoC Data Lake - Project Structure
 
 ## Repository Layout

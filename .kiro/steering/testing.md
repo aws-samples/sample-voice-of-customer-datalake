@@ -1,6 +1,7 @@
 ---
-inclusion: conditional
-triggers: ["test", "tests", "testing", "pytest", "vitest", "mock", "fixture", "assertion", "coverage", "unit test", "component test"]
+inclusion: auto
+name: testing
+description: Testing patterns, anti-patterns, deployment validation, and synthetic data generation for this project.
 ---
 
 # Writing Tests

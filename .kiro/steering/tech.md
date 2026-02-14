@@ -1,8 +1,3 @@
----
-inclusion: conditional
-triggers: ["tech stack", "dependency", "version", "library", "package", "aws service", "architecture", "secrets manager"]
----
-
 # VoC Data Lake - Tech Stack & Best Practices
 
 ## Infrastructure (AWS CDK)

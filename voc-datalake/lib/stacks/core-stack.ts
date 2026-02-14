@@ -166,47 +166,17 @@ export class VocCoreStack extends cdk.Stack {
     NagSuppressions.addResourceSuppressions(this.frontendDistribution, cloudfrontDefaultCertSuppressions);
     this.frontendDomainName = this.frontendDistribution.distributionDomainName;
 
-    // CORS origins including the production frontend domain
-    const corsAllowedOrigins = [
-      ...corsAllowedOriginsBase,
-      `https://${this.frontendDomainName}`,
-    ];
-    
-    // Avatars CDN (created after frontend so we can include its domain in CORS)
-    const avatarsCorsPolicy = new cloudfront.ResponseHeadersPolicy(this, 'AvatarsCorsPolicy', {
-      responseHeadersPolicyName: uniqueName('voc-avatars-cors-policy'),
-      corsBehavior: {
-        accessControlAllowOrigins: corsAllowedOrigins,
-        accessControlAllowMethods: ['GET', 'HEAD'],
-        accessControlAllowHeaders: ['*'],
-        accessControlMaxAge: cdk.Duration.hours(1),
-        originOverride: true,
-        accessControlAllowCredentials: false,
-      },
-    });
-
-    const avatarsDistribution = new cloudfront.Distribution(this, 'AvatarsDistribution', {
-      defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket, {
-          originPath: '/avatars',
-        }),
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
-        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
-        compress: true,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        responseHeadersPolicy: avatarsCorsPolicy,
-      },
-      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-      comment: 'VoC Persona Avatars CDN',
-      enableLogging: true,
-      logBucket: this.accessLogsBucket,
-      logFilePrefix: 'cloudfront-avatars/',
+    // Avatars served from the same distribution under /avatars/* path
+    // This avoids CSP issues (same-origin) and eliminates the need for a separate distribution
+    this.frontendDistribution.addBehavior('/avatars/*', origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket), {
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+      cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+      compress: true,
+      cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
     });
     cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
-    NagSuppressions.addResourceSuppressions(avatarsDistribution, cloudfrontDefaultCertSuppressions);
-    this.avatarsCdnUrl = `https://${avatarsDistribution.distributionDomainName}`;
-
+    this.avatarsCdnUrl = `https://${this.frontendDomainName}/avatars`;
 
     // ============================================
     // DYNAMODB TABLES
@@ -446,13 +416,13 @@ The VoC Analytics Team`,
     });
 
     // User groups
-    new cognito.CfnUserPoolGroup(this, 'AdminGroup', {
+    const adminGroup = new cognito.CfnUserPoolGroup(this, 'AdminGroup', {
       userPoolId: this.userPool.userPoolId,
       groupName: 'admins',
       description: 'VoC administrators with full access',
     });
 
-    new cognito.CfnUserPoolGroup(this, 'UsersGroup', {
+    const usersGroup = new cognito.CfnUserPoolGroup(this, 'UsersGroup', {
       userPoolId: this.userPool.userPoolId,
       groupName: 'users',
       description: 'VoC users with standard access',
@@ -533,6 +503,8 @@ The VoC Analytics Team`,
       ]),
     });
     addAdminToGroup.node.addDependency(setAdminPassword);
+    addAdminToGroup.node.addDependency(adminGroup);
+    addAdminToGroup.node.addDependency(createAdminUser);
 
     // ============================================
     // COGNITO IDENTITY POOL (for AWS IAM authentication)
