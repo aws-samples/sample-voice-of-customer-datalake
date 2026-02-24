@@ -15,7 +15,7 @@ import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
 import { uniqueName } from '../utils/naming';
-import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 
 export interface VocApiStackProps extends cdk.StackProps {
   // Core stack resources
@@ -208,6 +208,7 @@ export class VocApiStack extends cdk.Stack {
       actions: ['aws-marketplace:ViewSubscriptions', 'aws-marketplace:Subscribe'],
       resources: ['*'],
     }));
+    NagSuppressions.addResourceSuppressions(scrapersRole, marketplaceSuppressions, true);
 
     const scrapersLambda = new lambda.Function(this, 'ScrapersApi', {
       functionName: uniqueName('voc-scrapers-api'),
