@@ -6,7 +6,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { z } from 'zod';
 import { NagSuppressions } from 'cdk-nag';
-import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 
 /**
  * Valid industry options for Anthropic use case form.
@@ -179,7 +179,7 @@ export class BedrockAccessStack extends cdk.Stack {
       NagSuppressions.addResourceSuppressionsByPath(
         this,
         `${this.stackName}/SubmitAnthropicUseCase/CustomResourcePolicy/Resource`,
-        cdkCustomResourceSuppressions
+        [...cdkCustomResourceSuppressions, ...bedrockAgreementSuppressions]
       );
       
       // The AwsCustomResource construct creates a singleton Lambda with a deterministic UUID
@@ -258,7 +258,7 @@ export class BedrockAccessStack extends cdk.Stack {
     // Suppress for ModelAgreementLambda
     NagSuppressions.addResourceSuppressions(
       modelAgreementLambda,
-      lambdaBasicExecutionRoleSuppressions,
+      [...lambdaBasicExecutionRoleSuppressions, ...bedrockAgreementSuppressions, ...marketplaceSuppressions],
       true
     );
 

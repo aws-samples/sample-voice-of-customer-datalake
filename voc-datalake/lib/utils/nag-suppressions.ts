@@ -178,6 +178,24 @@ export const cdkAssetsSuppressions: NagPackSuppression[] = [
   },
 ];
 
+// Bedrock foundation model agreement APIs - account-level operations
+export const bedrockAgreementSuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-IAM5',
+    reason: 'Bedrock foundation model agreement APIs (ListFoundationModelAgreementOffers, CreateFoundationModelAgreement, GetFoundationModelAvailability, PutUseCaseForModelAccess) are account-level operations that do not support resource-level permissions',
+    appliesTo: ['Resource::*'],
+  },
+];
+
+// AWS Marketplace - subscription APIs for Bedrock model access
+export const marketplaceSuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-IAM5',
+    reason: 'AWS Marketplace subscription APIs (ViewSubscriptions, Subscribe) do not support resource-level permissions - required for Bedrock model EULA acceptance',
+    appliesTo: ['Resource::*'],
+  },
+];
+
 // AWS Comprehend - real-time text analysis APIs
 export const comprehendSuppressions: NagPackSuppression[] = [
   {
