@@ -1,8 +1,3 @@
----
-inclusion: conditional
-triggers: ["product", "feature", "use case", "capability", "overview", "voc", "voice of customer", "data flow"]
----
-
 # VoC Data Lake - Product Overview
 
 Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for ingesting, processing, and analyzing customer feedback from multiple sources in near real-time.

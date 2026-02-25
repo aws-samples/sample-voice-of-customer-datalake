@@ -1,6 +1,7 @@
 ---
-inclusion: conditional
-triggers: ["bedrock", "claude", "llm", "ai", "anthropic", "invoke model", "prompt", "inference"]
+inclusion: auto
+name: bedrock-ai
+description: Bedrock AI model standards, Claude Sonnet usage patterns, LLM inference, prompt design, and Anthropic model invocation.
 ---
 
 # Bedrock AI Model Standards

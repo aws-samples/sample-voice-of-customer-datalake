@@ -9,6 +9,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import { randomInt } from 'crypto';
 import { Construct } from 'constructs';
 import { uniqueName } from '../utils/naming';
 import { NagSuppressions } from 'cdk-nag';
@@ -166,47 +167,17 @@ export class VocCoreStack extends cdk.Stack {
     NagSuppressions.addResourceSuppressions(this.frontendDistribution, cloudfrontDefaultCertSuppressions);
     this.frontendDomainName = this.frontendDistribution.distributionDomainName;
 
-    // CORS origins including the production frontend domain
-    const corsAllowedOrigins = [
-      ...corsAllowedOriginsBase,
-      `https://${this.frontendDomainName}`,
-    ];
-    
-    // Avatars CDN (created after frontend so we can include its domain in CORS)
-    const avatarsCorsPolicy = new cloudfront.ResponseHeadersPolicy(this, 'AvatarsCorsPolicy', {
-      responseHeadersPolicyName: uniqueName('voc-avatars-cors-policy'),
-      corsBehavior: {
-        accessControlAllowOrigins: corsAllowedOrigins,
-        accessControlAllowMethods: ['GET', 'HEAD'],
-        accessControlAllowHeaders: ['*'],
-        accessControlMaxAge: cdk.Duration.hours(1),
-        originOverride: true,
-        accessControlAllowCredentials: false,
-      },
-    });
-
-    const avatarsDistribution = new cloudfront.Distribution(this, 'AvatarsDistribution', {
-      defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket, {
-          originPath: '/avatars',
-        }),
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
-        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
-        compress: true,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        responseHeadersPolicy: avatarsCorsPolicy,
-      },
-      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-      comment: 'VoC Persona Avatars CDN',
-      enableLogging: true,
-      logBucket: this.accessLogsBucket,
-      logFilePrefix: 'cloudfront-avatars/',
+    // Avatars served from the same distribution under /avatars/* path
+    // This avoids CSP issues (same-origin) and eliminates the need for a separate distribution
+    this.frontendDistribution.addBehavior('/avatars/*', origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket), {
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+      cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+      compress: true,
+      cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
     });
     cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
-    NagSuppressions.addResourceSuppressions(avatarsDistribution, cloudfrontDefaultCertSuppressions);
-    this.avatarsCdnUrl = `https://${avatarsDistribution.distributionDomainName}`;
-
+    this.avatarsCdnUrl = `https://${this.frontendDomainName}/avatars`;
 
     // ============================================
     // DYNAMODB TABLES
@@ -446,13 +417,13 @@ The VoC Analytics Team`,
     });
 
     // User groups
-    new cognito.CfnUserPoolGroup(this, 'AdminGroup', {
+    const adminGroup = new cognito.CfnUserPoolGroup(this, 'AdminGroup', {
       userPoolId: this.userPool.userPoolId,
       groupName: 'admins',
       description: 'VoC administrators with full access',
     });
 
-    new cognito.CfnUserPoolGroup(this, 'UsersGroup', {
+    const usersGroup = new cognito.CfnUserPoolGroup(this, 'UsersGroup', {
       userPoolId: this.userPool.userPoolId,
       groupName: 'users',
       description: 'VoC users with standard access',
@@ -461,10 +432,15 @@ The VoC Analytics Team`,
     // ============================================
     // INITIAL ADMIN USER (for greenfield deployments)
     // ============================================
-    // Create initial admin user using custom resource
     const initialAdminUsername = 'admin';
     const initialAdminEmail = 'admin@local.host';
-    const initialAdminPassword = 'VocAnalytics@@2026';
+    
+    // Generate random password (16 chars: uppercase, lowercase, numbers, special chars)
+    const randomPassword = Array.from({ length: 16 }, () => {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*';
+      return chars[randomInt(0, chars.length)];
+    }).join('');
+    const initialAdminPassword = randomPassword;
 
     // Create the admin user
     const createAdminUser = new cr.AwsCustomResource(this, 'CreateAdminUser', {
@@ -479,7 +455,7 @@ The VoC Analytics Team`,
             { Name: 'email_verified', Value: 'true' },
             { Name: 'name', Value: 'Admin' },
           ],
-          MessageAction: 'SUPPRESS', // Don't send email for initial admin
+          MessageAction: 'SUPPRESS',
         },
         physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-user')),
       },
@@ -491,7 +467,7 @@ The VoC Analytics Team`,
       ]),
     });
 
-    // Set permanent password for admin user
+    // Set temporary password for admin user (must change on first login)
     const setAdminPassword = new cr.AwsCustomResource(this, 'SetAdminPassword', {
       onCreate: {
         service: 'CognitoIdentityServiceProvider',
@@ -500,7 +476,6 @@ The VoC Analytics Team`,
           UserPoolId: this.userPool.userPoolId,
           Username: initialAdminUsername,
           Password: initialAdminPassword,
-          Permanent: true,
         },
         physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-password')),
       },
@@ -533,6 +508,8 @@ The VoC Analytics Team`,
       ]),
     });
     addAdminToGroup.node.addDependency(setAdminPassword);
+    addAdminToGroup.node.addDependency(adminGroup);
+    addAdminToGroup.node.addDependency(createAdminUser);
 
     // ============================================
     // COGNITO IDENTITY POOL (for AWS IAM authentication)
@@ -644,6 +621,10 @@ The VoC Analytics Team`,
     new cdk.CfnOutput(this, 'UserPoolDomain', { value: `${domainPrefix}.auth.${this.region}.amazoncognito.com`, description: 'Cognito User Pool Domain' });
     new cdk.CfnOutput(this, 'CognitoRegion', { value: this.region, description: 'AWS Region for Cognito' });
     new cdk.CfnOutput(this, 'IdentityPoolId', { value: this.identityPool.ref, description: 'Cognito Identity Pool ID for AWS IAM auth' });
+    new cdk.CfnOutput(this, 'InitialAdminPassword', { 
+      value: initialAdminPassword, 
+      description: 'Initial admin user password (username: admin)'
+    });
   }
 
   private getCustomMessageLambdaCode(signInUrl: string): string {
