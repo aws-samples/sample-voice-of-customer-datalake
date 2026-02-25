@@ -73,9 +73,18 @@ After deployment, an initial admin user is created automatically:
 | Field | Value |
 |-------|-------|
 | Username | `admin` |
-| Password | `VocAnalytics@@2026` |
+| Password | Check CloudFormation stack outputs for `AdminUserPassword` |
 
-> ⚠️ **Security Warning**: Change this password immediately after your first login!
+The password is randomly generated during deployment and stored as a CloudFormation output. Retrieve it with:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name VocCoreStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`AdminUserPassword`].OutputValue' \
+  --output text
+```
+
+> 🔒 **Note**: You will be prompted to change this password on your first login.
 
 ## ⚙️ Configuration
 
