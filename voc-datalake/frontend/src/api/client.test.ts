@@ -592,6 +592,44 @@ describe('API Client', () => {
     })
   })
 
+  describe('getIntegrationCredentials', () => {
+    it('fetches credentials with keys as comma-separated query param', async () => {
+      const mockCredentials = { app_name: 'my-app', package_name: 'com.example.app' }
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockCredentials),
+      })
+
+      const result = await api.getIntegrationCredentials('app_reviews_android', ['app_name', 'package_name'])
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/integrations/app_reviews_android/credentials?keys=app_name,package_name',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'Authorization': 'mock-id-token',
+          }),
+        })
+      )
+      expect(result).toEqual(mockCredentials)
+    })
+
+    it('handles single key', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ app_id: '585629514' }),
+      })
+
+      const result = await api.getIntegrationCredentials('app_reviews_ios', ['app_id'])
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/integrations/app_reviews_ios/credentials?keys=app_id',
+        expect.any(Object)
+      )
+      expect(result).toEqual({ app_id: '585629514' })
+    })
+  })
+
   describe('testIntegration', () => {
     it('sends POST request to test integration', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({

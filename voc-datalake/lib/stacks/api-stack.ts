@@ -165,7 +165,11 @@ export class VocApiStack extends cdk.Stack {
     }));
     integrationsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['events:EnableRule', 'events:DisableRule', 'events:DescribeRule'],
-      resources: [`arn:aws:events:${this.region}:${this.account}:rule/voc-ingest-*-schedule`],
+      resources: [`arn:aws:events:${this.region}:${this.account}:rule/voc-ingest-*-schedule*`],
+    }));
+    integrationsRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-ingestor-*`],
     }));
     NagSuppressions.addResourceSuppressions(integrationsRole, pluginSystemSuppressions, true);
 
@@ -178,7 +182,7 @@ export class VocApiStack extends cdk.Stack {
       role: integrationsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO' },
+      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION },
       layers: [apiLayer],
       logGroup: this.createLogGroup('IntegrationsApiLogs', uniqueName('voc-integrations-api')),
     });
@@ -646,7 +650,9 @@ export class VocApiStack extends cdk.Stack {
     const integrationsResource = this.api.root.addResource('integrations');
     integrationsResource.addResource('status').addMethod('GET', integrationsIntegration, authMethodOptions);
     const intSourceResource = integrationsResource.addResource('{source}');
-    intSourceResource.addResource('credentials').addMethod('PUT', integrationsIntegration, authMethodOptions);
+    const intCredentialsResource = intSourceResource.addResource('credentials');
+    intCredentialsResource.addMethod('PUT', integrationsIntegration, authMethodOptions);
+    intCredentialsResource.addMethod('GET', integrationsIntegration, authMethodOptions);
     intSourceResource.addResource('test').addMethod('POST', integrationsIntegration, authMethodOptions);
 
     // /sources/*
@@ -655,6 +661,7 @@ export class VocApiStack extends cdk.Stack {
     const srcSourceResource = sourcesResource.addResource('{source}');
     srcSourceResource.addResource('enable').addMethod('PUT', integrationsIntegration, authMethodOptions);
     srcSourceResource.addResource('disable').addMethod('PUT', integrationsIntegration, authMethodOptions);
+    srcSourceResource.addResource('run').addMethod('POST', integrationsIntegration, authMethodOptions);
 
     // /scrapers/*
     const scrapersResource = this.api.root.addResource('scrapers');

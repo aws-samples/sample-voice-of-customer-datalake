@@ -21,7 +21,7 @@ export const DEFAULT_SCRAPER: Omit<ScraperConfig, 'id'> = {
   enabled: true,
   base_url: '',
   urls: [],
-  frequency_minutes: 60,
+  frequency_minutes: 1440,
   extraction_method: 'css',
   container_selector: '.review',
   text_selector: '.review-text',
