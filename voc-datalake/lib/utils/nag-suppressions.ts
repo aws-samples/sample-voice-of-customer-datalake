@@ -152,6 +152,7 @@ export const pluginSystemSuppressions: NagPackSuppression[] = [
     reason: 'Plugin system requires wildcards for dynamic Lambda function names and EventBridge rules created at runtime',
     appliesTo: [
       { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-ingestor-webscraper-\*/' },
+      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-ingestor-\*/' },
       { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-manual-import-processor-\*/' },
       { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-projects-api-\*/' },
       { regex: '/Resource::arn:aws:events:.*:.*:rule.voc-ingest-.*-schedule/' },

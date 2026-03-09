@@ -6,9 +6,9 @@
  */
 
 import type React from 'react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Check, AlertCircle, Loader2, Copy, ExternalLink, Eye, EyeOff, CheckCircle2, Webhook, Key, TestTube } from 'lucide-react'
+import { Save, Check, AlertCircle, Loader2, Copy, ExternalLink, Eye, EyeOff, CheckCircle2, Webhook, Key, TestTube, Play } from 'lucide-react'
 import { api } from '../../api/client'
 import S3ImportExplorer from '../../components/S3ImportExplorer'
 import clsx from 'clsx'
@@ -54,6 +54,7 @@ export default function SourceCard({ manifest, apiEndpoint }: SourceCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [showSecrets, setShowSecrets] = useState(false)
   const [credentials, setCredentials] = useState<Record<string, string>>({})
+  const hasFetchedCredentials = useRef(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
   const [serverStatus, setServerStatus] = useState<{ enabled: boolean; loading?: boolean }>({ enabled: false })
@@ -66,9 +67,31 @@ export default function SourceCard({ manifest, apiEndpoint }: SourceCardProps) {
 
   const sourceStatus = integrationStatus?.[manifest.id]
 
+  // Task 4.1: Fetch saved credentials when the card is expanded
+  const { data: fetchedCredentials } = useQuery({
+    queryKey: ['integration-credentials', manifest.id],
+    queryFn: () => api.getIntegrationCredentials(manifest.id, manifest.config.map(f => f.key)),
+    enabled: isExpanded && manifest.config.length > 0,
+  })
+
+  // Task 4.2: Merge fetched credentials into local state without overwriting user edits
+  useEffect(() => {
+    if (!fetchedCredentials || hasFetchedCredentials.current) return
+    hasFetchedCredentials.current = true
+    setCredentials(prev => {
+      const merged = { ...prev }
+      for (const [key, value] of Object.entries(fetchedCredentials)) {
+        if (!merged[key]) {
+          merged[key] = value
+        }
+      }
+      return merged
+    })
+  }, [fetchedCredentials])
+
   useEffect(() => {
     if (apiEndpoint) {
-      api.getSourcesStatus().then(response => {
+      api.getSourcesStatus([manifest.id]).then(response => {
         const status = response.sources?.[manifest.id]
         if (status) setServerStatus({ enabled: status.enabled })
       }).catch(() => {})
@@ -80,12 +103,18 @@ export default function SourceCard({ manifest, apiEndpoint }: SourceCardProps) {
     onSuccess: () => {
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
+      hasFetchedCredentials.current = false
       queryClient.invalidateQueries({ queryKey: ['integration-status'] })
+      queryClient.invalidateQueries({ queryKey: ['integration-credentials', manifest.id] })
     },
   })
 
   const testMutation = useMutation({
     mutationFn: () => api.testIntegration(manifest.id),
+  })
+
+  const runMutation = useMutation({
+    mutationFn: () => api.runSource(manifest.id),
   })
 
   const toggleEnabled = async (enabled: boolean) => {
@@ -138,6 +167,8 @@ export default function SourceCard({ manifest, apiEndpoint }: SourceCardProps) {
               sourceStatus={sourceStatus}
               saveSuccess={saveSuccess}
               testMutation={testMutation}
+              runMutation={runMutation}
+              hasIngestor={manifest.hasIngestor}
               updateCredentialsMutation={updateCredentialsMutation}
               onCredentialsChange={setCredentials}
               onToggleSecrets={() => setShowSecrets(!showSecrets)}
@@ -183,7 +214,7 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
       className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 hover:bg-gray-50 gap-2 sm:gap-3"
     >
       <div className="flex items-center gap-2 sm:gap-3">
-        <span className="text-xl sm:text-2xl">{manifest.icon}</span>
+        <span className="w-12 h-12 sm:w-13 sm:h-13 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center text-[10px] font-semibold flex-shrink-0 overflow-hidden truncate px-1">{manifest.icon.slice(0, 8)}</span>
         <div className="text-left min-w-0">
           <span className="font-medium text-sm sm:text-base">{manifest.name}</span>
           {manifest.description && <p className="text-xs text-gray-500 line-clamp-1">{manifest.description}</p>}
@@ -267,13 +298,15 @@ interface CredentialsSectionProps {
   readonly sourceStatus: { configured?: boolean } | undefined
   readonly saveSuccess: boolean
   readonly testMutation: { isPending: boolean; data?: { success: boolean; message?: string; error?: string }; mutate: () => void }
+  readonly runMutation: { isPending: boolean; data?: { success: boolean; message?: string }; mutate: () => void }
+  readonly hasIngestor: boolean
   readonly updateCredentialsMutation: { isPending: boolean; mutate: (creds: Record<string, string>) => void }
   readonly onCredentialsChange: (creds: Record<string, string>) => void
   readonly onToggleSecrets: () => void
 }
 
 function CredentialsSection({
-  fields, credentials, showSecrets, sourceStatus, saveSuccess, testMutation, updateCredentialsMutation,
+  fields, credentials, showSecrets, sourceStatus, saveSuccess, testMutation, runMutation, hasIngestor, updateCredentialsMutation,
   onCredentialsChange, onToggleSecrets
 }: CredentialsSectionProps) {
   const saveIcon = getSaveButtonIcon(updateCredentialsMutation.isPending, saveSuccess)
@@ -304,7 +337,23 @@ function CredentialsSection({
             {showSecrets ? 'Hide' : 'Show'}
           </button>
           <button
-            onClick={() => updateCredentialsMutation.mutate(credentials)}
+            onClick={() => {
+              // Build complete credentials: include all config fields so untouched fields
+              // with defaults/placeholders don't get lost
+              const completeCreds: Record<string, string> = {}
+              for (const field of fields) {
+                const current = credentials[field.key]
+                if (current !== undefined && current !== '') {
+                  completeCreds[field.key] = current
+                } else if (field.options && field.options.length > 0) {
+                  // Select fields: use first option as default if not set
+                  completeCreds[field.key] = field.options[0].value
+                } else if (field.placeholder) {
+                  completeCreds[field.key] = field.placeholder
+                }
+              }
+              updateCredentialsMutation.mutate(completeCreds)
+            }}
             disabled={updateCredentialsMutation.isPending || Object.keys(credentials).length === 0}
             className={clsx('btn flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2', saveButtonClass)}
           >
@@ -320,10 +369,23 @@ function CredentialsSection({
             {testMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
             Test
           </button>
+          {hasIngestor && (
+            <button
+              onClick={() => runMutation.mutate()}
+              disabled={runMutation.isPending}
+              className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
+            >
+              {runMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+              Run Now
+            </button>
+          )}
         </div>
 
         {testMutation.data && (
           <TestResultMessage success={testMutation.data.success} message={testMutation.data.message || testMutation.data.error || 'Unknown result'} />
+        )}
+        {runMutation.data && (
+          <TestResultMessage success={runMutation.data.success} message={runMutation.data.message || 'Run triggered'} />
         )}
       </div>
     </div>

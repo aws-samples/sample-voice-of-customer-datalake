@@ -5,7 +5,9 @@
   "environment": "production",
   "brandName": "VoC Analytics",
   "pluginStatus": {
-    "webscraper": true
+    "webscraper": true,
+    "app_reviews_ios": true,
+    "app_reviews_android": true
   },
   "menuStatus": {
     "dashboard": true,

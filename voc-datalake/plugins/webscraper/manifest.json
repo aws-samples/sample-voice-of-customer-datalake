@@ -1,7 +1,7 @@
 {
   "id": "webscraper",
   "name": "Web Scraper",
-  "icon": "🕷️",
+  "icon": "Web",
   "description": "Configurable scraper for extracting feedback from websites",
   "category": "import",
   "version": "1.0.0",
