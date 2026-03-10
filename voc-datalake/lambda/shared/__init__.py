@@ -43,6 +43,8 @@ from shared.jobs import (
     create_job,
     update_job_status,
     get_job,
+    job_handler,
+    JobContext,
 )
 from shared.api import decimal_default
 from shared.exceptions import (
@@ -103,6 +105,8 @@ __all__ = [
     "create_job",
     "update_job_status",
     "get_job",
+    "job_handler",
+    "JobContext",
     # API utilities
     "decimal_default",
     # Exceptions
