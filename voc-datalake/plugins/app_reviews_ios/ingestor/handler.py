@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Generator
 
 from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
+from _shared.app_reviews_utils import parse_int, process_app_reviews
 from countries import IOS_COUNTRIES
 from itunes_client import create_session, fetch_reviews_for_country
 from models import IOSAppConfig
@@ -22,27 +23,19 @@ class IOSAppReviewsIngestor(BaseIngestor):
         super().__init__()
         self.app_configs = self._load_app_configs()
         self.sort_by = self.secrets.get("sort_by", "most_recent")
-        self.max_countries = self._parse_int(
+        self.max_countries = parse_int(
             self.secrets.get("max_countries_per_run", "40"), 40
         )
-        self.frequency_minutes = self._parse_int(
+        self.frequency_minutes = parse_int(
             self.secrets.get("frequency_minutes", "60"), 60
         )
         self.session = create_session()
-
-    def _parse_int(self, value: str, default: int) -> int:
-        """Safely parse an integer from string."""
-        try:
-            parsed = int(value)
-            return parsed if parsed > 0 else default
-        except (ValueError, TypeError):
-            return default
 
     def _load_app_configs(self) -> list[IOSAppConfig]:
         """Load app configuration from individual secret fields."""
         app_name = self.secrets.get("app_name", "").strip()
         app_id = self.secrets.get("app_id", "").strip()
-        max_reviews = self._parse_int(
+        max_reviews = parse_int(
             self.secrets.get("max_reviews_per_run", "500"), 500
         )
 
@@ -142,78 +135,16 @@ class IOSAppReviewsIngestor(BaseIngestor):
             return
 
         for app in self.app_configs:
-            # Check frequency-based throttling
-            last_run = self.get_watermark(f"{app.name}_last_run")
-            if last_run:
-                try:
-                    from datetime import timedelta
-                    last_run_dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
-                    next_run = last_run_dt + timedelta(minutes=self.frequency_minutes)
-                    if datetime.now(timezone.utc) < next_run:
-                        logger.info(f"Skipping iOS {app.name} - not due yet (frequency: {self.frequency_minutes}m)")
-                        continue
-                except (ValueError, TypeError):
-                    pass
-
-            logger.info(f"Collecting iOS reviews for {app.name} (app_id={app.app_id})")
-
-            # Load watermark
-            watermark_key = f"{app.name}_last_published_at"
-            last_published = self.get_watermark(watermark_key)
-            watermark_dt = None
-            if last_published:
-                try:
-                    watermark_dt = datetime.fromisoformat(
-                        last_published.replace("Z", "+00:00")
-                    )
-                except (ValueError, TypeError):
-                    watermark_dt = None
-
-            try:
-                reviews = self._collect_reviews_for_app(app)
-            except Exception as e:
-                logger.error(f"Failed to collect reviews for {app.name}: {e}")
-                metrics.add_metric(
-                    name=f"iOS_{app.name}_Errors", unit="Count", value=1
-                )
-                continue
-
-            newest_date = watermark_dt
-            yielded = 0
-
-            for review in reviews:
-                review_date = review.get("date")
-                if review_date and hasattr(review_date, "isoformat"):
-                    review_dt = review_date
-                else:
-                    review_dt = None
-
-                # Skip reviews older than watermark
-                if watermark_dt and review_dt and review_dt <= watermark_dt:
-                    continue
-
-                formatted = self._format_review(review, app)
-                yield formatted
-                yielded += 1
-
-                # Track newest date for watermark update
-                if review_dt and (newest_date is None or review_dt > newest_date):
-                    newest_date = review_dt
-
-            # Update watermark
-            if newest_date and newest_date != watermark_dt:
-                self.set_watermark(watermark_key, newest_date.isoformat())
-
-            self.set_watermark(
-                f"{app.name}_last_run", datetime.now(timezone.utc).isoformat()
-            )
-
-            metrics.add_metric(
-                name=f"iOS_{app.name}_Reviews", unit="Count", value=yielded
-            )
-            logger.info(
-                f"iOS {app.name}: yielded {yielded} new reviews "
-                f"(from {len(reviews)} candidates)"
+            yield from process_app_reviews(
+                app_config=app,
+                app_name=app.name,
+                platform_label="iOS",
+                date_field="date",
+                get_watermark_fn=self.get_watermark,
+                set_watermark_fn=self.set_watermark,
+                frequency_minutes=self.frequency_minutes,
+                collect_fn=self._collect_reviews_for_app,
+                format_fn=self._format_review,
             )
 
 

@@ -300,12 +300,11 @@ export default function Layout() {
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)
 
   // Filter nav items based on user role and menu config
-  const devBypassAdmin = import.meta.env.DEV && !authService.isConfigured()
   const visibleNavItems = NAV_ITEMS.filter(item => {
     // Check if menu item is enabled in config
     if (!isMenuItemEnabled(item.menuKey)) return false
-    // Check admin-only restriction (bypass in dev when Cognito is not configured)
-    if (item.adminOnly && !isAdmin && !devBypassAdmin) return false
+    // Check admin-only restriction
+    if (item.adminOnly && !isAdmin) return false
     return true
   })
 

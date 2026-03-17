@@ -65,7 +65,19 @@ def get_integration_status():
 @app.get("/integrations/<source>/credentials")
 @tracer.capture_method
 def get_credentials(source: str):
-    """Get saved credentials for an integration, filtered by requested keys."""
+    """Get saved configuration values for an integration so the Settings UI
+    can pre-populate form fields (e.g. app_name, sort_by, frequency).
+
+    This is NOT returning sensitive API keys — the app review plugins use
+    public endpoints with no authentication. The values stored in Secrets
+    Manager for these plugins are non-secret configuration like app names,
+    package names, and tuning parameters. Secrets Manager is reused as the
+    storage backend because the existing plugin infrastructure already
+    reads config from there via BaseIngestor._load_secrets().
+
+    The caller must specify which keys to retrieve via the `keys` query
+    parameter (comma-separated). Only matching keys are returned.
+    """
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
 
