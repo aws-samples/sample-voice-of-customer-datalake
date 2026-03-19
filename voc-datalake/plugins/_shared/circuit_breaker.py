@@ -78,7 +78,11 @@ class CircuitBreaker:
 
     def _trip_breaker(self, failure_count: int, last_error: str) -> None:
         """Disable the plugin schedule."""
-        rule_name = f"voc-ingest-{self.plugin_id}-schedule"
+        # Match CDK's uniqueName() pattern: {base}-{account}-{region}
+        account_id = os.environ.get("DEPLOY_ACCOUNT_ID", os.environ.get("AWS_ACCOUNT_ID", ""))
+        region = os.environ.get("DEPLOY_REGION", os.environ.get("AWS_REGION", ""))
+        suffix = f"-{account_id}-{region}" if account_id and region else ""
+        rule_name = f"voc-ingest-{self.plugin_id}-schedule{suffix}"
 
         try:
             if HAS_EVENTBRIDGE:

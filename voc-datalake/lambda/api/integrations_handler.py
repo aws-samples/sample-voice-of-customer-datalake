@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_secrets_client
 from shared.api import create_api_resolver, api_handler
-from shared.exceptions import ConfigurationError, ServiceError
+from shared.exceptions import ConfigurationError, ServiceError, ValidationError
 
 import boto3
 
@@ -22,9 +22,16 @@ secretsmanager = get_secrets_client()
 events_client = boto3.client("events")
 
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
-DEPLOYMENT_HASH = os.environ.get("DEPLOYMENT_HASH", "")
+AWS_ACCOUNT_ID = os.environ.get("DEPLOY_ACCOUNT_ID", os.environ.get("AWS_ACCOUNT_ID", ""))
+AWS_REGION = os.environ.get("DEPLOY_REGION", os.environ.get("AWS_REGION", ""))
 
 app = create_api_resolver()
+
+
+def _build_rule_name(source: str) -> str:
+    """Build EventBridge rule name matching CDK's uniqueName() pattern."""
+    suffix = f"-{AWS_ACCOUNT_ID}-{AWS_REGION}" if AWS_ACCOUNT_ID and AWS_REGION else ""
+    return f"voc-ingest-{source}-schedule{suffix}"
 
 
 @app.get("/integrations/status")
@@ -55,6 +62,54 @@ def get_integration_status():
         raise ServiceError('Failed to retrieve integration status')
 
 
+@app.get("/integrations/<source>/credentials")
+@tracer.capture_method
+def get_credentials(source: str):
+    """Get saved configuration values for an integration so the Settings UI
+    can pre-populate form fields (e.g. app_name, sort_by, frequency).
+
+    This is NOT returning sensitive API keys — the app review plugins use
+    public endpoints with no authentication. The values stored in Secrets
+    Manager for these plugins are non-secret configuration like app names,
+    package names, and tuning parameters. Secrets Manager is reused as the
+    storage backend because the existing plugin infrastructure already
+    reads config from there via BaseIngestor._load_secrets().
+
+    The caller must specify which keys to retrieve via the `keys` query
+    parameter (comma-separated). Only matching keys are returned.
+    """
+    if not SECRETS_ARN:
+        raise ConfigurationError('Secrets not configured')
+
+    params = app.current_event.query_string_parameters or {}
+    keys_param = params.get('keys', '')
+    if not keys_param:
+        raise ValidationError('Missing required query parameter: keys')
+
+    requested_keys = [k.strip() for k in keys_param.split(',') if k.strip()]
+
+    try:
+        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
+        secrets = json.loads(response.get('SecretString', '{}'))
+
+        prefix = f"{source}_"
+        result = {}
+        for key in requested_keys:
+            prefixed_key = f"{prefix}{key}"
+            if prefixed_key in secrets and secrets[prefixed_key]:
+                result[key] = secrets[prefixed_key]
+            elif key in secrets and secrets[key]:
+                # Fallback to unprefixed for backward compatibility
+                result[key] = secrets[key]
+
+        return result
+    except ConfigurationError:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get credentials for {source}: {e}")
+        raise ServiceError('Failed to retrieve credentials')
+
+
 @app.put("/integrations/<source>/credentials")
 @tracer.capture_method
 def update_credentials(source: str):
@@ -68,9 +123,10 @@ def update_credentials(source: str):
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
         
+        prefix = f"{source}_"
         for key, value in body.items():
             if value:
-                secrets[key] = value
+                secrets[f"{prefix}{key}"] = value
         
         secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
         return {'success': True, 'message': f'Credentials updated for {source}'}
@@ -88,18 +144,50 @@ def test_integration(source: str):
     return {'success': True, 'message': f'Integration {source} test not implemented'}
 
 
+@app.post("/sources/<source>/run")
+@tracer.capture_method
+def run_source(source: str):
+    """Manually trigger a data source ingestor Lambda."""
+    # Function name follows uniqueName() pattern: voc-ingestor-{id}-{account}-{region}
+    suffix = f"-{AWS_ACCOUNT_ID}-{AWS_REGION}" if AWS_ACCOUNT_ID and AWS_REGION else ""
+    function_name = f"voc-ingestor-{source}{suffix}"
+
+    lambda_client = boto3.client("lambda")
+    try:
+        response = lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="Event",
+            Payload=json.dumps({"manual_trigger": True}).encode(),
+        )
+        status_code = response.get("StatusCode", 0)
+        if status_code == 202:
+            return {"success": True, "message": f"Triggered {source} ingestor", "source": source}
+        raise ServiceError(f"Lambda invoke returned status {status_code}")
+    except lambda_client.exceptions.ResourceNotFoundException:
+        raise ServiceError(f"Ingestor Lambda not found for source: {source}")
+    except ServiceError:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to trigger source {source}: {e}")
+        raise ServiceError(f"Failed to trigger {source} ingestor")
+
+
 @app.get("/sources/status")
 @tracer.capture_method
 def get_sources_status():
     """Get status of all data source schedules."""
-    sources = ['webscraper', 'manual_import', 's3_import']
+    params = app.current_event.query_string_parameters or {}
+    sources_param = params.get('sources', '')
     
-    # Build rule name suffix based on deployment hash
-    rule_suffix = f"-{DEPLOYMENT_HASH}" if DEPLOYMENT_HASH else ""
+    # Use requested sources or fall back to defaults
+    if sources_param:
+        sources = [s.strip() for s in sources_param.split(',') if s.strip()]
+    else:
+        sources = ['webscraper', 'manual_import', 's3_import']
     
     status = {}
     for source in sources:
-        rule_name = f"voc-ingest-{source}-schedule{rule_suffix}"
+        rule_name = _build_rule_name(source)
         try:
             response = events_client.describe_rule(Name=rule_name)
             status[source] = {
@@ -121,8 +209,7 @@ def get_sources_status():
 @tracer.capture_method
 def enable_source(source: str):
     """Enable a data source schedule."""
-    rule_suffix = f"-{DEPLOYMENT_HASH}" if DEPLOYMENT_HASH else ""
-    rule_name = f"voc-ingest-{source}-schedule{rule_suffix}"
+    rule_name = _build_rule_name(source)
     try:
         events_client.enable_rule(Name=rule_name)
         return {'success': True, 'source': source, 'enabled': True}
@@ -135,8 +222,7 @@ def enable_source(source: str):
 @tracer.capture_method
 def disable_source(source: str):
     """Disable a data source schedule."""
-    rule_suffix = f"-{DEPLOYMENT_HASH}" if DEPLOYMENT_HASH else ""
-    rule_name = f"voc-ingest-{source}-schedule{rule_suffix}"
+    rule_name = _build_rule_name(source)
     try:
         events_client.disable_rule(Name=rule_name)
         return {'success': True, 'source': source, 'enabled': False}
