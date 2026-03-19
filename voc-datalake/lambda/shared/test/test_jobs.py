@@ -197,3 +197,200 @@ class TestGetJob:
         result = get_job('proj_123', 'job_abc')
         
         assert result is None
+
+
+class TestJobContext:
+    """Tests for JobContext class."""
+    
+    def setup_method(self):
+        """Reset module state before each test."""
+        from shared.tables import clear_table_cache
+        clear_table_cache()
+    
+    @patch('shared.jobs.update_job_status')
+    def test_update_progress_calls_update_job_status(self, mock_update):
+        """Should call update_job_status with correct parameters."""
+        from shared.jobs import JobContext
+        
+        ctx = JobContext('proj_123', 'job_abc')
+        ctx.update_progress(50, 'processing')
+        
+        mock_update.assert_called_once_with('proj_123', 'job_abc', 'running', 50, 'processing')
+    
+    def test_stores_project_and_job_ids(self):
+        """Should store project_id and job_id."""
+        from shared.jobs import JobContext
+        
+        ctx = JobContext('proj_123', 'job_abc')
+        
+        assert ctx.project_id == 'proj_123'
+        assert ctx.job_id == 'job_abc'
+
+
+class TestJobHandler:
+    """Tests for job_handler decorator."""
+    
+    def setup_method(self):
+        """Reset module state before each test."""
+        from shared.tables import clear_table_cache
+        clear_table_cache()
+    
+    @patch('shared.jobs.update_job_status')
+    @patch('shared.jobs.logger')
+    def test_successful_job_updates_status_to_completed(self, mock_logger, mock_update):
+        """Should update job status to completed on success."""
+        from shared.jobs import job_handler, JobContext
+        
+        @job_handler(error_message='Test failed')
+        def test_job(ctx: JobContext, project_id: str, job_id: str, config: dict) -> dict:
+            return {'result_key': 'result_value'}
+        
+        event = {
+            'project_id': 'proj_123',
+            'job_id': 'job_abc',
+            'config': {'test': True}
+        }
+        
+        result = test_job(event)
+        
+        assert result == {'success': True, 'result_key': 'result_value'}
+        mock_update.assert_called_once_with(
+            'proj_123', 'job_abc', 'completed', 100, 'complete',
+            result={'result_key': 'result_value'}
+        )
+    
+    @patch('shared.jobs.update_job_status')
+    @patch('shared.jobs.logger')
+    def test_failed_job_updates_status_to_failed(self, mock_logger, mock_update):
+        """Should update job status to failed on exception."""
+        from shared.jobs import job_handler, JobContext
+        from shared.exceptions import ServiceError
+        
+        @job_handler(error_message='Custom error message')
+        def test_job(ctx: JobContext, project_id: str, job_id: str, config: dict) -> dict:
+            raise ValueError('Something went wrong')
+        
+        event = {
+            'project_id': 'proj_123',
+            'job_id': 'job_abc',
+            'config': {'test': True}
+        }
+        
+        with pytest.raises(ServiceError, match='Custom error message'):
+            test_job(event)
+        
+        mock_update.assert_called_once()
+        call_args = mock_update.call_args
+        assert call_args[0][0] == 'proj_123'
+        assert call_args[0][1] == 'job_abc'
+        assert call_args[0][2] == 'failed'
+        assert call_args[0][3] == 0
+        assert call_args[0][4] == 'error'
+        assert 'Custom error message' in call_args[1]['error']
+    
+    @patch('shared.jobs.update_job_status')
+    @patch('shared.jobs.logger')
+    def test_extracts_filters_config(self, mock_logger, mock_update):
+        """Should extract 'filters' config key from event."""
+        from shared.jobs import job_handler, JobContext
+        
+        received_config = None
+        
+        @job_handler(error_message='Test failed')
+        def test_job(ctx: JobContext, project_id: str, job_id: str, filters: dict) -> dict:
+            nonlocal received_config
+            received_config = filters
+            return {}
+        
+        event = {
+            'project_id': 'proj_123',
+            'job_id': 'job_abc',
+            'filters': {'days': 30, 'sources': ['web']}
+        }
+        
+        test_job(event)
+        
+        assert received_config == {'days': 30, 'sources': ['web']}
+    
+    @patch('shared.jobs.update_job_status')
+    @patch('shared.jobs.logger')
+    def test_extracts_doc_config(self, mock_logger, mock_update):
+        """Should extract 'doc_config' config key from event."""
+        from shared.jobs import job_handler, JobContext
+        
+        received_config = None
+        
+        @job_handler(error_message='Test failed')
+        def test_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) -> dict:
+            nonlocal received_config
+            received_config = doc_config
+            return {}
+        
+        event = {
+            'project_id': 'proj_123',
+            'job_id': 'job_abc',
+            'doc_config': {'doc_type': 'prd', 'title': 'Test'}
+        }
+        
+        test_job(event)
+        
+        assert received_config == {'doc_type': 'prd', 'title': 'Test'}
+    
+    @patch('shared.jobs.update_job_status')
+    @patch('shared.jobs.logger')
+    def test_context_allows_progress_updates(self, mock_logger, mock_update):
+        """Should allow progress updates via context."""
+        from shared.jobs import job_handler, JobContext
+        
+        @job_handler(error_message='Test failed')
+        def test_job(ctx: JobContext, project_id: str, job_id: str, config: dict) -> dict:
+            ctx.update_progress(25, 'step_1')
+            ctx.update_progress(50, 'step_2')
+            ctx.update_progress(75, 'step_3')
+            return {'done': True}
+        
+        event = {
+            'project_id': 'proj_123',
+            'job_id': 'job_abc',
+            'config': {}
+        }
+        
+        test_job(event)
+        
+        # Should have 4 calls: 3 progress updates + 1 completed
+        assert mock_update.call_count == 4
+        
+        # Check progress update calls
+        calls = mock_update.call_args_list
+        assert calls[0][0] == ('proj_123', 'job_abc', 'running', 25, 'step_1')
+        assert calls[1][0] == ('proj_123', 'job_abc', 'running', 50, 'step_2')
+        assert calls[2][0] == ('proj_123', 'job_abc', 'running', 75, 'step_3')
+        
+        # Check completed call
+        assert calls[3][0][:5] == ('proj_123', 'job_abc', 'completed', 100, 'complete')
+    
+    @patch('shared.jobs.update_job_status')
+    @patch('shared.jobs.logger')
+    def test_truncates_long_error_messages(self, mock_logger, mock_update):
+        """Should truncate error messages longer than 200 chars."""
+        from shared.jobs import job_handler, JobContext
+        from shared.exceptions import ServiceError
+        
+        long_error = 'x' * 500
+        
+        @job_handler(error_message='Job failed')
+        def test_job(ctx: JobContext, project_id: str, job_id: str, config: dict) -> dict:
+            raise ValueError(long_error)
+        
+        event = {
+            'project_id': 'proj_123',
+            'job_id': 'job_abc',
+            'config': {}
+        }
+        
+        with pytest.raises(ServiceError):
+            test_job(event)
+        
+        error_arg = mock_update.call_args[1]['error']
+        # Error message should be truncated
+        assert len(error_arg) < 250  # 'Job failed: ' + 200 chars max
