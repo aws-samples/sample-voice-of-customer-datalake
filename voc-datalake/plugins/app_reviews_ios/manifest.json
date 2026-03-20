@@ -1,0 +1,99 @@
+{
+  "id": "app_reviews_ios",
+  "name": "iOS App Reviews",
+  "icon": "iOS",
+  "description": "Collect customer reviews from the Apple App Store",
+  "category": "reviews",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(30 minutes)",
+      "timeout": 300,
+      "memory": 512
+    }
+  },
+
+  "config": [
+    {
+      "key": "app_name",
+      "label": "App Name",
+      "type": "text",
+      "placeholder": "my-app",
+      "required": true,
+      "secret": false
+    },
+    {
+      "key": "app_id",
+      "label": "App Store ID",
+      "type": "text",
+      "placeholder": "585629514",
+      "required": true,
+      "secret": false
+    },
+    {
+      "key": "sort_by",
+      "label": "Review Sort Order",
+      "type": "select",
+      "required": false,
+      "secret": false,
+      "options": [
+        { "value": "most_recent", "label": "Most Recent (recommended)" },
+        { "value": "most_critical", "label": "Most Critical" }
+      ]
+    },
+    {
+      "key": "max_countries_per_run",
+      "label": "Max Countries Per Run",
+      "type": "text",
+      "placeholder": "40",
+      "required": false,
+      "secret": false
+    },
+    {
+      "key": "max_reviews_per_run",
+      "label": "Max Reviews Per Run",
+      "type": "text",
+      "placeholder": "500",
+      "required": false,
+      "secret": false
+    },
+    {
+      "key": "frequency_minutes",
+      "label": "Run Frequency",
+      "type": "select",
+      "required": false,
+      "secret": false,
+      "options": [
+        { "value": "15", "label": "Every 15 minutes" },
+        { "value": "30", "label": "Every 30 minutes" },
+        { "value": "60", "label": "Every hour" },
+        { "value": "180", "label": "Every 3 hours" },
+        { "value": "360", "label": "Every 6 hours" },
+        { "value": "720", "label": "Every 12 hours" },
+        { "value": "1440", "label": "Daily" }
+      ]
+    }
+  ],
+
+  "setup": {
+    "title": "iOS App Reviews Setup",
+    "color": "blue",
+    "steps": [
+      "Find your app's numeric ID from the App Store URL (e.g. 585629514)",
+      "Enter the App Name and App Store ID above",
+      "Choose a run frequency and optionally adjust country limits",
+      "Enable the schedule to start collecting reviews"
+    ]
+  },
+
+  "secrets": {
+    "app_name": "",
+    "app_id": "",
+    "sort_by": "most_recent",
+    "max_countries_per_run": "40",
+    "max_reviews_per_run": "500",
+    "frequency_minutes": "1440"
+  }
+}

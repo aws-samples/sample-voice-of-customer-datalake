@@ -282,6 +282,8 @@ export class VocIngestionStack extends cdk.Stack {
       PRIMARY_LANGUAGE: config.primaryLanguage,
       POWERTOOLS_SERVICE_NAME: 'voc-ingestion',
       LOG_LEVEL: 'INFO',
+      DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID,
+      DEPLOY_REGION: cdk.Aws.REGION,
     };
   }
 

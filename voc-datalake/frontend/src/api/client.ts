@@ -228,11 +228,16 @@ export const api = {
   },
 
   // Data Source Schedules
-  getSourcesStatus: () => fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>('/sources/status'),
+  getSourcesStatus: (sources?: string[]) => {
+    const params = sources?.length ? `?sources=${sources.join(',')}` : ''
+    return fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>(`/sources/status${params}`)
+  },
   
   enableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/enable`, { method: 'PUT' }),
   
   disableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/disable`, { method: 'PUT' }),
+
+  runSource: (source: string) => fetchApi<{ success: boolean; message: string; source: string }>(`/sources/${source}/run`, { method: 'POST' }),
 
   // Brand Settings (persisted to DynamoDB)
   getBrandSettings: () => fetchApi<{
@@ -298,6 +303,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(credentials)
     }),
+
+  getIntegrationCredentials: (source: string, keys: string[]) =>
+    fetchApi<Record<string, string>>(`/integrations/${source}/credentials?keys=${keys.join(',')}`),
   
   testIntegration: (source: string) => 
     fetchApi<{ success: boolean; message?: string; error?: string; details?: Record<string, unknown> }>(`/integrations/${source}/test`, {
