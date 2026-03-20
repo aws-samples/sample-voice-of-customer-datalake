@@ -54,7 +54,7 @@ if (anthropicUseCaseRaw) {
   if (parseResult.success) {
     bedrockAccessStack = new BedrockAccessStack(app, 'BedrockAccessStack', {
       env,
-      description: 'VoC Data Lake - Bedrock Access (Anthropic Use Case & Model Agreements)',
+      description: 'VoC Data Lake - Bedrock Access (Anthropic Use Case & Model Agreements) (uksb-0q2jyqfvlm)(tag:BedrockAccessStack)',
       anthropicUseCase: parseResult.data,
       modelRegion: env.region, // Create model agreements in the same region as other stacks
       skipUseCaseSubmission,
@@ -73,7 +73,7 @@ if (anthropicUseCaseRaw) {
 // ============================================
 const coreStack = new VocCoreStack(app, 'VocCoreStack', {
   env,
-  description: 'VoC Data Lake - Core Infrastructure (Storage, Auth, Frontend Hosting)',
+  description: 'VoC Data Lake - Core Infrastructure (Storage, Auth, Frontend Hosting) (uksb-0q2jyqfvlm)(tag:VocCoreStack)',
   brandName: config.brandName,
 });
 tagStack(coreStack, 'Core');
@@ -84,7 +84,7 @@ tagStack(coreStack, 'Core');
 // ============================================
 const ingestionStack = new VocIngestionStack(app, 'VocIngestionStack', {
   env,
-  description: 'VoC Data Lake - Ingestion Layer (Lambda, EventBridge, SQS)',
+  description: 'VoC Data Lake - Ingestion Layer (Lambda, EventBridge, SQS) (uksb-0q2jyqfvlm)(tag:VocIngestionStack)',
   feedbackTable: coreStack.feedbackTable,
   watermarksTable: coreStack.watermarksTable,
   aggregatesTable: coreStack.aggregatesTable,
@@ -103,7 +103,7 @@ tagStack(ingestionStack, 'Ingestion');
 // ============================================
 const processingStack = new VocProcessingStack(app, 'VocProcessingStack', {
   env,
-  description: 'VoC Data Lake - Processing Layer (Lambda, Bedrock, Step Functions)',
+  description: 'VoC Data Lake - Processing Layer (Lambda, Bedrock, Step Functions) (uksb-0q2jyqfvlm)(tag:VocProcessingStack)',
   feedbackTable: coreStack.feedbackTable,
   aggregatesTable: coreStack.aggregatesTable,
   projectsTable: coreStack.projectsTable,
@@ -123,7 +123,7 @@ tagStack(processingStack, 'Processing');
 // ============================================
 const apiStack = new VocApiStack(app, 'VocApiStack', {
   env,
-  description: 'VoC Data Lake - API & Frontend (API Gateway, Lambda, S3 Deploy)',
+  description: 'VoC Data Lake - API & Frontend (API Gateway, Lambda, S3 Deploy) (uksb-0q2jyqfvlm)(tag:VocApiStack)',
   feedbackTable: coreStack.feedbackTable,
   aggregatesTable: coreStack.aggregatesTable,
   projectsTable: coreStack.projectsTable,
