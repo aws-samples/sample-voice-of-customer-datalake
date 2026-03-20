@@ -35,6 +35,7 @@ WATERMARKS_TABLE = os.environ.get("WATERMARKS_TABLE", "")
 PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
+FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
 BRAND_NAME = os.environ.get("BRAND_NAME", "")
 BRAND_HANDLES = json.loads(os.environ.get("BRAND_HANDLES", "[]"))
 SOURCE_PLATFORM = os.environ.get("SOURCE_PLATFORM", "")
@@ -221,6 +222,32 @@ class BaseIngestor(ABC):
             "raw_data": item if not s3_raw_uri else None,
         }
 
+    def filter_duplicates(self, items: list[dict]) -> list[dict]:
+        """Filter out items that already exist in the feedback table."""
+        if not items or not FEEDBACK_TABLE:
+            return items
+
+        feedback_table = get_dynamodb_resource().Table(FEEDBACK_TABLE)
+        new_items = []
+        for item in items:
+            source = item.get('brand_name') or item.get('source_platform', 'unknown')
+            feedback_id = self._generate_deterministic_id(item)
+            try:
+                resp = feedback_table.get_item(
+                    Key={'pk': f"SOURCE#{source}", 'sk': f"FEEDBACK#{feedback_id}"},
+                    ProjectionExpression='feedback_id'
+                )
+                if 'Item' not in resp:
+                    new_items.append(item)
+            except Exception:
+                new_items.append(item)
+
+        skipped = len(items) - len(new_items)
+        if skipped:
+            logger.info(f"Filtered {skipped} duplicate items before queuing")
+            metrics.add_metric(name="IngestorDuplicatesSkipped", unit="Count", value=skipped)
+        return new_items
+
     def send_to_queue(self, items: list[dict]):
         """Send items to SQS processing queue."""
         if not items:
@@ -264,12 +291,14 @@ class BaseIngestor(ABC):
 
                 # Batch send every 100 items
                 if len(items) >= 100:
+                    items = self.filter_duplicates(items)
                     self.send_to_queue(items)
                     total_processed += len(items)
                     items = []
 
             # Send remaining items
             if items:
+                items = self.filter_duplicates(items)
                 self.send_to_queue(items)
                 total_processed += len(items)
 

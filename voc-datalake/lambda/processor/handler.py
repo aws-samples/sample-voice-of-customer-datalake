@@ -467,16 +467,20 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
     source_platform = raw_record.get('source_platform', 'unknown')
     source_id = raw_record.get('id', '')
     
+    # Resolve source_display early - used as PK for both duplicate check and write
+    brand_name = raw_record.get('brand_name', '')
+    source_display = brand_name if brand_name else source_platform
+    
     # Generate deterministic ID based on source to prevent duplicates
     original_text = raw_record.get('text', '')
     created_at_raw = raw_record.get('created_at', '')
     url = raw_record.get('url', '')
     feedback_id = generate_deterministic_id(source_platform, source_id, original_text, created_at_raw, url)
     
-    # Check for duplicate before expensive LLM processing
-    # This is a secondary check - idempotency decorator is the primary protection
-    if check_duplicate(source_platform, feedback_id):
-        logger.info(f"Skipping duplicate feedback: {source_platform}/{source_id}")
+    # Check for duplicate before expensive LLM/Comprehend/Translate processing
+    # Uses source_display (brand_name) to match the PK used when writing items
+    if check_duplicate(source_display, feedback_id):
+        logger.info(f"Skipping duplicate feedback: {source_display}/{source_id}")
         metrics.add_metric(name="DuplicatesSkipped", unit="Count", value=1)
         return None
     
@@ -495,10 +499,6 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
     
     urgency = insights.get('urgency', 'low')
     sentiment_score = insights.get('sentiment_score', sentiment['score'])
-    
-    # Use brand_name for source display (e.g., "Acme Corp - webscraper"), fallback to source_platform
-    brand_name = raw_record.get('brand_name', '')
-    source_display = brand_name if brand_name else source_platform
     
     # Build DynamoDB item with GSI keys
     item = {
