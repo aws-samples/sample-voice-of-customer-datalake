@@ -12,11 +12,6 @@ import boto3
 import urllib.parse
 from datetime import datetime, timezone
 from typing import Generator
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
 
 s3_client = boto3.client("s3")
