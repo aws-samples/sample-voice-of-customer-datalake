@@ -5,7 +5,8 @@
   "environment": "production",
   "brandName": "VoC Analytics",
   "pluginStatus": {
-    "webscraper": true
+    "webscraper": true,
+    "s3_import": true
   },
   "menuStatus": {
     "dashboard": true,

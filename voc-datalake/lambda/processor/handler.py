@@ -533,7 +533,7 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
         'original_text': original_text,
         'original_language': original_language,
         'normalized_text': normalized_text if original_language != PRIMARY_LANGUAGE else None,
-        'rating': raw_record.get('rating'),
+        'rating': Decimal(raw_record.get('rating', "")),
         
         'category': category,
         'subcategory': preset_subcategory if preset_subcategory else subcategory_from_llm,

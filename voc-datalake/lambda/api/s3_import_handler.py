@@ -131,12 +131,13 @@ def get_upload_url():
     key = f"{safe_source}/{safe_filename}"
     
     try:
+        expires_in = 7200  # 2 hours for large file uploads
         url = s3_client.generate_presigned_url(
             'put_object',
             Params={'Bucket': S3_IMPORT_BUCKET, 'Key': key, 'ContentType': content_type},
-            ExpiresIn=3600
+            ExpiresIn=expires_in
         )
-        return {'success': True, 'upload_url': url, 'key': key, 'bucket': S3_IMPORT_BUCKET, 'expires_in': 3600}
+        return {'success': True, 'upload_url': url, 'key': key, 'bucket': S3_IMPORT_BUCKET, 'expires_in': expires_in}
     except Exception as e:
         logger.exception(f"Failed to generate upload URL: {e}")
         raise ServiceError('Failed to generate upload URL')
