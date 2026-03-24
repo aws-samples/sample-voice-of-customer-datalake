@@ -8,15 +8,15 @@ import { FileJson, Database, X, Loader2, Save, Link2, AlertTriangle } from 'luci
 import clsx from 'clsx'
 
 export interface EditModalState {
-  isOpen: boolean
-  mode: 'create' | 'edit' | 'view'
-  type: 's3' | 'dynamodb'
-  data: unknown
-  key?: string
-  feedbackId?: string
-  s3RawUri?: string
-  contentType?: string
-  isPresignedUrl?: boolean
+  readonly isOpen: boolean
+  readonly mode: 'create' | 'edit' | 'view'
+  readonly type: 's3' | 'dynamodb'
+  readonly data: unknown
+  readonly key?: string
+  readonly feedbackId?: string
+  readonly s3RawUri?: string
+  readonly contentType?: string
+  readonly isPresignedUrl?: boolean
 }
 
 type EditMode = EditModalState['mode']
