@@ -32,6 +32,7 @@ export interface VocApiStackProps extends cdk.StackProps {
   frontendDomainName: string;
   userPool: cognito.UserPool;
   userPoolClient: cognito.UserPoolClient;
+  identityPool: cognito.CfnIdentityPool;
   authenticatedRole: iam.Role;
 
   // Ingestion stack resources
@@ -68,7 +69,7 @@ export class VocApiStack extends cdk.Stack {
     const {
       feedbackTable, aggregatesTable, projectsTable, jobsTable, conversationsTable,
       kmsKey, rawDataBucket, avatarsCdnUrl, websiteBucket, frontendDistribution,
-      frontendDomainName, userPool, userPoolClient, processingQueueUrl, processingQueueArn,
+      frontendDomainName, userPool, userPoolClient, identityPool, processingQueueUrl, processingQueueArn,
       secretsArn, s3ImportBucket, researchStateMachine, brandName
     } = props;
 
@@ -583,6 +584,7 @@ export class VocApiStack extends cdk.Stack {
         allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Amz-Date', 'X-Amz-Security-Token'],
         exposeHeaders: ['Content-Type'],
       },
+      cloudWatchRoleRemovalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
     NagSuppressions.addResourceSuppressions(this.api, apiGatewayRequestValidationSuppressions, true);
@@ -772,6 +774,7 @@ export class VocApiStack extends cdk.Stack {
         userPoolId: userPool.userPoolId,
         clientId: userPoolClient.userPoolClientId,
         region: this.region,
+        identityPoolId: identityPool.attrId
       },
     };
 

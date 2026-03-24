@@ -323,7 +323,7 @@ const processStack = async (stackName, basePath, templatesOutDir) => {
     console.log(`Detected region: ${region}, account: ${account}`);
   }
 
-  let finalTemplate = region && account ? replaceHardcodedValues(template, region, account) : template;
+  let finalTemplate = region || account ? replaceHardcodedValues(template, region, account) : template;
   finalTemplate = fixFnJoinStrings(finalTemplate);
   removeIntrinsicDefaults(finalTemplate);
 

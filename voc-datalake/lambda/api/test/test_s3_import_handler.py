@@ -222,7 +222,7 @@ class TestGetUploadUrlEndpoint:
         
         assert body['success'] is True
         assert 'upload_url' in body
-        assert body['expires_in'] == 3600
+        assert body['expires_in'] == 7200
 
     @patch('s3_import_handler.S3_IMPORT_BUCKET', 'test-bucket')
     def test_returns_error_when_filename_missing(self, api_gateway_event, lambda_context):
