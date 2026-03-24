@@ -77,14 +77,13 @@ export class VocIngestionStack extends cdk.Stack {
     const ingestionRole = this.createIngestionRole(
       watermarksTable,
       aggregatesTable,
-      feedbackTable,
       rawDataBucket,
       kmsKey,
       apiSecrets
     );
 
     // Common environment variables
-    const commonEnv = this.buildCommonEnv(watermarksTable, rawDataBucket, apiSecrets, feedbackTable, config);
+    const commonEnv = this.buildCommonEnv(watermarksTable, rawDataBucket, apiSecrets, config);
 
     // Lambda Layer for common dependencies
     const dependenciesLayer = this.createDependenciesLayer();
@@ -246,7 +245,6 @@ export class VocIngestionStack extends cdk.Stack {
   private createIngestionRole(
     watermarksTable: dynamodb.Table,
     aggregatesTable: dynamodb.Table,
-    feedbackTable: dynamodb.Table,
     rawDataBucket: s3.Bucket,
     kmsKey: kms.Key,
     apiSecrets: secretsmanager.Secret
@@ -260,7 +258,6 @@ export class VocIngestionStack extends cdk.Stack {
 
     watermarksTable.grantReadWriteData(role);
     aggregatesTable.grantReadWriteData(role);
-    feedbackTable.grantReadData(role);
     this.processingQueue.grantSendMessages(role);
     rawDataBucket.grantReadWrite(role);
     kmsKey.grantEncryptDecrypt(role);
@@ -273,7 +270,6 @@ export class VocIngestionStack extends cdk.Stack {
     watermarksTable: dynamodb.Table,
     rawDataBucket: s3.Bucket,
     apiSecrets: secretsmanager.Secret,
-    feedbackTable: dynamodb.Table,
     config: VocIngestionStackProps['config']
   ): Record<string, string> {
     return {
@@ -281,7 +277,6 @@ export class VocIngestionStack extends cdk.Stack {
       PROCESSING_QUEUE_URL: this.processingQueue.queueUrl,
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       SECRETS_ARN: apiSecrets.secretArn,
-      FEEDBACK_TABLE: feedbackTable.tableName,
       BRAND_NAME: config.brandName,
       BRAND_HANDLES: JSON.stringify(config.brandHandles),
       PRIMARY_LANGUAGE: config.primaryLanguage,
