@@ -291,41 +291,6 @@ describe('projectsApi', () => {
     })
   })
 
-  describe('projectChat', () => {
-    it('sends POST request with message', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, response: 'AI response' }),
-      })
-
-      await projectsApi.projectChat('p1', 'What do users want?')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/p1/chat',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ message: 'What do users want?', selected_personas: undefined, selected_documents: undefined }),
-        })
-      )
-    })
-
-    it('includes selected personas and documents', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, response: 'AI response' }),
-      })
-
-      await projectsApi.projectChat('p1', 'Question', ['per1', 'per2'], ['doc1'])
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/p1/chat',
-        expect.objectContaining({
-          body: JSON.stringify({ message: 'Question', selected_personas: ['per1', 'per2'], selected_documents: ['doc1'] }),
-        })
-      )
-    })
-  })
-
   describe('runResearch', () => {
     it('sends POST request with research question', async () => {
       const data = { question: 'What are the main pain points?', title: 'Pain Points Research' }

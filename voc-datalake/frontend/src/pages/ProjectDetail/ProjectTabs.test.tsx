@@ -11,12 +11,13 @@ describe('ProjectTabs', () => {
     onTabChange: vi.fn(),
   }
 
-  it('renders all four tabs', () => {
+  it('renders all tabs', () => {
     render(<ProjectTabs {...defaultProps} />)
     expect(screen.getByText('Overview')).toBeInTheDocument()
     expect(screen.getByText(/Personas/)).toBeInTheDocument()
     expect(screen.getByText(/Documents/)).toBeInTheDocument()
     expect(screen.getByText('AI Chat')).toBeInTheDocument()
+    expect(screen.getByText('MCP Access')).toBeInTheDocument()
   })
 
   it('displays personas count', () => {

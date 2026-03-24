@@ -164,7 +164,8 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
             Bucket=s3_bucket,
             Key=s3_key,
             Body=image_data,
-            ContentType='image/png'
+            ContentType='image/png',
+            CacheControl='public, max-age=31536000, immutable',
         )
         
         avatar_url = f"s3://{s3_bucket}/{s3_key}"

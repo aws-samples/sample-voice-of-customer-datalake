@@ -5,6 +5,34 @@
 import '@testing-library/jest-dom'
 import { vi, afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
+import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
+
+// Initialize i18next for tests with inline English translations
+// This avoids HTTP backend and provides real translated strings in tests.
+import commonEn from '../../public/locales/en/common.json'
+import dashboardEn from '../../public/locales/en/dashboard.json'
+import feedbackEn from '../../public/locales/en/feedback.json'
+import chatEn from '../../public/locales/en/chat.json'
+import loginEn from '../../public/locales/en/login.json'
+
+i18n.use(initReactI18next).init({
+  lng: 'en',
+  fallbackLng: 'en',
+  defaultNS: 'common',
+  ns: ['common', 'dashboard', 'feedback', 'chat', 'login'],
+  resources: {
+    en: {
+      common: commonEn,
+      dashboard: dashboardEn,
+      feedback: feedbackEn,
+      chat: chatEn,
+      login: loginEn,
+    },
+  },
+  interpolation: { escapeValue: false },
+  react: { useSuspense: false },
+})
 
 // Cleanup DOM after each test (critical for single jsdom)
 afterEach(() => {

@@ -6,10 +6,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createElement } from 'react'
 
 describe('printUtils', () => {
+  let mockPrintBtn: { addEventListener: ReturnType<typeof vi.fn> }
   let mockWindow: {
     document: {
       write: ReturnType<typeof vi.fn>
       close: ReturnType<typeof vi.fn>
+      getElementById: ReturnType<typeof vi.fn>
     }
     print: ReturnType<typeof vi.fn>
     onload: (() => void) | null
@@ -17,10 +19,12 @@ describe('printUtils', () => {
   }
 
   beforeEach(() => {
+    mockPrintBtn = { addEventListener: vi.fn() }
     mockWindow = {
       document: {
         write: vi.fn(),
         close: vi.fn(),
+        getElementById: vi.fn().mockReturnValue(mockPrintBtn),
       },
       print: vi.fn(),
       onload: null,
@@ -164,7 +168,7 @@ describe('printUtils', () => {
 
       const writtenHtml = mockWindow.document.write.mock.calls[0][0] as string
       expect(writtenHtml).toContain('Print / Save as PDF')
-      expect(writtenHtml).toContain('window.print()')
+      expect(writtenHtml).toContain('id="print-btn"')
     })
 
     it('returns the window reference', async () => {

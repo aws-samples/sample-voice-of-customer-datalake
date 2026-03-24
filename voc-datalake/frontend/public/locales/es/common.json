@@ -1,0 +1,14 @@
+{
+  "appDescription": "Plataforma unificada de inteligencia de retroalimentación del cliente",
+  "appName": "VoC Analytics",
+  "appTagline": "Análisis de la Voz del Cliente",
+  "configureBrand": "Configurar marca",
+  "send": "Enviar",
+  "sidebar": {
+    "closeMenu": "Cerrar menú",
+    "collapseSidebar": "Contraer barra lateral",
+    "expandSidebar": "Expandir barra lateral",
+    "openMenu": "Abrir menú",
+    "signOut": "Cerrar sesión"
+  }
+}

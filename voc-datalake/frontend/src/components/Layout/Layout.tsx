@@ -35,6 +35,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { api, getDaysFromRange } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { useAuthStore, useIsAdmin } from '../../store/authStore'
@@ -48,23 +49,23 @@ import { isMenuItemEnabled } from '../../config/menuConfig'
 interface NavItem {
   to: string
   icon: LucideIcon
-  label: string
+  labelKey: string
   menuKey: string
   adminOnly?: boolean
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', menuKey: 'dashboard' },
-  { to: '/feedback', icon: MessageSquare, label: 'Feedback', menuKey: 'feedback' },
-  { to: '/categories', icon: FolderOpen, label: 'Categories', menuKey: 'categories' },
-  { to: '/problems', icon: SearchX, label: 'Problem Analysis', menuKey: 'problems' },
-  { to: '/chat', icon: Bot, label: 'AI Chat', menuKey: 'chat' },
-  { to: '/projects', icon: Briefcase, label: 'Projects', menuKey: 'projects' },
-  { to: '/prioritization', icon: ListOrdered, label: 'Prioritization', menuKey: 'prioritization' },
-  { to: '/data-explorer', icon: Database, label: 'Data Explorer', menuKey: 'data-explorer' },
-  { to: '/scrapers', icon: Globe, label: 'Scrapers', menuKey: 'scrapers' },
-  { to: '/feedback-forms', icon: FileText, label: 'Feedback Forms', menuKey: 'feedback-forms' },
-  { to: '/settings', icon: Settings, label: 'Settings', menuKey: 'settings', adminOnly: true },
+  { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', menuKey: 'dashboard' },
+  { to: '/feedback', icon: MessageSquare, labelKey: 'nav.feedback', menuKey: 'feedback' },
+  { to: '/categories', icon: FolderOpen, labelKey: 'nav.categories', menuKey: 'categories' },
+  { to: '/problems', icon: SearchX, labelKey: 'nav.problemAnalysis', menuKey: 'problems' },
+  { to: '/chat', icon: Bot, labelKey: 'nav.aiChat', menuKey: 'chat' },
+  { to: '/projects', icon: Briefcase, labelKey: 'nav.projects', menuKey: 'projects' },
+  { to: '/prioritization', icon: ListOrdered, labelKey: 'nav.prioritization', menuKey: 'prioritization' },
+  { to: '/data-explorer', icon: Database, labelKey: 'nav.dataExplorer', menuKey: 'data-explorer' },
+  { to: '/scrapers', icon: Globe, labelKey: 'nav.scrapers', menuKey: 'scrapers' },
+  { to: '/feedback-forms', icon: FileText, labelKey: 'nav.feedbackForms', menuKey: 'feedback-forms' },
+  { to: '/settings', icon: Settings, labelKey: 'nav.settings', menuKey: 'settings', adminOnly: true },
 ]
 
 // Sidebar header component
@@ -81,6 +82,7 @@ function SidebarHeader({
   onClose: () => void
   onToggleCollapse: () => void
 }>) {
+  const { t } = useTranslation()
   return (
     <div className={clsx(
       'p-4 flex items-center flex-shrink-0',
@@ -88,21 +90,21 @@ function SidebarHeader({
     )}>
       {(!sidebarCollapsed || mobileMenuOpen) && (
         <div>
-          <h1 className="text-lg font-bold">VoC Analytics</h1>
-          <p className="text-gray-400 text-xs mt-0.5">{brandName || 'Configure brand'}</p>
+          <h1 className="text-lg font-bold">{t('appName')}</h1>
+          <p className="text-gray-400 text-xs mt-0.5">{brandName || t('configureBrand')}</p>
         </div>
       )}
       <button
         onClick={onClose}
         className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors lg:hidden"
-        aria-label="Close menu"
+        aria-label={t('sidebar.closeMenu')}
       >
         <X size={20} />
       </button>
       <button
         onClick={onToggleCollapse}
         className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors hidden lg:block"
-        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={sidebarCollapsed ? t('sidebar.expandSidebar') : t('sidebar.collapseSidebar')}
       >
         {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
       </button>
@@ -123,13 +125,15 @@ function NavItemLink({
   mobileMenuOpen: boolean
   urgentCount: number
 }>) {
+  const { t } = useTranslation()
   const Icon = item.icon
   const showLabel = !sidebarCollapsed || mobileMenuOpen
+  const label = t(item.labelKey)
   
   return (
     <NavLink
       to={item.to}
-      title={sidebarCollapsed && !mobileMenuOpen ? item.label : undefined}
+      title={sidebarCollapsed && !mobileMenuOpen ? label : undefined}
       className={({ isActive }) =>
         clsx(
           'flex items-center gap-3 py-2.5 rounded-lg mb-1 transition-colors',
@@ -141,7 +145,7 @@ function NavItemLink({
       <Icon size={20} className="flex-shrink-0" />
       {showLabel && (
         <>
-          <span>{item.label}</span>
+          <span>{label}</span>
           {item.to === '/feedback' && urgentCount > 0 && (
             <span className="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
               {urgentCount}
@@ -211,6 +215,7 @@ function UserSection({
   onShowProfile: () => void
   onLogout: () => void
 }>) {
+  const { t } = useTranslation()
   const showExpanded = !sidebarCollapsed || mobileMenuOpen
   const showCollapsed = sidebarCollapsed && !mobileMenuOpen
   const userInitial = user.email?.charAt(0).toUpperCase() || 'U'
@@ -221,14 +226,14 @@ function UserSection({
       {showCollapsed && <CollapsedProfileButton userInitial={userInitial} onShowProfile={onShowProfile} />}
       <button
         onClick={onLogout}
-        title="Sign out"
+        title={t('sidebar.signOut')}
         className={clsx(
           'flex items-center gap-2 w-full py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors',
           sidebarCollapsed && !mobileMenuOpen ? 'lg:justify-center lg:px-2 px-4' : 'px-4'
         )}
       >
         <LogOut size={18} />
-        {showExpanded && <span>Sign out</span>}
+        {showExpanded && <span>{t('sidebar.signOut')}</span>}
       </button>
     </div>
   )
@@ -236,6 +241,7 @@ function UserSection({
 
 // Main header component
 function MainHeader({ onOpenMenu }: Readonly<{ onOpenMenu: () => void }>) {
+  const { t } = useTranslation()
   return (
     <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0">
       <div className="flex items-center justify-between gap-4 mb-2 sm:mb-3">
@@ -243,16 +249,18 @@ function MainHeader({ onOpenMenu }: Readonly<{ onOpenMenu: () => void }>) {
           <button
             onClick={onOpenMenu}
             className="p-2 -ml-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg lg:hidden"
-            aria-label="Open menu"
+            aria-label={t('sidebar.openMenu')}
           >
             <Menu size={24} />
           </button>
           <div className="min-w-0">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900 truncate">Voice of the Customer</h2>
-            <p className="text-xs sm:text-sm text-gray-500 mt-0.5 hidden sm:block">Unified customer feedback intelligence platform</p>
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{t('appTagline')}</h2>
+            <p className="text-xs sm:text-sm text-gray-500 mt-0.5 hidden sm:block">{t('appDescription')}</p>
           </div>
         </div>
-        <TimeRangeSelector />
+        <div className="flex items-center gap-3">
+          <TimeRangeSelector />
+        </div>
       </div>
       <Breadcrumbs />
     </header>
@@ -293,7 +301,9 @@ export default function Layout() {
   const location = useLocation()
   const { timeRange, config } = useConfigStore()
   const { user, isAuthenticated } = useAuthStore()
-  const isAdmin = useIsAdmin()
+  const isAdminGroup = useIsAdmin()
+  // In dev mode without Cognito, treat user as admin (consistent with AdminRoute bypass)
+  const isAdmin = isAdminGroup || (!authService.isConfigured() && import.meta.env.DEV)
   const days = getDaysFromRange(timeRange)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)

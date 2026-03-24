@@ -1,0 +1,9 @@
+{
+  "assistantDescription": "カスタマーフィードバックデータについて質問してください",
+  "assistantName": "VoC AIアシスタント",
+  "configureEndpoint": "AIチャットを使用するには、設定でAPIエンドポイントを構成してください",
+  "emptyState": "カスタマーフィードバックについての会話を始めましょう",
+  "hideHistory": "履歴を非表示",
+  "inputPlaceholder": "フィードバックについて質問...",
+  "showHistory": "履歴を表示"
+}

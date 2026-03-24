@@ -1,0 +1,9 @@
+{
+  "assistantDescription": "Haga preguntas sobre los datos de retroalimentación de sus clientes",
+  "assistantName": "Asistente IA VoC",
+  "configureEndpoint": "Configure su endpoint de API en Configuración para usar el chat IA",
+  "emptyState": "Inicie una conversación sobre la retroalimentación de sus clientes",
+  "hideHistory": "Ocultar historial",
+  "inputPlaceholder": "Pregunte sobre su retroalimentación...",
+  "showHistory": "Mostrar historial"
+}

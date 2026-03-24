@@ -11,27 +11,31 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
-import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, BarChart, Bar } from 'recharts'
+import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap, FileDown } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api, getDaysFromRange } from '../../api/client'
 import type { MetricsSummary, SentimentBreakdown, CategoryBreakdown, SourceBreakdown, FeedbackItem } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import MetricCard from '../../components/MetricCard'
 import FeedbackCard from '../../components/FeedbackCard'
 import SocialFeed from '../../components/SocialFeed'
+import { generateDashboardPDF } from './dashboardPdfGenerator'
 
 const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
 
 function NotConfiguredState() {
+  const { t } = useTranslation('dashboard')
+  const { t: tc } = useTranslation()
   return (
     <div className="flex flex-col items-center justify-center h-full">
       <div className="text-center max-w-md">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to VoC Analytics</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">{t('welcome')}</h2>
         <p className="text-gray-600 mb-6">
-          Configure your API endpoint and brand settings to start analyzing customer feedback.
+          {t('welcomeDescription')}
         </p>
         <a href="/settings" className="btn btn-primary">
-          Go to Settings
+          {tc('goToSettings')}
         </a>
       </div>
     </div>
@@ -39,7 +43,8 @@ function NotConfiguredState() {
 }
 
 function LoadingState() {
-  return <div className="flex items-center justify-center h-full">Loading...</div>
+  const { t } = useTranslation()
+  return <div className="flex items-center justify-center h-full">{t('loading')}</div>
 }
 
 interface MetricsGridProps {
@@ -48,6 +53,7 @@ interface MetricsGridProps {
 }
 
 function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
+  const { t } = useTranslation()
   const avgSentiment = summary ? Number(summary.avg_sentiment) : 0
   const sentimentTrend = avgSentiment > 0 ? 'up' : 'down'
   const sentimentColor = avgSentiment > 0 ? 'green' : 'red'
@@ -55,26 +61,26 @@ function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
       <MetricCard
-        title="Total Feedback"
+        title={t('metrics.totalFeedback')}
         value={summary?.total_feedback.toLocaleString() || 0}
         icon={<MessageSquare size={24} />}
         color="blue"
       />
       <MetricCard
-        title="Avg Sentiment"
+        title={t('metrics.avgSentiment')}
         value={avgSentiment.toFixed(2)}
         icon={<TrendingUp size={24} />}
         color={sentimentColor}
         trend={sentimentTrend}
       />
       <MetricCard
-        title="Urgent Issues"
+        title={t('metrics.urgentIssues')}
         value={summary?.urgent_count || 0}
         icon={<AlertTriangle size={24} />}
         color="orange"
       />
       <MetricCard
-        title="Sources Active"
+        title={t('metrics.sourcesActive')}
         value={sourcesCount}
         icon={<Users size={24} />}
         color="gray"
@@ -88,11 +94,12 @@ interface TrendChartProps {
 }
 
 function TrendChart({ dailyTotals }: Readonly<TrendChartProps>) {
+  const { t } = useTranslation('dashboard')
   const sortedData = [...(dailyTotals || [])].sort((a, b) => a.date.localeCompare(b.date))
 
   return (
     <div className="card !p-4 sm:!p-6">
-      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Feedback Volume & Sentiment Trend</h3>
+      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('feedbackVolumeTrend')}</h3>
       <div className="h-[200px] sm:h-[300px] -mx-2 sm:mx-0">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={sortedData}>
@@ -108,13 +115,13 @@ function TrendChart({ dailyTotals }: Readonly<TrendChartProps>) {
   )
 }
 
-function prepareSentimentPieData(sentiment: SentimentBreakdown | undefined) {
+function prepareSentimentPieData(sentiment: SentimentBreakdown | undefined, t: (key: string) => string) {
   if (!sentiment) return []
   return [
-    { name: 'Positive', value: sentiment.breakdown.positive || 0 },
-    { name: 'Neutral', value: sentiment.breakdown.neutral || 0 },
-    { name: 'Negative', value: sentiment.breakdown.negative || 0 },
-    { name: 'Mixed', value: sentiment.breakdown.mixed || 0 },
+    { name: t('sentiment.positive'), value: sentiment.breakdown.positive || 0, fill: COLORS[0] },
+    { name: t('sentiment.neutral'), value: sentiment.breakdown.neutral || 0, fill: COLORS[1] },
+    { name: t('sentiment.negative'), value: sentiment.breakdown.negative || 0, fill: COLORS[2] },
+    { name: t('sentiment.mixed'), value: sentiment.breakdown.mixed || 0, fill: COLORS[3] },
   ].filter(d => d.value > 0)
 }
 
@@ -123,11 +130,13 @@ interface SentimentChartProps {
 }
 
 function SentimentChart({ sentiment }: Readonly<SentimentChartProps>) {
-  const pieData = prepareSentimentPieData(sentiment)
+  const { t } = useTranslation()
+  const { t: td } = useTranslation('dashboard')
+  const pieData = prepareSentimentPieData(sentiment, t)
 
   return (
     <div className="card !p-4 sm:!p-6">
-      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Sentiment Distribution</h3>
+      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{td('sentimentDistribution')}</h3>
       <div className="h-[200px] sm:h-[300px]">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <PieChart>
@@ -141,11 +150,7 @@ function SentimentChart({ sentiment }: Readonly<SentimentChartProps>) {
               dataKey="value"
               label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
               labelLine={{ strokeWidth: 1 }}
-            >
-              {pieData.map((_, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-              ))}
-            </Pie>
+            />
             <Tooltip />
           </PieChart>
         </ResponsiveContainer>
@@ -166,11 +171,12 @@ interface CategoryChartProps {
 }
 
 function CategoryChart({ categories }: Readonly<CategoryChartProps>) {
+  const { t } = useTranslation('dashboard')
   const barData = prepareCategoryData(categories)
 
   return (
     <div className="card !p-4 sm:!p-6">
-      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Top Issue Categories</h3>
+      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('topIssueCategories')}</h3>
       <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <BarChart data={barData} layout="vertical" margin={{ left: 0, right: 10 }}>
@@ -197,11 +203,12 @@ interface SourceChartProps {
 }
 
 function SourceChart({ sources }: Readonly<SourceChartProps>) {
+  const { t } = useTranslation('dashboard')
   const barData = prepareSourceData(sources)
 
   return (
     <div className="card !p-4 sm:!p-6">
-      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Feedback by Source</h3>
+      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('feedbackBySource')}</h3>
       <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <BarChart data={barData} margin={{ left: 0, right: 10 }}>
@@ -223,13 +230,14 @@ interface UrgentFeedbackProps {
 }
 
 function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
+  const { t } = useTranslation('dashboard')
   const hasItems = items && items.length > 0
 
   return (
     <div className="card !p-4 sm:!p-6">
       <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
         <AlertTriangle className="text-orange-500 flex-shrink-0" size={20} />
-        <span>Urgent Issues ({count})</span>
+        <span>{t('urgentIssues', { count })}</span>
       </h3>
       {hasItems ? (
         <div className="space-y-3 max-h-[400px] sm:max-h-[600px] overflow-y-auto">
@@ -239,14 +247,53 @@ function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
         </div>
       ) : (
         <div className="text-center py-6 sm:py-8 text-gray-500">
-          No urgent issues - great job! 🎉
+          {t('noUrgentIssues')}
         </div>
       )}
     </div>
   )
 }
 
+function buildSentimentEntries(sentiment: SentimentBreakdown | undefined) {
+  if (!sentiment) return []
+  return Object.entries(sentiment.breakdown).filter(([, v]) => v > 0).map(([name, value]) => ({ name, value }))
+}
+
+function buildCategoryEntries(categories: CategoryBreakdown | undefined) {
+  if (!categories) return []
+  return Object.entries(categories.categories).sort(([, a], [, b]) => b - a).slice(0, 10).map(([name, value]) => ({ name, value }))
+}
+
+function buildSourceEntries(sources: SourceBreakdown | undefined) {
+  if (!sources) return []
+  return Object.entries(sources.sources).map(([name, value]) => ({ name: name.replace('_', ' '), value }))
+}
+
+function buildPDFExportData(
+  summary: MetricsSummary | undefined,
+  sentiment: SentimentBreakdown | undefined,
+  categories: CategoryBreakdown | undefined,
+  sources: SourceBreakdown | undefined,
+  urgentFeedback: { items?: FeedbackItem[]; count?: number } | undefined,
+  timeRange: string,
+  sourcesCount: number,
+) {
+  return {
+    timeRange,
+    totalFeedback: summary?.total_feedback ?? 0,
+    avgSentiment: summary ? Number(summary.avg_sentiment) : 0,
+    urgentCount: summary?.urgent_count ?? 0,
+    sourcesCount,
+    dailyTotals: summary?.daily_totals ?? [],
+    sentimentBreakdown: buildSentimentEntries(sentiment),
+    categoryBreakdown: buildCategoryEntries(categories),
+    sourceBreakdown: buildSourceEntries(sources),
+    urgentItems: urgentFeedback?.items ?? [],
+  }
+}
+
 export default function Dashboard() {
+  const { t } = useTranslation('dashboard')
   const { timeRange, customDateRange, config } = useConfigStore()
   const days = getDaysFromRange(timeRange, customDateRange)
   const isConfigured = !!config.apiEndpoint
@@ -291,8 +338,29 @@ export default function Dashboard() {
 
   const sourcesCount = Object.keys(sources?.sources || {}).length
 
+  const exportPDF = () => {
+    try {
+      generateDashboardPDF(buildPDFExportData(summary, sentiment, categories, sources, urgentFeedback, timeRange, sourcesCount))
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('PDF export failed:', error)
+      }
+    }
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
+      <div className="flex justify-end">
+        <button
+          onClick={exportPDF}
+          className="btn btn-secondary text-xs sm:text-sm px-3 py-1.5 active:scale-95 flex items-center gap-1.5"
+          title="Export as PDF"
+        >
+          <FileDown size={14} />
+          PDF
+        </button>
+      </div>
+
       <MetricsGrid summary={summary} sourcesCount={sourcesCount} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
@@ -309,7 +377,7 @@ export default function Dashboard() {
         <div className="card !p-4 sm:!p-6">
           <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
             <Zap className="text-blue-500 flex-shrink-0" size={20} />
-            Live Social Feed
+            {t('liveSocialFeed')}
           </h3>
           <SocialFeed limit={8} showFilters={true} />
         </div>

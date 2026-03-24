@@ -127,7 +127,7 @@ export class VocCoreStack extends cdk.Stack {
     const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeadersPolicy', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com https://*.lambda-url.${cdk.Stack.of(this).region}.on.aws; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
+          contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com https://*.lambda-url.${cdk.Stack.of(this).region}.on.aws; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
           override: true,
         },
         contentTypeOptions: { override: true },
@@ -169,12 +169,23 @@ export class VocCoreStack extends cdk.Stack {
 
     // Avatars served from the same distribution under /avatars/* path
     // This avoids CSP issues (same-origin) and eliminates the need for a separate distribution
+    // Avatars are immutable (filename = persona_id.png), so cache aggressively
+    const avatarCachePolicy = new cloudfront.CachePolicy(this, 'AvatarCachePolicy', {
+      cachePolicyName: uniqueName('avatar-cache'),
+      comment: 'Long-lived cache for immutable persona avatar images',
+      defaultTtl: cdk.Duration.days(365),
+      minTtl: cdk.Duration.days(30),
+      maxTtl: cdk.Duration.days(365),
+      enableAcceptEncodingGzip: true,
+      enableAcceptEncodingBrotli: true,
+    });
+
     this.frontendDistribution.addBehavior('/avatars/*', origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket), {
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
       cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
       compress: true,
-      cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+      cachePolicy: avatarCachePolicy,
     });
     cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
     this.avatarsCdnUrl = `https://${this.frontendDomainName}/avatars`;

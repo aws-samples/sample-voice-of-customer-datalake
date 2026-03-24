@@ -1,7 +1,7 @@
 /**
  * ProjectTabs - Tab navigation for project detail page
  */
-import { Users, FileText, MessageSquare, Sparkles } from 'lucide-react'
+import { Users, FileText, MessageSquare, Sparkles, Key } from 'lucide-react'
 import clsx from 'clsx'
 import type { Tab } from './types'
 
@@ -10,6 +10,7 @@ const TABS: readonly { id: Tab; label: string; icon: typeof Sparkles }[] = [
   { id: 'personas', label: 'Personas', icon: Users },
   { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'chat', label: 'AI Chat', icon: MessageSquare },
+  { id: 'mcp', label: 'MCP Access', icon: Key },
 ]
 
 interface ProjectTabsProps {

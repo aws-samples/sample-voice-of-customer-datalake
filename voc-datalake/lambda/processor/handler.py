@@ -183,6 +183,42 @@ _categories_cache = None
 _categories_cache_time = None
 CATEGORIES_CACHE_TTL = 300  # 5 minutes
 
+# Cache for primary language setting
+_language_cache = None
+_language_cache_time = None
+LANGUAGE_CACHE_TTL = 300  # 5 minutes
+
+
+@tracer.capture_method
+def get_primary_language() -> str:
+    """Fetch primary language setting from DynamoDB with caching.
+    Falls back to PRIMARY_LANGUAGE env var if not configured."""
+    global _language_cache, _language_cache_time
+
+    now = datetime.now(timezone.utc).timestamp()
+
+    if _language_cache is not None and _language_cache_time and (now - _language_cache_time) < LANGUAGE_CACHE_TTL:
+        return _language_cache
+
+    try:
+        response = aggregates_table.get_item(
+            Key={'pk': 'SETTINGS#review', 'sk': 'config'}
+        )
+        item = response.get('Item')
+        if item and item.get('primary_language'):
+            _language_cache = item['primary_language']
+            _language_cache_time = now
+            logger.info(f"Loaded primary language from DynamoDB: {_language_cache}")
+            return _language_cache
+    except Exception as e:
+        logger.warning(f"Could not fetch primary language from DynamoDB: {e}")
+
+    # Fallback to env var
+    _language_cache = PRIMARY_LANGUAGE
+    _language_cache_time = now
+    logger.info(f"Using default primary language: {_language_cache}")
+    return _language_cache
+
 
 @tracer.capture_method
 def get_categories_config() -> list:
@@ -485,8 +521,9 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
         return None
     
     original_language = detect_language(original_text)
-    normalized_text = translate_text(original_text, original_language, PRIMARY_LANGUAGE)
-    sentiment = get_comprehend_sentiment(normalized_text, PRIMARY_LANGUAGE)
+    target_language = get_primary_language()
+    normalized_text = translate_text(original_text, original_language, target_language)
+    sentiment = get_comprehend_sentiment(normalized_text, target_language)
     llm_result = invoke_bedrock_llm(raw_record)
     insights = llm_result.get('insights', {})
     persona = insights.get('persona', {})
@@ -532,7 +569,7 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
         
         'original_text': original_text,
         'original_language': original_language,
-        'normalized_text': normalized_text if original_language != PRIMARY_LANGUAGE else None,
+        'normalized_text': normalized_text if original_language != target_language else None,
         'rating': raw_record.get('rating'),
         
         'category': category,

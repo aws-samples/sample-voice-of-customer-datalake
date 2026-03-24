@@ -14,10 +14,12 @@ import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { 
   Save, Check, AlertCircle, Loader2, CheckCircle2, Tags, Users, 
-  Building2, Plug, FileWarning, ChevronDown 
+  Building2, Plug, FileWarning, ChevronDown, Languages
 } from 'lucide-react'
 import { useConfigStore } from '../../store/configStore'
 import { useIsAdmin } from '../../store/authStore'
+import { useTranslation } from 'react-i18next'
+import { supportedLanguages, languageNames, changeLanguage } from '../../i18n/config'
 import { api } from '../../api/client'
 import CategoriesManager from '../../components/CategoriesManager'
 import UserAdmin from '../../components/UserAdmin'
@@ -27,8 +29,9 @@ import SourceCard from './SourceCard'
 import LogsSection from './LogsSection'
 import { getEnabledPlugins } from '../../plugins'
 import { getRuntimeConfig, isConfigLoaded } from '../../runtimeConfig'
+import { SUPPORTED_LANGUAGES } from '../../constants/languages'
 
-type SettingsTab = 'brand' | 'plugins' | 'categories' | 'logs' | 'users'
+type SettingsTab = 'general' | 'plugins' | 'categories' | 'logs' | 'users'
 
 export default function Settings() {
   const queryClient = useQueryClient()
@@ -37,7 +40,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
-  const [activeTab, setActiveTab] = useState<SettingsTab>('brand')
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const [apiEndpoint, setApiEndpoint] = useState(() => {
@@ -69,6 +72,14 @@ export default function Settings() {
     enabled: !!config.apiEndpoint,
   })
 
+  const { data: reviewSettings, isLoading: loadingReview } = useQuery({
+    queryKey: ['review-settings'],
+    queryFn: () => api.getReviewSettings(),
+    enabled: !!config.apiEndpoint,
+  })
+
+  const [primaryLanguage, setPrimaryLanguage] = useState('en')
+
   useEffect(() => {
     if (!backendSettings) return
     if ('error' in backendSettings && backendSettings.error) return
@@ -85,21 +96,33 @@ export default function Settings() {
     setConfig({ brandName: name, brandHandles: handles, hashtags: tags, urlsToTrack: urls })
   }, [backendSettings, setConfig])
 
+  useEffect(() => {
+    if (reviewSettings?.primary_language) {
+      setPrimaryLanguage(reviewSettings.primary_language)
+    }
+  }, [reviewSettings])
+
   const parseArrayInput = (input: string, separator: string): string[] =>
     input.split(separator).map(s => s.trim()).filter(Boolean)
 
   const saveToBackend = async (brandHandlesArray: string[], hashtagsArray: string[], urlsArray: string[]) => {
     setSaving(true)
     try {
-      await api.saveBrandSettings({
-        brand_name: brandName,
-        brand_handles: brandHandlesArray,
-        hashtags: hashtagsArray,
-        urls_to_track: urlsArray,
-      })
+      await Promise.all([
+        api.saveBrandSettings({
+          brand_name: brandName,
+          brand_handles: brandHandlesArray,
+          hashtags: hashtagsArray,
+          urls_to_track: urlsArray,
+        }),
+        api.saveReviewSettings({
+          primary_language: primaryLanguage,
+        }),
+      ])
       queryClient.invalidateQueries({ queryKey: ['brand-settings'] })
+      queryClient.invalidateQueries({ queryKey: ['review-settings'] })
     } catch (err) {
-      if (import.meta.env.DEV) console.error('Failed to save brand settings:', err)
+      if (import.meta.env.DEV) console.error('Failed to save settings:', err)
     } finally {
       setSaving(false)
     }
@@ -128,7 +151,7 @@ export default function Settings() {
   }
 
   const tabs = [
-    { id: 'brand' as const, label: 'Brand', icon: Building2 },
+    { id: 'general' as const, label: 'General', icon: Building2 },
     { id: 'plugins' as const, label: 'Data Sources', icon: Plug },
     { id: 'categories' as const, label: 'Categories', icon: Tags },
     { id: 'logs' as const, label: 'Logs', icon: FileWarning },
@@ -193,7 +216,7 @@ export default function Settings() {
 
       {/* Tab Content */}
       <div className="space-y-6">
-        {activeTab === 'brand' && (
+        {activeTab === 'general' && (
           <>
             <ApiConfigSection
               apiEndpoint={apiEndpoint}
@@ -210,6 +233,12 @@ export default function Settings() {
               onBrandHandlesChange={setBrandHandles}
               onHashtagsChange={setHashtags}
               onUrlsToTrackChange={setUrlsToTrack}
+            />
+            <ReviewConfigSection
+              apiEndpoint={apiEndpoint}
+              loadingReview={loadingReview}
+              primaryLanguage={primaryLanguage}
+              onPrimaryLanguageChange={setPrimaryLanguage}
             />
             <DangerZoneSection
               showResetConfirm={showResetConfirm}
@@ -377,6 +406,86 @@ function BrandConfigSection({ apiEndpoint, loadingSettings, brandName, brandHand
 }
 
 // ============================================
+// Review Config Section
+// ============================================
+
+interface ReviewConfigSectionProps {
+  readonly apiEndpoint: string
+  readonly loadingReview: boolean
+  readonly primaryLanguage: string
+  readonly onPrimaryLanguageChange: (value: string) => void
+}
+
+function ReviewConfigSection({ apiEndpoint, loadingReview, primaryLanguage, onPrimaryLanguageChange }: ReviewConfigSectionProps) {
+  const { i18n } = useTranslation()
+
+  const handleUiLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    changeLanguage(e.target.value)
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Languages className="text-blue-600" size={20} />
+          <h2 className="text-lg font-semibold">Language & Locale</h2>
+        </div>
+        {apiEndpoint && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 size={14} /> Synced to backend</span>}
+      </div>
+      {loadingReview && apiEndpoint && (
+        <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
+          <Loader2 size={16} className="animate-spin" />Loading review settings...
+        </div>
+      )}
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="ui-language" className="block text-sm font-medium text-gray-700 mb-1">
+            Interface Language
+          </label>
+          <select
+            id="ui-language"
+            value={i18n.language}
+            onChange={handleUiLanguageChange}
+            className="input"
+          >
+            {supportedLanguages.map((lang) => (
+              <option key={lang} value={lang}>
+                {languageNames[lang]}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Controls the dashboard interface language and the language AI uses for chat responses, 
+            generated personas, research reports, PRDs, and PR/FAQs. Saved to your browser.
+          </p>
+        </div>
+        <div>
+          <label htmlFor="primary-language" className="block text-sm font-medium text-gray-700 mb-1">
+            Review Language
+          </label>
+          <select
+            id="primary-language"
+            value={primaryLanguage}
+            onChange={(e) => onPrimaryLanguageChange(e.target.value)}
+            className="input"
+          >
+            {SUPPORTED_LANGUAGES.map((lang) => (
+              <option key={lang.code} value={lang.code}>
+                {lang.name} ({lang.code})
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            All incoming feedback will be translated to this language for analysis and display. 
+            The original text is always preserved.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================
 // Categories Section
 // ============================================
 
@@ -395,7 +504,7 @@ function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
       {!apiEndpoint ? (
         <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
           <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>Configure the API endpoint in the Brand tab to manage categories.</span>
+          <span>Configure the API endpoint in the General tab to manage categories.</span>
         </div>
       ) : (
         <CategoriesManager />
@@ -423,7 +532,7 @@ function DataSourcesSection({ apiEndpoint }: DataSourcesSectionProps) {
         {!apiEndpoint && (
           <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">
             <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-            <span>Configure the API endpoint in the Brand tab to manage data sources.</span>
+            <span>Configure the API endpoint in the General tab to manage data sources.</span>
           </div>
         )}
       </div>
@@ -461,7 +570,7 @@ function UserAdminSection({ apiEndpoint }: UserAdminSectionProps) {
       {!apiEndpoint ? (
         <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
           <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>Configure the API endpoint in the Brand tab to manage users.</span>
+          <span>Configure the API endpoint in the General tab to manage users.</span>
         </div>
       ) : (
         <UserAdmin />

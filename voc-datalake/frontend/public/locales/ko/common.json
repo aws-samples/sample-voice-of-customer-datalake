@@ -1,0 +1,14 @@
+{
+  "appDescription": "통합 고객 피드백 인텔리전스 플랫폼",
+  "appName": "VoC 분석",
+  "appTagline": "고객의 소리 분석",
+  "configureBrand": "브랜드 설정",
+  "send": "보내기",
+  "sidebar": {
+    "closeMenu": "메뉴 닫기",
+    "collapseSidebar": "사이드바 접기",
+    "expandSidebar": "사이드바 펼치기",
+    "openMenu": "메뉴 열기",
+    "signOut": "로그아웃"
+  }
+}

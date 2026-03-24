@@ -17,7 +17,13 @@ vi.mock('../../store/authStore', () => ({
 vi.mock('../../services/auth', () => ({
   authService: {
     isConfigured: vi.fn(),
+    refreshSession: vi.fn(),
   },
+}))
+
+// Mock PageLoader
+vi.mock('../PageLoader', () => ({
+  default: () => <div>Loading...</div>,
 }))
 
 // Helper to render with router
@@ -48,7 +54,6 @@ function renderWithRouter(
 describe('ProtectedRoute', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Reset import.meta.env.DEV mock
     vi.stubGlobal('import', { meta: { env: { DEV: false } } })
   })
 
@@ -57,9 +62,11 @@ describe('ProtectedRoute', () => {
       ;(authService.isConfigured as ReturnType<typeof vi.fn>).mockReturnValue(true)
     })
 
-    it('renders children when user is authenticated', () => {
+    it('renders children when user is authenticated and session is ready', () => {
       ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         isAuthenticated: true,
+        sessionReady: true,
+        setSessionReady: vi.fn(),
       })
 
       renderWithRouter(
@@ -71,9 +78,31 @@ describe('ProtectedRoute', () => {
       expect(screen.getByText('Protected Content')).toBeInTheDocument()
     })
 
+    it('shows loading when authenticated but session not yet ready', () => {
+      ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Promise(() => {}) // never resolves — keeps loading state
+      )
+      ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+        isAuthenticated: true,
+        sessionReady: false,
+        setSessionReady: vi.fn(),
+      })
+
+      renderWithRouter(
+        <ProtectedRoute>
+          <div>Protected Content</div>
+        </ProtectedRoute>
+      )
+
+      expect(screen.getByText('Loading...')).toBeInTheDocument()
+      expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
+    })
+
     it('redirects to login when user is not authenticated', () => {
       ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         isAuthenticated: false,
+        sessionReady: false,
+        setSessionReady: vi.fn(),
       })
 
       renderWithRouter(
@@ -92,23 +121,12 @@ describe('ProtectedRoute', () => {
       ;(authService.isConfigured as ReturnType<typeof vi.fn>).mockReturnValue(false)
       ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         isAuthenticated: false,
+        sessionReady: false,
+        setSessionReady: vi.fn(),
       })
     })
 
-    it('allows access in development mode', () => {
-      // Mock DEV mode
-      vi.stubGlobal('import', { meta: { env: { DEV: true } } })
-      
-      // Re-import to get fresh module with mocked env
-      // For this test, we'll check the component behavior directly
-      // Since we can't easily mock import.meta.env, we test the production behavior
-    })
-
     it('redirects to login in production mode', () => {
-      // Note: import.meta.env.DEV cannot be easily mocked in vitest
-      // When Cognito is not configured and DEV is false, it should redirect
-      // However, in test environment DEV is typically true, so we skip this assertion
-      // The behavior is tested implicitly by the component logic
       renderWithRouter(
         <ProtectedRoute>
           <div>Protected Content</div>
@@ -116,7 +134,6 @@ describe('ProtectedRoute', () => {
       )
 
       // In test environment, DEV is true so it allows access
-      // This test documents the expected production behavior
       expect(screen.getByText('Protected Content')).toBeInTheDocument()
     })
   })
@@ -126,10 +143,10 @@ describe('ProtectedRoute', () => {
       ;(authService.isConfigured as ReturnType<typeof vi.fn>).mockReturnValue(true)
       ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         isAuthenticated: false,
+        sessionReady: false,
+        setSessionReady: vi.fn(),
       })
 
-      // The Navigate component should include state with the original path
-      // This is tested implicitly by the redirect behavior
       renderWithRouter(
         <ProtectedRoute>
           <div>Protected Content</div>

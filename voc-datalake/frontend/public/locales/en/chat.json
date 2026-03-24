@@ -1,0 +1,17 @@
+{
+  "assistantDescription": "Ask questions about your customer feedback data",
+  "assistantName": "VoC AI Assistant",
+  "configureEndpoint": "Please configure your API endpoint in Settings to use the AI chat",
+  "emptyState": "Start a conversation about your customer feedback",
+  "hideHistory": "Hide history",
+  "inputPlaceholder": "Ask about your feedback...",
+  "showHistory": "Show history",
+  "suggestedQuestions": {
+    "topComplaints": "What are the top customer complaints this week?",
+    "urgentIssues": "Show me the most urgent issues right now",
+    "sentimentTrend": "How has sentiment changed over the past month?",
+    "negativeSource": "Which source has the most negative feedback?",
+    "mainProblems": "What are the main problems customers are reporting?",
+    "pricing": "What are customers saying about pricing?"
+  }
+}

@@ -189,7 +189,7 @@ describe('Layout', () => {
       render(<Layout />, { wrapper: createWrapper() })
       
       await waitFor(() => {
-        expect(screen.getByText('Voice of the Customer')).toBeInTheDocument()
+        expect(screen.getByText('Voice of the Customer Analytics')).toBeInTheDocument()
       })
     })
 

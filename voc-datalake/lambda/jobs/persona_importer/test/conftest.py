@@ -75,10 +75,11 @@ def mock_bedrock_persona_response():
 
 @pytest.fixture
 def mock_avatar_generation():
-    """Mock avatar generation function."""
-    with patch('api.projects.generate_persona_avatar') as mock:
-        mock.return_value = {
-            'avatar_url': 's3://test-bucket/avatars/test.png',
-            'avatar_prompt': 'Professional headshot of Sarah Chen'
-        }
+    """Mock avatar generation function where it's used in the handler."""
+    mock = MagicMock(return_value={
+        'avatar_url': 's3://test-bucket/avatars/test.png',
+        'avatar_prompt': 'Professional headshot of Sarah Chen'
+    })
+    with patch('api.projects.generate_persona_avatar', mock), \
+         patch('jobs.persona_importer.handler.generate_persona_avatar', mock, create=True):
         yield mock

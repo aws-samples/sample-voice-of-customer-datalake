@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react'
 import { ProblemRow } from './ProblemRow'
+import { generateProblemId } from './problemUtils'
 import type { FeedbackItem } from '../../api/client'
 
 interface ProblemGroup {
@@ -25,6 +26,10 @@ interface SubcategoryRowProps {
   readonly onToggle: () => void
   readonly expandedProblems: Set<string>
   readonly onToggleProblem: (key: string) => void
+  readonly resolvedProblemIds?: Set<string>
+  readonly resolvingProblemId?: string | null
+  readonly onResolveProblem?: (problemKey: string, category: string, subcategory: string, problemText: string) => void
+  readonly onUnresolveProblem?: (problemKey: string) => void
 }
 
 export function SubcategoryRow({
@@ -34,6 +39,10 @@ export function SubcategoryRow({
   onToggle,
   expandedProblems,
   onToggleProblem,
+  resolvedProblemIds,
+  resolvingProblemId,
+  onResolveProblem,
+  onUnresolveProblem,
 }: SubcategoryRowProps) {
   const subcategoryKey = `${categoryName}:${subcategoryGroup.subcategory}`
 
@@ -68,6 +77,7 @@ export function SubcategoryRow({
         <div className="divide-y divide-gray-50">
           {subcategoryGroup.problems.map((problemGroup) => {
             const problemKey = `${categoryName}:${subcategoryGroup.subcategory}:${problemGroup.problem}`
+            const problemId = generateProblemId(categoryName, subcategoryGroup.subcategory, problemGroup.problem)
             return (
               <ProblemRow
                 key={problemKey}
@@ -75,6 +85,10 @@ export function SubcategoryRow({
                 problemKey={problemKey}
                 isExpanded={expandedProblems.has(problemKey)}
                 onToggle={() => onToggleProblem(problemKey)}
+                isResolved={resolvedProblemIds?.has(problemId)}
+                isResolving={resolvingProblemId === problemId}
+                onResolve={() => onResolveProblem?.(problemId, categoryName, subcategoryGroup.subcategory, problemGroup.problem)}
+                onUnresolve={() => onUnresolveProblem?.(problemId)}
               />
             )
           })}

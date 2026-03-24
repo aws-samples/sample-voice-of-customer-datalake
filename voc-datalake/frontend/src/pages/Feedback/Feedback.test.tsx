@@ -128,7 +128,7 @@ describe('Feedback', () => {
       render(<Feedback />, { wrapper: createWrapper() })
       
       await waitFor(() => {
-        expect(screen.getByText(/Showing 3 of 3 items/i)).toBeInTheDocument()
+        expect(screen.getByText(/Showing 3 of 3 results/i)).toBeInTheDocument()
       })
     })
 

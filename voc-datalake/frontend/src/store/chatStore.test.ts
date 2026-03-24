@@ -84,8 +84,8 @@ describe('chatStore', () => {
       // Create first conversation
       const firstId = useChatStore.getState().createConversation()
       
-      // Wait a tick to ensure different timestamp for second ID
-      await new Promise(resolve => setTimeout(resolve, 1))
+      // Wait to ensure different timestamp for second ID
+      await new Promise(resolve => setTimeout(resolve, 10))
       
       // Create second conversation
       const secondId = useChatStore.getState().createConversation()

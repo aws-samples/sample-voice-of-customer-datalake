@@ -51,6 +51,7 @@ vi.mock('../config', () => ({
 // Mock authStore
 const mockSetUser = vi.fn()
 const mockSetTokens = vi.fn()
+const mockSetSessionReady = vi.fn()
 const mockLogout = vi.fn()
 
 vi.mock('../store/authStore', () => ({
@@ -58,6 +59,7 @@ vi.mock('../store/authStore', () => ({
     getState: () => ({
       setUser: mockSetUser,
       setTokens: mockSetTokens,
+      setSessionReady: mockSetSessionReady,
       logout: mockLogout,
       refreshToken: 'mock-refresh-token',
     }),

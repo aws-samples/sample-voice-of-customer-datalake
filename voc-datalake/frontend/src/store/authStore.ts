@@ -40,6 +40,8 @@ interface AuthState {
   refreshToken: string | null
   /** Whether the user is currently authenticated */
   isAuthenticated: boolean
+  /** Whether the session has been validated/refreshed after page load */
+  sessionReady: boolean
   /** Loading state for async auth operations */
   isLoading: boolean
   /** Error message from failed auth operations */
@@ -48,6 +50,8 @@ interface AuthState {
   setUser: (user: User | null) => void
   /** Store all authentication tokens */
   setTokens: (tokens: { accessToken: string; idToken: string; refreshToken: string }) => void
+  /** Mark session as validated and ready for API calls */
+  setSessionReady: (ready: boolean) => void
   /** Set loading state */
   setLoading: (loading: boolean) => void
   /** Set error message */
@@ -64,6 +68,7 @@ export const useAuthStore = create<AuthState>()(
       idToken: null,
       refreshToken: null,
       isAuthenticated: false,
+      sessionReady: false,
       isLoading: false,
       error: null,
       setUser: (user) => set({ user, isAuthenticated: !!user }),
@@ -73,6 +78,7 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: tokens.refreshToken,
         isAuthenticated: true,
       }),
+      setSessionReady: (sessionReady) => set({ sessionReady }),
       setLoading: (isLoading) => set({ isLoading }),
       setError: (error) => set({ error }),
       logout: () => set({
@@ -81,6 +87,7 @@ export const useAuthStore = create<AuthState>()(
         idToken: null,
         refreshToken: null,
         isAuthenticated: false,
+        sessionReady: false,
         error: null,
       }),
     }),

@@ -3,7 +3,7 @@
  * @module pages/Settings
  * 
  * The Settings page uses a tabbed interface:
- * - Brand tab: API config, brand settings, danger zone
+ * - General tab: API config, brand settings, language & locale, danger zone
  * - Data Sources tab: Plugin configurations
  * - Categories tab: Category management
  * - Logs tab: Validation/processing logs
@@ -19,11 +19,15 @@ import { TestRouter } from '../../test/test-utils'
 const mockGetBrandSettings = vi.fn()
 const mockSaveBrandSettings = vi.fn()
 const mockGetLogsSummary = vi.fn()
+const mockGetReviewSettings = vi.fn()
+const mockSaveReviewSettings = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
     getBrandSettings: () => mockGetBrandSettings(),
     saveBrandSettings: (settings: unknown) => mockSaveBrandSettings(settings),
+    getReviewSettings: () => mockGetReviewSettings(),
+    saveReviewSettings: (settings: unknown) => mockSaveReviewSettings(settings),
     getLogsSummary: () => mockGetLogsSummary(),
     getValidationLogs: () => Promise.resolve({ logs: [], count: 0, days: 7 }),
     getProcessingLogs: () => Promise.resolve({ logs: [], count: 0, days: 7 }),
@@ -82,6 +86,14 @@ vi.mock('./LogsSection', () => ({
   default: () => <div data-testid="logs-section">Logs Section</div>,
 }))
 
+// Mock i18n config (the real one initializes i18n with HTTP backend)
+const mockChangeLanguage = vi.fn()
+vi.mock('../../i18n/config', () => ({
+  supportedLanguages: ['en', 'es', 'fr'] as const,
+  languageNames: { en: 'English', es: 'Español', fr: 'Français' } as Record<string, string>,
+  changeLanguage: (...args: unknown[]) => mockChangeLanguage(...args),
+}))
+
 import Settings from './Settings'
 
 function createWrapper() {
@@ -107,6 +119,8 @@ describe('Settings', () => {
       urls_to_track: ['https://example.com'],
     })
     mockSaveBrandSettings.mockResolvedValue({ success: true })
+    mockGetReviewSettings.mockResolvedValue({ primary_language: 'en' })
+    mockSaveReviewSettings.mockResolvedValue({ success: true })
     mockGetLogsSummary.mockResolvedValue({
       summary: { validation_failures: {}, processing_errors: {}, total_validation_failures: 0, total_processing_errors: 0 },
       days: 7,
@@ -138,14 +152,14 @@ describe('Settings', () => {
       render(<Settings />, { wrapper: createWrapper() })
       
       // Verify all tab buttons exist (getAllByRole since there are mobile + desktop versions)
-      expect(screen.getAllByRole('button', { name: /Brand/i }).length).toBeGreaterThan(0)
+      expect(screen.getAllByRole('button', { name: /General/i }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: /Data Sources/i }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: /Categories/i }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: /Logs/i }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: /Users/i }).length).toBeGreaterThan(0)
     })
 
-    it('starts on Brand tab by default', () => {
+    it('starts on General tab by default', () => {
       render(<Settings />, { wrapper: createWrapper() })
       
       expect(screen.getByText('Brand Configuration')).toBeInTheDocument()
@@ -233,7 +247,7 @@ describe('Settings', () => {
     it('shows synced indicator when API endpoint is configured', () => {
       render(<Settings />, { wrapper: createWrapper() })
       
-      expect(screen.getByText(/Synced to backend/i)).toBeInTheDocument()
+      expect(screen.getAllByText(/Synced to backend/i).length).toBeGreaterThan(0)
     })
   })
 
@@ -280,6 +294,7 @@ describe('Settings', () => {
     it('shows Saving... while save is in progress', async () => {
       const user = userEvent.setup()
       mockSaveBrandSettings.mockReturnValue(new Promise(() => {}))
+      mockSaveReviewSettings.mockReturnValue(new Promise(() => {}))
       
       render(<Settings />, { wrapper: createWrapper() })
       
@@ -384,6 +399,7 @@ describe('Settings without admin access', () => {
       hashtags: [],
       urls_to_track: [],
     })
+    mockGetReviewSettings.mockResolvedValue({ primary_language: 'en' })
     
     vi.doMock('../../store/authStore', () => ({
       useIsAdmin: vi.fn(() => false),

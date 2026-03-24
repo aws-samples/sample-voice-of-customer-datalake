@@ -1,0 +1,9 @@
+{
+  "assistantDescription": "Posez des questions sur vos données de retours clients",
+  "assistantName": "Assistant IA VoC",
+  "configureEndpoint": "Veuillez configurer votre point de terminaison API dans les Paramètres pour utiliser le chat IA",
+  "emptyState": "Démarrez une conversation sur vos retours clients",
+  "hideHistory": "Masquer l'historique",
+  "inputPlaceholder": "Posez une question sur vos retours...",
+  "showHistory": "Afficher l'historique"
+}

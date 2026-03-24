@@ -1,0 +1,23 @@
+{
+  "feedbackBySource": "출처별 피드백",
+  "feedbackVolumeTrend": "피드백 수량 및 감성 추이",
+  "liveSocialFeed": "실시간 소셜 피드",
+  "loading": "로딩 중",
+  "metrics": {
+    "avgSentiment": "평균 감성",
+    "sourcesActive": "활성 출처",
+    "totalFeedback": "전체 피드백",
+    "urgentIssues": "긴급 이슈"
+  },
+  "noUrgentIssues": "긴급 이슈가 없습니다. 잘하고 있어요! 🎉",
+  "sentiment": {
+    "mixed": "혼합",
+    "negative": "부정",
+    "neutral": "중립",
+    "positive": "긍정"
+  },
+  "topIssueCategories": "주요 이슈 카테고리",
+  "urgentIssues_other": "긴급 이슈 {{count}}건",
+  "welcome": "VoC 분석에 오신 것을 환영합니다",
+  "welcomeDescription": "고객 피드백 분석을 시작하려면 API 엔드포인트와 브랜드 설정을 구성하세요."
+}

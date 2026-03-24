@@ -9,16 +9,17 @@ from jobs.conftest import *  # noqa: F401, F403
 
 @pytest.fixture
 def mock_generate_personas():
-    """Mock the generate_personas function from api.projects."""
-    with patch('api.projects.generate_personas') as mock:
-        mock.return_value = {
-            'success': True,
-            'personas': [
-                {'persona_id': 'persona_1', 'name': 'Test Persona 1'},
-                {'persona_id': 'persona_2', 'name': 'Test Persona 2'},
-            ],
-            'metadata': {'feedback_count': 50}
-        }
+    """Mock the generate_personas function where it's used in the handler."""
+    mock = MagicMock(return_value={
+        'success': True,
+        'personas': [
+            {'persona_id': 'persona_1', 'name': 'Test Persona 1'},
+            {'persona_id': 'persona_2', 'name': 'Test Persona 2'},
+        ],
+        'metadata': {'feedback_count': 50}
+    })
+    with patch('api.projects.generate_personas', mock), \
+         patch('jobs.persona_generator.handler.generate_personas', mock, create=True):
         yield mock
 
 

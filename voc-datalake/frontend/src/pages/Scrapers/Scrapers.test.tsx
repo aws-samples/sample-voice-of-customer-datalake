@@ -105,16 +105,15 @@ describe('Scrapers', () => {
     it('renders page header', async () => {
       render(<Scrapers />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('Web Scrapers')).toBeInTheDocument()
-      expect(screen.getByText(/configure custom scrapers/i)).toBeInTheDocument()
+      expect(screen.getByText('Data Sources')).toBeInTheDocument()
+      expect(screen.getByText(/configure web scrapers and app review sources/i)).toBeInTheDocument()
     })
 
     it('renders action buttons', async () => {
       render(<Scrapers />, { wrapper: createWrapper() })
 
       expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /manual import/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /new scraper/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /new source/i })).toBeInTheDocument()
     })
 
     it('renders scraper cards after loading', async () => {
@@ -169,11 +168,11 @@ describe('Scrapers', () => {
   })
 
   describe('template selector', () => {
-    it('opens template selector when New Scraper clicked', async () => {
+    it('opens template selector when New Source clicked', async () => {
       const user = userEvent.setup()
       render(<Scrapers />, { wrapper: createWrapper() })
 
-      await user.click(screen.getByRole('button', { name: /new scraper/i }))
+      await user.click(screen.getByRole('button', { name: /new source/i }))
 
       expect(screen.getByTestId('template-selector')).toBeInTheDocument()
     })
@@ -182,7 +181,7 @@ describe('Scrapers', () => {
       const user = userEvent.setup()
       render(<Scrapers />, { wrapper: createWrapper() })
 
-      await user.click(screen.getByRole('button', { name: /new scraper/i }))
+      await user.click(screen.getByRole('button', { name: /new source/i }))
       await user.click(screen.getByText('Close Templates'))
 
       expect(screen.queryByTestId('template-selector')).not.toBeInTheDocument()
@@ -192,7 +191,7 @@ describe('Scrapers', () => {
       const user = userEvent.setup()
       render(<Scrapers />, { wrapper: createWrapper() })
 
-      await user.click(screen.getByRole('button', { name: /new scraper/i }))
+      await user.click(screen.getByRole('button', { name: /new source/i }))
       await user.click(screen.getByText('Select Template'))
 
       expect(screen.getByTestId('scraper-editor')).toBeInTheDocument()

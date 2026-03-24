@@ -214,7 +214,7 @@ def _invoke_with_retry(
     
     # Should not reach here, but handle gracefully
     logger.error(f"[BEDROCK] Step '{step_name}' exhausted all retries without success")
-    if raise_on_throttle and last_exception:
+    if raise_on_throttle and last_exception:  # pragma: no cover — defensive guard; retryable errors raise inside the loop
         raise BedrockThrottlingError(
             f"Bedrock failed after {max_retries} retries for step '{step_name}': {last_exception}"
         )

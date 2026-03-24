@@ -1,0 +1,53 @@
+{
+  "appDescription": "Unified customer feedback intelligence platform",
+  "appName": "VoC Analytics",
+  "appTagline": "Voice of the Customer Analytics",
+  "configureBrand": "Configure brand",
+  "goToSettings": "Go to Settings",
+  "loading": "Loading...",
+  "send": "Send",
+  "nav": {
+    "dashboard": "Dashboard",
+    "feedback": "Feedback",
+    "categories": "Categories",
+    "problemAnalysis": "Problem Analysis",
+    "aiChat": "AI Chat",
+    "projects": "Projects",
+    "prioritization": "Prioritization",
+    "dataExplorer": "Data Explorer",
+    "scrapers": "Scrapers",
+    "feedbackForms": "Feedback Forms",
+    "settings": "Settings"
+  },
+  "metrics": {
+    "totalFeedback": "Total Feedback",
+    "avgSentiment": "Avg Sentiment",
+    "sourcesActive": "Sources Active",
+    "urgentIssues": "Urgent Issues"
+  },
+  "sentiment": {
+    "positive": "Positive",
+    "neutral": "Neutral",
+    "negative": "Negative",
+    "mixed": "Mixed"
+  },
+  "filters": {
+    "allSources": "All Sources",
+    "allSentiments": "All Sentiments",
+    "allCategories": "All Categories",
+    "searchFeedback": "Search feedback...",
+    "urgentOnly": "Urgent Only",
+    "clearFilters": "Clear Filters",
+    "mostRecent": "Most Recent"
+  },
+  "showingOf_one": "Showing {{count}} of {{total}} result",
+  "showingOf_other": "Showing {{count}} of {{total}} results",
+  "forQuery": "for \"{{query}}\"",
+  "sidebar": {
+    "closeMenu": "Close menu",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
+    "openMenu": "Open menu",
+    "signOut": "Sign out"
+  }
+}

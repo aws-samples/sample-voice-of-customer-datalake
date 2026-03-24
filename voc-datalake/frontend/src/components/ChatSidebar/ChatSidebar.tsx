@@ -141,34 +141,21 @@ export default function ChatSidebar({ onClose }: Readonly<ChatSidebarProps>) {
                       </p>
                     </div>
                   </div>
-                  {/* Actions - always visible on mobile for better touch targets */}
-                  <div className="flex sm:hidden items-center gap-1 mt-2 justify-end">
+                  {/* Actions - always visible to avoid layout shift on hover */}
+                  <div className="flex items-center gap-1 mt-2 sm:mt-1 justify-end">
                     <button
                       onClick={(e) => { e.stopPropagation(); handleEdit(conv.id, conv.title) }}
-                      className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                      className="p-2 sm:p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
                     >
-                      <Edit2 size={16} />
+                      <Edit2 size={16} className="sm:hidden" />
+                      <Edit2 size={12} className="hidden sm:block" />
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id) }}
-                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                      className="p-2 sm:p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                     >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                  {/* Desktop hover actions */}
-                  <div className="hidden sm:group-hover:flex items-center gap-1 mt-1 justify-end">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleEdit(conv.id, conv.title) }}
-                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
-                    >
-                      <Edit2 size={12} />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id) }}
-                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                    >
-                      <Trash2 size={12} />
+                      <Trash2 size={16} className="sm:hidden" />
+                      <Trash2 size={12} className="hidden sm:block" />
                     </button>
                   </div>
                 </>

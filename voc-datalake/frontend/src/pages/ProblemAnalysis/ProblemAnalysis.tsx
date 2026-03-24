@@ -11,16 +11,17 @@
  * @module pages/ProblemAnalysis
  */
 
-import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { 
-  ChevronDown, ChevronRight, AlertTriangle, 
-  MessageSquare, TrendingUp, Filter, X, Layers
-} from 'lucide-react'
+import { useState, useMemo, useCallback } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
 import { api, getDaysFromRange } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
-import type { FeedbackItem } from '../../api/client'
+import type { FeedbackItem, ResolvedProblem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
+import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
+import { filterResolvedProblems } from './problemUtils'
+import { ProblemFilters } from './ProblemFilters'
+import { ProblemStats } from './ProblemStats'
 
 interface ProblemGroup {
   problem: string
@@ -202,9 +203,26 @@ function buildCategoryGroups(categoryMap: Map<string, Map<string, Map<string, Pr
   return result
 }
 
+function buildSubcategoryPDFData(sub: SubcategoryGroup) {
+  return {
+    subcategory: sub.subcategory,
+    totalItems: sub.totalItems,
+    urgentCount: sub.urgentCount,
+    problems: sub.problems.map(p => ({
+      problem: p.problem,
+      similarProblems: p.similarProblems,
+      rootCause: p.rootCause,
+      itemCount: p.items.length,
+      avgSentiment: p.avgSentiment,
+      urgentCount: p.urgentCount,
+    })),
+  }
+}
+
 export default function ProblemAnalysis() {
   const { timeRange, config } = useConfigStore()
   const days = getDaysFromRange(timeRange)
+  const queryClient = useQueryClient()
   
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedSubcategories, setExpandedSubcategories] = useState<Set<string>>(new Set())
@@ -213,7 +231,9 @@ export default function ProblemAnalysis() {
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null)
   const [selectedSource, setSelectedSource] = useState<string | null>(null)
   const [showUrgentOnly, setShowUrgentOnly] = useState(false)
+  const [showResolved, setShowResolved] = useState(false)
   const [similarityThreshold, setSimilarityThreshold] = useState(0.4)
+  const [resolvingProblemId, setResolvingProblemId] = useState<string | null>(null)
 
   // Fetch entities for dynamic sources and categories
   const { data: entitiesData } = useQuery({
@@ -227,6 +247,76 @@ export default function ProblemAnalysis() {
     queryFn: () => api.getFeedback({ days, limit: 500 }),
     enabled: !!config.apiEndpoint,
   })
+
+  // Fetch resolved problems
+  const { data: resolvedData } = useQuery({
+    queryKey: ['resolved-problems'],
+    queryFn: () => api.getResolvedProblems(),
+    enabled: !!config.apiEndpoint,
+  })
+
+  const resolvedProblemIds = useMemo(() => {
+    if (!resolvedData?.resolved) return new Set<string>()
+    return new Set(resolvedData.resolved.map(r => r.problem_id))
+  }, [resolvedData])
+
+  // Resolve mutation with optimistic update
+  const resolveMutation = useMutation({
+    mutationFn: ({ problemId, category, subcategory, problemText }: { problemId: string; category: string; subcategory: string; problemText: string }) =>
+      api.resolveProblem(problemId, { category, subcategory, problem_text: problemText }),
+    onMutate: async ({ problemId, category, subcategory, problemText }) => {
+      setResolvingProblemId(problemId)
+      await queryClient.cancelQueries({ queryKey: ['resolved-problems'] })
+      const previous = queryClient.getQueryData<{ resolved: ResolvedProblem[] }>(['resolved-problems'])
+      queryClient.setQueryData<{ resolved: ResolvedProblem[] }>(['resolved-problems'], (old) => ({
+        resolved: [
+          ...(old?.resolved ?? []),
+          { problem_id: problemId, category, subcategory, problem_text: problemText, resolved_at: new Date().toISOString(), resolved_by: '' },
+        ],
+      }))
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['resolved-problems'], context.previous)
+      }
+    },
+    onSettled: () => {
+      setResolvingProblemId(null)
+      queryClient.invalidateQueries({ queryKey: ['resolved-problems'] })
+    },
+  })
+
+  // Unresolve mutation with optimistic update
+  const unresolveMutation = useMutation({
+    mutationFn: (problemId: string) => api.unresolveProblem(problemId),
+    onMutate: async (problemId) => {
+      setResolvingProblemId(problemId)
+      await queryClient.cancelQueries({ queryKey: ['resolved-problems'] })
+      const previous = queryClient.getQueryData<{ resolved: ResolvedProblem[] }>(['resolved-problems'])
+      queryClient.setQueryData<{ resolved: ResolvedProblem[] }>(['resolved-problems'], (old) => ({
+        resolved: (old?.resolved ?? []).filter(r => r.problem_id !== problemId),
+      }))
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['resolved-problems'], context.previous)
+      }
+    },
+    onSettled: () => {
+      setResolvingProblemId(null)
+      queryClient.invalidateQueries({ queryKey: ['resolved-problems'] })
+    },
+  })
+
+  const handleResolveProblem = useCallback((problemId: string, category: string, subcategory: string, problemText: string) => {
+    resolveMutation.mutate({ problemId, category, subcategory, problemText })
+  }, [resolveMutation])
+
+  const handleUnresolveProblem = useCallback((problemId: string) => {
+    unresolveMutation.mutate(problemId)
+  }, [unresolveMutation])
 
   // Build dynamic sources list from entities
   const allSources = useMemo(() => {
@@ -260,6 +350,11 @@ export default function ProblemAnalysis() {
 
     return buildCategoryGroups(categoryMap)
   }, [feedbackData, showUrgentOnly, selectedCategory, selectedSubcategory, selectedSource, similarityThreshold])
+
+  // Apply resolved filter
+  const filteredData = useMemo(() => {
+    return filterResolvedProblems(groupedData, resolvedProblemIds, showResolved)
+  }, [groupedData, resolvedProblemIds, showResolved])
 
   // Get unique categories from entities (dynamic)
   const allCategories = useMemo(() => {
@@ -307,10 +402,10 @@ export default function ProblemAnalysis() {
   }
 
   const expandAll = () => {
-    const allCats = new Set(groupedData.map(g => g.category))
+    const allCats = new Set(filteredData.map(g => g.category))
     const allSubs = new Set<string>()
     const allProbs = new Set<string>()
-    for (const g of groupedData) {
+    for (const g of filteredData) {
       for (const s of g.subcategories) {
         allSubs.add(`${g.category}:${s.subcategory}`)
         for (const p of s.problems) {
@@ -329,11 +424,36 @@ export default function ProblemAnalysis() {
     setExpandedProblems(new Set())
   }
 
-  const totalSubcategories = groupedData.reduce((sum, g) => sum + g.subcategories.length, 0)
-  const totalProblems = groupedData.reduce((sum, g) => 
+  const exportPDF = () => {
+    try {
+      const pdfCategories = filteredData.map(cat => ({
+        category: cat.category,
+        totalItems: cat.totalItems,
+        urgentCount: cat.urgentCount,
+        subcategories: cat.subcategories.map(buildSubcategoryPDFData),
+      }))
+      generateProblemAnalysisPDF({
+        categories: pdfCategories,
+        timeRange,
+        filters: {
+          source: selectedSource,
+          category: selectedCategory,
+          subcategory: selectedSubcategory,
+          urgentOnly: showUrgentOnly,
+        },
+      })
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('PDF export failed:', error)
+      }
+    }
+  }
+
+  const totalSubcategories = filteredData.reduce((sum, g) => sum + g.subcategories.length, 0)
+  const totalProblems = filteredData.reduce((sum, g) => 
     sum + g.subcategories.reduce((s, sub) => s + sub.problems.length, 0), 0)
-  const totalFeedback = groupedData.reduce((sum, g) => sum + g.totalItems, 0)
-  const totalUrgent = groupedData.reduce((sum, g) => sum + g.urgentCount, 0)
+  const totalFeedback = filteredData.reduce((sum, g) => sum + g.totalItems, 0)
+  const totalUrgent = filteredData.reduce((sum, g) => sum + g.urgentCount, 0)
 
   if (!config.apiEndpoint) {
     return (
@@ -353,137 +473,39 @@ export default function ProblemAnalysis() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Header Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4">
-        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
-            <TrendingUp size={14} className="sm:w-4 sm:h-4" />
-            <span className="text-xs sm:text-sm">Categories</span>
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900">{groupedData.length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
-            <Layers size={14} className="sm:w-4 sm:h-4" />
-            <span className="text-xs sm:text-sm">Subcategories</span>
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalSubcategories}</p>
-        </div>
-        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
-            <AlertTriangle size={14} className="sm:w-4 sm:h-4" />
-            <span className="text-xs sm:text-sm truncate">Problems</span>
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalProblems}</p>
-        </div>
-        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
-            <MessageSquare size={14} className="sm:w-4 sm:h-4" />
-            <span className="text-xs sm:text-sm">Feedback</span>
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalFeedback}</p>
-        </div>
-        <div className="bg-white rounded-xl p-3 sm:p-4 border border-red-200 shadow-sm bg-red-50 col-span-2 sm:col-span-1">
-          <div className="flex items-center gap-1.5 sm:gap-2 text-red-600 mb-1">
-            <AlertTriangle size={14} className="sm:w-4 sm:h-4" />
-            <span className="text-xs sm:text-sm">Urgent</span>
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-red-700">{totalUrgent}</p>
-        </div>
-      </div>
+      <ProblemStats
+        categoryCount={filteredData.length}
+        subcategoryCount={totalSubcategories}
+        problemCount={totalProblems}
+        feedbackCount={totalFeedback}
+        urgentCount={totalUrgent}
+      />
 
-      {/* Filters & Controls */}
-      <div className="card">
-        <div className="flex flex-col gap-3 sm:gap-4">
-          {/* Filter Row */}
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <Filter size={16} className="text-gray-500 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
-            <select
-              value={selectedSource || ''}
-              onChange={(e) => setSelectedSource(e.target.value || null)}
-              className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
-            >
-              <option value="">All Sources</option>
-              {allSources.map(source => (
-                <option key={source} value={source}>{source}</option>
-              ))}
-            </select>
-            <select
-              value={selectedCategory || ''}
-              onChange={(e) => { setSelectedCategory(e.target.value || null); setSelectedSubcategory(null) }}
-              className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
-            >
-              <option value="">All Categories</option>
-              {allCategories.map(cat => (
-                <option key={cat} value={cat}>{cat.replace('_', ' ')}</option>
-              ))}
-            </select>
-            <select
-              value={selectedSubcategory || ''}
-              onChange={(e) => setSelectedSubcategory(e.target.value || null)}
-              className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
-            >
-              <option value="">All Subcategories</option>
-              {allSubcategories.map(sub => (
-                <option key={sub} value={sub}>{sub.replace('_', ' ')}</option>
-              ))}
-            </select>
-          </div>
-          
-          {/* Controls Row */}
-          <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-4">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <label className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
-                <input
-                  type="checkbox"
-                  checked={showUrgentOnly}
-                  onChange={(e) => setShowUrgentOnly(e.target.checked)}
-                  className="rounded border-gray-300 w-3.5 h-3.5 sm:w-4 sm:h-4"
-                />
-                <span>Urgent only</span>
-              </label>
-              {(selectedSource || selectedCategory || selectedSubcategory || showUrgentOnly) && (
-                <button
-                  onClick={() => { setSelectedSource(null); setSelectedCategory(null); setSelectedSubcategory(null); setShowUrgentOnly(false) }}
-                  className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 active:scale-95"
-                >
-                  <X size={12} className="sm:w-[14px] sm:h-[14px]" />
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-              <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
-                <span className="text-gray-500 hidden xs:inline">Similarity:</span>
-                <select
-                  value={similarityThreshold}
-                  onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
-                  className="px-2 py-1 border border-gray-300 rounded text-xs sm:text-sm"
-                  title="Higher = stricter matching, fewer merged groups"
-                >
-                  <option value={0.2}>Low</option>
-                  <option value={0.4}>Med</option>
-                  <option value={0.6}>High</option>
-                  <option value={1.0}>Off</option>
-                </select>
-              </div>
-              <div className="flex gap-1.5 sm:gap-2">
-                <button onClick={expandAll} className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95">
-                  <span className="hidden xs:inline">Expand All</span>
-                  <span className="xs:hidden">Expand</span>
-                </button>
-                <button onClick={collapseAll} className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95">
-                  <span className="hidden xs:inline">Collapse All</span>
-                  <span className="xs:hidden">Collapse</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ProblemFilters
+        allSources={allSources}
+        allCategories={allCategories}
+        allSubcategories={allSubcategories}
+        selectedSource={selectedSource}
+        selectedCategory={selectedCategory}
+        selectedSubcategory={selectedSubcategory}
+        showUrgentOnly={showUrgentOnly}
+        showResolved={showResolved}
+        resolvedCount={resolvedProblemIds.size}
+        similarityThreshold={similarityThreshold}
+        hasData={filteredData.length > 0}
+        onSourceChange={setSelectedSource}
+        onCategoryChange={setSelectedCategory}
+        onSubcategoryChange={setSelectedSubcategory}
+        onUrgentOnlyChange={setShowUrgentOnly}
+        onShowResolvedChange={setShowResolved}
+        onSimilarityChange={setSimilarityThreshold}
+        onExpandAll={expandAll}
+        onCollapseAll={collapseAll}
+        onExportPDF={exportPDF}
+      />
 
       {/* Problem Tree */}
-      {groupedData.length === 0 ? (
+      {filteredData.length === 0 ? (
         <div className="card text-center py-8 sm:py-12">
           <AlertTriangle size={36} className="mx-auto text-gray-300 mb-3 sm:mb-4 sm:w-12 sm:h-12" />
           <p className="text-gray-500 text-sm sm:text-base">No problem analysis data found for the selected period</p>
@@ -491,7 +513,7 @@ export default function ProblemAnalysis() {
         </div>
       ) : (
         <div className="space-y-3 sm:space-y-4">
-          {groupedData.map((categoryGroup) => (
+          {filteredData.map((categoryGroup) => (
             <div key={categoryGroup.category} className="card p-0 overflow-hidden">
               {/* Category Header */}
               <button
@@ -532,6 +554,10 @@ export default function ProblemAnalysis() {
                         onToggle={() => toggleSubcategory(subcategoryKey)}
                         expandedProblems={expandedProblems}
                         onToggleProblem={toggleProblem}
+                        resolvedProblemIds={resolvedProblemIds}
+                        resolvingProblemId={resolvingProblemId}
+                        onResolveProblem={handleResolveProblem}
+                        onUnresolveProblem={handleUnresolveProblem}
                       />
                     )
                   })}

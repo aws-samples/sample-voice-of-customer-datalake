@@ -3,7 +3,7 @@
  */
 import type { ProjectPersona, Project } from '../../api/client'
 
-export type Tab = 'overview' | 'personas' | 'documents' | 'chat'
+export type Tab = 'overview' | 'personas' | 'documents' | 'chat' | 'mcp'
 
 export type NoteItem = string | { note_id?: string; text: string; created_at?: string }
 

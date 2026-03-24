@@ -10,9 +10,10 @@
  * @module pages/Login
  */
 
-import { useState } from 'react'
+import { useState, type SyntheticEvent } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { MessageSquare } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { authService } from '../../services/auth'
 import { CognitoUser } from 'amazon-cognito-identity-js'
 import {
@@ -68,10 +69,10 @@ interface AuthFormContentProps {
   readonly onVerificationCodeChange: (value: string) => void
   readonly onToggleShowPassword: () => void
   readonly onSetShowPassword: (checked: boolean) => void
-  readonly onLogin: (e: React.FormEvent) => void
-  readonly onNewPassword: (e: React.FormEvent) => void
-  readonly onForgotPassword: (e: React.FormEvent) => void
-  readonly onConfirmPassword: (e: React.FormEvent) => void
+  readonly onLogin: (e: SyntheticEvent) => void
+  readonly onNewPassword: (e: SyntheticEvent) => void
+  readonly onForgotPassword: (e: SyntheticEvent) => void
+  readonly onConfirmPassword: (e: SyntheticEvent) => void
   readonly onSwitchToForgotPassword: () => void
   readonly onBackToLogin: () => void
 }
@@ -167,6 +168,7 @@ function AuthFormContent({
 
 // Main Login Component
 export default function Login() {
+  const { t } = useTranslation('login')
   const navigate = useNavigate()
   const location = useLocation()
   const from = getFromPath(location.state)
@@ -183,7 +185,7 @@ export default function Login() {
   const [message, setMessage] = useState<string | null>(null)
   const [cognitoUser, setCognitoUser] = useState<CognitoUser | null>(null)
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: SyntheticEvent) => {
     e.preventDefault()
     setError(null)
     setIsLoading(true)
@@ -197,29 +199,29 @@ export default function Login() {
         setMode('newPassword')
         setError(null)
       } else {
-        setError(extractErrorMessage(err, 'Login failed'))
+        setError(extractErrorMessage(err, t('errors.loginFailed')))
       }
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleNewPassword = async (e: React.FormEvent) => {
+  const handleNewPassword = async (e: SyntheticEvent) => {
     e.preventDefault()
     setError(null)
 
     if (newPassword !== confirmNewPassword) {
-      setError('Passwords do not match')
+      setError(t('errors.passwordsDoNotMatch'))
       return
     }
 
     if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters')
+      setError(t('errors.passwordTooShort'))
       return
     }
 
     if (cognitoUser == null) {
-      setError('Session expired. Please login again.')
+      setError(t('errors.sessionExpired'))
       setMode('login')
       return
     }
@@ -230,13 +232,13 @@ export default function Login() {
       await authService.completeNewPassword(cognitoUser, newPassword)
       navigate(from, { replace: true })
     } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Failed to set new password'))
+      setError(extractErrorMessage(err, t('errors.failedNewPassword')))
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: SyntheticEvent) => {
     e.preventDefault()
     setError(null)
     setMessage(null)
@@ -244,21 +246,21 @@ export default function Login() {
 
     try {
       await authService.forgotPassword(username)
-      setMessage('Verification code sent to your email')
+      setMessage(t('errors.verificationCodeSent'))
       setMode('confirmPassword')
     } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Failed to send verification code'))
+      setError(extractErrorMessage(err, t('errors.failedSendCode')))
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleConfirmPassword = async (e: React.FormEvent) => {
+  const handleConfirmPassword = async (e: SyntheticEvent) => {
     e.preventDefault()
     setError(null)
 
     if (newPassword !== confirmNewPassword) {
-      setError('Passwords do not match')
+      setError(t('errors.passwordsDoNotMatch'))
       return
     }
 
@@ -266,14 +268,14 @@ export default function Login() {
 
     try {
       await authService.confirmPassword(username, verificationCode, newPassword)
-      setMessage('Password reset successful. Please login.')
+      setMessage(t('errors.passwordResetSuccess'))
       setMode('login')
       setPassword('')
       setNewPassword('')
       setConfirmNewPassword('')
       setVerificationCode('')
     } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Failed to reset password'))
+      setError(extractErrorMessage(err, t('errors.failedResetPassword')))
     } finally {
       setIsLoading(false)
     }
@@ -301,8 +303,8 @@ export default function Login() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
             <MessageSquare className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">VoC Analytics</h1>
-          <p className="text-gray-500 mt-1">Voice of the Customer Analytics</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('appName', { ns: 'common' })}</h1>
+          <p className="text-gray-500 mt-1">{t('appTagline', { ns: 'common' })}</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-8">
@@ -334,7 +336,7 @@ export default function Login() {
         </div>
 
         <p className="text-center text-gray-500 text-sm mt-6">
-          Contact your administrator if you need access.
+          {t('contactAdmin')}
         </p>
       </div>
     </div>

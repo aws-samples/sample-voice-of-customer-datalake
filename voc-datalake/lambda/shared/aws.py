@@ -152,8 +152,8 @@ def clear_secret_cache():
     get_secret.cache_clear()
 
 
-# Bedrock model ID - Claude Sonnet 4.5 global inference profile
-BEDROCK_MODEL_ID = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+# Bedrock model ID - Claude Sonnet 4.6 global cross-region inference profile
+BEDROCK_MODEL_ID = "global.anthropic.claude-sonnet-4-6"
 
 
 def invoke_bedrock(

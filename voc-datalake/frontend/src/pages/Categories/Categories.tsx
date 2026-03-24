@@ -6,6 +6,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, getDaysFromRange } from '../../api/client'
+import type { FeedbackItem } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { categoryColors, getSentimentColor } from './types'
 import type { SentimentFilter, ViewMode, CategoryData, SentimentData, WordCloudItem } from './types'
@@ -15,6 +16,7 @@ import { SentimentGauge } from './SentimentGaugeCard'
 import { WordCloudCard } from './WordCloudCard'
 import { CategorySelector } from './CategorySelector'
 import { FeedbackResults } from './FeedbackResults'
+import { generateCategoriesPDF } from './categoriesPdfGenerator'
 
 // Stop words for word cloud filtering
 const STOP_WORDS = new Set([
@@ -73,6 +75,79 @@ function checkHasActiveFilters(filters: FilterState): boolean {
   )
 }
 
+function matchesFeedbackFilters(
+  item: FeedbackItem,
+  minRating: number,
+  selectedCategories: string[],
+  selectedSource: string | null,
+  selectedKeywords: string[],
+): boolean {
+  if (minRating > 0 && (!item.rating || item.rating < minRating)) return false
+  if (selectedCategories.length > 1 && !selectedCategories.includes(item.category)) return false
+  if (selectedSource && item.brand_name !== selectedSource) return false
+  if (selectedKeywords.length > 0) {
+    const text = (item.original_text + ' ' + (item.problem_summary ?? '')).toLowerCase()
+    if (!selectedKeywords.some(kw => text.includes(kw.toLowerCase()))) return false
+  }
+  return true
+}
+
+function exportFeedbackCSV(filteredFeedback: FeedbackItem[], allItems: FeedbackItem[]) {
+  const dataToExport = filteredFeedback.length > 0 ? filteredFeedback : allItems
+  const csv = [
+    ['ID', 'Source', 'Category', 'Sentiment', 'Rating', 'Text', 'Date'].join(','),
+    ...dataToExport.map(item => [
+      item.feedback_id,
+      item.source_platform,
+      item.category,
+      item.sentiment_label,
+      item.rating || '',
+      `"${item.original_text.replace(/"/g, '""')}"`,
+      item.source_created_at,
+    ].join(',')),
+  ].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `feedback-export-${new Date().toISOString().split('T')[0]}.csv`
+  a.click()
+}
+
+function computeAvgSentiment(sentiment: { percentages: Record<string, number> } | undefined): number {
+  if (!sentiment) return 0
+  return (sentiment.percentages.positive || 0) - (sentiment.percentages.negative || 0)
+}
+
+function safePDFExport<T>(exportFn: (data: T) => void, data: T): void {
+  try {
+    exportFn(data)
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('PDF export failed:', error)
+    }
+  }
+}
+
+function toggleArrayItem(arr: string[], item: string): string[] {
+  return arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item]
+}
+
+function buildFeedbackQueryParams(
+  days: number,
+  selectedSource: string | null,
+  selectedCategories: string[],
+  sentimentFilter: SentimentFilter,
+) {
+  return {
+    days,
+    source: selectedSource || undefined,
+    category: selectedCategories.length === 1 ? selectedCategories[0] : undefined,
+    sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
+    limit: 100,
+  }
+}
+
 export default function Categories() {
   const { timeRange, config } = useConfigStore()
   const days = getDaysFromRange(timeRange)
@@ -115,13 +190,9 @@ export default function Categories() {
 
   const { data: feedbackData, isLoading: feedbackLoading } = useQuery({
     queryKey: ['feedback', days, selectedCategories, sentimentFilter, selectedKeywords, selectedSource],
-    queryFn: () => api.getFeedback({
-      days,
-      source: selectedSource || undefined,
-      category: selectedCategories.length === 1 ? selectedCategories[0] : undefined,
-      sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
-      limit: 100,
-    }),
+    queryFn: () => api.getFeedback(
+      buildFeedbackQueryParams(days, selectedSource, selectedCategories, sentimentFilter)
+    ),
     enabled: !!config.apiEndpoint && shouldFetchFeedback,
   })
 
@@ -159,32 +230,18 @@ export default function Categories() {
 
   const filteredFeedback = useMemo(() => {
     if (!feedbackData?.items) return []
-    return feedbackData.items.filter(item => {
-      const failsRatingFilter = minRating > 0 && (!item.rating || item.rating < minRating)
-      if (failsRatingFilter) return false
-      
-      const failsCategoryFilter = selectedCategories.length > 1 && !selectedCategories.includes(item.category)
-      if (failsCategoryFilter) return false
-      
-      const failsSourceFilter = selectedSource && item.brand_name !== selectedSource
-      if (failsSourceFilter) return false
-      
-      if (selectedKeywords.length > 0) {
-        const text = (item.original_text + ' ' + (item.problem_summary ?? '')).toLowerCase()
-        const hasKeyword = selectedKeywords.some(kw => text.includes(kw.toLowerCase()))
-        if (!hasKeyword) return false
-      }
-      return true
-    })
+    return feedbackData.items.filter(item =>
+      matchesFeedbackFilters(item, minRating, selectedCategories, selectedSource, selectedKeywords)
+    )
   }, [feedbackData, minRating, selectedCategories, selectedKeywords, selectedSource])
 
   // Handlers
   const toggleCategory = (category: string) => {
-    setSelectedCategories(prev => prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category])
+    setSelectedCategories(prev => toggleArrayItem(prev, category))
   }
 
   const toggleKeyword = (keyword: string) => {
-    setSelectedKeywords(prev => prev.includes(keyword) ? prev.filter(k => k !== keyword) : [...prev, keyword])
+    setSelectedKeywords(prev => toggleArrayItem(prev, keyword))
   }
 
   const clearFilters = () => {
@@ -204,25 +261,7 @@ export default function Categories() {
   })
 
   const exportData = () => {
-    const dataToExport = filteredFeedback.length > 0 ? filteredFeedback : feedbackData?.items || []
-    const csv = [
-      ['ID', 'Source', 'Category', 'Sentiment', 'Rating', 'Text', 'Date'].join(','),
-      ...dataToExport.map(item => [
-        item.feedback_id,
-        item.source_platform,
-        item.category,
-        item.sentiment_label,
-        item.rating || '',
-        `"${item.original_text.replace(/"/g, '""')}"`,
-        item.source_created_at,
-      ].join(',')),
-    ].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `feedback-export-${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
+    exportFeedbackCSV(filteredFeedback, feedbackData?.items || [])
   }
 
   if (!config.apiEndpoint) {
@@ -241,11 +280,37 @@ export default function Categories() {
     )
   }
 
-  const avgSentiment = sentiment ? (sentiment.percentages.positive || 0) - (sentiment.percentages.negative || 0) : 0
+  const avgSentiment = computeAvgSentiment(sentiment)
+
+  const exportPDF = () => {
+    safePDFExport(generateCategoriesPDF, {
+      categoryData,
+      sentimentData,
+      wordCloudData,
+      totalIssues,
+      avgSentiment,
+      timeRange,
+      selectedSource,
+    })
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <SourceFilter selectedSource={selectedSource} onSourceChange={setSelectedSource} allSources={allSources} />
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-start">
+        <div className="flex-1">
+          <SourceFilter selectedSource={selectedSource} onSourceChange={setSelectedSource} allSources={allSources} />
+        </div>
+        {categoryData.length > 0 && (
+          <button
+            onClick={exportPDF}
+            className="btn btn-secondary text-xs sm:text-sm px-3 py-2 sm:py-2.5 active:scale-95 flex items-center gap-1.5 whitespace-nowrap self-start"
+            title="Export as PDF"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            PDF
+          </button>
+        )}
+      </div>
       <InsightsRow categoryData={categoryData} totalIssues={totalIssues} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">

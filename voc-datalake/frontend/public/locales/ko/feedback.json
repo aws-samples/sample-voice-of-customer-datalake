@@ -1,0 +1,15 @@
+{
+  "configureEndpoint": "설정에서 API 엔드포인트를 구성해 주세요",
+  "filters": {
+    "allCategories": "모든 카테고리",
+    "allSentiments": "모든 감성",
+    "allSources": "모든 출처",
+    "clearFilters": "필터 초기화",
+    "mostRecent": "최신순",
+    "searchFeedback": "피드백 검색...",
+    "urgentOnly": "긴급만"
+  },
+  "forQuery": "\"{{query}}\" 검색 결과",
+  "noFeedbackFound": "필터 조건에 맞는 피드백이 없습니다",
+  "showingOf_other": "전체 {{total}}개 중 {{count}}개 표시"
+}

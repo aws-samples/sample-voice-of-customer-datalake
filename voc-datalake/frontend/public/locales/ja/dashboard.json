@@ -1,0 +1,23 @@
+{
+  "feedbackBySource": "ソース別フィードバック",
+  "feedbackVolumeTrend": "フィードバック量とセンチメントの推移",
+  "liveSocialFeed": "ライブソーシャルフィード",
+  "loading": "読み込み中",
+  "metrics": {
+    "avgSentiment": "平均センチメント",
+    "sourcesActive": "アクティブなソース",
+    "totalFeedback": "フィードバック合計",
+    "urgentIssues": "緊急の問題"
+  },
+  "noUrgentIssues": "緊急の問題はありません。素晴らしいです！🎉",
+  "sentiment": {
+    "mixed": "混合",
+    "negative": "ネガティブ",
+    "neutral": "ニュートラル",
+    "positive": "ポジティブ"
+  },
+  "topIssueCategories": "主要な問題カテゴリ",
+  "urgentIssues_other": "{{count}}件の緊急の問題",
+  "welcome": "VoC Analyticsへようこそ",
+  "welcomeDescription": "APIエンドポイントとブランド設定を構成して、カスタマーフィードバックの分析を開始しましょう。"
+}

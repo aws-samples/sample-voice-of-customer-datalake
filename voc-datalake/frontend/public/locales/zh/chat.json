@@ -1,0 +1,9 @@
+{
+  "assistantDescription": "询问有关客户反馈数据的问题",
+  "assistantName": "VoC AI助手",
+  "configureEndpoint": "请在设置中配置API端点以使用AI聊天",
+  "emptyState": "开始一段关于客户反馈的对话",
+  "hideHistory": "隐藏历史记录",
+  "inputPlaceholder": "询问有关反馈的问题...",
+  "showHistory": "显示历史记录"
+}

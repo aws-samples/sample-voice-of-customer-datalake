@@ -3,6 +3,7 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import type { ProjectPersona, ProjectDocument, ProjectJob } from '../../api/client'
 import type { ContextConfig } from '../../components/DataSourceWizard/exports'
@@ -79,6 +80,7 @@ export function useProjectMutations({
 }: UseProjectMutationsProps) {
   const queryClient = useQueryClient()
   const projectId = id ?? ''
+  const { i18n } = useTranslation()
 
   const personaMut = useMutation({
     mutationFn: () => api.generatePersonas(projectId, { 
@@ -87,7 +89,8 @@ export function useProjectMutations({
       sentiments: contextConfig.sentiments, 
       persona_count: personaConfig.personaCount, 
       custom_instructions: personaConfig.customInstructions, 
-      days: contextConfig.days 
+      days: contextConfig.days,
+      response_language: i18n.language,
     }),
     onSuccess: () => { 
       void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
@@ -112,7 +115,8 @@ export function useProjectMutations({
       feedback_sources: contextConfig.sources,
       feedback_categories: contextConfig.categories,
       days: contextConfig.days,
-      customer_questions: docConfig.customerQuestions.filter(q => q.trim())
+      customer_questions: docConfig.customerQuestions.filter(q => q.trim()),
+      response_language: i18n.language,
     }), 
     onSuccess: () => { 
       void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
@@ -130,7 +134,8 @@ export function useProjectMutations({
       sentiments: contextConfig.sentiments, 
       days: contextConfig.days,
       selected_persona_ids: contextConfig.selectedPersonaIds,
-      selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds]
+      selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
+      response_language: i18n.language,
     }), 
     onSuccess: () => { 
       void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
@@ -150,6 +155,7 @@ export function useProjectMutations({
       feedback_sources: contextConfig.sources,
       feedback_categories: contextConfig.categories,
       days: contextConfig.days,
+      response_language: i18n.language,
     }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
@@ -281,21 +287,4 @@ export function useDocumentMutations({
     deleteDocMut,
     updateDocMut,
   }
-}
-
-interface UseChatMutationProps {
-  id: string | undefined
-  onSuccess: (response: string) => void
-}
-
-export function useChatMutation({ id, onSuccess }: UseChatMutationProps) {
-  const projectId = id ?? ''
-
-  return useMutation({ 
-    mutationFn: (params: { message: string; personas: string[]; documents: string[] }) => 
-      api.projectChatStream(projectId, params.message, params.personas, params.documents), 
-    onSuccess: (r) => { 
-      if (r.success) onSuccess(r.response) 
-    } 
-  })
 }

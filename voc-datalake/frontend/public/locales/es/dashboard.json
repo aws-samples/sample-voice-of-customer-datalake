@@ -1,0 +1,25 @@
+{
+  "feedbackBySource": "Retroalimentación por Fuente",
+  "feedbackVolumeTrend": "Volumen de Retroalimentación y Tendencia de Sentimiento",
+  "liveSocialFeed": "Feed Social en Vivo",
+  "loading": "cargando",
+  "metrics": {
+    "avgSentiment": "Sentimiento Promedio",
+    "sourcesActive": "Fuentes Activas",
+    "totalFeedback": "Total de Retroalimentación",
+    "urgentIssues": "Problemas Urgentes"
+  },
+  "noUrgentIssues": "Sin problemas urgentes - ¡buen trabajo! 🎉",
+  "sentiment": {
+    "mixed": "Mixto",
+    "negative": "Negativo",
+    "neutral": "Neutral",
+    "positive": "Positivo"
+  },
+  "topIssueCategories": "Principales Categorías de Problemas",
+  "urgentIssues_one": "{{count}} problema urgente",
+  "urgentIssues_many": "{{count}} problemas urgentes",
+  "urgentIssues_other": "{{count}} problemas urgentes",
+  "welcome": "Bienvenido a VoC Analytics",
+  "welcomeDescription": "Configure su endpoint de API y la configuración de marca para comenzar a analizar la retroalimentación de los clientes."
+}

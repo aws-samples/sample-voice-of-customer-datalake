@@ -1,0 +1,14 @@
+{
+  "appDescription": "Einheitliche Plattform für Kundenfeedback-Intelligenz",
+  "appName": "VoC Analytics",
+  "appTagline": "Voice of the Customer Analytics",
+  "configureBrand": "Marke konfigurieren",
+  "send": "Senden",
+  "sidebar": {
+    "closeMenu": "Menü schließen",
+    "collapseSidebar": "Seitenleiste ausblenden",
+    "expandSidebar": "Seitenleiste einblenden",
+    "openMenu": "Menü öffnen",
+    "signOut": "Abmelden"
+  }
+}

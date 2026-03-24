@@ -1,0 +1,15 @@
+{
+  "configureEndpoint": "请在设置中配置API端点",
+  "filters": {
+    "allCategories": "所有类别",
+    "allSentiments": "所有情感",
+    "allSources": "所有来源",
+    "clearFilters": "清除筛选",
+    "mostRecent": "最新",
+    "searchFeedback": "搜索反馈...",
+    "urgentOnly": "仅紧急"
+  },
+  "forQuery": "搜索「{{query}}」的结果",
+  "noFeedbackFound": "未找到符合筛选条件的反馈",
+  "showingOf_other": "显示{{total}}条中的{{count}}条"
+}

@@ -5,26 +5,29 @@ Separate Lambda to handle projects endpoints and avoid policy size limits.
 
 import json
 import os
+import secrets
+import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
 from shared.logging import logger, tracer
 from shared.aws import invoke_lambda_async
 from shared.api import create_api_resolver, validate_days, validate_int, api_handler, DecimalEncoder
-from shared.tables import get_jobs_table, get_aggregates_table
+from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
 from shared.jobs import create_job
-from shared.exceptions import NotFoundError, ServiceError
+from shared.exceptions import NotFoundError, ServiceError, ValidationError
 
 from boto3.dynamodb.conditions import Key
 import boto3
 
 from projects import (
     list_projects, create_project, get_project, update_project, delete_project,
-    generate_personas, project_chat, run_research,
+    generate_personas, run_research,
     create_document, update_document, delete_document,
     create_persona, update_persona, delete_persona,
     add_persona_note, update_persona_note, delete_persona_note,
     regenerate_persona_avatar,
+    autoseed_project,
 )
 
 # API resolver with standard CORS
@@ -80,6 +83,15 @@ def api_update_project(project_id: str):
 @tracer.capture_method
 def api_delete_project(project_id: str):
     return delete_project(project_id)
+
+
+@app.get("/projects/<project_id>/autoseed")
+@tracer.capture_method
+def api_autoseed_project(project_id: str):
+    params = app.current_event.query_string_parameters or {}
+    persona_ids = params.get('persona_ids', '').split(',') if params.get('persona_ids') else None
+    document_ids = params.get('document_ids', '').split(',') if params.get('document_ids') else None
+    return autoseed_project(project_id, persona_ids=persona_ids, document_ids=document_ids)
 
 
 # ============================================
@@ -173,12 +185,6 @@ def api_generate_personas(project_id: str):
 # Document Routes
 # ============================================
 
-@app.post("/projects/<project_id>/chat")
-@tracer.capture_method
-def api_project_chat(project_id: str):
-    return project_chat(project_id, app.current_event.json_body)
-
-
 @app.post("/projects/<project_id>/research")
 @tracer.capture_method
 def api_run_research(project_id: str):
@@ -193,6 +199,7 @@ def api_run_research(project_id: str):
         'days': validate_days(body.get('days'), default=30),
         'selected_persona_ids': body.get('selected_persona_ids', []),
         'selected_document_ids': body.get('selected_document_ids', []),
+        'response_language': body.get('response_language'),
         'filters': body
     }
     job_id, _ = create_job(project_id, 'research', 'research_config', research_config, status='pending')
@@ -352,6 +359,113 @@ def api_patch_prioritization_scores():
     except Exception as e:
         logger.exception(f"Failed to patch prioritization scores: {e}")
         raise ServiceError('Failed to save prioritization scores')
+
+
+# ============================================
+# API Token Routes (MCP Access)
+# ============================================
+
+TOKEN_PREFIX = 'voc_'
+TOKEN_BYTE_LENGTH = 32
+
+
+def _hash_token(token: str) -> str:
+    """Hash a token for secure storage."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+@app.get("/projects/<project_id>/api-tokens")
+@tracer.capture_method
+def api_list_tokens(project_id: str):
+    """List all API tokens for a project."""
+    table = get_projects_table()
+    if not table:
+        raise ServiceError('Projects table not configured')
+
+    response = table.query(
+        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('TOKEN#')
+    )
+
+    tokens = []
+    for item in response.get('Items', []):
+        tokens.append({
+            'token_id': item['token_id'],
+            'name': item['name'],
+            'scope': item.get('scope', 'read'),
+            'created_at': item['created_at'],
+            'last_used_at': item.get('last_used_at'),
+            'project_id': project_id,
+        })
+
+    return {'success': True, 'tokens': tokens}
+
+
+@app.post("/projects/<project_id>/api-tokens")
+@tracer.capture_method
+def api_create_token(project_id: str):
+    """Create a new API token for a project."""
+    body = app.current_event.json_body or {}
+    name = body.get('name', '').strip()
+    scope = body.get('scope', 'read')
+
+    if not name:
+        raise ValidationError('Token name is required')
+    if scope not in ('read', 'read-write'):
+        raise ValidationError('Scope must be "read" or "read-write"')
+
+    table = get_projects_table()
+    if not table:
+        raise ServiceError('Projects table not configured')
+
+    # Verify project exists
+    project_resp = table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'})
+    if 'Item' not in project_resp:
+        raise NotFoundError(f'Project {project_id} not found')
+
+    # Generate secure token
+    raw_token = TOKEN_PREFIX + secrets.token_hex(TOKEN_BYTE_LENGTH)
+    token_id = f'tok_{secrets.token_hex(8)}'
+    now = datetime.now(timezone.utc).isoformat()
+
+    table.put_item(Item={
+        'pk': f'PROJECT#{project_id}',
+        'sk': f'TOKEN#{token_id}',
+        'token_id': token_id,
+        'name': name,
+        'scope': scope,
+        'token_hash': _hash_token(raw_token),
+        'created_at': now,
+        'project_id': project_id,
+    })
+
+    logger.info(f"Created API token {token_id} for project {project_id}")
+
+    return {
+        'success': True,
+        'token': raw_token,
+        'token_id': token_id,
+        'name': name,
+    }
+
+
+@app.delete("/projects/<project_id>/api-tokens/<token_id>")
+@tracer.capture_method
+def api_delete_token(project_id: str, token_id: str):
+    """Revoke an API token."""
+    table = get_projects_table()
+    if not table:
+        raise ServiceError('Projects table not configured')
+
+    # Verify token exists
+    resp = table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'TOKEN#{token_id}'})
+    if 'Item' not in resp:
+        raise NotFoundError(f'Token {token_id} not found')
+
+    table.delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'TOKEN#{token_id}'})
+
+    logger.info(f"Deleted API token {token_id} from project {project_id}")
+
+    return {'success': True, 'message': f'Token {token_id} revoked'}
 
 
 # ============================================

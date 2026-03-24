@@ -114,7 +114,7 @@ export function openPrintWindow(options: PrintOptions): Window | null {
   // Render React content to static HTML
   const contentHtml = renderToStaticMarkup(content)
   
-  // Build the full HTML document
+  // Build the full HTML document (no inline event handlers to avoid CSP/browser blocking)
   const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -126,7 +126,7 @@ export function openPrintWindow(options: PrintOptions): Window | null {
 </head>
 <body>
   <div class="no-print">
-    <button class="print-button" onclick="window.print()">
+    <button class="print-button" id="print-btn">
       Print / Save as PDF
     </button>
   </div>
@@ -139,6 +139,14 @@ export function openPrintWindow(options: PrintOptions): Window | null {
   // eslint-disable-next-line sonarjs/deprecation
   printWindow.document.write(html)
   printWindow.document.close()
+  
+  // Attach print button handler programmatically (inline onclick can be blocked by browsers)
+  const printBtn = printWindow.document.getElementById('print-btn')
+  if (printBtn) {
+    printBtn.addEventListener('click', () => {
+      printWindow.print()
+    })
+  }
   
   // Set up close handler if provided
   if (onClose) {

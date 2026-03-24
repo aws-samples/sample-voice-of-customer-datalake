@@ -1,0 +1,9 @@
+{
+  "assistantDescription": "고객 피드백 데이터에 대해 질문하세요",
+  "assistantName": "VoC AI 어시스턴트",
+  "configureEndpoint": "AI 채팅을 사용하려면 설정에서 API 엔드포인트를 구성해 주세요",
+  "emptyState": "고객 피드백에 대한 대화를 시작하세요",
+  "hideHistory": "기록 숨기기",
+  "inputPlaceholder": "피드백에 대해 질문하세요...",
+  "showHistory": "기록 보기"
+}

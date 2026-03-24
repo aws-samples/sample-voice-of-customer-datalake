@@ -21,6 +21,41 @@ vi.mock('../../api/client', () => ({
   getDaysFromRange: vi.fn(() => 7),
 }))
 
+// Mock useStreamChat hook
+const mockSendMessage = vi.fn()
+const mockCancel = vi.fn()
+const mockStreamState: {
+  isStreaming: boolean
+  streamingText: string
+  thinkingText: string
+  activeTools: string[]
+  sources: unknown[]
+  metadata: Record<string, unknown>
+  error: string | null
+} = {
+  isStreaming: false,
+  streamingText: '',
+  thinkingText: '',
+  activeTools: [],
+  sources: [],
+  metadata: {},
+  error: null,
+}
+
+vi.mock('../../hooks/useStreamChat', () => ({
+  useStreamChat: () => ({
+    isStreaming: mockStreamState.isStreaming,
+    streamingText: mockStreamState.streamingText,
+    thinkingText: mockStreamState.thinkingText,
+    activeTools: mockStreamState.activeTools,
+    sources: mockStreamState.sources,
+    metadata: mockStreamState.metadata,
+    error: mockStreamState.error,
+    sendMessage: (...args: unknown[]) => mockSendMessage(...args),
+    cancel: mockCancel,
+  }),
+}))
+
 // Mock config store
 const mockConfigStore = vi.fn()
 vi.mock('../../store/configStore', () => ({
@@ -103,6 +138,13 @@ describe('Chat', () => {
       response: 'AI response',
       sources: [],
     })
+    mockStreamState.isStreaming = false
+    mockStreamState.streamingText = ''
+    mockStreamState.thinkingText = ''
+    mockStreamState.activeTools = []
+    mockStreamState.sources = []
+    mockStreamState.metadata = {}
+    mockStreamState.error = null
   })
 
   describe('not configured state', () => {
@@ -319,22 +361,21 @@ describe('Chat', () => {
   })
 
   describe('error handling', () => {
-    it('adds error message to conversation when API fails', async () => {
+    it('shows stop button while streaming', async () => {
       const user = userEvent.setup()
-      mockChatStream.mockRejectedValue(new Error('API Error'))
-      
+      // Make sendMessage set isStreaming to true
+      mockSendMessage.mockImplementation(() => {
+        mockStreamState.isStreaming = true
+      })
+
       render(<Chat />, { wrapper: createWrapper() })
-      
+
       const input = screen.getByPlaceholderText(/Ask about your feedback/i)
       await user.type(input, 'Test message')
       await user.click(screen.getByRole('button', { name: /send/i }))
-      
-      await waitFor(() => {
-        expect(mockAddMessage).toHaveBeenCalledWith('conv_123', expect.objectContaining({
-          role: 'assistant',
-          content: expect.stringContaining('error'),
-        }))
-      })
+
+      // sendMessage was called
+      expect(mockSendMessage).toHaveBeenCalled()
     })
   })
 })

@@ -1,5 +1,6 @@
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, AlertTriangle, Lightbulb } from 'lucide-react'
+import { ChevronDown, ChevronRight, AlertTriangle, Lightbulb, CheckCircle2, Undo2 } from 'lucide-react'
 import SentimentBadge from '../../components/SentimentBadge'
 import type { FeedbackItem } from '../../api/client'
 
@@ -23,56 +24,143 @@ interface ProblemRowProps {
   readonly problemKey: string
   readonly isExpanded: boolean
   readonly onToggle: () => void
+  readonly isResolved?: boolean
+  readonly isResolving?: boolean
+  readonly onResolve?: () => void
+  readonly onUnresolve?: () => void
 }
 
-export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle }: ProblemRowProps) {
-  return (
-    <div key={problemKey} className="bg-white">
+function ResolveButton({ isResolved, isResolving, onResolve, onUnresolve }: Readonly<{
+  isResolved?: boolean
+  isResolving?: boolean
+  onResolve?: () => void
+  onUnresolve?: () => void
+}>) {
+  if (isResolved) {
+    return (
       <button
-        onClick={onToggle}
-        className="w-full px-3 sm:px-6 py-2.5 sm:py-3 pl-10 sm:pl-16 flex flex-col sm:flex-row sm:items-start justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors text-left gap-2"
+        onClick={(e) => { e.stopPropagation(); onUnresolve?.() }}
+        disabled={isResolving}
+        className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors disabled:opacity-50"
+        title="Mark as unresolved"
       >
-        <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
-          {isExpanded ? (
-            <ChevronDown size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
-          ) : (
-            <ChevronRight size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
-              <AlertTriangle size={12} className="text-orange-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
-              <span className="font-medium text-gray-800 text-xs sm:text-sm">{problemGroup.problem}</span>
-              {problemGroup.similarProblems.length > 0 && (
-                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full" title={problemGroup.similarProblems.join(', ')}>
-                  +{problemGroup.similarProblems.length}
-                </span>
-              )}
-            </div>
-            {problemGroup.rootCause && (
-              <div className="flex items-start gap-1.5 sm:gap-2 text-xs text-gray-600">
-                <Lightbulb size={12} className="text-yellow-500 mt-0.5 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
-                <span className="line-clamp-2">{problemGroup.rootCause}</span>
-              </div>
-            )}
-            {problemGroup.similarProblems.length > 0 && isExpanded && (
-              <div className="mt-2 text-xs text-gray-500">
-                <span className="font-medium">Similar:</span>{' '}
-                {problemGroup.similarProblems.slice(0, 2).join(' • ')}
-                {problemGroup.similarProblems.length > 2 && ` (+${problemGroup.similarProblems.length - 2})`}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 sm:gap-3 ml-6 sm:ml-4 flex-shrink-0">
-          <span className="text-xs text-gray-500">{problemGroup.items.length}</span>
-          {problemGroup.urgentCount > 0 && (
-            <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
-              {problemGroup.urgentCount}
-            </span>
-          )}
-          <SentimentBadge sentiment={getSentimentLabel(problemGroup.avgSentiment)} score={problemGroup.avgSentiment} />
-        </div>
+        <Undo2 size={14} className="sm:w-4 sm:h-4" />
       </button>
+    )
+  }
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onResolve?.() }}
+      disabled={isResolving}
+      className={`p-1.5 rounded-lg transition-all duration-200 disabled:opacity-50 ${
+        isResolving
+          ? 'text-green-500 bg-green-50 scale-110'
+          : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
+      }`}
+      title="Mark as resolved"
+    >
+      <CheckCircle2 size={14} className="sm:w-4 sm:h-4" />
+    </button>
+  )
+}
+
+function ProblemLabel({ problemGroup, isResolved, isExpanded }: Readonly<{
+  problemGroup: ProblemGroup
+  isResolved?: boolean
+  isExpanded: boolean
+}>) {
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
+        {isResolved ? (
+          <CheckCircle2 size={12} className="text-green-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
+        ) : (
+          <AlertTriangle size={12} className="text-orange-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
+        )}
+        <span className={`font-medium text-xs sm:text-sm ${isResolved ? 'text-gray-500 line-through' : 'text-gray-800'}`}>
+          {problemGroup.problem}
+        </span>
+        {isResolved && (
+          <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Resolved</span>
+        )}
+        {problemGroup.similarProblems.length > 0 && (
+          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full" title={problemGroup.similarProblems.join(', ')}>
+            +{problemGroup.similarProblems.length}
+          </span>
+        )}
+      </div>
+      {problemGroup.rootCause && (
+        <div className="flex items-start gap-1.5 sm:gap-2 text-xs text-gray-600">
+          <Lightbulb size={12} className="text-yellow-500 mt-0.5 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
+          <span className="line-clamp-2">{problemGroup.rootCause}</span>
+        </div>
+      )}
+      {problemGroup.similarProblems.length > 0 && isExpanded && (
+        <div className="mt-2 text-xs text-gray-500">
+          <span className="font-medium">Similar:</span>{' '}
+          {problemGroup.similarProblems.slice(0, 2).join(' • ')}
+          {problemGroup.similarProblems.length > 2 && ` (+${problemGroup.similarProblems.length - 2})`}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function getResolvedStyle(justResolved: boolean, isResolved?: boolean): string {
+  if (justResolved) return 'bg-green-50 ring-1 ring-green-200'
+  if (isResolved) return 'opacity-60'
+  return ''
+}
+
+export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle, isResolved, isResolving, onResolve, onUnresolve }: ProblemRowProps) {
+  const [justResolved, setJustResolved] = useState(false)
+  const prevResolvedRef = useRef(isResolved ?? false)
+
+  // Detect transition from unresolved → resolved for animation
+  useEffect(() => {
+    const wasResolved = prevResolvedRef.current
+    prevResolvedRef.current = isResolved ?? false
+
+    if (!isResolved || wasResolved) return
+
+    // Use queueMicrotask to avoid synchronous setState in effect body
+    const timer = setTimeout(() => setJustResolved(false), 800)
+    queueMicrotask(() => setJustResolved(true))
+    return () => clearTimeout(timer)
+  }, [isResolved])
+
+  return (
+    <div
+      key={problemKey}
+      className={`bg-white transition-all duration-500 ease-in-out ${getResolvedStyle(justResolved, isResolved)}`}
+    >
+      <div className="flex items-center">
+        <button
+          onClick={onToggle}
+          className="flex-1 px-3 sm:px-6 py-2.5 sm:py-3 pl-10 sm:pl-16 flex flex-col sm:flex-row sm:items-start justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors text-left gap-2"
+        >
+          <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
+            {isExpanded ? (
+              <ChevronDown size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
+            ) : (
+              <ChevronRight size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
+            )}
+            <ProblemLabel problemGroup={problemGroup} isResolved={isResolved} isExpanded={isExpanded} />
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3 ml-6 sm:ml-4 flex-shrink-0">
+            <span className="text-xs text-gray-500">{problemGroup.items.length}</span>
+            {problemGroup.urgentCount > 0 && (
+              <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
+                {problemGroup.urgentCount}
+              </span>
+            )}
+            <SentimentBadge sentiment={getSentimentLabel(problemGroup.avgSentiment)} score={problemGroup.avgSentiment} />
+          </div>
+        </button>
+        <div className="pr-3 sm:pr-6 flex-shrink-0">
+          <ResolveButton isResolved={isResolved} isResolving={isResolving} onResolve={onResolve} onUnresolve={onUnresolve} />
+        </div>
+      </div>
 
       {isExpanded && (
         <div className="px-3 sm:px-6 pb-3 sm:pb-4 pl-12 sm:pl-24 space-y-2 sm:space-y-3">

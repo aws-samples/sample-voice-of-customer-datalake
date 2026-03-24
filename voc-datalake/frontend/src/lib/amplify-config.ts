@@ -1,11 +1,11 @@
 /**
- * Amplify configuration for AWS IAM request signing.
+ * Amplify configuration for AWS credential exchange.
  * 
  * We use Amplify ONLY for:
  * - Credential exchange (JWT → AWS credentials via Identity Pool)
  * 
- * Request signing is handled separately by @aws-sdk/signature-v4 in streamApi.ts.
  * We keep existing amazon-cognito-identity-js for user authentication.
+ * Streaming chat now uses Cognito token auth via API Gateway (streamClient.ts).
  */
 import { Amplify } from 'aws-amplify'
 import { getConfig } from '../config'

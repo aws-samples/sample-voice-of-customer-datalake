@@ -347,6 +347,123 @@ def confirm_import():
         raise ServiceError('Failed to import reviews')
 
 
+MAX_JSON_UPLOAD_ITEMS = 500
+
+
+@app.post("/scrapers/manual/json-upload")
+@tracer.capture_method
+def json_upload():
+    """Import pre-structured JSON feedback items directly into the pipeline."""
+    body = app.current_event.json_body
+    items = body.get('items', [])
+
+    if not isinstance(items, list) or len(items) == 0:
+        raise ValidationError('Request must contain a non-empty "items" array')
+
+    if len(items) > MAX_JSON_UPLOAD_ITEMS:
+        raise ValidationError(f'Maximum {MAX_JSON_UPLOAD_ITEMS} items per upload')
+
+    # Validate required fields: text, id, source, timestamp
+    errors = []
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            errors.append(f'Item {idx}: must be an object')
+            continue
+        text = item.get('text', '')
+        if not isinstance(text, str) or not text.strip():
+            errors.append(f'Item {idx}: "text" is required and must be a non-empty string')
+        if not item.get('id'):
+            errors.append(f'Item {idx}: "id" is required for deduplication')
+        if not (item.get('source') or item.get('source_channel')):
+            errors.append(f'Item {idx}: "source" is required')
+        if not (item.get('timestamp') or item.get('created_at')):
+            errors.append(f'Item {idx}: "timestamp" is required (ISO 8601 format)')
+
+    if errors:
+        raise ValidationError(f'Validation failed: {"; ".join(errors[:10])}')
+
+    # Get user from request context
+    user_id = 'unknown'
+    try:
+        claims = app.current_event.request_context.authorizer.get('claims', {})
+        user_id = claims.get('sub', claims.get('cognito:username', 'unknown'))
+    except Exception:
+        pass
+
+    now = datetime.now(timezone.utc)
+    job_id = str(uuid.uuid4())
+
+    # Store raw upload to S3
+    s3_uri = None
+    if RAW_DATA_BUCKET:
+        s3_key = f"raw/json_upload/{now.year}/{now.month:02d}/{now.day:02d}/{job_id}.json"
+        try:
+            s3.put_object(
+                Bucket=RAW_DATA_BUCKET,
+                Key=s3_key,
+                Body=json.dumps({
+                    'job_id': job_id,
+                    'items': items,
+                    'uploaded_at': now.isoformat(),
+                    'uploaded_by': user_id,
+                }, default=decimal_default),
+                ContentType='application/json',
+            )
+            s3_uri = f"s3://{RAW_DATA_BUCKET}/{s3_key}"
+        except Exception as e:
+            logger.warning(f"Failed to store JSON upload to S3: {e}")
+
+    # Send each item to SQS
+    imported_count = 0
+    send_errors = []
+
+    for idx, item in enumerate(items):
+        text = item.get('text', '').strip()
+        source_id = item.get('id', '')
+        created_at = item.get('timestamp') or item.get('created_at')
+
+        message = {
+            'id': source_id,
+            'source_platform': 'manual_import',
+            'source_channel': item.get('source') or item.get('source_channel'),
+            'ingestion_method': 'json_upload',
+            'text': text,
+            'rating': item.get('rating'),
+            'author': item.get('user_id') or item.get('author'),
+            'title': item.get('title'),
+            'url': item.get('url'),
+            'created_at': created_at,
+            's3_raw_uri': s3_uri,
+        }
+
+        # Pass through metadata if present
+        if item.get('metadata') and isinstance(item['metadata'], dict):
+            message['metadata'] = item['metadata']
+
+        try:
+            if PROCESSING_QUEUE_URL:
+                sqs.send_message(
+                    QueueUrl=PROCESSING_QUEUE_URL,
+                    MessageBody=json.dumps(message),
+                )
+            imported_count += 1
+        except Exception as e:
+            logger.warning(f"Failed to send item {idx} to SQS: {e}")
+            send_errors.append(f"Item {idx}: {str(e)}")
+
+    result = {
+        'success': True,
+        'imported_count': imported_count,
+        'total_items': len(items),
+        's3_uri': s3_uri,
+    }
+
+    if send_errors:
+        result['errors'] = send_errors
+
+    return result
+
+
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

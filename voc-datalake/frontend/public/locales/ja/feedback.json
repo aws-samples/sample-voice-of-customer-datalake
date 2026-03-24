@@ -1,0 +1,15 @@
+{
+  "configureEndpoint": "設定でAPIエンドポイントを構成してください",
+  "filters": {
+    "allCategories": "すべてのカテゴリ",
+    "allSentiments": "すべてのセンチメント",
+    "allSources": "すべてのソース",
+    "clearFilters": "フィルターをクリア",
+    "mostRecent": "最新順",
+    "searchFeedback": "フィードバックを検索...",
+    "urgentOnly": "緊急のみ"
+  },
+  "forQuery": "「{{query}}」の検索結果",
+  "noFeedbackFound": "フィルター条件に一致するフィードバックが見つかりません",
+  "showingOf_other": "{{total}}件中{{count}}件を表示"
+}

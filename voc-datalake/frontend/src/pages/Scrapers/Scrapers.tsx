@@ -5,7 +5,7 @@
 
 import { useState, useEffect, type ReactElement } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Play, Settings, Globe, AlertCircle, CheckCircle, Loader2, XCircle, RefreshCw, ClipboardPaste } from 'lucide-react'
+import { Plus, Trash2, Play, Settings, Globe, AlertCircle, CheckCircle, Loader2, XCircle, RefreshCw } from 'lucide-react'
 import { api } from '../../api/client'
 import type { ScraperConfig, ScraperTemplate } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -14,8 +14,11 @@ import clsx from 'clsx'
 import ConfirmModal from '../../components/ConfirmModal'
 import ScraperEditor from './ScraperEditor'
 import TemplateSelector from './TemplateSelector'
+import PluginConfigModal from './PluginConfigModal'
 import ManualImportModal from './ManualImportModal'
+import JsonUploadModal from './JsonUploadModal'
 import { FREQUENCY_OPTIONS } from './constants'
+import type { PluginManifest } from '../../plugins/types'
 
 interface RunStatus {
   status: string
@@ -267,12 +270,11 @@ function useScraperMutations() {
   return { saveMutation, deleteMutation, runMutation }
 }
 
-function ScrapersContent({ scrapers, isLoading, onRefresh, onShowTemplates, onManualImport, onEdit, onDelete, onRun }: {
+function ScrapersContent({ scrapers, isLoading, onRefresh, onShowTemplates, onEdit, onDelete, onRun }: {
   readonly scrapers: ScraperConfig[]
   readonly isLoading: boolean
   readonly onRefresh: () => void
   readonly onShowTemplates: () => void
-  readonly onManualImport: () => void
   readonly onEdit: (s: ScraperConfig) => void
   readonly onDelete: (id: string) => void
   readonly onRun: (id: string) => void
@@ -281,18 +283,15 @@ function ScrapersContent({ scrapers, isLoading, onRefresh, onShowTemplates, onMa
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Web Scrapers</h1>
-          <p className="text-sm text-gray-500">Configure custom scrapers to extract feedback from any website</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Data Sources</h1>
+          <p className="text-sm text-gray-500">Configure web scrapers and app review sources to collect feedback</p>
         </div>
         <div className="flex gap-2">
           <button onClick={onRefresh} className="btn btn-secondary flex items-center justify-center gap-2 text-sm flex-1 sm:flex-none">
             <RefreshCw size={16} /> Refresh
           </button>
-          <button onClick={onManualImport} className="btn btn-secondary flex items-center justify-center gap-2 text-sm flex-1 sm:flex-none bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100">
-            <ClipboardPaste size={16} /> Manual Import
-          </button>
           <button onClick={onShowTemplates} className="btn btn-primary flex items-center justify-center gap-2 text-sm flex-1 sm:flex-none">
-            <Plus size={16} /> New Scraper
+            <Plus size={16} /> New Source
           </button>
         </div>
       </div>
@@ -312,6 +311,8 @@ export default function Scrapers() {
   const [showTemplates, setShowTemplates] = useState(false)
   const [deleteScraperId, setDeleteScraperId] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState<ScraperTemplate | null>(null)
+  const [selectedPlugin, setSelectedPlugin] = useState<PluginManifest | null>(null)
+  const [showJsonUpload, setShowJsonUpload] = useState(false)
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['scrapers'],
@@ -326,6 +327,11 @@ export default function Scrapers() {
     setSelectedTemplate(template)
     setShowTemplates(false)
     setIsCreating(true)
+  }
+
+  const handleSelectPlugin = (plugin: PluginManifest) => {
+    setShowTemplates(false)
+    setSelectedPlugin(plugin)
   }
 
   const handleSaveScraper = (scraper: ScraperConfig) => {
@@ -367,15 +373,22 @@ export default function Scrapers() {
         isLoading={isLoading}
         onRefresh={() => refetch()}
         onShowTemplates={() => setShowTemplates(true)}
-        onManualImport={() => setIsModalOpen(true)}
         onEdit={setEditingScraper}
         onDelete={setDeleteScraperId}
         onRun={id => runMutation.mutate(id)}
       />
 
       <ManualImportModal />
+      <JsonUploadModal isOpen={showJsonUpload} onClose={() => setShowJsonUpload(false)} />
 
-      {showTemplates && <TemplateSelector onSelect={handleSelectTemplate} onClose={() => setShowTemplates(false)} />}
+      {showTemplates && <TemplateSelector onSelect={handleSelectTemplate} onSelectPlugin={handleSelectPlugin} onManualImport={() => { setShowTemplates(false); setIsModalOpen(true) }} onJsonUpload={() => { setShowTemplates(false); setShowJsonUpload(true) }} onClose={() => setShowTemplates(false)} />}
+
+      {selectedPlugin && (
+        <PluginConfigModal
+          plugin={selectedPlugin}
+          onClose={() => setSelectedPlugin(null)}
+        />
+      )}
 
       {(isCreating || editingScraper) && (
         <ScraperEditor scraper={editingScraper} template={selectedTemplate} onSave={handleSaveScraper} onClose={handleCloseEditor} />

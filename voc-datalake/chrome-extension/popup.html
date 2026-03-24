@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoC Review Collector</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 340px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      color: #1f2937;
+      background: #ffffff;
+    }
+    .header {
+      padding: 16px;
+      background: #1e3a5f;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header h1 { font-size: 16px; font-weight: 600; }
+    .header .subtitle { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+
+    .section { padding: 16px; border-bottom: 1px solid #e5e7eb; }
+    .section:last-child { border-bottom: none; }
+
+    label { display: block; font-size: 12px; font-weight: 500; color: #6b7280; margin-bottom: 4px; }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: #3b82f6; }
+    .field + .field { margin-top: 10px; }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+    .btn-danger { background: #ef4444; color: white; margin-top: 8px; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-secondary { background: #f3f4f6; color: #374151; margin-top: 8px; }
+    .btn-secondary:hover { background: #e5e7eb; }
+
+    .status {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-ok { background: #ecfdf5; color: #065f46; }
+    .status-error { background: #fef2f2; color: #991b1b; }
+    .status-info { background: #eff6ff; color: #1e40af; }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-ok .status-dot { background: #10b981; }
+    .status-error .status-dot { background: #ef4444; }
+    .status-info .status-dot { background: #3b82f6; }
+
+    .instructions {
+      font-size: 12px;
+      color: #6b7280;
+      line-height: 1.5;
+      padding: 12px;
+      background: #f9fafb;
+      border-radius: 6px;
+    }
+    .instructions strong { color: #374151; }
+
+    .hidden { display: none; }
+    .hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>VoC Review Collector</h1>
+      <div class="subtitle">Chrome Extension</div>
+    </div>
+  </div>
+
+  <!-- Config Section (shown when not configured) -->
+  <div id="config-section" class="section hidden">
+    <div class="field">
+      <label for="deployment-url">VoC Dashboard URL</label>
+      <input type="url" id="deployment-url" placeholder="https://d7afw1xf9irnt.cloudfront.net" />
+      <div class="hint">Paste your CloudFront URL — config is fetched automatically</div>
+    </div>
+    <button class="btn-primary" id="save-config-btn" style="margin-top: 12px;">Connect</button>
+    <div id="config-error" class="status status-error hidden" style="margin-top: 10px;">
+      <div class="status-dot"></div>
+      <span id="config-error-text"></span>
+    </div>
+    <div id="config-loading" class="status status-info hidden" style="margin-top: 10px;">
+      <div class="status-dot"></div>
+      <span>Fetching configuration...</span>
+    </div>
+  </div>
+
+  <!-- Login Section (shown when configured but not authenticated) -->
+  <div id="login-section" class="section hidden">
+    <div class="status status-ok" style="margin-bottom: 12px;">
+      <div class="status-dot"></div>
+      <span>Connected to VoC Data Lake</span>
+    </div>
+    <div class="field">
+      <label for="username">Username</label>
+      <input type="text" id="username" placeholder="your-username" />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="your-password" />
+    </div>
+    <button class="btn-primary" id="login-btn" style="margin-top: 12px;">Sign In</button>
+    <button class="btn-secondary" id="reconfigure-btn">Change Deployment</button>
+    <div id="login-error" class="status status-error hidden" style="margin-top: 10px;">
+      <div class="status-dot"></div>
+      <span id="login-error-text"></span>
+    </div>
+  </div>
+
+  <!-- Authenticated Section -->
+  <div id="auth-section" class="section hidden">
+    <div class="status status-ok">
+      <div class="status-dot"></div>
+      <span>Signed in as <strong id="username-display"></strong></span>
+    </div>
+    <div class="instructions" style="margin-top: 12px;">
+      <strong>How to use:</strong><br />
+      1. Select review text on any page<br />
+      2. Right-click → "Send to VoC Data Lake"<br />
+      3. Reviews are automatically processed
+    </div>
+    <button class="btn-danger" id="logout-btn">Sign Out</button>
+    <button class="btn-secondary" id="reconfig-btn">Change Deployment</button>
+  </div>
+
+  <script src="dist/popup.js"></script>
+</body>
+</html>

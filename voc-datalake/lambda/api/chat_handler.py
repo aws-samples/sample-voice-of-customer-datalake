@@ -126,6 +126,14 @@ When answering questions:
 4. Highlight urgent issues
 5. Provide actionable recommendations"""
 
+    # Inject language instruction if non-English
+    response_language = body.get('response_language')
+    if response_language:
+        from shared.prompts import get_response_language_instruction
+        lang_instruction = get_response_language_instruction(response_language)
+        if lang_instruction:
+            system_prompt += f"\n\n{lang_instruction}"
+
     data_context = f"""## Data Summary (Last {days} days)
 Total Feedback: {total_feedback}
 Urgent Issues: {urgent_count}

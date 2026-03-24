@@ -593,6 +593,90 @@ def get_persona_metrics():
 
 
 # ============================================
+# Problem Resolution Endpoints
+# ============================================
+
+@app.get("/feedback/problems/resolved")
+@tracer.capture_method
+def list_resolved_problems():
+    """List all resolved problem IDs."""
+    if not aggregates_table:
+        return {'resolved': []}
+
+    response = aggregates_table.query(
+        KeyConditionExpression=Key('pk').eq('RESOLVED_PROBLEMS') & Key('sk').begins_with('PROBLEM#')
+    )
+
+    resolved = []
+    for item in response.get('Items', []):
+        resolved.append({
+            'problem_id': item['sk'].replace('PROBLEM#', ''),
+            'category': item.get('category', ''),
+            'subcategory': item.get('subcategory', ''),
+            'problem_text': item.get('problem_text', ''),
+            'resolved_at': item.get('resolved_at', ''),
+            'resolved_by': item.get('resolved_by', ''),
+        })
+
+    return {'resolved': resolved}
+
+
+@app.put("/feedback/problems/<problem_id>/resolve")
+@tracer.capture_method
+def resolve_problem(problem_id: str):
+    """Mark a problem group as resolved."""
+    if not aggregates_table:
+        return {'success': False, 'error': 'Aggregates table not configured'}
+
+    body = app.current_event.json_body or {}
+    category = body.get('category', '')
+    subcategory = body.get('subcategory', '')
+    problem_text = body.get('problem_text', '')
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Extract user from Cognito claims if available
+    resolved_by = ''
+    try:
+        request_context = app.current_event.request_context
+        claims = request_context.authorizer.get('claims', {}) if request_context.authorizer else {}
+        resolved_by = claims.get('email', claims.get('cognito:username', ''))
+    except Exception:
+        pass
+
+    aggregates_table.put_item(Item={
+        'pk': 'RESOLVED_PROBLEMS',
+        'sk': f'PROBLEM#{problem_id}',
+        'category': category,
+        'subcategory': subcategory,
+        'problem_text': problem_text,
+        'resolved_at': now,
+        'resolved_by': resolved_by,
+    })
+
+    logger.info(f"Problem {problem_id} marked as resolved by {resolved_by}")
+
+    return {'success': True, 'problem_id': problem_id, 'resolved_at': now}
+
+
+@app.delete("/feedback/problems/<problem_id>/resolve")
+@tracer.capture_method
+def unresolve_problem(problem_id: str):
+    """Unresolve a previously resolved problem group."""
+    if not aggregates_table:
+        return {'success': False, 'error': 'Aggregates table not configured'}
+
+    aggregates_table.delete_item(Key={
+        'pk': 'RESOLVED_PROBLEMS',
+        'sk': f'PROBLEM#{problem_id}',
+    })
+
+    logger.info(f"Problem {problem_id} marked as unresolved")
+
+    return {'success': True, 'problem_id': problem_id}
+
+
+# ============================================
 # Lambda Handler
 # ============================================
 

@@ -22,6 +22,9 @@ import type {
   ProcessingLogEntry,
   ScraperLogEntry,
   LogsSummary,
+  ResolvedProblem,
+  ApiToken,
+  CreateApiTokenResponse,
 } from './types'
 
 // Re-export all types for backward compatibility
@@ -47,6 +50,9 @@ export type {
   ProcessingLogEntry,
   ScraperLogEntry,
   LogsSummary,
+  ResolvedProblem,
+  ApiToken,
+  CreateApiTokenResponse,
 } from './types'
 export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation } from './types'
 
@@ -54,8 +60,6 @@ const getBaseUrl = () => {
   const { config } = useConfigStore.getState()
   return config.apiEndpoint || '/api'
 }
-
-const streamUrlCache: { value: string | null } = { value: null }
 
 function stripTrailingSlashes(url: string): string {
   // Remove trailing slashes without regex backtracking
@@ -136,19 +140,6 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
   throw new Error(`API Error: ${response.status}`)
 }
 
-async function getStreamUrl(): Promise<string> {
-  if (streamUrlCache.value !== null) return streamUrlCache.value
-  
-  try {
-    const config = await fetchApi<{ chat_stream_url: string }>('/projects/config')
-    streamUrlCache.value = config.chat_stream_url || ''
-    return streamUrlCache.value
-  } catch {
-    streamUrlCache.value = ''
-    return ''
-  }
-}
-
 // Helper to build URLSearchParams from an object, filtering out undefined/null values
 function buildSearchParams(params: Record<string, string | number | boolean | undefined | null>): URLSearchParams {
   const searchParams = new URLSearchParams()
@@ -189,6 +180,21 @@ export const api = {
     const searchParams = buildSearchParams(params)
     return fetchApi<EntitiesResponse>(`/feedback/entities?${searchParams}`)
   },
+
+  // Problem Resolution
+  getResolvedProblems: () =>
+    fetchApi<{ resolved: ResolvedProblem[] }>('/feedback/problems/resolved'),
+
+  resolveProblem: (problemId: string, data: { category: string; subcategory: string; problem_text: string }) =>
+    fetchApi<{ success: boolean; problem_id: string; resolved_at: string }>(`/feedback/problems/${problemId}/resolve`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  unresolveProblem: (problemId: string) =>
+    fetchApi<{ success: boolean; problem_id: string }>(`/feedback/problems/${problemId}/resolve`, {
+      method: 'DELETE',
+    }),
   
   // Metrics
   getSummary: (days: number, source?: string) => {
@@ -214,18 +220,17 @@ export const api = {
   },
   
   // Chat
-  chat: (message: string, context?: string) => fetchApi<{ response: string; sources?: FeedbackItem[] }>('/chat', {
+  chat: (message: string, context?: string, responseLanguage?: string) => fetchApi<{ response: string; sources?: FeedbackItem[] }>('/chat', {
     method: 'POST',
-    body: JSON.stringify({ message, context })
+    body: JSON.stringify({ message, context, response_language: responseLanguage })
   }),
 
-  // Chat with streaming (uses Lambda Function URL to bypass API Gateway timeout)
-  chatStream: async (message: string, context?: string, days?: number): Promise<{ response: string; sources?: FeedbackItem[]; metadata?: { total_feedback: number; days_analyzed: number; urgent_count: number } }> => {
-    const streamEndpoint = await getStreamUrl()
-    if (!streamEndpoint) return api.chat(message, context)
-    const { streamApi } = await import('./streamApi')
-    return streamApi.chatStream(streamEndpoint, message, context, days)
-  },
+  // Chat with streaming (via API Gateway SSE)
+  chatStream: (message: string, context?: string, days?: number, responseLanguage?: string) =>
+    fetchApi<{ response: string; sources?: FeedbackItem[] }>('/chat/stream', {
+      method: 'POST',
+      body: JSON.stringify({ message, context, days: days ?? 7, response_language: responseLanguage }),
+    }),
 
   // Data Source Schedules
   getSourcesStatus: (sources?: string[]) => {
@@ -254,6 +259,18 @@ export const api = {
     hashtags: string[]
     urls_to_track: string[]
   }) => fetchApi<{ success: boolean; message: string; settings: typeof settings }>('/settings/brand', {
+    method: 'PUT',
+    body: JSON.stringify(settings)
+  }),
+
+  // Review Configuration
+  getReviewSettings: () => fetchApi<{
+    primary_language: string
+  }>('/settings/review'),
+
+  saveReviewSettings: (settings: {
+    primary_language: string
+  }) => fetchApi<{ success: boolean; message: string; settings: typeof settings }>('/settings/review', {
     method: 'PUT',
     body: JSON.stringify(settings)
   }),
@@ -390,6 +407,12 @@ export const api = {
       body: JSON.stringify({ job_id: jobId, reviews })
     }),
 
+  uploadJsonFeedback: (items: Array<Record<string, unknown>>) =>
+    fetchApi<{ success: boolean; imported_count: number; total_items: number; s3_uri?: string; errors?: string[] }>('/scrapers/manual/json-upload', {
+      method: 'POST',
+      body: JSON.stringify({ items })
+    }),
+
   // Projects - delegated to projectsApi for file size reduction
   getProjects: () => import('./projectsApi').then(m => m.projectsApi.getProjects()),
   createProject: (data: { name: string; description?: string; filters?: Record<string, unknown> }) =>
@@ -398,7 +421,7 @@ export const api = {
   updateProject: (id: string, data: Partial<Project>) =>
     import('./projectsApi').then(m => m.projectsApi.updateProject(id, data)),
   deleteProject: (id: string) => import('./projectsApi').then(m => m.projectsApi.deleteProject(id)),
-  generatePersonas: (projectId: string, filters?: { sources?: string[]; categories?: string[]; sentiments?: string[]; persona_count?: number; custom_instructions?: string; days?: number }) =>
+  generatePersonas: (projectId: string, filters?: { sources?: string[]; categories?: string[]; sentiments?: string[]; persona_count?: number; custom_instructions?: string; days?: number; response_language?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.generatePersonas(projectId, filters)),
   createPersona: (projectId: string, persona: Omit<ProjectPersona, 'persona_id' | 'created_at'>) =>
     import('./projectsApi').then(m => m.projectsApi.createPersona(projectId, persona)),
@@ -408,19 +431,11 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.deletePersona(projectId, personaId)),
   importPersona: (projectId: string, data: { input_type: 'pdf' | 'image' | 'text'; content: string; media_type?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
-  projectChat: (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) =>
-    import('./projectsApi').then(m => m.projectsApi.projectChat(projectId, message, selectedPersonas, selectedDocuments)),
-  projectChatStream: async (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) => {
-    const streamEndpoint = await getStreamUrl()
-    if (!streamEndpoint) return api.projectChat(projectId, message, selectedPersonas, selectedDocuments)
-    const { streamApi } = await import('./streamApi')
-    return streamApi.projectChatStream(streamEndpoint, projectId, message, selectedPersonas, selectedDocuments)
-  },
-  runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
+  runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[]; response_language?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),
-  generateDocument: (projectId: string, data: { doc_type: 'prd' | 'prfaq'; title: string; feature_idea: string; data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }; selected_persona_ids: string[]; selected_document_ids: string[]; feedback_sources: string[]; feedback_categories: string[]; days: number; customer_questions?: string[] }) =>
+  generateDocument: (projectId: string, data: { doc_type: 'prd' | 'prfaq'; title: string; feature_idea: string; data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }; selected_persona_ids: string[]; selected_document_ids: string[]; feedback_sources: string[]; feedback_categories: string[]; days: number; customer_questions?: string[]; response_language?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.generateDocument(projectId, data)),
-  mergeDocuments: (projectId: string, data: { output_type: 'prd' | 'prfaq' | 'custom'; title: string; instructions: string; selected_document_ids: string[]; selected_persona_ids?: string[]; use_feedback?: boolean; feedback_sources?: string[]; feedback_categories?: string[]; days?: number }) =>
+  mergeDocuments: (projectId: string, data: { output_type: 'prd' | 'prfaq' | 'custom'; title: string; instructions: string; selected_document_ids: string[]; selected_persona_ids?: string[]; use_feedback?: boolean; feedback_sources?: string[]; feedback_categories?: string[]; days?: number; response_language?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.mergeDocuments(projectId, data)),
   getJobStatus: (projectId: string, jobId: string) =>
     import('./projectsApi').then(m => m.projectsApi.getJobStatus(projectId, jobId)),
@@ -649,6 +664,21 @@ export const api = {
   clearValidationLogs: (source: string) =>
     fetchApi<{ success: boolean; deleted: number }>(`/logs/validation/${source}`, {
       method: 'DELETE'
+    }),
+
+  // API Tokens
+  createApiToken: (projectId: string, data: { name: string; scope: 'read' | 'read-write' }) =>
+    fetchApi<CreateApiTokenResponse>(`/projects/${projectId}/api-tokens`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  listApiTokens: (projectId: string) =>
+    fetchApi<{ success: boolean; tokens: ApiToken[] }>(`/projects/${projectId}/api-tokens`),
+
+  deleteApiToken: (projectId: string, tokenId: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/projects/${projectId}/api-tokens/${tokenId}`, {
+      method: 'DELETE',
     }),
 }
 

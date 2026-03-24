@@ -13,11 +13,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Filter, SortDesc, X } from 'lucide-react'
+import { Search, Filter, SortDesc, X, FileDown } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api, getDaysFromRange } from '../../api/client'
 import type { FeedbackItem } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import FeedbackCard from '../../components/FeedbackCard'
+import { generateFeedbackPDF } from './feedbackPdfGenerator'
 
 const sentiments = ['all', 'positive', 'neutral', 'negative', 'mixed']
 const defaultCategories = ['all', 'delivery', 'customer_support', 'product_quality', 'pricing', 'website', 'app', 'billing', 'returns', 'communication', 'other']
@@ -33,9 +35,10 @@ function LoadingSpinner() {
 
 // Empty state component
 function EmptyState() {
+  const { t } = useTranslation('feedback')
   return (
     <div className="text-center py-12">
-      <p className="text-gray-500">No feedback found matching your filters</p>
+      <p className="text-gray-500">{t('noFeedbackFound')}</p>
     </div>
   )
 }
@@ -114,6 +117,7 @@ function FiltersCard({
   onCategoryChange: (value: string) => void
   onUrgentChange: (value: boolean) => void
 }>) {
+  const { t } = useTranslation()
   return (
     <div className="card !p-4 sm:!p-6">
       <div className="flex flex-col gap-3 sm:gap-4">
@@ -121,7 +125,7 @@ function FiltersCard({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
           <input
             type="text"
-            placeholder="Search feedback..."
+            placeholder={t('filters.searchFeedback')}
             value={filters.search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="input !pl-11"
@@ -131,18 +135,18 @@ function FiltersCard({
           <div className="flex items-center gap-2 min-w-0">
             <Filter size={16} className="text-gray-400 flex-shrink-0 hidden sm:block" />
             <select value={filters.sourceFilter} onChange={(e) => onSourceChange(e.target.value)} className="input w-full sm:w-auto text-sm">
-              {sources.map(s => <option key={s} value={s}>{s === 'all' ? 'All Sources' : s}</option>)}
+              {sources.map(s => <option key={s} value={s}>{s === 'all' ? t('filters.allSources') : s}</option>)}
             </select>
           </div>
           <select value={filters.sentimentFilter} onChange={(e) => onSentimentChange(e.target.value)} className="input w-full sm:w-auto text-sm flex-1 sm:flex-none">
-            {sentiments.map(s => <option key={s} value={s}>{s === 'all' ? 'All Sentiments' : s}</option>)}
+            {sentiments.map(s => <option key={s} value={s}>{s === 'all' ? t('filters.allSentiments') : t(`sentiment.${s}`)}</option>)}
           </select>
           <select value={filters.categoryFilter} onChange={(e) => onCategoryChange(e.target.value)} className="input w-full sm:w-auto text-sm flex-1 sm:flex-none">
-            {categories.map(c => <option key={c} value={c}>{c === 'all' ? 'All Categories' : c.replace('_', ' ')}</option>)}
+            {categories.map(c => <option key={c} value={c}>{c === 'all' ? t('filters.allCategories') : c.replace('_', ' ')}</option>)}
           </select>
           <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap">
             <input type="checkbox" checked={filters.showUrgentOnly} onChange={(e) => onUrgentChange(e.target.checked)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-            <span className="text-sm text-gray-700">Urgent only</span>
+            <span className="text-sm text-gray-700">{t('filters.urgentOnly')}</span>
           </label>
         </div>
       </div>
@@ -164,22 +168,23 @@ function ResultsHeader({
   hasActiveFilters: boolean
   onClearFilters: () => void
 }>) {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
       <p className="text-sm text-gray-500">
-        Showing {itemCount} of {totalCount} items
-        {search && <span className="ml-1">for "{search}"</span>}
+        {t('showingOf', { count: itemCount, total: totalCount })}
+        {search && <span className="ml-1">{t('forQuery', { query: search })}</span>}
       </p>
       <div className="flex items-center gap-3">
         {hasActiveFilters && (
           <button onClick={onClearFilters} className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700">
             <X size={14} />
-            Clear filters
+            {t('filters.clearFilters')}
           </button>
         )}
         <button className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
           <SortDesc size={14} />
-          Most recent
+          {t('filters.mostRecent')}
         </button>
       </div>
     </div>
@@ -278,6 +283,7 @@ function useFeedbackData(
 }
 
 export default function Feedback() {
+  const { t } = useTranslation('feedback')
   const { timeRange, config } = useConfigStore()
   const days = getDaysFromRange(timeRange)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -332,10 +338,30 @@ export default function Feedback() {
 
   const hasActiveFilters = checkHasActiveFilters(search, sourceFilter, sentimentFilter, categoryFilter, showUrgentOnly)
 
+  const exportPDF = () => {
+    try {
+      generateFeedbackPDF({
+        items: filteredItems,
+        timeRange,
+        filters: {
+          source: sourceFilter !== 'all' ? sourceFilter : undefined,
+          sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
+          category: categoryFilter !== 'all' ? categoryFilter : undefined,
+          search: search || undefined,
+          urgentOnly: showUrgentOnly,
+        },
+      })
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('PDF export failed:', error)
+      }
+    }
+  }
+
   if (!config.apiEndpoint) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Please configure your API endpoint in Settings</p>
+        <p className="text-gray-500">{t('configureEndpoint')}</p>
       </div>
     )
   }
@@ -362,6 +388,19 @@ export default function Feedback() {
         hasActiveFilters={hasActiveFilters}
         onClearFilters={clearFilters}
       />
+
+      {filteredItems.length > 0 && (
+        <div className="flex justify-end">
+          <button
+            onClick={exportPDF}
+            className="btn btn-secondary text-xs sm:text-sm px-3 py-1.5 active:scale-95 flex items-center gap-1.5"
+            title="Export as PDF"
+          >
+            <FileDown size={14} />
+            PDF
+          </button>
+        </div>
+      )}
 
       <FeedbackListContent isLoading={activeLoading} items={filteredItems} />
     </div>

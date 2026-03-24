@@ -415,3 +415,30 @@ export interface LogsSummary {
   total_validation_failures: number
   total_processing_errors: number
 }
+
+export interface ResolvedProblem {
+  problem_id: string
+  category: string
+  subcategory: string
+  problem_text: string
+  resolved_at: string
+  resolved_by: string
+}
+
+// API Token types
+export interface ApiToken {
+  token_id: string
+  name: string
+  scope: 'read' | 'read-write'
+  created_at: string
+  last_used_at?: string
+  project_id: string
+}
+
+export interface CreateApiTokenResponse {
+  success: boolean
+  token: string
+  token_id: string
+  name: string
+  message?: string
+}

@@ -1,0 +1,9 @@
+{
+  "assistantDescription": "Faça perguntas sobre os dados de feedback dos seus clientes",
+  "assistantName": "Assistente IA VoC",
+  "configureEndpoint": "Configure o endpoint da API nas Configurações para usar o chat IA",
+  "emptyState": "Inicie uma conversa sobre o feedback dos seus clientes",
+  "hideHistory": "Ocultar histórico",
+  "inputPlaceholder": "Pergunte sobre o seu feedback...",
+  "showHistory": "Mostrar histórico"
+}

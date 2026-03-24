@@ -1,0 +1,9 @@
+{
+  "assistantDescription": "Stellen Sie Fragen zu Ihren Kundenfeedback-Daten",
+  "assistantName": "VoC KI-Assistent",
+  "configureEndpoint": "Bitte konfigurieren Sie Ihren API-Endpunkt in den Einstellungen, um den KI-Chat zu nutzen",
+  "emptyState": "Starten Sie ein Gespräch über Ihr Kundenfeedback",
+  "hideHistory": "Verlauf ausblenden",
+  "inputPlaceholder": "Fragen Sie zu Ihrem Feedback...",
+  "showHistory": "Verlauf anzeigen"
+}

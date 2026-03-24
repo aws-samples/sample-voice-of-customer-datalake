@@ -12,7 +12,7 @@
 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Bot, User, Copy, Check } from 'lucide-react'
+import { Bot, User, Copy, Check, Brain, ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import type { ChatMessage as ChatMessageType } from '../../store/chatStore'
 import FeedbackCarousel from '../FeedbackCarousel'
@@ -20,6 +20,29 @@ import clsx from 'clsx'
 
 interface ChatMessageProps {
   message: ChatMessageType
+}
+
+function ThinkingSection({ thinking }: Readonly<{ thinking: string }>) {
+  const [expanded, setExpanded] = useState(false)
+  if (!thinking) return null
+
+  return (
+    <div className="mb-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+      >
+        <Brain size={14} />
+        <span>Reasoning</span>
+        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+      </button>
+      {expanded && (
+        <div className="text-xs text-gray-400 bg-gray-50 rounded p-2 mt-1 max-h-48 overflow-y-auto">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{thinking}</ReactMarkdown>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function ChatMessage({ message }: Readonly<ChatMessageProps>) {
@@ -55,6 +78,7 @@ export default function ChatMessage({ message }: Readonly<ChatMessageProps>) {
         >
           {message.role === 'assistant' ? (
             <div className="prose prose-sm max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:my-2 prose-ul:my-2 prose-li:my-0.5 overflow-x-auto overflow-y-hidden break-words [&>*]:max-w-full text-sm sm:text-base">
+              {message.thinking && <ThinkingSection thinking={message.thinking} />}
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{

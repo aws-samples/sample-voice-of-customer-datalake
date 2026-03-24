@@ -174,6 +174,14 @@ def step_analyze(event: dict) -> dict:
     system_prompt = """You are a senior user researcher conducting rigorous analysis of REAL customer feedback data.
 Your analysis must be grounded in the actual feedback provided - cite specific reviews, quote customers directly, and identify patterns from the data.
 Be thorough, data-driven, and cite specific examples."""
+
+    # Inject language instruction if non-English
+    response_language = config.get('response_language')
+    if response_language:
+        from shared.prompts import get_response_language_instruction
+        lang_instruction = get_response_language_instruction(response_language)
+        if lang_instruction:
+            system_prompt += f"\n\n{lang_instruction}"
     
     # Build additional context sections
     additional_context = ""
@@ -218,12 +226,21 @@ def step_synthesize(event: dict) -> dict:
     project_id = event['project_id']
     job_id = event['job_id']
     analysis = event['analysis']
+    config = event.get('research_config', {})
     
     logger.info(f"Synthesizing findings for job {job_id}")
     update_job_status(project_id, job_id, 'running', 50, 'preparing_synthesis')
     
     system_prompt = """You are synthesizing research findings into actionable insights.
 Focus on clarity, prioritization, and recommendations."""
+
+    # Inject language instruction if non-English
+    response_language = config.get('response_language')
+    if response_language:
+        from shared.prompts import get_response_language_instruction
+        lang_instruction = get_response_language_instruction(response_language)
+        if lang_instruction:
+            system_prompt += f"\n\n{lang_instruction}"
     
     user_prompt = f"""Synthesize the analysis into clear findings.
 
@@ -252,12 +269,21 @@ def step_validate(event: dict) -> dict:
     job_id = event['job_id']
     analysis = event['analysis']
     synthesis = event['synthesis']
+    config = event.get('research_config', {})
     
     logger.info(f"Validating research for job {job_id}")
     update_job_status(project_id, job_id, 'running', 75, 'preparing_validation')
     
     system_prompt = """You are a critical reviewer ensuring research quality.
 Challenge assumptions and verify conclusions."""
+
+    # Inject language instruction if non-English
+    response_language = config.get('response_language')
+    if response_language:
+        from shared.prompts import get_response_language_instruction
+        lang_instruction = get_response_language_instruction(response_language)
+        if lang_instruction:
+            system_prompt += f"\n\n{lang_instruction}"
     
     user_prompt = f"""Review and validate the research findings.
 

@@ -22,7 +22,7 @@ export interface EditModalState {
 type EditMode = EditModalState['mode']
 type EditType = EditModalState['type']
 
-interface EditModalProps extends EditModalState {
+interface EditModalProps extends Readonly<EditModalState> {
   readonly onClose: () => void
   readonly onSave: (content: unknown, syncOption?: boolean) => void
   readonly saving: boolean
@@ -94,7 +94,7 @@ function MediaContent({ fileType, mediaUrl, fileKey }: MediaContentProps) {
 
 export default function EditModal({
   mode, type, data, key: fileKey, feedbackId, s3RawUri, contentType, isPresignedUrl, onClose, onSave, saving, error
-}: EditModalProps) {
+}: Readonly<EditModalProps>) {
   const initialContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2)
   const [content, setContent] = useState(initialContent)
   const [syncEnabled, setSyncEnabled] = useState(false)

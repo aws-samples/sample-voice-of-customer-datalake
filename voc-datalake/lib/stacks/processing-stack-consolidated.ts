@@ -11,7 +11,7 @@ import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { uniqueName } from '../utils/naming';
-import { pluginSystemSuppressions } from '../utils/nag-suppressions';
+import { pluginSystemSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 
 export interface VocProcessingStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -83,9 +83,9 @@ export class VocProcessingStack extends cdk.Stack {
       sid: 'BedrockInvoke',
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
         'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
       ],
     }));
@@ -109,6 +109,7 @@ export class VocProcessingStack extends cdk.Stack {
     idempotencyTable.grantReadWriteData(processingRole);
     processingQueue.grantConsumeMessages(processingRole);
     kmsKey.grantEncryptDecrypt(processingRole);
+    NagSuppressions.addResourceSuppressions(processingRole, bedrockModelSuppressions, true);
 
     // ============================================
     // FEEDBACK PROCESSOR LAMBDA
@@ -217,10 +218,11 @@ export class VocProcessingStack extends cdk.Stack {
     researchRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
       ],
     }));
+    NagSuppressions.addResourceSuppressions(researchRole, bedrockModelSuppressions, true);
 
     const researchCode = lambda.Code.fromAsset('.', {
       exclude: ['**/__pycache__', '*.pyc', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md', 'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**', 'plugins/**', 'lambda/api/**', 'lambda/processor/**', 'lambda/ingestors/**', 'lambda/aggregator/**', 'lambda/webhooks/**', 'lambda/layers/**'],

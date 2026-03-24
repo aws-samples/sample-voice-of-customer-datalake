@@ -1,0 +1,14 @@
+{
+  "appDescription": "统一客户反馈智能平台",
+  "appName": "VoC Analytics",
+  "appTagline": "客户之声分析",
+  "configureBrand": "配置品牌",
+  "send": "发送",
+  "sidebar": {
+    "closeMenu": "关闭菜单",
+    "collapseSidebar": "收起侧边栏",
+    "expandSidebar": "展开侧边栏",
+    "openMenu": "打开菜单",
+    "signOut": "退出登录"
+  }
+}

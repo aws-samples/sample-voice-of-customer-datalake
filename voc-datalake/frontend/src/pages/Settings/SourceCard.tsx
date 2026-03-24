@@ -75,17 +75,21 @@ export default function SourceCard({ manifest, apiEndpoint }: SourceCardProps) {
   })
 
   // Task 4.2: Merge fetched credentials into local state without overwriting user edits
+  // Use query's onSuccess-like pattern via useEffect with event handler scheduling
   useEffect(() => {
     if (!fetchedCredentials || hasFetchedCredentials.current) return
     hasFetchedCredentials.current = true
-    setCredentials(prev => {
-      const merged = { ...prev }
-      for (const [key, value] of Object.entries(fetchedCredentials)) {
-        if (!merged[key]) {
-          merged[key] = value
+    // Schedule state update to avoid synchronous setState in effect
+    queueMicrotask(() => {
+      setCredentials(prev => {
+        const merged = { ...prev }
+        for (const [key, value] of Object.entries(fetchedCredentials)) {
+          if (!merged[key]) {
+            merged[key] = value
+          }
         }
-      }
-      return merged
+        return merged
+      })
     })
   }, [fetchedCredentials])
 
@@ -148,46 +152,22 @@ export default function SourceCard({ manifest, apiEndpoint }: SourceCardProps) {
       />
 
       {isExpanded && (
-        <div className="p-3 sm:p-4 border-t border-gray-200 space-y-4 sm:space-y-6">
-          {manifest.webhooks && manifest.webhooks.length > 0 && (
-            <WebhooksSection
-              webhooks={manifest.webhooks}
-              sourceKey={manifest.id}
-              webhookBaseUrl={webhookBaseUrl}
-              copiedUrl={copiedUrl}
-              onCopy={copyToClipboard}
-            />
-          )}
-
-          {manifest.config.length > 0 && (
-            <CredentialsSection
-              fields={manifest.config}
-              credentials={credentials}
-              showSecrets={showSecrets}
-              sourceStatus={sourceStatus}
-              saveSuccess={saveSuccess}
-              testMutation={testMutation}
-              runMutation={runMutation}
-              hasIngestor={manifest.hasIngestor}
-              updateCredentialsMutation={updateCredentialsMutation}
-              onCredentialsChange={setCredentials}
-              onToggleSecrets={() => setShowSecrets(!showSecrets)}
-            />
-          )}
-
-          {manifest.setup && (
-            <SetupInstructionsSection setup={manifest.setup} />
-          )}
-
-          {manifest.id === 's3_import' && apiEndpoint && (
-            <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-2 sm:mb-3 flex items-center gap-2">
-                📁 File Explorer
-              </h4>
-              <S3ImportExplorer />
-            </div>
-          )}
-        </div>
+        <SourceCardExpandedContent
+          manifest={manifest}
+          apiEndpoint={apiEndpoint}
+          credentials={credentials}
+          showSecrets={showSecrets}
+          sourceStatus={sourceStatus}
+          saveSuccess={saveSuccess}
+          copiedUrl={copiedUrl}
+          webhookBaseUrl={webhookBaseUrl}
+          testMutation={testMutation}
+          runMutation={runMutation}
+          updateCredentialsMutation={updateCredentialsMutation}
+          onCredentialsChange={setCredentials}
+          onToggleSecrets={() => setShowSecrets(!showSecrets)}
+          onCopy={copyToClipboard}
+        />
       )}
     </div>
   )
@@ -196,6 +176,71 @@ export default function SourceCard({ manifest, apiEndpoint }: SourceCardProps) {
 // ============================================
 // Sub-Components
 // ============================================
+
+interface SourceCardExpandedContentProps {
+  readonly manifest: PluginManifest
+  readonly apiEndpoint: string
+  readonly credentials: Record<string, string>
+  readonly showSecrets: boolean
+  readonly sourceStatus: { configured?: boolean } | undefined
+  readonly saveSuccess: boolean
+  readonly copiedUrl: string | null
+  readonly webhookBaseUrl: string
+  readonly testMutation: { isPending: boolean; data?: { success: boolean; message?: string; error?: string }; mutate: () => void }
+  readonly runMutation: { isPending: boolean; data?: { success: boolean; message?: string }; mutate: () => void }
+  readonly updateCredentialsMutation: { isPending: boolean; mutate: (creds: Record<string, string>) => void }
+  readonly onCredentialsChange: (creds: Record<string, string>) => void
+  readonly onToggleSecrets: () => void
+  readonly onCopy: (text: string, id: string) => void
+}
+
+function SourceCardExpandedContent({
+  manifest, apiEndpoint, credentials, showSecrets, sourceStatus, saveSuccess, copiedUrl, webhookBaseUrl,
+  testMutation, runMutation, updateCredentialsMutation, onCredentialsChange, onToggleSecrets, onCopy,
+}: SourceCardExpandedContentProps) {
+  return (
+    <div className="p-3 sm:p-4 border-t border-gray-200 space-y-4 sm:space-y-6">
+      {manifest.webhooks && manifest.webhooks.length > 0 && (
+        <WebhooksSection
+          webhooks={manifest.webhooks}
+          sourceKey={manifest.id}
+          webhookBaseUrl={webhookBaseUrl}
+          copiedUrl={copiedUrl}
+          onCopy={onCopy}
+        />
+      )}
+
+      {manifest.config.length > 0 && (
+        <CredentialsSection
+          fields={manifest.config}
+          credentials={credentials}
+          showSecrets={showSecrets}
+          sourceStatus={sourceStatus}
+          saveSuccess={saveSuccess}
+          testMutation={testMutation}
+          runMutation={runMutation}
+          hasIngestor={manifest.hasIngestor}
+          updateCredentialsMutation={updateCredentialsMutation}
+          onCredentialsChange={onCredentialsChange}
+          onToggleSecrets={onToggleSecrets}
+        />
+      )}
+
+      {manifest.setup && (
+        <SetupInstructionsSection setup={manifest.setup} />
+      )}
+
+      {manifest.id === 's3_import' && apiEndpoint && (
+        <div>
+          <h4 className="text-sm font-semibold text-gray-700 mb-2 sm:mb-3 flex items-center gap-2">
+            📁 File Explorer
+          </h4>
+          <S3ImportExplorer />
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface SourceCardHeaderProps {
   readonly manifest: PluginManifest
@@ -305,13 +350,28 @@ interface CredentialsSectionProps {
   readonly onToggleSecrets: () => void
 }
 
+function buildCompleteCredentials(fields: ConfigField[], credentials: Record<string, string>): Record<string, string> {
+  const completeCreds: Record<string, string> = {}
+  for (const field of fields) {
+    const current = field.key in credentials ? credentials[field.key] : undefined
+    if (current != null && current !== '') {
+      completeCreds[field.key] = current
+    } else if (field.options && field.options.length > 0) {
+      completeCreds[field.key] = field.options[0].value
+    } else if (field.placeholder) {
+      completeCreds[field.key] = field.placeholder
+    }
+  }
+  return completeCreds
+}
+
 function CredentialsSection({
   fields, credentials, showSecrets, sourceStatus, saveSuccess, testMutation, runMutation, hasIngestor, updateCredentialsMutation,
   onCredentialsChange, onToggleSecrets
 }: CredentialsSectionProps) {
-  const saveIcon = getSaveButtonIcon(updateCredentialsMutation.isPending, saveSuccess)
-  const saveText = getSaveButtonText(saveSuccess)
-  const saveButtonClass = saveSuccess ? 'bg-green-600 text-white' : 'btn-primary'
+  const handleSave = () => {
+    updateCredentialsMutation.mutate(buildCompleteCredentials(fields, credentials))
+  }
 
   return (
     <div>
@@ -331,55 +391,18 @@ function CredentialsSection({
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button onClick={onToggleSecrets} className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2">
-            {showSecrets ? <EyeOff size={14} /> : <Eye size={14} />}
-            {showSecrets ? 'Hide' : 'Show'}
-          </button>
-          <button
-            onClick={() => {
-              // Build complete credentials: include all config fields so untouched fields
-              // with defaults/placeholders don't get lost
-              const completeCreds: Record<string, string> = {}
-              for (const field of fields) {
-                const current = credentials[field.key]
-                if (current !== undefined && current !== '') {
-                  completeCreds[field.key] = current
-                } else if (field.options && field.options.length > 0) {
-                  // Select fields: use first option as default if not set
-                  completeCreds[field.key] = field.options[0].value
-                } else if (field.placeholder) {
-                  completeCreds[field.key] = field.placeholder
-                }
-              }
-              updateCredentialsMutation.mutate(completeCreds)
-            }}
-            disabled={updateCredentialsMutation.isPending || Object.keys(credentials).length === 0}
-            className={clsx('btn flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2', saveButtonClass)}
-          >
-            {saveIcon}
-            <span className="hidden xs:inline">{saveText.full}</span>
-            <span className="xs:hidden">{saveText.short}</span>
-          </button>
-          <button
-            onClick={() => testMutation.mutate()}
-            disabled={testMutation.isPending || !sourceStatus?.configured}
-            className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
-          >
-            {testMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
-            Test
-          </button>
-          {hasIngestor && (
-            <button
-              onClick={() => runMutation.mutate()}
-              disabled={runMutation.isPending}
-              className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
-            >
-              {runMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-              Run Now
-            </button>
-          )}
-        </div>
+        <CredentialActions
+          showSecrets={showSecrets}
+          saveSuccess={saveSuccess}
+          sourceStatus={sourceStatus}
+          hasIngestor={hasIngestor}
+          savePending={updateCredentialsMutation.isPending}
+          testMutation={testMutation}
+          runMutation={runMutation}
+          credentialsEmpty={Object.keys(credentials).length === 0}
+          onToggleSecrets={onToggleSecrets}
+          onSave={handleSave}
+        />
 
         {testMutation.data && (
           <TestResultMessage success={testMutation.data.success} message={testMutation.data.message || testMutation.data.error || 'Unknown result'} />
@@ -388,6 +411,64 @@ function CredentialsSection({
           <TestResultMessage success={runMutation.data.success} message={runMutation.data.message || 'Run triggered'} />
         )}
       </div>
+    </div>
+  )
+}
+
+interface CredentialActionsProps {
+  readonly showSecrets: boolean
+  readonly saveSuccess: boolean
+  readonly sourceStatus: { configured?: boolean } | undefined
+  readonly hasIngestor: boolean
+  readonly savePending: boolean
+  readonly testMutation: { isPending: boolean; mutate: () => void }
+  readonly runMutation: { isPending: boolean; mutate: () => void }
+  readonly credentialsEmpty: boolean
+  readonly onToggleSecrets: () => void
+  readonly onSave: () => void
+}
+
+function CredentialActions({
+  showSecrets, saveSuccess, sourceStatus, hasIngestor, savePending, testMutation, runMutation, credentialsEmpty,
+  onToggleSecrets, onSave,
+}: CredentialActionsProps) {
+  const saveIcon = getSaveButtonIcon(savePending, saveSuccess)
+  const saveText = getSaveButtonText(saveSuccess)
+  const saveButtonClass = saveSuccess ? 'bg-green-600 text-white' : 'btn-primary'
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button onClick={onToggleSecrets} className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2">
+        {showSecrets ? <EyeOff size={14} /> : <Eye size={14} />}
+        {showSecrets ? 'Hide' : 'Show'}
+      </button>
+      <button
+        onClick={onSave}
+        disabled={savePending || credentialsEmpty}
+        className={clsx('btn flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2', saveButtonClass)}
+      >
+        {saveIcon}
+        <span className="hidden xs:inline">{saveText.full}</span>
+        <span className="xs:hidden">{saveText.short}</span>
+      </button>
+      <button
+        onClick={() => testMutation.mutate()}
+        disabled={testMutation.isPending || !sourceStatus?.configured}
+        className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
+      >
+        {testMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
+        Test
+      </button>
+      {hasIngestor && (
+        <button
+          onClick={() => runMutation.mutate()}
+          disabled={runMutation.isPending}
+          className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
+        >
+          {runMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          Run Now
+        </button>
+      )}
     </div>
   )
 }

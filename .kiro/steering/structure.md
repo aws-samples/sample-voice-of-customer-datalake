@@ -30,7 +30,7 @@ voice-of-customer-datalake/       # Root repository
     │   ├── aggregator/handler.py     # DynamoDB Streams consumer - real-time metrics
     │   ├── research/
     │   │   └── research_step_handler.py  # Step Functions task handler
-    │   ├── shared/                   # Shared utilities across Lambdas (12 modules)
+    │   ├── shared/                   # Shared utilities across Lambdas (11 modules)
     │   │   ├── __init__.py
     │   │   ├── api.py                # API response helpers
     │   │   ├── auth.py               # Authentication utilities
@@ -41,16 +41,14 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── http.py               # HTTP utilities
     │   │   ├── idempotency.py        # Idempotency helpers
     │   │   ├── logging.py            # Logging utilities
-    │   │   ├── project_chat.py       # Project chat utilities
     │   │   └── prompts.py            # Prompt management utilities
-    │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 15 handlers
+    │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit)
     │   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
-    │   │   ├── chat_handler.py           # /chat/* (conversations)
-    │   │   ├── chat_stream_handler.py    # Streaming chat (Lambda Function URL)
+    │   │   ├── chat_handler.py           # /chat/* (conversations CRUD only)
     │   │   ├── integrations_handler.py   # /integrations/*, /sources/* (credentials, schedules)
     │   │   ├── scrapers_handler.py       # /scrapers/* (web scraper management)
     │   │   ├── settings_handler.py       # /settings/* (brand, categories config)
-    │   │   ├── projects_handler.py       # /projects/* (research projects, personas)
+    │   │   ├── projects_handler.py       # /projects/* (research projects, personas — NO chat)
     │   │   ├── users_handler.py          # /users/* (Cognito user administration)
     │   │   ├── feedback_form_handler.py  # /feedback-form/*, /feedback-forms/* (embeddable forms)
     │   │   ├── data_explorer_handler.py  # /data-explorer/* (S3 raw data & DynamoDB browser)
@@ -65,6 +63,26 @@ voice-of-customer-datalake/       # Root repository
     │   │       ├── prd-generation.json
     │   │       ├── prfaq-generation.json
     │   │       └── research-analysis.json
+    │   ├── stream/                    # ⚡ TypeScript streaming chat Lambda (Node.js 22)
+    │   │   ├── src/
+    │   │   │   ├── handler.ts            # Entry point — routes VoC chat vs project chat
+    │   │   │   ├── schema.ts             # Zod request validation (attachments, messages)
+    │   │   │   ├── attachments.ts        # Attachment validation + Bedrock content blocks
+    │   │   │   ├── bedrock/
+    │   │   │   │   ├── converse-stream.ts    # Bedrock ConverseStream wrapper
+    │   │   │   │   └── stream-processor.ts   # SSE event processing
+    │   │   │   ├── context/
+    │   │   │   │   ├── project-context.ts    # Project chat context builder
+    │   │   │   │   └── voc-context.ts        # VoC chat context builder
+    │   │   │   ├── tools/
+    │   │   │   │   ├── index.ts              # Tool definitions
+    │   │   │   │   ├── executor.ts           # Tool execution
+    │   │   │   │   └── search-feedback.ts    # search_feedback tool
+    │   │   │   └── lib/
+    │   │   │       ├── streaming.ts          # SSE streaming utilities
+    │   │   │       └── errors.ts             # Error types
+    │   │   ├── package.json
+    │   │   └── tsconfig.json
     │   └── layers/
     │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4
     │       └── processing-deps/      # Layer: aws-lambda-powertools
@@ -78,7 +96,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── client.ts         # API client, fetch helpers
     │   │   │   ├── types.ts          # API type definitions
     │   │   │   ├── projectsApi.ts    # Projects API (lazy-loaded)
-    │   │   │   └── streamApi.ts      # Streaming API helpers (lazy-loaded)
+    │   │   │   └── streamClient.ts   # SSE streaming client (VoC + project chat)
     │   │   ├── services/auth.ts      # Cognito authentication service
     │   │   ├── components/           # Each component in its own folder with index.tsx (23 total)
     │   │   │   ├── AdminRoute/           # Admin-only route wrapper

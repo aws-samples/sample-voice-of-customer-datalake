@@ -1,0 +1,14 @@
+{
+  "appDescription": "Plateforme unifiée d'intelligence des retours clients",
+  "appName": "VoC Analytics",
+  "appTagline": "Voice of the Customer Analytics",
+  "configureBrand": "Configurer la marque",
+  "send": "Envoyer",
+  "sidebar": {
+    "closeMenu": "Fermer le menu",
+    "collapseSidebar": "Réduire la barre latérale",
+    "expandSidebar": "Développer la barre latérale",
+    "openMenu": "Ouvrir le menu",
+    "signOut": "Se déconnecter"
+  }
+}

@@ -67,6 +67,7 @@ export const projectsApi = {
     persona_count?: number
     custom_instructions?: string
     days?: number
+    response_language?: string
   }) =>
     fetchApi<{ success: boolean; personas: ProjectPersona[]; analysis?: { research: string; validation: string } }>(`/projects/${projectId}/personas/generate`, {
       method: 'POST',
@@ -94,12 +95,6 @@ export const projectsApi = {
       body: JSON.stringify(data)
     }),
   
-  projectChat: (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) =>
-    fetchApi<{ success: boolean; response: string; mentioned_personas?: string[]; selected_personas?: string[]; referenced_documents?: string[]; context?: { feedback_count: number; persona_count: number; document_count: number } }>(`/projects/${projectId}/chat`, {
-      method: 'POST',
-      body: JSON.stringify({ message, selected_personas: selectedPersonas, selected_documents: selectedDocuments })
-    }),
-  
   runResearch: (projectId: string, data: { 
     question: string
     title?: string
@@ -109,6 +104,7 @@ export const projectsApi = {
     days?: number
     selected_persona_ids?: string[]
     selected_document_ids?: string[]
+    response_language?: string
   }) =>
     fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/research`, {
       method: 'POST',
@@ -126,6 +122,7 @@ export const projectsApi = {
     feedback_categories: string[]
     days: number
     customer_questions?: string[]
+    response_language?: string
   }) =>
     fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/document`, {
       method: 'POST',
@@ -142,6 +139,7 @@ export const projectsApi = {
     feedback_sources?: string[]
     feedback_categories?: string[]
     days?: number
+    response_language?: string
   }) =>
     fetchApi<{ success: boolean; job_id: string; status: string; message: string }>(`/projects/${projectId}/documents/merge`, {
       method: 'POST',
@@ -171,4 +169,15 @@ export const projectsApi = {
   
   deleteDocument: (projectId: string, documentId: string) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, { method: 'DELETE' }),
+
+  getAutoseed: (projectId: string, personaIds?: string[], documentIds?: string[]) => {
+    const params = new URLSearchParams()
+    if (personaIds?.length) params.set('persona_ids', personaIds.join(','))
+    if (documentIds?.length) params.set('document_ids', documentIds.join(','))
+    const qs = params.toString()
+    const endpoint = `/projects/${projectId}/autoseed`
+    return fetchApi<{ project: { name: string; description: string }; files: { path: string; content: string }[] }>(
+      qs ? `${endpoint}?${qs}` : endpoint
+    )
+  },
 }

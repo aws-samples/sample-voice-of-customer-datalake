@@ -96,6 +96,8 @@ def build_chain_steps(filename: str, step_names: list[str], context: dict) -> li
     """
     config = load_prompt_file(filename)
     steps_config = config.get('steps', {})
+    response_language = context.pop('response_language', None)
+    language_instruction = get_response_language_instruction(response_language)
     
     chain_steps = []
     for step_name in step_names:
@@ -103,8 +105,11 @@ def build_chain_steps(filename: str, step_names: list[str], context: dict) -> li
             raise KeyError(f"Step '{step_name}' not found in {filename}")
         
         step = steps_config[step_name]
+        system = step.get('system_prompt', '')
+        if language_instruction:
+            system = f"{system}\n\n{language_instruction}"
         chain_steps.append({
-            'system': step.get('system_prompt', ''),
+            'system': system,
             'user': format_prompt(step.get('user_prompt_template', ''), **context),
             'max_tokens': step.get('max_tokens', 4096),
             'thinking_budget': step.get('thinking_budget', 0),
@@ -114,13 +119,44 @@ def build_chain_steps(filename: str, step_names: list[str], context: dict) -> li
     return chain_steps
 
 
+def get_response_language_instruction(language_code: str | None) -> str:
+    """
+    Build a language instruction to append to system prompts.
+    
+    Args:
+        language_code: ISO language code (e.g. 'en', 'es', 'ko').
+                       If None or 'en', returns empty string.
+    
+    Returns:
+        Instruction string like 'IMPORTANT: You MUST respond entirely in Spanish (es).'
+    """
+    if not language_code or language_code == 'en':
+        return ''
+    
+    # Map of common codes to display names
+    _names = {
+        'es': 'Spanish', 'fr': 'French', 'de': 'German', 'pt': 'Portuguese',
+        'ja': 'Japanese', 'zh': 'Chinese', 'ko': 'Korean', 'it': 'Italian',
+        'nl': 'Dutch', 'ru': 'Russian', 'ar': 'Arabic', 'hi': 'Hindi',
+        'sv': 'Swedish', 'pl': 'Polish', 'tr': 'Turkish', 'da': 'Danish',
+        'no': 'Norwegian', 'fi': 'Finnish', 'th': 'Thai', 'vi': 'Vietnamese',
+        'uk': 'Ukrainian', 'ro': 'Romanian', 'cs': 'Czech', 'el': 'Greek',
+        'hu': 'Hungarian', 'he': 'Hebrew', 'id': 'Indonesian', 'ms': 'Malay',
+        'bg': 'Bulgarian', 'hr': 'Croatian', 'sk': 'Slovak', 'sl': 'Slovenian',
+        'sr': 'Serbian', 'ca': 'Catalan', 'tl': 'Filipino',
+    }
+    name = _names.get(language_code, language_code)
+    return f'IMPORTANT: You MUST respond entirely in {name} ({language_code}). All text, headings, labels, and explanations must be in {name}.'
+
+
 # Convenience functions for specific prompt types
 
 def get_persona_generation_steps(
     persona_count: int,
     feedback_stats: str,
     feedback_context: str,
-    custom_instructions: str = ''
+    custom_instructions: str = '',
+    response_language: str | None = None,
 ) -> list[dict]:
     """Build persona generation chain steps."""
     custom_section = f"\n\n## ADDITIONAL INSTRUCTIONS:\n{custom_instructions}\n" if custom_instructions else ""
@@ -135,6 +171,7 @@ def get_persona_generation_steps(
         'feedback_sample': feedback_sample,
         'custom_section': custom_section,
         'previous': '{previous}',  # Placeholder for chain
+        'response_language': response_language,
     }
     
     return build_chain_steps(
@@ -147,7 +184,8 @@ def get_persona_generation_steps(
 def get_prd_generation_steps(
     feature_idea: str,
     personas_context: str,
-    feedback_context: str
+    feedback_context: str,
+    response_language: str | None = None,
 ) -> list[dict]:
     """Build PRD generation chain steps."""
     context = {
@@ -155,6 +193,7 @@ def get_prd_generation_steps(
         'personas_context': personas_context,
         'feedback_context': feedback_context,
         'previous': '{previous}',
+        'response_language': response_language,
     }
     
     return build_chain_steps(
@@ -167,7 +206,8 @@ def get_prd_generation_steps(
 def get_prfaq_generation_steps(
     feature_idea: str,
     personas_context: str,
-    feedback_context: str
+    feedback_context: str,
+    response_language: str | None = None,
 ) -> list[dict]:
     """Build PR/FAQ generation chain steps."""
     context = {
@@ -175,6 +215,7 @@ def get_prfaq_generation_steps(
         'personas_context': personas_context,
         'feedback_context': feedback_context,
         'previous': '{previous}',
+        'response_language': response_language,
     }
     
     return build_chain_steps(
@@ -188,7 +229,8 @@ def get_research_analysis_steps(
     research_question: str,
     feedback_stats: str,
     feedback_context: str,
-    feedback_count: int
+    feedback_count: int,
+    response_language: str | None = None,
 ) -> list[dict]:
     """Build research analysis chain steps."""
     context = {
@@ -197,6 +239,7 @@ def get_research_analysis_steps(
         'feedback_context': feedback_context,
         'feedback_count': feedback_count,
         'previous': '{previous}',
+        'response_language': response_language,
     }
     
     return build_chain_steps(

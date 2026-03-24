@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -134,8 +135,8 @@ export class VocApiStack extends cdk.Stack {
     // Metrics API
     const metricsRole = this.createLambdaRole('MetricsLambdaRole');
     feedbackTable.grantReadData(metricsRole);
-    aggregatesTable.grantReadData(metricsRole);
-    kmsKey.grantDecrypt(metricsRole);
+    aggregatesTable.grantReadWriteData(metricsRole);
+    kmsKey.grantEncryptDecrypt(metricsRole);
 
     const metricsLambda = new lambda.Function(this, 'MetricsApi', {
       functionName: uniqueName('voc-metrics-api'),
@@ -203,8 +204,8 @@ export class VocApiStack extends cdk.Stack {
     scrapersRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
       ],
     }));
     // AWS Marketplace permissions required for Bedrock model access
@@ -266,7 +267,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(manualImportProcessorRole);
     manualImportProcessorRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
+      resources: [`arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6'],
     }));
 
     new lambda.Function(this, 'ManualImportProcessor', {
@@ -289,7 +290,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(settingsRole);
     settingsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
+      resources: [`arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6'],
     }));
 
     const settingsLambda = new lambda.Function(this, 'SettingsApi', {
@@ -375,7 +376,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(chatRole);
     chatRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
+      resources: [`arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6'],
     }));
 
     const chatLambda = new lambda.Function(this, 'ChatApi', {
@@ -404,8 +405,8 @@ export class VocApiStack extends cdk.Stack {
     projectsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
         'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
     }));
@@ -471,8 +472,8 @@ export class VocApiStack extends cdk.Stack {
     personaGeneratorRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
         'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
     }));
@@ -510,8 +511,8 @@ export class VocApiStack extends cdk.Stack {
     documentGeneratorRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
       ],
     }));
 
@@ -544,8 +545,8 @@ export class VocApiStack extends cdk.Stack {
     documentMergerRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
       ],
     }));
 
@@ -577,8 +578,8 @@ export class VocApiStack extends cdk.Stack {
     personaImporterRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
         'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
     }));
@@ -617,52 +618,85 @@ export class VocApiStack extends cdk.Stack {
     documentMergerLambda.grantInvoke(projectsRole);
     personaImporterLambda.grantInvoke(projectsRole);
 
-    // Chat Stream (Function URL)
-    const chatStreamRole = this.createLambdaRole('ChatStreamLambdaRole');
-    feedbackTable.grantReadData(chatStreamRole);
-    aggregatesTable.grantReadData(chatStreamRole);
-    projectsTable.grantReadData(chatStreamRole);
-    kmsKey.grantDecrypt(chatStreamRole);
-    chatStreamRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
-    }));
-
-    const chatStreamLambda = new lambda.Function(this, 'ChatStreamApi', {
+    // Chat Stream (Node.js — API Gateway streaming, replaces Python Function URL)
+    const chatStreamLambda = new NodejsFunction(this, 'ChatStreamApi', {
       functionName: uniqueName('voc-chat-stream'),
-      runtime: lambda.Runtime.PYTHON_3_14,
+      entry: path.join(__dirname, '../../lambda/stream/src/handler.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
       architecture: lambda.Architecture.ARM_64,
-      handler: 'chat_stream_handler.lambda_handler',
-      code: createApiLambdaCode('chat_stream_handler.py'),
-      role: chatStreamRole,
-      timeout: cdk.Duration.minutes(5),
       memorySize: 1024,
+      timeout: cdk.Duration.minutes(5),
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
-        USER_POOL_ID: userPool.userPoolId,
+        BEDROCK_MODEL_ID: 'global.anthropic.claude-sonnet-4-6',
+        AVATARS_CDN_URL: avatarsCdnUrl,
         ALLOWED_ORIGIN: allowedOrigin,
-        POWERTOOLS_SERVICE_NAME: 'voc-chat-stream',
-        LOG_LEVEL: 'INFO',
       },
-      layers: [apiLayer],
+      bundling: {
+        format: OutputFormat.ESM,
+        mainFields: ['module', 'main'],
+        externalModules: [
+          '@aws-sdk/*',
+          '@smithy/*',
+        ],
+      },
       logGroup: this.createLogGroup('ChatStreamLogs', uniqueName('voc-chat-stream')),
     });
 
-    const chatStreamUrl = chatStreamLambda.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.AWS_IAM,
-      cors: { 
-        allowedOrigins: [allowedOrigin],
-        allowedMethods: [lambda.HttpMethod.ALL],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Amz-Date', 'X-Amz-Security-Token', 'X-Amz-Content-Sha256'],
-        maxAge: cdk.Duration.seconds(0),
+    // Bedrock permissions — ConverseStream
+    chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+      resources: [
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
+      ],
+    }));
+    // AWS Marketplace permissions required for Bedrock model access
+    chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['aws-marketplace:ViewSubscriptions', 'aws-marketplace:Subscribe'],
+      resources: ['*'],
+    }));
+    NagSuppressions.addResourceSuppressions(chatStreamLambda, marketplaceSuppressions, true);
+
+    // DynamoDB permissions
+    feedbackTable.grantReadData(chatStreamLambda);
+    aggregatesTable.grantReadData(chatStreamLambda);
+    projectsTable.grantReadWriteData(chatStreamLambda);
+    kmsKey.grantDecrypt(chatStreamLambda);
+
+    NagSuppressions.addResourceSuppressions(chatStreamLambda, [
+      { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the streaming Lambda — latest stable LTS' },
+    ], true);
+
+    // MCP Server API (public — auth handled by Lambda via Bearer token)
+    const mcpRole = this.createLambdaRole('McpLambdaRole');
+    feedbackTable.grantReadData(mcpRole);
+    aggregatesTable.grantReadData(mcpRole);
+    projectsTable.grantReadWriteData(mcpRole);  // read tokens + update last_used_at
+    kmsKey.grantDecrypt(mcpRole);
+
+    const mcpLambda = new lambda.Function(this, 'McpApi', {
+      functionName: uniqueName('voc-mcp-api'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'mcp_handler.lambda_handler',
+      code: createApiLambdaCode('mcp_handler.py'),
+      role: mcpRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        PROJECTS_TABLE: projectsTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        POWERTOOLS_SERVICE_NAME: 'voc-mcp-api',
+        LOG_LEVEL: 'INFO',
       },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('McpApiLogs', uniqueName('voc-mcp-api')),
     });
-
-    // Permission to invoke is granted in CoreStack to avoid circular dependency
-
-    projectsLambda.addEnvironment('CHAT_STREAM_URL', chatStreamUrl.url);
 
     // S3 Import API
     const s3ImportRole = this.createLambdaRole('S3ImportLambdaRole');
@@ -711,6 +745,32 @@ export class VocApiStack extends cdk.Stack {
       logGroup: this.createLogGroup('DataExplorerApiLogs', uniqueName('voc-data-explorer-api')),
     });
 
+    // Chrome Extension API
+    const extensionRole = this.createLambdaRole('ExtensionLambdaRole');
+    rawDataBucket.grantReadWrite(extensionRole);
+    kmsKey.grantEncryptDecrypt(extensionRole);
+    extensionRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
+
+    const extensionLambda = new lambda.Function(this, 'ExtensionApi', {
+      functionName: uniqueName('voc-extension-api'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'extension_handler.lambda_handler',
+      code: createApiLambdaCode('extension_handler.py'),
+      role: extensionRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        RAW_DATA_BUCKET: rawDataBucket.bucketName,
+        PROCESSING_QUEUE_URL: processingQueueUrl,
+        ALLOWED_ORIGIN: allowedOrigin,
+        POWERTOOLS_SERVICE_NAME: 'voc-extension-api',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('ExtensionApiLogs', uniqueName('voc-extension-api')),
+    });
+
     // ============================================
     // WEBHOOKS
     // ============================================
@@ -745,7 +805,7 @@ export class VocApiStack extends cdk.Stack {
 
     this.api = new apigateway.RestApi(this, 'VocAnalyticsApi', {
       restApiName: uniqueName('voc-analytics-api'),
-      description: 'Voice of the Customer Analytics API',
+      description: 'Voice of the Customer Analytics API v2',
       deployOptions: {
         stageName: 'v1',
         throttlingRateLimit: 100,
@@ -793,11 +853,14 @@ export class VocApiStack extends cdk.Stack {
     const usersIntegration = new apigateway.LambdaIntegration(usersLambda, { proxy: true });
     const feedbackFormIntegration = new apigateway.LambdaIntegration(feedbackFormLambda, { proxy: true });
     const chatIntegration = new apigateway.LambdaIntegration(chatLambda, { proxy: true });
+    const chatStreamIntegration = new apigateway.LambdaIntegration(chatStreamLambda, { proxy: true });
     const projectsIntegration = new apigateway.LambdaIntegration(projectsLambda, { proxy: true });
     const manualImportIntegration = new apigateway.LambdaIntegration(manualImportLambda, { proxy: true });
     const logsIntegration = new apigateway.LambdaIntegration(logsLambda, { proxy: true });
     const s3ImportIntegration = new apigateway.LambdaIntegration(s3ImportLambda, { proxy: true });
     const dataExplorerIntegration = new apigateway.LambdaIntegration(dataExplorerLambda, { proxy: true });
+    const mcpIntegration = new apigateway.LambdaIntegration(mcpLambda, { proxy: true });
+    const extensionIntegration = new apigateway.LambdaIntegration(extensionLambda, { proxy: true });
 
     // ============================================
     // API ROUTES
@@ -812,6 +875,14 @@ export class VocApiStack extends cdk.Stack {
     feedbackResource.addResource('urgent').addMethod('GET', metricsIntegration, authMethodOptions);
     feedbackResource.addResource('entities').addMethod('GET', metricsIntegration, authMethodOptions);
 
+    // /feedback/problems/* (problem resolution)
+    const problemsResource = feedbackResource.addResource('problems');
+    problemsResource.addResource('resolved').addMethod('GET', metricsIntegration, authMethodOptions);
+    const problemIdResource = problemsResource.addResource('{problemId}');
+    const problemResolveResource = problemIdResource.addResource('resolve');
+    problemResolveResource.addMethod('PUT', metricsIntegration, authMethodOptions);
+    problemResolveResource.addMethod('DELETE', metricsIntegration, authMethodOptions);
+
     // /metrics/*
     const metricsResource = this.api.root.addResource('metrics');
     metricsResource.addResource('summary').addMethod('GET', metricsIntegration, authMethodOptions);
@@ -823,7 +894,18 @@ export class VocApiStack extends cdk.Stack {
     // /chat/*
     const chatResource = this.api.root.addResource('chat');
     chatResource.addMethod('POST', chatIntegration, authMethodOptions);
+    const chatStreamResource = chatResource.addResource('stream');
+    const chatStreamMethod = chatStreamResource.addMethod('POST', chatStreamIntegration, authMethodOptions);
     chatResource.addResource('conversations').addProxy({ defaultIntegration: chatIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+
+    // Apply streaming overrides to /chat/stream
+    const chatStreamCfnMethod = chatStreamMethod.node.defaultChild as cdk.aws_apigateway.CfnMethod;
+    chatStreamCfnMethod.addPropertyOverride('Integration.ResponseTransferMode', 'STREAM');
+    chatStreamCfnMethod.addPropertyOverride('Integration.TimeoutInMillis', 300000);
+    chatStreamCfnMethod.addPropertyOverride(
+      'Integration.Uri',
+      `arn:aws:apigateway:${this.region}:lambda:path/2021-11-15/functions/${chatStreamLambda.functionArn}/response-streaming-invocations`
+    );
 
     // /integrations/*
     const integrationsResource = this.api.root.addResource('integrations');
@@ -851,6 +933,7 @@ export class VocApiStack extends cdk.Stack {
     manualParseResource.addMethod('POST', manualImportIntegration, authMethodOptions);
     manualParseResource.addResource('{jobId}').addMethod('GET', manualImportIntegration, authMethodOptions);
     manualResource.addResource('confirm').addMethod('POST', manualImportIntegration, authMethodOptions);
+    manualResource.addResource('json-upload').addMethod('POST', manualImportIntegration, authMethodOptions);
     scrapersResource.addProxy({ defaultIntegration: scrapersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /s3-import/*
@@ -884,6 +967,10 @@ export class VocApiStack extends cdk.Stack {
     settingsCategoriesResource.addMethod('GET', settingsIntegration, authMethodOptions);
     settingsCategoriesResource.addMethod('PUT', settingsIntegration, authMethodOptions);
     settingsCategoriesResource.addResource('generate').addMethod('POST', settingsIntegration, authMethodOptions);
+
+    const reviewResource = settingsResource.addResource('review');
+    reviewResource.addMethod('GET', settingsIntegration, authMethodOptions);
+    reviewResource.addMethod('PUT', settingsIntegration, authMethodOptions);
 
     // /logs/*
     const logsResource = this.api.root.addResource('logs');
@@ -927,6 +1014,11 @@ export class VocApiStack extends cdk.Stack {
     projectsResource.addMethod('POST', projectsIntegration, authMethodOptions);
     projectsResource.addProxy({ defaultIntegration: projectsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
+    // /extension/*
+    const extensionResource = this.api.root.addResource('extension');
+    extensionResource.addResource('reviews').addMethod('POST', extensionIntegration, authMethodOptions);
+    extensionResource.addResource('status').addMethod('GET', extensionIntegration, authMethodOptions);
+
     // /webhooks/{pluginId}
     const webhooksResource = this.api.root.addResource('webhooks');
     for (const plugin of webhookPlugins) {
@@ -938,6 +1030,37 @@ export class VocApiStack extends cdk.Stack {
         pluginResource.addMethod(method, webhookIntegration);
       }
     }
+
+    // /mcp (public — auth handled by Lambda via Bearer token validation)
+    const mcpResource = this.api.root.addResource('mcp');
+    const mcpMethod = mcpResource.addMethod('POST', mcpIntegration);
+
+    // /mcp/autoseed/{project_id} (public — auth handled by MCP Lambda via Bearer token)
+    const mcpAutoseedResource = mcpResource.addResource('autoseed');
+    const mcpAutoseedProjectResource = mcpAutoseedResource.addResource('{project_id}');
+    const autoseedMethod = mcpAutoseedProjectResource.addMethod('GET', mcpIntegration);
+
+    NagSuppressions.addResourceSuppressions(autoseedMethod, [
+      {
+        id: 'AwsSolutions-APIG4',
+        reason: 'Autoseed endpoint uses Bearer token authentication validated by the MCP Lambda handler against DynamoDB token hashes',
+      },
+      {
+        id: 'AwsSolutions-COG4',
+        reason: 'Autoseed endpoint uses Bearer token authentication validated by the MCP Lambda handler — external tools cannot use Cognito auth flow',
+      },
+    ]);
+
+    NagSuppressions.addResourceSuppressions(mcpMethod, [
+      {
+        id: 'AwsSolutions-APIG4',
+        reason: 'MCP endpoint uses Bearer token authentication validated by the Lambda handler against DynamoDB token hashes — Cognito auth not applicable for MCP protocol clients',
+      },
+      {
+        id: 'AwsSolutions-COG4',
+        reason: 'MCP endpoint uses Bearer token authentication validated by the Lambda handler — MCP clients cannot use Cognito auth flow',
+      },
+    ]);
 
 
     // ============================================
@@ -977,7 +1100,6 @@ export class VocApiStack extends cdk.Stack {
     // ============================================
     new cdk.CfnOutput(this, 'ApiEndpoint', { value: this.api.url });
     new cdk.CfnOutput(this, 'ApiId', { value: this.api.restApiId });
-    new cdk.CfnOutput(this, 'ChatStreamUrl', { value: chatStreamUrl.url });
     new cdk.CfnOutput(this, 'WebhookPlugins', { value: webhookPlugins.map(p => p.id).join(',') });
     new cdk.CfnOutput(this, 'CognitoUserPoolId', { value: userPool.userPoolId, description: 'Cognito User Pool ID' });
     new cdk.CfnOutput(this, 'CognitoClientId', { value: userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID' });

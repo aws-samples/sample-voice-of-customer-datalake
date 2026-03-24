@@ -10,7 +10,7 @@ import { useConfigStore } from '../../store/configStore'
 
 // Local components
 import type { Tab } from './types'
-import { useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations, useChatMutation } from './useProjectData'
+import { useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations } from './useProjectData'
 import { useWizardState } from './useWizardState'
 import { useSelectionState, useDocModalState, useImportModalState, useConfirmModalState } from './useModalState'
 import ProjectHeader from './ProjectHeader'
@@ -25,7 +25,6 @@ export default function ProjectDetail() {
   const { config } = useConfigStore()
   
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
 
   // Custom hooks for state management
   const wizard = useWizardState()
@@ -63,17 +62,7 @@ export default function ProjectDetail() {
     setSelectedDoc: selection.setSelectedDoc,
   })
 
-  const chatMut = useChatMutation({
-    id,
-    onSuccess: (response) => setChatMessages(p => [...p, { role: 'assistant', content: response }]),
-  })
-
   // Handlers
-  const handleSendChat = useCallback((message: string, personaIds: string[], documentIds: string[]) => {
-    setChatMessages(p => [...p, { role: 'user', content: message }])
-    chatMut.mutate({ message, personas: personaIds, documents: documentIds })
-  }, [chatMut])
-
   const handleImportPersona = useCallback(() => {
     importPersonaMut.mutate(
       { input_type: importModal.importType, content: importModal.importContent, media_type: importModal.importMediaType },
@@ -173,8 +162,6 @@ export default function ProjectDetail() {
         jobs={jobs}
         selectedPersona={selection.selectedPersona}
         selectedDoc={selection.selectedDoc}
-        chatMessages={chatMessages}
-        isChatPending={chatMut.isPending}
         isDeleting={deletePersonaMut.isPending || deleteDocMut.isPending}
         isSavingNotes={updatePersonaMut.isPending}
         onGeneratePersonas={() => wizard.setActiveWizard('persona')}
@@ -192,8 +179,8 @@ export default function ProjectDetail() {
         onEditDoc={() => selection.selectedDoc && docModal.openEditModal(selection.selectedDoc)}
         onDeleteDoc={() => selection.selectedDoc && confirm.openDocumentConfirm(selection.selectedDoc.document_id)}
         onCreateDoc={docModal.openCreateModal}
-        onSendChat={handleSendChat}
         onSaveAsDocument={docModal.openSaveAsModal}
+        onDocumentChanged={() => void queryClient.invalidateQueries({ queryKey: ['project', id] })}
       />
 
       <PersonaEditModalWrapper
