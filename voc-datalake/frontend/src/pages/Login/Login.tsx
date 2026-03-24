@@ -68,10 +68,10 @@ interface AuthFormContentProps {
   readonly onVerificationCodeChange: (value: string) => void
   readonly onToggleShowPassword: () => void
   readonly onSetShowPassword: (checked: boolean) => void
-  readonly onLogin: (e: React.FormEvent) => void
-  readonly onNewPassword: (e: React.FormEvent) => void
-  readonly onForgotPassword: (e: React.FormEvent) => void
-  readonly onConfirmPassword: (e: React.FormEvent) => void
+  readonly onLogin: (e: React.SyntheticEvent) => void
+  readonly onNewPassword: (e: React.SyntheticEvent) => void
+  readonly onForgotPassword: (e: React.SyntheticEvent) => void
+  readonly onConfirmPassword: (e: React.SyntheticEvent) => void
   readonly onSwitchToForgotPassword: () => void
   readonly onBackToLogin: () => void
 }
@@ -183,7 +183,7 @@ export default function Login() {
   const [message, setMessage] = useState<string | null>(null)
   const [cognitoUser, setCognitoUser] = useState<CognitoUser | null>(null)
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.SyntheticEvent) => {
     e.preventDefault()
     setError(null)
     setIsLoading(true)
@@ -204,7 +204,7 @@ export default function Login() {
     }
   }
 
-  const handleNewPassword = async (e: React.FormEvent) => {
+  const handleNewPassword = async (e: React.SyntheticEvent) => {
     e.preventDefault()
     setError(null)
 
@@ -236,7 +236,7 @@ export default function Login() {
     }
   }
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.SyntheticEvent) => {
     e.preventDefault()
     setError(null)
     setMessage(null)
@@ -253,7 +253,7 @@ export default function Login() {
     }
   }
 
-  const handleConfirmPassword = async (e: React.FormEvent) => {
+  const handleConfirmPassword = async (e: React.SyntheticEvent) => {
     e.preventDefault()
     setError(null)
 

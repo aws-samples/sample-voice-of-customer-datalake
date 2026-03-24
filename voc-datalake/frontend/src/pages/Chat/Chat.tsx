@@ -185,7 +185,7 @@ export default function Chat() {
     },
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.SyntheticEvent) => {
     e.preventDefault()
     if (!input.trim() || chatMutation.isPending) return
 
