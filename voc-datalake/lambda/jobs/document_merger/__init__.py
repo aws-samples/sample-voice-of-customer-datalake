@@ -1,0 +1,1 @@
+"""Document merger job Lambda."""
