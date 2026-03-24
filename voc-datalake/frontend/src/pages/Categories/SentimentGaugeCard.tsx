@@ -1,4 +1,4 @@
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
+import { PieChart, Pie, ResponsiveContainer, Tooltip } from 'recharts'
 import clsx from 'clsx'
 import type { SentimentData, SentimentFilter } from './types'
 import { getSentimentScoreColorClass } from './types'
@@ -26,7 +26,7 @@ export function SentimentGauge({
           <ResponsiveContainer width="100%" height={160} minWidth={0} className="sm:!h-[200px]">
             <PieChart>
               <Pie
-                data={sentimentData}
+                data={sentimentData.map(d => ({ ...d, fill: d.color }))}
                 cx="50%"
                 cy="100%"
                 startAngle={180}
@@ -36,9 +36,6 @@ export function SentimentGauge({
                 paddingAngle={2}
                 dataKey="value"
               >
-                {sentimentData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
               </Pie>
               <Tooltip
                 formatter={(value, name) => {

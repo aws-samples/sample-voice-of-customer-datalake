@@ -11,7 +11,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, BarChart, Bar } from 'recharts'
 import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap } from 'lucide-react'
 import { api, getDaysFromRange } from '../../api/client'
 import type { MetricsSummary, SentimentBreakdown, CategoryBreakdown, SourceBreakdown, FeedbackItem } from '../../api/client'
@@ -111,10 +111,10 @@ function TrendChart({ dailyTotals }: Readonly<TrendChartProps>) {
 function prepareSentimentPieData(sentiment: SentimentBreakdown | undefined) {
   if (!sentiment) return []
   return [
-    { name: 'Positive', value: sentiment.breakdown.positive || 0 },
-    { name: 'Neutral', value: sentiment.breakdown.neutral || 0 },
-    { name: 'Negative', value: sentiment.breakdown.negative || 0 },
-    { name: 'Mixed', value: sentiment.breakdown.mixed || 0 },
+    { name: 'Positive', value: sentiment.breakdown.positive || 0, fill: COLORS[0] },
+    { name: 'Neutral', value: sentiment.breakdown.neutral || 0, fill: COLORS[1] },
+    { name: 'Negative', value: sentiment.breakdown.negative || 0, fill: COLORS[2] },
+    { name: 'Mixed', value: sentiment.breakdown.mixed || 0, fill: COLORS[3] },
   ].filter(d => d.value > 0)
 }
 
@@ -142,9 +142,6 @@ function SentimentChart({ sentiment }: Readonly<SentimentChartProps>) {
               label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
               labelLine={{ strokeWidth: 1 }}
             >
-              {pieData.map((_, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-              ))}
             </Pie>
             <Tooltip />
           </PieChart>

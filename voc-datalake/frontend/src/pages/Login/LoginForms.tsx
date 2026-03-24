@@ -16,7 +16,7 @@ interface LoginFormProps {
   readonly onUsernameChange: (value: string) => void
   readonly onPasswordChange: (value: string) => void
   readonly onToggleShowPassword: () => void
-  readonly onSubmit: (e: React.FormEvent) => void
+  readonly onSubmit: (e: React.SyntheticEvent) => void
   readonly onForgotPassword: () => void
 }
 
@@ -91,7 +91,7 @@ interface NewPasswordFormProps {
   readonly onNewPasswordChange: (value: string) => void
   readonly onConfirmPasswordChange: (value: string) => void
   readonly onToggleShowPassword: (checked: boolean) => void
-  readonly onSubmit: (e: React.FormEvent) => void
+  readonly onSubmit: (e: React.SyntheticEvent) => void
 }
 
 export function NewPasswordForm({
@@ -168,7 +168,7 @@ interface ForgotPasswordFormProps {
   readonly isLoading: boolean
   readonly error: string | null
   readonly onUsernameChange: (value: string) => void
-  readonly onSubmit: (e: React.FormEvent) => void
+  readonly onSubmit: (e: React.SyntheticEvent) => void
   readonly onBackToLogin: () => void
 }
 
@@ -232,7 +232,7 @@ interface ConfirmPasswordFormProps {
   readonly onVerificationCodeChange: (value: string) => void
   readonly onNewPasswordChange: (value: string) => void
   readonly onConfirmPasswordChange: (value: string) => void
-  readonly onSubmit: (e: React.FormEvent) => void
+  readonly onSubmit: (e: React.SyntheticEvent) => void
   readonly onBackToLogin: () => void
 }
 
