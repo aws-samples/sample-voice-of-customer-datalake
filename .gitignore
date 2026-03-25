@@ -60,5 +60,5 @@ secrets.json
 *.bak
 
 # Workshop files
-Workshop/*
+voc-datalake/Workshop/*
 

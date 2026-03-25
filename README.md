@@ -73,14 +73,14 @@ After deployment, an initial admin user is created automatically:
 | Field | Value |
 |-------|-------|
 | Username | `admin` |
-| Password | Check CloudFormation stack outputs for `AdminUserPassword` |
+| Password | Check CloudFormation stack outputs for `InitialAdminPassword` |
 
 The password is randomly generated during deployment and stored as a CloudFormation output. Retrieve it with:
 
 ```bash
 aws cloudformation describe-stacks \
   --stack-name VocCoreStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`AdminUserPassword`].OutputValue' \
+  --query 'Stacks[0].Outputs[?OutputKey==`InitialAdminPassword`].OutputValue' \
   --output text
 ```
 

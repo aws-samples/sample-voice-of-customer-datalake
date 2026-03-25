@@ -7,7 +7,8 @@
   "pluginStatus": {
     "webscraper": true,
     "app_reviews_ios": true,
-    "app_reviews_android": true
+    "app_reviews_android": true,
+    "s3_import": true
   },
   "menuStatus": {
     "dashboard": true,
@@ -22,7 +23,7 @@
     "feedback-forms": true,
     "settings": true
   },
-  "skipUseCaseSubmission": true,
+  "skipUseCaseSubmission": false,
   "anthropicUseCase": {
     "companyName": "Amazon Web Services",
     "companyWebsite": "https://aws.amazon.com",
