@@ -116,9 +116,11 @@ export const projectsApi = {
     }),
   
   generateDocument: (projectId: string, data: {
-    doc_type: 'prd' | 'prfaq'
+    doc_type: 'prd' | 'prfaq' | 'process_analysis'
     title: string
-    feature_idea: string
+    feature_idea?: string
+    process_description?: string
+    improvement_goals?: string
     data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }
     selected_persona_ids: string[]
     selected_document_ids: string[]

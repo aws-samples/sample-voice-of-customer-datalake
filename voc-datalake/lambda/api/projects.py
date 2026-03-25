@@ -178,7 +178,7 @@ def get_project(project_id: str) -> dict:
             if item.get('avatar_url') and item['avatar_url'].startswith('s3://'):
                 item['avatar_url'] = get_avatar_cdn_url(item['avatar_url'])
             personas.append(item)
-        elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('DOC#'):
+        elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('PROCESS_ANALYSIS#') or sk.startswith('DOC#'):
             documents.append(item)
     
     if not project:

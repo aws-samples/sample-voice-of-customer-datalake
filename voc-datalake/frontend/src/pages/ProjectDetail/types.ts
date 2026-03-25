@@ -18,7 +18,7 @@ export interface ResearchToolConfig {
 }
 
 export interface DocToolConfig {
-  docType: 'prd' | 'prfaq'
+  docType: 'prd' | 'prfaq' | 'process_analysis'
   title: string
   featureIdea: string
   customerQuestions: string[]
@@ -28,6 +28,12 @@ export interface MergeToolConfig {
   outputType: 'prd' | 'prfaq' | 'custom'
   title: string
   instructions: string
+}
+
+export interface ProcessAnalysisConfig {
+  title: string
+  processDescription: string
+  improvementGoals: string
 }
 
 export interface PersonaAvatarProps {
