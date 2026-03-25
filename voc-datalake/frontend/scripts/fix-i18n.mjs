@@ -52,8 +52,11 @@ function getNested(obj, key) {
   return key.split('.').reduce((o, k) => o?.[k], obj)
 }
 
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
 function setNested(obj, key, val) {
   const parts = key.split('.')
+  if (parts.some(p => UNSAFE_KEYS.has(p))) return
   let cur = obj
   for (let i = 0; i < parts.length - 1; i++) {
     if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {}
