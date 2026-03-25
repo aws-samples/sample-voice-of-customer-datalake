@@ -6,7 +6,7 @@ import { useEffect } from 'react'
 import { api } from '../../api/client'
 import type { ProjectPersona, ProjectDocument, ProjectJob } from '../../api/client'
 import type { ContextConfig } from '../../components/DataSourceWizard/exports'
-import type { PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, NoteItem } from './types'
+import type { PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, ProcessAnalysisConfig, NoteItem } from './types'
 
 interface UseProjectDataProps {
   id: string | undefined
@@ -63,6 +63,7 @@ interface UseProjectMutationsProps {
   researchConfig: ResearchToolConfig
   docConfig: DocToolConfig
   mergeConfig: MergeToolConfig
+  processConfig: ProcessAnalysisConfig
   onSuccess: () => void
   onError: () => void
 }
@@ -74,6 +75,7 @@ export function useProjectMutations({
   researchConfig,
   docConfig,
   mergeConfig,
+  processConfig,
   onSuccess,
   onError,
 }: UseProjectMutationsProps) {
@@ -158,9 +160,29 @@ export function useProjectMutations({
     onError
   })
 
-  const dismissJobMut = useMutation({ 
-    mutationFn: (jobId: string) => api.dismissJob(projectId, jobId), 
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] }) 
+  const processMut = useMutation({
+    mutationFn: () => api.generateDocument(projectId, {
+      doc_type: 'process_analysis' as const,
+      title: processConfig.title,
+      process_description: processConfig.processDescription,
+      improvement_goals: processConfig.improvementGoals,
+      data_sources: { feedback: contextConfig.useFeedback, personas: contextConfig.usePersonas, documents: contextConfig.useDocuments, research: contextConfig.useResearch },
+      selected_persona_ids: contextConfig.selectedPersonaIds,
+      selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
+      feedback_sources: contextConfig.sources,
+      feedback_categories: contextConfig.categories,
+      days: contextConfig.days,
+    }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      onSuccess()
+    },
+    onError
+  })
+
+  const dismissJobMut = useMutation({
+    mutationFn: (jobId: string) => api.dismissJob(projectId, jobId),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
   })
 
   return {
@@ -168,6 +190,7 @@ export function useProjectMutations({
     docMut,
     resMut,
     mergeMut,
+    processMut,
     dismissJobMut,
   }
 }

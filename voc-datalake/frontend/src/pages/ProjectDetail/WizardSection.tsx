@@ -6,7 +6,7 @@ import type { ContextConfig } from '../../components/DataSourceWizard/exports'
 import type { PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig } from './types'
 import { PersonaWizard, ResearchWizard, DocWizard, MergeWizard } from './Wizards'
 
-type WizardType = 'persona' | 'research' | 'doc' | 'merge' | null
+type WizardType = 'persona' | 'research' | 'doc' | 'merge' | 'process' | null
 
 interface WizardSectionProps {
   readonly activeWizard: WizardType
