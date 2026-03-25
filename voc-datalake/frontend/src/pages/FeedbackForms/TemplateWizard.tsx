@@ -3,6 +3,7 @@
  */
 import { useState } from 'react'
 import { X, ArrowRight, User } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { FeedbackForm } from '../../api/client'
 import clsx from 'clsx'
 import { formTemplates } from './formTemplates'
@@ -13,6 +14,7 @@ interface TemplateWizardProps {
 }
 
 export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardProps) {
+  const { t } = useTranslation('feedbackForms')
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
   const [collectPII, setCollectPII] = useState<'none' | 'name' | 'email' | 'both'>('none')
 
@@ -32,10 +34,10 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
   }
 
   const piiOptions = [
-    { id: 'none', label: 'Anonymous', desc: 'No PII collected' },
-    { id: 'name', label: 'Name Only', desc: 'Collect name' },
-    { id: 'email', label: 'Email Only', desc: 'Collect email' },
-    { id: 'both', label: 'Name & Email', desc: 'Full contact info' },
+    { id: 'none', label: t('wizard.anonymous'), desc: t('wizard.anonymousDesc') },
+    { id: 'name', label: t('wizard.nameOnly'), desc: t('wizard.nameOnlyDesc') },
+    { id: 'email', label: t('wizard.emailOnly'), desc: t('wizard.emailOnlyDesc') },
+    { id: 'both', label: t('wizard.nameAndEmail'), desc: t('wizard.nameAndEmailDesc') },
   ] as const
 
   return (
@@ -43,8 +45,8 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
       <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-3 sm:p-4 border-b">
           <div className="min-w-0 flex-1">
-            <h2 className="text-base sm:text-lg font-semibold">Create New Form</h2>
-            <p className="text-xs sm:text-sm text-gray-500">Choose a template to get started</p>
+            <h2 className="text-base sm:text-lg font-semibold">{t('wizard.title')}</h2>
+            <p className="text-xs sm:text-sm text-gray-500">{t('wizard.subtitle')}</p>
           </div>
           <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0 ml-2">
             <X size={20} />
@@ -80,10 +82,10 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
             <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
               <h4 className="font-medium text-gray-900 mb-2 sm:mb-3 flex items-center gap-2 text-sm sm:text-base">
                 <User size={16} />
-                Contact Information Collection
+                {t('wizard.contactInfoTitle')}
               </h4>
               <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4">
-                Choose what personal information to collect from respondents.
+                {t('wizard.contactInfoDescription')}
               </p>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
                 {piiOptions.map((option) => (
@@ -106,16 +108,16 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 sm:p-4 border-t bg-gray-50">
           <p className="text-xs sm:text-sm text-gray-500 text-center sm:text-left">
-            {selectedTemplate ? `Selected: ${formTemplates.find(t => t.id === selectedTemplate)?.name}` : 'Select a template to continue'}
+            {selectedTemplate ? t('wizard.selectedTemplate', { name: formTemplates.find(t2 => t2.id === selectedTemplate)?.name }) : t('wizard.selectPrompt')}
           </p>
           <div className="flex gap-2 sm:gap-3">
-            <button onClick={onCancel} className="btn btn-secondary flex-1 sm:flex-none">Cancel</button>
+            <button onClick={onCancel} className="btn btn-secondary flex-1 sm:flex-none">{t('wizard.cancel')}</button>
             <button
               onClick={handleContinue}
               disabled={!selectedTemplate}
               className="btn btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
             >
-              Continue
+              {t('wizard.continue')}
               <ArrowRight size={16} />
             </button>
           </div>

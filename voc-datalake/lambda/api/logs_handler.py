@@ -4,12 +4,8 @@ Provides access to validation failures and processing errors for user visibility
 """
 
 import os
-import sys
 from datetime import datetime, timezone, timedelta
 from typing import Any
-
-# Add shared module to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource

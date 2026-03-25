@@ -3,6 +3,7 @@
  */
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { MessageSquare, Send, X, Paperclip, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useStreamChat } from '../../hooks/useStreamChat'
 import type { ToolStep } from '../../hooks/useStreamChat'
 import { useProjectChatStore } from '../../store/projectChatStore'
@@ -414,6 +415,8 @@ function ChatInputSection({
     fileInputRef.current?.click()
   }, [fileInputRef])
 
+  const { t } = useTranslation('projectDetail')
+
   return (
     <div className="p-4 border-t relative">
       {mentions.mentionState.show && mentionItems.length > 0 && (
@@ -460,8 +463,8 @@ function ChatInputSection({
           onClick={handleOpenFilePicker}
           disabled={isStreaming}
           className="px-2 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50 transition-colors"
-          title="Attach image or PDF"
-          aria-label="Attach file"
+          title={t('chat.attachFile')}
+          aria-label={t('chat.attachFile')}
         >
           <Paperclip size={18} />
         </button>
@@ -471,14 +474,14 @@ function ChatInputSection({
           onChange={(e) => mentions.handleInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={attachState.handlePaste}
-          placeholder="Ask about your project..."
+          placeholder={t('chat.askPlaceholder')}
           className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           disabled={isStreaming}
         />
         {isStreaming ? (
           <button onClick={cancel} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-1">
             <X size={16} />
-            <span className="hidden sm:inline">Stop</span>
+            <span className="hidden sm:inline">{t('chat.stop')}</span>
           </button>
         ) : (
           <button
@@ -500,6 +503,7 @@ const EMPTY_MESSAGES: ChatMessage[] = []
 
 export default function ChatTab({ projectId, personas, documents, onSaveAsDocument, onDocumentChanged }: ChatTabProps) {
   const [chatInput, setChatInput] = useState('')
+  const { t } = useTranslation('projectDetail')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -580,19 +584,20 @@ export default function ChatTab({ projectId, personas, documents, onSaveAsDocume
     <div className="bg-white rounded-xl border h-[calc(100vh-280px)] sm:h-[600px] flex flex-col">
       <div className="p-3 sm:p-4 border-b flex items-center justify-between">
         <div>
-          <h3 className="font-semibold text-sm sm:text-base">Project AI Chat</h3>
+          <h3 className="font-semibold text-sm sm:text-base">{t('chat.projectAiChat')}</h3>
           <p className="text-xs sm:text-sm text-gray-500">
-            Type <span className="font-mono bg-purple-100 text-purple-700 px-1 rounded">@</span> for personas,{' '}
-            <span className="font-mono bg-purple-100 text-purple-700 px-1 rounded">@all</span> for roundtable, or{' '}
-            <span className="font-mono bg-blue-100 text-blue-700 px-1 rounded">#</span> for documents
+            {t('chat.mentionHint')
+              .replace('<at>', '@')
+              .replace('<atAll>', '@all')
+              .replace('<hash>', '#')}
           </p>
         </div>
         {messages.length > 0 && !isStreaming && (
           <button
             onClick={() => clearStoreMessages(projectId)}
             className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded"
-            title="Clear chat history"
-            aria-label="Clear chat history"
+            title={t('chat.clearHistory')}
+            aria-label={t('chat.clearHistory')}
           >
             <Trash2 size={16} />
           </button>
@@ -603,9 +608,9 @@ export default function ChatTab({ projectId, personas, documents, onSaveAsDocume
         {messages.length === 0 && !isStreaming && (
           <div className="text-center text-gray-400 py-8">
             <MessageSquare size={32} className="mx-auto mb-2 opacity-50" />
-            <p>Start a conversation</p>
+            <p>{t('chat.startConversation')}</p>
             <p className="text-sm mt-2">
-              Try: &quot;@all What do you think about our onboarding flow?&quot;
+              {t('chat.tryExample')}
             </p>
           </div>
         )}

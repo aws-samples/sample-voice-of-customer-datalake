@@ -8,8 +8,10 @@
  * - New password challenge handling (first login)
  * 
  * Security features:
- * - Tokens stored in sessionStorage via authStore
+ * - Short-lived tokens persisted in localStorage for cross-tab UX
+ * - Refresh token kept in memory only (never persisted to disk)
  * - Automatic token refresh 5 minutes before expiration
+ * - Fallback to Cognito getSession() for tabs without in-memory refresh token
  * - Graceful handling of expired sessions
  * 
  * @module services/auth
@@ -23,7 +25,7 @@ import {
   CognitoRefreshToken,
 } from 'amazon-cognito-identity-js'
 import { fetchAuthSession } from 'aws-amplify/auth'
-import { getConfig } from '../config'
+import { getRuntimeConfig } from '../runtimeConfig'
 import { useAuthStore } from '../store/authStore'
 import type { User } from '../store/authStore'
 
@@ -45,7 +47,7 @@ function isStringArray(value: unknown): value is string[] {
  * @returns CognitoUserPool instance or null if not configured
  */
 const getUserPool = (): CognitoUserPool | null => {
-  const cfg = getConfig()
+  const cfg = getRuntimeConfig()
   if (!cfg.cognito.userPoolId || !cfg.cognito.clientId) {
     return null
   }
@@ -114,7 +116,7 @@ export const authService = {
    * @returns true if Cognito environment variables are set
    */
   isConfigured: (): boolean => {
-    const cfg = getConfig()
+    const cfg = getRuntimeConfig()
     return !!(cfg.cognito.userPoolId && cfg.cognito.clientId)
   },
 
@@ -247,6 +249,9 @@ export const authService = {
 
   /**
    * Refreshes the current session using the stored refresh token.
+   * If no refresh token is in memory (e.g., new tab), falls back to
+   * Cognito's getSession() which uses Cognito's own cookies for
+   * silent re-authentication.
    * Updates all tokens in authStore on success.
    * 
    * @returns Promise resolving to new CognitoUserSession
@@ -262,44 +267,63 @@ export const authService = {
 
       const cognitoUser = userPool.getCurrentUser()
       if (!cognitoUser) {
+        useAuthStore.getState().logout()
         reject(new Error('No current user'))
         return
       }
 
       const refreshToken = useAuthStore.getState().refreshToken
-      if (!refreshToken) {
-        reject(new Error('No refresh token'))
-        return
+
+      /**
+       * Handles a successful session by extracting tokens and updating the store.
+       */
+      const handleSession = async (session: CognitoUserSession) => {
+        const idToken = session.getIdToken().getJwtToken()
+        const accessToken = session.getAccessToken().getJwtToken()
+        const newRefreshToken = session.getRefreshToken().getToken()
+
+        const user = extractUser(idToken)
+
+        useAuthStore.getState().setTokens({
+          accessToken,
+          idToken,
+          refreshToken: newRefreshToken,
+        })
+        useAuthStore.getState().setUser(user)
+
+        await authService.syncAmplifySession()
+
+        resolve(session)
       }
 
-      cognitoUser.refreshSession(
-        new CognitoRefreshToken({ RefreshToken: refreshToken }),
-        async (err: Error | null, session: CognitoUserSession | null) => {
-          if (err || !session) {
-            useAuthStore.getState().logout()
-            reject(err ?? new Error('Session refresh failed'))
-            return
+      if (refreshToken) {
+        // Primary path: use the in-memory refresh token
+        cognitoUser.refreshSession(
+          new CognitoRefreshToken({ RefreshToken: refreshToken }),
+          async (err: Error | null, session: CognitoUserSession | null) => {
+            if (err || !session) {
+              useAuthStore.getState().logout()
+              reject(err ?? new Error('Session refresh failed'))
+              return
+            }
+            await handleSession(session)
           }
-
-          const idToken = session.getIdToken().getJwtToken()
-          const accessToken = session.getAccessToken().getJwtToken()
-          const newRefreshToken = session.getRefreshToken().getToken()
-
-          const user = extractUser(idToken)
-          
-          useAuthStore.getState().setTokens({ 
-            accessToken, 
-            idToken, 
-            refreshToken: newRefreshToken 
-          })
-          useAuthStore.getState().setUser(user)
-          
-          // Sync with Amplify after refresh
-          await authService.syncAmplifySession()
-          
-          resolve(session)
-        }
-      )
+        )
+      } else {
+        // Fallback: no refresh token in memory (new tab).
+        // Cognito SDK's getSession() uses its own cookies to silently
+        // re-authenticate without requiring the refresh token from our store.
+        cognitoUser.getSession(
+          async (err: Error | null, session: CognitoUserSession | null) => {
+            if (err || !session) {
+              useAuthStore.getState().logout()
+              reject(err ?? new Error('No session available — please sign in again'))
+              return
+            }
+            await handleSession(session)
+          }
+        )
+      }
     })
   },
 

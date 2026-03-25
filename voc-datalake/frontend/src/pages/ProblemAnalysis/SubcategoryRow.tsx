@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react'
 import { ProblemRow } from './ProblemRow'
 import { generateProblemId } from './problemUtils'
@@ -44,6 +45,7 @@ export function SubcategoryRow({
   onResolveProblem,
   onUnresolveProblem,
 }: SubcategoryRowProps) {
+  const { t } = useTranslation('problemAnalysis')
   const subcategoryKey = `${categoryName}:${subcategoryGroup.subcategory}`
 
   return (
@@ -63,7 +65,7 @@ export function SubcategoryRow({
             {subcategoryGroup.subcategory.replace(/_/g, ' ')}
           </span>
           <span className="text-xs text-gray-500 hidden xs:inline whitespace-nowrap">
-            {subcategoryGroup.problems.length} problems • {subcategoryGroup.totalItems} reviews
+            {t('tree.problems', { count: subcategoryGroup.problems.length })} • {t('tree.reviews', { count: subcategoryGroup.totalItems })}
           </span>
           {subcategoryGroup.urgentCount > 0 && (
             <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full flex-shrink-0">

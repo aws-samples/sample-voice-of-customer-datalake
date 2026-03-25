@@ -4,6 +4,7 @@
  */
 
 import { Loader2, FileText } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { ProjectPersona, ProjectDocument } from '../../api/client'
 import { SENTIMENTS } from '../../constants/filters'
 import clsx from 'clsx'
@@ -154,18 +155,19 @@ export function DataSourcesStep({
   otherDocsCount,
   researchDocsCount,
 }: DataSourcesStepProps) {
+  const { t } = useTranslation('components')
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="font-medium mb-2 sm:mb-3">Data Sources</h3>
-        <p className="text-sm text-gray-500 mb-3 sm:mb-4">Select what data to use for generating the document</p>
+        <h3 className="font-medium mb-2 sm:mb-3">{t('dataSourceWizard.dataSources')}</h3>
+        <p className="text-sm text-gray-500 mb-3 sm:mb-4">{t('dataSourceWizard.dataSourcesDescription')}</p>
         <div className="space-y-2">
           {showFeedback && (
             <DataSourceCheckbox
               checked={contextConfig.useFeedback}
               onChange={checked => onContextChange({ ...contextConfig, useFeedback: checked })}
-              title="Customer Feedback"
-              description="Use feedback from selected sources"
+              title={t('dataSourceWizard.customerFeedback')}
+              description={t('dataSourceWizard.customerFeedbackDescription')}
             />
           )}
           
@@ -177,8 +179,8 @@ export function DataSourcesStep({
                 usePersonas: checked, 
                 selectedPersonaIds: checked ? contextConfig.selectedPersonaIds : [] 
               })}
-              title={`Personas (${personasCount})`}
-              description="Include user personas for context"
+              title={t('dataSourceWizard.personasCount', { count: personasCount })}
+              description={t('dataSourceWizard.personasDescription')}
             />
           )}
           
@@ -192,8 +194,8 @@ export function DataSourcesStep({
                 selectedDocumentIds: checked ? contextConfig.selectedDocumentIds : [],
                 selectedResearchIds: checked ? contextConfig.selectedResearchIds : []
               })}
-              title={`Documents (${documentsCount})`}
-              description="Select documents to merge"
+              title={t('dataSourceWizard.documentsCount', { count: documentsCount })}
+              description={t('dataSourceWizard.selectDocumentsToMerge')}
             />
           )}
 
@@ -205,8 +207,8 @@ export function DataSourcesStep({
                 useDocuments: checked, 
                 selectedDocumentIds: checked ? contextConfig.selectedDocumentIds : [] 
               })}
-              title={`Existing Documents (${otherDocsCount})`}
-              description="Reference existing PRDs, PR-FAQs, etc."
+              title={t('dataSourceWizard.existingDocumentsCount', { count: otherDocsCount })}
+              description={t('dataSourceWizard.existingDocumentsDescription')}
             />
           )}
           
@@ -218,8 +220,8 @@ export function DataSourcesStep({
                 useResearch: checked, 
                 selectedResearchIds: checked ? contextConfig.selectedResearchIds : [] 
               })}
-              title={`Research Documents (${researchDocsCount})`}
-              description="Include research findings"
+              title={t('dataSourceWizard.researchDocumentsCount', { count: researchDocsCount })}
+              description={t('dataSourceWizard.researchDescription')}
             />
           )}
         </div>
@@ -246,11 +248,12 @@ export function FeedbackFiltersStep({
   loadingCategories,
   colors,
 }: FeedbackFiltersStepProps) {
+  const { t } = useTranslation('components')
   return (
     <div className="space-y-4 sm:space-y-6">
       <div>
-        <h3 className="font-medium mb-2 sm:mb-3">Sources</h3>
-        <p className="text-sm text-gray-500 mb-2">Leave empty for all sources</p>
+        <h3 className="font-medium mb-2 sm:mb-3">{t('dataSourceWizard.sources')}</h3>
+        <p className="text-sm text-gray-500 mb-2">{t('dataSourceWizard.leaveEmptyForAllSources')}</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {sources.map(s => (
             <button
@@ -268,11 +271,11 @@ export function FeedbackFiltersStep({
       </div>
 
       <div>
-        <h3 className="font-medium mb-2 sm:mb-3">Categories</h3>
+        <h3 className="font-medium mb-2 sm:mb-3">{t('dataSourceWizard.categories')}</h3>
         {loadingCategories ? (
           <div className="flex items-center justify-center py-4">
             <Loader2 size={20} className="animate-spin text-gray-400" />
-            <span className="ml-2 text-sm text-gray-500">Loading categories...</span>
+            <span className="ml-2 text-sm text-gray-500">{t('dataSourceWizard.loadingCategories')}</span>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -293,7 +296,7 @@ export function FeedbackFiltersStep({
       </div>
 
       <div>
-        <h3 className="font-medium mb-2 sm:mb-3">Sentiments</h3>
+        <h3 className="font-medium mb-2 sm:mb-3">{t('dataSourceWizard.sentiments')}</h3>
         <div className="flex flex-col sm:flex-row gap-2">
           {SENTIMENTS.map(s => (
             <button
@@ -311,19 +314,19 @@ export function FeedbackFiltersStep({
       </div>
 
       <div>
-        <h3 className="font-medium mb-2 sm:mb-3">Time Range</h3>
+        <h3 className="font-medium mb-2 sm:mb-3">{t('dataSourceWizard.timeRange')}</h3>
         <select
           value={contextConfig.days}
           onChange={e => onContextChange({ ...contextConfig, days: +e.target.value })}
           className="w-full px-3 py-2.5 sm:py-2 border rounded-lg text-sm sm:text-base"
         >
-          <option value={7}>Last 7 days</option>
-          <option value={14}>Last 14 days</option>
-          <option value={30}>Last 30 days</option>
-          <option value={60}>Last 60 days</option>
-          <option value={90}>Last 90 days</option>
-          <option value={365}>Last year</option>
-          <option value={3650}>All time</option>
+          <option value={7}>{t('dataSourceWizard.lastDays', { days: 7 })}</option>
+          <option value={14}>{t('dataSourceWizard.lastDays', { days: 14 })}</option>
+          <option value={30}>{t('dataSourceWizard.lastDays', { days: 30 })}</option>
+          <option value={60}>{t('dataSourceWizard.lastDays', { days: 60 })}</option>
+          <option value={90}>{t('dataSourceWizard.lastDays', { days: 90 })}</option>
+          <option value={365}>{t('dataSourceWizard.lastYear')}</option>
+          <option value={3650}>{t('dataSourceWizard.allTime')}</option>
         </select>
       </div>
     </div>
@@ -338,10 +341,11 @@ interface PersonaSelectionProps {
 }
 
 function PersonaSelection({ personas, selectedIds, onToggle }: PersonaSelectionProps) {
+  const { t } = useTranslation('components')
   return (
     <div>
-      <h3 className="font-medium mb-2 sm:mb-3">Select Personas</h3>
-      <p className="text-sm text-gray-500 mb-2 sm:mb-3">Leave empty to use all personas</p>
+      <h3 className="font-medium mb-2 sm:mb-3">{t('dataSourceWizard.selectPersonas')}</h3>
+      <p className="text-sm text-gray-500 mb-2 sm:mb-3">{t('dataSourceWizard.leaveEmptyForAllPersonas')}</p>
       <div className="space-y-2 max-h-40 sm:max-h-48 overflow-y-auto">
         {personas.map(p => (
           <PersonaItem
@@ -503,12 +507,13 @@ interface CombinedDocumentsSectionProps {
 }
 
 function CombinedDocumentsSection({ contextConfig, documents, combineDocuments, onToggle }: CombinedDocumentsSectionProps) {
+  const { t } = useTranslation('components')
   const shouldShow = combineDocuments && (contextConfig.useDocuments || contextConfig.useResearch) && documents.length > 0
   if (!shouldShow) return null
   return (
     <DocumentSelection
-      title="Select Documents"
-      description="Select documents to merge"
+      title={t('dataSourceWizard.selectDocuments')}
+      description={t('dataSourceWizard.selectDocumentsToMerge')}
       documents={documents}
       selectedDocIds={contextConfig.selectedDocumentIds}
       selectedResearchIds={contextConfig.selectedResearchIds}
@@ -526,12 +531,13 @@ interface OtherDocumentsSectionProps {
 }
 
 function OtherDocumentsSection({ contextConfig, otherDocs, combineDocuments, onToggle }: OtherDocumentsSectionProps) {
+  const { t } = useTranslation('components')
   const shouldShow = !combineDocuments && contextConfig.useDocuments && otherDocs.length > 0
   if (!shouldShow) return null
   return (
     <DocumentSelection
-      title="Select Documents"
-      description="Leave empty to use all documents"
+      title={t('dataSourceWizard.selectDocuments')}
+      description={t('dataSourceWizard.leaveEmptyForAllDocuments')}
       documents={otherDocs}
       selectedDocIds={contextConfig.selectedDocumentIds}
       selectedResearchIds={contextConfig.selectedResearchIds}
@@ -548,12 +554,13 @@ interface ResearchDocumentsSectionProps {
 }
 
 function ResearchDocumentsSection({ contextConfig, researchDocs, combineDocuments, onToggle }: ResearchDocumentsSectionProps) {
+  const { t } = useTranslation('components')
   const shouldShow = !combineDocuments && contextConfig.useResearch && researchDocs.length > 0
   if (!shouldShow) return null
   return (
     <DocumentSelection
-      title="Select Research Documents"
-      description="Leave empty to use all research"
+      title={t('dataSourceWizard.selectResearchDocuments')}
+      description={t('dataSourceWizard.leaveEmptyForAllResearch')}
       documents={researchDocs}
       selectedDocIds={contextConfig.selectedDocumentIds}
       selectedResearchIds={contextConfig.selectedResearchIds}

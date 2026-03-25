@@ -205,6 +205,68 @@ describe('Categories', () => {
       await waitFor(() => {
         expect(mockGetFeedback).toHaveBeenCalled()
       })
+
+      // Verify single category is sent as the category param
+      const callArgs = mockGetFeedback.mock.calls[0][0]
+      expect(callArgs.category).toBe('delivery')
+    })
+
+    it('sends comma-separated categories when multiple selected', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Select Categories to Explore')).toBeInTheDocument()
+      })
+
+      // Click delivery (50) and customer_support (30)
+      const categoryButtons = screen.getAllByRole('button')
+      const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
+      const supportButton = categoryButtons.find(btn => btn.textContent?.includes('30'))
+      if (deliveryButton) await user.click(deliveryButton)
+      if (supportButton) await user.click(supportButton)
+
+      await waitFor(() => {
+        expect(mockGetFeedback).toHaveBeenCalled()
+      })
+
+      // Find the call with both categories
+      const lastCall = mockGetFeedback.mock.calls[mockGetFeedback.mock.calls.length - 1][0]
+      expect(lastCall.category).toContain('delivery')
+      expect(lastCall.category).toContain('customer_support')
+      expect(lastCall.category).toContain(',')
+    })
+
+    it('filters feedback by selected category on the client side', async () => {
+      // Mock feedback with mixed categories
+      mockGetFeedback.mockResolvedValue({
+        items: [
+          { ...mockFeedbackData.items[0], feedback_id: '1', category: 'delivery' },
+          { ...mockFeedbackData.items[0], feedback_id: '2', category: 'pricing' },
+        ],
+        count: 2,
+      })
+
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Select Categories to Explore')).toBeInTheDocument()
+      })
+
+      // Select delivery category
+      const categoryButtons = screen.getAllByRole('button')
+      const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
+      if (deliveryButton) await user.click(deliveryButton)
+
+      await waitFor(() => {
+        expect(screen.getByText('Feedback Results')).toBeInTheDocument()
+      })
+
+      // Only delivery items should show (client-side filter)
+      await waitFor(() => {
+        expect(screen.getByText('(1)')).toBeInTheDocument()
+      })
     })
   })
 

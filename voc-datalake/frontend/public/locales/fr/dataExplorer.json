@@ -1,0 +1,68 @@
+{
+  "categories": {
+    "errorLoading": "Erreur de chargement des catégories",
+    "noCategories": "Aucune catégorie",
+    "summary": "{{count}} catégories • {{total}} éléments • Derniers {{days}} jours",
+    "summary_one": "{{count}} catégories • {{total}} éléments • Derniers {{days}} jours",
+    "summary_many": "{{count}} catégories • {{total}} éléments • Derniers {{days}} jours",
+    "summary_other": "{{count}} catégories • {{total}} éléments • Derniers {{days}} jours"
+  },
+  "deleteConfirm": {
+    "deleteFeedback": "Supprimer le commentaire",
+    "deleteS3File": "Supprimer le fichier S3",
+    "message": "Êtes-vous sûr ? Cette action ne peut pas être annulée."
+  },
+  "description": "Parcourir, modifier et synchroniser les données brutes S3 et les enregistrements traités DynamoDB",
+  "editModal": {
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "create": "Créer",
+    "createNewFile": "Créer un nouveau fichier",
+    "editFeedback": "Modifier le commentaire",
+    "editS3File": "Modifier le fichier S3",
+    "id": "ID",
+    "invalidJson": "JSON invalide : {{error}}",
+    "key": "Clé",
+    "save": "Enregistrer",
+    "syncToDynamo": "Mettre à jour aussi DynamoDB",
+    "syncToS3": "Mettre à jour aussi S3",
+    "type": "Type",
+    "viewFeedback": "Afficher le commentaire",
+    "viewS3File": "Afficher le fichier S3"
+  },
+  "feedback": {
+    "category": "Catégorie : {{category}}",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "errorLoading": "Erreur de chargement des commentaires",
+    "noFeedback": "Aucun commentaire trouvé",
+    "showingRecords": "Affichage de {{filtered}} sur {{total}} enregistrements",
+    "urgent": "Urgent",
+    "view": "Afficher"
+  },
+  "filters": {
+    "allSources": "Toutes les sources",
+    "searchPlaceholder": "Rechercher..."
+  },
+  "newFile": "Nouveau fichier",
+  "notConfigured": "Configurez le point de terminaison API dans les paramètres pour explorer les données",
+  "refresh": "Actualiser",
+  "s3Browser": {
+    "back": "Retour",
+    "delete": "Supprimer",
+    "download": "Télécharger",
+    "edit": "Modifier",
+    "errorLoading": "Erreur de chargement des fichiers",
+    "noFiles": "Aucun fichier trouvé",
+    "view": "Afficher"
+  },
+  "tabs": {
+    "categories": "Catégories",
+    "categoriesShort": "Catégories",
+    "feedbackShort": "Commentaires",
+    "processedFeedback": "Commentaires traités",
+    "s3RawData": "Données brutes S3",
+    "s3Short": "S3"
+  },
+  "title": "Explorateur de données"
+}

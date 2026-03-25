@@ -11,5 +11,6 @@
   },
   "forQuery": "搜索「{{query}}」的结果",
   "noFeedbackFound": "未找到符合筛选条件的反馈",
+  "showingOf_one": "显示{{total}}条中的{{count}}条",
   "showingOf_other": "显示{{total}}条中的{{count}}条"
 }

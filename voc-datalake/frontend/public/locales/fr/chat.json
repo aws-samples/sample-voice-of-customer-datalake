@@ -2,8 +2,44 @@
   "assistantDescription": "Posez des questions sur vos données de retours clients",
   "assistantName": "Assistant IA VoC",
   "configureEndpoint": "Veuillez configurer votre point de terminaison API dans les Paramètres pour utiliser le chat IA",
+  "copyMessage": "Copier le message",
   "emptyState": "Démarrez une conversation sur vos retours clients",
+  "export": {
+    "copied": "Copié !",
+    "copyConversation": "Copier la conversation",
+    "downloadJson": "Télécharger en JSON",
+    "downloadMarkdown": "Télécharger en Markdown",
+    "downloadPdf": "Télécharger en PDF",
+    "exportOptions": "Options d'export",
+    "share": "Partager"
+  },
+  "filters": {
+    "clear": "Effacer",
+    "focusingOn": "Filtrage actif : {{summary}}",
+    "title": "Filtrer le contexte (max 30 avis)"
+  },
   "hideHistory": "Masquer l'historique",
   "inputPlaceholder": "Posez une question sur vos retours...",
-  "showHistory": "Afficher l'historique"
+  "message": {
+    "reasoning": "Raisonnement",
+    "relatedFeedback": "Retours associés :"
+  },
+  "showHistory": "Afficher l'historique",
+  "sidebar": {
+    "clearAll": "Effacer toutes les conversations",
+    "messagesCount": "{{count}} messages",
+    "messagesCount_one": "{{count}} messages",
+    "messagesCount_many": "{{count}} messages",
+    "messagesCount_other": "{{count}} messages",
+    "newChat": "Nouveau chat",
+    "noConversations": "Aucune conversation pour le moment"
+  },
+  "suggestedQuestions": {
+    "mainProblems": "Quels sont les principaux problèmes signalés par les clients ?",
+    "negativeSource": "Quelle source a le plus de feedback négatif ?",
+    "pricing": "Que disent les clients sur les prix ?",
+    "sentimentTrend": "Comment le sentiment a-t-il évolué au cours du dernier mois ?",
+    "topComplaints": "Quelles sont les principales plaintes des clients cette semaine ?",
+    "urgentIssues": "Montre-moi les problèmes les plus urgents"
+  }
 }

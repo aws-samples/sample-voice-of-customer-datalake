@@ -15,6 +15,7 @@ vi.mock('../../api/client', () => ({
     createApiToken: (...args: unknown[]) => mockCreateApiToken(...args),
     deleteApiToken: (...args: unknown[]) => mockDeleteApiToken(...args),
   },
+  stripTrailingSlashes: (url: string) => url.replace(/\/+$/, ''),
 }))
 
 vi.mock('../../store/configStore', () => ({

@@ -6,6 +6,7 @@
 import { useState, useEffect, type ReactElement } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Play, Settings, Globe, AlertCircle, CheckCircle, Loader2, XCircle, RefreshCw } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import type { ScraperConfig, ScraperTemplate } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -36,19 +37,21 @@ function getStatusStyle(status: RunStatus): string {
 }
 
 function StatusIndicator({ status }: { readonly status: RunStatus }): ReactElement | null {
+  const { t } = useTranslation('scrapers')
   if (status.status === 'running') {
-    return <><Loader2 size={16} className="animate-spin text-blue-600" /><span className="font-medium text-blue-700">Running...</span></>
+    return <><Loader2 size={16} className="animate-spin text-blue-600" /><span className="font-medium text-blue-700">{t('status.running')}</span></>
   }
   if (status.status === 'error') {
-    return <><XCircle size={16} className="text-red-600" /><span className="font-medium text-red-700">Failed</span></>
+    return <><XCircle size={16} className="text-red-600" /><span className="font-medium text-red-700">{t('status.failed')}</span></>
   }
   if (status.errors?.length > 0) {
-    return <><AlertCircle size={16} className="text-amber-600" /><span className="font-medium text-amber-700">Completed with errors</span></>
+    return <><AlertCircle size={16} className="text-amber-600" /><span className="font-medium text-amber-700">{t('status.completedWithErrors')}</span></>
   }
-  return <><CheckCircle size={16} className="text-green-600" /><span className="font-medium text-green-700">Completed</span></>
+  return <><CheckCircle size={16} className="text-green-600" /><span className="font-medium text-green-700">{t('status.completed')}</span></>
 }
 
 function ScraperRunStatus({ scraperId, onComplete }: { readonly scraperId: string; readonly onComplete?: () => void }) {
+  const { t } = useTranslation('scrapers')
   const [status, setStatus] = useState<RunStatus | null>(null)
   const [polling, setPolling] = useState(true)
 
@@ -83,13 +86,13 @@ function ScraperRunStatus({ scraperId, onComplete }: { readonly scraperId: strin
         <StatusIndicator status={status} />
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <div>Pages scraped: <span className="font-semibold">{status.pages_scraped}</span></div>
-        <div>Reviews found: <span className="font-semibold">{status.items_found}</span></div>
+        <div>{t('status.pagesScraped')} <span className="font-semibold">{status.pages_scraped}</span></div>
+        <div>{t('status.reviewsFound')} <span className="font-semibold">{status.items_found}</span></div>
       </div>
       {hasErrors && (
         <div className="mt-2 text-xs text-red-600">
           {status.errors.slice(0, 2).map((err, i) => <div key={i} className="truncate">{err}</div>)}
-          {status.errors.length > 2 && <div>...and {status.errors.length - 2} more errors</div>}
+          {status.errors.length > 2 && <div>{t('status.moreErrors', { count: status.errors.length - 2 })}</div>}
         </div>
       )}
     </div>
@@ -103,11 +106,12 @@ function getLastRunBadge(status: string): { className: string; icon: string } {
 }
 
 function LastRunSummary({ lastRunInfo }: { readonly lastRunInfo: RunStatus }) {
+  const { t } = useTranslation('scrapers')
   const badge = getLastRunBadge(lastRunInfo.status)
   return (
     <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
       <div className="flex items-center justify-between">
-        <span>Last: {lastRunInfo.pages_scraped} pages, {lastRunInfo.items_found} reviews</span>
+        <span>{t('card.lastSummary', { pages: lastRunInfo.pages_scraped, reviews: lastRunInfo.items_found })}</span>
         <span className={clsx('px-2 py-0.5 rounded', badge.className)}>{badge.icon}</span>
       </div>
       {lastRunInfo.errors?.length > 0 && <p className="text-red-500 truncate mt-1">{lastRunInfo.errors[0]}</p>}
@@ -122,7 +126,8 @@ function ScraperCardHeader({ scraper, isRunning, onRun, onEdit, onDelete }: {
   readonly onEdit: () => void
   readonly onDelete: () => void
 }) {
-  const domain = scraper.base_url ? new URL(scraper.base_url).hostname : 'Not configured'
+  const { t } = useTranslation('scrapers')
+  const domain = scraper.base_url ? new URL(scraper.base_url).hostname : t('card.notConfigured')
   return (
     <div className="flex items-start justify-between mb-3">
       <div className="flex items-center gap-3">
@@ -135,11 +140,11 @@ function ScraperCardHeader({ scraper, isRunning, onRun, onEdit, onDelete }: {
         </div>
       </div>
       <div className="flex items-center gap-1">
-        <button onClick={onRun} disabled={isRunning || !scraper.base_url} className={clsx("p-2 rounded transition-colors", isRunning ? "bg-blue-100 text-blue-600" : "hover:bg-green-100 text-green-600")} title="Run now">
+        <button onClick={onRun} disabled={isRunning || !scraper.base_url} className={clsx("p-2 rounded transition-colors", isRunning ? "bg-blue-100 text-blue-600" : "hover:bg-green-100 text-green-600")} title={t('card.runNow')}>
           {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
         </button>
-        <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title="Edit"><Settings size={16} /></button>
-        <button onClick={onDelete} className="p-2 hover:bg-gray-100 rounded text-red-500" title="Delete"><Trash2 size={16} /></button>
+        <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title={t('card.edit')}><Settings size={16} /></button>
+        <button onClick={onDelete} className="p-2 hover:bg-gray-100 rounded text-red-500" title={t('card.delete')}><Trash2 size={16} /></button>
       </div>
     </div>
   )
@@ -157,15 +162,16 @@ function getFrequencyLabel(minutes: number): string {
 }
 
 function ScraperCardStats({ scraper, lastRunInfo }: { readonly scraper: ScraperConfig; readonly lastRunInfo: RunStatus | null }) {
+  const { t } = useTranslation('scrapers')
   const totalUrls = calculateTotalUrls(scraper)
   const frequencyLabel = getFrequencyLabel(scraper.frequency_minutes)
-  const lastRunDate = lastRunInfo?.started_at ? new Date(lastRunInfo.started_at).toLocaleDateString() : 'Never'
+  const lastRunDate = lastRunInfo?.started_at ? new Date(lastRunInfo.started_at).toLocaleDateString() : t('card.never')
 
   return (
     <div className="grid grid-cols-3 gap-4 text-sm">
-      <div><span className="text-gray-500">Frequency</span><p className="font-medium">{frequencyLabel}</p></div>
-      <div><span className="text-gray-500">URLs</span><p className="font-medium">{totalUrls}</p></div>
-      <div><span className="text-gray-500">Last Run</span><p className="font-medium">{lastRunDate}</p></div>
+      <div><span className="text-gray-500">{t('card.frequency')}</span><p className="font-medium">{frequencyLabel}</p></div>
+      <div><span className="text-gray-500">{t('card.urls')}</span><p className="font-medium">{totalUrls}</p></div>
+      <div><span className="text-gray-500">{t('card.lastRun')}</span><p className="font-medium">{lastRunDate}</p></div>
     </div>
   )
 }
@@ -217,13 +223,14 @@ function ScraperCard({ scraper, onEdit, onDelete, onRun }: {
 }
 
 function EmptyState({ onCreateClick }: { readonly onCreateClick: () => void }) {
+  const { t } = useTranslation('scrapers')
   return (
     <div className="card text-center py-12">
       <Globe className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-      <h3 className="text-lg font-medium text-gray-900 mb-2">No scrapers configured</h3>
-      <p className="text-gray-500 mb-4">Create a scraper to start collecting feedback from websites</p>
+      <h3 className="text-lg font-medium text-gray-900 mb-2">{t('empty.title')}</h3>
+      <p className="text-gray-500 mb-4">{t('empty.description')}</p>
       <button onClick={onCreateClick} className="btn btn-primary inline-flex items-center gap-2">
-        <Plus size={16} /> Create Scraper
+        <Plus size={16} /> {t('empty.createButton')}
       </button>
     </div>
   )
@@ -279,19 +286,20 @@ function ScrapersContent({ scrapers, isLoading, onRefresh, onShowTemplates, onEd
   readonly onDelete: (id: string) => void
   readonly onRun: (id: string) => void
 }) {
+  const { t } = useTranslation('scrapers')
   return (
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Data Sources</h1>
-          <p className="text-sm text-gray-500">Configure web scrapers and app review sources to collect feedback</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="text-sm text-gray-500">{t('subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={onRefresh} className="btn btn-secondary flex items-center justify-center gap-2 text-sm flex-1 sm:flex-none">
-            <RefreshCw size={16} /> Refresh
+            <RefreshCw size={16} /> {t('refresh')}
           </button>
           <button onClick={onShowTemplates} className="btn btn-primary flex items-center justify-center gap-2 text-sm flex-1 sm:flex-none">
-            <Plus size={16} /> New Source
+            <Plus size={16} /> {t('newSource')}
           </button>
         </div>
       </div>
@@ -304,6 +312,7 @@ function ScrapersContent({ scrapers, isLoading, onRefresh, onShowTemplates, onEd
 }
 
 export default function Scrapers() {
+  const { t } = useTranslation('scrapers')
   const { config } = useConfigStore()
   const { setIsModalOpen } = useManualImportStore()
   const [editingScraper, setEditingScraper] = useState<ScraperConfig | null>(null)
@@ -359,8 +368,8 @@ export default function Scrapers() {
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
           <AlertCircle className="mx-auto h-12 w-12 text-amber-500 mb-4" />
-          <p className="text-gray-500 mb-4">Configure API endpoint first</p>
-          <a href="/settings" className="btn btn-primary">Go to Settings</a>
+          <p className="text-gray-500 mb-4">{t('configureApiFirst')}</p>
+          <a href="/settings" className="btn btn-primary">{t('goToSettings', { ns: 'common' })}</a>
         </div>
       </div>
     )
@@ -397,9 +406,9 @@ export default function Scrapers() {
       {deleteScraperId && (
         <ConfirmModal
           isOpen={!!deleteScraperId}
-          title="Delete Scraper"
-          message="Are you sure you want to delete this scraper? This action cannot be undone."
-          confirmLabel="Delete"
+          title={t('deleteConfirmTitle')}
+          message={t('deleteConfirmMessage')}
+          confirmLabel={t('deleteConfirmLabel')}
           onConfirm={handleConfirmDelete}
           onCancel={() => setDeleteScraperId(null)}
         />

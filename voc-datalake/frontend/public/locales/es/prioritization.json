@@ -1,0 +1,74 @@
+{
+  "actions": {
+    "reset": "Restablecer",
+    "save": "Guardar puntuaciones",
+    "saveMobile": "Guardar",
+    "saving": "Guardando...",
+    "savingMobile": "..."
+  },
+  "configureApiEndpoint": "Configure el endpoint de la API en Configuración para ver la priorización.",
+  "empty": {
+    "description": "Cree PR/FAQs en sus proyectos para comenzar a priorizar.",
+    "title": "No se encontraron PR/FAQs"
+  },
+  "framework": {
+    "description": "Puntúe cada PR/FAQ en: <strong>Impacto</strong>, <strong>Tiempo de comercialización</strong>, <strong>Ajuste estratégico</strong> y <strong>Confianza</strong>.",
+    "title": "Marco de priorización"
+  },
+  "loading": "Cargando PR/FAQs...",
+  "notes": {
+    "label": "Notas",
+    "placeholder": "Agregar notas sobre esta decisión de priorización..."
+  },
+  "preview": {
+    "title": "Vista previa de PR/FAQ",
+    "viewFull": "Ver documento completo",
+    "viewMobile": "Ver"
+  },
+  "priority": {
+    "high": "Alta prioridad",
+    "low": "Baja prioridad",
+    "medium": "Prioridad media",
+    "none": "Sin puntuar"
+  },
+  "scores": {
+    "confidence": "Confianza",
+    "confidenceDescription": "Certeza en las estimaciones de impacto y TdC",
+    "fast": "Rápido",
+    "high": "Alto",
+    "impact": "Impacto",
+    "impactDescription": "Valor comercial y beneficio para el cliente",
+    "low": "Bajo",
+    "score": "Puntuación",
+    "slow": "Lento",
+    "strategicFit": "Ajuste estratégico",
+    "strategicFitDescription": "Alineación con los objetivos de la empresa",
+    "timeToMarket": "Tiempo de comercialización",
+    "timeToMarketDescription": "¿Qué tan rápido se puede entregar?",
+    "title": "Puntuaciones de priorización"
+  },
+  "sort": {
+    "date": "Fecha",
+    "dateFull": "Fecha de creación",
+    "impact": "Impacto",
+    "label": "Ordenar por:",
+    "priority": "Prioridad",
+    "priorityFull": "Puntuación de prioridad",
+    "ttm": "TdC",
+    "ttmFull": "Tiempo de comercialización"
+  },
+  "stats": {
+    "highPriority": "Alta prioridad",
+    "mediumPriority": "Prioridad media",
+    "notScored": "Sin puntuar",
+    "totalPrfaqs": "Total PR/FAQs"
+  },
+  "subtitle": "Puntuar y priorizar PR/FAQs en todos los proyectos",
+  "title": "Priorización de PR/FAQ",
+  "unsavedChanges": {
+    "cancel": "Permanecer en la página",
+    "confirm": "Descartar cambios",
+    "message": "Tiene puntuaciones de priorización sin guardar. ¿Desea descartar los cambios y abandonar esta página?",
+    "title": "Cambios sin guardar"
+  }
+}

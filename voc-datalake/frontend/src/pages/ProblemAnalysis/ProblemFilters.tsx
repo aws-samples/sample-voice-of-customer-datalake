@@ -1,6 +1,7 @@
 /**
  * Filter and control bar for the Problem Analysis page.
  */
+import { useTranslation } from 'react-i18next'
 import { Filter, X, Eye, EyeOff, FileDown } from 'lucide-react'
 
 interface ProblemFiltersProps {
@@ -35,6 +36,7 @@ export function ProblemFilters({
   onUrgentOnlyChange, onShowResolvedChange, onSimilarityChange,
   onExpandAll, onCollapseAll, onExportPDF,
 }: ProblemFiltersProps) {
+  const { t } = useTranslation('problemAnalysis')
   const hasActiveFilters = selectedSource || selectedCategory || selectedSubcategory || showUrgentOnly
 
   const clearFilters = () => {
@@ -55,7 +57,7 @@ export function ProblemFilters({
             onChange={(e) => onSourceChange(e.target.value || null)}
             className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
           >
-            <option value="">All Sources</option>
+            <option value="">{t('filters.allSources')}</option>
             {allSources.map(source => (
               <option key={source} value={source}>{source}</option>
             ))}
@@ -65,7 +67,7 @@ export function ProblemFilters({
             onChange={(e) => { onCategoryChange(e.target.value || null); onSubcategoryChange(null) }}
             className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
           >
-            <option value="">All Categories</option>
+            <option value="">{t('filters.allCategories')}</option>
             {allCategories.map(cat => (
               <option key={cat} value={cat}>{cat.replace('_', ' ')}</option>
             ))}
@@ -75,7 +77,7 @@ export function ProblemFilters({
             onChange={(e) => onSubcategoryChange(e.target.value || null)}
             className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
           >
-            <option value="">All Subcategories</option>
+            <option value="">{t('filters.allSubcategories')}</option>
             {allSubcategories.map(sub => (
               <option key={sub} value={sub}>{sub.replace('_', ' ')}</option>
             ))}
@@ -92,7 +94,7 @@ export function ProblemFilters({
                 onChange={(e) => onUrgentOnlyChange(e.target.checked)}
                 className="rounded border-gray-300 w-3.5 h-3.5 sm:w-4 sm:h-4"
               />
-              <span>Urgent only</span>
+              <span>{t('filters.urgentOnly')}</span>
             </label>
             <label className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
               <input
@@ -106,7 +108,7 @@ export function ProblemFilters({
               ) : (
                 <EyeOff size={14} className="text-gray-400 sm:w-4 sm:h-4" />
               )}
-              <span>Show resolved</span>
+              <span>{t('filters.showResolved')}</span>
               {resolvedCount > 0 && (
                 <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
                   {resolvedCount}
@@ -119,33 +121,33 @@ export function ProblemFilters({
                 className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 active:scale-95"
               >
                 <X size={12} className="sm:w-[14px] sm:h-[14px]" />
-                Clear
+                {t('filters.clear')}
               </button>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
-              <span className="text-gray-500 hidden xs:inline">Similarity:</span>
+              <span className="text-gray-500 hidden xs:inline">{t('filters.similarity')}</span>
               <select
                 value={similarityThreshold}
                 onChange={(e) => onSimilarityChange(parseFloat(e.target.value))}
                 className="px-2 py-1 border border-gray-300 rounded text-xs sm:text-sm"
                 title="Higher = stricter matching, fewer merged groups"
               >
-                <option value={0.2}>Low</option>
-                <option value={0.4}>Med</option>
-                <option value={0.6}>High</option>
-                <option value={1.0}>Off</option>
+                <option value={0.2}>{t('filters.similarityLow')}</option>
+                <option value={0.4}>{t('filters.similarityMed')}</option>
+                <option value={0.6}>{t('filters.similarityHigh')}</option>
+                <option value={1.0}>{t('filters.similarityOff')}</option>
               </select>
             </div>
             <div className="flex gap-1.5 sm:gap-2">
               <button onClick={onExpandAll} className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95">
-                <span className="hidden xs:inline">Expand All</span>
-                <span className="xs:hidden">Expand</span>
+                <span className="hidden xs:inline">{t('filters.expandAll')}</span>
+                <span className="xs:hidden">{t('filters.expand')}</span>
               </button>
               <button onClick={onCollapseAll} className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95">
-                <span className="hidden xs:inline">Collapse All</span>
-                <span className="xs:hidden">Collapse</span>
+                <span className="hidden xs:inline">{t('filters.collapseAll')}</span>
+                <span className="xs:hidden">{t('filters.collapse')}</span>
               </button>
               {hasData && (
                 <button
@@ -154,7 +156,7 @@ export function ProblemFilters({
                   title="Export as PDF"
                 >
                   <FileDown size={14} />
-                  <span className="hidden xs:inline">PDF</span>
+                  <span className="hidden xs:inline">{t('filters.pdf')}</span>
                 </button>
               )}
             </div>

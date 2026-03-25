@@ -2,16 +2,43 @@
   "assistantDescription": "Ask questions about your customer feedback data",
   "assistantName": "VoC AI Assistant",
   "configureEndpoint": "Please configure your API endpoint in Settings to use the AI chat",
+  "copyMessage": "Copy message",
   "emptyState": "Start a conversation about your customer feedback",
+  "export": {
+    "copied": "Copied!",
+    "copyConversation": "Copy conversation",
+    "downloadJson": "Download as JSON",
+    "downloadMarkdown": "Download as Markdown",
+    "downloadPdf": "Download as PDF",
+    "exportOptions": "Export options",
+    "share": "Share"
+  },
+  "filters": {
+    "clear": "Clear",
+    "focusingOn": "Focusing on: {{summary}}",
+    "title": "Filter Context (max 30 reviews)"
+  },
   "hideHistory": "Hide history",
   "inputPlaceholder": "Ask about your feedback...",
+  "message": {
+    "reasoning": "Reasoning",
+    "relatedFeedback": "Related feedback:"
+  },
   "showHistory": "Show history",
+  "sidebar": {
+    "clearAll": "Clear all conversations",
+    "messagesCount": "{{count}} messages",
+    "messagesCount_one": "{{count}} message",
+    "messagesCount_other": "{{count}} messages",
+    "newChat": "New Chat",
+    "noConversations": "No conversations yet"
+  },
   "suggestedQuestions": {
-    "topComplaints": "What are the top customer complaints this week?",
-    "urgentIssues": "Show me the most urgent issues right now",
-    "sentimentTrend": "How has sentiment changed over the past month?",
-    "negativeSource": "Which source has the most negative feedback?",
     "mainProblems": "What are the main problems customers are reporting?",
-    "pricing": "What are customers saying about pricing?"
+    "negativeSource": "Which source has the most negative feedback?",
+    "pricing": "What are customers saying about pricing?",
+    "sentimentTrend": "How has sentiment changed over the past month?",
+    "topComplaints": "What are the top customer complaints this week?",
+    "urgentIssues": "Show me the most urgent issues right now"
   }
 }

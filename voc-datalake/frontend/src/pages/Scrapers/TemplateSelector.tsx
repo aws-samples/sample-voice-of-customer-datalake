@@ -8,6 +8,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, FileJson, Globe, Smartphone, ClipboardPaste, Upload } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import type { ScraperTemplate } from '../../api/client'
 import type { PluginManifest } from '../../plugins/types'
@@ -98,6 +99,7 @@ function mergeTemplates(apiTemplates: ScraperTemplate[]): ScraperTemplate[] {
 }
 
 export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImport, onJsonUpload, onClose }: TemplateSelectorProps) {
+  const { t } = useTranslation('scrapers')
   const { config } = useConfigStore()
 
   const { data, isLoading } = useQuery({
@@ -113,7 +115,7 @@ export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImp
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
         <div className="p-3 sm:p-4 border-b flex items-center justify-between">
-          <h3 className="font-semibold text-base sm:text-lg">Add Data Source</h3>
+          <h3 className="font-semibold text-base sm:text-lg">{t('templateSelector.title')}</h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
         </div>
 
@@ -121,7 +123,7 @@ export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImp
           {/* Auto-discovered plugins section */}
           {discoverablePlugins.length > 0 && (
             <div>
-              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">App Review Sources</h4>
+              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('templateSelector.appReviewSources')}</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {discoverablePlugins.map(plugin => (
                   <button
@@ -137,7 +139,7 @@ export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImp
                       <div>
                         <div className="font-medium text-sm sm:text-base">{plugin.name}</div>
                         <span className="inline-flex items-center gap-1 text-xs text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded">
-                          Auto-discovered
+                          {t('templateSelector.autoDiscovered')}
                         </span>
                       </div>
                     </div>
@@ -150,7 +152,7 @@ export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImp
 
           {/* Web scraper templates section */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Web Scraper Templates</h4>
+            <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('templateSelector.webScraperTemplates')}</h4>
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="animate-spin h-8 w-8 text-blue-500" />
@@ -186,7 +188,7 @@ export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImp
 
           {/* Manual Import section */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Manual Input</h4>
+            <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('templateSelector.manualInput')}</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <button
                 onClick={onManualImport}
@@ -194,9 +196,9 @@ export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImp
               >
                 <div className="flex items-center gap-2 sm:gap-3 mb-2">
                   <ClipboardPaste size={24} className="text-amber-600" />
-                  <div className="font-medium text-sm sm:text-base">Manual Import</div>
+                  <div className="font-medium text-sm sm:text-base">{t('templateSelector.manualImport')}</div>
                 </div>
-                <p className="text-xs sm:text-sm text-gray-600">Paste reviews from any website and import them with AI parsing.</p>
+                <p className="text-xs sm:text-sm text-gray-600">{t('templateSelector.manualImportDescription')}</p>
               </button>
               <button
                 onClick={onJsonUpload}
@@ -204,16 +206,16 @@ export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImp
               >
                 <div className="flex items-center gap-2 sm:gap-3 mb-2">
                   <Upload size={24} className="text-blue-600" />
-                  <div className="font-medium text-sm sm:text-base">JSON Upload</div>
+                  <div className="font-medium text-sm sm:text-base">{t('templateSelector.jsonUpload')}</div>
                 </div>
-                <p className="text-xs sm:text-sm text-gray-600">Upload a JSON file with structured feedback data. Download a template to get started.</p>
+                <p className="text-xs sm:text-sm text-gray-600">{t('templateSelector.jsonUploadDescription')}</p>
               </button>
             </div>
           </div>
         </div>
 
         <div className="p-3 sm:p-4 border-t">
-          <button onClick={onClose} className="btn btn-secondary w-full text-sm">Cancel</button>
+          <button onClick={onClose} className="btn btn-secondary w-full text-sm">{t('templateSelector.cancel')}</button>
         </div>
       </div>
     </div>

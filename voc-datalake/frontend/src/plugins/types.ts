@@ -65,28 +65,8 @@ export type WebhookInfo = z.infer<typeof WebhookInfoSchema>;
 export type SetupInfo = z.infer<typeof SetupSchema>;
 
 // ============================================
-// Type Guards
-// ============================================
-
-export function isPluginManifest(value: unknown): value is PluginManifest {
-  return PluginManifestSchema.safeParse(value).success;
-}
-
-export function isPluginManifestArray(value: unknown): value is PluginManifest[] {
-  return PluginManifestsSchema.safeParse(value).success;
-}
-
-// ============================================
 // Validation Functions
 // ============================================
-
-/**
- * Validate and parse plugin manifests at runtime.
- * Throws if validation fails.
- */
-export function validateManifests(data: unknown): PluginManifest[] {
-  return PluginManifestsSchema.parse(data);
-}
 
 /**
  * Safely validate manifests, returning null on failure.

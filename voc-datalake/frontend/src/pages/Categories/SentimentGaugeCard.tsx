@@ -1,5 +1,6 @@
 import { PieChart, Pie, ResponsiveContainer, Tooltip } from 'recharts'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import type { SentimentData, SentimentFilter } from './types'
 import { getSentimentScoreColorClass } from './types'
 
@@ -18,11 +19,12 @@ export function SentimentGauge({
   onSentimentFilterChange,
   percentages,
 }: SentimentGaugeProps) {
+  const { t } = useTranslation('categories')
   const dataWithFill = sentimentData.map(entry => ({ ...entry, fill: entry.color }))
 
   return (
     <div className="card">
-      <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Overall Sentiment</h2>
+      <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('overallSentiment')}</h2>
       <div className="flex items-center justify-center">
         <div className="relative w-full max-w-[280px]">
           <ResponsiveContainer width="100%" height={160} minWidth={0} className="sm:!h-[200px]">
@@ -52,7 +54,7 @@ export function SentimentGauge({
               <p className={clsx('text-2xl sm:text-3xl font-bold', getSentimentScoreColorClass(avgSentiment))}>
                 {avgSentiment > 0 ? '+' : ''}{avgSentiment.toFixed(0)}
               </p>
-              <p className="text-xs text-gray-500">Net Sentiment</p>
+              <p className="text-xs text-gray-500">{t('netSentiment')}</p>
             </div>
           </div>
         </div>

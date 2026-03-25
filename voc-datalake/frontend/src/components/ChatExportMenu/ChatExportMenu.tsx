@@ -10,6 +10,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Download, Share2, FileText, Copy, Check, FileDown, MoreVertical } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { Conversation } from '../../store/chatStore'
 import { generateChatPDF } from './chatPdfGenerator'
 
@@ -72,6 +73,7 @@ function downloadFile(content: string, filename: string, mimeType: string): void
 }
 
 export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
+  const { t } = useTranslation('chat')
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -150,8 +152,8 @@ export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-        title="Export options"
-        aria-label="Export options"
+        title={t('export.exportOptions')}
+        aria-label={t('export.exportOptions')}
         aria-expanded={isOpen}
         aria-haspopup="menu"
       >
@@ -170,7 +172,7 @@ export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
             role="menuitem"
           >
             {copied ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Copy size={16} className="flex-shrink-0" />}
-            <span className="truncate">{copied ? 'Copied!' : 'Copy conversation'}</span>
+            <span className="truncate">{copied ? t('export.copied') : t('export.copyConversation')}</span>
           </button>
 
           <button
@@ -179,7 +181,7 @@ export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
             role="menuitem"
           >
             <Share2 size={16} className="flex-shrink-0" />
-            <span className="truncate">Share</span>
+            <span className="truncate">{t('export.share')}</span>
           </button>
 
           <hr className="my-1 border-gray-100" />
@@ -190,7 +192,7 @@ export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
             role="menuitem"
           >
             <FileText size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as Markdown</span>
+            <span className="truncate">{t('export.downloadMarkdown')}</span>
           </button>
 
           <button
@@ -199,7 +201,7 @@ export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
             role="menuitem"
           >
             <Download size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as JSON</span>
+            <span className="truncate">{t('export.downloadJson')}</span>
           </button>
 
           <button
@@ -208,7 +210,7 @@ export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
             role="menuitem"
           >
             <FileDown size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as PDF</span>
+            <span className="truncate">{t('export.downloadPdf')}</span>
           </button>
         </div>
       )}

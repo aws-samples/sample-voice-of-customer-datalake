@@ -148,57 +148,6 @@ class TestUpdateJobStatus:
         mock_logger.warning.assert_called_once()
 
 
-class TestGetJob:
-    """Tests for get_job function."""
-    
-    def setup_method(self):
-        """Reset module state before each test."""
-        from shared.tables import clear_table_cache
-        clear_table_cache()
-    
-    @patch('shared.jobs.get_jobs_table')
-    def test_returns_job_item(self, mock_get_jobs_table):
-        """Should return job item when found."""
-        from shared.jobs import get_job
-        
-        mock_table = MagicMock()
-        mock_table.get_item.return_value = {
-            'Item': {'job_id': 'job_abc', 'status': 'running'}
-        }
-        mock_get_jobs_table.return_value = mock_table
-        
-        result = get_job('proj_123', 'job_abc')
-        
-        assert result == {'job_id': 'job_abc', 'status': 'running'}
-        mock_table.get_item.assert_called_once_with(
-            Key={'pk': 'PROJECT#proj_123', 'sk': 'JOB#job_abc'}
-        )
-    
-    @patch('shared.jobs.get_jobs_table')
-    def test_returns_none_when_not_found(self, mock_get_jobs_table):
-        """Should return None when job is not found."""
-        from shared.jobs import get_job
-        
-        mock_table = MagicMock()
-        mock_table.get_item.return_value = {}
-        mock_get_jobs_table.return_value = mock_table
-        
-        result = get_job('proj_123', 'job_abc')
-        
-        assert result is None
-    
-    @patch('shared.jobs.get_jobs_table')
-    def test_returns_none_when_table_not_configured(self, mock_get_jobs_table):
-        """Should return None when table is not configured."""
-        from shared.jobs import get_job
-        
-        mock_get_jobs_table.return_value = None
-        
-        result = get_job('proj_123', 'job_abc')
-        
-        assert result is None
-
-
 class TestJobContext:
     """Tests for JobContext class."""
     

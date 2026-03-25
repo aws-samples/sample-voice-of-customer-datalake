@@ -2,6 +2,7 @@
  * OverviewTab - Project overview with action cards and jobs
  */
 import { Users, FileText, Search, Sparkles, Shuffle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { ProjectPersona, ProjectDocument, Project } from '../../api/client'
 import type { ProjectJob } from '../../api/client'
 import JobsSection from './JobsSection'
@@ -31,6 +32,8 @@ export default function OverviewTab({
   onDismissJob,
   onSaveKiroPrompt,
 }: OverviewTabProps) {
+  const { t } = useTranslation('projectDetail')
+
   return (
     <div className="space-y-6">
       {/* Running Jobs Section */}
@@ -41,44 +44,48 @@ export default function OverviewTab({
         <ActionCard
           icon={<Users size={20} className="text-purple-600" />}
           iconBg="bg-purple-100"
-          title="Generate Personas"
-          description="Create user personas from feedback"
+          title={t('overview.generatePersonas')}
+          description={t('overview.generatePersonasDesc')}
           buttonColor="bg-purple-600 hover:bg-purple-700"
           buttonIcon={<Sparkles size={16} />}
-          buttonLabel="Generate"
+          buttonLabel={t('overview.generate')}
+          configureLabel={t('overview.configureAnd')}
           onClick={onGeneratePersonas}
         />
         <ActionCard
           icon={<FileText size={20} className="text-blue-600" />}
           iconBg="bg-blue-100"
-          title="Generate PRD / PR-FAQ"
-          description="Create product documents from feedback"
+          title={t('overview.generatePrdPrfaq')}
+          description={t('overview.generatePrdPrfaqDesc')}
           buttonColor="bg-blue-600 hover:bg-blue-700"
           buttonIcon={<FileText size={16} />}
-          buttonLabel="Generate"
+          buttonLabel={t('overview.generate')}
+          configureLabel={t('overview.configureAnd')}
           onClick={onGenerateDoc}
         />
         <ActionCard
           icon={<Search size={20} className="text-amber-600" />}
           iconBg="bg-amber-100"
-          title="Run Research"
-          description="Deep dive into feedback with filters"
+          title={t('overview.runResearch')}
+          description={t('overview.runResearchDesc')}
           buttonColor="bg-amber-600 hover:bg-amber-700"
           buttonIcon={<Search size={16} />}
-          buttonLabel="Run Research"
+          buttonLabel={t('overview.runResearch')}
+          configureLabel={t('overview.configureAnd')}
           onClick={onRunResearch}
         />
         <ActionCard
           icon={<Shuffle size={20} className="text-green-600" />}
           iconBg="bg-green-100"
-          title="Remix Documents"
-          description="Combine and revise documents into new versions"
+          title={t('overview.remixDocuments')}
+          description={t('overview.remixDocumentsDesc')}
           buttonColor="bg-green-600 hover:bg-green-700"
           buttonIcon={<Shuffle size={16} />}
-          buttonLabel="Select & Remix"
+          buttonLabel={t('overview.selectAndRemix')}
+          configureLabel={t('overview.configureAnd')}
           onClick={onRemixDocuments}
           disabled={documents.length < 2}
-          disabledMessage="Need at least 2 documents"
+          disabledMessage={t('overview.needAtLeast2Docs')}
         />
       </div>
 
@@ -96,6 +103,7 @@ interface ActionCardProps {
   readonly buttonColor: string
   readonly buttonIcon: React.ReactNode
   readonly buttonLabel: string
+  readonly configureLabel: string
   readonly onClick: () => void
   readonly disabled?: boolean
   readonly disabledMessage?: string
@@ -109,6 +117,7 @@ function ActionCard({
   buttonColor,
   buttonIcon,
   buttonLabel,
+  configureLabel,
   onClick,
   disabled,
   disabledMessage,
@@ -130,7 +139,7 @@ function ActionCard({
         className={`w-full py-2 text-white rounded-lg flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed ${buttonColor}`}
       >
         {buttonIcon}
-        <span className="hidden sm:inline">Configure & </span>{buttonLabel}
+        <span className="hidden sm:inline">{configureLabel}</span>{buttonLabel}
       </button>
       {disabled && disabledMessage && (
         <p className="text-xs text-gray-400 mt-2 text-center">{disabledMessage}</p>

@@ -459,12 +459,9 @@ def _tool_get_feedback_detail(args: dict, _token_info: dict) -> list[dict]:
     if not feedback_table:
         return [{"type": "text", "text": "Feedback table not configured"}]
 
-    # Feedback items use SOURCE#{platform} as PK — we need to scan by ID
-    # Use GSI or scan. For now, query all sources for this ID.
-    # The id field is stored as an attribute, so we scan with a filter.
-    response = feedback_table.scan(
-        FilterExpression='id = :fid',
-        ExpressionAttributeValues={':fid': feedback_id},
+    response = feedback_table.query(
+        IndexName='gsi4-by-feedback-id',
+        KeyConditionExpression=Key('feedback_id').eq(feedback_id),
         Limit=1,
     )
     items = response.get('Items', [])

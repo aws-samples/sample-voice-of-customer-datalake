@@ -254,6 +254,4 @@ def get_avatar_prompt_config() -> dict:
     return load_prompt_file('avatar-generation.json')
 
 
-def get_persona_import_config() -> dict:
-    """Get persona import prompt configuration."""
-    return load_prompt_file('persona-import.json')
+

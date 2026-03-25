@@ -294,13 +294,6 @@ def build_categories_instruction() -> str:
 processor = BatchProcessor(event_type=EventType.SQS)
 
 
-def decimal_default(obj):
-    """Convert floats to Decimal for DynamoDB."""
-    if isinstance(obj, float):
-        return Decimal(str(round(obj, 6)))
-    raise TypeError
-
-
 @tracer.capture_method
 def detect_language(text: str) -> str:
     """Detect dominant language using Comprehend."""
@@ -623,7 +616,11 @@ def record_handler(record: SQSRecord) -> dict:
     validated_record, validation_errors = validate_sqs_message(raw_record)
     if validation_errors:
         logger.warning(f"Validation failed for {source_platform}/{source_id}: {validation_errors}")
+        # Emit metric so validation drops are visible in CloudWatch dashboards/alarms
+        metrics.add_metric(name="ValidationDropped", unit="Count", value=1)
+        metrics.add_dimension(name="SourcePlatform", value=source_platform)
         # Return success to remove from queue - invalid messages shouldn't be retried
+        # Validation failures are persisted via log_validation_failure() in validate_sqs_message()
         return {"status": "skipped", "reason": "validation_failed", "errors": validation_errors}
     
     # Use validated record for processing

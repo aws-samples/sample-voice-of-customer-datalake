@@ -9,6 +9,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Copy, Check, FileDown, MoreVertical, FileText, FileType } from 'lucide-react'
 import type { ProjectPersona } from '../../api/client'
 import { personaToMarkdown } from './personaToMarkdown'
@@ -44,6 +45,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const { t } = useTranslation('components')
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -92,8 +94,8 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-        title="Export persona"
-        aria-label="Export persona"
+        title={t('personaExport.exportPersona')}
+        aria-label={t('personaExport.exportPersona')}
         aria-expanded={isOpen}
         aria-haspopup="menu"
       >
@@ -112,7 +114,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
             role="menuitem"
           >
             {copied ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Copy size={16} className="flex-shrink-0" />}
-            <span className="truncate">{copied ? 'Copied!' : 'Copy as Markdown'}</span>
+            <span className="truncate">{copied ? t('personaExport.copied') : t('personaExport.copyMarkdown')}</span>
           </button>
 
           <hr className="my-1 border-gray-100" />
@@ -123,7 +125,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
             role="menuitem"
           >
             <FileText size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as Markdown</span>
+            <span className="truncate">{t('personaExport.downloadMarkdown')}</span>
           </button>
 
           <button
@@ -132,7 +134,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
             role="menuitem"
           >
             <FileDown size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as PDF</span>
+            <span className="truncate">{t('personaExport.downloadPDF')}</span>
           </button>
 
           <button
@@ -141,7 +143,7 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
             role="menuitem"
           >
             <FileType size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as TXT</span>
+            <span className="truncate">{t('personaExport.downloadTXT')}</span>
           </button>
         </div>
       )}

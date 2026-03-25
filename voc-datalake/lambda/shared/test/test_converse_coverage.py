@@ -83,34 +83,6 @@ class TestConverseChainExceptionPropagation:
             converse_chain(steps)
 
 
-class TestConverseWithToolsEmptyToolResults:
-    """Tests for converse_with_tools when tool_use has no actual tool blocks (line 361)."""
-
-    @patch('shared.converse.get_bedrock_client')
-    def test_returns_text_when_tool_use_but_no_tool_blocks(self, mock_get_client):
-        """Returns text when stopReason is tool_use but content has no toolUse blocks."""
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'I tried to use a tool'}]}},
-            'stopReason': 'tool_use'
-        }
-        mock_get_client.return_value = mock_client
-
-        from shared.converse import converse_with_tools
-
-        result, metadata = converse_with_tools(
-            prompt='Search for something',
-            system_prompt='System',
-            tools=[],
-            tool_executor=lambda name, inp: ('result', None),
-        )
-
-        assert result == 'I tried to use a tool'
-        assert metadata == []
-        # Only one call since no tool results to send back
-        assert mock_client.converse.call_count == 1
-
-
 class TestInvokeWithRetryGenericExceptionExhausted:
     """Tests for _invoke_with_retry when generic exceptions exhaust all retries."""
 

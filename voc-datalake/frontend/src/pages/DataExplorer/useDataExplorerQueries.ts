@@ -60,10 +60,13 @@ export function useDataExplorerQueries(
     bucketsData: bucketsQuery.data,
     s3Data: s3Query.data,
     s3Loading: s3Query.isLoading,
+    s3Error: s3Query.error,
     feedbackData: feedbackQuery.data,
     feedbackLoading: feedbackQuery.isLoading,
+    feedbackError: feedbackQuery.error,
     categoriesData: categoriesQuery.data,
     categoriesLoading: categoriesQuery.isLoading,
+    categoriesError: categoriesQuery.error,
     sourcesData: sourcesQuery.data,
     refetch,
   }

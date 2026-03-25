@@ -11,7 +11,7 @@ import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { uniqueName } from '../utils/naming';
-import { pluginSystemSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
+import { pluginSystemSuppressions, bedrockModelSuppressions, comprehendSuppressions, translateSuppressions } from '../utils/nag-suppressions';
 
 export interface VocProcessingStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -69,7 +69,7 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     // ============================================
-    // PROCESSING ROLE (shared for processor + aggregator)
+    // PROCESSING ROLE (processor Lambda only)
     // ============================================
     const processingRole = new iam.Role(this, 'ProcessingLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
@@ -105,11 +105,12 @@ export class VocProcessingStack extends cdk.Stack {
     // DynamoDB + KMS permissions
     feedbackTable.grantReadWriteData(processingRole);
     aggregatesTable.grantReadWriteData(processingRole);
-    projectsTable.grantReadData(processingRole);
     idempotencyTable.grantReadWriteData(processingRole);
     processingQueue.grantConsumeMessages(processingRole);
     kmsKey.grantEncryptDecrypt(processingRole);
     NagSuppressions.addResourceSuppressions(processingRole, bedrockModelSuppressions, true);
+    NagSuppressions.addResourceSuppressions(processingRole, comprehendSuppressions, true);
+    NagSuppressions.addResourceSuppressions(processingRole, translateSuppressions, true);
 
     // ============================================
     // FEEDBACK PROCESSOR LAMBDA
@@ -135,7 +136,6 @@ export class VocProcessingStack extends cdk.Stack {
       environment: {
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
-        PROJECTS_TABLE: projectsTable.tableName,
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
         PRIMARY_LANGUAGE: config.primaryLanguage,
         BEDROCK_MODEL_ID: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -159,6 +159,31 @@ export class VocProcessingStack extends cdk.Stack {
 
 
     // ============================================
+    // AGGREGATOR ROLE (minimal: only DynamoDB aggregates + KMS)
+    // ============================================
+    const aggregatorRole = new iam.Role(this, 'AggregatorLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      ],
+    });
+
+    aggregatesTable.grantReadWriteData(aggregatorRole);
+    kmsKey.grantEncryptDecrypt(aggregatorRole);
+
+    // DynamoDB Streams read permission for the feedback table trigger
+    aggregatorRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'DynamoDBStreamsRead',
+      actions: [
+        'dynamodb:DescribeStream',
+        'dynamodb:GetRecords',
+        'dynamodb:GetShardIterator',
+        'dynamodb:ListStreams',
+      ],
+      resources: [feedbackTable.tableStreamArn!],
+    }));
+
+    // ============================================
     // AGGREGATION LAMBDA
     // ============================================
     const aggregatorCode = lambda.Code.fromAsset('lambda', {
@@ -176,7 +201,7 @@ export class VocProcessingStack extends cdk.Stack {
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: aggregatorCode,
-      role: processingRole,
+      role: aggregatorRole,
       timeout: cdk.Duration.minutes(1),
       memorySize: 512,
       environment: {

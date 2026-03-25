@@ -5,6 +5,7 @@
 import { useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 
@@ -25,6 +26,7 @@ export default function ProjectDetail() {
   const { config } = useConfigStore()
   
   const [activeTab, setActiveTab] = useState<Tab>('overview')
+  const { t } = useTranslation('projectDetail')
 
   // Custom hooks for state management
   const wizard = useWizardState()
@@ -116,9 +118,9 @@ export default function ProjectDetail() {
   if (!data?.project) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500">Project not found</p>
+        <p className="text-gray-500">{t('notFound.message')}</p>
         <button onClick={() => navigate('/projects')} className="mt-4 text-blue-600 hover:underline">
-          Back to Projects
+          {t('notFound.backToProjects')}
         </button>
       </div>
     )

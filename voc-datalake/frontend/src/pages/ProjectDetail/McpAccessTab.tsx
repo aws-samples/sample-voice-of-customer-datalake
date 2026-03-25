@@ -19,6 +19,7 @@ import {
   Clock, Shield, AlertCircle, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import type { ApiToken, ProjectPersona, ProjectDocument } from '../../api/types'
@@ -41,6 +42,7 @@ interface McpAccessTabProps {
 export default function McpAccessTab({ projectId, personas, documents }: McpAccessTabProps) {
   const { config } = useConfigStore()
   const queryClient = useQueryClient()
+  const { t } = useTranslation('projectDetail')
 
   // Token creation form
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -109,10 +111,10 @@ export default function McpAccessTab({ projectId, personas, documents }: McpAcce
         <div>
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <Key size={20} className="text-indigo-600" />
-            MCP Access
+            {t('mcp.title')}
           </h3>
           <p className="text-sm text-gray-500 mt-1">
-            Generate API tokens to connect this project to MCP-compatible clients like Kiro or VS Code.
+            {t('mcp.description')}
           </p>
         </div>
         {!showCreateForm && !newlyCreatedToken && (
@@ -121,7 +123,7 @@ export default function McpAccessTab({ projectId, personas, documents }: McpAcce
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"
           >
             <Plus size={16} />
-            Generate Token
+            {t('mcp.generateToken')}
           </button>
         )}
       </div>
@@ -199,24 +201,25 @@ function buildMcpConfig(baseUrl: string, projectId: string): string {
 // ---------------------------------------------------------------------------
 
 function McpAccessErrorState() {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <Key size={20} className="text-indigo-600" />
-            MCP Access
+            {t('mcp.title')}
           </h3>
           <p className="text-sm text-gray-500 mt-1">
-            Generate API tokens to connect this project to MCP-compatible clients like Kiro or VS Code.
+            {t('mcp.description')}
           </p>
         </div>
       </div>
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 text-center">
         <AlertCircle size={32} className="mx-auto text-amber-400 mb-3" />
-        <p className="text-amber-800 font-medium">MCP Access is not available yet</p>
+        <p className="text-amber-800 font-medium">{t('mcp.notAvailable')}</p>
         <p className="text-amber-600 text-sm mt-1">
-          The API token management endpoint has not been deployed. Deploy the backend with MCP token support to enable this feature.
+          {t('mcp.notAvailableDesc')}
         </p>
       </div>
     </div>
@@ -237,14 +240,15 @@ interface NewTokenBannerProps {
 }
 
 function NewTokenBanner({ token, showToken, copiedId, onToggleShow, onCopy, onDismiss }: NewTokenBannerProps) {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="bg-green-50 border border-green-200 rounded-lg p-4">
       <div className="flex items-start gap-3">
         <Check size={20} className="text-green-600 mt-0.5 flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-green-800">Token created successfully</p>
+          <p className="font-medium text-green-800">{t('mcp.tokenCreated')}</p>
           <p className="text-sm text-green-700 mt-1">
-            Copy this token now — it won't be shown again.
+            {t('mcp.copyTokenNow')}
           </p>
           <div className="mt-3 flex items-center gap-2">
             <code className="flex-1 bg-white border border-green-300 rounded px-3 py-2 text-sm font-mono break-all select-none">
@@ -253,24 +257,24 @@ function NewTokenBanner({ token, showToken, copiedId, onToggleShow, onCopy, onDi
             <button
               onClick={onToggleShow}
               className="p-2 text-green-700 hover:bg-green-100 rounded"
-              title={showToken ? 'Hide token' : 'Reveal token'}
+              title={showToken ? t('mcp.hideToken') : t('mcp.revealToken')}
             >
               {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
             <button
               onClick={onCopy}
               className="p-2 text-green-700 hover:bg-green-100 rounded"
-              title="Copy token to clipboard"
+              title={t('mcp.copyToken')}
             >
               {copiedId === 'new-token' ? <Check size={16} /> : <Copy size={16} />}
             </button>
           </div>
           <p className="text-xs text-green-600 mt-2">
-            Paste this token into the <code className="bg-green-100 px-1 rounded">Authorization</code> header of your mcp.json or autoseed curl command.
+            {t('mcp.tokenPasteHint')}
           </p>
         </div>
         <button onClick={onDismiss} className="text-green-600 hover:text-green-800 text-sm font-medium">
-          Dismiss
+          {t('mcp.dismiss')}
         </button>
       </div>
     </div>
@@ -293,23 +297,24 @@ interface CreateTokenFormProps {
 }
 
 function CreateTokenForm({ tokenName, tokenScope, isCreating, error, onNameChange, onScopeChange, onSubmit, onCancel }: CreateTokenFormProps) {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="bg-white border rounded-lg p-4">
-      <h4 className="font-medium mb-3">Generate new API token</h4>
+      <h4 className="font-medium mb-3">{t('mcp.generateNewToken')}</h4>
       <div className="space-y-3">
         <div>
-          <label htmlFor="token-name" className="block text-sm font-medium text-gray-700 mb-1">Token name</label>
+          <label htmlFor="token-name" className="block text-sm font-medium text-gray-700 mb-1">{t('mcp.tokenName')}</label>
           <input
             id="token-name"
             type="text"
             value={tokenName}
             onChange={(e) => onNameChange(e.target.value)}
-            placeholder="e.g. My Kiro token"
+            placeholder={t('mcp.tokenNamePlaceholder')}
             className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
           />
         </div>
         <div>
-          <label htmlFor="token-scope" className="block text-sm font-medium text-gray-700 mb-1">Scope</label>
+          <label htmlFor="token-scope" className="block text-sm font-medium text-gray-700 mb-1">{t('mcp.scope')}</label>
           <select
             id="token-scope"
             value={tokenScope}
@@ -319,8 +324,8 @@ function CreateTokenForm({ tokenName, tokenScope, isCreating, error, onNameChang
             }}
             className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
           >
-            <option value="read">Read only — search feedback, view metrics</option>
-            <option value="read-write">Read & write — includes chat and document generation</option>
+            <option value="read">{t('mcp.scopeRead')}</option>
+            <option value="read-write">{t('mcp.scopeReadWrite')}</option>
           </select>
         </div>
         {error && (
@@ -331,14 +336,14 @@ function CreateTokenForm({ tokenName, tokenScope, isCreating, error, onNameChang
         )}
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
-            Cancel
+            {t('mcp.cancel')}
           </button>
           <button
             onClick={onSubmit}
             disabled={!tokenName.trim() || isCreating}
             className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isCreating ? 'Generating...' : 'Generate'}
+            {isCreating ? t('mcp.generating') : t('mcp.generate')}
           </button>
         </div>
       </div>
@@ -357,16 +362,17 @@ interface McpConfigSnippetProps {
 }
 
 function McpConfigSnippet({ config, copied, onCopy }: McpConfigSnippetProps) {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="bg-white border rounded-lg p-4">
       <div className="flex items-center justify-between mb-2">
-        <h4 className="font-medium text-sm">MCP Client Configuration</h4>
+        <h4 className="font-medium text-sm">{t('mcp.mcpConfig')}</h4>
         <button
           onClick={onCopy}
           className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
         >
           {copied ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? t('mcp.copied') : t('mcp.copy')}
         </button>
       </div>
       <p className="text-xs text-gray-500 mb-2">
@@ -393,10 +399,11 @@ interface TokenListCollapsibleProps {
 }
 
 function TokenListCollapsible({ tokens, isLoading, expanded, onToggle, deletingTokenId, onDelete }: TokenListCollapsibleProps) {
+  const { t } = useTranslation('projectDetail')
   if (isLoading) {
     return (
       <div className="bg-white border rounded-lg p-6 text-center text-gray-500 text-sm">
-        Loading tokens…
+        {t('mcp.loadingTokens')}
       </div>
     )
   }
@@ -405,8 +412,8 @@ function TokenListCollapsible({ tokens, isLoading, expanded, onToggle, deletingT
     return (
       <div className="bg-white border rounded-lg p-6 text-center">
         <Key size={28} className="mx-auto text-gray-300 mb-2" />
-        <p className="text-gray-500 text-sm">No API tokens yet</p>
-        <p className="text-gray-400 text-xs mt-1">Generate a token to connect MCP clients to this project.</p>
+        <p className="text-gray-500 text-sm">{t('mcp.noTokensYet')}</p>
+        <p className="text-gray-400 text-xs mt-1">{t('mcp.noTokensHint')}</p>
       </div>
     )
   }
@@ -420,10 +427,10 @@ function TokenListCollapsible({ tokens, isLoading, expanded, onToggle, deletingT
       >
         <h4 className="font-medium text-sm text-gray-700 flex items-center gap-2">
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          Active Tokens ({tokens.length})
+          {t('mcp.activeTokens', { count: tokens.length })}
         </h4>
         <span className="text-xs text-gray-400">
-          {expanded ? 'Collapse' : 'Expand'}
+          {expanded ? t('mcp.collapseLabel') : t('mcp.expandLabel')}
         </span>
       </button>
       {expanded && (
@@ -453,6 +460,7 @@ interface TokenRowProps {
 }
 
 function TokenRow({ token, isDeleting, onDelete }: TokenRowProps) {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="flex items-center justify-between px-4 py-3">
       <div className="flex items-center gap-3 min-w-0">
@@ -469,11 +477,11 @@ function TokenRow({ token, isDeleting, onDelete }: TokenRowProps) {
             </span>
             <span className="flex items-center gap-1">
               <Clock size={10} />
-              Created {new Date(token.created_at).toLocaleDateString()}
+              {t('mcp.createdDate', { date: new Date(token.created_at).toLocaleDateString() })}
             </span>
             {token.last_used_at && (
               <span className="text-gray-400">
-                Last used {new Date(token.last_used_at).toLocaleDateString()}
+                {t('mcp.lastUsed', { date: new Date(token.last_used_at).toLocaleDateString() })}
               </span>
             )}
           </div>
@@ -483,7 +491,7 @@ function TokenRow({ token, isDeleting, onDelete }: TokenRowProps) {
         onClick={onDelete}
         disabled={isDeleting}
         className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-50"
-        title="Revoke token"
+        title={t('mcp.revokeToken')}
       >
         <Trash2 size={16} />
       </button>

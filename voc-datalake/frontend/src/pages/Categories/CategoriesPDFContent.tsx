@@ -4,6 +4,8 @@
  * @module pages/Categories/CategoriesPDFContent
  */
 
+import { useTranslation } from 'react-i18next'
+
 interface CategoryDataPDF {
   readonly name: string
   readonly value: number
@@ -32,10 +34,10 @@ export interface CategoriesPDFProps {
   readonly selectedSource?: string | null
 }
 
-function getSentimentLabel(avgSentiment: number): string {
-  if (avgSentiment > 20) return 'Positive'
-  if (avgSentiment < -20) return 'Negative'
-  return 'Neutral'
+function getSentimentLabel(avgSentiment: number, t: (key: string) => string): string {
+  if (avgSentiment > 20) return t('positive')
+  if (avgSentiment < -20) return t('negative')
+  return t('neutral')
 }
 
 function getSentimentHeaderColor(avgSentiment: number): string {
@@ -45,22 +47,25 @@ function getSentimentHeaderColor(avgSentiment: number): string {
 }
 
 function HeaderSection({ categoryData, totalIssues, avgSentiment, timeRange, selectedSource }: CategoriesPDFProps) {
-  const sentimentLabel = getSentimentLabel(avgSentiment)
+  const { t } = useTranslation('categories')
+  const sentimentLabel = getSentimentLabel(avgSentiment, t)
   const sentimentColor = getSentimentHeaderColor(avgSentiment)
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
       <h1 style={{ fontSize: '28px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#111827' }}>
-        Categories Analysis Report
+        {t('pdf.title')}
       </h1>
       <p style={{ fontSize: '14px', color: '#6b7280', margin: '0 0 16px 0' }}>
-        Time range: {timeRange}{selectedSource ? ` • Source: ${selectedSource}` : ''}
+        {selectedSource
+          ? t('pdf.timeRangeWithSource', { range: timeRange, source: selectedSource })
+          : t('pdf.timeRange', { range: timeRange })}
       </p>
       <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
         {[
-          { label: 'Categories', value: String(categoryData.length), bg: '#f0f9ff', color: '#1d4ed8' },
-          { label: 'Total Feedback', value: String(totalIssues), bg: '#f0fdf4', color: '#166534' },
-          { label: 'Sentiment', value: `${sentimentLabel} (${avgSentiment.toFixed(0)}%)`, bg: '#faf5ff', color: sentimentColor },
+          { label: t('pdf.categoriesLabel'), value: String(categoryData.length), bg: '#f0f9ff', color: '#1d4ed8' },
+          { label: t('pdf.totalFeedback'), value: String(totalIssues), bg: '#f0fdf4', color: '#166534' },
+          { label: t('pdf.sentimentLabel'), value: `${sentimentLabel} (${avgSentiment.toFixed(0)}%)`, bg: '#faf5ff', color: sentimentColor },
         ].map(stat => (
           <div key={stat.label} style={{
             padding: '12px 20px', backgroundColor: stat.bg, borderRadius: '8px', minWidth: '140px',
@@ -75,18 +80,20 @@ function HeaderSection({ categoryData, totalIssues, avgSentiment, timeRange, sel
 }
 
 function CategoryBreakdownSection({ categoryData, totalIssues }: { readonly categoryData: CategoryDataPDF[]; readonly totalIssues: number }) {
+  const { t } = useTranslation('categories')
+
   if (categoryData.length === 0) return null
 
   return (
     <div data-pdf-section style={{ marginBottom: '28px' }}>
-      <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>📊 Category Breakdown</h2>
+      <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>{t('pdf.categoryBreakdown')}</h2>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-            <th style={{ textAlign: 'left', padding: '8px 12px', color: '#6b7280', fontWeight: '600' }}>Category</th>
-            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#6b7280', fontWeight: '600', width: '80px' }}>Count</th>
-            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#6b7280', fontWeight: '600', width: '80px' }}>Share</th>
-            <th style={{ textAlign: 'left', padding: '8px 12px', color: '#6b7280', fontWeight: '600', width: '200px' }}>Distribution</th>
+            <th style={{ textAlign: 'left', padding: '8px 12px', color: '#6b7280', fontWeight: '600' }}>{t('pdf.category')}</th>
+            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#6b7280', fontWeight: '600', width: '80px' }}>{t('pdf.count')}</th>
+            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#6b7280', fontWeight: '600', width: '80px' }}>{t('pdf.share')}</th>
+            <th style={{ textAlign: 'left', padding: '8px 12px', color: '#6b7280', fontWeight: '600', width: '200px' }}>{t('pdf.distribution')}</th>
           </tr>
         </thead>
         <tbody>
@@ -115,11 +122,13 @@ function CategoryBreakdownSection({ categoryData, totalIssues }: { readonly cate
 }
 
 function SentimentSection({ sentimentData }: { readonly sentimentData: SentimentDataPDF[] }) {
+  const { t } = useTranslation('categories')
+
   if (sentimentData.length === 0) return null
 
   return (
     <div data-pdf-section style={{ marginBottom: '28px' }}>
-      <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>😊 Sentiment Distribution</h2>
+      <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>{t('pdf.sentimentDistribution')}</h2>
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
         {sentimentData.map(s => (
           <div key={s.name} data-pdf-section style={{
@@ -140,13 +149,15 @@ function SentimentSection({ sentimentData }: { readonly sentimentData: Sentiment
 }
 
 function KeywordsSection({ wordCloudData }: { readonly wordCloudData: WordCloudItemPDF[] }) {
+  const { t } = useTranslation('categories')
+
   if (wordCloudData.length === 0) return null
 
   const maxCount = wordCloudData[0]?.count ?? 1
 
   return (
     <div data-pdf-section style={{ marginBottom: '28px' }}>
-      <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>🔑 Top Keywords & Issues</h2>
+      <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>{t('pdf.topKeywords')}</h2>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
         {wordCloudData.map(item => {
           const intensity = Math.max(0.3, item.count / maxCount)
@@ -167,6 +178,8 @@ function KeywordsSection({ wordCloudData }: { readonly wordCloudData: WordCloudI
 }
 
 export default function CategoriesPDFContent(props: CategoriesPDFProps) {
+  const { t } = useTranslation('categories')
+
   return (
     <div style={{ padding: '40px', backgroundColor: 'white' }}>
       <HeaderSection {...props} />
@@ -177,7 +190,7 @@ export default function CategoriesPDFContent(props: CategoriesPDFProps) {
       <div data-pdf-section>
         <hr style={{ border: 'none', borderTop: '1px solid #e5e7eb', marginTop: '32px', marginBottom: '16px' }} />
         <p style={{ fontSize: '11px', color: '#9ca3af', textAlign: 'center' }}>
-          Generated on {new Date().toLocaleDateString()} • VoC Analytics — Categories Analysis Report
+          {t('pdf.generatedOn', { date: new Date().toLocaleDateString() })}
         </p>
       </div>
     </div>

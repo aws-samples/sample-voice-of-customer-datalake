@@ -19,6 +19,7 @@ vi.mock('../../api/client', () => ({
     deleteFeedbackForm: (id: string) => mockDeleteFeedbackForm(id),
     getCategories: () => mockGetCategories(),
   },
+  stripTrailingSlashes: (url: string) => url.replace(/\/+$/, ''),
 }))
 
 vi.mock('../../store/configStore', () => ({

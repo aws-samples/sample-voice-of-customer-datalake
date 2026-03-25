@@ -167,25 +167,6 @@ class TestDecimalDefault:
             decimal_default(set())
 
 
-class TestSumDailyMetricDefaultDate:
-    """Tests for sum_daily_metric with default current_date."""
-
-    def test_uses_current_date_when_none(self):
-        """Uses current UTC date when current_date is None."""
-        from shared.api import sum_daily_metric
-
-        mock_table = MagicMock()
-        mock_table.get_item.return_value = {'Item': {'count': 5}}
-
-        result = sum_daily_metric(mock_table, 'METRIC#daily_total', days=1)
-
-        assert result == 5
-        mock_table.get_item.assert_called_once()
-        call_key = mock_table.get_item.call_args.kwargs['Key']
-        assert call_key['pk'] == 'METRIC#daily_total'
-        assert len(call_key['sk']) == 10
-
-
 class TestValidateDaysInvalidString:
     """Tests for validate_days with invalid string input."""
 

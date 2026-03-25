@@ -4,7 +4,9 @@
  */
 import { useState, useCallback, useMemo } from 'react'
 import { Link, Copy, Check, ChevronDown, ChevronRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useConfigStore } from '../../store/configStore'
+import { stripTrailingSlashes } from '../../api/client'
 import type { ProjectPersona, ProjectDocument } from '../../api/types'
 
 interface AutoseedCardProps {
@@ -14,12 +16,6 @@ interface AutoseedCardProps {
 }
 
 type DocType = 'prd' | 'prfaq' | 'research' | 'custom'
-
-function stripTrailingSlashes(url: string): string {
-  const trimmed = url.trimEnd()
-  const lastNonSlash = trimmed.length - [...trimmed].reverse().findIndex(c => c !== '/')
-  return trimmed.slice(0, lastNonSlash)
-}
 
 const DOC_TYPE_LABELS: Record<DocType, string> = {
   prd: 'PRDs',
@@ -43,6 +39,7 @@ function isValidDocType(value: string): value is DocType {
 
 export default function AutoseedCard({ projectId, personas, documents }: AutoseedCardProps) {
   const { config } = useConfigStore()
+  const { t } = useTranslation('projectDetail')
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<Set<string>>(() => new Set(personas.map(p => p.persona_id)))
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set(documents.map(d => d.document_id)))
   const [copied, setCopied] = useState(false)
@@ -136,22 +133,22 @@ Replace \`<YOUR_API_TOKEN>\` with your API token from the MCP Access tab.`, [cur
             <Link size={20} className="text-indigo-600" />
           </div>
           <div>
-            <h3 className="font-semibold">Kiro Autoseed</h3>
-            <p className="text-sm text-gray-500">Select personas and documents to seed into a Kiro workspace</p>
+            <h3 className="font-semibold">{t('autoseed.title')}</h3>
+            <p className="text-sm text-gray-500">{t('autoseed.description')}</p>
           </div>
         </div>
       </div>
 
       {isEmpty ? (
         <p className="text-sm text-gray-400 text-center py-4">
-          Generate personas or documents first to use autoseed.
+          {t('autoseed.generateFirst')}
         </p>
       ) : (
         <>
           {/* Persona picker */}
           {personas.length > 0 && (
             <PickerSection
-              title={`Personas (${selectedPersonaIds.size}/${personas.length})`}
+              title={t('autoseed.personas', { selected: selectedPersonaIds.size, total: personas.length })}
               expanded={expandedSections.has('personas')}
               onToggle={() => toggleSection('personas')}
               allSelected={selectedPersonaIds.size === personas.length}
@@ -173,7 +170,7 @@ Replace \`<YOUR_API_TOKEN>\` with your API token from the MCP Access tab.`, [cur
           {/* Document picker grouped by type */}
           {documents.length > 0 && (
             <PickerSection
-              title={`Documents (${selectedDocumentIds.size}/${documents.length})`}
+              title={t('autoseed.documents', { selected: selectedDocumentIds.size, total: documents.length })}
               expanded={expandedSections.has('documents')}
               onToggle={() => toggleSection('documents')}
               allSelected={selectedDocumentIds.size === documents.length}
@@ -206,21 +203,21 @@ Replace \`<YOUR_API_TOKEN>\` with your API token from the MCP Access tab.`, [cur
           {/* Generated prompt */}
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-gray-700">Generated Kiro Prompt</p>
+              <p className="text-sm font-medium text-gray-700">{t('autoseed.generatedPrompt')}</p>
               <button
                 onClick={handleCopy}
                 disabled={!config.apiEndpoint || !hasSelection}
                 className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {copied ? <Check size={16} /> : <Copy size={16} />}
-                {copied ? 'Copied' : 'Copy Kiro Prompt'}
+                {copied ? t('mcp.copied') : t('autoseed.copyKiroPrompt')}
               </button>
             </div>
             <div className="bg-gray-900 rounded-lg p-4 max-h-48 overflow-y-auto">
               <pre className="text-xs text-gray-100 whitespace-pre-wrap">{kiroPrompt}</pre>
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              Paste this into Kiro chat. Requires an API token from the MCP Access tab.
+              {t('autoseed.pasteHint')}
             </p>
           </div>
         </>
@@ -241,6 +238,7 @@ interface PickerSectionProps {
 }
 
 function PickerSection({ title, expanded, onToggle, allSelected, onToggleAll, children }: PickerSectionProps) {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="border rounded-lg mb-3">
       <button
@@ -259,7 +257,7 @@ function PickerSection({ title, expanded, onToggle, allSelected, onToggleAll, ch
           onClick={(e) => { e.stopPropagation(); onToggleAll(!allSelected) }}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onToggleAll(!allSelected) } }}
         >
-          {allSelected ? 'Deselect all' : 'Select all'}
+          {allSelected ? t('autoseed.deselectAll') : t('autoseed.selectAll')}
         </span>
       </button>
       {expanded && (

@@ -1,5 +1,5 @@
 /**
- * Content script — injected into all pages.
+ * Content script — injected on-demand by the service worker via chrome.scripting.executeScript.
  * Shows toast notifications when reviews are sent via the context menu.
  */
 

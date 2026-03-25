@@ -11,6 +11,7 @@
 
 import { useState, useEffect } from 'react'
 import { Filter, X, ChevronDown } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { ChatFilters as ChatFiltersType } from '../../store/chatStore'
 import { api } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -116,6 +117,7 @@ function FilterSelect({
 }
 
 export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
+  const { t } = useTranslation('chat')
   const [sources, setSources] = useState(defaultSources)
   const [categories, setCategories] = useState(defaultCategories)
   const { config } = useConfigStore()
@@ -150,14 +152,14 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
     <div className="bg-gray-50 rounded-lg p-2.5 sm:p-3 mb-3">
       <div className="flex items-center gap-2 mb-2">
         <Filter size={14} className="text-gray-400 flex-shrink-0" />
-        <span className="text-xs font-medium text-gray-600 truncate">Filter Context (max 30 reviews)</span>
+        <span className="text-xs font-medium text-gray-600 truncate">{t('filters.title')}</span>
         {hasActiveFilters && (
           <button
             onClick={clearFilters}
             className="ml-auto text-xs text-red-500 hover:text-red-600 flex items-center gap-1 flex-shrink-0"
           >
             <X size={12} />
-            <span className="hidden sm:inline">Clear</span>
+            <span className="hidden sm:inline">{t('filters.clear')}</span>
           </button>
         )}
       </div>
@@ -185,7 +187,7 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
 
       {hasActiveFilters && (
         <div className="mt-2 text-xs text-gray-500 truncate">
-          Focusing on: {getActiveFilterSummary(filters, sources, categories)}
+          {t('filters.focusingOn', { summary: getActiveFilterSummary(filters, sources, categories) })}
         </div>
       )}
     </div>

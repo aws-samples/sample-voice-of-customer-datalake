@@ -8,13 +8,10 @@ import type {
   SourceBreakdown,
   IntegrationStatus,
   ScraperConfig,
-  ScraperTemplate,
   EntitiesResponse,
   ProjectPersona,
   Project,
   PrioritizationScore,
-  S3ImportSource,
-  S3ImportFile,
   FeedbackFormConfig,
   FeedbackForm,
   CognitoUser,
@@ -54,14 +51,14 @@ export type {
   ApiToken,
   CreateApiTokenResponse,
 } from './types'
-export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation } from './types'
+export type { ProjectJob, ProjectDocument, ProjectDetail } from './types'
 
 const getBaseUrl = () => {
   const { config } = useConfigStore.getState()
   return config.apiEndpoint || '/api'
 }
 
-function stripTrailingSlashes(url: string): string {
+export function stripTrailingSlashes(url: string): string {
   // Remove trailing slashes without regex backtracking
   const trimmed = url.trimEnd()
   const lastNonSlash = trimmed.length - [...trimmed].reverse().findIndex(c => c !== '/')
@@ -85,25 +82,34 @@ function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
 }
 
 import { z } from 'zod'
+import { MetricsSummarySchema, FeedbackItemSchema } from './schemas'
 
-// API response parser using Zod for runtime validation
-// This satisfies the no-type-assertions rule
-const unknownSchema = z.unknown()
-
-export async function parseJsonResponse<T>(response: Response): Promise<T> {
-  // Use unknownSchema to safely parse the JSON response
+/**
+ * Parse a JSON response with optional Zod schema validation.
+ *
+ * When a schema is provided, the response is validated at runtime — use this
+ * for critical endpoints (metrics summary, feedback lists).
+ *
+ * When no schema is provided, the response is trusted as-is ("trust the server"
+ * pattern). This is acceptable for less critical or rapidly-evolving endpoints
+ * where maintaining a schema would add friction without meaningful safety.
+ */
+async function parseJsonResponse<T>(response: Response, schema?: z.ZodType<T>): Promise<T> {
   const rawJson: unknown = await response.json()
-  const validated = unknownSchema.parse(rawJson)
-  // Use Zod's custom schema to convert unknown to T without type assertions
-  const typedSchema = z.custom<T>(() => true)
-  return typedSchema.parse(validated)
+  if (schema) {
+    return schema.parse(rawJson)
+  }
+  // Trust the server — no runtime validation for endpoints without a schema
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- intentional cast for schema-less endpoints
+  return rawJson as T
 }
 
 async function handleUnauthorized<T>(
   endpoint: string,
   options: RequestInit | undefined,
   headers: Record<string, string>,
-  baseUrl: string
+  baseUrl: string,
+  schema?: z.ZodType<T>
 ): Promise<T> {
   await authService.refreshSession()
   const newIdToken = authService.getIdToken()
@@ -114,22 +120,22 @@ async function handleUnauthorized<T>(
   if (!retryResponse.ok) {
     throw new Error(`API Error: ${retryResponse.status}`)
   }
-  return parseJsonResponse<T>(retryResponse)
+  return parseJsonResponse<T>(retryResponse, schema)
 }
 
-async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+export async function fetchApi<T>(endpoint: string, options?: RequestInit, schema?: z.ZodType<T>): Promise<T> {
   const baseUrl = stripTrailingSlashes(getBaseUrl())
   const headers = buildHeaders(options?.headers)
   
   const response = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
   
   if (response.ok) {
-    return parseJsonResponse<T>(response)
+    return parseJsonResponse<T>(response, schema)
   }
   
   if (response.status === 401) {
     try {
-      return await handleUnauthorized<T>(endpoint, options, headers, baseUrl)
+      return await handleUnauthorized<T>(endpoint, options, headers, baseUrl, schema)
     } catch {
       authService.signOut()
       window.location.href = '/login'
@@ -141,7 +147,7 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
 }
 
 // Helper to build URLSearchParams from an object, filtering out undefined/null values
-function buildSearchParams(params: Record<string, string | number | boolean | undefined | null>): URLSearchParams {
+export function buildSearchParams(params: Record<string, string | number | boolean | undefined | null>): URLSearchParams {
   const searchParams = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value != null) {
@@ -155,7 +161,11 @@ export const api = {
   // Feedback
   getFeedback: (params: { days?: number; source?: string; category?: string; sentiment?: string; limit?: number }) => {
     const searchParams = buildSearchParams(params)
-    return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback?${searchParams}`)
+    return fetchApi<{ count: number; items: FeedbackItem[] }>(
+      `/feedback?${searchParams}`,
+      undefined,
+      z.object({ count: z.coerce.number(), items: z.array(FeedbackItemSchema) }),
+    )
   },
   
   getFeedbackById: (id: string) => fetchApi<FeedbackItem>(`/feedback/${id}`),
@@ -200,7 +210,7 @@ export const api = {
   getSummary: (days: number, source?: string) => {
     const params = new URLSearchParams({ days: String(days) })
     if (source) params.set('source', source)
-    return fetchApi<MetricsSummary>(`/metrics/summary?${params}`)
+    return fetchApi<MetricsSummary>(`/metrics/summary?${params}`, undefined, MetricsSummarySchema)
   },
   getSentiment: (days: number, source?: string) => {
     const params = new URLSearchParams({ days: String(days) })
@@ -219,19 +229,6 @@ export const api = {
     return fetchApi<{ period_days: number; personas: Record<string, number> }>(`/metrics/personas?${params}`)
   },
   
-  // Chat
-  chat: (message: string, context?: string, responseLanguage?: string) => fetchApi<{ response: string; sources?: FeedbackItem[] }>('/chat', {
-    method: 'POST',
-    body: JSON.stringify({ message, context, response_language: responseLanguage })
-  }),
-
-  // Chat with streaming (via API Gateway SSE)
-  chatStream: (message: string, context?: string, days?: number, responseLanguage?: string) =>
-    fetchApi<{ response: string; sources?: FeedbackItem[] }>('/chat/stream', {
-      method: 'POST',
-      body: JSON.stringify({ message, context, days: days ?? 7, response_language: responseLanguage }),
-    }),
-
   // Data Source Schedules
   getSourcesStatus: (sources?: string[]) => {
     const params = sources?.length ? `?sources=${sources.join(',')}` : ''
@@ -329,89 +326,21 @@ export const api = {
       method: 'POST'
     }),
 
-  // Scrapers
-  getScrapers: () => fetchApi<{ scrapers: ScraperConfig[] }>('/scrapers'),
-  
-  getScraperTemplates: () => fetchApi<{ templates: ScraperTemplate[] }>('/scrapers/templates'),
-  
-  saveScraper: (scraper: ScraperConfig) =>
-    fetchApi<{ success: boolean; scraper: ScraperConfig }>('/scrapers', {
-      method: 'POST',
-      body: JSON.stringify({ scraper })
-    }),
-  
-  deleteScraper: (id: string) =>
-    fetchApi<{ success: boolean }>(`/scrapers/${id}`, { method: 'DELETE' }),
-  
-  analyzeUrlForSelectors: (url: string) =>
-    fetchApi<{ 
-      success: boolean
-      selectors?: {
-        container_selector: string
-        text_selector: string
-        rating_selector?: string
-        rating_attribute?: string
-        author_selector?: string
-        date_selector?: string
-        title_selector?: string
-        confidence: string
-        detected_reviews_count: number
-        notes?: string
-        warnings?: string[]
-      }
-      message?: string
-      error?: string 
-    }>('/scrapers/analyze-url', {
-      method: 'POST',
-      body: JSON.stringify({ url })
-    }),
-  
-  runScraper: (id: string) =>
-    fetchApi<{ success: boolean; execution_id: string; status: string }>(`/scrapers/${id}/run`, { method: 'POST' }),
-  
-  getScraperStatus: (id: string) =>
-    fetchApi<{
-      scraper_id: string
-      execution_id?: string
-      status: string
-      started_at?: string
-      completed_at?: string
-      pages_scraped: number
-      items_found: number
-      errors: string[]
-    }>(`/scrapers/${id}/status`),
-  
-  getScraperRuns: (id: string) =>
-    fetchApi<{ runs: Array<{ sk: string; status: string; started_at: string; completed_at?: string; pages_scraped: number; items_found: number }> }>(`/scrapers/${id}/runs`),
+  // Scrapers - delegated to scrapersApi for code splitting
+  getScrapers: () => import('./scrapersApi').then(m => m.scrapersApi.getScrapers()),
+  getScraperTemplates: () => import('./scrapersApi').then(m => m.scrapersApi.getScraperTemplates()),
+  saveScraper: (scraper: ScraperConfig) => import('./scrapersApi').then(m => m.scrapersApi.saveScraper(scraper)),
+  deleteScraper: (id: string) => import('./scrapersApi').then(m => m.scrapersApi.deleteScraper(id)),
+  analyzeUrlForSelectors: (url: string) => import('./scrapersApi').then(m => m.scrapersApi.analyzeUrlForSelectors(url)),
+  runScraper: (id: string) => import('./scrapersApi').then(m => m.scrapersApi.runScraper(id)),
+  getScraperStatus: (id: string) => import('./scrapersApi').then(m => m.scrapersApi.getScraperStatus(id)),
+  getScraperRuns: (id: string) => import('./scrapersApi').then(m => m.scrapersApi.getScraperRuns(id)),
 
-  // Manual Import
-  startManualImportParse: (sourceUrl: string, rawText: string) =>
-    fetchApi<{ success: boolean; job_id: string; source_origin?: string; message?: string; error?: string }>('/scrapers/manual/parse', {
-      method: 'POST',
-      body: JSON.stringify({ source_url: sourceUrl, raw_text: rawText })
-    }),
-
-  getManualImportStatus: (jobId: string) =>
-    fetchApi<{
-      status: 'processing' | 'completed' | 'failed' | 'not_found'
-      source_origin?: string
-      source_url?: string
-      reviews?: Array<{ text: string; rating: number | null; author: string | null; date: string | null; title: string | null }>
-      unparsed_sections?: string[]
-      error?: string
-    }>(`/scrapers/manual/parse/${jobId}`),
-
-  confirmManualImport: (jobId: string, reviews: Array<{ text: string; rating: number | null; author: string | null; date: string | null; title: string | null }>) =>
-    fetchApi<{ success: boolean; imported_count?: number; s3_uri?: string; message?: string; error?: string; errors?: string[] }>('/scrapers/manual/confirm', {
-      method: 'POST',
-      body: JSON.stringify({ job_id: jobId, reviews })
-    }),
-
-  uploadJsonFeedback: (items: Array<Record<string, unknown>>) =>
-    fetchApi<{ success: boolean; imported_count: number; total_items: number; s3_uri?: string; errors?: string[] }>('/scrapers/manual/json-upload', {
-      method: 'POST',
-      body: JSON.stringify({ items })
-    }),
+  // Manual Import - delegated to scrapersApi
+  startManualImportParse: (sourceUrl: string, rawText: string) => import('./scrapersApi').then(m => m.scrapersApi.startManualImportParse(sourceUrl, rawText)),
+  getManualImportStatus: (jobId: string) => import('./scrapersApi').then(m => m.scrapersApi.getManualImportStatus(jobId)),
+  confirmManualImport: (jobId: string, reviews: Array<{ text: string; rating: number | null; author: string | null; date: string | null; title: string | null }>) => import('./scrapersApi').then(m => m.scrapersApi.confirmManualImport(jobId, reviews)),
+  uploadJsonFeedback: (items: Array<Record<string, unknown>>) => import('./scrapersApi').then(m => m.scrapersApi.uploadJsonFeedback(items)),
 
   // Projects - delegated to projectsApi for file size reduction
   getProjects: () => import('./projectsApi').then(m => m.projectsApi.getProjects()),
@@ -466,144 +395,34 @@ export const api = {
       body: JSON.stringify({ scores: changedScores })
     }),
 
-  // S3 Import File Explorer
-  getS3ImportSources: () => fetchApi<{ sources: S3ImportSource[]; bucket: string | null }>('/s3-import/sources'),
-  
-  createS3ImportSource: (name: string) =>
-    fetchApi<{ success: boolean; source?: S3ImportSource; message?: string }>('/s3-import/sources', {
-      method: 'POST',
-      body: JSON.stringify({ name })
-    }),
-  
-  getS3ImportFiles: (params?: { source?: string; include_processed?: boolean }) => {
-    const searchParams = new URLSearchParams()
-    if (params?.source) searchParams.set('source', params.source)
-    if (params?.include_processed) searchParams.set('include_processed', 'true')
-    return fetchApi<{ files: S3ImportFile[]; bucket: string | null }>(`/s3-import/files?${searchParams}`)
-  },
-  
-  getS3UploadUrl: (filename: string, source: string, contentType?: string) =>
-    fetchApi<{ success: boolean; upload_url?: string; key?: string; error?: string }>('/s3-import/upload-url', {
-      method: 'POST',
-      body: JSON.stringify({ filename, source, content_type: contentType || 'application/octet-stream' })
-    }),
-  
-  deleteS3ImportFile: (key: string) =>
-    fetchApi<{ success: boolean; message?: string }>(`/s3-import/file/${encodeURIComponent(key)}`, {
-      method: 'DELETE'
-    }),
+  // S3 Import - delegated to dataExplorerApi for code splitting
+  getS3ImportSources: () => import('./dataExplorerApi').then(m => m.dataExplorerApi.getS3ImportSources()),
+  createS3ImportSource: (name: string) => import('./dataExplorerApi').then(m => m.dataExplorerApi.createS3ImportSource(name)),
+  getS3ImportFiles: (params?: { source?: string; include_processed?: boolean }) => import('./dataExplorerApi').then(m => m.dataExplorerApi.getS3ImportFiles(params)),
+  getS3UploadUrl: (filename: string, source: string, contentType?: string) => import('./dataExplorerApi').then(m => m.dataExplorerApi.getS3UploadUrl(filename, source, contentType)),
+  deleteS3ImportFile: (key: string) => import('./dataExplorerApi').then(m => m.dataExplorerApi.deleteS3ImportFile(key)),
 
-  // Data Explorer - S3 Raw Data Browser
-  getDataExplorerBuckets: () =>
-    fetchApi<{ buckets: Array<{ id: string; name: string; label: string; description: string }> }>('/data-explorer/buckets'),
+  // Data Explorer - delegated to dataExplorerApi for code splitting
+  getDataExplorerBuckets: () => import('./dataExplorerApi').then(m => m.dataExplorerApi.getDataExplorerBuckets()),
+  getDataExplorerS3: (prefix?: string, bucket?: string) => import('./dataExplorerApi').then(m => m.dataExplorerApi.getDataExplorerS3(prefix, bucket)),
+  getDataExplorerS3Preview: (key: string, bucket?: string) => import('./dataExplorerApi').then(m => m.dataExplorerApi.getDataExplorerS3Preview(key, bucket)),
+  saveDataExplorerS3: (key: string, content: string, syncToDynamo?: boolean, bucket?: string) => import('./dataExplorerApi').then(m => m.dataExplorerApi.saveDataExplorerS3(key, content, syncToDynamo, bucket)),
+  deleteDataExplorerS3: (key: string, bucket?: string) => import('./dataExplorerApi').then(m => m.dataExplorerApi.deleteDataExplorerS3(key, bucket)),
+  saveDataExplorerFeedback: (feedbackId: string, data: Partial<FeedbackItem>, syncToS3?: boolean) => import('./dataExplorerApi').then(m => m.dataExplorerApi.saveDataExplorerFeedback(feedbackId, data, syncToS3)),
+  deleteDataExplorerFeedback: (feedbackId: string) => import('./dataExplorerApi').then(m => m.dataExplorerApi.deleteDataExplorerFeedback(feedbackId)),
 
-  getDataExplorerS3: (prefix?: string, bucket?: string) => {
-    const params = new URLSearchParams()
-    if (prefix) params.set('prefix', prefix)
-    if (bucket) params.set('bucket', bucket)
-    return fetchApi<{ 
-      objects: Array<{ key: string; fullKey?: string; size: number; lastModified: string; isFolder: boolean }>
-      bucket: string
-      bucketId: string
-      bucketLabel: string
-      prefix: string 
-    }>(`/data-explorer/s3?${params}`)
-  },
-  
-  getDataExplorerS3Preview: (key: string, bucket?: string) => {
-    const params = new URLSearchParams()
-    params.set('key', key)
-    if (bucket) params.set('bucket', bucket)
-    return fetchApi<{ content: unknown; size: number; contentType: string; key: string; isPresignedUrl?: boolean }>(`/data-explorer/s3/preview?${params}`)
-  },
-
-  saveDataExplorerS3: (key: string, content: string, syncToDynamo?: boolean, bucket?: string) =>
-    fetchApi<{ success: boolean; message?: string; synced?: boolean }>('/data-explorer/s3', {
-      method: 'PUT',
-      body: JSON.stringify({ key, content, sync_to_dynamo: syncToDynamo, bucket })
-    }),
-
-  deleteDataExplorerS3: (key: string, bucket?: string) => {
-    const params = new URLSearchParams()
-    params.set('key', key)
-    if (bucket) params.set('bucket', bucket)
-    return fetchApi<{ success: boolean; message?: string }>(`/data-explorer/s3?${params}`, {
-      method: 'DELETE'
-    })
-  },
-
-  // Data Explorer - DynamoDB Feedback CRUD
-  saveDataExplorerFeedback: (feedbackId: string, data: Partial<FeedbackItem>, syncToS3?: boolean) =>
-    fetchApi<{ success: boolean; message?: string; synced?: boolean }>('/data-explorer/feedback', {
-      method: 'PUT',
-      body: JSON.stringify({ feedback_id: feedbackId, data, sync_to_s3: syncToS3 })
-    }),
-
-  deleteDataExplorerFeedback: (feedbackId: string) =>
-    fetchApi<{ success: boolean; message?: string }>(`/data-explorer/feedback?feedback_id=${encodeURIComponent(feedbackId)}`, {
-      method: 'DELETE'
-    }),
-
-  // Feedback Form (Embeddable) - Legacy single form
-  getFeedbackFormConfig: () => fetchApi<{ success: boolean; config: FeedbackFormConfig }>('/feedback-form/config'),
-  
-  saveFeedbackFormConfig: (config: FeedbackFormConfig) =>
-    fetchApi<{ success: boolean; message: string }>('/feedback-form/config', {
-      method: 'PUT',
-      body: JSON.stringify(config)
-    }),
-  
-  submitFeedbackForm: (data: { text: string; rating?: number; email?: string; name?: string; page_url?: string; custom_fields?: Record<string, string> }) =>
-    fetchApi<{ success: boolean; feedback_id?: string; message: string }>('/feedback-form/submit', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
-  getFeedbackFormEmbed: (apiEndpoint: string) =>
-    fetchApi<{ success: boolean; script_embed: string; iframe_embed: string }>(`/feedback-form/embed?api_endpoint=${encodeURIComponent(apiEndpoint)}`),
-
-  // Feedback Forms (Multiple forms management)
-  getFeedbackForms: () => fetchApi<{ success: boolean; forms: FeedbackForm[] }>('/feedback-forms'),
-  
-  getFeedbackForm: (formId: string) => fetchApi<{ success: boolean; form: FeedbackForm }>(`/feedback-forms/${formId}`),
-  
-  createFeedbackForm: (form: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>) =>
-    fetchApi<{ success: boolean; form: FeedbackForm }>('/feedback-forms', {
-      method: 'POST',
-      body: JSON.stringify(form)
-    }),
-  
-  updateFeedbackForm: (formId: string, form: Partial<FeedbackForm>) =>
-    fetchApi<{ success: boolean; form: FeedbackForm }>(`/feedback-forms/${formId}`, {
-      method: 'PUT',
-      body: JSON.stringify(form)
-    }),
-  
-  deleteFeedbackForm: (formId: string) =>
-    fetchApi<{ success: boolean }>(`/feedback-forms/${formId}`, { method: 'DELETE' }),
-
-  getFeedbackFormStats: (formId: string) =>
-    fetchApi<{ success: boolean; form_id: string; stats: { total_submissions: number; avg_rating: number | null; rating_count: number } }>(`/feedback-forms/${formId}/stats`),
-
-  getFeedbackFormSubmissions: (formId: string, limit?: number) => {
-    const params = new URLSearchParams()
-    if (limit) params.set('limit', String(limit))
-    return fetchApi<{
-      success: boolean
-      form_id: string
-      stats: { total_submissions: number; avg_rating: number | null; rating_count: number }
-      submissions: Array<{
-        feedback_id: string
-        original_text: string
-        rating: number | null
-        sentiment_label: string
-        sentiment_score: number
-        category: string
-        created_at: string
-        persona_name: string
-      }>
-    }>(`/feedback-forms/${formId}/submissions?${params}`)
-  },
+  // Feedback Forms - delegated to feedbackFormsApi for code splitting
+  getFeedbackFormConfig: () => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.getFeedbackFormConfig()),
+  saveFeedbackFormConfig: (config: FeedbackFormConfig) => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.saveFeedbackFormConfig(config)),
+  submitFeedbackForm: (data: { text: string; rating?: number; email?: string; name?: string; page_url?: string; custom_fields?: Record<string, string> }) => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.submitFeedbackForm(data)),
+  getFeedbackFormEmbed: (apiEndpoint: string) => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.getFeedbackFormEmbed(apiEndpoint)),
+  getFeedbackForms: () => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.getFeedbackForms()),
+  getFeedbackForm: (formId: string) => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.getFeedbackForm(formId)),
+  createFeedbackForm: (form: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>) => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.createFeedbackForm(form)),
+  updateFeedbackForm: (formId: string, form: Partial<FeedbackForm>) => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.updateFeedbackForm(formId, form)),
+  deleteFeedbackForm: (formId: string) => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.deleteFeedbackForm(formId)),
+  getFeedbackFormStats: (formId: string) => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.getFeedbackFormStats(formId)),
+  getFeedbackFormSubmissions: (formId: string, limit?: number) => import('./feedbackFormsApi').then(m => m.feedbackFormsApi.getFeedbackFormSubmissions(formId, limit)),
 
   // User Administration (admin only)
   getUsers: () => fetchApi<{ success: boolean; users: CognitoUser[]; message?: string }>('/users'),
@@ -699,12 +518,3 @@ export function getDaysFromRange(range: string, customRange?: { start: string; e
   }
 }
 
-export function getDateRangeParams(range: string, customRange?: { start: string; end: string } | null): { days?: number; start_date?: string; end_date?: string } {
-  if (range === 'custom' && customRange) {
-    return {
-      start_date: customRange.start,
-      end_date: customRange.end,
-    }
-  }
-  return { days: getDaysFromRange(range) }
-}

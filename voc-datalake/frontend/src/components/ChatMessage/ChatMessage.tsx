@@ -14,6 +14,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Bot, User, Copy, Check, Brain, ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ChatMessage as ChatMessageType } from '../../store/chatStore'
 import FeedbackCarousel from '../FeedbackCarousel'
 import clsx from 'clsx'
@@ -24,6 +25,7 @@ interface ChatMessageProps {
 
 function ThinkingSection({ thinking }: Readonly<{ thinking: string }>) {
   const [expanded, setExpanded] = useState(false)
+  const { t } = useTranslation('chat')
   if (!thinking) return null
 
   return (
@@ -33,7 +35,7 @@ function ThinkingSection({ thinking }: Readonly<{ thinking: string }>) {
         className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
       >
         <Brain size={14} />
-        <span>Reasoning</span>
+        <span>{t('message.reasoning')}</span>
         {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
       </button>
       {expanded && (
@@ -46,6 +48,7 @@ function ThinkingSection({ thinking }: Readonly<{ thinking: string }>) {
 }
 
 export default function ChatMessage({ message }: Readonly<ChatMessageProps>) {
+  const { t } = useTranslation('chat')
   const [copied, setCopied] = useState(false)
 
   const copyToClipboard = async () => {
@@ -137,7 +140,7 @@ export default function ChatMessage({ message }: Readonly<ChatMessageProps>) {
                 ? 'hover:bg-blue-500 text-blue-100' 
                 : 'hover:bg-gray-100 text-gray-400'
             )}
-            title="Copy message"
+            title={t('copyMessage')}
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
@@ -146,7 +149,7 @@ export default function ChatMessage({ message }: Readonly<ChatMessageProps>) {
         {/* Source feedback carousel - constrained to parent width */}
         {message.sources && message.sources.length > 0 && (
           <div className="w-full max-w-full overflow-hidden">
-            <FeedbackCarousel items={message.sources} title="Related feedback:" />
+            <FeedbackCarousel items={message.sources} title={t('message.relatedFeedback')} />
           </div>
         )}
 

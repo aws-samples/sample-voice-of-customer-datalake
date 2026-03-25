@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Briefcase, Users, FileText, Trash2, ArrowRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import type { Project } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -26,6 +27,7 @@ interface ProjectCardProps {
 }
 
 function ProjectCard({ project, onDelete, onOpen }: Readonly<ProjectCardProps>) {
+  const { t } = useTranslation('projects')
   return (
     <div className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all group">
       <div className="flex items-start justify-between mb-3">
@@ -58,11 +60,11 @@ function ProjectCard({ project, onDelete, onOpen }: Readonly<ProjectCardProps>) 
       <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm text-gray-500 mb-3 sm:mb-4">
         <span className="flex items-center gap-1">
           <Users size={14} />
-          {project.persona_count} personas
+          {t('card.personas', { count: project.persona_count })}
         </span>
         <span className="flex items-center gap-1">
           <FileText size={14} />
-          {project.document_count} docs
+          {t('card.docs', { count: project.document_count })}
         </span>
       </div>
       
@@ -70,7 +72,7 @@ function ProjectCard({ project, onDelete, onOpen }: Readonly<ProjectCardProps>) 
         onClick={() => onOpen(project.project_id)}
         className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-50 text-gray-700 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors text-sm"
       >
-        Open Project
+        {t('openProject')}
         <ArrowRight size={16} />
       </button>
     </div>
@@ -96,23 +98,25 @@ interface EmptyStateProps {
 }
 
 function EmptyState({ onCreateClick }: Readonly<EmptyStateProps>) {
+  const { t } = useTranslation('projects')
   return (
     <div className="text-center py-12 sm:py-16 bg-white rounded-xl border border-gray-200">
       <Briefcase size={40} className="mx-auto text-gray-300 mb-4 sm:w-12 sm:h-12" />
-      <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
-      <p className="text-sm sm:text-base text-gray-500 mb-4 px-4">Create your first project to start building personas and documents</p>
+      <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">{t('emptyState.title')}</h3>
+      <p className="text-sm sm:text-base text-gray-500 mb-4 px-4">{t('emptyState.description')}</p>
       <button
         onClick={onCreateClick}
         className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
       >
         <Plus size={18} />
-        Create Project
+        {t('emptyState.createButton')}
       </button>
     </div>
   )
 }
 
 export default function Projects() {
+  const { t } = useTranslation('projects')
   const { config } = useConfigStore()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -149,7 +153,7 @@ export default function Projects() {
   if (!config.apiEndpoint) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500">Configure API endpoint in Settings first</p>
+        <p className="text-gray-500">{t('configureEndpoint')}</p>
       </div>
     )
   }
@@ -181,39 +185,39 @@ export default function Projects() {
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Projects</h1>
-          <p className="text-sm sm:text-base text-gray-500 mt-1">Create projects to build personas, PRDs, and PR/FAQs from feedback</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="text-sm sm:text-base text-gray-500 mt-1">{t('description')}</p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
           className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 w-full sm:w-auto"
         >
           <Plus size={18} />
-          New Project
+          {t('newProject')}
         </button>
       </div>
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
           <div className="bg-white rounded-t-xl sm:rounded-xl p-4 sm:p-6 w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold mb-4">Create New Project</h2>
+            <h2 className="text-lg font-semibold mb-4">{t('createModal.title')}</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('createModal.nameLabel')}</label>
                 <input
                   type="text"
                   value={newProject.name}
                   onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
-                  placeholder="e.g., Q1 Product Improvements"
+                  placeholder={t('createModal.namePlaceholder')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('createModal.descriptionLabel')}</label>
                 <textarea
                   value={newProject.description}
                   onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
-                  placeholder="What is this project about?"
+                  placeholder={t('createModal.descriptionPlaceholder')}
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
@@ -224,14 +228,14 @@ export default function Projects() {
                 onClick={() => setShowCreate(false)}
                 className="w-full sm:w-auto px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
               >
-                Cancel
+                {t('createModal.cancel')}
               </button>
               <button
                 onClick={handleCreate}
                 disabled={!newProject.name.trim() || createMutation.isPending}
                 className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {createMutation.isPending ? 'Creating...' : 'Create Project'}
+                {createMutation.isPending ? t('createModal.creating') : t('createModal.create')}
               </button>
             </div>
           </div>
@@ -242,9 +246,9 @@ export default function Projects() {
 
       <ConfirmModal
         isOpen={deleteProjectId !== null}
-        title="Delete Project"
-        message="Are you sure you want to delete this project? All personas and documents will be permanently deleted."
-        confirmLabel="Delete"
+        title={t('deleteModal.title')}
+        message={t('deleteModal.message')}
+        confirmLabel={t('deleteModal.confirm')}
         variant="danger"
         isLoading={deleteMutation.isPending}
         onConfirm={() => {

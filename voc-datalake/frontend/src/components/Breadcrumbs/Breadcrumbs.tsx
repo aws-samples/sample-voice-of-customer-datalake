@@ -10,24 +10,26 @@
 
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronRight, Home } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 
-const routeLabels: Record<string, string> = {
-  '': 'Dashboard',
-  'feedback': 'Feedback',
-  'categories': 'Categories',
-  'chat': 'AI Chat',
-  'scrapers': 'Web Scrapers',
-  'feedback-forms': 'Feedback Forms',
-  'settings': 'Settings',
-  'data-explorer': 'Data Explorer',
-  'projects': 'Projects',
-  'prioritization': 'Prioritization',
-  'problems': 'Problem Analysis',
+const routeKeys: Record<string, string> = {
+  '': 'breadcrumbs.dashboard',
+  'feedback': 'breadcrumbs.feedback',
+  'categories': 'breadcrumbs.categories',
+  'chat': 'breadcrumbs.chat',
+  'scrapers': 'breadcrumbs.scrapers',
+  'feedback-forms': 'breadcrumbs.feedbackForms',
+  'settings': 'breadcrumbs.settings',
+  'data-explorer': 'breadcrumbs.dataExplorer',
+  'projects': 'breadcrumbs.projects',
+  'prioritization': 'breadcrumbs.prioritization',
+  'problems': 'breadcrumbs.problems',
 }
 
 export default function Breadcrumbs() {
   const location = useLocation()
+  const { t } = useTranslation()
   const pathSegments = location.pathname.split('/').filter(Boolean)
 
   // Don't show breadcrumbs on home page
@@ -36,10 +38,11 @@ export default function Breadcrumbs() {
   }
 
   const breadcrumbs = [
-    { label: 'Home', path: '/', isHome: true },
+    { label: t('breadcrumbs.home'), path: '/', isHome: true },
     ...pathSegments.map((segment, index) => {
       const path = '/' + pathSegments.slice(0, index + 1).join('/')
-      const label = routeLabels[segment] || segment
+      const key = routeKeys[segment]
+      const label = key ? t(key) : segment
       return { label, path, isHome: false }
     })
   ]

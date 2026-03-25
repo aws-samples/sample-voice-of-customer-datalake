@@ -9,21 +9,21 @@ class TestDocumentMergerHandler:
 
     def test_successful_document_merge(
         self, mock_dynamodb, mock_jobs_table, mock_converse, 
-        merge_documents_event, mock_project_documents
+        merge_documents_event, mock_project_documents, lambda_context
     ):
         """Test successful document merge job."""
         mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
         
         from jobs.document_merger.handler import lambda_handler
         
-        result = lambda_handler(merge_documents_event, None)
+        result = lambda_handler(merge_documents_event, lambda_context)
         
         assert result['success'] is True
         assert 'document_id' in result
         mock_converse.assert_called_once()
 
     def test_fails_with_less_than_two_documents(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event
+        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
     ):
         """Test that merge fails when less than 2 documents are selected."""
         from jobs.document_merger.handler import lambda_handler
@@ -35,18 +35,18 @@ class TestDocumentMergerHandler:
         }
         
         with pytest.raises((ServiceError, ValueError)):
-            lambda_handler(merge_documents_event, None)
+            lambda_handler(merge_documents_event, lambda_context)
 
     def test_merged_document_saved_to_dynamodb(
         self, mock_dynamodb, mock_jobs_table, mock_converse,
-        merge_documents_event, mock_project_documents
+        merge_documents_event, mock_project_documents, lambda_context
     ):
         """Test that merged document is saved to DynamoDB."""
         mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
         
         from jobs.document_merger.handler import lambda_handler
         
-        lambda_handler(merge_documents_event, None)
+        lambda_handler(merge_documents_event, lambda_context)
         
         mock_dynamodb['table'].put_item.assert_called()
         put_call = mock_dynamodb['table'].put_item.call_args
@@ -56,7 +56,7 @@ class TestDocumentMergerHandler:
 
     def test_uses_correct_output_type_prefix(
         self, mock_dynamodb, mock_jobs_table, mock_converse,
-        merge_documents_event, mock_project_documents
+        merge_documents_event, mock_project_documents, lambda_context
     ):
         """Test that document uses correct SK prefix based on output_type."""
         mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
@@ -65,7 +65,7 @@ class TestDocumentMergerHandler:
         
         # Test PRD output type
         merge_documents_event['merge_config']['output_type'] = 'prd'
-        lambda_handler(merge_documents_event, None)
+        lambda_handler(merge_documents_event, lambda_context)
         
         put_call = mock_dynamodb['table'].put_item.call_args
         item = put_call.kwargs.get('Item', {})
@@ -73,7 +73,7 @@ class TestDocumentMergerHandler:
 
     def test_custom_output_type_uses_doc_prefix(
         self, mock_dynamodb, mock_jobs_table, mock_converse,
-        merge_documents_event, mock_project_documents
+        merge_documents_event, mock_project_documents, lambda_context
     ):
         """Test that custom output type uses DOC# prefix."""
         mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
@@ -81,14 +81,14 @@ class TestDocumentMergerHandler:
         from jobs.document_merger.handler import lambda_handler
         
         merge_documents_event['merge_config']['output_type'] = 'custom'
-        lambda_handler(merge_documents_event, None)
+        lambda_handler(merge_documents_event, lambda_context)
         
         put_call = mock_dynamodb['table'].put_item.call_args
         item = put_call.kwargs.get('Item', {})
         assert item.get('sk', '').startswith('DOC#')
 
     def test_includes_personas_when_selected(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event
+        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
     ):
         """Test that personas are included in context when selected."""
         mock_items = [
@@ -102,7 +102,7 @@ class TestDocumentMergerHandler:
         
         from jobs.document_merger.handler import lambda_handler
         
-        lambda_handler(merge_documents_event, None)
+        lambda_handler(merge_documents_event, lambda_context)
         
         # Verify persona context was included in prompt
         call_kwargs = mock_converse.call_args.kwargs

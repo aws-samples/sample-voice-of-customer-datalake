@@ -13,6 +13,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
 import { api, getDaysFromRange } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -220,8 +221,9 @@ function buildSubcategoryPDFData(sub: SubcategoryGroup) {
 }
 
 export default function ProblemAnalysis() {
-  const { timeRange, config } = useConfigStore()
-  const days = getDaysFromRange(timeRange)
+  const { timeRange, customDateRange, config } = useConfigStore()
+  const { t } = useTranslation('problemAnalysis')
+  const days = getDaysFromRange(timeRange, customDateRange)
   const queryClient = useQueryClient()
   
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
@@ -458,7 +460,7 @@ export default function ProblemAnalysis() {
   if (!config.apiEndpoint) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Please configure your API endpoint in Settings</p>
+        <p className="text-gray-500">{t('configureApi')}</p>
       </div>
     )
   }
@@ -508,8 +510,8 @@ export default function ProblemAnalysis() {
       {filteredData.length === 0 ? (
         <div className="card text-center py-8 sm:py-12">
           <AlertTriangle size={36} className="mx-auto text-gray-300 mb-3 sm:mb-4 sm:w-12 sm:h-12" />
-          <p className="text-gray-500 text-sm sm:text-base">No problem analysis data found for the selected period</p>
-          <p className="text-xs sm:text-sm text-gray-400 mt-1">Try expanding the time range or adjusting filters</p>
+          <p className="text-gray-500 text-sm sm:text-base">{t('noDataTitle')}</p>
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">{t('noDataHint')}</p>
         </div>
       ) : (
         <div className="space-y-3 sm:space-y-4">
@@ -530,7 +532,7 @@ export default function ProblemAnalysis() {
                     {categoryGroup.category.replace(/_/g, ' ')}
                   </span>
                   <span className="text-xs sm:text-sm text-gray-500 hidden xs:inline whitespace-nowrap">
-                    {categoryGroup.subcategories.length} sub • {categoryGroup.totalItems} reviews
+                    {t('tree.sub', { count: categoryGroup.subcategories.length })} • {t('tree.reviews', { count: categoryGroup.totalItems })}
                   </span>
                   {categoryGroup.urgentCount > 0 && (
                     <span className="px-1.5 sm:px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full flex-shrink-0">

@@ -13,11 +13,12 @@ BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
 class TestChatEndpoint:
     """Tests for POST /chat endpoint."""
 
+    @patch('chat_handler.dynamodb')
     @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_returns_ai_response_for_valid_message(
-        self, mock_agg_table, mock_fb_table, mock_converse,
+        self, mock_agg_table, mock_fb_table, mock_converse, mock_dynamodb,
         api_gateway_event, lambda_context
     ):
         """Returns AI-generated response based on feedback data."""
@@ -25,6 +26,7 @@ class TestChatEndpoint:
         mock_converse.return_value = 'Based on the feedback data, customers are generally satisfied with the product quality.'
         mock_agg_table.get_item.return_value = {'Item': {'count': 100}}
         mock_fb_table.query.return_value = {'Items': []}
+        mock_dynamodb.batch_get_item.return_value = {'Responses': {}, 'UnprocessedKeys': {}}
         
         import sys
         import os
@@ -47,11 +49,12 @@ class TestChatEndpoint:
         assert 'satisfied' in body['response']
         mock_converse.assert_called_once()
 
+    @patch('chat_handler.dynamodb')
     @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_uses_correct_bedrock_model_id(
-        self, mock_agg_table, mock_fb_table, mock_converse,
+        self, mock_agg_table, mock_fb_table, mock_converse, mock_dynamodb,
         api_gateway_event, lambda_context
     ):
         """Verifies converse is called (model ID is configured in shared module)."""
@@ -59,6 +62,7 @@ class TestChatEndpoint:
         mock_converse.return_value = 'Test response'
         mock_agg_table.get_item.return_value = {}
         mock_fb_table.query.return_value = {'Items': []}
+        mock_dynamodb.batch_get_item.return_value = {'Responses': {}, 'UnprocessedKeys': {}}
         
         from chat_handler import lambda_handler
         event = api_gateway_event(
@@ -73,11 +77,12 @@ class TestChatEndpoint:
         # Assert - converse was called (model ID is configured in shared.converse)
         mock_converse.assert_called_once()
 
+    @patch('chat_handler.dynamodb')
     @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_returns_graceful_error_when_bedrock_fails(
-        self, mock_agg_table, mock_fb_table, mock_converse,
+        self, mock_agg_table, mock_fb_table, mock_converse, mock_dynamodb,
         api_gateway_event, lambda_context
     ):
         """Returns graceful error message when Bedrock service fails."""
@@ -85,6 +90,7 @@ class TestChatEndpoint:
         mock_converse.side_effect = Exception('Service unavailable')
         mock_agg_table.get_item.return_value = {'Item': {'count': 50}}
         mock_fb_table.query.return_value = {'Items': []}
+        mock_dynamodb.batch_get_item.return_value = {'Responses': {}, 'UnprocessedKeys': {}}
         
         from chat_handler import lambda_handler
         event = api_gateway_event(
@@ -101,11 +107,12 @@ class TestChatEndpoint:
         assert response['statusCode'] == 200
         assert 'error' in body or 'Error' in body.get('response', '')
 
+    @patch('chat_handler.dynamodb')
     @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_includes_feedback_sources_in_response(
-        self, mock_agg_table, mock_fb_table, mock_converse,
+        self, mock_agg_table, mock_fb_table, mock_converse, mock_dynamodb,
         sample_feedback_items, api_gateway_event, lambda_context
     ):
         """Includes source feedback items in response."""
@@ -113,6 +120,7 @@ class TestChatEndpoint:
         mock_converse.return_value = 'Analysis complete.'
         mock_agg_table.get_item.return_value = {'Item': {'count': 10}}
         mock_fb_table.query.return_value = {'Items': sample_feedback_items}
+        mock_dynamodb.batch_get_item.return_value = {'Responses': {}, 'UnprocessedKeys': {}}
         
         from chat_handler import lambda_handler
         event = api_gateway_event(
@@ -215,7 +223,7 @@ class TestChatConversationsEndpointWithTable:
     def test_get_conversation_raises_not_found_when_missing(self):
         """Raises NotFoundError when conversation doesn't exist."""
         import chat_handler
-        from aws_lambda_powertools.event_handler.exceptions import NotFoundError
+        from shared.exceptions import NotFoundError
         
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}
@@ -363,17 +371,19 @@ class TestDeleteConversation:
 class TestChatEndpointEdgeCases:
     """Additional edge case tests for POST /chat endpoint."""
 
+    @patch('chat_handler.dynamodb')
     @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_handles_empty_feedback_data(
-        self, mock_agg_table, mock_fb_table, mock_converse,
+        self, mock_agg_table, mock_fb_table, mock_converse, mock_dynamodb,
         api_gateway_event, lambda_context
     ):
         """Handles case when no feedback data exists."""
         mock_converse.return_value = 'No feedback data available for analysis.'
         mock_agg_table.get_item.return_value = {}
         mock_fb_table.query.return_value = {'Items': []}
+        mock_dynamodb.batch_get_item.return_value = {'Responses': {}, 'UnprocessedKeys': {}}
         
         from shared.api import clear_categories_cache
         clear_categories_cache()
@@ -391,17 +401,19 @@ class TestChatEndpointEdgeCases:
         assert response['statusCode'] == 200
         assert 'response' in body
 
+    @patch('chat_handler.dynamodb')
     @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
     def test_uses_days_query_parameter(
-        self, mock_agg_table, mock_fb_table, mock_converse,
+        self, mock_agg_table, mock_fb_table, mock_converse, mock_dynamodb,
         api_gateway_event, lambda_context
     ):
         """Uses days parameter from query string."""
         mock_converse.return_value = 'Analysis complete.'
         mock_agg_table.get_item.return_value = {'Item': {'count': 10}}
         mock_fb_table.query.return_value = {'Items': []}
+        mock_dynamodb.batch_get_item.return_value = {'Responses': {}, 'UnprocessedKeys': {}}
         
         from chat_handler import lambda_handler
         event = api_gateway_event(

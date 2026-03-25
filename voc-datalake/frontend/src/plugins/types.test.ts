@@ -8,9 +8,6 @@ import {
   ConfigFieldSchema,
   WebhookInfoSchema,
   SetupSchema,
-  isPluginManifest,
-  isPluginManifestArray,
-  validateManifests,
   safeValidateManifests,
 } from './types';
 
@@ -335,101 +332,6 @@ describe('PluginManifestsSchema', () => {
   });
 });
 
-describe('Type Guards', () => {
-  describe('isPluginManifest', () => {
-    it('returns true for valid manifest', () => {
-      const manifest = {
-        id: 'test',
-        name: 'Test',
-        icon: '🧪',
-        config: [],
-        hasIngestor: true,
-        hasWebhook: false,
-        hasS3Trigger: false,
-        enabled: true,
-      };
-
-      expect(isPluginManifest(manifest)).toBe(true);
-    });
-
-    it('returns false for invalid manifest', () => {
-      const invalid = { id: 'test' };
-
-      expect(isPluginManifest(invalid)).toBe(false);
-    });
-
-    it('returns false for null', () => {
-      expect(isPluginManifest(null)).toBe(false);
-    });
-
-    it('returns false for undefined', () => {
-      expect(isPluginManifest(undefined)).toBe(false);
-    });
-
-    it('returns false for non-object', () => {
-      expect(isPluginManifest('string')).toBe(false);
-      expect(isPluginManifest(123)).toBe(false);
-    });
-  });
-
-
-  describe('isPluginManifestArray', () => {
-    it('returns true for valid manifest array', () => {
-      const manifests = [
-        {
-          id: 'test1',
-          name: 'Test 1',
-          icon: '1️⃣',
-          config: [],
-          hasIngestor: true,
-          hasWebhook: false,
-          hasS3Trigger: false,
-          enabled: true,
-        },
-        {
-          id: 'test2',
-          name: 'Test 2',
-          icon: '2️⃣',
-          config: [],
-          hasIngestor: false,
-          hasWebhook: true,
-          hasS3Trigger: false,
-          enabled: true,
-        },
-      ];
-
-      expect(isPluginManifestArray(manifests)).toBe(true);
-    });
-
-    it('returns true for empty array', () => {
-      expect(isPluginManifestArray([])).toBe(true);
-    });
-
-    it('returns false for array with invalid item', () => {
-      const manifests = [
-        {
-          id: 'valid',
-          name: 'Valid',
-          icon: '✓',
-          config: [],
-          hasIngestor: true,
-          hasWebhook: false,
-          hasS3Trigger: false,
-          enabled: true,
-        },
-        { invalid: true },
-      ];
-
-      expect(isPluginManifestArray(manifests)).toBe(false);
-    });
-
-    it('returns false for non-array', () => {
-      expect(isPluginManifestArray({})).toBe(false);
-      expect(isPluginManifestArray('string')).toBe(false);
-    });
-  });
-});
-
 describe('Validation Functions', () => {
   const validManifest = {
     id: 'webscraper',
@@ -441,28 +343,6 @@ describe('Validation Functions', () => {
     hasS3Trigger: false,
     enabled: true,
   };
-
-  describe('validateManifests', () => {
-    it('returns validated manifests for valid input', () => {
-      const manifests = [validManifest];
-
-      const result = validateManifests(manifests);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('webscraper');
-    });
-
-    it('throws for invalid input', () => {
-      const invalid = [{ id: 'test' }];
-
-      expect(() => validateManifests(invalid)).toThrow();
-    });
-
-    it('throws for non-array input', () => {
-      expect(() => validateManifests({})).toThrow();
-      expect(() => validateManifests(null)).toThrow();
-    });
-  });
 
   describe('safeValidateManifests', () => {
     it('returns validated manifests for valid input', () => {

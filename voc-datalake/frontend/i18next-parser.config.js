@@ -18,8 +18,9 @@ export default {
   failOnWarnings: false,
   verbose: true,
   sort: true,
-  // Keep existing translations, only add new keys
-  keepRemoved: false,
+  // Keep existing translations — many keys are referenced dynamically
+  // (e.g. t(item.labelKey)) and can't be statically detected by the parser.
+  keepRemoved: true,
   defaultValue: (locale, _namespace, key) => {
     // English gets the key as default, other locales get empty string
     return locale === 'en' ? key : ''

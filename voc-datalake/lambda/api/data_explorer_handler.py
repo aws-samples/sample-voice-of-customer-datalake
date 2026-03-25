@@ -11,12 +11,9 @@ Dedicated Lambda to avoid 20KB IAM policy limit.
 
 import json
 import os
-import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer
 from shared.aws import get_s3_client, get_dynamodb_resource, get_sqs_client
@@ -37,17 +34,6 @@ AVAILABLE_BUCKETS = {
 }
 
 app = create_api_resolver()
-
-
-def decimal_to_native(obj):
-    """Convert Decimal to native Python types recursively."""
-    if isinstance(obj, Decimal):
-        return float(obj) if obj % 1 else int(obj)
-    elif isinstance(obj, dict):
-        return {k: decimal_to_native(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [decimal_to_native(i) for i in obj]
-    return obj
 
 
 # ============================================

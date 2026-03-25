@@ -3,6 +3,7 @@
  */
 import { useState, useMemo } from 'react'
 import { FileText, X, Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { ResearchNotesProps, NoteItem } from './types'
 
 function getNoteText(note: NoteItem): string {
@@ -10,6 +11,7 @@ function getNoteText(note: NoteItem): string {
 }
 
 export default function ResearchNotes({ persona, onSave, isSaving }: Readonly<ResearchNotesProps>) {
+  const { t } = useTranslation('projectDetail')
   // Use useMemo to derive initial state from props instead of useEffect + setState
   const initialNotes = useMemo(() => persona.research_notes ?? [], [persona.research_notes])
   
@@ -35,9 +37,8 @@ export default function ResearchNotes({ persona, onSave, isSaving }: Readonly<Re
   }
   
   const getNotesLabel = () => {
-    if (notes.length === 0) return 'No notes yet'
-    const plural = notes.length !== 1 ? 's' : ''
-    return `${notes.length} note${plural}`
+    if (notes.length === 0) return t('personas.noNotesYet')
+    return t('personas.notesCount', { count: notes.length })
   }
   
   return (
@@ -53,7 +54,7 @@ export default function ResearchNotes({ persona, onSave, isSaving }: Readonly<Re
               onClick={() => setIsExpanded(!isExpanded)}
               className="text-xs text-purple-600 hover:text-purple-700"
             >
-              {isExpanded ? 'Collapse' : 'Expand'}
+              {isExpanded ? t('personas.collapse') : t('personas.expand')}
             </button>
           )}
         </div>
@@ -65,8 +66,8 @@ export default function ResearchNotes({ persona, onSave, isSaving }: Readonly<Re
           <div className="w-12 h-12 mx-auto mb-3 bg-purple-100 rounded-full flex items-center justify-center">
             <FileText size={24} className="text-purple-500" />
           </div>
-          <p className="text-gray-600 font-medium mb-1">Add Your Research Notes</p>
-          <p className="text-gray-400 text-sm mb-4">Document your observations, insights, and hypotheses about this persona</p>
+          <p className="text-gray-600 font-medium mb-1">{t('personas.addResearchNotes')}</p>
+          <p className="text-gray-400 text-sm mb-4">{t('personas.addResearchNotesDesc')}</p>
         </div>
       )}
       
@@ -83,7 +84,7 @@ export default function ResearchNotes({ persona, onSave, isSaving }: Readonly<Re
                 onClick={() => removeNote(i)} 
                 className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1 transition-opacity"
                 disabled={isSaving}
-                title="Remove note"
+                title={t('personas.removeNote')}
               >
                 <X size={16} />
               </button>
@@ -100,11 +101,11 @@ export default function ResearchNotes({ persona, onSave, isSaving }: Readonly<Re
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addNote()}
-            placeholder="Type your research observation or insight..."
+            placeholder={t('personas.notePlaceholder')}
             className="w-full px-4 py-3 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 pr-24"
           />
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-            Press Enter ↵
+            {t('personas.pressEnter')}
           </span>
         </div>
         <button
@@ -115,7 +116,7 @@ export default function ResearchNotes({ persona, onSave, isSaving }: Readonly<Re
           {isSaving ? <Loader2 size={16} className="animate-spin" /> : (
             <>
               <FileText size={16} />
-              Add Note
+              {t('personas.addNote')}
             </>
           )}
         </button>
@@ -123,7 +124,7 @@ export default function ResearchNotes({ persona, onSave, isSaving }: Readonly<Re
       
       {/* Helper text */}
       <p className="text-xs text-gray-400">
-        💡 Tip: Add observations from user interviews, usability tests, or data analysis that relate to this persona.
+        {t('personas.notesTip')}
       </p>
     </div>
   )

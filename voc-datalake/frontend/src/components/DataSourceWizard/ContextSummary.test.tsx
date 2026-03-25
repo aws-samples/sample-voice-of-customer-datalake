@@ -103,7 +103,7 @@ describe('ContextSummary', () => {
       const config = createConfig({ usePersonas: true })
       render(<ContextSummary config={config} personas={mockPersonas} documents={[]} />)
 
-      expect(screen.getByText('Personas:')).toBeInTheDocument()
+      expect(screen.getByText('Select Personas:')).toBeInTheDocument()
       expect(screen.getByText('All 2 personas')).toBeInTheDocument()
     })
 
@@ -125,7 +125,7 @@ describe('ContextSummary', () => {
       const config = createConfig({ usePersonas: false })
       render(<ContextSummary config={config} personas={mockPersonas} documents={[]} />)
 
-      expect(screen.queryByText('Personas:')).not.toBeInTheDocument()
+      expect(screen.queryByText('Select Personas:')).not.toBeInTheDocument()
     })
   })
 
@@ -134,7 +134,7 @@ describe('ContextSummary', () => {
       const config = createConfig({ useDocuments: true })
       render(<ContextSummary config={config} personas={[]} documents={mockDocuments} />)
 
-      expect(screen.getByText('Documents:')).toBeInTheDocument()
+      expect(screen.getByText('Select Documents:')).toBeInTheDocument()
       expect(screen.getByText('All 2 documents')).toBeInTheDocument() // excludes research docs
     })
 
@@ -149,7 +149,7 @@ describe('ContextSummary', () => {
       const config = createConfig({ useDocuments: false })
       render(<ContextSummary config={config} personas={[]} documents={mockDocuments} />)
 
-      expect(screen.queryByText('Documents:')).not.toBeInTheDocument()
+      expect(screen.queryByText('Select Documents:')).not.toBeInTheDocument()
     })
   })
 
@@ -158,7 +158,7 @@ describe('ContextSummary', () => {
       const config = createConfig({ useResearch: true })
       render(<ContextSummary config={config} personas={[]} documents={mockDocuments} />)
 
-      expect(screen.getByText('Research:')).toBeInTheDocument()
+      expect(screen.getByText('Select Research Documents:')).toBeInTheDocument()
       expect(screen.getByText('All 2 research docs')).toBeInTheDocument()
     })
 
@@ -173,7 +173,7 @@ describe('ContextSummary', () => {
       const config = createConfig({ useResearch: false })
       render(<ContextSummary config={config} personas={[]} documents={mockDocuments} />)
 
-      expect(screen.queryByText('Research:')).not.toBeInTheDocument()
+      expect(screen.queryByText('Select Research Documents:')).not.toBeInTheDocument()
     })
   })
 
@@ -189,9 +189,9 @@ describe('ContextSummary', () => {
       render(<ContextSummary config={config} personas={mockPersonas} documents={mockDocuments} />)
 
       expect(screen.getByText('Sources:')).toBeInTheDocument()
-      expect(screen.getByText('Personas:')).toBeInTheDocument()
-      expect(screen.getByText('Documents:')).toBeInTheDocument()
-      expect(screen.getByText('Research:')).toBeInTheDocument()
+      expect(screen.getByText('Select Personas:')).toBeInTheDocument()
+      expect(screen.getByText('Select Documents:')).toBeInTheDocument()
+      expect(screen.getByText('Select Research Documents:')).toBeInTheDocument()
       expect(screen.getByText('Last 14 days')).toBeInTheDocument()
       expect(screen.queryByText('No data sources selected')).not.toBeInTheDocument()
     })

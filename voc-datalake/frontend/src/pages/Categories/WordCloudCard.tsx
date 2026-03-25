@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import type { WordCloudItem } from './types'
 
 interface WordCloudCardProps {
@@ -15,19 +16,20 @@ export function WordCloudCard({
   onToggleKeyword,
   onClearKeywords,
 }: WordCloudCardProps) {
+  const { t } = useTranslation('categories')
   const maxCount = Math.max(...wordCloudData.map(w => w.count), 1)
 
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
-        <h2 className="text-base sm:text-lg font-semibold">Trending Keywords</h2>
+        <h2 className="text-base sm:text-lg font-semibold">{t('trendingKeywords')}</h2>
         {selectedKeywords.length > 0 && (
           <button
             onClick={onClearKeywords}
             className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 whitespace-nowrap"
           >
             <X size={12} />
-            Clear ({selectedKeywords.length})
+            {t('clear')} ({selectedKeywords.length})
           </button>
         )}
       </div>
@@ -46,19 +48,19 @@ export function WordCloudCard({
                   : 'bg-blue-100 text-blue-800 hover:bg-blue-200 sm:hover:scale-105'
               )}
               style={{ fontSize: `${size}rem` }}
-              title={`${count} mentions - click to filter`}
+              title={t('mentionsTooltip', { count })}
             >
               {word}
             </button>
           )
         })}
         {wordCloudData.length === 0 && (
-          <p className="text-gray-400 text-xs sm:text-sm">No keyword data available</p>
+          <p className="text-gray-400 text-xs sm:text-sm">{t('noKeywordData')}</p>
         )}
       </div>
       {selectedKeywords.length > 0 && (
         <p className="text-xs text-center text-gray-500 mt-2 sm:mt-3 line-clamp-2">
-          Filtering by: {selectedKeywords.join(', ')}
+          {t('filteringBy', { keywords: selectedKeywords.join(', ') })}
         </p>
       )}
     </div>

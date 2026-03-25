@@ -3,12 +3,13 @@
  * @module pages/DataExplorer
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Database, HardDrive, FolderOpen, Plus, RefreshCw, Search, Filter } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { FeedbackItem } from '../../api/client'
 import ConfirmModal from '../../components/ConfirmModal'
 import clsx from 'clsx'
-import S3Browser from './S3Browser'
+import S3Browser, { type S3Object } from './S3Browser'
 import ProcessedFeedbackView from './ProcessedFeedbackView'
 import CategoriesView from './CategoriesView'
 import EditModal, { type EditModalState } from './EditModal'
@@ -24,12 +25,6 @@ interface DeleteConfirmState {
   id?: string
 }
 
-const VIEW_TABS = [
-  { id: 's3-raw', icon: HardDrive, label: 'S3 Raw Data', shortLabel: 'S3' },
-  { id: 'dynamodb-processed', icon: Database, label: 'Processed Feedback', shortLabel: 'Feedback' },
-  { id: 'dynamodb-categories', icon: FolderOpen, label: 'Categories', shortLabel: 'Categories' },
-] as const
-
 // Extended feedback item type that may include s3_raw_uri from API
 interface FeedbackItemWithS3 extends FeedbackItem {
   s3_raw_uri?: string
@@ -44,6 +39,7 @@ function isPartialFeedbackItem(content: unknown): content is Partial<FeedbackIte
 }
 
 export default function DataExplorer() {
+  const { t } = useTranslation('dataExplorer')
   const [viewMode, setViewMode] = useState<ViewMode>('s3-raw')
   const [selectedBucket, setSelectedBucket] = useState<string>('raw-data')
   const [s3Path, setS3Path] = useState<string[]>([])
@@ -105,9 +101,28 @@ export default function DataExplorer() {
     }
   }, [deleteConfirm, mutations.deleteS3Mutation, mutations.deleteFeedbackMutation])
 
+  const s3BrowserData = useMemo(() => {
+    if (!queries.s3Data) return undefined
+    return {
+      objects: queries.s3Data.objects ?? [],
+      bucket: queries.s3Data.bucketLabel ?? queries.s3Data.bucket ?? selectedBucket,
+      prefix: queries.s3Data.prefix,
+    }
+  }, [queries.s3Data, selectedBucket])
+
+  const buckets = useMemo(() =>
+    queries.bucketsData?.buckets?.map((b: { id: string; name: string; label: string }) => ({
+      id: b.id, label: b.label || b.name,
+    })),
+  [queries.bucketsData])
+
   if (!queries.isConfigured) {
     return <NotConfiguredView />
   }
+
+  const deleteTitle = deleteConfirm?.type === 's3'
+    ? t('deleteConfirm.deleteS3File')
+    : t('deleteConfirm.deleteFeedback')
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -116,7 +131,7 @@ export default function DataExplorer() {
       <FilterBar
         viewMode={viewMode}
         selectedBucket={selectedBucket}
-        buckets={queries.bucketsData?.buckets}
+        buckets={buckets}
         sourceFilter={sourceFilter}
         sources={queries.sourcesData?.sources}
         searchQuery={searchQuery}
@@ -129,6 +144,7 @@ export default function DataExplorer() {
       <ContentPanel
         viewMode={viewMode}
         queries={queries}
+        s3BrowserData={s3BrowserData}
         s3Path={s3Path}
         searchQuery={searchQuery}
         onS3PathChange={setS3Path}
@@ -150,9 +166,9 @@ export default function DataExplorer() {
 
       <ConfirmModal
         isOpen={!!deleteConfirm}
-        title={`Delete ${deleteConfirm?.type === 's3' ? 'S3 File' : 'Feedback'}`}
-        message="Are you sure? This cannot be undone."
-        confirmLabel="Delete"
+        title={deleteTitle}
+        message={t('deleteConfirm.message')}
+        confirmLabel={t('s3Browser.delete')}
         variant="danger"
         onConfirm={handleDelete}
         onCancel={() => setDeleteConfirm(null)}
@@ -163,11 +179,12 @@ export default function DataExplorer() {
 }
 
 function NotConfiguredView() {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="flex items-center justify-center h-64">
       <div className="text-center text-gray-500">
         <Database size={48} className="mx-auto mb-4 opacity-50" />
-        <p>Configure API endpoint in Settings to explore data</p>
+        <p>{t('notConfigured')}</p>
       </div>
     </div>
   )
@@ -176,6 +193,7 @@ function NotConfiguredView() {
 interface ContentPanelProps {
   readonly viewMode: ViewMode
   readonly queries: ReturnType<typeof useDataExplorerQueries>
+  readonly s3BrowserData: { objects: S3Object[]; bucket: string; prefix: string } | undefined
   readonly s3Path: string[]
   readonly searchQuery: string
   readonly onS3PathChange: (path: string[]) => void
@@ -186,15 +204,16 @@ interface ContentPanelProps {
 }
 
 function ContentPanel({
-  viewMode, queries, s3Path, searchQuery, onS3PathChange, onOpenS3Editor, onDownloadS3File, onOpenFeedbackEditor, onDeleteConfirm
+  viewMode, queries, s3BrowserData, s3Path, searchQuery, onS3PathChange, onOpenS3Editor, onDownloadS3File, onOpenFeedbackEditor, onDeleteConfirm
 }: ContentPanelProps) {
   return (
     <div className="card p-0 overflow-hidden">
       {viewMode === 's3-raw' && (
         <S3Browser
           path={s3Path}
-          data={queries.s3Data}
+          data={s3BrowserData}
           loading={queries.s3Loading}
+          error={queries.s3Error}
           onNavigateToFolder={(folder) => onS3PathChange([...s3Path, folder])}
           onNavigateUp={() => onS3PathChange(s3Path.slice(0, -1))}
           onNavigateToBreadcrumb={(i) => onS3PathChange(i < 0 ? [] : s3Path.slice(0, i + 1))}
@@ -208,6 +227,7 @@ function ContentPanel({
         <ProcessedFeedbackView
           data={queries.feedbackData}
           loading={queries.feedbackLoading}
+          error={queries.feedbackError}
           searchQuery={searchQuery}
           onView={(i) => onOpenFeedbackEditor(i, 'view')}
           onEdit={(i) => onOpenFeedbackEditor(i, 'edit')}
@@ -215,7 +235,7 @@ function ContentPanel({
         />
       )}
       {viewMode === 'dynamodb-categories' && (
-        <CategoriesView data={queries.categoriesData} loading={queries.categoriesLoading} />
+        <CategoriesView data={queries.categoriesData} loading={queries.categoriesLoading} error={queries.categoriesError} />
       )}
     </div>
   )
@@ -227,15 +247,16 @@ interface HeaderProps {
 }
 
 function Header({ viewMode, onCreateFile }: HeaderProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Data Explorer</h1>
-        <p className="text-sm text-gray-500">Browse, edit, and sync raw S3 data and processed DynamoDB records</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <p className="text-sm text-gray-500">{t('description')}</p>
       </div>
       {viewMode === 's3-raw' && (
         <button onClick={onCreateFile} className="btn btn-primary flex items-center justify-center gap-2 text-sm">
-          <Plus size={18} /> New File
+          <Plus size={18} /> {t('newFile')}
         </button>
       )}
     </div>
@@ -248,9 +269,17 @@ interface ViewTabsProps {
 }
 
 function ViewTabs({ viewMode, onViewModeChange }: ViewTabsProps) {
+  const { t } = useTranslation('dataExplorer')
+
+  const viewTabs = [
+    { id: 's3-raw' as const, icon: HardDrive, label: t('tabs.s3RawData'), shortLabel: t('tabs.s3Short') },
+    { id: 'dynamodb-processed' as const, icon: Database, label: t('tabs.processedFeedback'), shortLabel: t('tabs.feedbackShort') },
+    { id: 'dynamodb-categories' as const, icon: FolderOpen, label: t('tabs.categories'), shortLabel: t('tabs.categoriesShort') },
+  ]
+
   return (
     <div className="flex items-center gap-2 sm:gap-4 border-b border-gray-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-      {VIEW_TABS.map(({ id, icon: Icon, label, shortLabel }) => (
+      {viewTabs.map(({ id, icon: Icon, label, shortLabel }) => (
         <button
           key={id}
           onClick={() => onViewModeChange(id)}
@@ -285,6 +314,7 @@ function FilterBar({
   viewMode, selectedBucket, buckets, sourceFilter, sources, searchQuery,
   onBucketChange, onSourceFilterChange, onSearchChange, onRefresh
 }: FilterBarProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
       {viewMode === 's3-raw' && buckets && buckets.length > 1 && (
@@ -299,7 +329,7 @@ function FilterBar({
         </>
       )}
       <button onClick={onRefresh} className="btn btn-secondary py-1.5 text-sm flex items-center justify-center gap-1 sm:ml-auto">
-        <RefreshCw size={14} /> Refresh
+        <RefreshCw size={14} /> {t('refresh')}
       </button>
     </div>
   )
@@ -333,6 +363,7 @@ interface SourceSelectorProps {
 }
 
 function SourceSelector({ sourceFilter, sources, onSourceFilterChange }: SourceSelectorProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="flex items-center gap-2">
       <Filter size={16} className="text-gray-400 flex-shrink-0" />
@@ -341,7 +372,7 @@ function SourceSelector({ sourceFilter, sources, onSourceFilterChange }: SourceS
         onChange={(e) => onSourceFilterChange(e.target.value)}
         className="input py-1.5 text-sm flex-1 sm:min-w-[150px]"
       >
-        <option value="">All Sources</option>
+        <option value="">{t('filters.allSources')}</option>
         {sources && Object.keys(sources).map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
     </div>
@@ -354,6 +385,7 @@ interface SearchInputProps {
 }
 
 function SearchInput({ searchQuery, onSearchChange }: SearchInputProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="flex items-center gap-2 flex-1">
       <Search size={16} className="text-gray-400 flex-shrink-0" />
@@ -361,7 +393,7 @@ function SearchInput({ searchQuery, onSearchChange }: SearchInputProps) {
         type="text"
         value={searchQuery}
         onChange={(e) => onSearchChange(e.target.value)}
-        placeholder="Search..."
+        placeholder={t('filters.searchPlaceholder')}
         className="input py-1.5 text-sm flex-1 sm:max-w-md"
       />
     </div>

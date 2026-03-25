@@ -463,13 +463,13 @@ class TestToolGetFeedbackDetail:
 
     def test_feedback_not_found(self, tables):
         from mcp_handler import _tool_get_feedback_detail
-        tables['feedback'].scan.return_value = {'Items': []}
+        tables['feedback'].query.return_value = {'Items': []}
         result = _tool_get_feedback_detail({'feedback_id': 'f1'}, {})
         assert 'not found' in result[0]['text']
 
     def test_returns_full_detail(self, tables):
         from mcp_handler import _tool_get_feedback_detail
-        tables['feedback'].scan.return_value = {
+        tables['feedback'].query.return_value = {
             'Items': [{
                 'id': 'f1',
                 'source_platform': 'webscraper',

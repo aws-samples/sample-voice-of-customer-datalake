@@ -48,7 +48,7 @@ describe('InsightsRow', () => {
 
     // Both top and bottom should be the same category
     expect(screen.getAllByText('delivery')).toHaveLength(2)
-    expect(screen.getByText('1 categories')).toBeInTheDocument()
+    expect(screen.getByText('1 category')).toBeInTheDocument()
   })
 
   it('replaces underscores with spaces in category names', () => {

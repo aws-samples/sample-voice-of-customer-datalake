@@ -10,7 +10,7 @@ import sys
 # Add parent directory to path for shared module imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from shared.logging import logger
+from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
 from shared.exceptions import ConfigurationError
 
@@ -38,6 +38,9 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, filters: dict) -> 
     return result
 
 
+@logger.inject_lambda_context
+@tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context) -> dict:
     """Lambda entry point."""
     logger.info(f"Persona generator invoked with event keys: {list(event.keys())}")

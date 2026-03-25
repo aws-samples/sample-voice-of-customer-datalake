@@ -39,7 +39,43 @@ describe('API Client', () => {
 
   describe('getFeedback', () => {
     it('fetches feedback with correct query parameters', async () => {
-      const mockResponse = { count: 2, items: [{ feedback_id: '1' }, { feedback_id: '2' }] }
+      const mockItems = [
+        {
+          feedback_id: '1',
+          source_id: 'src-1',
+          source_platform: 'webscraper',
+          source_channel: 'web',
+          brand_name: 'TestBrand',
+          source_created_at: '2025-01-01T00:00:00Z',
+          processed_at: '2025-01-01T00:01:00Z',
+          original_text: 'Great product',
+          original_language: 'en',
+          category: 'general',
+          journey_stage: 'post_purchase',
+          sentiment_label: 'positive',
+          sentiment_score: 0.9,
+          urgency: 'low',
+          impact_area: 'product',
+        },
+        {
+          feedback_id: '2',
+          source_id: 'src-2',
+          source_platform: 'webscraper',
+          source_channel: 'web',
+          brand_name: 'TestBrand',
+          source_created_at: '2025-01-02T00:00:00Z',
+          processed_at: '2025-01-02T00:01:00Z',
+          original_text: 'Needs improvement',
+          original_language: 'en',
+          category: 'general',
+          journey_stage: 'post_purchase',
+          sentiment_label: 'negative',
+          sentiment_score: -0.5,
+          urgency: 'medium',
+          impact_area: 'product',
+        },
+      ]
+      const mockResponse = { count: 2, items: mockItems }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockResponse),
@@ -185,7 +221,14 @@ describe('API Client', () => {
 
   describe('getSummary', () => {
     it('fetches summary with days parameter', async () => {
-      const mockSummary = { total_feedback: 100, avg_sentiment: 0.5 }
+      const mockSummary = {
+        period_days: 30,
+        total_feedback: 100,
+        avg_sentiment: 0.5,
+        urgent_count: 5,
+        daily_totals: [{ date: '2025-01-01', count: 10 }],
+        daily_sentiment: [{ date: '2025-01-01', avg_sentiment: 0.5, count: 10 }],
+      }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockSummary),
@@ -201,9 +244,17 @@ describe('API Client', () => {
     })
 
     it('includes source filter when provided', async () => {
+      const mockSummary = {
+        period_days: 7,
+        total_feedback: 0,
+        avg_sentiment: 0,
+        urgent_count: 0,
+        daily_totals: [],
+        daily_sentiment: [],
+      }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({}),
+        json: () => Promise.resolve(mockSummary),
       })
 
       await api.getSummary(7, 'webscraper')
@@ -266,43 +317,6 @@ describe('API Client', () => {
         expect.any(Object)
       )
       expect(result).toEqual(mockSources)
-    })
-  })
-
-  describe('chat', () => {
-    it('sends POST request with message body', async () => {
-      const mockResponse = { response: 'AI response', sources: [] }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      const result = await api.chat('What do customers think?')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/chat',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ message: 'What do customers think?', context: undefined }),
-        })
-      )
-      expect(result).toEqual(mockResponse)
-    })
-
-    it('includes context when provided', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ response: 'Response' }),
-      })
-
-      await api.chat('Question', 'Additional context')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/chat',
-        expect.objectContaining({
-          body: JSON.stringify({ message: 'Question', context: 'Additional context' }),
-        })
-      )
     })
   })
 
@@ -1577,24 +1591,5 @@ describe('getDaysFromRange', () => {
 
   it('returns default when custom range is null', () => {
     expect(getDaysFromRange('custom', null)).toBe(7)
-  })
-})
-
-describe('getDateRangeParams', () => {
-  it('returns days for standard ranges', () => {
-    expect(getDateRangeParams('7d')).toEqual({ days: 7 })
-    expect(getDateRangeParams('30d')).toEqual({ days: 30 })
-  })
-
-  it('returns start_date and end_date for custom range', () => {
-    const customRange = { start: '2025-01-01', end: '2025-01-31' }
-    expect(getDateRangeParams('custom', customRange)).toEqual({
-      start_date: '2025-01-01',
-      end_date: '2025-01-31',
-    })
-  })
-
-  it('returns days when custom range is null', () => {
-    expect(getDateRangeParams('custom', null)).toEqual({ days: 7 })
   })
 })

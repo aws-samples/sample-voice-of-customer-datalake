@@ -4,6 +4,7 @@
  */
 
 import { FolderOpen, FileJson, ChevronRight, Eye, Pencil, Trash2, ArrowLeft, HardDrive, Image, FileText, Download, Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import { safeFormatDate } from '../../utils/dateUtils'
 
@@ -19,6 +20,7 @@ interface S3BrowserProps {
   readonly path: string[]
   readonly data: { objects: S3Object[]; bucket: string; prefix: string } | undefined
   readonly loading: boolean
+  readonly error: Error | null
   readonly onNavigateToFolder: (folder: string) => void
   readonly onNavigateUp: () => void
   readonly onNavigateToBreadcrumb: (index: number) => void
@@ -51,10 +53,22 @@ function isEditableFile(filename: string): boolean {
 }
 
 export default function S3Browser({
-  path, data, loading, onNavigateToFolder, onNavigateUp, onNavigateToBreadcrumb, onView, onEdit, onDelete, onDownload
+  path, data, loading, error, onNavigateToFolder, onNavigateUp, onNavigateToBreadcrumb, onView, onEdit, onDelete, onDownload
 }: S3BrowserProps) {
+  const { t } = useTranslation('dataExplorer')
+
   if (loading) {
     return <div className="p-8 text-center"><Loader2 className="mx-auto animate-spin text-gray-400" size={32} /></div>
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 text-center text-red-500">
+        <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
+        <p className="font-medium">{t('s3Browser.errorLoading', 'Error loading files')}</p>
+        <p className="text-sm mt-1 text-red-400">{error.message}</p>
+      </div>
+    )
   }
 
   const objects = data?.objects ?? []
@@ -81,7 +95,7 @@ export default function S3Browser({
       {path.length > 0 && (
         <div className="px-4 py-2 border-b">
           <button onClick={onNavigateUp} className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900">
-            <ArrowLeft size={16} /> Back
+            <ArrowLeft size={16} /> {t('s3Browser.back')}
           </button>
         </div>
       )}
@@ -89,7 +103,7 @@ export default function S3Browser({
       {objects.length === 0 ? (
         <div className="p-8 text-center text-gray-500">
           <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
-          <p>No files found</p>
+          <p>{t('s3Browser.noFiles')}</p>
         </div>
       ) : (
         <div className="divide-y">
@@ -120,6 +134,7 @@ interface S3ObjectRowProps {
 }
 
 function S3ObjectRow({ obj, onNavigateToFolder, onView, onEdit, onDelete, onDownload }: S3ObjectRowProps) {
+  const { t } = useTranslation('dataExplorer')
   const fullKey = obj.fullKey ?? obj.key
 
   const handleClick = () => {
@@ -145,18 +160,18 @@ function S3ObjectRow({ obj, onNavigateToFolder, onView, onEdit, onDelete, onDown
       </div>
       {!obj.isFolder && (
         <div className="flex items-center gap-1">
-          <button onClick={() => onView(fullKey)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="View">
+          <button onClick={() => onView(fullKey)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title={t('s3Browser.view')}>
             <Eye size={16} />
           </button>
-          <button onClick={() => onDownload(fullKey, obj.key)} className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="Download">
+          <button onClick={() => onDownload(fullKey, obj.key)} className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded" title={t('s3Browser.download')}>
             <Download size={16} />
           </button>
           {isEditableFile(obj.key) && (
-            <button onClick={() => onEdit(fullKey)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title="Edit">
+            <button onClick={() => onEdit(fullKey)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title={t('s3Browser.edit')}>
               <Pencil size={16} />
             </button>
           )}
-          <button onClick={() => onDelete(fullKey)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
+          <button onClick={() => onDelete(fullKey)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title={t('s3Browser.delete')}>
             <Trash2 size={16} />
           </button>
         </div>

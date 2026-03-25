@@ -263,4 +263,40 @@ describe('SocialFeed', () => {
       })
     })
   })
+
+  describe('incomplete data handling', () => {
+    it('renders items with missing optional fields (regression: Zod schema too strict)', async () => {
+      // Simulates DynamoDB items where processor stripped None values
+      const incompleteItems = [
+        {
+          feedback_id: 'fb-incomplete',
+          source_id: '',
+          source_platform: 'webscraper',
+          source_channel: 'unknown',
+          brand_name: '',
+          source_created_at: '',
+          processed_at: '',
+          original_text: 'This review has minimal fields',
+          original_language: 'unknown',
+          category: 'other',
+          journey_stage: 'unknown',
+          sentiment_label: 'negative',
+          sentiment_score: -0.8,
+          urgency: 'high',
+          impact_area: 'other',
+        },
+      ]
+      ;(api.getFeedback as ReturnType<typeof vi.fn>).mockResolvedValue({
+        count: 1,
+        items: incompleteItems,
+      })
+
+      renderWithQueryClient(<SocialFeed />)
+
+      await waitFor(() => {
+        expect(screen.getByText('This review has minimal fields')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('No feedback found for this period')).not.toBeInTheDocument()
+    })
+  })
 })

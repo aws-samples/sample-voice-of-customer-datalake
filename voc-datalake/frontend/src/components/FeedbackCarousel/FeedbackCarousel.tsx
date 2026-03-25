@@ -11,6 +11,7 @@
 
 import { useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { ChevronLeft, ChevronRight, ExternalLink, Star, AlertTriangle } from 'lucide-react'
 import { format, isValid, parseISO } from 'date-fns'
 import type { FeedbackItem } from '../../api/client'
@@ -30,9 +31,9 @@ const sourceIcons: Record<string, string> = {
   s3_import: '📦',
 }
 
-function formatSourceName(source: string): string {
+function formatSourceName(source: string, t: (key: string) => string): string {
   if (source.startsWith('scraper_') || source === 'web_scrape' || source === 'web_scrape_jsonld') {
-    return 'Web Scraper'
+    return t('feedbackCarousel.webScraper')
   }
   return source.replace(/_/g, ' ')
 }
@@ -51,6 +52,7 @@ export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCaro
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(items.length > 1)
+  const { t } = useTranslation('components')
 
   const checkScroll = () => {
     if (!scrollRef.current) return
@@ -106,14 +108,14 @@ export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCaro
                 <div className="flex items-center gap-2">
                   <span className="text-lg">{sourceIcons[feedback.source_platform] || '📝'}</span>
                   <span className="text-sm font-medium text-gray-700 capitalize">
-                    {formatSourceName(feedback.source_platform)}
+                    {formatSourceName(feedback.source_platform, t)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
                   {feedback.urgency === 'high' && (
                     <span className="badge badge-urgent flex items-center gap-1 text-xs">
                       <AlertTriangle size={10} />
-                      Urgent
+                      {t('feedbackCarousel.urgent')}
                     </span>
                   )}
                   <SentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} />
@@ -140,7 +142,7 @@ export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCaro
               {feedback.problem_summary && (
                 <div className="bg-gray-50 rounded p-2 mb-2">
                   <p className="text-xs font-medium text-gray-600 line-clamp-2">
-                    Issue: {feedback.problem_summary}
+                    {t('feedbackCarousel.issue', { summary: feedback.problem_summary })}
                   </p>
                 </div>
               )}
@@ -163,7 +165,7 @@ export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCaro
                     to={`/feedback/${feedback.feedback_id}`}
                     className="text-xs text-blue-600 hover:text-blue-700 font-medium"
                   >
-                    View Details
+                    {t('feedbackCarousel.viewDetails')}
                   </Link>
                   {feedback.source_url && (
                     <a

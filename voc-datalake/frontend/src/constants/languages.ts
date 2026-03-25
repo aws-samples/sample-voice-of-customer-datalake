@@ -79,5 +79,3 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'vi', name: 'Vietnamese' },
   { code: 'cy', name: 'Welsh' },
 ] as const
-
-export type LanguageCode = (typeof SUPPORTED_LANGUAGES)[number]['code']

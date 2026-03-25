@@ -5,12 +5,9 @@ Receives scraped reviews from the Chrome extension and sends them to the process
 
 import json
 import os
-import sys
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_s3_client, get_sqs_client

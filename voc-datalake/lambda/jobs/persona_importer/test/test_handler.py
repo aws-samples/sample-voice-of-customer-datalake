@@ -9,14 +9,14 @@ class TestPersonaImporterHandler:
 
     def test_successful_text_import(
         self, mock_dynamodb, mock_jobs_table, mock_bedrock,
-        mock_avatar_generation, text_import_event, mock_bedrock_persona_response
+        mock_avatar_generation, text_import_event, mock_bedrock_persona_response, lambda_context
     ):
         """Test successful persona import from text."""
         mock_bedrock.converse.return_value = mock_bedrock_persona_response
         
         from jobs.persona_importer.handler import lambda_handler
         
-        result = lambda_handler(text_import_event, None)
+        result = lambda_handler(text_import_event, lambda_context)
         
         assert result['success'] is True
         assert 'persona_id' in result
@@ -24,14 +24,14 @@ class TestPersonaImporterHandler:
 
     def test_successful_image_import(
         self, mock_dynamodb, mock_jobs_table, mock_bedrock,
-        mock_avatar_generation, image_import_event, mock_bedrock_persona_response
+        mock_avatar_generation, image_import_event, mock_bedrock_persona_response, lambda_context
     ):
         """Test successful persona import from image."""
         mock_bedrock.converse.return_value = mock_bedrock_persona_response
         
         from jobs.persona_importer.handler import lambda_handler
         
-        result = lambda_handler(image_import_event, None)
+        result = lambda_handler(image_import_event, lambda_context)
         
         assert result['success'] is True
         assert 'persona_id' in result
@@ -43,14 +43,14 @@ class TestPersonaImporterHandler:
 
     def test_persona_saved_to_dynamodb(
         self, mock_dynamodb, mock_jobs_table, mock_bedrock,
-        mock_avatar_generation, text_import_event, mock_bedrock_persona_response
+        mock_avatar_generation, text_import_event, mock_bedrock_persona_response, lambda_context
     ):
         """Test that imported persona is saved to DynamoDB."""
         mock_bedrock.converse.return_value = mock_bedrock_persona_response
         
         from jobs.persona_importer.handler import lambda_handler
         
-        lambda_handler(text_import_event, None)
+        lambda_handler(text_import_event, lambda_context)
         
         mock_dynamodb['table'].put_item.assert_called()
         put_call = mock_dynamodb['table'].put_item.call_args
@@ -60,14 +60,14 @@ class TestPersonaImporterHandler:
 
     def test_avatar_generated_for_imported_persona(
         self, mock_dynamodb, mock_jobs_table, mock_bedrock,
-        mock_avatar_generation, text_import_event, mock_bedrock_persona_response
+        mock_avatar_generation, text_import_event, mock_bedrock_persona_response, lambda_context
     ):
         """Test that avatar is generated for imported persona."""
         mock_bedrock.converse.return_value = mock_bedrock_persona_response
         
         from jobs.persona_importer.handler import lambda_handler
         
-        lambda_handler(text_import_event, None)
+        lambda_handler(text_import_event, lambda_context)
         
         mock_avatar_generation.assert_called_once()
         
@@ -78,7 +78,7 @@ class TestPersonaImporterHandler:
 
     def test_handles_json_in_markdown_code_block(
         self, mock_dynamodb, mock_jobs_table, mock_bedrock,
-        mock_avatar_generation, text_import_event
+        mock_avatar_generation, text_import_event, lambda_context
     ):
         """Test that handler extracts JSON from markdown code blocks."""
         mock_bedrock.converse.return_value = {
@@ -108,7 +108,7 @@ class TestPersonaImporterHandler:
         
         from jobs.persona_importer.handler import lambda_handler
         
-        result = lambda_handler(text_import_event, None)
+        result = lambda_handler(text_import_event, lambda_context)
         
         assert result['success'] is True
         put_call = mock_dynamodb['table'].put_item.call_args
@@ -117,7 +117,7 @@ class TestPersonaImporterHandler:
 
     def test_job_fails_on_invalid_json(
         self, mock_dynamodb, mock_jobs_table, mock_bedrock,
-        mock_avatar_generation, text_import_event
+        mock_avatar_generation, text_import_event, lambda_context
     ):
         """Test that job fails when LLM returns invalid JSON."""
         from jobs.persona_importer.handler import lambda_handler
@@ -132,20 +132,20 @@ class TestPersonaImporterHandler:
         }
         
         with pytest.raises(ServiceError):
-            lambda_handler(text_import_event, None)
+            lambda_handler(text_import_event, lambda_context)
         
         mock_jobs_table.update_item.assert_called()
 
     def test_persona_count_incremented(
         self, mock_dynamodb, mock_jobs_table, mock_bedrock,
-        mock_avatar_generation, text_import_event, mock_bedrock_persona_response
+        mock_avatar_generation, text_import_event, mock_bedrock_persona_response, lambda_context
     ):
         """Test that project persona count is incremented."""
         mock_bedrock.converse.return_value = mock_bedrock_persona_response
         
         from jobs.persona_importer.handler import lambda_handler
         
-        lambda_handler(text_import_event, None)
+        lambda_handler(text_import_event, lambda_context)
         
         # Verify update_item was called to increment persona_count
         update_calls = [c for c in mock_dynamodb['table'].update_item.call_args_list]

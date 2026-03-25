@@ -150,12 +150,14 @@ export default function Settings() {
     setTimeout(() => setSaved(false), 3000)
   }
 
+  const { t } = useTranslation('settings')
+
   const tabs = [
-    { id: 'general' as const, label: 'General', icon: Building2 },
-    { id: 'plugins' as const, label: 'Data Sources', icon: Plug },
-    { id: 'categories' as const, label: 'Categories', icon: Tags },
-    { id: 'logs' as const, label: 'Logs', icon: FileWarning },
-    ...(isAdmin ? [{ id: 'users' as const, label: 'Users', icon: Users }] : []),
+    { id: 'general' as const, label: t('tabs.general'), icon: Building2 },
+    { id: 'plugins' as const, label: t('tabs.plugins'), icon: Plug },
+    { id: 'categories' as const, label: t('tabs.categories'), icon: Tags },
+    { id: 'logs' as const, label: t('tabs.logs'), icon: FileWarning },
+    ...(isAdmin ? [{ id: 'users' as const, label: t('tabs.users'), icon: Users }] : []),
   ]
 
   const activeTabData = tabs.find(t => t.id === activeTab)
@@ -286,21 +288,22 @@ interface HeaderProps {
   readonly onSave: () => void
 }
 
-function getSaveButtonContent(saving: boolean, saved: boolean): { icon: React.ReactNode; text: string } {
-  if (saving) return { icon: <Loader2 size={18} className="animate-spin" />, text: 'Saving...' }
-  if (saved) return { icon: <Check size={18} />, text: 'Saved!' }
-  return { icon: <Save size={18} />, text: 'Save Changes' }
+function getSaveButtonContent(saving: boolean, saved: boolean, t: (key: string) => string): { icon: React.ReactNode; text: string } {
+  if (saving) return { icon: <Loader2 size={18} className="animate-spin" />, text: t('saving') }
+  if (saved) return { icon: <Check size={18} />, text: t('saved') }
+  return { icon: <Save size={18} />, text: t('saveChanges') }
 }
 
 function Header({ saved, saving, onSave }: HeaderProps) {
-  const buttonContent = getSaveButtonContent(saving, saved)
+  const { t } = useTranslation('settings')
+  const buttonContent = getSaveButtonContent(saving, saved, t)
   const buttonClass = saved ? 'bg-green-600 text-white' : 'btn-primary'
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-6">
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-sm sm:text-base text-gray-500">Configure your VoC platform</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <p className="text-sm sm:text-base text-gray-500">{t('subtitle')}</p>
       </div>
       <button
         onClick={onSave}
@@ -324,6 +327,7 @@ interface ApiConfigSectionProps {
 }
 
 function ApiConfigSection({ apiEndpoint, onApiEndpointChange }: ApiConfigSectionProps) {
+  const { t } = useTranslation('settings')
   const [showApiConfig, setShowApiConfig] = useState(!apiEndpoint)
 
   return (
@@ -332,9 +336,9 @@ function ApiConfigSection({ apiEndpoint, onApiEndpointChange }: ApiConfigSection
         onClick={() => setShowApiConfig(!showApiConfig)}
         className="w-full flex items-center justify-between text-left"
       >
-        <h2 className="text-lg font-semibold">API Configuration</h2>
+        <h2 className="text-lg font-semibold">{t('api.title')}</h2>
         <div className="flex items-center gap-2">
-          {apiEndpoint && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 size={14} /> Connected</span>}
+          {apiEndpoint && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 size={14} /> {t('api.connected')}</span>}
           <ChevronDown size={18} className={clsx('text-gray-400 transition-transform', showApiConfig && 'rotate-180')} />
         </div>
       </button>
@@ -342,9 +346,9 @@ function ApiConfigSection({ apiEndpoint, onApiEndpointChange }: ApiConfigSection
       {showApiConfig && (
         <div className="space-y-4 mt-4 pt-4 border-t border-gray-100">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">API Endpoint URL</label>
-            <input type="url" value={apiEndpoint} onChange={(e) => onApiEndpointChange(e.target.value)} placeholder="https://your-api-id.execute-api.region.amazonaws.com/v1" className="input" />
-            <p className="text-xs text-gray-500 mt-1">The API Gateway endpoint from your VoC deployment</p>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('api.endpointLabel')}</label>
+            <input type="url" value={apiEndpoint} onChange={(e) => onApiEndpointChange(e.target.value)} placeholder={t('api.endpointPlaceholder')} className="input" />
+            <p className="text-xs text-gray-500 mt-1">{t('api.endpointHint')}</p>
           </div>
         </div>
       )}
@@ -370,35 +374,36 @@ interface BrandConfigSectionProps {
 }
 
 function BrandConfigSection({ apiEndpoint, loadingSettings, brandName, brandHandles, hashtags, urlsToTrack, onBrandNameChange, onBrandHandlesChange, onHashtagsChange, onUrlsToTrackChange }: BrandConfigSectionProps) {
+  const { t } = useTranslation('settings')
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Brand Configuration</h2>
-        {apiEndpoint && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 size={14} /> Synced to backend</span>}
+        <h2 className="text-lg font-semibold">{t('brand.title')}</h2>
+        {apiEndpoint && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 size={14} /> {t('brand.syncedToBackend')}</span>}
       </div>
       {loadingSettings && apiEndpoint && (
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-          <Loader2 size={16} className="animate-spin" />Loading settings from server...
+          <Loader2 size={16} className="animate-spin" />{t('brand.loadingSettings')}
         </div>
       )}
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Brand Name</label>
-          <input type="text" value={brandName} onChange={(e) => onBrandNameChange(e.target.value)} placeholder="Your Brand Name" className="input" />
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('brand.nameLabel')}</label>
+          <input type="text" value={brandName} onChange={(e) => onBrandNameChange(e.target.value)} placeholder={t('brand.namePlaceholder')} className="input" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Brand Handles (comma-separated)</label>
-          <input type="text" value={brandHandles} onChange={(e) => onBrandHandlesChange(e.target.value)} placeholder="@yourbrand, yourbrand, YourBrand" className="input" />
-          <p className="text-xs text-gray-500 mt-1">Social media handles and variations to track</p>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('brand.handlesLabel')}</label>
+          <input type="text" value={brandHandles} onChange={(e) => onBrandHandlesChange(e.target.value)} placeholder={t('brand.handlesPlaceholder')} className="input" />
+          <p className="text-xs text-gray-500 mt-1">{t('brand.handlesHint')}</p>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Hashtags to Track (comma-separated)</label>
-          <input type="text" value={hashtags} onChange={(e) => onHashtagsChange(e.target.value)} placeholder="#yourbrand, #yourproduct" className="input" />
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('brand.hashtagsLabel')}</label>
+          <input type="text" value={hashtags} onChange={(e) => onHashtagsChange(e.target.value)} placeholder={t('brand.hashtagsPlaceholder')} className="input" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">URLs to Track (one per line)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('brand.urlsLabel')}</label>
           <textarea value={urlsToTrack} onChange={(e) => onUrlsToTrackChange(e.target.value)} placeholder="https://example.com/reviews&#10;https://forum.example.com" className="input min-h-[100px]" />
-          <p className="text-xs text-gray-500 mt-1">Specific URLs to monitor via web search</p>
+          <p className="text-xs text-gray-500 mt-1">{t('brand.urlsHint')}</p>
         </div>
       </div>
     </div>
@@ -417,7 +422,7 @@ interface ReviewConfigSectionProps {
 }
 
 function ReviewConfigSection({ apiEndpoint, loadingReview, primaryLanguage, onPrimaryLanguageChange }: ReviewConfigSectionProps) {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation('settings')
 
   const handleUiLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     changeLanguage(e.target.value)
@@ -428,19 +433,19 @@ function ReviewConfigSection({ apiEndpoint, loadingReview, primaryLanguage, onPr
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Languages className="text-blue-600" size={20} />
-          <h2 className="text-lg font-semibold">Language & Locale</h2>
+          <h2 className="text-lg font-semibold">{t('language.title')}</h2>
         </div>
-        {apiEndpoint && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 size={14} /> Synced to backend</span>}
+        {apiEndpoint && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 size={14} /> {t('brand.syncedToBackend')}</span>}
       </div>
       {loadingReview && apiEndpoint && (
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-          <Loader2 size={16} className="animate-spin" />Loading review settings...
+          <Loader2 size={16} className="animate-spin" />{t('language.loadingReview')}
         </div>
       )}
       <div className="space-y-4">
         <div>
           <label htmlFor="ui-language" className="block text-sm font-medium text-gray-700 mb-1">
-            Interface Language
+            {t('language.interfaceLabel')}
           </label>
           <select
             id="ui-language"
@@ -455,13 +460,12 @@ function ReviewConfigSection({ apiEndpoint, loadingReview, primaryLanguage, onPr
             ))}
           </select>
           <p className="text-xs text-gray-500 mt-1">
-            Controls the dashboard interface language and the language AI uses for chat responses, 
-            generated personas, research reports, PRDs, and PR/FAQs. Saved to your browser.
+            {t('language.interfaceHint')}
           </p>
         </div>
         <div>
           <label htmlFor="primary-language" className="block text-sm font-medium text-gray-700 mb-1">
-            Review Language
+            {t('language.reviewLabel')}
           </label>
           <select
             id="primary-language"
@@ -476,8 +480,7 @@ function ReviewConfigSection({ apiEndpoint, loadingReview, primaryLanguage, onPr
             ))}
           </select>
           <p className="text-xs text-gray-500 mt-1">
-            All incoming feedback will be translated to this language for analysis and display. 
-            The original text is always preserved.
+            {t('language.reviewHint')}
           </p>
         </div>
       </div>
@@ -494,17 +497,18 @@ interface CategoriesSectionProps {
 }
 
 function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
+  const { t } = useTranslation('settings')
   return (
     <div className="card">
       <div className="flex items-center gap-2 mb-4">
         <Tags className="text-purple-600" size={20} />
-        <h2 className="text-lg font-semibold">Feedback Categories</h2>
+        <h2 className="text-lg font-semibold">{t('categories.title')}</h2>
       </div>
-      <p className="text-sm text-gray-500 mb-4">Configure categories and subcategories for feedback classification.</p>
+      <p className="text-sm text-gray-500 mb-4">{t('categories.description')}</p>
       {!apiEndpoint ? (
         <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
           <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>Configure the API endpoint in the General tab to manage categories.</span>
+          <span>{t('categories.configureFirst')}</span>
         </div>
       ) : (
         <CategoriesManager />
@@ -522,17 +526,18 @@ interface DataSourcesSectionProps {
 }
 
 function DataSourcesSection({ apiEndpoint }: DataSourcesSectionProps) {
+  const { t } = useTranslation('settings')
   const pluginManifests = getEnabledPlugins()
 
   return (
     <div className="space-y-4">
       <div className="card">
-        <h2 className="text-lg font-semibold mb-2">Data Sources & Integrations</h2>
-        <p className="text-sm text-gray-500 mb-4">Configure API credentials, webhooks, and enable/disable data source schedules.</p>
+        <h2 className="text-lg font-semibold mb-2">{t('dataSources.title')}</h2>
+        <p className="text-sm text-gray-500 mb-4">{t('dataSources.description')}</p>
         {!apiEndpoint && (
           <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">
             <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-            <span>Configure the API endpoint in the General tab to manage data sources.</span>
+            <span>{t('dataSources.configureFirst')}</span>
           </div>
         )}
       </div>
@@ -560,17 +565,18 @@ interface UserAdminSectionProps {
 }
 
 function UserAdminSection({ apiEndpoint }: UserAdminSectionProps) {
+  const { t } = useTranslation('settings')
   return (
     <div className="card">
       <div className="flex items-center gap-2 mb-4">
         <Users className="text-indigo-600" size={20} />
-        <h2 className="text-lg font-semibold">User Administration</h2>
+        <h2 className="text-lg font-semibold">{t('users.title')}</h2>
       </div>
-      <p className="text-sm text-gray-500 mb-4">Manage users, roles, and permissions for the VoC platform.</p>
+      <p className="text-sm text-gray-500 mb-4">{t('users.description')}</p>
       {!apiEndpoint ? (
         <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
           <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>Configure the API endpoint in the General tab to manage users.</span>
+          <span>{t('users.configureFirst')}</span>
         </div>
       ) : (
         <UserAdmin />
@@ -590,25 +596,26 @@ interface DangerZoneSectionProps {
 }
 
 function DangerZoneSection({ showResetConfirm, onShowResetConfirm, onReset }: DangerZoneSectionProps) {
+  const { t } = useTranslation('settings')
   return (
     <>
       <div className="card border-red-200">
-        <h2 className="text-lg font-semibold text-red-600 mb-4">Danger Zone</h2>
+        <h2 className="text-lg font-semibold text-red-600 mb-4">{t('dangerZone.title')}</h2>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div>
-            <p className="font-medium text-sm sm:text-base">Reset All Settings</p>
-            <p className="text-xs sm:text-sm text-gray-500">Clear all local configuration. This won&apos;t affect backend data.</p>
+            <p className="font-medium text-sm sm:text-base">{t('dangerZone.resetTitle')}</p>
+            <p className="text-xs sm:text-sm text-gray-500">{t('dangerZone.resetDescription')}</p>
           </div>
           <button onClick={() => onShowResetConfirm(true)} className="btn bg-red-600 text-white hover:bg-red-700 w-full sm:w-auto">
-            Reset Settings
+            {t('dangerZone.resetButton')}
           </button>
         </div>
       </div>
       <ConfirmModal
         isOpen={showResetConfirm}
-        title="Reset All Settings"
-        message="Are you sure you want to reset all local settings? This will clear your API endpoint, brand configuration, and all local preferences. Backend data will not be affected."
-        confirmLabel="Reset"
+        title={t('dangerZone.resetTitle')}
+        message={t('dangerZone.resetConfirmMessage')}
+        confirmLabel={t('dangerZone.resetConfirmLabel')}
         variant="danger"
         onConfirm={onReset}
         onCancel={() => onShowResetConfirm(false)}

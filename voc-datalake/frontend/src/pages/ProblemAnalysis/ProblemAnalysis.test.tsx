@@ -10,20 +10,27 @@ import { MemoryRouter } from 'react-router-dom'
 // Mock API
 const mockGetFeedback = vi.fn()
 const mockGetEntities = vi.fn()
+const mockGetResolvedProblems = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
     getFeedback: (params: unknown) => mockGetFeedback(params),
     getEntities: (params: unknown) => mockGetEntities(params),
+    getResolvedProblems: () => mockGetResolvedProblems(),
+    resolveProblem: vi.fn(),
+    unresolveProblem: vi.fn(),
   },
-  getDaysFromRange: () => 7,
+  getDaysFromRange: vi.fn((_range: string, _custom?: unknown) => 7),
 }))
 
+const mockConfigStore = {
+  timeRange: '7d' as string,
+  customDateRange: null as { start: string; end: string } | null,
+  config: { apiEndpoint: 'https://api.example.com' },
+}
+
 vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({
-    timeRange: '7d',
-    config: { apiEndpoint: 'https://api.example.com' },
-  }),
+  useConfigStore: () => mockConfigStore,
 }))
 
 import ProblemAnalysis from './ProblemAnalysis'
@@ -82,6 +89,9 @@ describe('ProblemAnalysis', () => {
     vi.clearAllMocks()
     mockGetFeedback.mockResolvedValue({ items: mockFeedbackItems, count: 2 })
     mockGetEntities.mockResolvedValue(mockEntities)
+    mockGetResolvedProblems.mockResolvedValue({ resolved: [] })
+    mockConfigStore.timeRange = '7d'
+    mockConfigStore.customDateRange = null
   })
 
   describe('rendering', () => {
@@ -171,3 +181,89 @@ describe('source filtering', () => {
 
 // Note: Testing "not configured" state requires module re-mocking which is complex
 // The main functionality is tested above
+
+// ============================================
+// Regression tests for Problem Analysis bugs
+// ============================================
+
+describe('ProblemAnalysis - Regression', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetResolvedProblems.mockResolvedValue({ resolved: [] })
+    mockConfigStore.timeRange = '7d'
+    mockConfigStore.customDateRange = null
+  })
+
+  describe('limit parameter (regression: backend capped at 100)', () => {
+    it('requests limit=500 so the backend returns enough items for grouping', async () => {
+      mockGetFeedback.mockResolvedValue({ items: mockFeedbackItems, count: 2 })
+      mockGetEntities.mockResolvedValue(mockEntities)
+
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(mockGetFeedback).toHaveBeenCalled()
+      })
+
+      const callArgs = mockGetFeedback.mock.calls[0][0]
+      expect(callArgs.limit).toBe(500)
+    })
+  })
+
+  describe('customDateRange (regression: custom range was ignored)', () => {
+    it('passes customDateRange to getDaysFromRange', async () => {
+      const { getDaysFromRange } = await import('../../api/client')
+      const mockGetDaysFromRange = getDaysFromRange as ReturnType<typeof vi.fn>
+
+      mockConfigStore.timeRange = 'custom'
+      mockConfigStore.customDateRange = { start: '2026-01-01', end: '2026-01-15' }
+      mockGetFeedback.mockResolvedValue({ items: [], count: 0 })
+      mockGetEntities.mockResolvedValue(mockEntities)
+
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(mockGetDaysFromRange).toHaveBeenCalledWith(
+          'custom',
+          { start: '2026-01-01', end: '2026-01-15' }
+        )
+      })
+    })
+  })
+
+  describe('data grouping with problem_summary', () => {
+    it('shows non-zero stats when feedback items have problem_summary', async () => {
+      mockGetFeedback.mockResolvedValue({ items: mockFeedbackItems, count: 2 })
+      mockGetEntities.mockResolvedValue(mockEntities)
+
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
+      })
+
+      // With 2 items that have problem_summary, we should see non-zero stats
+      // Both items are in category "delivery", subcategory "shipping_speed"
+      // so we expect 1 category, 1 subcategory, and at least 1 problem
+      const statValues = document.querySelectorAll('[class*="text-2xl"], [class*="text-3xl"]')
+      const values = Array.from(statValues).map(el => el.textContent?.trim())
+      // At least one stat should be non-zero
+      expect(values.some(v => v && v !== '0')).toBe(true)
+    })
+
+    it('shows empty state when all items lack problem_summary', async () => {
+      const itemsWithoutProblems = mockFeedbackItems.map(item => ({
+        ...item,
+        problem_summary: undefined,
+      }))
+      mockGetFeedback.mockResolvedValue({ items: itemsWithoutProblems, count: 2 })
+      mockGetEntities.mockResolvedValue(mockEntities)
+
+      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText(/no problem analysis data found/i)).toBeInTheDocument()
+      })
+    })
+  })
+})

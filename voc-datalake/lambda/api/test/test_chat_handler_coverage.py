@@ -12,16 +12,18 @@ from datetime import datetime, timezone
 class TestChatFeedbackBreak:
     """Tests for chat endpoint breaking at 30+ feedback items (line 104)."""
 
+    @patch('chat_handler.dynamodb')
     @patch('chat_handler.get_configured_categories')
     @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
-    def test_breaks_at_30_feedback_items(self, mock_agg, mock_fb, mock_converse, mock_cats):
+    def test_breaks_at_30_feedback_items(self, mock_agg, mock_fb, mock_converse, mock_cats, mock_dynamodb):
         """Stops fetching feedback when 30+ items collected."""
         from chat_handler import app
 
         mock_agg.get_item.return_value = {'Item': {'count': 10}}
         mock_cats.return_value = ['delivery']
+        mock_dynamodb.batch_get_item.return_value = {'Responses': {}, 'UnprocessedKeys': {}}
 
         # Return 31 items on first query to trigger the break
         mock_fb.query.return_value = {
@@ -52,11 +54,12 @@ class TestChatFeedbackBreak:
 class TestChatResponseLanguage:
     """Tests for response_language injection (lines 132-135)."""
 
+    @patch('chat_handler.dynamodb')
     @patch('chat_handler.get_configured_categories')
     @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
-    def test_injects_language_instruction_for_non_english(self, mock_agg, mock_fb, mock_converse, mock_cats):
+    def test_injects_language_instruction_for_non_english(self, mock_agg, mock_fb, mock_converse, mock_cats, mock_dynamodb):
         """Injects language instruction when response_language is set."""
         from chat_handler import app
 
@@ -64,6 +67,7 @@ class TestChatResponseLanguage:
         mock_cats.return_value = []
         mock_fb.query.return_value = {'Items': []}
         mock_converse.return_value = "Respuesta en español"
+        mock_dynamodb.batch_get_item.return_value = {'Responses': {}, 'UnprocessedKeys': {}}
 
         event = {
             'httpMethod': 'POST',

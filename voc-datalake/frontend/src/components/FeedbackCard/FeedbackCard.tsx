@@ -12,6 +12,7 @@
  */
 
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { ExternalLink, Copy, MessageCircle, Star, AlertTriangle } from 'lucide-react'
 import { format, isValid, parseISO } from 'date-fns'
 import type { FeedbackItem } from '../../api/client'
@@ -47,9 +48,9 @@ function getSourceIcon(platform: string, channel?: string): string {
   return SOURCE_ICONS[platform] || SOURCE_ICONS[channel ?? ''] || '📝'
 }
 
-function formatSourceName(source: string): string {
+function formatSourceName(source: string, t: (key: string) => string): string {
   if (source.startsWith('scraper_') || source === 'web_scrape' || source === 'web_scrape_jsonld') {
-    return 'Web Scraper'
+    return t('feedbackCard.webScraper')
   }
   return source.replace(/_/g, ' ')
 }
@@ -69,6 +70,7 @@ function RatingStars({ rating }: Readonly<{ rating: number }>) {
 }
 
 function CompactCard({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  useTranslation('components')
   return (
     <Link
       to={`/feedback/${feedback.feedback_id}`}
@@ -94,6 +96,7 @@ function CompactCard({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
 }
 
 function CardHeader({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t } = useTranslation('components')
   return (
     <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
       <div className="flex items-center gap-2 min-w-0">
@@ -102,7 +105,7 @@ function CardHeader({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
         </span>
         <div className="min-w-0">
           <span className="font-medium text-gray-900 capitalize text-sm sm:text-base">
-            {formatSourceName(feedback.source_platform)}
+            {formatSourceName(feedback.source_platform, t)}
           </span>
           {feedback.source_channel && feedback.source_channel !== feedback.source_platform && (
             <>
@@ -116,7 +119,7 @@ function CardHeader({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
         {feedback.urgency === 'high' && (
           <span className="badge badge-urgent flex items-center gap-1 text-xs">
             <AlertTriangle size={12} />
-            <span className="hidden sm:inline">Urgent</span>
+            <span className="hidden sm:inline">{t('feedbackCard.urgent')}</span>
           </span>
         )}
         <SentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} />
@@ -126,6 +129,7 @@ function CardHeader({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
 }
 
 function CardContent({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t } = useTranslation('components')
   const showQuote = feedback.direct_customer_quote &&
     !feedback.original_text.includes(feedback.direct_customer_quote) &&
     feedback.direct_customer_quote !== feedback.original_text
@@ -142,10 +146,10 @@ function CardContent({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
 
       {feedback.problem_summary && (
         <div className="bg-gray-50 rounded-lg p-2 sm:p-3 mb-3">
-          <p className="text-xs sm:text-sm font-medium text-gray-700">Issue: {feedback.problem_summary}</p>
+          <p className="text-xs sm:text-sm font-medium text-gray-700">{t('feedbackCard.issue', { summary: feedback.problem_summary })}</p>
           {feedback.problem_root_cause_hypothesis && (
             <p className="text-xs text-gray-500 mt-1 hidden sm:block">
-              Root cause: {feedback.problem_root_cause_hypothesis}
+              {t('feedbackCard.rootCause', { cause: feedback.problem_root_cause_hypothesis })}
             </p>
           )}
         </div>
@@ -182,6 +186,7 @@ interface CardFooterProps {
 }
 
 function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>) {
+  const { t } = useTranslation('components')
   return (
     <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
       <span className="text-xs text-gray-400 truncate">
@@ -196,7 +201,7 @@ function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>
             className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm flex items-center gap-1"
           >
             <MessageCircle size={14} />
-            <span className="hidden sm:inline">Details</span>
+            <span className="hidden sm:inline">{t('feedbackCard.details')}</span>
           </Link>
           {feedback.source_url && (
             <a
@@ -211,7 +216,7 @@ function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>
           <button
             onClick={() => onCopy(feedback.original_text)}
             className="text-gray-500 hover:text-gray-700 p-1"
-            title="Copy text"
+            title={t('feedbackCard.copyText')}
           >
             <Copy size={14} />
           </button>

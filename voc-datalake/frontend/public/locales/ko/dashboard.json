@@ -16,7 +16,9 @@
     "neutral": "중립",
     "positive": "긍정"
   },
+  "sentimentDistribution": "감정 분포",
   "topIssueCategories": "주요 이슈 카테고리",
+  "urgentIssues_one": "긴급 이슈 {{count}}건",
   "urgentIssues_other": "긴급 이슈 {{count}}건",
   "welcome": "VoC 분석에 오신 것을 환영합니다",
   "welcomeDescription": "고객 피드백 분석을 시작하려면 API 엔드포인트와 브랜드 설정을 구성하세요."

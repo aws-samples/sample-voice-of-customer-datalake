@@ -14,6 +14,7 @@
 import { useState } from 'react'
 import { Plus, MessageSquare, Trash2, Edit2, Check, X, History } from 'lucide-react'
 import { format, isValid } from 'date-fns'
+import { useTranslation } from 'react-i18next'
 import { useChatStore } from '../../store/chatStore'
 import clsx from 'clsx'
 
@@ -22,6 +23,7 @@ interface ChatSidebarProps {
 }
 
 export default function ChatSidebar({ onClose }: Readonly<ChatSidebarProps>) {
+  const { t } = useTranslation('chat')
   const { 
     conversations, 
     activeConversationId, 
@@ -78,7 +80,7 @@ export default function ChatSidebar({ onClose }: Readonly<ChatSidebarProps>) {
           className="w-full btn btn-primary flex items-center justify-center gap-2 py-2.5 sm:py-2"
         >
           <Plus size={18} />
-          New Chat
+          {t('sidebar.newChat')}
         </button>
       </div>
 
@@ -87,7 +89,7 @@ export default function ChatSidebar({ onClose }: Readonly<ChatSidebarProps>) {
         {conversations.length === 0 ? (
           <div className="text-center py-8 text-gray-400">
             <History size={32} className="mx-auto mb-2 opacity-50" />
-            <p className="text-sm">No conversations yet</p>
+            <p className="text-sm">{t('sidebar.noConversations')}</p>
           </div>
         ) : (
           conversations.map((conv) => (
@@ -137,7 +139,7 @@ export default function ChatSidebar({ onClose }: Readonly<ChatSidebarProps>) {
                         {conv.title}
                       </p>
                       <p className="text-xs text-gray-400 truncate">
-                        {conv.messages.length} messages • {formatDate(conv.updatedAt)}
+                        {t('sidebar.messagesCount', { count: conv.messages.length })} • {formatDate(conv.updatedAt)}
                       </p>
                     </div>
                   </div>
@@ -172,7 +174,7 @@ export default function ChatSidebar({ onClose }: Readonly<ChatSidebarProps>) {
             onClick={clearAllConversations}
             className="w-full text-xs text-gray-400 hover:text-red-500 py-2 sm:py-1"
           >
-            Clear all conversations
+            {t('sidebar.clearAll')}
           </button>
         </div>
       )}

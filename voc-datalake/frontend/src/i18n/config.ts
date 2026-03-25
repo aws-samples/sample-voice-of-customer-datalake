@@ -26,8 +26,8 @@ export const languageNames: Record<SupportedLanguage, string> = {
   ko: '한국어',
 }
 
-export const defaultNS = 'common'
-export const namespaces = ['common', 'dashboard', 'feedback', 'chat', 'login'] as const
+const defaultNS = 'common'
+const namespaces = ['common', 'dashboard', 'dataExplorer', 'feedback', 'feedbackDetail', 'chat', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail'] as const
 
 function isSupportedLanguage(lang: string): lang is SupportedLanguage {
   return supportedLanguages.some((supported) => supported === lang)

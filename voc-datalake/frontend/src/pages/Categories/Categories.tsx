@@ -5,6 +5,7 @@
 
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { api, getDaysFromRange } from '../../api/client'
 import type { FeedbackItem } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -83,7 +84,7 @@ function matchesFeedbackFilters(
   selectedKeywords: string[],
 ): boolean {
   if (minRating > 0 && (!item.rating || item.rating < minRating)) return false
-  if (selectedCategories.length > 1 && !selectedCategories.includes(item.category)) return false
+  if (selectedCategories.length > 0 && !selectedCategories.includes(item.category)) return false
   if (selectedSource && item.brand_name !== selectedSource) return false
   if (selectedKeywords.length > 0) {
     const text = (item.original_text + ' ' + (item.problem_summary ?? '')).toLowerCase()
@@ -142,13 +143,14 @@ function buildFeedbackQueryParams(
   return {
     days,
     source: selectedSource || undefined,
-    category: selectedCategories.length === 1 ? selectedCategories[0] : undefined,
+    category: selectedCategories.length > 0 ? selectedCategories.join(',') : undefined,
     sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
     limit: 100,
   }
 }
 
 export default function Categories() {
+  const { t } = useTranslation('categories')
   const { timeRange, config } = useConfigStore()
   const days = getDaysFromRange(timeRange)
 
@@ -267,7 +269,7 @@ export default function Categories() {
   if (!config.apiEndpoint) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Please configure your API endpoint in Settings</p>
+        <p className="text-gray-500">{t('configureApiEndpoint')}</p>
       </div>
     )
   }
@@ -304,7 +306,7 @@ export default function Categories() {
           <button
             onClick={exportPDF}
             className="btn btn-secondary text-xs sm:text-sm px-3 py-2 sm:py-2.5 active:scale-95 flex items-center gap-1.5 whitespace-nowrap self-start"
-            title="Export as PDF"
+            title={t('pdf.title')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             PDF

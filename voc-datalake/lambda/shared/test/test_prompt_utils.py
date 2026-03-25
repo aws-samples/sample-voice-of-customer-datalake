@@ -201,10 +201,3 @@ class TestConvenienceFunctions:
         ml.return_value = {}
         get_avatar_prompt_config()
         ml.assert_called_with('avatar-generation.json')
-
-    @patch('shared.prompts.load_prompt_file')
-    def test_import(self, ml):
-        from shared.prompts import get_persona_import_config
-        ml.return_value = {}
-        get_persona_import_config()
-        ml.assert_called_with('persona-import.json')

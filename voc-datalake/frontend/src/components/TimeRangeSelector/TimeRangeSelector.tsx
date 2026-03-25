@@ -13,19 +13,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { useConfigStore } from '../../store/configStore'
 import { Calendar, X, ChevronDown } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { format } from 'date-fns'
 import clsx from 'clsx'
 
-const ranges = [
-  { value: '24h', label: '24h', fullLabel: '24 Hours' },
-  { value: '48h', label: '48h', fullLabel: '48 Hours' },
-  { value: '7d', label: '7d', fullLabel: '7 Days' },
-  { value: '30d', label: '30d', fullLabel: '30 Days' },
-  { value: 'custom', label: 'Custom', fullLabel: 'Custom' },
-] as const
+const rangeValues = ['24h', '48h', '7d', '30d', 'custom'] as const
 
 export default function TimeRangeSelector() {
   const { timeRange, setTimeRange, customDateRange, setCustomDateRange } = useConfigStore()
+  const { t } = useTranslation()
   const [showPicker, setShowPicker] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
   const [startDate, setStartDate] = useState(customDateRange?.start || '')
@@ -50,7 +46,7 @@ export default function TimeRangeSelector() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleRangeClick = (value: typeof ranges[number]['value']) => {
+  const handleRangeClick = (value: typeof rangeValues[number]) => {
     if (value === 'custom') {
       setShowPicker(true)
       setShowDropdown(false)
@@ -81,14 +77,14 @@ export default function TimeRangeSelector() {
     if (timeRange === 'custom' && customDateRange) {
       return `${format(new Date(customDateRange.start), 'MMM d')} - ${format(new Date(customDateRange.end), 'MMM d')}`
     }
-    return ranges.find(r => r.value === timeRange)?.label || '7d'
+    return t(`timeRange.${timeRange}`)
   }
 
   const getCurrentFullLabel = () => {
     if (timeRange === 'custom' && customDateRange) {
       return `${format(new Date(customDateRange.start), 'MMM d')} - ${format(new Date(customDateRange.end), 'MMM d')}`
     }
-    return ranges.find(r => r.value === timeRange)?.fullLabel || '7 Days'
+    return t(`timeRange.${timeRange}Full`)
   }
 
   return (
@@ -113,7 +109,7 @@ export default function TimeRangeSelector() {
             className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[160px]"
             role="listbox"
           >
-            {ranges.map(({ value, fullLabel }) => (
+            {rangeValues.map((value) => (
               <button
                 key={value}
                 onClick={() => handleRangeClick(value)}
@@ -126,7 +122,7 @@ export default function TimeRangeSelector() {
                     : 'text-gray-700 hover:bg-gray-50 active:bg-gray-100'
                 )}
               >
-                {value === 'custom' && customDateRange ? getCurrentFullLabel() : fullLabel}
+                {value === 'custom' && customDateRange ? getCurrentFullLabel() : t(`timeRange.${value}Full`)}
               </button>
             ))}
           </div>
@@ -135,7 +131,7 @@ export default function TimeRangeSelector() {
 
       {/* Desktop: Button group */}
       <div className="hidden sm:flex bg-gray-100 rounded-lg p-1">
-        {ranges.map(({ value, label }) => (
+        {rangeValues.map((value) => (
           <button
             key={value}
             onClick={() => handleRangeClick(value)}
@@ -146,7 +142,7 @@ export default function TimeRangeSelector() {
                 : 'text-gray-600 hover:text-gray-900'
             )}
           >
-            {value === 'custom' && customDateRange ? getDisplayLabel() : label}
+            {value === 'custom' && customDateRange ? getDisplayLabel() : t(`timeRange.${value}`)}
           </button>
         ))}
       </div>
@@ -160,7 +156,7 @@ export default function TimeRangeSelector() {
           aria-label="Select custom date range"
         >
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium text-gray-900">Select Date Range</h3>
+            <h3 className="font-medium text-gray-900">{t('timeRange.selectDateRange')}</h3>
             <button 
               onClick={() => setShowPicker(false)} 
               className="text-gray-400 hover:text-gray-600 p-2 -m-2 touch-manipulation"
@@ -172,7 +168,7 @@ export default function TimeRangeSelector() {
 
           <div className="space-y-4">
             <div>
-              <label htmlFor="start-date" className="block text-sm text-gray-600 mb-1.5">Start Date</label>
+              <label htmlFor="start-date" className="block text-sm text-gray-600 mb-1.5">{t('timeRange.startDate')}</label>
               <input
                 id="start-date"
                 type="date"
@@ -183,7 +179,7 @@ export default function TimeRangeSelector() {
               />
             </div>
             <div>
-              <label htmlFor="end-date" className="block text-sm text-gray-600 mb-1.5">End Date</label>
+              <label htmlFor="end-date" className="block text-sm text-gray-600 mb-1.5">{t('timeRange.endDate')}</label>
               <input
                 id="end-date"
                 type="date"
@@ -202,7 +198,7 @@ export default function TimeRangeSelector() {
                 onClick={handleClearCustom}
                 className="text-sm text-red-600 hover:text-red-700 py-2 touch-manipulation"
               >
-                Clear
+                {t('timeRange.clear')}
               </button>
             )}
             <div className="flex gap-2 ml-auto">
@@ -210,14 +206,14 @@ export default function TimeRangeSelector() {
                 onClick={() => setShowPicker(false)}
                 className="px-4 py-2.5 sm:py-1.5 text-sm text-gray-600 hover:text-gray-900 touch-manipulation"
               >
-                Cancel
+                {t('timeRange.cancel')}
               </button>
               <button
                 onClick={handleApplyCustom}
                 disabled={!startDate || !endDate}
                 className="px-5 py-2.5 sm:py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
               >
-                Apply
+                {t('timeRange.apply')}
               </button>
             </div>
           </div>

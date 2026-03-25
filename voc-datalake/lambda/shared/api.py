@@ -237,43 +237,6 @@ def api_handler(func):
     return wrapper
 
 
-def json_response(data: dict, status_code: int = 200) -> dict:
-    """
-    Create a JSON response with proper headers.
-    
-    Args:
-        data: Response data dict
-        status_code: HTTP status code (default 200)
-    
-    Returns:
-        Lambda response dict
-    """
-    return {
-        'statusCode': status_code,
-        'headers': {'Content-Type': 'application/json'},
-        'body': json.dumps(data, cls=DecimalEncoder)
-    }
-
-
-def error_response(message: str, status_code: int = 400) -> dict:
-    """
-    Create an error response.
-    
-    Args:
-        message: Error message
-        status_code: HTTP status code (default 400)
-    
-    Returns:
-        Lambda response dict
-    
-    Note:
-        Prefer raising exceptions (ValidationError, NotFoundError, etc.)
-        over using this function directly. The exception handlers will
-        create consistent error responses automatically.
-    """
-    return json_response({'success': False, 'error': message}, status_code)
-
-
 # Re-export exceptions for convenience
 __all__ = [
     'DecimalEncoder',
@@ -283,11 +246,7 @@ __all__ = [
     'create_cors_config',
     'create_api_resolver',
     'api_handler',
-    'json_response',
-    'error_response',
     'get_configured_categories',
-    'clear_categories_cache',
-    'sum_daily_metric',
     'DEFAULT_CATEGORIES',
     # Exceptions
     'ApiError',
@@ -356,43 +315,3 @@ def clear_categories_cache():
     global _categories_cache, _categories_cache_time
     _categories_cache = None
     _categories_cache_time = None
-
-
-def sum_daily_metric(
-    aggregates_table,
-    metric_prefix: str,
-    days: int,
-    current_date=None
-) -> int:
-    """
-    Sum a daily metric over a date range from the aggregates table.
-    
-    Args:
-        aggregates_table: DynamoDB Table resource for aggregates
-        metric_prefix: The pk prefix (e.g., 'METRIC#daily_total', 'METRIC#daily_sentiment#positive')
-        days: Number of days to sum
-        current_date: Optional datetime, defaults to now (UTC)
-    
-    Returns:
-        Total count across the date range
-    """
-    from datetime import datetime, timezone, timedelta
-    
-    if not aggregates_table:
-        return 0
-    
-    if current_date is None:
-        current_date = datetime.now(timezone.utc)
-    
-    total = 0
-    for i in range(days):
-        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        try:
-            response = aggregates_table.get_item(Key={'pk': metric_prefix, 'sk': date})
-            item = response.get('Item')
-            if item:
-                total += int(item.get('count', 0))
-        except Exception as e:
-            logger.warning(f"Failed to fetch metric {metric_prefix} for {date}: {e}")
-    
-    return total

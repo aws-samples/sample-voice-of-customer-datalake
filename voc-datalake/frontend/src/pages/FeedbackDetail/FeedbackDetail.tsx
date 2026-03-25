@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ExternalLink, Copy, Check, MessageCircle, Star, Clock, Globe, Users, Tag, TrendingUp } from 'lucide-react'
 import { format } from 'date-fns'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import type { FeedbackItem } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -70,11 +71,12 @@ function LoadingSpinner() {
 
 // Not Found Component
 function FeedbackNotFound() {
+  const { t } = useTranslation('feedbackDetail')
   return (
     <div className="text-center py-12">
-      <p className="text-gray-500">Feedback not found</p>
+      <p className="text-gray-500">{t('notFound')}</p>
       <Link to="/feedback" className="text-blue-600 hover:underline mt-2 inline-block">
-        Back to feedback list
+        {t('backToList')}
       </Link>
     </div>
   )
@@ -82,6 +84,7 @@ function FeedbackNotFound() {
 
 // Header Component
 function FeedbackHeader({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t } = useTranslation('feedbackDetail')
   return (
     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
       <div className="flex items-center gap-3">
@@ -97,7 +100,7 @@ function FeedbackHeader({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         {feedback.urgency === 'high' && (
-          <span className="badge badge-urgent">Urgent</span>
+          <span className="badge badge-urgent">{t('urgent')}</span>
         )}
         <SentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} size="md" />
       </div>
@@ -107,10 +110,11 @@ function FeedbackHeader({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
 
 // Rating Component
 function RatingDisplay({ rating }: Readonly<{ rating: number | null | undefined }>) {
+  const { t } = useTranslation('feedbackDetail')
   if (!rating) return null
   return (
     <div className="flex items-center gap-2 mb-4">
-      <span className="text-sm text-gray-500">Rating:</span>
+      <span className="text-sm text-gray-500">{t('rating')}:</span>
       <div className="flex items-center gap-1">
         {Array.from({ length: 5 }).map((_, i) => (
           <Star
@@ -126,14 +130,15 @@ function RatingDisplay({ rating }: Readonly<{ rating: number | null | undefined 
 
 // Original Text Component
 function OriginalTextSection({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t } = useTranslation('feedbackDetail')
   return (
     <div className="bg-gray-50 rounded-lg p-4 mb-6">
-      <h3 className="text-sm font-medium text-gray-500 mb-2">Original Feedback</h3>
+      <h3 className="text-sm font-medium text-gray-500 mb-2">{t('originalFeedback')}</h3>
       <p className="text-gray-900 whitespace-pre-wrap">{feedback.original_text}</p>
       {feedback.original_language !== 'en' && feedback.normalized_text && (
         <div className="mt-4 pt-4 border-t border-gray-200">
           <h4 className="text-sm font-medium text-gray-500 mb-2">
-            Translated from {feedback.original_language}
+            {t('translatedFrom', { language: feedback.original_language })}
           </h4>
           <p className="text-gray-700">{feedback.normalized_text}</p>
         </div>
@@ -144,26 +149,27 @@ function OriginalTextSection({ feedback }: Readonly<{ feedback: FeedbackItem }>)
 
 // Classification Section
 function ClassificationSection({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t } = useTranslation('feedbackDetail')
   return (
     <div>
-      <h3 className="text-sm font-medium text-gray-500 mb-2 sm:mb-3">Classification</h3>
+      <h3 className="text-sm font-medium text-gray-500 mb-2 sm:mb-3">{t('classification')}</h3>
       <div className="space-y-2 text-sm sm:text-base">
         <div className="flex justify-between gap-2">
-          <span className="text-gray-600">Category</span>
+          <span className="text-gray-600">{t('category')}</span>
           <span className="font-medium text-right">{feedback.category}</span>
         </div>
         {feedback.subcategory && (
           <div className="flex justify-between gap-2">
-            <span className="text-gray-600">Subcategory</span>
+            <span className="text-gray-600">{t('subcategory')}</span>
             <span className="font-medium text-right">{feedback.subcategory}</span>
           </div>
         )}
         <div className="flex justify-between gap-2">
-          <span className="text-gray-600">Journey Stage</span>
+          <span className="text-gray-600">{t('journeyStage')}</span>
           <span className="font-medium text-right">{feedback.journey_stage}</span>
         </div>
         <div className="flex justify-between gap-2">
-          <span className="text-gray-600">Impact Area</span>
+          <span className="text-gray-600">{t('impactArea')}</span>
           <span className="font-medium text-right">{feedback.impact_area}</span>
         </div>
       </div>
@@ -173,19 +179,20 @@ function ClassificationSection({ feedback }: Readonly<{ feedback: FeedbackItem }
 
 // Persona Section
 function PersonaSection({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t } = useTranslation('feedbackDetail')
   return (
     <div>
-      <h3 className="text-sm font-medium text-gray-500 mb-2 sm:mb-3">Customer Persona</h3>
+      <h3 className="text-sm font-medium text-gray-500 mb-2 sm:mb-3">{t('customerPersona')}</h3>
       <div className="space-y-2 text-sm sm:text-base">
         {feedback.persona_name && (
           <div className="flex justify-between gap-2">
-            <span className="text-gray-600">Persona</span>
+            <span className="text-gray-600">{t('persona')}</span>
             <span className="font-medium text-right">{feedback.persona_name}</span>
           </div>
         )}
         {feedback.persona_type && (
           <div className="flex justify-between gap-2">
-            <span className="text-gray-600">Type</span>
+            <span className="text-gray-600">{t('type')}</span>
             <span className="font-medium text-right">{feedback.persona_type}</span>
           </div>
         )}
@@ -196,15 +203,16 @@ function PersonaSection({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
 
 // Problem Analysis Section
 function ProblemAnalysisSection({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t } = useTranslation('feedbackDetail')
   if (!feedback.problem_summary && !feedback.problem_root_cause_hypothesis) return null
   return (
     <div className="bg-orange-50 rounded-lg p-4 mb-6">
-      <h3 className="text-sm font-medium text-orange-800 mb-2">Problem Analysis</h3>
+      <h3 className="text-sm font-medium text-orange-800 mb-2">{t('problemAnalysis')}</h3>
       {feedback.problem_summary && (
-        <p className="text-orange-900 mb-2"><strong>Issue:</strong> {feedback.problem_summary}</p>
+        <p className="text-orange-900 mb-2"><strong>{t('issue')}</strong> {feedback.problem_summary}</p>
       )}
       {feedback.problem_root_cause_hypothesis && (
-        <p className="text-orange-800 text-sm"><strong>Possible Root Cause:</strong> {feedback.problem_root_cause_hypothesis}</p>
+        <p className="text-orange-800 text-sm"><strong>{t('possibleRootCause')}</strong> {feedback.problem_root_cause_hypothesis}</p>
       )}
     </div>
   )
@@ -217,11 +225,12 @@ interface TagsSectionProps {
 }
 
 function TagsSection({ feedback, onTagClick }: TagsSectionProps) {
+  const { t } = useTranslation('feedbackDetail')
   return (
     <div className="mb-4 sm:mb-6">
       <h3 className="text-sm font-medium text-gray-500 mb-2 sm:mb-3 flex items-center gap-2">
         <Tag size={14} />
-        Tags & Filters
+        {t('tagsAndFilters')}
       </h3>
       <div className="flex flex-wrap gap-1.5 sm:gap-2">
         <button
@@ -255,7 +264,7 @@ function TagsSection({ feedback, onTagClick }: TagsSectionProps) {
         </span>
         {feedback.urgency === 'high' && (
           <span className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-red-100 text-red-800 rounded-full text-xs sm:text-sm font-medium">
-            🔥 Urgent
+            🔥 {t('urgent')}
           </span>
         )}
       </div>
@@ -264,28 +273,29 @@ function TagsSection({ feedback, onTagClick }: TagsSectionProps) {
 }
 
 // Helper to safely format dates
-function formatDateSafe(dateString: string | null | undefined): string {
-  if (!dateString) return 'Unknown'
+function formatDateSafe(dateString: string | null | undefined, fallback: string): string {
+  if (!dateString) return fallback
   try {
     const date = new Date(dateString)
-    if (isNaN(date.getTime())) return 'Unknown'
+    if (isNaN(date.getTime())) return fallback
     return format(date, 'PPpp')
   } catch {
-    return 'Unknown'
+    return fallback
   }
 }
 
 // Metadata Section
 function MetadataSection({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t } = useTranslation('feedbackDetail')
   return (
     <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-gray-500 pt-3 sm:pt-4 border-t border-gray-100">
       <div className="flex items-center gap-1">
         <Clock size={14} className="flex-shrink-0" />
-        <span className="truncate">Created: {formatDateSafe(feedback.source_created_at)}</span>
+        <span className="truncate">{t('created', { date: formatDateSafe(feedback.source_created_at, t('unknown')) })}</span>
       </div>
       <div className="flex items-center gap-1">
         <Globe size={14} className="flex-shrink-0" />
-        <span>Language: {feedback.original_language}</span>
+        <span>{t('language', { lang: feedback.original_language })}</span>
       </div>
       {feedback.source_url && (
         <a
@@ -295,7 +305,7 @@ function MetadataSection({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
           className="flex items-center gap-1 text-blue-600 hover:underline"
         >
           <ExternalLink size={14} className="flex-shrink-0" />
-          View original
+          {t('viewOriginal')}
         </a>
       )}
     </div>
@@ -310,14 +320,15 @@ interface SuggestedResponsesSectionProps {
 }
 
 function SuggestedResponsesSection({ responses, copiedIndex, onCopy }: SuggestedResponsesSectionProps) {
+  const { t } = useTranslation('feedbackDetail')
   return (
     <div className="card">
       <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
         <MessageCircle size={18} className="sm:w-5 sm:h-5" />
-        Suggested Responses
+        {t('suggestedResponses')}
       </h2>
       <p className="text-xs sm:text-sm text-gray-500 mb-3 sm:mb-4">
-        Copy these responses to share with your team or use as a starting point for your reply.
+        {t('suggestedResponsesHint')}
       </p>
       <div className="space-y-2 sm:space-y-3">
         {responses.map((response, index) => (
@@ -326,7 +337,7 @@ function SuggestedResponsesSection({ responses, copiedIndex, onCopy }: Suggested
             <button
               onClick={() => onCopy(response, index)}
               className="flex-shrink-0 p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors active:scale-95"
-              title="Copy to clipboard"
+              title={t('copyToClipboard')}
             >
               {copiedIndex === index ? <Check size={16} className="sm:w-[18px] sm:h-[18px] text-green-600" /> : <Copy size={16} className="sm:w-[18px] sm:h-[18px]" />}
             </button>
@@ -345,19 +356,20 @@ interface SimilarFeedbackSectionProps {
 }
 
 function SimilarFeedbackSection({ activeTab, onToggle, similarItems }: SimilarFeedbackSectionProps) {
+  const { t } = useTranslation('feedbackDetail')
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
         <h2 className="text-base sm:text-lg font-semibold flex items-center gap-2">
           <TrendingUp size={18} className="sm:w-5 sm:h-5" />
-          <span className="hidden xs:inline">Similar Feedback</span>
-          <span className="xs:hidden">Similar</span>
+          <span className="hidden xs:inline">{t('similarFeedback')}</span>
+          <span className="xs:hidden">{t('similar')}</span>
         </h2>
         <button
           onClick={onToggle}
           className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 whitespace-nowrap"
         >
-          {activeTab === 'similar' ? 'Hide' : 'Show'}
+          {activeTab === 'similar' ? t('hide') : t('show')}
         </button>
       </div>
       
@@ -369,10 +381,11 @@ function SimilarFeedbackSection({ activeTab, onToggle, similarItems }: SimilarFe
 }
 
 function SimilarFeedbackList({ items }: Readonly<{ items: FeedbackItem[] | undefined }>) {
+  const { t } = useTranslation('feedbackDetail')
   if (!items || items.length === 0) {
     return (
       <p className="text-xs sm:text-sm text-gray-500 text-center py-4">
-        Loading similar feedback...
+        {t('loadingSimilar')}
       </p>
     )
   }
@@ -393,7 +406,7 @@ function SimilarFeedbackList({ items }: Readonly<{ items: FeedbackItem[] | undef
           <div className="flex flex-wrap gap-1.5 sm:gap-2 mt-1.5 sm:mt-2">
             <span className="text-xs px-1.5 sm:px-2 py-0.5 bg-blue-100 text-blue-700 rounded">{item.category}</span>
             {item.urgency === 'high' && (
-              <span className="text-xs px-1.5 sm:px-2 py-0.5 bg-red-100 text-red-700 rounded">Urgent</span>
+              <span className="text-xs px-1.5 sm:px-2 py-0.5 bg-red-100 text-red-700 rounded">{t('urgent')}</span>
             )}
           </div>
         </Link>
@@ -407,6 +420,7 @@ export default function FeedbackDetail() {
   const { id } = useParams<{ id: string }>()
   const { config } = useConfigStore()
   const navigate = useNavigate()
+  const { t } = useTranslation('feedbackDetail')
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<'details' | 'similar'>('details')
 
@@ -451,8 +465,8 @@ export default function FeedbackDetail() {
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6 px-1 sm:px-0">
       <Link to="/feedback" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm sm:text-base">
         <ArrowLeft size={18} />
-        <span className="hidden xs:inline">Back to feedback</span>
-        <span className="xs:hidden">Back</span>
+        <span className="hidden xs:inline">{t('backToFeedback')}</span>
+        <span className="xs:hidden">{t('back')}</span>
       </Link>
 
       <div className="card">

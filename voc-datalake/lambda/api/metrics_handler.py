@@ -14,8 +14,7 @@ from shared.api import (
     create_api_resolver, validate_days, validate_limit,
     get_configured_categories, api_handler, DEFAULT_CATEGORIES
 )
-
-from aws_lambda_powertools.event_handler.exceptions import NotFoundError
+from shared.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Key
 
 # AWS Clients
@@ -44,21 +43,29 @@ def list_feedback():
     
     days = validate_days(params.get('days'), default=7)
     source = params.get('source')
-    category = params.get('category')
+    category_param = params.get('category')
     sentiment = params.get('sentiment')
-    limit = validate_limit(params.get('limit'), default=50, max_val=100)
+    limit = validate_limit(params.get('limit'), default=50, max_val=500)
+    
+    # Support comma-separated categories (e.g. "ease_of_use,delivery")
+    categories = [c.strip() for c in category_param.split(',') if c.strip()] if category_param else []
     
     items = []
     current_date = datetime.now(timezone.utc)
+    cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
     
-    if category and not source:
-        response = feedback_table.query(
-            IndexName='gsi2-by-category',
-            KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{category}'),
-            Limit=limit * 2,
-            ScanIndexForward=False
-        )
-        items = response.get('Items', [])
+    if categories and not source:
+        # Query each category via GSI2 and merge results
+        for cat in categories:
+            response = feedback_table.query(
+                IndexName='gsi2-by-category',
+                KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{cat}'),
+                Limit=limit * 2,
+                ScanIndexForward=False
+            )
+            items.extend(response.get('Items', []))
+        # Filter by date range — GSI2 doesn't partition by date
+        items = [i for i in items if i.get('date', '') >= cutoff_date]
     else:
         for i in range(days):
             date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
@@ -74,8 +81,8 @@ def list_feedback():
     
     if source:
         items = [i for i in items if i.get('source_platform') == source]
-    if category and source:
-        items = [i for i in items if i.get('category') == category]
+    if categories and source:
+        items = [i for i in items if i.get('category') in categories]
     if sentiment:
         items = [i for i in items if i.get('sentiment_label') == sentiment]
     

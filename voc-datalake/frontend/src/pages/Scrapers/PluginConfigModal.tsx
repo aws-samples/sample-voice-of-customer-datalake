@@ -9,6 +9,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Save, Check, Loader2, Eye, EyeOff, TestTube, Play, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import type { PluginManifest, ConfigField, SetupInfo } from '../../plugins/types'
 import clsx from 'clsx'
@@ -31,6 +32,7 @@ function PluginField({ field, value, showSecrets, onChange }: {
   readonly showSecrets: boolean
   readonly onChange: (value: string) => void
 }) {
+  const { t } = useTranslation('scrapers')
   const placeholder = field.placeholder ?? `Enter ${field.label.toLowerCase()}`
 
   if (field.type === 'select' && field.options) {
@@ -41,7 +43,7 @@ function PluginField({ field, value, showSecrets, onChange }: {
           {field.required && <span className="text-red-500 ml-1">*</span>}
         </label>
         <select value={value} onChange={(e) => onChange(e.target.value)} className="input text-sm">
-          <option value="">Select...</option>
+          <option value="">{t('pluginConfig.select')}</option>
           {field.options.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
@@ -110,6 +112,7 @@ function ResultMessage({ success, message }: { readonly success: boolean; readon
 }
 
 export default function PluginConfigModal({ plugin, onClose }: PluginConfigModalProps) {
+  const { t } = useTranslation('scrapers')
   const queryClient = useQueryClient()
   const [credentials, setCredentials] = useState<Record<string, string>>({})
   const [showSecrets, setShowSecrets] = useState(false)
@@ -234,7 +237,7 @@ export default function PluginConfigModal({ plugin, onClose }: PluginConfigModal
 
         {/* Footer */}
         <div className="p-4 border-t">
-          <button onClick={onClose} className="btn btn-secondary w-full text-sm">Close</button>
+          <button onClick={onClose} className="btn btn-secondary w-full text-sm">{t('pluginConfig.close')}</button>
         </div>
       </div>
     </div>
@@ -263,11 +266,12 @@ function ScheduleToggle({ scheduleLoading, scheduleEnabled, onToggle }: {
   readonly scheduleEnabled: boolean
   readonly onToggle: (enabled: boolean) => void
 }) {
+  const { t } = useTranslation('scrapers')
   return (
     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
       <div>
-        <p className="text-sm font-medium">Automatic Schedule</p>
-        <p className="text-xs text-gray-500">Run this source on its configured schedule</p>
+        <p className="text-sm font-medium">{t('pluginConfig.automaticSchedule')}</p>
+        <p className="text-xs text-gray-500">{t('pluginConfig.scheduleDescription')}</p>
       </div>
       {scheduleLoading ? (
         <Loader2 size={16} className="animate-spin text-blue-600" />
@@ -279,7 +283,7 @@ function ScheduleToggle({ scheduleLoading, scheduleEnabled, onToggle }: {
             onChange={(e) => onToggle(e.target.checked)}
             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
-          <span className="text-sm text-gray-600">{scheduleEnabled ? 'Enabled' : 'Disabled'}</span>
+          <span className="text-sm text-gray-600">{scheduleEnabled ? t('pluginConfig.enabled') : t('pluginConfig.disabled')}</span>
         </label>
       )}
     </div>
@@ -304,9 +308,10 @@ function PluginConfigSection({
   plugin, credentials, showSecrets, saveSuccess, saveIcon, saveMutation, testMutation, runMutation,
   onCredentialsChange, onToggleSecrets, onSave,
 }: PluginConfigSectionProps) {
+  const { t } = useTranslation('scrapers')
   return (
     <div className="space-y-4">
-      <h4 className="text-sm font-semibold text-gray-700">Configuration</h4>
+      <h4 className="text-sm font-semibold text-gray-700">{t('pluginConfig.configuration')}</h4>
       <div className="grid gap-4">
         {plugin.config.map(field => (
           <PluginField
@@ -322,7 +327,7 @@ function PluginConfigSection({
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={onToggleSecrets} className="btn btn-secondary flex items-center gap-2 text-sm">
           {showSecrets ? <EyeOff size={14} /> : <Eye size={14} />}
-          {showSecrets ? 'Hide' : 'Show'}
+          {showSecrets ? t('pluginConfig.hide') : t('pluginConfig.show')}
         </button>
         <button
           onClick={onSave}
@@ -330,7 +335,7 @@ function PluginConfigSection({
           className={clsx('btn flex items-center gap-2 text-sm', saveSuccess ? 'bg-green-600 text-white' : 'btn-primary')}
         >
           {saveIcon}
-          {saveSuccess ? 'Saved!' : 'Save'}
+          {saveSuccess ? t('pluginConfig.saved') : t('pluginConfig.save')}
         </button>
         <button
           onClick={() => testMutation.mutate()}
@@ -338,7 +343,7 @@ function PluginConfigSection({
           className="btn btn-secondary flex items-center gap-2 text-sm"
         >
           {testMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
-          Test
+          {t('pluginConfig.test')}
         </button>
         <button
           onClick={() => runMutation.mutate()}
@@ -346,7 +351,7 @@ function PluginConfigSection({
           className="btn btn-secondary flex items-center gap-2 text-sm"
         >
           {runMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-          Run Now
+          {t('pluginConfig.runNow')}
         </button>
       </div>
 
@@ -354,7 +359,7 @@ function PluginConfigSection({
         <ResultMessage success={testMutation.data.success} message={testMutation.data.message || testMutation.data.error || 'Unknown result'} />
       )}
       {runMutation.data && (
-        <ResultMessage success={runMutation.data.success} message={runMutation.data.message || 'Run triggered'} />
+        <ResultMessage success={runMutation.data.success} message={runMutation.data.message || t('pluginConfig.runTriggered')} />
       )}
     </div>
   )

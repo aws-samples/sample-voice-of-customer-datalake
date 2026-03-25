@@ -2,8 +2,43 @@
   "assistantDescription": "고객 피드백 데이터에 대해 질문하세요",
   "assistantName": "VoC AI 어시스턴트",
   "configureEndpoint": "AI 채팅을 사용하려면 설정에서 API 엔드포인트를 구성해 주세요",
+  "copyMessage": "메시지 복사",
   "emptyState": "고객 피드백에 대한 대화를 시작하세요",
+  "export": {
+    "copied": "복사됨!",
+    "copyConversation": "대화 복사",
+    "downloadJson": "JSON으로 다운로드",
+    "downloadMarkdown": "Markdown으로 다운로드",
+    "downloadPdf": "PDF로 다운로드",
+    "exportOptions": "내보내기 옵션",
+    "share": "공유"
+  },
+  "filters": {
+    "clear": "초기화",
+    "focusingOn": "필터링 중: {{summary}}",
+    "title": "필터 컨텍스트 (최대 30개 리뷰)"
+  },
   "hideHistory": "기록 숨기기",
   "inputPlaceholder": "피드백에 대해 질문하세요...",
-  "showHistory": "기록 보기"
+  "message": {
+    "reasoning": "추론",
+    "relatedFeedback": "관련 피드백:"
+  },
+  "showHistory": "기록 보기",
+  "sidebar": {
+    "clearAll": "모든 대화 삭제",
+    "messagesCount": "{{count}}개 메시지",
+    "messagesCount_one": "{{count}}개 메시지",
+    "messagesCount_other": "{{count}}개 메시지",
+    "newChat": "새 채팅",
+    "noConversations": "아직 대화가 없습니다"
+  },
+  "suggestedQuestions": {
+    "mainProblems": "고객이 보고하는 주요 문제는 무엇인가요?",
+    "negativeSource": "부정적인 피드백이 가장 많은 소스는 어디인가요?",
+    "pricing": "고객들이 가격에 대해 뭐라고 하나요?",
+    "sentimentTrend": "지난 한 달간 감정 추세는 어떻게 변했나요?",
+    "topComplaints": "이번 주 주요 고객 불만은 무엇인가요?",
+    "urgentIssues": "가장 긴급한 문제를 보여주세요"
+  }
 }

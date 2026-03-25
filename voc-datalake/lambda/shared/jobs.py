@@ -129,30 +129,6 @@ def update_job_status(
         logger.error(f"Failed to update job status: {e}")
 
 
-def get_job(project_id: str, job_id: str) -> dict | None:
-    """Get a job record by ID.
-    
-    Args:
-        project_id: Project ID
-        job_id: Job ID
-        
-    Returns:
-        Job item dict or None if not found
-    """
-    jobs_table = get_jobs_table()
-    if not jobs_table:
-        return None
-    
-    try:
-        response = jobs_table.get_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'}
-        )
-        return response.get('Item')
-    except Exception as e:
-        logger.error(f"Failed to get job: {e}")
-        return None
-
-
 class JobContext:
     """Context object passed to job handlers for progress updates."""
     

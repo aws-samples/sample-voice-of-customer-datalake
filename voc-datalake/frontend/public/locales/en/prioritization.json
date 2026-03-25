@@ -1,0 +1,74 @@
+{
+  "actions": {
+    "reset": "Reset",
+    "save": "Save Scores",
+    "saveMobile": "Save",
+    "saving": "Saving...",
+    "savingMobile": "..."
+  },
+  "configureApiEndpoint": "Configure API endpoint in Settings to view prioritization.",
+  "empty": {
+    "description": "Create PR/FAQs in your projects to start prioritizing.",
+    "title": "No PR/FAQs Found"
+  },
+  "framework": {
+    "description": "Score each PR/FAQ on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.",
+    "title": "Prioritization Framework"
+  },
+  "loading": "Loading PR/FAQs...",
+  "notes": {
+    "label": "Notes",
+    "placeholder": "Add notes about this prioritization decision..."
+  },
+  "preview": {
+    "title": "PR/FAQ Preview",
+    "viewFull": "View Full Document",
+    "viewMobile": "View"
+  },
+  "priority": {
+    "high": "High Priority",
+    "low": "Low Priority",
+    "medium": "Medium Priority",
+    "none": "Not Scored"
+  },
+  "scores": {
+    "confidence": "Confidence",
+    "confidenceDescription": "Certainty in impact and TTM estimates",
+    "fast": "Fast",
+    "high": "High",
+    "impact": "Impact",
+    "impactDescription": "Business value and customer benefit",
+    "low": "Low",
+    "score": "Score",
+    "slow": "Slow",
+    "strategicFit": "Strategic Fit",
+    "strategicFitDescription": "Alignment with company goals",
+    "timeToMarket": "Time to Market",
+    "timeToMarketDescription": "How quickly can this be delivered?",
+    "title": "Prioritization Scores"
+  },
+  "sort": {
+    "date": "Date",
+    "dateFull": "Date Created",
+    "impact": "Impact",
+    "label": "Sort by:",
+    "priority": "Priority",
+    "priorityFull": "Priority Score",
+    "ttm": "TTM",
+    "ttmFull": "Time to Market"
+  },
+  "stats": {
+    "highPriority": "High Priority",
+    "mediumPriority": "Medium Priority",
+    "notScored": "Not Scored",
+    "totalPrfaqs": "Total PR/FAQs"
+  },
+  "subtitle": "Score and prioritize PR/FAQs across all projects",
+  "title": "PR/FAQ Prioritization",
+  "unsavedChanges": {
+    "cancel": "Stay on Page",
+    "confirm": "Discard Changes",
+    "message": "You have unsaved prioritization scores. Do you want to discard your changes and leave this page?",
+    "title": "Unsaved Changes"
+  }
+}

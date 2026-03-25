@@ -29,27 +29,6 @@ class TestUpdateJobStatusException:
         mock_table.update_item.assert_called_once()
 
 
-class TestGetJobException:
-    """Tests for get_job exception handling (lines 151-153)."""
-
-    def setup_method(self):
-        from shared.tables import clear_table_cache
-        clear_table_cache()
-
-    @patch('shared.jobs.get_jobs_table')
-    def test_returns_none_on_get_item_failure(self, mock_get_jobs_table):
-        """Returns None when get_item raises an exception."""
-        from shared.jobs import get_job
-
-        mock_table = MagicMock()
-        mock_table.get_item.side_effect = Exception("DynamoDB read error")
-        mock_get_jobs_table.return_value = mock_table
-
-        result = get_job('proj_123', 'job_abc')
-
-        assert result is None
-
-
 class TestJobHandlerNoConfig:
     """Tests for job_handler when no config key is found in event (line 213)."""
 

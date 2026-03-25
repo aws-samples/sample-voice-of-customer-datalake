@@ -10,7 +10,7 @@ class TestDocumentMergerFeedbackPath:
     """Cover the use_feedback=True branch (lines 80-107, 115)."""
 
     def test_includes_feedback_when_use_feedback_enabled(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event
+        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
     ):
         """Cover the use_feedback=True path with feedback items."""
         mock_projects_table = MagicMock()
@@ -44,7 +44,7 @@ class TestDocumentMergerFeedbackPath:
         merge_documents_event['merge_config']['days'] = 7
 
         from jobs.document_merger.handler import lambda_handler
-        result = lambda_handler(merge_documents_event, None)
+        result = lambda_handler(merge_documents_event, lambda_context)
 
         assert result['success'] is True
         assert mock_feedback_table.query.called
@@ -54,7 +54,7 @@ class TestDocumentMergerFeedbackPath:
         assert 'Great app!' in prompt
 
     def test_filters_feedback_by_category(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event
+        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
     ):
         """Cover feedback_categories filtering branch (line 115)."""
         mock_projects_table = MagicMock()
@@ -87,7 +87,7 @@ class TestDocumentMergerFeedbackPath:
         merge_documents_event['merge_config']['days'] = 7
 
         from jobs.document_merger.handler import lambda_handler
-        result = lambda_handler(merge_documents_event, None)
+        result = lambda_handler(merge_documents_event, lambda_context)
 
         assert result['success'] is True
         # Only billing feedback should be in prompt
@@ -96,7 +96,7 @@ class TestDocumentMergerFeedbackPath:
         assert 'Billing issue' in prompt
 
     def test_use_feedback_with_no_feedback_items(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event
+        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
     ):
         """Cover use_feedback=True when no feedback items are returned."""
         mock_projects_table = MagicMock()
@@ -123,19 +123,19 @@ class TestDocumentMergerFeedbackPath:
         merge_documents_event['merge_config']['days'] = 7
 
         from jobs.document_merger.handler import lambda_handler
-        result = lambda_handler(merge_documents_event, None)
+        result = lambda_handler(merge_documents_event, lambda_context)
 
         assert result['success'] is True
 
     def test_prfaq_output_type_uses_correct_prompt(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, mock_project_documents
+        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, mock_project_documents, lambda_context
     ):
         """Cover the prfaq output_type branch for system prompt."""
         mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
         merge_documents_event['merge_config']['output_type'] = 'prfaq'
 
         from jobs.document_merger.handler import lambda_handler
-        result = lambda_handler(merge_documents_event, None)
+        result = lambda_handler(merge_documents_event, lambda_context)
 
         assert result['success'] is True
         call_kwargs = mock_converse.call_args.kwargs

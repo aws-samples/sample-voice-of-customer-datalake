@@ -208,7 +208,7 @@ describe('LogsSection', () => {
 
       await waitFor(() => {
         expect(screen.getByText('webscraper')).toBeInTheDocument()
-        expect(screen.getByText('1 failures')).toBeInTheDocument()
+        expect(screen.getByText('1 failure')).toBeInTheDocument()
       })
     })
 

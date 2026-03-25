@@ -4,14 +4,10 @@
 
 ```
 voice-of-customer-datalake/       # Root repository
-├── docs/                         # Documentation
-│   ├── data-lake-structure.md    # Data lake architecture documentation
-│   ├── deployment.md             # Deployment guide
-│   ├── feedback-forms.md         # Feedback forms documentation
-│   ├── getting-started-plugins.md # Plugin development guide
-│   ├── plugin-architecture.md    # Plugin system architecture
-│   ├── processing-pipeline.md    # Processing pipeline documentation
-│   └── scrapers.md               # Web scraper documentation
+├── .kiro/
+│   ├── SYSTEM_DOCUMENTATION.md   # Complete technical documentation
+│   ├── steering/                 # Steering files for AI context
+│   └── prompts/                  # Reusable prompt templates
 ├── scripts/                      # Root-level scripts
 │   └── find-*.sh                 # Dead code analysis scripts
 ├── static/                       # Static assets (demo videos, thumbnails)
@@ -30,18 +26,25 @@ voice-of-customer-datalake/       # Root repository
     │   ├── aggregator/handler.py     # DynamoDB Streams consumer - real-time metrics
     │   ├── research/
     │   │   └── research_step_handler.py  # Step Functions task handler
-    │   ├── shared/                   # Shared utilities across Lambdas (11 modules)
+    │   ├── jobs/                     # Step Functions job handlers
+    │   │   ├── document_generator/   # PRD/PR-FAQ document generation
+    │   │   ├── document_merger/      # Document merging logic
+    │   │   ├── persona_generator/    # Persona generation from feedback
+    │   │   └── persona_importer/     # Persona import logic
+    │   ├── shared/                   # Shared utilities across Lambdas (14 modules)
     │   │   ├── __init__.py
     │   │   ├── api.py                # API response helpers
-    │   │   ├── auth.py               # Authentication utilities
     │   │   ├── avatar.py             # Avatar generation utilities
     │   │   ├── aws.py                # AWS client helpers
     │   │   ├── converse.py           # Bedrock conversation utilities
+    │   │   ├── exceptions.py         # Custom exception classes
     │   │   ├── feedback.py           # Feedback data utilities
     │   │   ├── http.py               # HTTP utilities
     │   │   ├── idempotency.py        # Idempotency helpers
+    │   │   ├── jobs.py               # Job management utilities
     │   │   ├── logging.py            # Logging utilities
-    │   │   └── prompts.py            # Prompt management utilities
+    │   │   ├── prompts.py            # Prompt management utilities
+    │   │   └── tables.py             # DynamoDB table helpers
     │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit)
     │   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
     │   │   ├── chat_handler.py           # /chat/* (conversations CRUD only)
@@ -55,7 +58,12 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── logs_handler.py           # /logs/* (system logs)
     │   │   ├── manual_import_handler.py  # /manual-import/* (manual data import)
     │   │   ├── manual_import_processor.py # Manual import processing logic
+    │   │   ├── extension_handler.py      # /extension/* (Chrome extension review ingestion)
+    │   │   ├── mcp_handler.py            # MCP server (JSON-RPC, tool calls)
+    │   │   ├── s3_import_handler.py      # /s3-import/* (S3 file import browser)
     │   │   ├── projects.py               # Projects business logic (shared)
+    │   │   ├── static/                   # Static assets served by API
+    │   │   │   └── feedback-widget.js    # Embeddable feedback widget
     │   │   └── prompts/                  # LLM prompt templates (6 templates)
     │   │       ├── avatar-generation.json
     │   │       ├── persona-generation.json
@@ -89,6 +97,8 @@ voice-of-customer-datalake/       # Root repository
     ├── plugins/                      # Data source plugins
     │   ├── _shared/                  # Shared plugin utilities
     │   ├── _template/                # Template for new plugins
+    │   ├── app_reviews_android/      # Google Play Store reviews
+    │   ├── app_reviews_ios/          # Apple App Store reviews
     │   └── webscraper/               # Configurable web scraper
     ├── frontend/                     # React dashboard (Vite + Tailwind)
     │   ├── src/
@@ -98,7 +108,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── projectsApi.ts    # Projects API (lazy-loaded)
     │   │   │   └── streamClient.ts   # SSE streaming client (VoC + project chat)
     │   │   ├── services/auth.ts      # Cognito authentication service
-    │   │   ├── components/           # Each component in its own folder with index.tsx (23 total)
+    │   │   ├── components/           # Each component in its own folder with index.tsx (24 total)
     │   │   │   ├── AdminRoute/           # Admin-only route wrapper
     │   │   │   ├── Breadcrumbs/          # Navigation breadcrumbs
     │   │   │   ├── CategoriesManager/    # Category management UI
@@ -111,6 +121,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── DocumentExportMenu/   # Export documents
     │   │   │   ├── FeedbackCard/         # Feedback item display
     │   │   │   ├── FeedbackCarousel/     # Carousel for feedback items
+    │   │   │   ├── LanguageSwitcher/     # i18n language switcher
     │   │   │   ├── Layout/               # Main layout with sidebar (reads menu-config.json)
     │   │   │   ├── MetricCard/           # Dashboard metric card
     │   │   │   ├── PageLoader/           # Page loading indicator
@@ -137,11 +148,18 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── Projects/         # Research projects list
     │   │   │   ├── Scrapers/         # Web scraper configuration
     │   │   │   └── Settings/         # Configuration and integrations (uses getEnabledPlugins)
+    │   │   ├── hooks/
+    │   │   │   └── useStreamChat.ts  # Streaming chat hook
+    │   │   ├── i18n/
+    │   │   │   └── config.ts         # i18next configuration
+    │   │   ├── lib/
+    │   │   │   └── amplify-config.ts # AWS Amplify configuration
     │   │   ├── store/
     │   │   │   ├── configStore.ts    # Zustand state (config, time range, custom dates)
     │   │   │   ├── chatStore.ts      # Chat conversation state
     │   │   │   ├── authStore.ts      # Authentication state
-    │   │   │   └── manualImportStore.ts # Manual import state
+    │   │   │   ├── manualImportStore.ts # Manual import state
+    │   │   │   └── projectChatStore.ts  # Project-scoped chat state
     │   │   ├── plugins/              # Frontend plugin system
     │   │   │   ├── index.ts          # Plugin loader (getEnabledPlugins, getPluginManifests)
     │   │   │   ├── types.ts          # Plugin type definitions (with enabled field)
@@ -149,15 +167,32 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── config/
     │   │   │   └── menu-config.json  # Generated menu visibility config
     │   │   ├── constants/
-    │   │   │   └── filters.ts        # Filter constants and options
+    │   │   │   ├── filters.ts        # Filter constants and options
+    │   │   │   └── languages.ts      # Supported language definitions
     │   │   └── utils/
-    │   │       └── dateUtils.ts      # Date utility functions
+    │   │       ├── dateUtils.ts      # Date utility functions
+    │   │       └── printUtils.ts     # Print/export utility functions
     │   ├── package.json
     │   └── vite.config.ts
+    ├── chrome-extension/             # Chrome extension for review scraping
+    │   ├── src/
+    │   │   ├── api.ts                # API client for extension
+    │   │   ├── content.ts            # Content script
+    │   │   ├── popup.ts              # Popup UI logic
+    │   │   ├── service-worker.ts     # Background service worker
+    │   │   ├── storage.ts            # Chrome storage helpers
+    │   │   └── types.ts              # Type definitions
+    │   ├── icons/                    # Extension icons (16, 48, 128px)
+    │   ├── build.mjs                 # Build script
+    │   ├── manifest.json             # Chrome extension manifest
+    │   ├── popup.html                # Popup HTML
+    │   ├── package.json
+    │   └── tsconfig.json
     ├── schemas/
     │   └── feedback-event.schema.json
     ├── scripts/
     │   ├── build-layers.sh           # Build Lambda layers with Docker (ARM64)
+    │   ├── convert-template.mjs      # Convert CDK synth output to CloudFormation templates
     │   ├── test-api.sh               # API validation script
     │   ├── generate-manifests.ts     # Generate plugin manifests with enabled status
     │   ├── generate-menu-config.ts   # Generate menu config from cdk.context.json
@@ -304,6 +339,26 @@ voice-of-customer-datalake/       # Root repository
 | PUT | `/data-explorer/feedback` | Update DynamoDB feedback record (with optional S3 sync) |
 | DELETE | `/data-explorer/feedback` | Delete DynamoDB feedback record |
 | GET | `/data-explorer/stats` | Get data lake statistics |
+
+### Chrome Extension (extension_handler.py)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/extension/reviews` | Submit scraped reviews from Chrome extension |
+| GET | `/extension/status` | Health check and user info for extension |
+
+### S3 Import (s3_import_handler.py)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/s3-import/sources` | List source folders in S3 import bucket |
+| POST | `/s3-import/sources` | Create a new source folder |
+| GET | `/s3-import/files` | List files in S3 import bucket |
+| POST | `/s3-import/upload-url` | Generate presigned URL for file upload |
+| DELETE | `/s3-import/file/{key}` | Delete a file from S3 import bucket |
+
+### MCP Server (mcp_handler.py)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/mcp` | JSON-RPC MCP endpoint (tools: search_feedback, get_metrics_summary, get_project, list_personas, get_feedback_detail) |
 
 ## Adding a New Data Source
 

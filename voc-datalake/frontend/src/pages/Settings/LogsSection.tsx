@@ -6,6 +6,7 @@
  */
 
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 
   AlertTriangle, XCircle, RefreshCw, Trash2, ChevronDown, 
@@ -22,6 +23,7 @@ interface LogsSectionProps {
 }
 
 export default function LogsSection({ apiEndpoint }: LogsSectionProps) {
+  const { t } = useTranslation('settings')
   const [activeTab, setActiveTab] = useState<LogTab>('validation')
   const [days, setDays] = useState(7)
 
@@ -30,20 +32,20 @@ export default function LogsSection({ apiEndpoint }: LogsSectionProps) {
       <div className="card">
         <div className="flex items-center gap-2 mb-4">
           <FileWarning className="text-amber-600" size={20} />
-          <h2 className="text-lg font-semibold">System Logs</h2>
+          <h2 className="text-lg font-semibold">{t('logs.title')}</h2>
         </div>
         <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
           <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>Configure the API endpoint in the Brand tab to view logs.</span>
+          <span>{t('logs.configureFirst')}</span>
         </div>
       </div>
     )
   }
 
   const tabs = [
-    { id: 'validation' as const, label: 'Validation Failures', icon: AlertTriangle },
-    { id: 'processing' as const, label: 'Processing Errors', icon: XCircle },
-    { id: 'scrapers' as const, label: 'Scraper Runs', icon: RefreshCw },
+    { id: 'validation' as const, label: t('logs.validationFailures'), icon: AlertTriangle },
+    { id: 'processing' as const, label: t('logs.processingErrors'), icon: XCircle },
+    { id: 'scrapers' as const, label: t('logs.scraperRuns'), icon: RefreshCw },
   ]
 
   return (
@@ -52,16 +54,16 @@ export default function LogsSection({ apiEndpoint }: LogsSectionProps) {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <FileWarning className="text-amber-600" size={20} />
-            <h2 className="text-lg font-semibold">System Logs</h2>
+            <h2 className="text-lg font-semibold">{t('logs.title')}</h2>
           </div>
           <select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
             className="input w-auto text-sm"
           >
-            <option value={1}>Last 24 hours</option>
-            <option value={7}>Last 7 days</option>
-            <option value={30}>Last 30 days</option>
+            <option value={1}>{t('logs.last24Hours')}</option>
+            <option value={7}>{t('logs.last7Days')}</option>
+            <option value={30}>{t('logs.last30Days')}</option>
           </select>
         </div>
 
@@ -142,6 +144,7 @@ function SummaryCardItem({ count, label, icon: Icon, colorScheme }: SummaryCardI
 }
 
 function LogsSummaryCard({ days }: { readonly days: number }) {
+  const { t } = useTranslation('settings')
   const { data, isLoading } = useQuery({
     queryKey: ['logs-summary', days],
     queryFn: () => api.getLogsSummary(days),
@@ -152,7 +155,7 @@ function LogsSummaryCard({ days }: { readonly days: number }) {
     return (
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Loader2 size={16} className="animate-spin" />
-        Loading summary...
+        {t('logs.loadingSummary')}
       </div>
     )
   }
@@ -165,13 +168,13 @@ function LogsSummaryCard({ days }: { readonly days: number }) {
     <div className="grid grid-cols-2 gap-4">
       <SummaryCardItem 
         count={totalValidation} 
-        label="Validation Failures" 
+        label={t('logs.validationFailures')} 
         icon={AlertTriangle} 
         colorScheme="amber" 
       />
       <SummaryCardItem 
         count={totalProcessing} 
-        label="Processing Errors" 
+        label={t('logs.processingErrors')} 
         icon={XCircle} 
         colorScheme="red" 
       />
@@ -184,6 +187,7 @@ function LogsSummaryCard({ days }: { readonly days: number }) {
 // ============================================
 
 function ValidationLogsPanel({ days }: { readonly days: number }) {
+  const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
   const [expandedLog, setExpandedLog] = useState<string | null>(null)
 
@@ -207,7 +211,7 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
   const logs = data?.logs ?? []
 
   if (logs.length === 0) {
-    return <LogsEmptyState message="No validation failures in this period" icon={CheckCircle} />
+    return <LogsEmptyState message={t('logs.noValidationFailures')} icon={CheckCircle} />
   }
 
   // Group by source
@@ -223,7 +227,7 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
       <div className="flex justify-end">
         <button onClick={() => refetch()} className="btn btn-secondary text-sm flex items-center gap-1">
           <RefreshCw size={14} />
-          Refresh
+          {t('logs.refresh')}
         </button>
       </div>
 
@@ -233,7 +237,7 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
             <div className="flex items-center gap-2">
               <span className="font-medium">{source}</span>
               <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                {sourceLogs.length} failures
+                {t('logs.failures', { count: sourceLogs.length })}
               </span>
             </div>
             <button
@@ -242,7 +246,7 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
               className="btn btn-secondary text-xs flex items-center gap-1"
             >
               {clearMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-              Clear
+              {t('logs.clear')}
             </button>
           </div>
 
@@ -262,7 +266,7 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
                       <span className="text-sm truncate">{log.message_id}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">{formatTimestamp(log.timestamp)}</span>
+                      <span className="text-xs text-gray-500">{formatTimestamp(log.timestamp, t)}</span>
                       <ChevronDown size={14} className={clsx('text-gray-400 transition-transform', isExpanded && 'rotate-180')} />
                     </div>
                   </button>
@@ -270,14 +274,14 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
                   {isExpanded && (
                     <div className="p-3 bg-gray-50 border-t border-gray-200 text-sm">
                       <div className="mb-2">
-                        <span className="font-medium text-gray-700">Errors:</span>
+                        <span className="font-medium text-gray-700">{t('logs.errorsLabel')}</span>
                         <ul className="mt-1 list-disc list-inside text-red-600">
                           {log.errors.map((err, i) => <li key={i}>{err}</li>)}
                         </ul>
                       </div>
                       {log.raw_preview && (
                         <div>
-                          <span className="font-medium text-gray-700">Raw Preview:</span>
+                          <span className="font-medium text-gray-700">{t('logs.rawPreview')}</span>
                           <pre className="mt-1 p-2 bg-gray-100 rounded text-xs overflow-x-auto">
                             {log.raw_preview}
                           </pre>
@@ -290,7 +294,7 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
             })}
             {sourceLogs.length > 5 && (
               <p className="text-xs text-gray-500 text-center py-2">
-                +{sourceLogs.length - 5} more entries
+                {t('logs.moreEntries', { count: sourceLogs.length - 5 })}
               </p>
             )}
           </div>
@@ -305,6 +309,7 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
 // ============================================
 
 function ProcessingLogsPanel({ days }: { readonly days: number }) {
+  const { t } = useTranslation('settings')
   const [expandedLog, setExpandedLog] = useState<string | null>(null)
 
   const { data, isLoading, refetch } = useQuery({
@@ -319,7 +324,7 @@ function ProcessingLogsPanel({ days }: { readonly days: number }) {
   const logs = data?.logs ?? []
 
   if (logs.length === 0) {
-    return <LogsEmptyState message="No processing errors in this period" icon={CheckCircle} />
+    return <LogsEmptyState message={t('logs.noProcessingErrors')} icon={CheckCircle} />
   }
 
   // Group by source
@@ -335,7 +340,7 @@ function ProcessingLogsPanel({ days }: { readonly days: number }) {
       <div className="flex justify-end">
         <button onClick={() => refetch()} className="btn btn-secondary text-sm flex items-center gap-1">
           <RefreshCw size={14} />
-          Refresh
+          {t('logs.refresh')}
         </button>
       </div>
 
@@ -344,7 +349,7 @@ function ProcessingLogsPanel({ days }: { readonly days: number }) {
           <div className="flex items-center gap-2 mb-3">
             <span className="font-medium">{source}</span>
             <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-              {sourceLogs.length} errors
+              {t('logs.errors', { count: sourceLogs.length })}
             </span>
           </div>
 
@@ -364,7 +369,7 @@ function ProcessingLogsPanel({ days }: { readonly days: number }) {
                       <span className="text-sm font-medium text-red-700">{log.error_type}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">{formatTimestamp(log.timestamp)}</span>
+                      <span className="text-xs text-gray-500">{formatTimestamp(log.timestamp, t)}</span>
                       <ChevronDown size={14} className={clsx('text-gray-400 transition-transform', isExpanded && 'rotate-180')} />
                     </div>
                   </button>
@@ -372,11 +377,11 @@ function ProcessingLogsPanel({ days }: { readonly days: number }) {
                   {isExpanded && (
                     <div className="p-3 bg-gray-50 border-t border-gray-200 text-sm">
                       <div className="mb-2">
-                        <span className="font-medium text-gray-700">Message ID:</span>
+                        <span className="font-medium text-gray-700">{t('logs.messageId')}</span>
                         <span className="ml-2 text-gray-600">{log.message_id}</span>
                       </div>
                       <div>
-                        <span className="font-medium text-gray-700">Error:</span>
+                        <span className="font-medium text-gray-700">{t('logs.errorLabel')}</span>
                         <p className="mt-1 text-red-600">{log.error_message}</p>
                       </div>
                     </div>
@@ -386,7 +391,7 @@ function ProcessingLogsPanel({ days }: { readonly days: number }) {
             })}
             {sourceLogs.length > 5 && (
               <p className="text-xs text-gray-500 text-center py-2">
-                +{sourceLogs.length - 5} more entries
+                {t('logs.moreEntries', { count: sourceLogs.length - 5 })}
               </p>
             )}
           </div>
@@ -401,6 +406,7 @@ function ProcessingLogsPanel({ days }: { readonly days: number }) {
 // ============================================
 
 function ScraperLogsPanel({ days }: { readonly days: number }) {
+  const { t } = useTranslation('settings')
   const { data: scrapersData, isLoading: loadingScrapers } = useQuery({
     queryKey: ['scrapers'],
     queryFn: () => api.getScrapers(),
@@ -413,7 +419,7 @@ function ScraperLogsPanel({ days }: { readonly days: number }) {
   const scrapers = scrapersData?.scrapers ?? []
 
   if (scrapers.length === 0) {
-    return <LogsEmptyState message="No scrapers configured" icon={RefreshCw} />
+    return <LogsEmptyState message={t('logs.noScrapersConfigured')} icon={RefreshCw} />
   }
 
   return (
@@ -468,17 +474,19 @@ interface ScraperLogContentProps {
 }
 
 function ScraperLogContent({ isLoading, logs }: ScraperLogContentProps) {
+  const { t } = useTranslation('settings')
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Loader2 size={14} className="animate-spin" />
-        Loading runs...
+        {t('logs.loadingRuns')}
       </div>
     )
   }
 
   if (logs.length === 0) {
-    return <p className="text-sm text-gray-500">No runs in this period</p>
+    return <p className="text-sm text-gray-500">{t('logs.noRunsInPeriod')}</p>
   }
 
   return (
@@ -487,13 +495,13 @@ function ScraperLogContent({ isLoading, logs }: ScraperLogContentProps) {
         <div key={log.run_id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm">
           <div className="flex items-center gap-3">
             <ScraperStatusBadge status={log.status} />
-            <span className="text-gray-600">{formatTimestamp(log.started_at)}</span>
+            <span className="text-gray-600">{formatTimestamp(log.started_at, t)}</span>
           </div>
           <div className="flex items-center gap-4 text-gray-500">
-            <span>{log.pages_scraped} pages</span>
-            <span>{log.items_found} items</span>
+            <span>{t('logs.pages', { count: log.pages_scraped })}</span>
+            <span>{t('logs.items', { count: log.items_found })}</span>
             {log.errors.length > 0 && (
-              <span className="text-red-600">{log.errors.length} errors</span>
+              <span className="text-red-600">{t('logs.runErrors', { count: log.errors.length })}</span>
             )}
           </div>
         </div>
@@ -542,7 +550,9 @@ function LogsEmptyState({ message, icon: Icon }: { readonly message: string; rea
   )
 }
 
-function formatTimestamp(timestamp: string): string {
+type TFunction = (key: string, options?: Record<string, unknown>) => string
+
+function formatTimestamp(timestamp: string, t: TFunction): string {
   try {
     const date = new Date(timestamp)
     const now = new Date()
@@ -551,10 +561,10 @@ function formatTimestamp(timestamp: string): string {
     const diffHours = Math.floor(diffMs / 3600000)
     const diffDays = Math.floor(diffMs / 86400000)
 
-    if (diffMins < 1) return 'just now'
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    if (diffDays < 7) return `${diffDays}d ago`
+    if (diffMins < 1) return t('logs.justNow')
+    if (diffMins < 60) return t('logs.minutesAgo', { count: diffMins })
+    if (diffHours < 24) return t('logs.hoursAgo', { count: diffHours })
+    if (diffDays < 7) return t('logs.daysAgo', { count: diffDays })
     
     return date.toLocaleDateString()
   } catch {

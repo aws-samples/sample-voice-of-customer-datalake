@@ -16,6 +16,7 @@ import {
   Plus, Trash2, Loader2, Sparkles, ChevronDown, ChevronRight,
   Check, AlertCircle, GripVertical
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import ConfirmModal from '../ConfirmModal'
 
@@ -38,6 +39,7 @@ export interface CategoriesConfig {
 }
 
 export default function CategoriesManager() {
+  const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [companyDescription, setCompanyDescription] = useState('')
@@ -87,8 +89,9 @@ export default function CategoriesManager() {
 
   const handleAddCategory = () => {
     if (!newCategoryName.trim()) return
+    const id = crypto.randomUUID()
     const newCategory: Category = {
-      id: `cat_${Date.now()}`,
+      id: `cat_${id}`,
       name: newCategoryName.trim().toLowerCase().replace(/\s+/g, '_'),
       description: newCategoryName.trim(),
       subcategories: [],
@@ -118,8 +121,9 @@ export default function CategoriesManager() {
   const handleAddSubcategory = (categoryId: string) => {
     const name = newSubcategoryName[categoryId]?.trim()
     if (!name) return
+    const id = crypto.randomUUID()
     const newSub: Subcategory = {
-      id: `sub_${Date.now()}`,
+      id: `sub_${id}`,
       name: name.toLowerCase().replace(/\s+/g, '_'),
       description: name,
     }
@@ -183,14 +187,14 @@ export default function CategoriesManager() {
             <Sparkles className="text-purple-600" size={20} />
           </div>
           <div className="flex-1 min-w-0">
-            <h4 className="font-semibold text-gray-900 mb-1">AI Category Suggestions</h4>
+            <h4 className="font-semibold text-gray-900 mb-1">{t('categories.aiSuggestionsTitle')}</h4>
             <p className="text-sm text-gray-600 mb-3">
-              Describe your company, industry, or product to get AI-suggested categories tailored to your business.
+              {t('categories.aiSuggestionsDescription')}
             </p>
             <textarea
               value={companyDescription}
               onChange={(e) => setCompanyDescription(e.target.value)}
-              placeholder="e.g., We are an airline company offering domestic and international flights. Our customers care about punctuality, comfort, baggage handling, customer service, and in-flight experience..."
+              placeholder={t('categories.companyPlaceholder')}
               className="input min-h-[80px] text-sm mb-3 w-full"
             />
             <button
@@ -201,19 +205,19 @@ export default function CategoriesManager() {
               {isGenerating ? (
                 <>
                   <Loader2 size={16} className="animate-spin" />
-                  Generating...
+                  {t('categories.generating')}
                 </>
               ) : (
                 <>
                   <Sparkles size={16} />
-                  Generate Categories
+                  {t('categories.generateButton')}
                 </>
               )}
             </button>
             {generateMutation.isError && (
               <p className="text-sm text-red-600 mt-2 flex items-center gap-1">
                 <AlertCircle size={14} />
-                Failed to generate categories. Please try again.
+                {t('categories.generateError')}
               </p>
             )}
           </div>
@@ -223,14 +227,14 @@ export default function CategoriesManager() {
       {/* Categories List */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h4 className="font-semibold text-gray-900">Categories & Subcategories</h4>
-          <span className="text-sm text-gray-500">{categories.length} categories</span>
+          <h4 className="font-semibold text-gray-900">{t('categories.titleLabel')}</h4>
+          <span className="text-sm text-gray-500">{t('categories.categoriesCount', { count: categories.length })}</span>
         </div>
 
         {categories.length === 0 ? (
           <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-            <p className="mb-2">No categories configured yet.</p>
-            <p className="text-sm">Use AI generation above or add categories manually below.</p>
+            <p className="mb-2">{t('categories.emptyTitle')}</p>
+            <p className="text-sm">{t('categories.emptyDescription')}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -283,7 +287,7 @@ export default function CategoriesManager() {
                     {category.name}
                   </span>
                   <span className="text-xs text-gray-400 flex-shrink-0">
-                    {category.subcategories.length} sub
+                    {t('categories.subcategoriesCount', { count: category.subcategories.length })}
                   </span>
                   <button
                     onClick={() => handleDeleteCategory(category.id)}
@@ -331,7 +335,7 @@ export default function CategoriesManager() {
                         type="text"
                         value={newSubcategoryName[category.id] || ''}
                         onChange={(e) => setNewSubcategoryName(prev => ({ ...prev, [category.id]: e.target.value }))}
-                        placeholder="Add subcategory..."
+                        placeholder={t('categories.addSubcategoryPlaceholder')}
                         className="flex-1 min-w-0 px-2 py-1.5 sm:py-1 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleAddSubcategory(category.id)
@@ -358,7 +362,7 @@ export default function CategoriesManager() {
             type="text"
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
-            placeholder="Add new category..."
+            placeholder={t('categories.addCategoryPlaceholder')}
             className="flex-1 input"
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAddCategory()
@@ -370,7 +374,7 @@ export default function CategoriesManager() {
             className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
           >
             <Plus size={16} />
-            Add Category
+            {t('categories.addCategory')}
           </button>
         </div>
       </div>
@@ -379,21 +383,21 @@ export default function CategoriesManager() {
       {saveMutation.isPending && (
         <div className="flex items-center gap-2 text-sm text-blue-600">
           <Loader2 size={14} className="animate-spin" />
-          Saving...
+          {t('categories.saving')}
         </div>
       )}
       {saveMutation.isSuccess && (
         <div className="flex items-center gap-2 text-sm text-green-600">
           <Check size={14} />
-          Categories saved successfully
+          {t('categories.saved')}
         </div>
       )}
 
       <ConfirmModal
         isOpen={deleteCategoryId !== null}
-        title="Delete Category"
-        message="Are you sure you want to delete this category and all its subcategories? This action cannot be undone."
-        confirmLabel="Delete"
+        title={t('categories.deleteConfirmTitle')}
+        message={t('categories.deleteConfirmMessage')}
+        confirmLabel={t('categories.deleteButton')}
         variant="danger"
         isLoading={saveMutation.isPending}
         onConfirm={confirmDeleteCategory}

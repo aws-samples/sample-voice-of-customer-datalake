@@ -10,6 +10,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Copy, Check, FileDown, MoreVertical, FileText, FileType, Sparkles } from 'lucide-react'
 import type { ProjectDocument, Project } from '../../api/client'
 import { openPrintWindow } from '../../utils/printUtils'
@@ -78,6 +79,7 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
   const [copied, setCopied] = useState(false)
   const [copiedKiro, setCopiedKiro] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const { t } = useTranslation('components')
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -169,8 +171,8 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-        title="Download options"
-        aria-label="Download options"
+        title={t('documentExport.downloadOptions')}
+        aria-label={t('documentExport.downloadOptions')}
         aria-expanded={isOpen}
         aria-haspopup="menu"
       >
@@ -189,7 +191,7 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
             role="menuitem"
           >
             {copied ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Copy size={16} className="flex-shrink-0" />}
-            <span className="truncate">{copied ? 'Copied!' : 'Copy'}</span>
+            <span className="truncate">{copied ? t('documentExport.copied') : t('documentExport.copy')}</span>
           </button>
 
           <hr className="my-1 border-gray-100" />
@@ -200,7 +202,7 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
             role="menuitem"
           >
             <FileText size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as Markdown</span>
+            <span className="truncate">{t('documentExport.downloadMarkdown')}</span>
           </button>
 
           <button
@@ -209,7 +211,7 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
             role="menuitem"
           >
             <FileDown size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as PDF</span>
+            <span className="truncate">{t('documentExport.downloadPDF')}</span>
           </button>
 
           <button
@@ -218,7 +220,7 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
             role="menuitem"
           >
             <FileType size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as TXT</span>
+            <span className="truncate">{t('documentExport.downloadTXT')}</span>
           </button>
 
           {(doc.document_type === 'prd' || doc.document_type === 'prfaq') && (
@@ -230,11 +232,11 @@ export default function DocumentExportMenu({ document: doc, project }: Readonly<
                 role="menuitem"
               >
                 {copiedKiro ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Sparkles size={16} className="flex-shrink-0" />}
-                <span className="truncate">{copiedKiro ? 'Copied!' : 'Copy to Kiro'}</span>
+                <span className="truncate">{copiedKiro ? t('documentExport.copied') : t('documentExport.copyToKiro')}</span>
               </button>
               {!project?.kiro_export_prompt && (
                 <p className="px-3 py-1 text-xs text-gray-400">
-                  Tip: Configure Kiro prompt in project settings
+                  {t('documentExport.kiroPromptTip')}
                 </p>
               )}
             </>

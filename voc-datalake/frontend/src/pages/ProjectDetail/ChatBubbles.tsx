@@ -99,7 +99,7 @@ export function ToolIndicator({ toolName }: Readonly<{ toolName: string }>) {
   )
 }
 
-export function ToolProgressTracker({ steps, documentChanges }: Readonly<{ steps: ToolStep[]; documentChanges: DocumentChangeInfo[] }>) {
+function ToolProgressTracker({ steps, documentChanges }: Readonly<{ steps: ToolStep[]; documentChanges: DocumentChangeInfo[] }>) {
   if (steps.length === 0) return null
 
   // Build a merged timeline: tool steps + document change confirmations
@@ -140,7 +140,7 @@ export function ToolProgressTracker({ steps, documentChanges }: Readonly<{ steps
   )
 }
 
-export function DocumentChangeIndicator({ change }: Readonly<{ change: DocumentChangeInfo }>) {
+function DocumentChangeIndicator({ change }: Readonly<{ change: DocumentChangeInfo }>) {
   const isCreated = change.action === 'created'
   return (
     <div className={clsx(

@@ -17,7 +17,8 @@ import {
   Plus, Loader2, Palette, Settings2, Save, X, Eye
 } from 'lucide-react'
 import clsx from 'clsx'
-import { api } from '../../api/client'
+import { useTranslation } from 'react-i18next'
+import { api, stripTrailingSlashes } from '../../api/client'
 import type { FeedbackForm } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import ConfirmModal from '../../components/ConfirmModal'
@@ -28,11 +29,6 @@ import FormCard from './FormCard'
 
 type FormConfig = Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>
 type FormConfigWithId = FormConfig & { form_id?: string }
-
-function stripTrailingSlashes(str: string): string {
-  if (str.length === 0 || str[str.length - 1] !== '/') return str
-  return stripTrailingSlashes(str.slice(0, -1))
-}
 
 function FormsListContent({
   isLoading,
@@ -51,6 +47,7 @@ function FormsListContent({
   onCreateNew: () => void
   apiEndpoint: string
 }>) {
+  const { t } = useTranslation('feedbackForms')
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -79,11 +76,11 @@ function FormsListContent({
   return (
     <div className="card text-center py-12">
       <div className="text-4xl mb-4">📝</div>
-      <h3 className="text-lg font-medium text-gray-900 mb-2">No feedback forms yet</h3>
-      <p className="text-gray-500 mb-4">Create your first form to start collecting customer feedback.</p>
+      <h3 className="text-lg font-medium text-gray-900 mb-2">{t('empty.title')}</h3>
+      <p className="text-gray-500 mb-4">{t('empty.description')}</p>
       <button onClick={onCreateNew} className="btn btn-primary inline-flex items-center gap-2">
         <Plus size={18} />
-        Create Your First Form
+        {t('empty.createButton')}
       </button>
     </div>
   )
@@ -104,12 +101,13 @@ function getInitialFormData(form: FeedbackForm | null, initialConfig: FormConfig
   return { ...defaultFormConfig }
 }
 
-function getSaveButtonText(isSaving: boolean, isEditing: boolean): string {
-  if (isSaving) return isEditing ? 'Saving...' : 'Creating...'
-  return isEditing ? 'Save Changes' : 'Create Form'
+function getSaveButtonText(isSaving: boolean, isEditing: boolean, t: (key: string) => string): string {
+  if (isSaving) return isEditing ? t('editor.saving') : t('editor.creating')
+  return isEditing ? t('editor.saveChanges') : t('editor.createForm')
 }
 
 function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSaving }: FormEditorProps) {
+  const { t } = useTranslation('feedbackForms')
   const [activeTab, setActiveTab] = useState<'settings' | 'theme' | 'category'>('settings')
   const [formData, setFormData] = useState<FormConfigWithId>(() => getInitialFormData(form, initialConfig))
 
@@ -121,7 +119,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
         {/* Header */}
         <div className="flex items-center justify-between p-3 sm:p-4 border-b">
           <h2 className="text-base sm:text-lg font-semibold truncate pr-2">
-            {form ? 'Edit Feedback Form' : 'Create New Feedback Form'}
+            {form ? t('editor.editTitle') : t('editor.createTitle')}
           </h2>
           <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0">
             <X size={20} />
@@ -131,9 +129,9 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
         {/* Tabs */}
         <div className="flex gap-1 sm:gap-2 px-3 sm:px-4 pt-3 sm:pt-4 border-b border-gray-200 overflow-x-auto">
           {[
-            { id: 'settings', label: 'Form Settings', shortLabel: 'Settings', icon: Settings2 },
-            { id: 'category', label: 'Category Routing', shortLabel: 'Category', icon: Settings2 },
-            { id: 'theme', label: 'Theme', shortLabel: 'Theme', icon: Palette },
+            { id: 'settings', label: t('editor.tabs.formSettings'), shortLabel: t('editor.tabs.settings'), icon: Settings2 },
+            { id: 'category', label: t('editor.tabs.categoryRouting'), shortLabel: t('editor.tabs.category'), icon: Settings2 },
+            { id: 'theme', label: t('editor.tabs.theme'), shortLabel: t('editor.tabs.theme'), icon: Palette },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -159,17 +157,17 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <div className="space-y-3 sm:space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Form Name (Internal)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.formName')}</label>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Website Footer Form"
+                    placeholder={t('editor.formNamePlaceholder')}
                     className="input"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Form Title</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.formTitle')}</label>
                   <input
                     type="text"
                     value={formData.title}
@@ -178,7 +176,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.description')}</label>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -186,7 +184,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Question</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.question')}</label>
                   <input
                     type="text"
                     value={formData.question}
@@ -195,7 +193,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Placeholder Text</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.placeholderText')}</label>
                   <input
                     type="text"
                     value={formData.placeholder}
@@ -206,7 +204,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
               </div>
               <div className="space-y-3 sm:space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Submit Button Text</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.submitButtonText')}</label>
                   <input
                     type="text"
                     value={formData.submit_button_text}
@@ -215,7 +213,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Success Message</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.successMessage')}</label>
                   <input
                     type="text"
                     value={formData.success_message}
@@ -231,7 +229,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                       onChange={(e) => setFormData({ ...formData, rating_enabled: e.target.checked })}
                       className="rounded border-gray-300 text-blue-600"
                     />
-                    <span className="text-sm">Enable Rating</span>
+                    <span className="text-sm">{t('editor.enableRating')}</span>
                   </label>
                   {formData.rating_enabled && (
                     <select
@@ -244,9 +242,9 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                       }}
                       className="input w-auto"
                     >
-                      <option value="stars">Stars ⭐</option>
-                      <option value="numeric">Numeric (1-10)</option>
-                      <option value="emoji">Emoji 😀</option>
+                      <option value="stars">{t('editor.ratingStars')}</option>
+                      <option value="numeric">{t('editor.ratingNumeric')}</option>
+                      <option value="emoji">{t('editor.ratingEmoji')}</option>
                     </select>
                   )}
                 </div>
@@ -258,7 +256,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                       onChange={(e) => setFormData({ ...formData, collect_name: e.target.checked })}
                       className="rounded border-gray-300 text-blue-600"
                     />
-                    <span className="text-sm">Collect Name</span>
+                    <span className="text-sm">{t('editor.collectName')}</span>
                   </label>
                   <label className="flex items-center gap-2">
                     <input
@@ -267,7 +265,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                       onChange={(e) => setFormData({ ...formData, collect_email: e.target.checked })}
                       className="rounded border-gray-300 text-blue-600"
                     />
-                    <span className="text-sm">Collect Email</span>
+                    <span className="text-sm">{t('editor.collectEmail')}</span>
                   </label>
                 </div>
               </div>
@@ -277,40 +275,39 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
           {activeTab === 'category' && (
             <div className="space-y-4 sm:space-y-6">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
-                <h4 className="font-medium text-blue-900 mb-2 text-sm sm:text-base">Category Routing</h4>
+                <h4 className="font-medium text-blue-900 mb-2 text-sm sm:text-base">{t('editor.categoryRoutingTitle')}</h4>
                 <p className="text-xs sm:text-sm text-blue-800">
-                  Assign a category to this form. All feedback submitted through this form will be automatically 
-                  tagged with the selected category, making it easy to filter and analyze feedback by source.
+                  {t('editor.categoryRoutingDescription')}
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.categoryLabel')}</label>
                   <select
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value, subcategory: '' })}
                     className="input"
                   >
-                    <option value="">-- Select Category --</option>
+                    <option value="">{t('editor.selectCategory')}</option>
                     {categories.map(cat => (
                       <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
                   </select>
                   <p className="text-xs text-gray-500 mt-1">
-                    Categories are configured in Settings → Feedback Categories
+                    {t('editor.categoryHint')}
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Subcategory (Optional)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.subcategoryLabel')}</label>
                   <select
                     value={formData.subcategory}
                     onChange={(e) => setFormData({ ...formData, subcategory: e.target.value })}
                     className="input"
                     disabled={!selectedCategory}
                   >
-                    <option value="">-- Select Subcategory --</option>
+                    <option value="">{t('editor.selectSubcategory')}</option>
                     {selectedCategory?.subcategories.map(sub => (
                       <option key={sub.id} value={sub.id}>{sub.name}</option>
                     ))}
@@ -321,7 +318,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
               {formData.category && (
                 <div className="p-3 sm:p-4 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-700">
-                    <strong>Preview:</strong> Feedback from this form will be tagged as:
+                    <strong>{t('editor.previewLabel')}</strong> {t('editor.previewTagged')}
                   </p>
                   <p className="mt-2 font-mono text-xs sm:text-sm bg-white px-3 py-2 rounded border inline-block break-all">
                     category: "{formData.category}"
@@ -336,7 +333,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <div className="space-y-3 sm:space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Primary Color</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.primaryColor')}</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
@@ -353,7 +350,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Background Color</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.backgroundColor')}</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
@@ -370,7 +367,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Text Color</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.textColor')}</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
@@ -387,7 +384,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Border Radius</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('editor.borderRadius')}</label>
                   <input
                     type="text"
                     value={formData.theme.border_radius}
@@ -399,7 +396,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
               </div>
               {/* Preview */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Preview</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('editor.preview')}</label>
                 <div
                   className="relative overflow-hidden border"
                   style={{
@@ -432,7 +429,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
         {/* Footer */}
         <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 p-3 sm:p-4 border-t bg-gray-50">
           <button onClick={onCancel} className="btn btn-secondary" disabled={isSaving}>
-            Cancel
+            {t('editor.cancel')}
           </button>
           <button
             onClick={() => onSave(formData)}
@@ -440,7 +437,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
             className="btn btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            {getSaveButtonText(isSaving ?? false, !!form)}
+            {getSaveButtonText(isSaving ?? false, !!form, t)}
           </button>
         </div>
       </div>
@@ -450,6 +447,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
 
 
 export default function FeedbackForms() {
+  const { t } = useTranslation('feedbackForms')
   const queryClient = useQueryClient()
   const { config } = useConfigStore()
   const [editingForm, setEditingForm] = useState<FeedbackForm | null>(null)
@@ -505,8 +503,8 @@ export default function FeedbackForms() {
     return (
       <div className="max-w-4xl mx-auto">
         <div className="card text-center py-12">
-          <p className="text-gray-500 mb-4">Configure the API endpoint in Settings to manage feedback forms.</p>
-          <a href="/settings" className="btn btn-primary">Go to Settings</a>
+          <p className="text-gray-500 mb-4">{t('configureApiFirst')}</p>
+          <a href="/settings" className="btn btn-primary">{t('goToSettings', { ns: 'common' })}</a>
         </div>
       </div>
     )
@@ -517,28 +515,28 @@ export default function FeedbackForms() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Feedback Forms</h1>
-          <p className="text-sm sm:text-base text-gray-500">Create embeddable forms to collect customer feedback</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="text-sm sm:text-base text-gray-500">{t('subtitle')}</p>
         </div>
         <button
           onClick={() => setShowWizard(true)}
           className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
         >
           <Plus size={18} />
-          Create Form
+          {t('createForm')}
         </button>
       </div>
 
       {/* Info banner */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <h4 className="font-medium text-blue-900 mb-2 flex items-center gap-2">
-          <Eye size={16} /> Typeform-style Feedback Collection
+          <Eye size={16} /> {t('infoBanner.title')}
         </h4>
         <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-          <li>Create multiple forms for different purposes (website, app, support, etc.)</li>
-          <li>Each form has its own unique URL and embed code</li>
-          <li>Assign categories to route feedback automatically</li>
-          <li>All submissions go through AI enrichment (sentiment, personas, etc.)</li>
+          <li>{t('infoBanner.item1')}</li>
+          <li>{t('infoBanner.item2')}</li>
+          <li>{t('infoBanner.item3')}</li>
+          <li>{t('infoBanner.item4')}</li>
         </ul>
       </div>
 
@@ -581,9 +579,9 @@ export default function FeedbackForms() {
 
       <ConfirmModal
         isOpen={deleteFormId !== null}
-        title="Delete Form"
-        message="Are you sure you want to delete this form? This action cannot be undone."
-        confirmLabel="Delete"
+        title={t('deleteConfirmTitle')}
+        message={t('deleteConfirmMessage')}
+        confirmLabel={t('deleteConfirmLabel')}
         variant="danger"
         isLoading={deleteMutation.isPending}
         onConfirm={() => {

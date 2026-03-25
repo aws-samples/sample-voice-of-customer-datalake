@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, AlertTriangle, Lightbulb, CheckCircle2, Undo2 } from 'lucide-react'
 import SentimentBadge from '../../components/SentimentBadge'
 import type { FeedbackItem } from '../../api/client'
@@ -36,13 +37,15 @@ function ResolveButton({ isResolved, isResolving, onResolve, onUnresolve }: Read
   onResolve?: () => void
   onUnresolve?: () => void
 }>) {
+  const { t } = useTranslation('problemAnalysis')
+
   if (isResolved) {
     return (
       <button
         onClick={(e) => { e.stopPropagation(); onUnresolve?.() }}
         disabled={isResolving}
         className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors disabled:opacity-50"
-        title="Mark as unresolved"
+        title={t('tree.markUnresolved')}
       >
         <Undo2 size={14} className="sm:w-4 sm:h-4" />
       </button>
@@ -57,7 +60,7 @@ function ResolveButton({ isResolved, isResolving, onResolve, onUnresolve }: Read
           ? 'text-green-500 bg-green-50 scale-110'
           : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
       }`}
-      title="Mark as resolved"
+      title={t('tree.markResolved')}
     >
       <CheckCircle2 size={14} className="sm:w-4 sm:h-4" />
     </button>
@@ -69,6 +72,8 @@ function ProblemLabel({ problemGroup, isResolved, isExpanded }: Readonly<{
   isResolved?: boolean
   isExpanded: boolean
 }>) {
+  const { t } = useTranslation('problemAnalysis')
+
   return (
     <div className="flex-1 min-w-0">
       <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
@@ -81,7 +86,7 @@ function ProblemLabel({ problemGroup, isResolved, isExpanded }: Readonly<{
           {problemGroup.problem}
         </span>
         {isResolved && (
-          <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Resolved</span>
+          <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">{t('tree.resolved')}</span>
         )}
         {problemGroup.similarProblems.length > 0 && (
           <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full" title={problemGroup.similarProblems.join(', ')}>
@@ -97,7 +102,7 @@ function ProblemLabel({ problemGroup, isResolved, isExpanded }: Readonly<{
       )}
       {problemGroup.similarProblems.length > 0 && isExpanded && (
         <div className="mt-2 text-xs text-gray-500">
-          <span className="font-medium">Similar:</span>{' '}
+          <span className="font-medium">{t('tree.similar')}</span>{' '}
           {problemGroup.similarProblems.slice(0, 2).join(' • ')}
           {problemGroup.similarProblems.length > 2 && ` (+${problemGroup.similarProblems.length - 2})`}
         </div>
@@ -173,18 +178,20 @@ export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle, isR
   )
 }
 
-function formatDateSafe(dateString: string | null | undefined): string {
-  if (!dateString) return 'Unknown'
+function formatDateSafe(dateString: string | null | undefined, fallback: string): string {
+  if (!dateString) return fallback
   try {
     const date = new Date(dateString)
-    if (isNaN(date.getTime())) return 'Unknown'
+    if (isNaN(date.getTime())) return fallback
     return date.toLocaleDateString()
   } catch {
-    return 'Unknown'
+    return fallback
   }
 }
 
 function FeedbackItemCard({ item, problemSummary }: Readonly<{ item: FeedbackItem; problemSummary: string }>) {
+  const { t } = useTranslation('problemAnalysis')
+
   return (
     <Link
       to={`/feedback/${item.feedback_id}`}
@@ -196,17 +203,17 @@ function FeedbackItemCard({ item, problemSummary }: Readonly<{ item: FeedbackIte
             {item.source_platform.replace(/_/g, ' ')}
           </span>
           {item.urgency === 'high' && (
-            <span className="px-1 py-0.5 bg-red-100 text-red-700 text-xs rounded">Urgent</span>
+            <span className="px-1 py-0.5 bg-red-100 text-red-700 text-xs rounded">{t('stats.urgent')}</span>
           )}
         </div>
         <SentimentBadge sentiment={item.sentiment_label} score={item.sentiment_score} />
       </div>
       <p className="text-xs sm:text-sm text-gray-600 line-clamp-3">{item.original_text}</p>
       {item.problem_summary && item.problem_summary !== problemSummary && (
-        <p className="text-xs text-gray-400 mt-1 italic line-clamp-1">Original: {item.problem_summary}</p>
+        <p className="text-xs text-gray-400 mt-1 italic line-clamp-1">{t('tree.original', { text: item.problem_summary })}</p>
       )}
       <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-1.5 sm:mt-2 text-xs text-gray-400">
-        <span>{formatDateSafe(item.source_created_at)}</span>
+        <span>{formatDateSafe(item.source_created_at, t('tree.unknown'))}</span>
         {item.rating && <span>★ {item.rating}/5</span>}
         {item.persona_name && <span className="hidden xs:inline">{item.persona_name}</span>}
       </div>

@@ -1,13 +1,15 @@
 import type { ProjectPersona } from '../../api/client'
+import { useTranslation } from 'react-i18next'
 import PersonaSection from './PersonaSection'
 
 export function IdentitySection({ persona }: Readonly<{ persona: ProjectPersona }>) {
+  const { t } = useTranslation('projectDetail')
   if (!persona.identity) return null
 
   const { bio, ...attributes } = persona.identity
 
   return (
-    <PersonaSection title="Identity & Demographics" icon="👤" color="purple">
+    <PersonaSection title={t('personaSections.identityDemographics')} icon="👤" color="purple">
       <div className="space-y-3">
         {bio && <p className="text-gray-700 text-sm leading-relaxed">{bio}</p>}
         <div className="flex flex-wrap gap-2">
@@ -37,22 +39,23 @@ function GoalsList({ goals, label }: Readonly<{ goals: string[]; label: string }
 }
 
 export function GoalsSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
+  const { t } = useTranslation('projectDetail')
   if (!persona.goals_motivations) return null
 
   const secondaryGoals = persona.goals_motivations.secondary_goals ?? []
   const motivations = persona.goals_motivations.underlying_motivations ?? []
 
   return (
-    <PersonaSection title="Goals & Motivations" icon="🎯" color="green">
+    <PersonaSection title={t('personaSections.goalsMotivations')} icon="🎯" color="green">
       <div className="space-y-3">
         {persona.goals_motivations.primary_goal && (
           <div className="p-3 bg-green-50 rounded-lg border border-green-100">
-            <p className="text-xs text-green-600 font-medium mb-1">Primary Goal</p>
+            <p className="text-xs text-green-600 font-medium mb-1">{t('personaSections.primaryGoal')}</p>
             <p className="text-gray-700 text-sm">{persona.goals_motivations.primary_goal}</p>
           </div>
         )}
-        <GoalsList goals={secondaryGoals} label="Secondary Goals" />
-        <GoalsList goals={motivations} label="Underlying Motivations" />
+        <GoalsList goals={secondaryGoals} label={t('personaSections.secondaryGoals')} />
+        <GoalsList goals={motivations} label={t('personaSections.underlyingMotivations')} />
       </div>
     </PersonaSection>
   )
@@ -71,6 +74,7 @@ function PainPointsList({ items, label }: Readonly<{ items: string[]; label: str
 }
 
 export function PainPointsSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
+  const { t } = useTranslation('projectDetail')
   if (!persona.pain_points) return null
 
   const challenges = persona.pain_points.current_challenges ?? []
@@ -78,28 +82,29 @@ export function PainPointsSection({ persona }: Readonly<{ persona: ProjectPerson
   const workarounds = persona.pain_points.workarounds ?? []
 
   return (
-    <PersonaSection title="Pain Points & Frustrations" icon="😤" color="red">
+    <PersonaSection title={t('personaSections.painPoints')} icon="😤" color="red">
       <div className="space-y-3">
-        <PainPointsList items={challenges} label="Current Challenges" />
-        <PainPointsList items={blockers} label="Blockers" />
-        <PainPointsList items={workarounds} label="Current Workarounds" />
+        <PainPointsList items={challenges} label={t('personaSections.currentChallenges')} />
+        <PainPointsList items={blockers} label={t('personaSections.blockers')} />
+        <PainPointsList items={workarounds} label={t('personaSections.currentWorkarounds')} />
       </div>
     </PersonaSection>
   )
 }
 
 export function BehaviorsSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
+  const { t } = useTranslation('projectDetail')
   if (!persona.behaviors) return null
 
   const solutions = persona.behaviors.current_solutions ?? []
   const tools = persona.behaviors.tools_used ?? []
 
   return (
-    <PersonaSection title="Behaviors & Habits" icon="🔄" color="blue">
+    <PersonaSection title={t('personaSections.behaviorsHabits')} icon="🔄" color="blue">
       <div className="space-y-3">
         {solutions.length > 0 && (
           <div>
-            <p className="text-xs text-gray-500 font-medium mb-2">Current Solutions</p>
+            <p className="text-xs text-gray-500 font-medium mb-2">{t('personaSections.currentSolutions')}</p>
             <ul className="list-disc list-inside text-gray-600 text-sm space-y-1">
               {solutions.map((s: string, i: number) => <li key={i}>{s}</li>)}
             </ul>
@@ -124,7 +129,7 @@ export function BehaviorsSection({ persona }: Readonly<{ persona: ProjectPersona
         </div>
         {tools.length > 0 && (
           <div>
-            <p className="text-xs text-gray-500 font-medium mb-2">Tools Used</p>
+            <p className="text-xs text-gray-500 font-medium mb-2">{t('personaSections.toolsUsed')}</p>
             <div className="flex flex-wrap gap-1">
               {tools.map((t: string, i: number) => (
                 <span key={i} className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{t}</span>
@@ -138,10 +143,11 @@ export function BehaviorsSection({ persona }: Readonly<{ persona: ProjectPersona
 }
 
 export function ContextSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
+  const { t } = useTranslation('projectDetail')
   if (!persona.context_environment) return null
 
   return (
-    <PersonaSection title="Context & Environment" icon="🌍" color="amber">
+    <PersonaSection title={t('personaSections.contextEnvironment')} icon="🌍" color="amber">
       <div className="space-y-3">
         {persona.context_environment.usage_context && (
           <p className="text-gray-700 text-sm">{persona.context_environment.usage_context}</p>
@@ -153,7 +159,7 @@ export function ContextSection({ persona }: Readonly<{ persona: ProjectPersona }
         </div>
         {persona.context_environment.time_constraints && (
           <p className="text-gray-600 text-sm">
-            <span className="font-medium">Time constraints:</span> {persona.context_environment.time_constraints}
+            <span className="font-medium">{t('personaSections.timeConstraints')}</span> {persona.context_environment.time_constraints}
           </p>
         )}
       </div>
@@ -171,10 +177,11 @@ function QuoteBlock({ text, context }: Readonly<{ text: string; context?: string
 }
 
 export function QuotesSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
+  const { t } = useTranslation('projectDetail')
   if (!persona.quotes || persona.quotes.length === 0) return null
 
   return (
-    <PersonaSection title="Representative Quotes" icon="💬" color="indigo">
+    <PersonaSection title={t('personaSections.representativeQuotes')} icon="💬" color="indigo">
       <div className="space-y-3">
         {persona.quotes.map((q: { text: string; context?: string }, i: number) => (
           <QuoteBlock key={i} text={q.text} context={q.context} />
@@ -185,10 +192,11 @@ export function QuotesSection({ persona }: Readonly<{ persona: ProjectPersona }>
 }
 
 export function ScenarioSection({ persona }: Readonly<{ persona: ProjectPersona }>) {
+  const { t } = useTranslation('projectDetail')
   if (!persona.scenario) return null
 
   return (
-    <PersonaSection title="Scenario" icon="📖" color="teal">
+    <PersonaSection title={t('personaSections.scenario')} icon="📖" color="teal">
       <div className="space-y-3">
         {persona.scenario.title && <h5 className="font-medium text-gray-900">{persona.scenario.title}</h5>}
         {persona.scenario.narrative && <p className="text-gray-700 text-sm leading-relaxed">{persona.scenario.narrative}</p>}
@@ -196,13 +204,13 @@ export function ScenarioSection({ persona }: Readonly<{ persona: ProjectPersona 
           <div className="flex gap-4 text-sm">
             {persona.scenario.trigger && (
               <div className="flex-1 p-2 bg-teal-50 rounded">
-                <p className="text-xs text-teal-600 font-medium">Trigger</p>
+                <p className="text-xs text-teal-600 font-medium">{t('personaSections.trigger')}</p>
                 <p className="text-gray-600">{persona.scenario.trigger}</p>
               </div>
             )}
             {persona.scenario.outcome && (
               <div className="flex-1 p-2 bg-teal-50 rounded">
-                <p className="text-xs text-teal-600 font-medium">Desired Outcome</p>
+                <p className="text-xs text-teal-600 font-medium">{t('personaSections.desiredOutcome')}</p>
                 <p className="text-gray-600">{persona.scenario.outcome}</p>
               </div>
             )}

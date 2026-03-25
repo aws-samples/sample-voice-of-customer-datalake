@@ -1,0 +1,35 @@
+{
+  "card": {
+    "docs_one": "{{count}} doc.",
+    "docs_many": "{{count}} docs.",
+    "docs_other": "{{count}} docs.",
+    "personas_one": "{{count}} persona",
+    "personas_many": "{{count}} personas",
+    "personas_other": "{{count}} personas"
+  },
+  "configureEndpoint": "Configura primero el endpoint de la API en Ajustes",
+  "createModal": {
+    "cancel": "Cancelar",
+    "create": "Crear proyecto",
+    "creating": "Creando...",
+    "descriptionLabel": "Descripción",
+    "descriptionPlaceholder": "¿De qué trata este proyecto?",
+    "nameLabel": "Nombre del proyecto",
+    "namePlaceholder": "p. ej., Mejoras de producto Q1",
+    "title": "Crear nuevo proyecto"
+  },
+  "deleteModal": {
+    "confirm": "Eliminar",
+    "message": "¿Estás seguro de que deseas eliminar este proyecto? Todas las personas y documentos se eliminarán permanentemente.",
+    "title": "Eliminar proyecto"
+  },
+  "description": "Crea proyectos para generar personas, PRDs y PR/FAQs a partir de comentarios",
+  "emptyState": {
+    "createButton": "Crear proyecto",
+    "description": "Crea tu primer proyecto para empezar a generar personas y documentos",
+    "title": "Aún no hay proyectos"
+  },
+  "newProject": "Nuevo proyecto",
+  "openProject": "Abrir proyecto",
+  "title": "Proyectos"
+}

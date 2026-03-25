@@ -2,8 +2,44 @@
   "assistantDescription": "Faça perguntas sobre os dados de feedback dos seus clientes",
   "assistantName": "Assistente IA VoC",
   "configureEndpoint": "Configure o endpoint da API nas Configurações para usar o chat IA",
+  "copyMessage": "Copiar mensagem",
   "emptyState": "Inicie uma conversa sobre o feedback dos seus clientes",
+  "export": {
+    "copied": "Copiado!",
+    "copyConversation": "Copiar conversa",
+    "downloadJson": "Baixar como JSON",
+    "downloadMarkdown": "Baixar como Markdown",
+    "downloadPdf": "Baixar como PDF",
+    "exportOptions": "Opções de exportação",
+    "share": "Compartilhar"
+  },
+  "filters": {
+    "clear": "Limpar",
+    "focusingOn": "Focando em: {{summary}}",
+    "title": "Filtrar contexto (máx. 30 avaliações)"
+  },
   "hideHistory": "Ocultar histórico",
   "inputPlaceholder": "Pergunte sobre o seu feedback...",
-  "showHistory": "Mostrar histórico"
+  "message": {
+    "reasoning": "Raciocínio",
+    "relatedFeedback": "Feedback relacionado:"
+  },
+  "showHistory": "Mostrar histórico",
+  "sidebar": {
+    "clearAll": "Limpar todas as conversas",
+    "messagesCount": "{{count}} mensagens",
+    "messagesCount_one": "{{count}} mensagens",
+    "messagesCount_many": "{{count}} mensagens",
+    "messagesCount_other": "{{count}} mensagens",
+    "newChat": "Novo Chat",
+    "noConversations": "Nenhuma conversa ainda"
+  },
+  "suggestedQuestions": {
+    "mainProblems": "Quais são os principais problemas relatados pelos clientes?",
+    "negativeSource": "Qual fonte tem mais feedback negativo?",
+    "pricing": "O que os clientes estão dizendo sobre preços?",
+    "sentimentTrend": "Como o sentimento mudou no último mês?",
+    "topComplaints": "Quais são as principais reclamações dos clientes esta semana?",
+    "urgentIssues": "Mostre-me os problemas mais urgentes"
+  }
 }

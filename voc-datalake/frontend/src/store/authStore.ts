@@ -1,10 +1,14 @@
 /**
  * @fileoverview Authentication state management using Zustand with localStorage persistence.
  * 
- * Features:
- * - Uses localStorage to persist auth across tabs and browser sessions
- * - Allows multiple tabs to share the same authenticated session
- * - Tokens persist until explicit logout or expiration
+ * Security model (mirrors Chrome extension pattern):
+ * - Short-lived tokens (access, ID) persisted in localStorage for cross-tab UX
+ * - Refresh token kept in memory only (never persisted) to limit XSS blast radius
+ * - Non-secret data (user info, auth state) persisted in localStorage
+ * 
+ * When a new tab opens with expired short-lived tokens, the auth service
+ * falls back to Cognito's getSession() which uses Cognito's own cookies
+ * for silent re-authentication — no re-login needed.
  * 
  * @module store/authStore
  */
@@ -93,13 +97,14 @@ export const useAuthStore = create<AuthState>()(
     }),
     { 
       name: 'voc-auth',
-      // Use localStorage to persist auth across tabs and browser sessions
-      // This allows opening multiple tabs without re-authenticating
+      // Persist short-lived tokens + user info in localStorage for cross-tab UX.
+      // refreshToken is deliberately excluded — it stays in memory only.
+      // This limits XSS blast radius: stolen access/ID tokens expire in ~1hr,
+      // while the 30-day refresh token is never written to disk.
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,
         idToken: state.idToken,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }

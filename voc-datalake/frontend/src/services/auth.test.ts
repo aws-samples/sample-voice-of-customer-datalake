@@ -31,21 +31,18 @@ vi.mock('amazon-cognito-identity-js', () => ({
 }))
 
 // Mock config
-vi.mock('../config', () => ({
-  config: {
-    cognito: {
-      userPoolId: 'us-east-1_test123',
-      clientId: 'testclientid123',
-    },
-  },
-  getConfig: () => ({
+vi.mock('../runtimeConfig', () => ({
+  getRuntimeConfig: () => ({
     apiEndpoint: 'https://api.example.com',
     cognito: {
       userPoolId: 'us-east-1_test123',
       clientId: 'testclientid123',
       region: 'us-east-1',
+      identityPoolId: 'us-east-1:test-pool-id',
     },
   }),
+  isConfigLoaded: () => true,
+  loadRuntimeConfig: vi.fn(),
 }))
 
 // Mock authStore

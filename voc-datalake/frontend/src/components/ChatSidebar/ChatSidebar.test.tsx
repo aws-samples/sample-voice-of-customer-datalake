@@ -69,7 +69,7 @@ describe('ChatSidebar', () => {
 
     it('displays message count for each conversation', () => {
       render(<ChatSidebar />)
-      expect(screen.getByText(/1 messages/)).toBeInTheDocument()
+      expect(screen.getByText(/1 message/)).toBeInTheDocument()
       expect(screen.getByText(/2 messages/)).toBeInTheDocument()
     })
   })

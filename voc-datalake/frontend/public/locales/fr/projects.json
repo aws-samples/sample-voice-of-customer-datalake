@@ -1,0 +1,35 @@
+{
+  "card": {
+    "docs_one": "{{count}} doc.",
+    "docs_many": "{{count}} docs.",
+    "docs_other": "{{count}} docs.",
+    "personas_one": "{{count}} persona",
+    "personas_many": "{{count}} personas",
+    "personas_other": "{{count}} personas"
+  },
+  "configureEndpoint": "Configurez d'abord le point de terminaison API dans les Paramètres",
+  "createModal": {
+    "cancel": "Annuler",
+    "create": "Créer le projet",
+    "creating": "Création en cours...",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "De quoi traite ce projet ?",
+    "nameLabel": "Nom du projet",
+    "namePlaceholder": "ex. Améliorations produit Q1",
+    "title": "Créer un nouveau projet"
+  },
+  "deleteModal": {
+    "confirm": "Supprimer",
+    "message": "Êtes-vous sûr de vouloir supprimer ce projet ? Toutes les personas et documents seront définitivement supprimés.",
+    "title": "Supprimer le projet"
+  },
+  "description": "Créez des projets pour générer des personas, PRDs et PR/FAQs à partir des retours",
+  "emptyState": {
+    "createButton": "Créer un projet",
+    "description": "Créez votre premier projet pour commencer à générer des personas et des documents",
+    "title": "Aucun projet pour le moment"
+  },
+  "newProject": "Nouveau projet",
+  "openProject": "Ouvrir le projet",
+  "title": "Projets"
+}

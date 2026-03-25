@@ -7,6 +7,7 @@ import { useState, useMemo, type ReactElement } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useBlocker } from 'react-router-dom'
 import { ArrowUpDown, FileText, Sparkles, ChevronDown, ChevronUp, ExternalLink, Save, RotateCcw } from 'lucide-react'
+import { useTranslation, Trans } from 'react-i18next'
 import { api } from '../../api/client'
 import type { Project, ProjectDocument, PrioritizationScore } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -35,11 +36,11 @@ const getScoreColor = (score: number, max: number = 5): string => {
   return 'text-red-600 bg-red-50'
 }
 
-const getPriorityLabel = (score: number): { label: string; color: string } => {
-  if (score >= 4) return { label: 'High Priority', color: 'bg-green-100 text-green-800' }
-  if (score >= 3) return { label: 'Medium Priority', color: 'bg-blue-100 text-blue-800' }
-  if (score >= 2) return { label: 'Low Priority', color: 'bg-yellow-100 text-yellow-800' }
-  return { label: 'Not Scored', color: 'bg-gray-100 text-gray-600' }
+const getPriorityLabel = (score: number, t: (key: string) => string): { label: string; color: string } => {
+  if (score >= 4) return { label: t('priority.high'), color: 'bg-green-100 text-green-800' }
+  if (score >= 3) return { label: t('priority.medium'), color: 'bg-blue-100 text-blue-800' }
+  if (score >= 2) return { label: t('priority.low'), color: 'bg-yellow-100 text-yellow-800' }
+  return { label: t('priority.none'), color: 'bg-gray-100 text-gray-600' }
 }
 
 interface ScoreSliderProps {
@@ -105,30 +106,32 @@ function comparePRFAQs(a: PRFAQWithProject, b: PRFAQWithProject, scores: Record<
 }
 
 function StatsCards({ allPRFAQs, scores }: { readonly allPRFAQs: PRFAQWithProject[]; readonly scores: Record<string, PrioritizationScore> }) {
+  const { t } = useTranslation('prioritization')
   const highPriority = allPRFAQs.filter(p => { const s = scores[p.document_id]; return s && calculatePriorityScore(s) >= 4 }).length
   const mediumPriority = allPRFAQs.filter(p => { const s = scores[p.document_id]; return s && calculatePriorityScore(s) >= 3 && calculatePriorityScore(s) < 4 }).length
   const notScored = allPRFAQs.filter(p => !scores[p.document_id] || scores[p.document_id].impact === 0).length
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{allPRFAQs.length}</div><div className="text-sm text-gray-500">Total PR/FAQs</div></div>
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-green-600">{highPriority}</div><div className="text-sm text-gray-500">High Priority</div></div>
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-blue-600">{mediumPriority}</div><div className="text-sm text-gray-500">Medium Priority</div></div>
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-400">{notScored}</div><div className="text-sm text-gray-500">Not Scored</div></div>
+      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{allPRFAQs.length}</div><div className="text-sm text-gray-500">{t('stats.totalPrfaqs')}</div></div>
+      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-green-600">{highPriority}</div><div className="text-sm text-gray-500">{t('stats.highPriority')}</div></div>
+      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-blue-600">{mediumPriority}</div><div className="text-sm text-gray-500">{t('stats.mediumPriority')}</div></div>
+      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-400">{notScored}</div><div className="text-sm text-gray-500">{t('stats.notScored')}</div></div>
     </div>
   )
 }
 
 function SortControls({ sortField, sortDirection, onToggleSort }: { readonly sortField: SortField; readonly sortDirection: SortDirection; readonly onToggleSort: (f: SortField) => void }) {
+  const { t } = useTranslation('prioritization')
   const options = [
-    { field: 'priority_score' as const, label: 'Priority', fullLabel: 'Priority Score' },
-    { field: 'impact' as const, label: 'Impact', fullLabel: 'Impact' },
-    { field: 'time_to_market' as const, label: 'TTM', fullLabel: 'Time to Market' },
-    { field: 'created_at' as const, label: 'Date', fullLabel: 'Date Created' },
+    { field: 'priority_score' as const, label: t('sort.priority'), fullLabel: t('sort.priorityFull') },
+    { field: 'impact' as const, label: t('sort.impact'), fullLabel: t('sort.impact') },
+    { field: 'time_to_market' as const, label: t('sort.ttm'), fullLabel: t('sort.ttmFull') },
+    { field: 'created_at' as const, label: t('sort.date'), fullLabel: t('sort.dateFull') },
   ]
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
-      <span className="text-gray-500 w-full sm:w-auto">Sort by:</span>
+      <span className="text-gray-500 w-full sm:w-auto">{t('sort.label')}</span>
       {options.map(({ field, label, fullLabel }) => (
         <button key={field} onClick={() => onToggleSort(field)} className={clsx('px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs sm:text-sm', sortField === field ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
           <span className="sm:hidden">{label}</span>
@@ -141,21 +144,22 @@ function SortControls({ sortField, sortDirection, onToggleSort }: { readonly sor
 }
 
 function QuickScores({ score }: { readonly score: PrioritizationScore }): ReactElement {
+  const { t } = useTranslation('prioritization')
   const priorityScore = score.impact > 0 ? calculatePriorityScore(score) : 0
   const showTTM = score.time_to_market !== 3 || score.impact > 0
   return (
     <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
       <div className="text-center">
         <div className={clsx('text-base sm:text-lg font-bold', score.impact > 0 ? 'text-blue-600' : 'text-gray-300')}>{score.impact || '-'}</div>
-        <div className="text-xs text-gray-400">Impact</div>
+        <div className="text-xs text-gray-400">{t('scores.impact')}</div>
       </div>
       <div className="text-center">
         <div className={clsx('text-base sm:text-lg font-bold', showTTM ? 'text-purple-600' : 'text-gray-300')}>{score.impact > 0 ? score.time_to_market : '-'}</div>
-        <div className="text-xs text-gray-400">TTM</div>
+        <div className="text-xs text-gray-400">{t('sort.ttm')}</div>
       </div>
       <div className="text-center px-2 sm:px-3 py-1 bg-gray-50 rounded-lg">
         <div className={clsx('text-lg sm:text-xl font-bold', priorityScore > 0 ? 'text-green-600' : 'text-gray-300')}>{priorityScore > 0 ? priorityScore.toFixed(1) : '-'}</div>
-        <div className="text-xs text-gray-400">Score</div>
+        <div className="text-xs text-gray-400">{t('scores.score')}</div>
       </div>
     </div>
   )
@@ -169,8 +173,9 @@ function PRFAQRow({ prfaq, index, score, isExpanded, onToggle, onUpdateScore }: 
   readonly onToggle: () => void
   readonly onUpdateScore: (field: keyof PrioritizationScore, value: number | string) => void
 }) {
+  const { t } = useTranslation('prioritization')
   const priorityScore = score.impact > 0 ? calculatePriorityScore(score) : 0
-  const priority = getPriorityLabel(priorityScore)
+  const priority = getPriorityLabel(priorityScore, t)
 
   return (
     <div className="bg-white rounded-lg border shadow-sm">
@@ -197,22 +202,22 @@ function PRFAQRow({ prfaq, index, score, isExpanded, onToggle, onUpdateScore }: 
         <div className="border-t px-3 sm:px-4 py-4 bg-gray-50">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             <div className="space-y-4">
-              <h4 className="font-medium text-gray-900">Prioritization Scores</h4>
-              <ScoreSlider label="Impact" value={score.impact || 3} onChange={(v) => onUpdateScore('impact', v)} description="Business value and customer benefit" lowLabel="Low" highLabel="High" />
-              <ScoreSlider label="Time to Market" value={score.time_to_market || 3} onChange={(v) => onUpdateScore('time_to_market', v)} description="How quickly can this be delivered?" lowLabel="Slow" highLabel="Fast" />
-              <ScoreSlider label="Strategic Fit" value={score.strategic_fit || 3} onChange={(v) => onUpdateScore('strategic_fit', v)} description="Alignment with company goals" lowLabel="Low" highLabel="High" />
-              <ScoreSlider label="Confidence" value={score.confidence || 3} onChange={(v) => onUpdateScore('confidence', v)} description="Certainty in impact and TTM estimates" lowLabel="Low" highLabel="High" />
+              <h4 className="font-medium text-gray-900">{t('scores.title')}</h4>
+              <ScoreSlider label={t('scores.impact')} value={score.impact || 3} onChange={(v) => onUpdateScore('impact', v)} description={t('scores.impactDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
+              <ScoreSlider label={t('scores.timeToMarket')} value={score.time_to_market || 3} onChange={(v) => onUpdateScore('time_to_market', v)} description={t('scores.timeToMarketDescription')} lowLabel={t('scores.slow')} highLabel={t('scores.fast')} />
+              <ScoreSlider label={t('scores.strategicFit')} value={score.strategic_fit || 3} onChange={(v) => onUpdateScore('strategic_fit', v)} description={t('scores.strategicFitDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
+              <ScoreSlider label={t('scores.confidence')} value={score.confidence || 3} onChange={(v) => onUpdateScore('confidence', v)} description={t('scores.confidenceDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
               <div>
-                <label className="text-sm font-medium text-gray-700">Notes</label>
-                <textarea value={score.notes || ''} onChange={(e) => onUpdateScore('notes', e.target.value)} placeholder="Add notes about this prioritization decision..." rows={2} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
+                <label className="text-sm font-medium text-gray-700">{t('notes.label')}</label>
+                <textarea value={score.notes || ''} onChange={(e) => onUpdateScore('notes', e.target.value)} placeholder={t('notes.placeholder')} rows={2} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
               </div>
             </div>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <h4 className="font-medium text-gray-900">PR/FAQ Preview</h4>
+                <h4 className="font-medium text-gray-900">{t('preview.title')}</h4>
                 <a href={`/projects/${prfaq.project_id}`} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-                  <span className="hidden sm:inline">View Full Document</span>
-                  <span className="sm:hidden">View</span>
+                  <span className="hidden sm:inline">{t('preview.viewFull')}</span>
+                  <span className="sm:hidden">{t('preview.viewMobile')}</span>
                   <ExternalLink size={14} />
                 </a>
               </div>
@@ -235,11 +240,13 @@ function PRFAQList({ isLoading, prfaqs, scores, expandedId, onToggleExpand, onUp
   readonly onToggleExpand: (id: string) => void
   readonly onUpdateScore: (docId: string, field: keyof PrioritizationScore, value: number | string) => void
 }) {
+  const { t } = useTranslation('prioritization')
+
   if (isLoading) {
-    return <div className="text-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div><p className="text-gray-500 mt-4">Loading PR/FAQs...</p></div>
+    return <div className="text-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div><p className="text-gray-500 mt-4">{t('loading')}</p></div>
   }
   if (prfaqs.length === 0) {
-    return <div className="text-center py-12 bg-white rounded-lg border"><FileText size={48} className="mx-auto text-gray-300 mb-4" /><h3 className="text-lg font-medium text-gray-900">No PR/FAQs Found</h3><p className="text-gray-500 mt-1">Create PR/FAQs in your projects to start prioritizing.</p></div>
+    return <div className="text-center py-12 bg-white rounded-lg border"><FileText size={48} className="mx-auto text-gray-300 mb-4" /><h3 className="text-lg font-medium text-gray-900">{t('empty.title')}</h3><p className="text-gray-500 mt-1">{t('empty.description')}</p></div>
   }
   return (
     <div className="space-y-3">
@@ -259,6 +266,7 @@ function PRFAQList({ isLoading, prfaqs, scores, expandedId, onToggleExpand, onUp
 }
 
 export default function Prioritization() {
+  const { t } = useTranslation('prioritization')
   const { config } = useConfigStore()
   const queryClient = useQueryClient()
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -314,7 +322,6 @@ export default function Prioritization() {
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      // Only send the scores that were actually changed
       const changedScores: Record<string, PrioritizationScore> = {}
       changedDocIds.forEach(docId => {
         if (scores[docId]) {
@@ -354,7 +361,7 @@ export default function Prioritization() {
   }
 
   if (!config.apiEndpoint) {
-    return <div className="text-center py-12"><p className="text-gray-500">Configure API endpoint in Settings to view prioritization.</p></div>
+    return <div className="text-center py-12"><p className="text-gray-500">{t('configureApiEndpoint')}</p></div>
   }
 
   const isLoading = loadingProjects || loadingDetails
@@ -363,19 +370,19 @@ export default function Prioritization() {
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">PR/FAQ Prioritization</h1>
-          <p className="text-sm sm:text-base text-gray-500 mt-1">Score and prioritize PR/FAQs across all projects</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="text-sm sm:text-base text-gray-500 mt-1">{t('subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           {hasChanges && (
             <button onClick={handleReset} className="flex items-center gap-2 px-3 sm:px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">
-              <RotateCcw size={16} /><span className="hidden sm:inline">Reset</span>
+              <RotateCcw size={16} /><span className="hidden sm:inline">{t('actions.reset')}</span>
             </button>
           )}
           <button onClick={() => saveMutation.mutate()} disabled={!hasChanges || saveMutation.isPending} className={clsx('flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium text-sm', hasChanges ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed')}>
             <Save size={16} />
-            <span className="hidden sm:inline">{saveMutation.isPending ? 'Saving...' : 'Save Scores'}</span>
-            <span className="sm:hidden">{saveMutation.isPending ? '...' : 'Save'}</span>
+            <span className="hidden sm:inline">{saveMutation.isPending ? t('actions.saving') : t('actions.save')}</span>
+            <span className="sm:hidden">{saveMutation.isPending ? t('actions.savingMobile') : t('actions.saveMobile')}</span>
           </button>
         </div>
       </div>
@@ -384,8 +391,12 @@ export default function Prioritization() {
         <div className="flex items-start gap-3">
           <Sparkles className="text-blue-600 mt-0.5 flex-shrink-0" size={20} />
           <div>
-            <h3 className="font-medium text-blue-900 text-sm sm:text-base">Prioritization Framework</h3>
-            <p className="text-xs sm:text-sm text-blue-700 mt-1">Score each PR/FAQ on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.</p>
+            <h3 className="font-medium text-blue-900 text-sm sm:text-base">{t('framework.title')}</h3>
+            <p className="text-xs sm:text-sm text-blue-700 mt-1">
+              <Trans i18nKey="framework.description" ns="prioritization">
+                Score each PR/FAQ on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.
+              </Trans>
+            </p>
           </div>
         </div>
       </div>
@@ -404,10 +415,10 @@ export default function Prioritization() {
 
       <ConfirmModal
         isOpen={blocker.state === 'blocked'}
-        title="Unsaved Changes"
-        message="You have unsaved prioritization scores. Do you want to discard your changes and leave this page?"
-        confirmLabel="Discard Changes"
-        cancelLabel="Stay on Page"
+        title={t('unsavedChanges.title')}
+        message={t('unsavedChanges.message')}
+        confirmLabel={t('unsavedChanges.confirm')}
+        cancelLabel={t('unsavedChanges.cancel')}
         variant="warning"
         onConfirm={() => blocker.proceed?.()}
         onCancel={() => blocker.reset?.()}

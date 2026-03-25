@@ -5,6 +5,7 @@
 
 import { useState } from 'react'
 import { FileJson, Database, X, Loader2, Save, Link2, AlertTriangle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 
 export interface EditModalState {
@@ -46,10 +47,16 @@ function getFileType(isPresignedUrl: boolean | undefined, contentType: string | 
   return 'text'
 }
 
-function getTitle(mode: EditMode, type: EditType): string {
-  if (mode === 'create') return 'Create New File'
-  const target = type === 's3' ? 'S3 File' : 'Feedback'
-  return mode === 'edit' ? `Edit ${target}` : `View ${target}`
+function getTitle(mode: EditMode, type: EditType, t: (key: string) => string): string {
+  if (mode === 'create') return t('editModal.createNewFile')
+  const titleMap: Record<string, string> = {
+    's3-edit': 'editModal.editS3File',
+    's3-view': 'editModal.viewS3File',
+    'dynamodb-edit': 'editModal.editFeedback',
+    'dynamodb-view': 'editModal.viewFeedback',
+  }
+  const key = `${type}-${mode}`
+  return t(titleMap[key] ?? 'editModal.viewS3File')
 }
 
 function validateJson(text: string): string | null {
@@ -95,6 +102,7 @@ function MediaContent({ fileType, mediaUrl, fileKey }: MediaContentProps) {
 export default function EditModal({
   mode, type, data, key: fileKey, feedbackId, s3RawUri, contentType, isPresignedUrl, onClose, onSave, saving, error
 }: Readonly<EditModalProps>) {
+  const { t } = useTranslation('dataExplorer')
   const initialContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2)
   const [content, setContent] = useState(initialContent)
   const [syncEnabled, setSyncEnabled] = useState(false)
@@ -103,7 +111,7 @@ export default function EditModal({
   const fileType = getFileType(isPresignedUrl, contentType, fileKey)
   const isMediaFile = fileType === 'image' || fileType === 'pdf'
   const isReadOnly = mode === 'view' || isMediaFile
-  const title = getTitle(mode, type)
+  const title = getTitle(mode, type, t)
 
   const handleContentChange = (text: string) => {
     setContent(text)
@@ -147,7 +155,7 @@ export default function EditModal({
               />
               {jsonError && (
                 <p className="text-xs text-red-600 mt-2 flex items-center gap-1">
-                  <AlertTriangle size={14} /> Invalid JSON: {jsonError}
+                  <AlertTriangle size={14} /> {t('editModal.invalidJson', { error: jsonError })}
                 </p>
               )}
             </>
@@ -207,13 +215,14 @@ interface ModalMetadataProps {
 }
 
 function ModalMetadata({ type, fileKey, feedbackId, s3RawUri, contentType }: ModalMetadataProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="px-3 sm:px-4 py-2 bg-gray-50 border-b text-xs text-gray-600 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 overflow-x-auto">
       {type === 's3' && fileKey && (
-        <span className="truncate">Key: <code className="bg-gray-200 px-1 rounded">{fileKey}</code></span>
+        <span className="truncate">{t('editModal.key')}: <code className="bg-gray-200 px-1 rounded">{fileKey}</code></span>
       )}
       {type === 'dynamodb' && feedbackId && (
-        <span className="truncate">ID: <code className="bg-gray-200 px-1 rounded">{feedbackId}</code></span>
+        <span className="truncate">{t('editModal.id')}: <code className="bg-gray-200 px-1 rounded">{feedbackId}</code></span>
       )}
       {s3RawUri && (
         <span className="flex items-center gap-1 truncate">
@@ -221,7 +230,7 @@ function ModalMetadata({ type, fileKey, feedbackId, s3RawUri, contentType }: Mod
         </span>
       )}
       {contentType && (
-        <span className="truncate">Type: <code className="bg-gray-200 px-1 rounded">{contentType}</code></span>
+        <span className="truncate">{t('editModal.type')}: <code className="bg-gray-200 px-1 rounded">{contentType}</code></span>
       )}
     </div>
   )
@@ -244,8 +253,9 @@ interface ModalFooterProps {
 function ModalFooter({
   type, mode, isReadOnly, isMediaFile, syncEnabled, onSyncChange, onClose, onSave, saving, jsonError, error
 }: ModalFooterProps) {
-  const syncLabel = type === 's3' ? 'Also update DynamoDB' : 'Also update S3'
-  const saveLabel = mode === 'create' ? 'Create' : 'Save'
+  const { t } = useTranslation('dataExplorer')
+  const syncLabel = type === 's3' ? t('editModal.syncToDynamo') : t('editModal.syncToS3')
+  const saveLabel = mode === 'create' ? t('editModal.create') : t('editModal.save')
 
   return (
     <div className="px-3 sm:px-4 py-3 border-t bg-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -265,7 +275,7 @@ function ModalFooter({
       <div className="flex items-center gap-2 justify-end">
         {error && <span className="text-xs text-red-600">{error}</span>}
         <button onClick={onClose} className="btn btn-secondary text-sm">
-          {isMediaFile ? 'Close' : 'Cancel'}
+          {isMediaFile ? t('editModal.close') : t('editModal.cancel')}
         </button>
         {!isReadOnly && !isMediaFile && (
           <button

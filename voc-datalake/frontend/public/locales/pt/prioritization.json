@@ -1,0 +1,74 @@
+{
+  "actions": {
+    "reset": "Redefinir",
+    "save": "Salvar Pontuações",
+    "saveMobile": "Salvar",
+    "saving": "Salvando...",
+    "savingMobile": "..."
+  },
+  "configureApiEndpoint": "Configure o endpoint da API em Configurações para visualizar a priorização.",
+  "empty": {
+    "description": "Crie PR/FAQs em seus projetos para começar a priorizar.",
+    "title": "Nenhum PR/FAQ Encontrado"
+  },
+  "framework": {
+    "description": "Pontue cada PR/FAQ em: <strong>Impacto</strong>, <strong>Tempo para o Mercado</strong>, <strong>Alinhamento Estratégico</strong> e <strong>Confiança</strong>.",
+    "title": "Framework de Priorização"
+  },
+  "loading": "Carregando PR/FAQs...",
+  "notes": {
+    "label": "Notas",
+    "placeholder": "Adicione notas sobre esta decisão de priorização..."
+  },
+  "preview": {
+    "title": "Visualização de PR/FAQ",
+    "viewFull": "Visualizar Documento Completo",
+    "viewMobile": "Visualizar"
+  },
+  "priority": {
+    "high": "Alta Prioridade",
+    "low": "Baixa Prioridade",
+    "medium": "Média Prioridade",
+    "none": "Não Pontuado"
+  },
+  "scores": {
+    "confidence": "Confiança",
+    "confidenceDescription": "Certeza nas estimativas de impacto e TTM",
+    "fast": "Rápido",
+    "high": "Alto",
+    "impact": "Impacto",
+    "impactDescription": "Valor comercial e benefício ao cliente",
+    "low": "Baixo",
+    "score": "Pontuação",
+    "slow": "Lento",
+    "strategicFit": "Alinhamento Estratégico",
+    "strategicFitDescription": "Alinhamento com objetivos da empresa",
+    "timeToMarket": "Tempo para o Mercado",
+    "timeToMarketDescription": "Com que rapidez isso pode ser entregue?",
+    "title": "Pontuações de Priorização"
+  },
+  "sort": {
+    "date": "Data",
+    "dateFull": "Data de Criação",
+    "impact": "Impacto",
+    "label": "Ordenar por:",
+    "priority": "Prioridade",
+    "priorityFull": "Pontuação de Prioridade",
+    "ttm": "TTM",
+    "ttmFull": "Tempo para o Mercado"
+  },
+  "stats": {
+    "highPriority": "Alta Prioridade",
+    "mediumPriority": "Média Prioridade",
+    "notScored": "Não Pontuado",
+    "totalPrfaqs": "Total de PR/FAQs"
+  },
+  "subtitle": "Pontue e priorize PR/FAQs em todos os projetos",
+  "title": "Priorização de PR/FAQ",
+  "unsavedChanges": {
+    "cancel": "Permanecer na Página",
+    "confirm": "Descartar Alterações",
+    "message": "Você tem pontuações de priorização não salvas. Deseja descartar suas alterações e sair desta página?",
+    "title": "Alterações Não Salvas"
+  }
+}

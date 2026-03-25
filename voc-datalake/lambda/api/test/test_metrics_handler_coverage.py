@@ -17,12 +17,14 @@ class TestListFeedbackCategoryFilter:
     def test_category_filter_without_source(self, mock_agg, mock_fb, api_gateway_event, lambda_context):
         """Uses GSI2 when category is provided without source."""
         from metrics_handler import lambda_handler
-        mock_fb.query.return_value = {
-            'Items': [
-                {'feedback_id': '1', 'category': 'delivery', 'source_platform': 'web'},
-                {'feedback_id': '2', 'category': 'delivery', 'source_platform': 'app'},
-            ]
-        }
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        mock_fb.query.side_effect = [
+            {'Items': [
+                {'feedback_id': '1', 'category': 'delivery', 'source_platform': 'web', 'date': today},
+                {'feedback_id': '2', 'category': 'delivery', 'source_platform': 'app', 'date': today},
+            ]}
+        ] + [{'Items': []}] * 10
         event = api_gateway_event(
             method='GET', path='/feedback',
             query_params={'category': 'delivery', 'days': '7'}

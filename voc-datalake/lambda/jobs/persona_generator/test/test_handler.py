@@ -8,12 +8,12 @@ class TestPersonaGeneratorHandler:
     """Tests for the persona generator job Lambda handler."""
 
     def test_successful_persona_generation(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event
+        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
     ):
         """Test successful persona generation job."""
         from jobs.persona_generator.handler import lambda_handler
         
-        result = lambda_handler(persona_generation_event, None)
+        result = lambda_handler(persona_generation_event, lambda_context)
         
         assert result['success'] is True
         mock_generate_personas.assert_called_once()
@@ -22,12 +22,12 @@ class TestPersonaGeneratorHandler:
         assert 'progress_callback' in call_args.kwargs
 
     def test_job_status_updated_on_completion(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event
+        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
     ):
         """Test that job status is updated to completed."""
         from jobs.persona_generator.handler import lambda_handler
         
-        lambda_handler(persona_generation_event, None)
+        lambda_handler(persona_generation_event, lambda_context)
         
         # Verify job was marked as completed
         mock_jobs_table.update_item.assert_called()
@@ -35,7 +35,7 @@ class TestPersonaGeneratorHandler:
         assert ':status' in str(last_call) or 'completed' in str(last_call)
 
     def test_job_status_updated_on_failure(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event
+        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
     ):
         """Test that job status is updated to failed on error."""
         from jobs.persona_generator.handler import lambda_handler
@@ -44,13 +44,13 @@ class TestPersonaGeneratorHandler:
         mock_generate_personas.side_effect = Exception("LLM error")
         
         with pytest.raises(ServiceError):
-            lambda_handler(persona_generation_event, None)
+            lambda_handler(persona_generation_event, lambda_context)
         
         # Verify job was marked as failed
         mock_jobs_table.update_item.assert_called()
 
     def test_progress_callback_updates_job(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event
+        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
     ):
         """Test that progress callback updates job status."""
         from jobs.persona_generator.handler import lambda_handler
@@ -64,7 +64,7 @@ class TestPersonaGeneratorHandler:
         
         mock_generate_personas.side_effect = capture_callback
         
-        lambda_handler(persona_generation_event, None)
+        lambda_handler(persona_generation_event, lambda_context)
         
         # Verify callback was provided
         assert captured_callback is not None
@@ -74,12 +74,12 @@ class TestPersonaGeneratorHandler:
         assert mock_jobs_table.update_item.called
 
     def test_handler_extracts_filters_from_event(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event
+        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
     ):
         """Test that handler correctly extracts filters from event."""
         from jobs.persona_generator.handler import lambda_handler
         
-        lambda_handler(persona_generation_event, None)
+        lambda_handler(persona_generation_event, lambda_context)
         
         call_args = mock_generate_personas.call_args
         assert call_args[0][0] == persona_generation_event['project_id']

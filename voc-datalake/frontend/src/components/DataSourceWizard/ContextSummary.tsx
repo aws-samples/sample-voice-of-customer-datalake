@@ -1,6 +1,7 @@
 /**
  * ContextSummary component - displays summary of selected context
  */
+import { useTranslation } from 'react-i18next'
 import type { ProjectPersona, ProjectDocument } from '../../api/client'
 import type { ContextConfig } from './types'
 
@@ -20,18 +21,20 @@ function formatConfigList(items: string[], fallback: string): string {
 
 // Feedback section component
 function FeedbackSection({ config }: Readonly<{ config: ContextConfig }>) {
+  const { t } = useTranslation('components')
   if (!config.useFeedback) return null
   return (
     <div className="space-y-1">
-      <p><span className="text-gray-500">Sources:</span> {formatConfigList(config.sources, 'All')}</p>
-      <p><span className="text-gray-500">Categories:</span> {formatConfigList(config.categories, 'All')}</p>
-      <p><span className="text-gray-500">Sentiments:</span> {formatConfigList(config.sentiments, 'All')}</p>
-      <p><span className="text-gray-500">Time Range:</span> Last {config.days} days</p>
+      <p><span className="text-gray-500">{t('dataSourceWizard.sources')}:</span> {formatConfigList(config.sources, 'All')}</p>
+      <p><span className="text-gray-500">{t('dataSourceWizard.categories')}:</span> {formatConfigList(config.categories, 'All')}</p>
+      <p><span className="text-gray-500">{t('dataSourceWizard.sentiments')}:</span> {formatConfigList(config.sentiments, 'All')}</p>
+      <p><span className="text-gray-500">{t('dataSourceWizard.timeRange')}:</span> {t('dataSourceWizard.lastDays', { days: config.days })}</p>
     </div>
   )
 }
 
 export default function ContextSummary({ config, personas, documents }: ContextSummaryProps) {
+  const { t } = useTranslation('components')
   const selectedPersonas = personas.filter(p => config.selectedPersonaIds.includes(p.persona_id))
   const researchDocs = documents.filter(d => d.document_type === 'research')
   const otherDocs = documents.filter(d => d.document_type !== 'research')
@@ -42,30 +45,30 @@ export default function ContextSummary({ config, personas, documents }: ContextS
 
   return (
     <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
-      <h4 className="font-medium">Context Summary</h4>
+      <h4 className="font-medium">{t('dataSourceWizard.contextSummary')}</h4>
       
       <FeedbackSection config={config} />
       
       {config.usePersonas && (
-        <p><span className="text-gray-500">Personas:</span> {
+        <p><span className="text-gray-500">{t('dataSourceWizard.selectPersonas')}:</span> {
           formatListOrAll(selectedPersonas.map(p => p.name), personas.length, 'personas')
         }</p>
       )}
       
       {config.useDocuments && (
-        <p><span className="text-gray-500">Documents:</span> {
+        <p><span className="text-gray-500">{t('dataSourceWizard.selectDocuments')}:</span> {
           formatListOrAll(selectedDocs.map(d => d.title), otherDocs.length, 'documents')
         }</p>
       )}
       
       {config.useResearch && (
-        <p><span className="text-gray-500">Research:</span> {
+        <p><span className="text-gray-500">{t('dataSourceWizard.selectResearchDocuments')}:</span> {
           formatListOrAll(selectedResearch.map(d => d.title), researchDocs.length, 'research docs')
         }</p>
       )}
       
       {hasNoSources && (
-        <p className="text-gray-400 italic">No data sources selected</p>
+        <p className="text-gray-400 italic">{t('dataSourceWizard.noDataSourcesSelected')}</p>
       )}
     </div>
   )

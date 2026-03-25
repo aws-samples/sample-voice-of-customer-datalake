@@ -1,5 +1,6 @@
 import { Filter, X, ChevronDown, Star } from 'lucide-react'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import type { CategoryData, SentimentFilter } from './types'
 
 interface CategorySelectorProps {
@@ -31,16 +32,18 @@ export function CategorySelector({
   sentimentFilter,
   onSentimentFilterChange,
 }: CategorySelectorProps) {
+  const { t } = useTranslation('categories')
+
   return (
     <div className="card">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
-        <h2 className="text-base sm:text-lg font-semibold">Select Categories to Explore</h2>
+        <h2 className="text-base sm:text-lg font-semibold">{t('selectCategoriesToExplore')}</h2>
         <div className="flex items-center gap-2">
           {hasActiveFilters && (
             <button onClick={onClearFilters} className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
               <X size={14} />
-              <span className="hidden xs:inline">Clear filters</span>
-              <span className="xs:hidden">Clear</span>
+              <span className="hidden xs:inline">{t('clearFilters')}</span>
+              <span className="xs:hidden">{t('clear')}</span>
             </button>
           )}
           <button
@@ -51,7 +54,7 @@ export function CategorySelector({
             )}
           >
             <Filter size={14} />
-            <span className="hidden xs:inline">Filters</span>
+            <span className="hidden xs:inline">{t('filters')}</span>
             <ChevronDown size={14} className={clsx('transition-transform', showFilters && 'rotate-180')} />
           </button>
         </div>
@@ -102,10 +105,12 @@ function AdvancedFilters({
   sentimentFilter: SentimentFilter
   onSentimentFilterChange: (filter: SentimentFilter) => void
 }>) {
+  const { t } = useTranslation('categories')
+
   return (
     <div className="mb-3 sm:mb-4 p-3 sm:p-4 bg-gray-50 rounded-lg flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4">
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Min Rating</label>
+        <label className="block text-xs text-gray-500 mb-1">{t('minRating')}</label>
         <div className="flex gap-0.5 sm:gap-1">
           {[0, 1, 2, 3, 4, 5].map(rating => (
             <button
@@ -114,7 +119,7 @@ function AdvancedFilters({
               className={clsx('p-1 sm:p-1.5 rounded transition-colors active:scale-95', minRating === rating ? 'bg-yellow-100' : 'hover:bg-gray-200')}
             >
               {rating === 0 ? (
-                <span className="text-xs text-gray-500 px-1">Any</span>
+                <span className="text-xs text-gray-500 px-1">{t('any')}</span>
               ) : (
                 <Star size={14} className="sm:w-4 sm:h-4" fill={minRating >= rating ? '#eab308' : 'none'} color={minRating >= rating ? '#eab308' : '#d1d5db'} />
               )}
@@ -123,7 +128,7 @@ function AdvancedFilters({
         </div>
       </div>
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Sentiment</label>
+        <label className="block text-xs text-gray-500 mb-1">{t('sentiment')}</label>
         <select
           value={sentimentFilter}
           onChange={(e) => {
@@ -134,11 +139,11 @@ function AdvancedFilters({
           }}
           className="px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm w-full sm:w-auto"
         >
-          <option value="all">All Sentiments</option>
-          <option value="positive">Positive</option>
-          <option value="neutral">Neutral</option>
-          <option value="negative">Negative</option>
-          <option value="mixed">Mixed</option>
+          <option value="all">{t('allSentiments')}</option>
+          <option value="positive">{t('positive')}</option>
+          <option value="neutral">{t('neutral')}</option>
+          <option value="negative">{t('negative')}</option>
+          <option value="mixed">{t('mixed')}</option>
         </select>
       </div>
     </div>

@@ -113,62 +113,6 @@ export interface ScraperTemplate {
   config: Partial<ScraperConfig>
 }
 
-export interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  sources?: FeedbackItem[]
-  timestamp: string
-  filters?: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-}
-
-export interface ChatConversation {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  filters: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  sources?: FeedbackItem[]
-  timestamp: string
-  filters?: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-}
-
-export interface ChatConversation {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  filters: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-  createdAt: string
-  updatedAt: string
-}
-
 export interface EntitiesResponse {
   period_days: number
   feedback_count: number

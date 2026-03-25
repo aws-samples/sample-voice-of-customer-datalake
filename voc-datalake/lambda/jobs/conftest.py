@@ -93,6 +93,18 @@ def mock_converse():
 
 
 @pytest.fixture
+def lambda_context():
+    """Create a mock Lambda context for Powertools decorators."""
+    context = MagicMock()
+    context.function_name = 'test-voc-job'
+    context.memory_limit_in_mb = 256
+    context.invoked_function_arn = 'arn:aws:lambda:us-east-1:123456789012:function:test-voc-job'
+    context.aws_request_id = 'test-request-id-12345'
+    context.get_remaining_time_in_millis.return_value = 300000
+    return context
+
+
+@pytest.fixture
 def sample_job_event():
     """Sample job event with common fields."""
     return {

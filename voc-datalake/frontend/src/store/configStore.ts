@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
 
-export interface SourceConfig {
+interface SourceConfig {
   enabled: boolean
   schedule: string // cron or rate
   credentials: Record<string, string>

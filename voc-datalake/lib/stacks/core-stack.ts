@@ -4,6 +4,7 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -17,6 +18,10 @@ import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefa
 
 export interface VocCoreStackProps extends cdk.StackProps {
   brandName: string;
+  /** Custom domain name for CloudFront (e.g., "app.example.com"). Requires certificateArn. */
+  customDomain?: string;
+  /** ARN of an ACM certificate in us-east-1 for the custom domain. Enables TLS 1.2. */
+  certificateArn?: string;
 }
 
 /**
@@ -143,6 +148,12 @@ export class VocCoreStack extends cdk.Stack {
       },
     });
 
+    // Custom domain + ACM certificate for TLS 1.2 enforcement
+    const useCustomDomain = props.customDomain && props.certificateArn;
+    const certificate = props.certificateArn
+      ? acm.Certificate.fromCertificateArn(this, 'FrontendCertificate', props.certificateArn)
+      : undefined;
+
     // Frontend hosting distribution (created first so we can use its domain for CORS)
     this.frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
       defaultBehavior: {
@@ -163,9 +174,24 @@ export class VocCoreStack extends cdk.Stack {
       enableLogging: true,
       logBucket: this.accessLogsBucket,
       logFilePrefix: 'cloudfront-frontend/',
+      ...(useCustomDomain && certificate ? {
+        domainNames: [props.customDomain!],
+        certificate,
+        minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+        sslSupportMethod: cloudfront.SSLMethod.SNI,
+      } : {}),
     });
-    NagSuppressions.addResourceSuppressions(this.frontendDistribution, cloudfrontDefaultCertSuppressions);
-    this.frontendDomainName = this.frontendDistribution.distributionDomainName;
+
+    // Only suppress CFR4 when using default certificate (no custom domain)
+    if (!useCustomDomain) {
+      NagSuppressions.addResourceSuppressions(this.frontendDistribution, cloudfrontDefaultCertSuppressions);
+    } else {
+      // Still suppress CFR1 (geo restrictions) and CFR2 (WAF) — those are separate concerns
+      NagSuppressions.addResourceSuppressions(this.frontendDistribution, cloudfrontDefaultCertSuppressions.filter(
+        s => s.id !== 'AwsSolutions-CFR4'
+      ));
+    }
+    this.frontendDomainName = useCustomDomain ? props.customDomain! : this.frontendDistribution.distributionDomainName;
 
     // Avatars served from the same distribution under /avatars/* path
     // This avoids CSP issues (same-origin) and eliminates the need for a separate distribution

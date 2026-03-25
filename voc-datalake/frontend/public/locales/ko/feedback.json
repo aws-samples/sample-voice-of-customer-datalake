@@ -11,5 +11,6 @@
   },
   "forQuery": "\"{{query}}\" 검색 결과",
   "noFeedbackFound": "필터 조건에 맞는 피드백이 없습니다",
+  "showingOf_one": "전체 {{total}}개 중 {{count}}개 표시",
   "showingOf_other": "전체 {{total}}개 중 {{count}}개 표시"
 }

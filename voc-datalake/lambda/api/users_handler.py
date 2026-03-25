@@ -12,12 +12,9 @@ Only accessible by users in the 'admins' group.
 """
 import os
 import json
-import sys
 import uuid
 import boto3
 from typing import Any
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer
 from shared.api import create_api_resolver, api_handler

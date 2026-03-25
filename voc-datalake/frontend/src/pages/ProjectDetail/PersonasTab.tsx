@@ -3,6 +3,7 @@
  */
 import { Users, Sparkles, Upload } from 'lucide-react'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import type { ProjectPersona } from '../../api/client'
 import PersonaAvatar from './PersonaAvatar'
 import PersonaDetailView from './PersonaDetailView'
@@ -33,6 +34,8 @@ export default function PersonasTab({
   isDeleting,
   isSavingNotes,
 }: PersonasTabProps) {
+  const { t } = useTranslation('projectDetail')
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row justify-end gap-2">
@@ -40,13 +43,13 @@ export default function PersonasTab({
           onClick={onImportPersona} 
           className="flex items-center justify-center gap-2 px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50 text-sm"
         >
-          <Upload size={16} />Import Persona
+          <Upload size={16} />{t('personas.importPersona')}
         </button>
         <button 
           onClick={onGeneratePersonas} 
           className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
         >
-          <Sparkles size={16} />Generate Personas
+          <Sparkles size={16} />{t('personas.generatePersonas')}
         </button>
       </div>
       
@@ -91,7 +94,7 @@ export default function PersonasTab({
               />
             ) : (
               <div className="flex items-center justify-center h-full min-h-[500px] text-gray-400">
-                Select a persona to view details
+                {t('personas.selectToView')}
               </div>
             )}
           </div>
@@ -102,13 +105,14 @@ export default function PersonasTab({
 }
 
 function EmptyPersonasState({ onGenerate }: { readonly onGenerate: () => void }) {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="text-center py-12 bg-white rounded-xl border">
       <Users size={48} className="mx-auto text-gray-300 mb-4" />
-      <h3 className="text-lg font-medium mb-2">No personas yet</h3>
-      <p className="text-gray-500 mb-4">Generate personas from feedback</p>
+      <h3 className="text-lg font-medium mb-2">{t('personas.noPersonasYet')}</h3>
+      <p className="text-gray-500 mb-4">{t('personas.generateFromFeedback')}</p>
       <button onClick={onGenerate} className="px-4 py-2 bg-purple-600 text-white rounded-lg">
-        <Sparkles size={16} className="inline mr-2" />Generate
+        <Sparkles size={16} className="inline mr-2" />{t('overview.generate')}
       </button>
     </div>
   )

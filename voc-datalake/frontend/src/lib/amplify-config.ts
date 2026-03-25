@@ -8,7 +8,7 @@
  * Streaming chat now uses Cognito token auth via API Gateway (streamClient.ts).
  */
 import { Amplify } from 'aws-amplify'
-import { getConfig } from '../config'
+import { getRuntimeConfig } from '../runtimeConfig'
 
 // eslint-disable-next-line no-restricted-syntax -- Singleton pattern requires mutation
 let isConfigured = false
@@ -16,7 +16,7 @@ let isConfigured = false
 export function configureAmplify(): void {
   if (isConfigured) return
 
-  const cfg = getConfig()
+  const cfg = getRuntimeConfig()
   
   if (!cfg.cognito.userPoolId || !cfg.cognito.clientId || !cfg.cognito.identityPoolId) {
     console.warn('Amplify configuration incomplete - streaming API will not work')

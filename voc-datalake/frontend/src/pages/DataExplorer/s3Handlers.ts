@@ -12,7 +12,8 @@ export async function openS3Editor(
   selectedBucket: string,
   setEditModal: (state: EditModalState) => void
 ): Promise<void> {
-  const preview = await api.getDataExplorerS3Preview(fullKey, selectedBucket)
+  const preview: { content: unknown; contentType?: string; isPresignedUrl?: boolean } =
+    await api.getDataExplorerS3Preview(fullKey, selectedBucket)
   setEditModal({
     isOpen: true, mode, type: 's3', data: preview.content, key: fullKey,
     contentType: preview.contentType, isPresignedUrl: preview.isPresignedUrl,
@@ -24,10 +25,11 @@ export function openS3Creator(
   setEditModal: (state: EditModalState) => void
 ): void {
   const prefix = s3Path.length > 0 ? s3Path.join('/') + '/' : 'raw/'
+  const id = crypto.randomUUID()
   setEditModal({
     isOpen: true, mode: 'create', type: 's3',
     data: { source_platform: 'manual', text: '', created_at: new Date().toISOString() },
-    key: `${prefix}${Date.now()}.json`,
+    key: `${prefix}${id}.json`,
   })
 }
 
@@ -36,7 +38,8 @@ export async function downloadS3File(
   filename: string,
   selectedBucket: string
 ): Promise<void> {
-  const preview = await api.getDataExplorerS3Preview(fullKey, selectedBucket)
+  const preview: { content: unknown; contentType?: string; isPresignedUrl?: boolean } =
+    await api.getDataExplorerS3Preview(fullKey, selectedBucket)
   const blob = preview.isPresignedUrl && typeof preview.content === 'string'
     ? await fetch(preview.content).then(r => r.blob())
     : new Blob(

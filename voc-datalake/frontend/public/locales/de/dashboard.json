@@ -16,6 +16,7 @@
     "neutral": "Neutral",
     "positive": "Positiv"
   },
+  "sentimentDistribution": "Stimmungsverteilung",
   "topIssueCategories": "Top-Problemkategorien",
   "urgentIssues_one": "{{count}} dringendes Problem",
   "urgentIssues_other": "{{count}} dringende Probleme",

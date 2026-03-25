@@ -11,5 +11,6 @@
   },
   "forQuery": "「{{query}}」の検索結果",
   "noFeedbackFound": "フィルター条件に一致するフィードバックが見つかりません",
+  "showingOf_one": "{{total}}件中{{count}}件を表示",
   "showingOf_other": "{{total}}件中{{count}}件を表示"
 }

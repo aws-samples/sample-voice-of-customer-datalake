@@ -8,6 +8,7 @@
 
 import { useState, useRef, useCallback, type DragEvent } from 'react'
 import { X, Upload, Download, FileJson, AlertCircle, CheckCircle, Loader2, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
 import clsx from 'clsx'
 import { api } from '../../api/client'
@@ -154,52 +155,55 @@ function validateFileBasics(file: File): string | null {
 // ============================================
 
 function SuccessView({ count, onClose }: Readonly<{ count: number; onClose: () => void }>) {
+  const { t } = useTranslation('scrapers')
   return (
     <div className="text-center py-8">
       <CheckCircle className="mx-auto h-12 w-12 text-green-500 mb-4" />
       <h3 className="text-lg font-medium text-gray-900 mb-2">
-        {count} item{count !== 1 ? 's' : ''} imported
+        {t('jsonUpload.itemsImported', { count })}
       </h3>
       <p className="text-sm text-gray-500 mb-6">
-        Items are now being processed through the pipeline. They'll appear on the dashboard shortly.
+        {t('jsonUpload.pipelineNote')}
       </p>
       <button onClick={onClose} className="btn btn-primary">
-        Done
+        {t('jsonUpload.done')}
       </button>
     </div>
   )
 }
 
 function FormatGuide() {
+  const { t } = useTranslation('scrapers')
   return (
     <div className="p-4 bg-gray-50 rounded-lg space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-medium text-gray-700">Format guide</div>
+        <div className="text-sm font-medium text-gray-700">{t('jsonUpload.formatGuide')}</div>
         <button
           onClick={downloadTemplate}
           className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium"
         >
-          <Download size={14} /> Download template
+          <Download size={14} /> {t('jsonUpload.downloadTemplate')}
         </button>
       </div>
       <div className="text-xs text-gray-500 space-y-1.5">
-        <p><span className="font-medium text-gray-700">text</span> — the feedback content. Keep the original text as-is.</p>
-        <p><span className="font-medium text-gray-700">id</span> — unique identifier from your source data (review ID, ticket number). Critical for deduplication — same id = skipped on re-import.</p>
-        <p><span className="font-medium text-gray-700">source</span> — where the feedback came from (e.g. "trustpilot", "zendesk"). Keep consistent across imports from the same origin.</p>
-        <p><span className="font-medium text-gray-700">timestamp</span> — ISO 8601 UTC (e.g. 2026-03-20T14:30:00Z). When the feedback was originally created.</p>
-        <p><span className="text-gray-400">Optional:</span> rating (1-5), title, user_id, url, metadata (flat key-value).</p>
-        <p className="text-gray-400">The template file includes full instructions and LLM-ready documentation.</p>
+        <p><span className="font-medium text-gray-700">text</span> — {t('jsonUpload.fieldText')}</p>
+        <p><span className="font-medium text-gray-700">id</span> — {t('jsonUpload.fieldId')}</p>
+        <p><span className="font-medium text-gray-700">source</span> — {t('jsonUpload.fieldSource')}</p>
+        <p><span className="font-medium text-gray-700">timestamp</span> — {t('jsonUpload.fieldTimestamp')}</p>
+        <p><span className="text-gray-400">{t('jsonUpload.optionalFields')}</span></p>
+        <p className="text-gray-400">{t('jsonUpload.templateNote')}</p>
       </div>
     </div>
   )
 }
 
 function PreviewList({ items }: Readonly<{ items: JsonFeedbackItem[] }>) {
+  const { t } = useTranslation('scrapers')
   if (items.length === 0) return null
   return (
     <div>
       <h4 className="text-sm font-medium text-gray-700 mb-2">
-        Preview — {items.length} item{items.length !== 1 ? 's' : ''}
+        {t('jsonUpload.preview', { count: items.length, plural: items.length !== 1 ? 's' : '' })}
       </h4>
       <div className="border rounded-lg divide-y max-h-60 overflow-y-auto">
         {items.slice(0, 20).map((item, i) => (
@@ -207,7 +211,7 @@ function PreviewList({ items }: Readonly<{ items: JsonFeedbackItem[] }>) {
         ))}
         {items.length > 20 && (
           <div className="px-3 py-2 text-xs text-gray-400 text-center">
-            ...and {items.length - 20} more items
+            {t('jsonUpload.moreItems', { count: items.length - 20 })}
           </div>
         )}
       </div>
@@ -245,6 +249,7 @@ function DropZone({ isDragging, fileName, fileInputRef, onDragOver, onDragLeave,
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void
   onReset: () => void
 }>) {
+  const { t } = useTranslation('scrapers')
   return (
     <div
       onDragOver={onDragOver}
@@ -270,8 +275,8 @@ function DropZone({ isDragging, fileName, fileInputRef, onDragOver, onDragLeave,
       ) : (
         <>
           <Upload size={24} className="mx-auto text-gray-400 mb-2" />
-          <p className="text-sm text-gray-600">Drop a JSON file here or click to browse</p>
-          <p className="text-xs text-gray-400 mt-1">Max 500 items, 5MB</p>
+          <p className="text-sm text-gray-600">{t('jsonUpload.dropHint')}</p>
+          <p className="text-xs text-gray-400 mt-1">{t('jsonUpload.dropLimits')}</p>
         </>
       )}
     </div>
@@ -284,18 +289,19 @@ function UploadFooter({ isUploading, itemCount, onImport, onClose }: Readonly<{
   onImport: () => void
   onClose: () => void
 }>) {
+  const { t } = useTranslation('scrapers')
   return (
     <div className="flex justify-end gap-3 px-6 py-4 border-t bg-gray-50">
-      <button onClick={onClose} className="btn btn-secondary">Cancel</button>
+      <button onClick={onClose} className="btn btn-secondary">{t('jsonUpload.cancel')}</button>
       <button
         onClick={onImport}
         disabled={itemCount === 0 || isUploading}
         className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isUploading ? (
-          <><Loader2 size={16} className="animate-spin" /> Importing...</>
+          <><Loader2 size={16} className="animate-spin" /> {t('jsonUpload.importing')}</>
         ) : (
-          <><Upload size={16} /> Import {itemCount} Item{itemCount !== 1 ? 's' : ''}</>
+          <><Upload size={16} /> {t('jsonUpload.importItems', { count: itemCount, plural: itemCount !== 1 ? 's' : '' })}</>
         )}
       </button>
     </div>
@@ -312,6 +318,7 @@ interface JsonUploadModalProps {
 }
 
 export default function JsonUploadModal({ isOpen, onClose }: JsonUploadModalProps) {
+  const { t } = useTranslation('scrapers')
   const [items, setItems] = useState<JsonFeedbackItem[]>([])
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [fileName, setFileName] = useState<string | null>(null)
@@ -420,7 +427,7 @@ export default function JsonUploadModal({ isOpen, onClose }: JsonUploadModalProp
             <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
               <FileJson className="text-blue-600" size={20} />
             </div>
-            <h2 className="text-lg font-semibold">JSON Upload</h2>
+            <h2 className="text-lg font-semibold">{t('jsonUpload.title')}</h2>
           </div>
           <button onClick={handleClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
             <X size={20} />

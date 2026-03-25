@@ -6,12 +6,8 @@ Manages brand configuration and categories.
 import json
 import os
 import re
-import sys
 from datetime import datetime, timezone
 from typing import Any
-
-# Add shared module to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID

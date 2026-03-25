@@ -12,6 +12,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { Star, ExternalLink } from 'lucide-react'
 import { api, getDaysFromRange } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -40,6 +41,7 @@ const SOURCE_COLORS: Record<string, string> = {
 }
 
 function FeedItem({ item }: Readonly<{ item: FeedbackItem }>) {
+  const { t } = useTranslation('components')
   const icon = SOURCE_ICONS[item.source_platform] || '📝'
   const borderColor = SOURCE_COLORS[item.source_platform] || 'border-l-gray-300'
   
@@ -80,7 +82,7 @@ function FeedItem({ item }: Readonly<{ item: FeedbackItem }>) {
             {item.category && <span className="capitalize">{item.category.replace(/_/g, ' ')}</span>}
             {item.source_url && (
               <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:underline">
-                View <ExternalLink size={10} />
+                {t('socialFeed.view')} <ExternalLink size={10} />
               </a>
             )}
           </div>
@@ -96,6 +98,7 @@ interface SocialFeedProps {
 }
 
 export default function SocialFeed({ limit = 10, showFilters = true }: SocialFeedProps) {
+  const { t } = useTranslation('components')
   const { timeRange, customDateRange, config } = useConfigStore()
   const days = getDaysFromRange(timeRange, customDateRange)
   const [activeSource, setActiveSource] = useState<string | null>(null)
@@ -143,7 +146,7 @@ export default function SocialFeed({ limit = 10, showFilters = true }: SocialFee
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               )}
             >
-              {source === 'all' ? '🔄 All' : `${SOURCE_ICONS[source] || ''} ${source.replace(/_/g, ' ')}`}
+              {source === 'all' ? `🔄 ${t('socialFeed.all')}` : `${SOURCE_ICONS[source] || ''} ${source.replace(/_/g, ' ')}`}
             </button>
           ))}
         </div>
@@ -155,7 +158,7 @@ export default function SocialFeed({ limit = 10, showFilters = true }: SocialFee
         ))}
         {(!data?.items || data.items.length === 0) && (
           <div className="text-center py-8 text-gray-500">
-            No feedback found for this period
+            {t('socialFeed.noFeedback')}
           </div>
         )}
       </div>

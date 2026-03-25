@@ -5,11 +5,7 @@ Manages API credentials and data source schedules.
 
 import json
 import os
-import sys
 from typing import Any
-
-# Add shared module to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_secrets_client

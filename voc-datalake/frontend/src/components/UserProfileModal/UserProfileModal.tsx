@@ -10,6 +10,7 @@
 
 import { useState } from 'react'
 import { X, User, Shield, Eye, Lock, Loader2, CheckCircle2, AlertCircle, EyeOff } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
 import clsx from 'clsx'
@@ -19,18 +20,18 @@ interface UserProfileModalProps {
   readonly onClose: () => void
 }
 
-function getPasswordError(err: unknown): string {
+function getPasswordError(err: unknown, t: (key: string) => string): string {
   if (err instanceof Error) {
-    if (err.message?.includes('Incorrect')) return 'Current password is incorrect'
-    return err.message || 'Failed to change password'
+    if (err.message?.includes('Incorrect')) return t('userProfile.incorrectPassword')
+    return err.message || t('userProfile.failedToChange')
   }
-  return 'Failed to change password'
+  return t('userProfile.failedToChange')
 }
 
-function validatePasswordChange(current: string, newPwd: string, confirm: string): string | null {
-  if (!current || !newPwd || !confirm) return 'All fields are required'
-  if (newPwd !== confirm) return 'New passwords do not match'
-  if (newPwd.length < 8) return 'Password must be at least 8 characters'
+function validatePasswordChange(current: string, newPwd: string, confirm: string, t: (key: string) => string): string | null {
+  if (!current || !newPwd || !confirm) return t('userProfile.allFieldsRequired')
+  if (newPwd !== confirm) return t('userProfile.passwordsMismatch')
+  if (newPwd.length < 8) return t('userProfile.passwordTooShort')
   return null
 }
 
@@ -58,27 +59,29 @@ function InfoField({ label, children }: Readonly<{ label: string; children: Reac
 
 // Role display component
 function RoleDisplay({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
+  const { t } = useTranslation('components')
   if (isAdmin) {
     return (
       <div className="flex items-center gap-2">
         <Shield size={16} className="text-purple-600 flex-shrink-0" />
-        <span className="text-purple-700 font-medium">Administrator</span>
+        <span className="text-purple-700 font-medium">{t('userProfile.administrator')}</span>
       </div>
     )
   }
   return (
     <div className="flex items-center gap-2">
       <Eye size={16} className="text-gray-500 flex-shrink-0" />
-      <span className="text-gray-700">User</span>
+      <span className="text-gray-700">{t('userProfile.user')}</span>
     </div>
   )
 }
 
 // Groups display component
 function GroupsDisplay({ groups }: Readonly<{ groups: string[] }>) {
+  const { t } = useTranslation('components')
   if (groups.length === 0) return null
   return (
-    <InfoField label="Groups">
+    <InfoField label={t('userProfile.groups')}>
       <div className="flex flex-wrap gap-2">
         {groups.map((group) => (
           <span
@@ -98,22 +101,23 @@ function GroupsDisplay({ groups }: Readonly<{ groups: string[] }>) {
 
 // Profile tab content
 function ProfileTab({ user, isAdmin }: Readonly<{ user: { name?: string; email?: string; username?: string; groups?: string[] }; isAdmin: boolean }>) {
+  const { t } = useTranslation('components')
   return (
     <div className="space-y-4">
       <UserAvatar name={user.name} email={user.email} />
       <div className="space-y-3">
         {user.name && (
-          <InfoField label="Name">
+          <InfoField label={t('userProfile.name')}>
             <p className="text-gray-900 font-medium truncate">{user.name}</p>
           </InfoField>
         )}
-        <InfoField label="Email">
+        <InfoField label={t('userProfile.email')}>
           <p className="text-gray-900 font-medium truncate">{user.email}</p>
         </InfoField>
-        <InfoField label="Username">
+        <InfoField label={t('userProfile.username')}>
           <p className="text-gray-900 truncate">{user.username}</p>
         </InfoField>
-        <InfoField label="Role">
+        <InfoField label={t('userProfile.role')}>
           <RoleDisplay isAdmin={isAdmin} />
         </InfoField>
         <GroupsDisplay groups={user.groups ?? []} />
@@ -183,21 +187,22 @@ function PasswordTab({
   onShowPasswordsChange: (v: boolean) => void
   onSubmit: () => void
 }>) {
+  const { t } = useTranslation('components')
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
         <Lock size={16} />
-        <span>Enter your current password and choose a new one</span>
+        <span>{t('userProfile.passwordIntro')}</span>
       </div>
 
-      <PasswordInput id="current-password" label="Current Password" value={currentPassword} onChange={onCurrentChange} showPassword={showPasswords} placeholder="Enter current password" />
-      <PasswordInput id="new-password" label="New Password" value={newPassword} onChange={onNewChange} showPassword={showPasswords} placeholder="Enter new password" />
-      <PasswordInput id="confirm-password" label="Confirm New Password" value={confirmPassword} onChange={onConfirmChange} showPassword={showPasswords} placeholder="Confirm new password" />
+      <PasswordInput id="current-password" label={t('userProfile.currentPassword')} value={currentPassword} onChange={onCurrentChange} showPassword={showPasswords} placeholder={t('userProfile.currentPasswordPlaceholder')} />
+      <PasswordInput id="new-password" label={t('userProfile.newPassword')} value={newPassword} onChange={onNewChange} showPassword={showPasswords} placeholder={t('userProfile.newPasswordPlaceholder')} />
+      <PasswordInput id="confirm-password" label={t('userProfile.confirmNewPassword')} value={confirmPassword} onChange={onConfirmChange} showPassword={showPasswords} placeholder={t('userProfile.confirmPasswordPlaceholder')} />
 
       <label htmlFor="show-passwords" className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
         <input id="show-passwords" type="checkbox" checked={showPasswords} onChange={(e) => onShowPasswordsChange(e.target.checked)} className="rounded border-gray-300" />
         {showPasswords ? <EyeOff size={14} /> : <Eye size={14} />}
-        Show passwords
+        {t('userProfile.showPasswords')}
       </label>
 
       {passwordError && (
@@ -210,7 +215,7 @@ function PasswordTab({
       {passwordSuccess && (
         <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded-lg">
           <CheckCircle2 size={16} className="flex-shrink-0" />
-          Password changed successfully!
+          {t('userProfile.passwordChanged')}
         </div>
       )}
 
@@ -220,17 +225,18 @@ function PasswordTab({
         className="btn btn-primary w-full flex items-center justify-center gap-2 py-2.5"
       >
         {isChanging ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
-        {isChanging ? 'Changing...' : 'Change Password'}
+        {isChanging ? t('userProfile.changing') : t('userProfile.changePassword')}
       </button>
 
       <p className="text-xs text-gray-500 text-center">
-        Password must be at least 8 characters with uppercase, lowercase, and numbers
+        {t('userProfile.passwordRequirements')}
       </p>
     </div>
   )
 }
 
 export default function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
+  const { t } = useTranslation('components')
   const { user } = useAuthStore()
   const [activeTab, setActiveTab] = useState<'profile' | 'password'>('profile')
 
@@ -250,7 +256,7 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
     setPasswordError('')
     setPasswordSuccess(false)
 
-    const validationError = validatePasswordChange(currentPassword, newPassword, confirmPassword)
+    const validationError = validatePasswordChange(currentPassword, newPassword, confirmPassword, t)
     if (validationError) {
       setPasswordError(validationError)
       return
@@ -265,7 +271,7 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
       setConfirmPassword('')
       setTimeout(() => setPasswordSuccess(false), 3000)
     } catch (err) {
-      setPasswordError(getPasswordError(err))
+      setPasswordError(getPasswordError(err, t))
     } finally {
       setIsChanging(false)
     }
@@ -287,7 +293,7 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
         <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <User size={20} className="text-blue-600" />
-            My Profile
+            {t('userProfile.myProfile')}
           </h3>
           <button onClick={handleClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded">
             <X size={20} />
@@ -299,13 +305,13 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
             onClick={() => setActiveTab('profile')}
             className={clsx('flex-1 px-4 py-3 text-sm font-medium transition-colors', activeTab === 'profile' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700')}
           >
-            Profile
+            {t('userProfile.profile')}
           </button>
           <button
             onClick={() => setActiveTab('password')}
             className={clsx('flex-1 px-4 py-3 text-sm font-medium transition-colors', activeTab === 'password' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700')}
           >
-            Change Password
+            {t('userProfile.changePassword')}
           </button>
         </div>
 

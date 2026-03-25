@@ -13,6 +13,7 @@
 
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { 
   Upload, FolderPlus, Trash2, FileText, Loader2, 
   CheckCircle2, AlertCircle, RefreshCw, FolderOpen
@@ -31,19 +32,21 @@ function formatFileSize(bytes: number): string {
 const SUPPORTED_FILE_REGEX = /\.(csv|json|jsonl)$/i
 
 function UploadingState({ count }: Readonly<{ count: number }>) {
+  const { t } = useTranslation('components')
   return (
     <div className="flex items-center justify-center gap-2 text-blue-600">
       <Loader2 size={20} className="animate-spin" />
-      <span className="text-sm sm:text-base">Uploading {count} file(s)...</span>
+      <span className="text-sm sm:text-base">{t('s3Import.uploading', { count })}</span>
     </div>
   )
 }
 
 function SuccessState({ message }: Readonly<{ message: string }>) {
+  const { t } = useTranslation('components')
   return (
     <div className="flex items-center justify-center gap-2 text-green-600">
       <CheckCircle2 size={20} />
-      <span className="text-sm sm:text-base">Uploaded {message}</span>
+      <span className="text-sm sm:text-base">{t('s3Import.uploaded', { filename: message })}</span>
     </div>
   )
 }
@@ -58,12 +61,13 @@ function ErrorState({ message }: Readonly<{ message: string }>) {
 }
 
 function IdleState({ selectedSource }: Readonly<{ selectedSource: string }>) {
+  const { t } = useTranslation('components')
   return (
     <>
       <Upload size={24} className="mx-auto mb-2 text-gray-400" />
-      <p className="text-gray-600 text-sm sm:text-base">Drop files here or click to upload</p>
-      <p className="text-xs text-gray-400 mt-1">Supports CSV, JSON, JSONL</p>
-      {selectedSource && <p className="text-xs text-blue-600 mt-1">Uploading to: {selectedSource}</p>}
+      <p className="text-gray-600 text-sm sm:text-base">{t('s3Import.dropFiles')}</p>
+      <p className="text-xs text-gray-400 mt-1">{t('s3Import.supportedFormats')}</p>
+      {selectedSource && <p className="text-xs text-blue-600 mt-1">{t('s3Import.uploadingTo', { source: selectedSource })}</p>}
     </>
   )
 }
@@ -75,6 +79,7 @@ function UploadStateDisplay({ uploadSuccess, uploadError, selectedSource }: Read
 }
 
 function FileListContent({ loadingFiles, files, onDelete }: Readonly<{ loadingFiles: boolean; files: S3ImportFile[]; onDelete: (key: string) => void }>) {
+  const { t } = useTranslation('components')
   if (loadingFiles) {
     return (
       <div className="p-8 text-center text-gray-500">
@@ -87,7 +92,7 @@ function FileListContent({ loadingFiles, files, onDelete }: Readonly<{ loadingFi
     return (
       <div className="p-8 text-center text-gray-500">
         <FileText className="mx-auto mb-2" size={24} />
-        <p>No files found</p>
+        <p>{t('s3Import.noFiles')}</p>
       </div>
     )
   }
@@ -107,9 +112,9 @@ function FileListContent({ loadingFiles, files, onDelete }: Readonly<{ loadingFi
           </div>
           <div className="flex items-center gap-2 justify-end sm:justify-start ml-6 sm:ml-0">
             <span className={clsx('text-xs px-2 py-0.5 rounded whitespace-nowrap', file.status === 'processed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')}>
-              {file.status === 'processed' ? 'Processed' : 'Pending'}
+              {file.status === 'processed' ? t('s3Import.processed') : t('s3Import.pending')}
             </span>
-            <button onClick={() => onDelete(file.key)} className="p-2 sm:p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded" title="Delete file">
+            <button onClick={() => onDelete(file.key)} className="p-2 sm:p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded" title={t('s3Import.deleteFile')}>
               <Trash2 size={16} />
             </button>
           </div>
@@ -120,6 +125,7 @@ function FileListContent({ loadingFiles, files, onDelete }: Readonly<{ loadingFi
 }
 
 export default function S3ImportExplorer() {
+  const { t } = useTranslation('components')
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [selectedSource, setSelectedSource] = useState<string>('')
@@ -179,7 +185,7 @@ export default function S3ImportExplorer() {
 
   const uploadSingleFile = async (file: File, source: string): Promise<boolean> => {
     if (!SUPPORTED_FILE_REGEX.test(file.name)) {
-      showTemporaryError(`Unsupported file type: ${file.name}. Only CSV, JSON, and JSONL files are supported.`)
+      showTemporaryError(t('s3Import.unsupportedFile', { filename: file.name }))
       return false
     }
 
@@ -189,14 +195,14 @@ export default function S3ImportExplorer() {
     const result = await api.getS3UploadUrl(file.name, source, contentType)
       .then(async (urlResponse) => {
         if (!urlResponse.success || !urlResponse.upload_url) {
-          throw new Error(urlResponse.error || 'Failed to get upload URL')
+          throw new Error('Failed to get upload URL')
         }
         await fetch(urlResponse.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': contentType } })
         return true
       })
-      .catch((err: unknown) => {
+      .catch((err) => {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-        showTemporaryError(`Failed to upload ${file.name}: ${errorMessage}`)
+        showTemporaryError(t('s3Import.uploadFailed', { filename: file.name, error: errorMessage }))
         return false
       })
 
@@ -228,7 +234,7 @@ export default function S3ImportExplorer() {
     return (
       <div className="text-center py-8 text-gray-500">
         <AlertCircle className="mx-auto mb-2" size={24} />
-        <p>S3 Import bucket not configured</p>
+        <p>{t('s3Import.notConfigured')}</p>
       </div>
     )
   }
@@ -238,10 +244,10 @@ export default function S3ImportExplorer() {
       {/* Header with bucket info */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="text-sm text-gray-500 truncate">
-          Bucket: <code className="bg-gray-100 px-2 py-0.5 rounded text-xs">{bucket}</code>
+          {t('s3Import.bucket')} <code className="bg-gray-100 px-2 py-0.5 rounded text-xs">{bucket}</code>
         </div>
         <button onClick={() => refetchFiles()} className="btn btn-secondary text-sm flex items-center justify-center gap-1 w-full sm:w-auto">
-          <RefreshCw size={14} /> Refresh
+          <RefreshCw size={14} /> {t('s3Import.refresh')}
         </button>
       </div>
 
@@ -254,7 +260,7 @@ export default function S3ImportExplorer() {
             onChange={(e) => setSelectedSource(e.target.value)}
             className="input py-2 sm:py-1.5 text-sm flex-1 sm:min-w-[150px]"
           >
-            <option value="">All Sources</option>
+            <option value="">{t('s3Import.allSources')}</option>
             {sources.map((s: S3ImportSource) => (
               <option key={s.name} value={s.name}>{s.display_name}</option>
             ))}
@@ -267,7 +273,7 @@ export default function S3ImportExplorer() {
               type="text"
               value={newSourceName}
               onChange={(e) => setNewSourceName(e.target.value)}
-              placeholder="Source name..."
+              placeholder={t('s3Import.sourcePlaceholder')}
               className="input py-2 sm:py-1.5 text-sm flex-1 sm:w-40"
               autoFocus
             />
@@ -277,16 +283,16 @@ export default function S3ImportExplorer() {
                 disabled={!newSourceName || createSourceMutation.isPending}
                 className="btn btn-primary py-2 sm:py-1.5 text-sm flex-1 sm:flex-none"
               >
-                {createSourceMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : 'Create'}
+                {createSourceMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : t('s3Import.create')}
               </button>
               <button onClick={() => setShowNewSource(false)} className="btn btn-secondary py-2 sm:py-1.5 text-sm flex-1 sm:flex-none">
-                Cancel
+                {t('s3Import.cancel')}
               </button>
             </div>
           </div>
         ) : (
           <button onClick={() => setShowNewSource(true)} className="btn btn-secondary py-2 sm:py-1.5 text-sm flex items-center justify-center gap-1 w-full sm:w-auto">
-            <FolderPlus size={14} /> New Source
+            <FolderPlus size={14} /> {t('s3Import.newSource')}
           </button>
         )}
       </div>
@@ -321,7 +327,7 @@ export default function S3ImportExplorer() {
       {/* File list */}
       <div className="border rounded-lg overflow-hidden">
         <div className="bg-gray-50 px-4 py-2 border-b text-sm font-medium text-gray-700">
-          Files ({files.length})
+          {t('s3Import.filesCount', { count: files.length })}
         </div>
         <FileListContent loadingFiles={loadingFiles} files={files} onDelete={(key) => deleteFileMutation.mutate(key)} />
       </div>

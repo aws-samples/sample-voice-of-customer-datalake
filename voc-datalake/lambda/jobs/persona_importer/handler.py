@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 # Add parent directory to path for shared module imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from shared.logging import logger
+from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
 from api.projects import generate_persona_avatar, get_avatar_cdn_url
@@ -144,6 +144,9 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
     return {'persona_id': persona_id, 'title': f'Imported: {persona_name}'}
 
 
+@logger.inject_lambda_context
+@tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context) -> dict:
     """Lambda entry point."""
     logger.info(f"Persona importer invoked with event keys: {list(event.keys())}")

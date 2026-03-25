@@ -2,6 +2,7 @@
  * PersonaEditModal - Modal for editing persona details
  */
 import { X, Loader2, Pencil } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { ProjectPersona } from '../../api/client'
 
 interface PersonaEditModalProps {
@@ -297,11 +298,12 @@ export default function PersonaEditModal({
   onClose,
   isSaving,
 }: PersonaEditModalProps) {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">Edit Persona</h2>
+          <h2 className="text-lg font-semibold">{t('personaEdit.title')}</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
         </div>
         <div className="p-4 sm:p-6 space-y-6 overflow-y-auto max-h-[65vh]">
@@ -313,16 +315,16 @@ export default function PersonaEditModal({
           <ScenarioSection persona={persona} onChange={onChange} />
         </div>
         <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 p-4 border-t bg-gray-50">
-          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('personaEdit.cancel')}</button>
           <button
             onClick={onSave}
             disabled={isSaving}
             className="flex items-center justify-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50"
           >
             {isSaving ? (
-              <><Loader2 size={16} className="animate-spin" />Saving...</>
+              <><Loader2 size={16} className="animate-spin" />{t('personaEdit.saving')}</>
             ) : (
-              <><Pencil size={16} />Save Changes</>
+              <><Pencil size={16} />{t('personaEdit.saveChanges')}</>
             )}
           </button>
         </div>

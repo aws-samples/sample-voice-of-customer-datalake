@@ -13,21 +13,43 @@ import { initReactI18next } from 'react-i18next'
 import commonEn from '../../public/locales/en/common.json'
 import dashboardEn from '../../public/locales/en/dashboard.json'
 import feedbackEn from '../../public/locales/en/feedback.json'
+import feedbackDetailEn from '../../public/locales/en/feedbackDetail.json'
 import chatEn from '../../public/locales/en/chat.json'
 import loginEn from '../../public/locales/en/login.json'
+import settingsEn from '../../public/locales/en/settings.json'
+import projectsEn from '../../public/locales/en/projects.json'
+import categoriesEn from '../../public/locales/en/categories.json'
+import componentsEn from '../../public/locales/en/components.json'
+import dataExplorerEn from '../../public/locales/en/dataExplorer.json'
+import feedbackFormsEn from '../../public/locales/en/feedbackForms.json'
+import prioritizationEn from '../../public/locales/en/prioritization.json'
+import problemAnalysisEn from '../../public/locales/en/problemAnalysis.json'
+import scrapersEn from '../../public/locales/en/scrapers.json'
+import projectDetailEn from '../../public/locales/en/projectDetail.json'
 
 i18n.use(initReactI18next).init({
   lng: 'en',
   fallbackLng: 'en',
   defaultNS: 'common',
-  ns: ['common', 'dashboard', 'feedback', 'chat', 'login'],
+  ns: ['common', 'dashboard', 'feedback', 'feedbackDetail', 'chat', 'login', 'settings', 'projects', 'categories', 'components', 'dataExplorer', 'feedbackForms', 'prioritization', 'problemAnalysis', 'scrapers', 'projectDetail'],
   resources: {
     en: {
       common: commonEn,
       dashboard: dashboardEn,
       feedback: feedbackEn,
+      feedbackDetail: feedbackDetailEn,
       chat: chatEn,
       login: loginEn,
+      settings: settingsEn,
+      projects: projectsEn,
+      categories: categoriesEn,
+      components: componentsEn,
+      dataExplorer: dataExplorerEn,
+      feedbackForms: feedbackFormsEn,
+      prioritization: prioritizationEn,
+      problemAnalysis: problemAnalysisEn,
+      scrapers: scrapersEn,
+      projectDetail: projectDetailEn,
     },
   },
   interpolation: { escapeValue: false },

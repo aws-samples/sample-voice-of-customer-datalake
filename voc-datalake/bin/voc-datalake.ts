@@ -75,6 +75,8 @@ const coreStack = new VocCoreStack(app, 'VocCoreStack', {
   env,
   description: 'VoC Data Lake - Core Infrastructure (Storage, Auth, Frontend Hosting)',
   brandName: config.brandName,
+  customDomain: app.node.tryGetContext('customDomain') || undefined,
+  certificateArn: app.node.tryGetContext('certificateArn') || undefined,
 });
 tagStack(coreStack, 'Core');
 

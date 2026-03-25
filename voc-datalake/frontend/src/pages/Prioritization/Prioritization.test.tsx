@@ -30,6 +30,41 @@ vi.mock('../../store/configStore', () => ({
   }),
 }))
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => {
+      const translations: Record<string, string> = {
+        'title': 'PR/FAQ Prioritization',
+        'subtitle': 'Score and prioritize PR/FAQs across all projects',
+        'loading': 'Loading PR/FAQs...',
+        'empty.title': 'No PR/FAQs Found',
+        'empty.description': 'Create PR/FAQs in your projects to start prioritizing.',
+        'stats.totalPrfaqs': 'Total PR/FAQs',
+        'stats.highPriority': 'High Priority',
+        'stats.mediumPriority': 'Medium Priority',
+        'stats.notScored': 'Not Scored',
+        'sort.label': 'Sort by:',
+        'sort.impact': 'Impact',
+        'sort.priorityFull': 'Priority Score',
+        'sort.ttmFull': 'Time to Market',
+        'sort.dateFull': 'Date Created',
+        'scores.title': 'Prioritization Scores',
+        'scores.impact': 'Impact',
+        'scores.score': 'Score',
+        'sort.ttm': 'TTM',
+        'preview.title': 'PR/FAQ Preview',
+        'preview.viewFull': 'View Full Document',
+        'priority.none': 'Not Scored',
+        'actions.save': 'Save Scores',
+        'actions.saveMobile': 'Save',
+      }
+      return translations[key] ?? key
+    },
+    i18n: { changeLanguage: () => Promise.resolve() },
+  }),
+  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}))
+
 vi.mock('react-markdown', () => ({
   default: ({ children }: { children: string }) => <div>{children}</div>,
 }))

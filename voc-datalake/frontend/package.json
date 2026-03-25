@@ -15,7 +15,9 @@
     "test:coverage": "vitest --coverage",
     "test:ui": "vitest --ui",
     "typecheck": "tsc -b --noEmit",
-    "i18n:extract": "i18next-parser",
+    "i18n:extract": "npx i18next-parser",
+    "i18n:check": "node scripts/i18n-check.mjs",
+    "i18n:validate": "npx i18next-parser && node scripts/i18n-check.mjs",
     "deploy:frontend": "chmod +x scripts/deploy.sh && ./scripts/deploy.sh"
   },
   "dependencies": {

@@ -1,0 +1,74 @@
+{
+  "actions": {
+    "reset": "重置",
+    "save": "保存评分",
+    "saveMobile": "保存",
+    "saving": "保存中...",
+    "savingMobile": "..."
+  },
+  "configureApiEndpoint": "在设置中配置 API 端点以查看优先级排序。",
+  "empty": {
+    "description": "在项目中创建 PR/FAQ 以开始优先级排序。",
+    "title": "未找到 PR/FAQ"
+  },
+  "framework": {
+    "description": "对每个 PR/FAQ 进行评分：<strong>影响力</strong>、<strong>上市时间</strong>、<strong>战略契合度</strong>和<strong>置信度</strong>。",
+    "title": "优先级排序框架"
+  },
+  "loading": "加载 PR/FAQ 中...",
+  "notes": {
+    "label": "备注",
+    "placeholder": "添加关于此优先级排序决策的备注..."
+  },
+  "preview": {
+    "title": "PR/FAQ 预览",
+    "viewFull": "查看完整文档",
+    "viewMobile": "查看"
+  },
+  "priority": {
+    "high": "高优先级",
+    "low": "低优先级",
+    "medium": "中优先级",
+    "none": "未评分"
+  },
+  "scores": {
+    "confidence": "置信度",
+    "confidenceDescription": "对影响力和上市时间估计的确定性",
+    "fast": "快速",
+    "high": "高",
+    "impact": "影响力",
+    "impactDescription": "业务价值和客户收益",
+    "low": "低",
+    "score": "评分",
+    "slow": "缓慢",
+    "strategicFit": "战略契合度",
+    "strategicFitDescription": "与公司目标的一致性",
+    "timeToMarket": "上市时间",
+    "timeToMarketDescription": "能多快交付？",
+    "title": "优先级排序评分"
+  },
+  "sort": {
+    "date": "日期",
+    "dateFull": "创建日期",
+    "impact": "影响力",
+    "label": "排序方式：",
+    "priority": "优先级",
+    "priorityFull": "优先级评分",
+    "ttm": "上市时间",
+    "ttmFull": "上市时间"
+  },
+  "stats": {
+    "highPriority": "高优先级",
+    "mediumPriority": "中优先级",
+    "notScored": "未评分",
+    "totalPrfaqs": "PR/FAQ 总数"
+  },
+  "subtitle": "对所有项目中的 PR/FAQ 进行评分和优先级排序",
+  "title": "PR/FAQ 优先级排序",
+  "unsavedChanges": {
+    "cancel": "留在此页面",
+    "confirm": "放弃更改",
+    "message": "您有未保存的优先级排序评分。要放弃更改并离开此页面吗？",
+    "title": "未保存的更改"
+  }
+}

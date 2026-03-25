@@ -2,8 +2,43 @@
   "assistantDescription": "询问有关客户反馈数据的问题",
   "assistantName": "VoC AI助手",
   "configureEndpoint": "请在设置中配置API端点以使用AI聊天",
+  "copyMessage": "复制消息",
   "emptyState": "开始一段关于客户反馈的对话",
+  "export": {
+    "copied": "已复制！",
+    "copyConversation": "复制对话",
+    "downloadJson": "下载为 JSON",
+    "downloadMarkdown": "下载为 Markdown",
+    "downloadPdf": "下载为 PDF",
+    "exportOptions": "导出选项",
+    "share": "分享"
+  },
+  "filters": {
+    "clear": "清除",
+    "focusingOn": "筛选条件：{{summary}}",
+    "title": "筛选上下文（最多 30 条评论）"
+  },
   "hideHistory": "隐藏历史记录",
   "inputPlaceholder": "询问有关反馈的问题...",
-  "showHistory": "显示历史记录"
+  "message": {
+    "reasoning": "推理",
+    "relatedFeedback": "相关反馈："
+  },
+  "showHistory": "显示历史记录",
+  "sidebar": {
+    "clearAll": "清除所有对话",
+    "messagesCount": "{{count}} 条消息",
+    "messagesCount_one": "{{count}} 条消息",
+    "messagesCount_other": "{{count}} 条消息",
+    "newChat": "新建对话",
+    "noConversations": "暂无对话"
+  },
+  "suggestedQuestions": {
+    "mainProblems": "客户报告的主要问题是什么？",
+    "negativeSource": "哪个来源的负面反馈最多？",
+    "pricing": "客户对定价有什么看法？",
+    "sentimentTrend": "过去一个月情感趋势如何变化？",
+    "topComplaints": "本周客户的主要投诉是什么？",
+    "urgentIssues": "显示最紧急的问题"
+  }
 }

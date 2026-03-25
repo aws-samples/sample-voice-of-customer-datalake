@@ -16,7 +16,9 @@
     "neutral": "ニュートラル",
     "positive": "ポジティブ"
   },
+  "sentimentDistribution": "感情分布",
   "topIssueCategories": "主要な問題カテゴリ",
+  "urgentIssues_one": "{{count}}件の緊急の問題",
   "urgentIssues_other": "{{count}}件の緊急の問題",
   "welcome": "VoC Analyticsへようこそ",
   "welcomeDescription": "APIエンドポイントとブランド設定を構成して、カスタマーフィードバックの分析を開始しましょう。"

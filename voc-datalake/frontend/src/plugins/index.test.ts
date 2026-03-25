@@ -80,92 +80,6 @@ describe('Plugin Manifest Loader', () => {
       expect(webscraper?.hasWebhook).toBe(false);
     });
   });
-
-  describe('getPluginById', () => {
-    it('returns manifest for existing plugin', async () => {
-      const { getPluginById } = await import('./index');
-
-      const manifest = getPluginById('webscraper');
-
-      expect(manifest).toBeDefined();
-      expect(manifest?.id).toBe('webscraper');
-      expect(manifest?.name).toBe('Web Scraper');
-    });
-
-    it('returns undefined for non-existent plugin', async () => {
-      const { getPluginById } = await import('./index');
-
-      const manifest = getPluginById('nonexistent');
-
-      expect(manifest).toBeUndefined();
-    });
-
-    it('is case-sensitive', async () => {
-      const { getPluginById } = await import('./index');
-
-      const manifest = getPluginById('Webscraper');  // Wrong case
-
-      expect(manifest).toBeUndefined();
-    });
-  });
-
-  describe('getPluginsByCategory', () => {
-    it('returns plugins filtered by category', async () => {
-      const { getPluginsByCategory } = await import('./index');
-
-      const importPlugins = getPluginsByCategory('import');
-
-      expect(importPlugins).toHaveLength(3);
-      expect(importPlugins.map(p => p.id)).toContain('webscraper');
-      expect(importPlugins.map(p => p.id)).toContain('manual_import');
-      expect(importPlugins.map(p => p.id)).toContain('s3_import');
-    });
-
-    it('returns empty array for non-existent category', async () => {
-      const { getPluginsByCategory } = await import('./index');
-
-      const plugins = getPluginsByCategory('nonexistent');
-
-      expect(plugins).toHaveLength(0);
-    });
-  });
-
-  describe('getPluginsWithIngestor', () => {
-    it('returns plugins that have ingestors enabled', async () => {
-      const { getPluginsWithIngestor } = await import('./index');
-
-      const plugins = getPluginsWithIngestor();
-
-      // All mock plugins have ingestors
-      expect(plugins).toHaveLength(3);
-      plugins.forEach(p => {
-        expect(p.hasIngestor).toBe(true);
-      });
-    });
-  });
-
-  describe('getPluginsWithWebhook', () => {
-    it('returns only plugins with webhooks enabled', async () => {
-      const { getPluginsWithWebhook } = await import('./index');
-
-      const plugins = getPluginsWithWebhook();
-
-      // No mock plugins have webhooks
-      expect(plugins).toHaveLength(0);
-    });
-  });
-
-  describe('getPluginsWithS3Trigger', () => {
-    it('returns only plugins with S3 triggers enabled', async () => {
-      const { getPluginsWithS3Trigger } = await import('./index');
-
-      const plugins = getPluginsWithS3Trigger();
-
-      expect(plugins).toHaveLength(1);
-      expect(plugins[0].id).toBe('s3_import');
-      expect(plugins[0].hasS3Trigger).toBe(true);
-    });
-  });
 });
 
 describe('Plugin Manifest Validation', () => {
@@ -207,8 +121,9 @@ describe('Type Exports', () => {
   });
 
   it('exports ConfigField type through manifest config', async () => {
-    const { getPluginById } = await import('./index');
-    const manifest = getPluginById('webscraper');
+    const { getPluginManifests } = await import('./index');
+    const manifests = getPluginManifests();
+    const manifest = manifests.find(m => m.id === 'webscraper');
 
     expect(manifest?.config).toBeDefined();
     expect(Array.isArray(manifest?.config)).toBe(true);

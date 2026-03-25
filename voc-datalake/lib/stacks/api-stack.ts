@@ -664,7 +664,16 @@ export class VocApiStack extends cdk.Stack {
     // DynamoDB permissions
     feedbackTable.grantReadData(chatStreamLambda);
     aggregatesTable.grantReadData(chatStreamLambda);
-    projectsTable.grantReadWriteData(chatStreamLambda);
+    // Scoped projects table access: Query (context), UpdateItem (doc edits), PutItem (doc creation) — no DeleteItem
+    chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'dynamodb:GetItem',
+        'dynamodb:Query',
+        'dynamodb:PutItem',
+        'dynamodb:UpdateItem',
+      ],
+      resources: [projectsTable.tableArn, `${projectsTable.tableArn}/index/*`],
+    }));
     kmsKey.grantDecrypt(chatStreamLambda);
 
     NagSuppressions.addResourceSuppressions(chatStreamLambda, [
@@ -1031,34 +1040,107 @@ export class VocApiStack extends cdk.Stack {
       }
     }
 
-    // /mcp (public — auth handled by Lambda via Bearer token validation)
-    const mcpResource = this.api.root.addResource('mcp');
-    const mcpMethod = mcpResource.addMethod('POST', mcpIntegration);
+    // ============================================
+    // MCP TOKEN FORMAT AUTHORIZER
+    // ============================================
+    // Lightweight Lambda authorizer that validates Bearer token format
+    // before invoking the main MCP handler. Rejects requests missing
+    // "Bearer voc_..." or the X-Project-Id header at the API Gateway
+    // level, reducing cold-start costs from invalid/brute-force requests.
 
-    // /mcp/autoseed/{project_id} (public — auth handled by MCP Lambda via Bearer token)
+    const mcpAuthorizerLogGroup = this.createLogGroup('McpAuthorizerLogs', uniqueName('voc-mcp-authorizer'));
+
+    const mcpAuthorizerFn = new lambda.Function(this, 'McpTokenAuthorizer', {
+      functionName: uniqueName('voc-mcp-token-authorizer'),
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'index.handler',
+      code: lambda.Code.fromInline(`
+exports.handler = async (event) => {
+  const token = event.authorizationToken || '';
+  const methodArn = event.methodArn;
+  if (!token.startsWith('Bearer voc_') || token.length < 20) {
+    throw new Error('Unauthorized');
+  }
+  const arnParts = methodArn.split(':');
+  const region = arnParts[3];
+  const accountId = arnParts[4];
+  const apiGatewayArnParts = arnParts[5].split('/');
+  const restApiId = apiGatewayArnParts[0];
+  const stage = apiGatewayArnParts[1];
+  const resourceArn = 'arn:aws:execute-api:' + region + ':' + accountId + ':' + restApiId + '/' + stage + '/*/mcp*';
+  return {
+    principalId: 'mcp-client',
+    policyDocument: {
+      Version: '2012-10-17',
+      Statement: [{
+        Action: 'execute-api:Invoke',
+        Effect: 'Allow',
+        Resource: resourceArn,
+      }],
+    },
+  };
+};
+`),
+      timeout: cdk.Duration.seconds(3),
+      memorySize: 128,
+      logGroup: mcpAuthorizerLogGroup,
+    });
+
+    NagSuppressions.addResourceSuppressions(mcpAuthorizerFn, [
+      { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the latest LTS runtime available in CDK for inline Lambda authorizers' },
+    ], true);
+
+    const mcpTokenAuthorizer = new apigateway.TokenAuthorizer(this, 'McpApiTokenAuthorizer', {
+      handler: mcpAuthorizerFn,
+      identitySource: 'method.request.header.Authorization',
+      resultsCacheTtl: cdk.Duration.seconds(300),
+      authorizerName: 'voc-mcp-token-authorizer',
+    });
+
+    const mcpMethodOptions: apigateway.MethodOptions = {
+      authorizer: mcpTokenAuthorizer,
+      authorizationType: apigateway.AuthorizationType.CUSTOM,
+    };
+
+    // /mcp — protected by token format authorizer + per-method throttling
+    const mcpResource = this.api.root.addResource('mcp');
+    const mcpMethod = mcpResource.addMethod('POST', mcpIntegration, mcpMethodOptions);
+
+    // /mcp/autoseed/{project_id} — same authorizer
     const mcpAutoseedResource = mcpResource.addResource('autoseed');
     const mcpAutoseedProjectResource = mcpAutoseedResource.addResource('{project_id}');
-    const autoseedMethod = mcpAutoseedProjectResource.addMethod('GET', mcpIntegration);
+    const autoseedMethod = mcpAutoseedProjectResource.addMethod('GET', mcpIntegration, mcpMethodOptions);
+
+    // Per-method throttling for MCP endpoints (10 req/s, burst 20)
+    // Much lower than the global 100 req/s to limit brute-force exposure
+    const mcpUsagePlan = this.api.addUsagePlan('McpUsagePlan', {
+      name: uniqueName('voc-mcp-throttle'),
+      description: 'Throttle MCP endpoints to limit brute-force token attempts',
+      throttle: {
+        rateLimit: 10,
+        burstLimit: 20,
+      },
+    });
+    mcpUsagePlan.addApiStage({
+      stage: this.api.deploymentStage,
+      throttle: [
+        { method: mcpMethod, throttle: { rateLimit: 10, burstLimit: 20 } },
+        { method: autoseedMethod, throttle: { rateLimit: 10, burstLimit: 20 } },
+      ],
+    });
 
     NagSuppressions.addResourceSuppressions(autoseedMethod, [
       {
-        id: 'AwsSolutions-APIG4',
-        reason: 'Autoseed endpoint uses Bearer token authentication validated by the MCP Lambda handler against DynamoDB token hashes',
-      },
-      {
         id: 'AwsSolutions-COG4',
-        reason: 'Autoseed endpoint uses Bearer token authentication validated by the MCP Lambda handler — external tools cannot use Cognito auth flow',
+        reason: 'MCP autoseed uses a custom Lambda token authorizer instead of Cognito — MCP clients cannot use Cognito auth flow',
       },
     ]);
 
     NagSuppressions.addResourceSuppressions(mcpMethod, [
       {
-        id: 'AwsSolutions-APIG4',
-        reason: 'MCP endpoint uses Bearer token authentication validated by the Lambda handler against DynamoDB token hashes — Cognito auth not applicable for MCP protocol clients',
-      },
-      {
         id: 'AwsSolutions-COG4',
-        reason: 'MCP endpoint uses Bearer token authentication validated by the Lambda handler — MCP clients cannot use Cognito auth flow',
+        reason: 'MCP endpoint uses a custom Lambda token authorizer instead of Cognito — MCP clients cannot use Cognito auth flow',
       },
     ]);
 

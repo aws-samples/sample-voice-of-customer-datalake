@@ -5,14 +5,11 @@ Allows users to paste raw review text and have it parsed by LLM.
 
 import json
 import os
-import sys
 import uuid
 import time
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_sqs_client, get_s3_client, invoke_lambda_async

@@ -1,14 +1,84 @@
 {
   "appDescription": "Plataforma unificada de inteligência de feedback do cliente",
   "appName": "VoC Analytics",
-  "appTagline": "Análise da Voz do Cliente",
+  "appTagline": "Voice of the Customer Analytics",
+  "breadcrumbs": {
+    "categories": "Categorias",
+    "chat": "Chat IA",
+    "dashboard": "Painel",
+    "dataExplorer": "Explorador de dados",
+    "feedback": "Feedback",
+    "feedbackForms": "Formulários de feedback",
+    "home": "Início",
+    "prioritization": "Priorização",
+    "problems": "Análise de problemas",
+    "projects": "Projetos",
+    "scrapers": "Web Scrapers",
+    "settings": "Configurações"
+  },
   "configureBrand": "Configurar marca",
+  "filters": {
+    "allCategories": "Todas as categorias",
+    "allSentiments": "Todos os sentimentos",
+    "allSources": "Todas as fontes",
+    "clearFilters": "Limpar filtros",
+    "mostRecent": "Mais recentes",
+    "searchFeedback": "Pesquisar feedback...",
+    "urgentOnly": "Apenas urgentes"
+  },
+  "forQuery": "para \"{{query}}\"",
+  "goToSettings": "Ir para Configurações",
+  "loading": "Carregando...",
+  "metrics": {
+    "avgSentiment": "Sentimento médio",
+    "sourcesActive": "Fontes ativas",
+    "totalFeedback": "Feedback total",
+    "urgentIssues": "Problemas urgentes"
+  },
+  "nav": {
+    "aiChat": "Chat IA",
+    "categories": "Categorias",
+    "dashboard": "Painel",
+    "dataExplorer": "Explorador de dados",
+    "feedback": "Feedback",
+    "feedbackForms": "Formulários de feedback",
+    "prioritization": "Priorização",
+    "problemAnalysis": "Análise de problemas",
+    "projects": "Projetos",
+    "scrapers": "Scrapers",
+    "settings": "Configurações"
+  },
   "send": "Enviar",
+  "sentiment": {
+    "mixed": "Misto",
+    "negative": "Negativo",
+    "neutral": "Neutro",
+    "positive": "Positivo"
+  },
+  "showingOf_one": "Mostrando {{count}} de {{total}} resultado",
+  "showingOf_other": "Mostrando {{count}} de {{total}} resultados",
   "sidebar": {
     "closeMenu": "Fechar menu",
     "collapseSidebar": "Recolher barra lateral",
     "expandSidebar": "Expandir barra lateral",
     "openMenu": "Abrir menu",
     "signOut": "Sair"
+  },
+  "timeRange": {
+    "24h": "24h",
+    "24hFull": "24 Horas",
+    "30d": "30d",
+    "30dFull": "30 Dias",
+    "48h": "48h",
+    "48hFull": "48 Horas",
+    "7d": "7d",
+    "7dFull": "7 Dias",
+    "apply": "Aplicar",
+    "cancel": "Cancelar",
+    "clear": "Limpar",
+    "custom": "Personalizado",
+    "endDate": "Data final",
+    "selectDateRange": "Selecionar período",
+    "startDate": "Data inicial"
   }
 }

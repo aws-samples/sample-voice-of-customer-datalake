@@ -1,0 +1,44 @@
+{
+  "configureApi": "Bitte konfigurieren Sie Ihren API-Endpunkt in den Einstellungen",
+  "filters": {
+    "allCategories": "Alle Kategorien",
+    "allSources": "Alle Quellen",
+    "allSubcategories": "Alle Unterkategorien",
+    "clear": "Zurücksetzen",
+    "collapse": "Zuklappen",
+    "collapseAll": "Alle zuklappen",
+    "expand": "Aufklappen",
+    "expandAll": "Alle aufklappen",
+    "pdf": "PDF",
+    "showResolved": "Gelöste anzeigen",
+    "similarity": "Ähnlichkeit:",
+    "similarityHigh": "Hoch",
+    "similarityLow": "Niedrig",
+    "similarityMed": "Mittel",
+    "similarityOff": "Aus",
+    "urgentOnly": "Nur dringend"
+  },
+  "noDataHint": "Versuchen Sie, den Zeitraum zu erweitern oder die Filter anzupassen",
+  "noDataTitle": "Keine Problemanalysedaten für den ausgewählten Zeitraum gefunden",
+  "stats": {
+    "categories": "Kategorien",
+    "feedback": "Feedback",
+    "problems": "Probleme",
+    "subcategories": "Unterkategorien",
+    "urgent": "Dringend"
+  },
+  "tree": {
+    "markResolved": "Als gelöst markieren",
+    "markUnresolved": "Als ungelöst markieren",
+    "original": "Original: {{text}}",
+    "problems_one": "{{count}} Problem",
+    "problems_other": "{{count}} Probleme",
+    "resolved": "Gelöst",
+    "reviews_one": "{{count}} Bewertung",
+    "reviews_other": "{{count}} Bewertungen",
+    "similar": "Ähnlich:",
+    "sub_one": "{{count}} Unter.",
+    "sub_other": "{{count}} Unter.",
+    "unknown": "Unbekannt"
+  }
+}

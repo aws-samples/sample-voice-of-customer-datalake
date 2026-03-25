@@ -8,22 +8,16 @@ import json
 import os
 import re
 import socket
-import sys
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-# Add shared module to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_secrets_client, get_bedrock_client, BEDROCK_MODEL_ID
 from shared.api import create_api_resolver, api_handler
 from shared.tables import get_aggregates_table
-from shared.exceptions import ConfigurationError, ValidationError, ServiceError
-
-from aws_lambda_powertools.event_handler.exceptions import NotFoundError
+from shared.exceptions import ConfigurationError, ValidationError, ServiceError, NotFoundError
 from boto3.dynamodb.conditions import Key
 import boto3
 

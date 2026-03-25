@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from boto3.dynamodb.conditions import Key
 
-from shared.logging import logger
+from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
 from shared.aws import get_dynamodb_resource
 from shared.converse import converse
@@ -150,6 +150,9 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     return {'document_id': doc_id, 'title': title}
 
 
+@logger.inject_lambda_context
+@tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context) -> dict:
     """Lambda entry point."""
     logger.info(f"Document merger invoked with event keys: {list(event.keys())}")

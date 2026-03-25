@@ -4,6 +4,7 @@
 import type { ProjectPersona } from '../../api/client'
 import { Pencil, Trash2, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import PersonaAvatar from './PersonaAvatar'
 import PersonaSection from './PersonaSection'
 import ResearchNotes from './ResearchNotes'
@@ -37,6 +38,7 @@ export default function PersonaDetailView({
   isDeleting,
   isSavingNotes,
 }: PersonaDetailViewProps) {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="h-full overflow-y-auto">
       {/* Header with Avatar */}
@@ -76,7 +78,7 @@ export default function PersonaDetailView({
         <QuotesSection persona={persona} />
         <ScenarioSection persona={persona} />
 
-        <PersonaSection title="Research Notes" icon="📝" color="gray">
+        <PersonaSection title={t('personas.researchNotes')} icon="📝" color="gray">
           <ResearchNotes
             key={persona.persona_id}
             persona={persona}
