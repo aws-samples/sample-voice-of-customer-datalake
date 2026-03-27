@@ -26,7 +26,7 @@ const RuntimeConfigSchema = z.object({
   }),
 })
 
-export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>
+type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>
 
 // Singleton state using a mutable container (const reference, mutable contents)
 const configState: {

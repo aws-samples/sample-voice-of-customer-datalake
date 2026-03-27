@@ -138,7 +138,7 @@ export async function* streamChat(
   yield* readSSEStream(reader)
 }
 
-export interface VocChatOptions {
+interface VocChatOptions {
   message: string
   context?: string
   days?: number
@@ -162,7 +162,7 @@ export function streamVocChat(options: VocChatOptions): AsyncGenerator<StreamEve
   }, options.signal)
 }
 
-export interface ProjectChatOptions {
+interface ProjectChatOptions {
   projectId: string
   message: string
   selectedPersonas?: string[]

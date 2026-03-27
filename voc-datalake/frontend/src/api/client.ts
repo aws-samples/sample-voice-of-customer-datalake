@@ -306,11 +306,30 @@ export const api = {
     message?: string
   }>(`/sources/${source}/disable`, { method: 'PUT' }),
 
-  runSource: (source: string) => fetchApi<{
+  runSource: (source: string, appId?: string) => fetchApi<{
     success: boolean;
     message: string;
     source: string
-  }>(`/sources/${source}/run`, { method: 'POST' }),
+  }>(`/sources/${source}/run`, {
+    method: 'POST',
+    ...(appId != null && appId !== '' ? { body: JSON.stringify({ app_id: appId }) } : {}),
+  }),
+
+  // App Config CRUD (multi-instance plugins like iOS/Android app reviews)
+  getAppConfigs: (source: string) =>
+    fetchApi<{ apps: Array<Record<string, string>> }>(`/integrations/${source}/apps`),
+
+  saveAppConfig: (source: string, app: Record<string, string>) =>
+    fetchApi<{
+      success: boolean;
+      app: Record<string, string>
+    }>(`/integrations/${source}/apps`, {
+      method: 'POST',
+      body: JSON.stringify({ app }),
+    }),
+
+  deleteAppConfig: (source: string, appId: string) =>
+    fetchApi<{ success: boolean }>(`/integrations/${source}/apps/${appId}`, { method: 'DELETE' }),
 
   // ── Brand Settings ──────────────────────────────────────────────────────
   getBrandSettings: () => fetchApi<{

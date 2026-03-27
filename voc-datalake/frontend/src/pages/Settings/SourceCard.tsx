@@ -30,7 +30,7 @@ interface SourceCardProps {
 }
 
 function ExpandedContent({
-  manifest, apiEndpoint, webhookBaseUrl, copiedUrl, credentials, showSecrets, sourceStatus, saveSuccess, testMutation, runMutation, updateCredentialsMutation, onCopy, onCredentialsChange, onToggleSecrets,
+  manifest, apiEndpoint, webhookBaseUrl, copiedUrl, credentials, showSecrets, saveSuccess, runMutation, updateCredentialsMutation, onCopy, onCredentialsChange,
 }: {
   readonly manifest: PluginManifest
   readonly apiEndpoint: string
@@ -38,20 +38,17 @@ function ExpandedContent({
   readonly copiedUrl: string | null
   readonly credentials: Record<string, string>
   readonly showSecrets: boolean
-  readonly sourceStatus: { configured?: boolean } | undefined
   readonly saveSuccess: boolean
-  readonly testMutation: CredentialsSectionProps['testMutation']
   readonly runMutation: CredentialsSectionProps['runMutation']
   readonly updateCredentialsMutation: CredentialsSectionProps['updateCredentialsMutation']
   readonly onCopy: (text: string, id: string) => void
   readonly onCredentialsChange: (creds: Record<string, string>) => void
-  readonly onToggleSecrets: () => void
 }) {
   return (
     <div className="p-3 sm:p-4 border-t border-gray-200 space-y-4 sm:space-y-6">
       {manifest.webhooks && manifest.webhooks.length > 0 ? <WebhooksSection webhooks={manifest.webhooks} sourceKey={manifest.id} webhookBaseUrl={webhookBaseUrl} copiedUrl={copiedUrl} onCopy={onCopy} /> : null}
       {manifest.config.length > 0 && (
-        <CredentialsSection fields={manifest.config} credentials={credentials} showSecrets={showSecrets} sourceStatus={sourceStatus} saveSuccess={saveSuccess} testMutation={testMutation} runMutation={runMutation} hasIngestor={manifest.hasIngestor} updateCredentialsMutation={updateCredentialsMutation} onCredentialsChange={onCredentialsChange} onToggleSecrets={onToggleSecrets} />
+        <CredentialsSection fields={manifest.config} credentials={credentials} showSecrets={showSecrets} saveSuccess={saveSuccess} runMutation={runMutation} hasIngestor={manifest.hasIngestor} updateCredentialsMutation={updateCredentialsMutation} onCredentialsChange={onCredentialsChange} />
       )}
       {manifest.setup ? <SetupInstructionsSection setup={manifest.setup} /> : null}
       {manifest.id === 's3_import' && apiEndpoint !== '' ? <div>
@@ -67,7 +64,7 @@ export default function SourceCard({
 }: SourceCardProps) {
   const queryClient = useQueryClient()
   const [isExpanded, setIsExpanded] = useState(false)
-  const [showSecrets, setShowSecrets] = useState(false)
+  const showSecrets = false
   const [credentials, setCredentials] = useState<Record<string, string>>({})
   const hasFetchedCredentials = useRef(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -133,7 +130,6 @@ export default function SourceCard({
     },
   })
 
-  const testMutation = useMutation({ mutationFn: () => api.testIntegration(manifest.id) })
   const runMutation = useMutation({ mutationFn: () => api.runSource(manifest.id) })
 
   const toggleEnabled = async (enabled: boolean) => {
@@ -162,7 +158,7 @@ export default function SourceCard({
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <SourceCardHeader manifest={manifest} sourceStatus={sourceStatus} serverStatus={serverStatus} apiEndpoint={apiEndpoint} isExpanded={isExpanded} onToggleExpand={() => setIsExpanded(!isExpanded)} onToggleEnabled={(enabled) => void toggleEnabled(enabled)} />
-      {isExpanded ? <ExpandedContent manifest={manifest} apiEndpoint={apiEndpoint} webhookBaseUrl={webhookBaseUrl} copiedUrl={copiedUrl} credentials={credentials} showSecrets={showSecrets} sourceStatus={sourceStatus} saveSuccess={saveSuccess} testMutation={testMutation} runMutation={runMutation} updateCredentialsMutation={updateCredentialsMutation} onCopy={copyToClipboard} onCredentialsChange={setCredentials} onToggleSecrets={() => setShowSecrets(!showSecrets)} /> : null}
+      {isExpanded ? <ExpandedContent manifest={manifest} apiEndpoint={apiEndpoint} webhookBaseUrl={webhookBaseUrl} copiedUrl={copiedUrl} credentials={credentials} showSecrets={showSecrets} saveSuccess={saveSuccess} runMutation={runMutation} updateCredentialsMutation={updateCredentialsMutation} onCopy={copyToClipboard} onCredentialsChange={setCredentials} /> : null}
     </div>
   )
 }

@@ -6,13 +6,16 @@
 import {
   useQuery, useMutation, useQueryClient,
 } from '@tanstack/react-query'
+import clsx from 'clsx'
 import {
-  Plus, Globe, AlertCircle, Loader2, RefreshCw,
+  Plus, Globe, AlertCircle, Loader2, RefreshCw, Smartphone, Play, Settings, Trash2,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { api } from '../../api/client'
 import { scrapersApi } from '../../api/scrapersApi'
 import ConfirmModal from '../../components/ConfirmModal'
+import { getPluginManifests } from '../../plugins'
 import { useConfigStore } from '../../store/configStore'
 import { useManualImportStore } from '../../store/manualImportStore'
 import JsonUploadModal from './JsonUploadModal'
@@ -26,6 +29,139 @@ import type {
 } from '../../api/types'
 import type { PluginManifest } from '../../plugins/types'
 
+type AppConfig = Record<string, string>
+
+function getAppConfigPlugins(): PluginManifest[] {
+  return getPluginManifests().filter((p) => p.id !== 'webscraper' && p.id !== 's3_import' && p.hasIngestor)
+}
+
+function getAppIdentifier(app: AppConfig, pluginId: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- keys may be undefined at runtime
+  if (pluginId === 'app_reviews_ios') return app.app_id ?? ''
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- keys may be undefined at runtime
+  if (pluginId === 'app_reviews_android') return app.package_name ?? ''
+  return ''
+}
+
+function getPlatformLabel(pluginId: string): string {
+  if (pluginId === 'app_reviews_ios') return 'iOS'
+  if (pluginId === 'app_reviews_android') return 'Android'
+  return 'App'
+}
+
+function AppConfigCard({
+  app, plugin, onEdit, onDelete, onRun, isRunning,
+}: {
+  readonly app: AppConfig;
+  readonly plugin: PluginManifest;
+  readonly onEdit: () => void
+  readonly onDelete: () => void;
+  readonly onRun: () => void;
+  readonly isRunning: boolean
+}) {
+  return (
+    <div className="card border-2 border-purple-200 bg-purple-50/30 transition-all">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center"><Smartphone size={20} /></div>
+          <div>
+            <h3 className="font-semibold">{app.app_name === '' ? 'Unnamed App' : app.app_name}</h3>
+            <p className="text-sm text-gray-500">{getAppIdentifier(app, plugin.id)}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={onRun} disabled={isRunning} className={clsx('p-2 rounded transition-colors', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600')} title="Run now">
+            {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+          </button>
+          <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title="Edit"><Settings size={16} className="text-gray-500" /></button>
+          <button onClick={onDelete} className="p-2 hover:bg-gray-100 rounded text-red-500" title="Delete"><Trash2 size={16} /></button>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-4 text-sm">
+        <div><span className="text-gray-500">Platform</span><p className="font-medium">{getPlatformLabel(plugin.id)}</p></div>
+        <div><span className="text-gray-500">Source</span><p className="font-medium">{plugin.name}</p></div>
+        <div><span className="text-gray-500">Max Reviews</span><p className="font-medium">{app.max_reviews_per_run === '' ? '500' : app.max_reviews_per_run}</p></div>
+      </div>
+    </div>
+  )
+}
+
+function AppConfigList({
+  plugins, onEditPlugin, onDeleteApp, onRunApp,
+}: {
+  readonly plugins: PluginManifest[];
+  readonly onEditPlugin: (p: PluginManifest) => void
+  readonly onDeleteApp: (pluginId: string, appId: string) => void;
+  readonly onRunApp: (pluginId: string, appIdentifier: string) => void
+}) {
+  const { config } = useConfigStore()
+  const [runningApps, setRunningApps] = useState<Set<string>>(new Set())
+
+  const handleRun = (pluginId: string, appIdentifier: string) => {
+    const key = `${pluginId}-${appIdentifier}`
+    setRunningApps((prev) => new Set(prev).add(key))
+    onRunApp(pluginId, appIdentifier)
+    setTimeout(() => setRunningApps((prev) => {
+      const next = new Set(prev); next.delete(key); return next
+    }), 3000)
+  }
+
+  const { data: allAppConfigs } = useQuery({
+    queryKey: ['all-app-configs', plugins.map((p) => p.id).join(',')],
+    queryFn: async () => {
+      const results: Array<{
+        pluginId: string;
+        apps: AppConfig[]
+      }> = []
+      for (const plugin of plugins) {
+        try {
+          const response = await api.getAppConfigs(plugin.id)
+          results.push({
+            pluginId: plugin.id,
+            apps: response.apps,
+          })
+        } catch {
+          results.push({
+            pluginId: plugin.id,
+            apps: [],
+          })
+        }
+      }
+      return results
+    },
+    enabled: config.apiEndpoint.length > 0 && plugins.length > 0,
+  })
+
+  const pluginMap = new Map(plugins.map((p) => [p.id, p]))
+  const allApps: Array<{
+    app: AppConfig;
+    plugin: PluginManifest
+  }> = []
+  for (const entry of allAppConfigs ?? []) {
+    const plugin = pluginMap.get(entry.pluginId)
+    if (!plugin) continue
+    for (const app of entry.apps) allApps.push({
+      app,
+      plugin,
+    })
+  }
+
+  if (allApps.length === 0) return null
+
+  return (
+    <>
+      {allApps.map(({
+        app, plugin,
+      }) => (
+        <AppConfigCard key={`${plugin.id}-${app.id}`} app={app} plugin={plugin}
+          onEdit={() => onEditPlugin(plugin)} onDelete={() => onDeleteApp(plugin.id, app.id)}
+          onRun={() => handleRun(plugin.id, getAppIdentifier(app, plugin.id))}
+          isRunning={runningApps.has(`${plugin.id}-${getAppIdentifier(app, plugin.id)}`)} />
+      ))}
+    </>
+  )
+}
+
 function EmptyState({ onCreateClick }: { readonly onCreateClick: () => void }) {
   const { t } = useTranslation('scrapers')
   return (
@@ -36,29 +172,6 @@ function EmptyState({ onCreateClick }: { readonly onCreateClick: () => void }) {
       <button onClick={onCreateClick} className="btn btn-primary inline-flex items-center gap-2">
         <Plus size={16} /> {t('empty.createButton')}
       </button>
-    </div>
-  )
-}
-
-function ScraperList({
-  scrapers, onEdit, onDelete, onRun,
-}: {
-  readonly scrapers: ScraperConfig[]
-  readonly onEdit: (s: ScraperConfig) => void
-  readonly onDelete: (id: string) => void
-  readonly onRun: (id: string) => void
-}) {
-  return (
-    <div className="grid gap-4">
-      {scrapers.map((scraper) => (
-        <ScraperCard
-          key={scraper.id}
-          scraper={scraper}
-          onEdit={() => onEdit(scraper)}
-          onDelete={() => onDelete(scraper.id)}
-          onRun={() => onRun(scraper.id)}
-        />
-      ))}
     </div>
   )
 }
@@ -86,27 +199,21 @@ function useScraperMutations() {
 }
 
 function ScrapersContent({
-  scrapers, isLoading, onRefresh, onShowTemplates, onEdit, onDelete, onRun,
+  scrapers, isLoading, appConfigPlugins, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp,
 }: {
   readonly scrapers: ScraperConfig[]
   readonly isLoading: boolean
+  readonly appConfigPlugins: PluginManifest[]
   readonly onRefresh: () => void
   readonly onShowTemplates: () => void
   readonly onEdit: (s: ScraperConfig) => void
   readonly onDelete: (id: string) => void
   readonly onRun: (id: string) => void
+  readonly onEditPlugin: (p: PluginManifest) => void
+  readonly onDeleteApp: (pluginId: string, appId: string) => void
+  readonly onRunApp: (pluginId: string, appIdentifier: string) => void
 }) {
   const { t } = useTranslation('scrapers')
-
-  function renderContent() {
-    if (isLoading) {
-      return <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /></div>
-    }
-    if (scrapers.length === 0) {
-      return <EmptyState onCreateClick={onShowTemplates} />
-    }
-    return <ScraperList scrapers={scrapers} onEdit={onEdit} onDelete={onDelete} onRun={onRun} />
-  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
@@ -125,11 +232,21 @@ function ScrapersContent({
         </div>
       </div>
 
-      {renderContent()}
+      {isLoading ? <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /></div> : null}
+      {!isLoading && (
+        <div className="grid gap-4">
+          <AppConfigList plugins={appConfigPlugins} onEditPlugin={onEditPlugin} onDeleteApp={onDeleteApp} onRunApp={onRunApp} />
+          {scrapers.map((scraper) => (
+            <ScraperCard key={scraper.id} scraper={scraper} onEdit={() => onEdit(scraper)} onDelete={() => onDelete(scraper.id)} onRun={() => onRun(scraper.id)} />
+          ))}
+        </div>
+      )}
+      {!isLoading && scrapers.length === 0 && <EmptyState onCreateClick={onShowTemplates} />}
     </div>
   )
 }
 
+// eslint-disable-next-line complexity
 export default function Scrapers() {
   const { t } = useTranslation('scrapers')
   const { config } = useConfigStore()
@@ -141,6 +258,12 @@ export default function Scrapers() {
   const [selectedTemplate, setSelectedTemplate] = useState<ScraperTemplate | null>(null)
   const [selectedPlugin, setSelectedPlugin] = useState<PluginManifest | null>(null)
   const [showJsonUpload, setShowJsonUpload] = useState(false)
+  const [deleteAppInfo, setDeleteAppInfo] = useState<{
+    pluginId: string;
+    appId: string
+  } | null>(null)
+
+  const appConfigPlugins = getAppConfigPlugins()
 
   const {
     data, isLoading, refetch,
@@ -156,6 +279,21 @@ export default function Scrapers() {
     runMutation,
   } = useScraperMutations()
   const scrapers = data?.scrapers ?? []
+
+  const queryClient = useQueryClient()
+  const deleteAppMutation = useMutation({
+    mutationFn: ({
+      pluginId, appId,
+    }: {
+      pluginId: string;
+      appId: string
+    }) => api.deleteAppConfig(pluginId, appId),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['app-configs', variables.pluginId] })
+      void queryClient.invalidateQueries({ queryKey: ['all-app-configs'] })
+      setDeleteAppInfo(null)
+    },
+  })
 
   const handleSelectTemplate = (template: ScraperTemplate) => {
     setSelectedTemplate(template)
@@ -205,11 +343,18 @@ export default function Scrapers() {
       <ScrapersContent
         scrapers={scrapers}
         isLoading={isLoading}
+        appConfigPlugins={appConfigPlugins}
         onRefresh={() => void refetch()}
         onShowTemplates={() => setShowTemplates(true)}
         onEdit={setEditingScraper}
         onDelete={setDeleteScraperId}
         onRun={(id) => runMutation.mutate(id)}
+        onEditPlugin={(plugin) => setSelectedPlugin(plugin)}
+        onDeleteApp={(pluginId, appId) => setDeleteAppInfo({
+          pluginId,
+          appId,
+        })}
+        onRunApp={(pluginId, appIdentifier) => void api.runSource(pluginId, appIdentifier)}
       />
 
       <ManualImportModal />
@@ -236,6 +381,17 @@ export default function Scrapers() {
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteScraperId(null)}
       /> : null}
+
+      {deleteAppInfo == null ? null : <ConfirmModal
+        isOpen
+        title="Delete App"
+        message="Are you sure you want to remove this app configuration?"
+        confirmLabel="Delete"
+        onConfirm={() => {
+          deleteAppMutation.mutate(deleteAppInfo)
+        }}
+        onCancel={() => setDeleteAppInfo(null)}
+      />}
     </>
   )
 }

@@ -13,7 +13,6 @@ import type { PluginManifest } from '../../plugins/types'
 const mockGetIntegrationStatus = vi.fn()
 const mockGetSourcesStatus = vi.fn()
 const mockUpdateIntegrationCredentials = vi.fn()
-const mockTestIntegration = vi.fn()
 const mockEnableSource = vi.fn()
 const mockDisableSource = vi.fn()
 const mockGetIntegrationCredentials = vi.fn()
@@ -24,7 +23,6 @@ vi.mock('../../api/client', () => ({
     getSourcesStatus: () => mockGetSourcesStatus(),
     updateIntegrationCredentials: (source: string, creds: Record<string, string>) =>
       mockUpdateIntegrationCredentials(source, creds),
-    testIntegration: (source: string) => mockTestIntegration(source),
     enableSource: (source: string) => mockEnableSource(source),
     disableSource: (source: string) => mockDisableSource(source),
     getIntegrationCredentials: (source: string, keys: string[]) =>
@@ -224,23 +222,6 @@ describe('SourceCard', () => {
       expect(screen.getByPlaceholderText('Enter ID')).toBeInTheDocument()
     })
 
-    it('toggles password visibility', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-
-      const apiKeyInput = screen.getByPlaceholderText('Enter api key')
-      expect(apiKeyInput).toHaveAttribute('type', 'password')
-
-      await user.click(screen.getByRole('button', { name: /show/i }))
-
-      expect(apiKeyInput).toHaveAttribute('type', 'text')
-    })
-
     it('saves credentials when save button is clicked', async () => {
       const user = userEvent.setup()
       mockUpdateIntegrationCredentials.mockResolvedValue({ success: true })
@@ -276,91 +257,6 @@ describe('SourceCard', () => {
       await waitFor(() => {
         expect(mockUpdateIntegrationCredentials).toHaveBeenCalledWith('test_source', { api_key: 'secret-key', business_id: 'Enter ID' })
       })
-    })
-  })
-
-  describe('Test Integration', () => {
-    it('tests integration when test button is clicked', async () => {
-      const user = userEvent.setup()
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
-      mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
-
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-
-      // Wait for the integration status to load
-      await waitFor(() => {
-        const testButton = screen.getByRole('button', { name: /test$/i })
-        expect(testButton).not.toBeDisabled()
-      })
-
-      await user.click(screen.getByRole('button', { name: /test$/i }))
-
-      await waitFor(() => {
-        expect(mockTestIntegration).toHaveBeenCalledWith('test_source')
-      })
-    })
-
-    it('shows success message on successful test', async () => {
-      const user = userEvent.setup()
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
-      mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
-
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /test$/i })).not.toBeDisabled()
-      })
-      await user.click(screen.getByRole('button', { name: /test$/i }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Connection successful')).toBeInTheDocument()
-      })
-    })
-
-    it('shows error message on failed test', async () => {
-      const user = userEvent.setup()
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
-      mockTestIntegration.mockResolvedValue({ success: false, message: 'Invalid credentials' })
-
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /test$/i })).not.toBeDisabled()
-      })
-      await user.click(screen.getByRole('button', { name: /test$/i }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Invalid credentials')).toBeInTheDocument()
-      })
-    })
-
-    it('disables test button when source not configured', async () => {
-      const user = userEvent.setup()
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: false } })
-
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-
-      // The test button should be disabled when not configured
-      const testButton = screen.getByRole('button', { name: /test$/i })
-      expect(testButton).toBeDisabled()
     })
   })
 

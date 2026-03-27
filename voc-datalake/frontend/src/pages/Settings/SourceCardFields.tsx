@@ -5,7 +5,7 @@
 
 import clsx from 'clsx'
 import {
-  Save, Check, AlertCircle, Loader2, Eye, EyeOff, CheckCircle2, Key, TestTube, Play,
+  Save, Check, AlertCircle, Loader2, CheckCircle2, Key, Play,
 } from 'lucide-react'
 import type {
   ConfigField, SetupInfo,
@@ -127,44 +127,29 @@ export function CredentialField({
 }
 
 interface CredentialActionsProps {
-  readonly showSecrets: boolean
   readonly saveSuccess: boolean
-  readonly sourceStatus: { configured?: boolean } | undefined
   readonly hasIngestor: boolean
   readonly savePending: boolean
-  readonly testMutation: {
-    isPending: boolean;
-    mutate: () => void
-  }
   readonly runMutation: {
     isPending: boolean;
     mutate: () => void
   }
   readonly credentialsEmpty: boolean
-  readonly onToggleSecrets: () => void
   readonly onSave: () => void
 }
 
 export function CredentialActions({
-  showSecrets, saveSuccess, sourceStatus, hasIngestor, savePending, testMutation, runMutation, credentialsEmpty, onToggleSecrets, onSave,
+  saveSuccess, hasIngestor, savePending, runMutation, credentialsEmpty, onSave,
 }: CredentialActionsProps) {
   const saveIcon = getSaveButtonIcon(savePending, saveSuccess)
   const saveText = getSaveButtonText(saveSuccess)
   const saveButtonClass = saveSuccess ? 'bg-green-600 text-white' : 'btn-primary'
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <button onClick={onToggleSecrets} className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2">
-        {showSecrets ? <EyeOff size={14} /> : <Eye size={14} />}
-        {showSecrets ? 'Hide' : 'Show'}
-      </button>
       <button onClick={onSave} disabled={savePending || credentialsEmpty} className={clsx('btn flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2', saveButtonClass)}>
         {saveIcon}
         <span className="hidden xs:inline">{saveText.full}</span>
         <span className="xs:hidden">{saveText.short}</span>
-      </button>
-      <button onClick={() => testMutation.mutate()} disabled={testMutation.isPending || sourceStatus?.configured !== true} className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2">
-        {testMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
-        Test
       </button>
       {hasIngestor ? <button onClick={() => runMutation.mutate()} disabled={runMutation.isPending} className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2">
         {runMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
@@ -206,17 +191,7 @@ export interface CredentialsSectionProps {
   readonly fields: ConfigField[]
   readonly credentials: Record<string, string>
   readonly showSecrets: boolean
-  readonly sourceStatus: { configured?: boolean } | undefined
   readonly saveSuccess: boolean
-  readonly testMutation: {
-    isPending: boolean;
-    data?: {
-      success: boolean;
-      message?: string;
-      error?: string
-    };
-    mutate: () => void
-  }
   readonly runMutation: {
     isPending: boolean;
     data?: {
@@ -231,11 +206,10 @@ export interface CredentialsSectionProps {
     mutate: (creds: Record<string, string>) => void
   }
   readonly onCredentialsChange: (creds: Record<string, string>) => void
-  readonly onToggleSecrets: () => void
 }
 
 export function CredentialsSection({
-  fields, credentials, showSecrets, sourceStatus, saveSuccess, testMutation, runMutation, hasIngestor, updateCredentialsMutation, onCredentialsChange, onToggleSecrets,
+  fields, credentials, showSecrets, saveSuccess, runMutation, hasIngestor, updateCredentialsMutation, onCredentialsChange,
 }: CredentialsSectionProps) {
   const handleSave = () => {
     updateCredentialsMutation.mutate(buildCompleteCredentials(fields, credentials))
@@ -252,8 +226,7 @@ export function CredentialsSection({
             })} />
           ))}
         </div>
-        <CredentialActions showSecrets={showSecrets} saveSuccess={saveSuccess} sourceStatus={sourceStatus} hasIngestor={hasIngestor} savePending={updateCredentialsMutation.isPending} testMutation={testMutation} runMutation={runMutation} credentialsEmpty={Object.keys(credentials).length === 0} onToggleSecrets={onToggleSecrets} onSave={handleSave} />
-        {testMutation.data ? <TestResultMessage success={testMutation.data.success} message={testMutation.data.message ?? testMutation.data.error ?? 'Unknown result'} /> : null}
+        <CredentialActions saveSuccess={saveSuccess} hasIngestor={hasIngestor} savePending={updateCredentialsMutation.isPending} runMutation={runMutation} credentialsEmpty={Object.keys(credentials).length === 0} onSave={handleSave} />
         {runMutation.data ? <TestResultMessage success={runMutation.data.success} message={runMutation.data.message ?? 'Run triggered'} /> : null}
       </div>
     </div>

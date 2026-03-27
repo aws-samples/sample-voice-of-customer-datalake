@@ -1,6 +1,3 @@
-/**
- * Tests for PluginConfigModal - plugin credential configuration.
- */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -8,145 +5,137 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PluginConfigModal from './PluginConfigModal'
 import type { PluginManifest } from '../../plugins/types'
 
-const mockGetIntegrationCredentials = vi.fn()
-const mockUpdateIntegrationCredentials = vi.fn()
-const mockTestIntegration = vi.fn()
+const mockGetAppConfigs = vi.fn()
+const mockSaveAppConfig = vi.fn()
+const mockDeleteAppConfig = vi.fn()
 const mockGetSourcesStatus = vi.fn()
+const mockRunSource = vi.fn()
 const mockEnableSource = vi.fn()
 const mockDisableSource = vi.fn()
-const mockRunSource = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
-    getIntegrationCredentials: (...args: unknown[]) => mockGetIntegrationCredentials(...args),
-    updateIntegrationCredentials: (...args: unknown[]) => mockUpdateIntegrationCredentials(...args),
-    testIntegration: (...args: unknown[]) => mockTestIntegration(...args),
-    getSourcesStatus: (...args: unknown[]) => mockGetSourcesStatus(...args),
-    enableSource: (...args: unknown[]) => mockEnableSource(...args),
-    disableSource: (...args: unknown[]) => mockDisableSource(...args),
-    runSource: (...args: unknown[]) => mockRunSource(...args),
+    getAppConfigs: (s: string) => mockGetAppConfigs(s),
+    saveAppConfig: (s: string, a: Record<string, string>) => mockSaveAppConfig(s, a),
+    deleteAppConfig: (s: string, id: string) => mockDeleteAppConfig(s, id),
+    getSourcesStatus: (s: string[]) => mockGetSourcesStatus(s),
+    enableSource: (s: string) => mockEnableSource(s),
+    disableSource: (s: string) => mockDisableSource(s),
+    runSource: (s: string) => mockRunSource(s),
   },
 }))
-
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({
-    config: { apiEndpoint: 'https://api.example.com' },
-  }),
-}))
+vi.mock('../../store/configStore', () => ({ useConfigStore: () => ({ config: { apiEndpoint: 'https://api.example.com' } }) }))
 
 function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
 }
 
-const androidPlugin: PluginManifest = {
-  id: 'app_reviews_android',
-  name: 'Android App Reviews',
-  icon: 'Android',
-  description: 'Collect reviews from Google Play Store',
-  category: 'reviews',
+const plugin: PluginManifest = {
+  id: 'app_reviews_android', name: 'Android App Reviews', icon: 'Android',
+  description: 'Collect reviews from Google Play Store', category: 'reviews',
   config: [
     { key: 'app_name', label: 'App Name', type: 'text', required: true, placeholder: 'my-app', secret: false },
     { key: 'package_name', label: 'Package Name', type: 'text', required: true, placeholder: 'com.example.app', secret: false },
   ],
-  setup: { title: 'Android Setup', color: 'green', steps: ['Install the Play Console API'] },
-  hasIngestor: true,
-  hasWebhook: false,
-  hasS3Trigger: false,
-  version: '1.0.0',
-  enabled: true,
+  setup: { title: 'Android Setup', color: 'green', steps: ['Step 1'] },
+  hasIngestor: true, hasWebhook: false, hasS3Trigger: false, version: '1.0.0', enabled: true,
 }
+
+const mockApps = [
+  { id: 'a1', app_name: 'Zara', package_name: 'com.inditex.zara' },
+  { id: 'a2', app_name: 'H&M', package_name: 'com.hm.app' },
+]
 
 describe('PluginConfigModal', () => {
   const onClose = vi.fn()
-
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetIntegrationCredentials.mockResolvedValue({})
+    mockGetAppConfigs.mockResolvedValue({ apps: mockApps })
     mockGetSourcesStatus.mockResolvedValue({ sources: { app_reviews_android: { enabled: false } } })
-    mockUpdateIntegrationCredentials.mockResolvedValue({ success: true })
-    mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection OK' })
+    mockSaveAppConfig.mockResolvedValue({ success: true, app: {} })
+    mockDeleteAppConfig.mockResolvedValue({ success: true })
     mockRunSource.mockResolvedValue({ success: true, message: 'Triggered' })
   })
 
   it('renders plugin name and description', () => {
-    render(<PluginConfigModal plugin={androidPlugin} onClose={onClose} />, { wrapper: createWrapper() })
-
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
     expect(screen.getByText('Android App Reviews')).toBeInTheDocument()
     expect(screen.getByText('Collect reviews from Google Play Store')).toBeInTheDocument()
   })
 
-  it('renders config fields from plugin manifest', () => {
-    render(<PluginConfigModal plugin={androidPlugin} onClose={onClose} />, { wrapper: createWrapper() })
-
-    expect(screen.getByText('App Name')).toBeInTheDocument()
-    expect(screen.getByText('Package Name')).toBeInTheDocument()
-  })
-
-  it('renders setup instructions when plugin has setup info', () => {
-    render(<PluginConfigModal plugin={androidPlugin} onClose={onClose} />, { wrapper: createWrapper() })
-
-    expect(screen.getByText('Android Setup')).toBeInTheDocument()
-    expect(screen.getByText('Install the Play Console API')).toBeInTheDocument()
-  })
-
-  it('populates fields with fetched credentials', async () => {
-    mockGetIntegrationCredentials.mockResolvedValue({ app_name: 'MyApp', package_name: 'com.my.app' })
-
-    render(<PluginConfigModal plugin={androidPlugin} onClose={onClose} />, { wrapper: createWrapper() })
-
+  it('displays configured apps after loading', async () => {
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
     await waitFor(() => {
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockGetIntegrationCredentials).toHaveBeenCalled()
+      expect(screen.getByText('Zara')).toBeInTheDocument()
+      expect(screen.getByText('H&M')).toBeInTheDocument()
     })
   })
 
-  it('calls onClose when close button is clicked', async () => {
+  it('shows empty state when no apps configured', async () => {
+    mockGetAppConfigs.mockResolvedValue({ apps: [] })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    await waitFor(() => { expect(screen.getByText('No apps configured yet')).toBeInTheDocument() })
+  })
+
+  it('opens add form when Add App clicked', async () => {
     const user = userEvent.setup()
-    render(<PluginConfigModal plugin={androidPlugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+    await user.click(screen.getByRole('button', { name: /add app/i }))
+    expect(screen.getByText('Add New App')).toBeInTheDocument()
+  })
 
-    const closeBtn = screen.getByText('×')
-    await user.click(closeBtn)
+  it('saves new app config when form submitted', async () => {
+    const user = userEvent.setup()
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+    await user.click(screen.getByRole('button', { name: /add app/i }))
+    await user.type(screen.getByPlaceholderText('my-app'), 'Nike')
+    await user.type(screen.getByPlaceholderText('com.example.app'), 'com.nike.app')
+    await user.click(screen.getByRole('button', { name: /add app$/i }))
+    await waitFor(() => {
+      expect(mockSaveAppConfig).toHaveBeenCalledWith('app_reviews_android', expect.objectContaining({ app_name: 'Nike', package_name: 'com.nike.app' }))
+    })
+  })
 
+  it('shows delete confirmation when delete clicked', async () => {
+    const user = userEvent.setup()
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+    const deleteButtons = screen.getAllByTitle('Delete')
+    await user.click(deleteButtons[0])
+    expect(screen.getByText('Delete App')).toBeInTheDocument()
+  })
+
+  it('calls close when Close button clicked', async () => {
+    const user = userEvent.setup()
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    await user.click(screen.getByRole('button', { name: /close/i }))
     // eslint-disable-next-line vitest/prefer-called-with
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('saves credentials when save button is clicked', async () => {
+  it('shows Run Now when apps exist', async () => {
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+    expect(screen.getByRole('button', { name: /run now/i })).toBeInTheDocument()
+  })
+
+  it('hides Run Now when no apps', async () => {
+    mockGetAppConfigs.mockResolvedValue({ apps: [] })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    await waitFor(() => { expect(screen.getByText('No apps configured yet')).toBeInTheDocument() })
+    expect(screen.queryByRole('button', { name: /run now/i })).not.toBeInTheDocument()
+  })
+
+  it('cancels add form without saving', async () => {
     const user = userEvent.setup()
-    render(<PluginConfigModal plugin={androidPlugin} onClose={onClose} />, { wrapper: createWrapper() })
-
-    const inputs = screen.getAllByRole('textbox')
-    await user.clear(inputs[0])
-    await user.type(inputs[0], 'TestApp')
-
-    const saveBtn = screen.getAllByRole('button').find(b => b.textContent?.includes('Save') || b.textContent?.includes('save'))
-    expect(saveBtn).toBeDefined()
-    await user.click(saveBtn!)
-
-    await waitFor(() => {
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockUpdateIntegrationCredentials).toHaveBeenCalled()
-    })
-  })
-
-  it('fetches schedule status on mount', async () => {
-    render(<PluginConfigModal plugin={androidPlugin} onClose={onClose} />, { wrapper: createWrapper() })
-
-    await waitFor(() => {
-      expect(mockGetSourcesStatus).toHaveBeenCalledWith(['app_reviews_android'])
-    })
-  })
-
-  it('shows schedule toggle with correct initial state', async () => {
-    render(<PluginConfigModal plugin={androidPlugin} onClose={onClose} />, { wrapper: createWrapper() })
-
-    await waitFor(() => {
-      expect(screen.getByRole('checkbox')).toBeInTheDocument()
-    })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+    await user.click(screen.getByRole('button', { name: /add app/i }))
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(screen.queryByText('Add New App')).not.toBeInTheDocument()
+    expect(mockSaveAppConfig).not.toHaveBeenCalled()
   })
 })
