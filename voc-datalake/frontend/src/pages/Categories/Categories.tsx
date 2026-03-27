@@ -3,27 +3,35 @@
  * @module pages/Categories
  */
 
-import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import {
+  useState, useMemo,
+} from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, getDaysFromRange } from '../../api/client'
-import type { FeedbackItem } from '../../api/client'
+import { getDaysFromRange } from '../../api/baseUrl'
+import { api } from '../../api/client'
+import { toggleArrayItem } from '../../components/DataSourceWizard/stepItemUtils'
 import { useConfigStore } from '../../store/configStore'
-import { categoryColors, getSentimentColor } from './types'
-import type { SentimentFilter, ViewMode, CategoryData, SentimentData, WordCloudItem } from './types'
-import { SourceFilter } from './SourceFilter'
-import { InsightsRow } from './InsightsRow'
-import { SentimentGauge } from './SentimentGaugeCard'
-import { WordCloudCard } from './WordCloudCard'
+import { generateCategoriesPDF } from './categoriesPdfGenerator'
 import { CategorySelector } from './CategorySelector'
 import { FeedbackResults } from './FeedbackResults'
-import { generateCategoriesPDF } from './categoriesPdfGenerator'
+import { InsightsRow } from './InsightsRow'
+import { SentimentGauge } from './SentimentGaugeCard'
+import { SourceFilter } from './SourceFilter'
+import {
+  categoryColors, getSentimentColor,
+} from './types'
+import { WordCloudCard } from './WordCloudCard'
+import type {
+  SentimentFilter, ViewMode, CategoryData, SentimentData, WordCloudItem,
+} from './types'
+import type { FeedbackItem } from '../../api/types'
 
 // Stop words for word cloud filtering
 const STOP_WORDS = new Set([
   'with', 'that', 'this', 'from', 'have', 'been', 'were', 'they', 'their',
   'about', 'would', 'could', 'should', 'very', 'more', 'some', 'than',
-  'when', 'what', 'which', 'there', 'other'
+  'when', 'what', 'which', 'there', 'other',
 ])
 
 function isValidWord(word: string): boolean {
@@ -33,29 +41,35 @@ function isValidWord(word: string): boolean {
 function extractWordsFromIssues(issuesData: Record<string, number>): Record<string, number> {
   const wordCounts: Record<string, number> = {}
   for (const [issue, count] of Object.entries(issuesData)) {
-    const words = issue.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(isValidWord)
+    const words = issue.toLowerCase().replaceAll(/[^a-z\s]/g, '').split(/\s+/).filter(isValidWord)
     const countNum = typeof count === 'number' ? count : 0
     for (const word of words) {
-      wordCounts[word] = (wordCounts[word] ?? 0) + countNum
+      wordCounts[word] = wordCounts[word] + countNum
     }
   }
   return wordCounts
 }
 
-function buildWordCloudData(entities: { issues?: Record<string, number>; categories?: Record<string, number> } | undefined): WordCloudItem[] {
+function buildWordCloudData(entities: {
+  issues?: Record<string, number>;
+  categories?: Record<string, number>
+} | undefined): WordCloudItem[] {
   if (!entities) return []
   const wordCounts = extractWordsFromIssues(entities.issues ?? {})
 
   for (const [cat, count] of Object.entries(entities.categories ?? {})) {
     const word = cat.replace('_', ' ')
     const countNum = typeof count === 'number' ? count : 0
-    wordCounts[word] = (wordCounts[word] ?? 0) + countNum
+    wordCounts[word] = wordCounts[word] + countNum
   }
 
   return Object.entries(wordCounts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 30)
-    .map(([word, count]) => ({ word, count }))
+    .map(([word, count]) => ({
+      word,
+      count,
+    }))
 }
 
 interface FilterState {
@@ -76,34 +90,34 @@ function checkHasActiveFilters(filters: FilterState): boolean {
   )
 }
 
-function matchesFeedbackFilters(
-  item: FeedbackItem,
-  minRating: number,
-  selectedCategories: string[],
-  selectedSource: string | null,
-  selectedKeywords: string[],
-): boolean {
-  if (minRating > 0 && (!item.rating || item.rating < minRating)) return false
-  if (selectedCategories.length > 0 && !selectedCategories.includes(item.category)) return false
-  if (selectedSource && item.brand_name !== selectedSource) return false
-  if (selectedKeywords.length > 0) {
-    const text = (item.original_text + ' ' + (item.problem_summary ?? '')).toLowerCase()
-    if (!selectedKeywords.some(kw => text.includes(kw.toLowerCase()))) return false
-  }
-  return true
+function matchesRatingFilter(item: FeedbackItem, minRating: number): boolean {
+  return minRating <= 0 || (item.rating != null && item.rating >= minRating)
+}
+
+function matchesKeywordFilter(item: FeedbackItem, selectedKeywords: string[]): boolean {
+  if (selectedKeywords.length === 0) return true
+  const text = (item.original_text + ' ' + (item.problem_summary ?? '')).toLowerCase()
+  return selectedKeywords.some((kw) => text.includes(kw.toLowerCase()))
+}
+
+function matchesFeedbackFilters(item: FeedbackItem, filters: FilterState): boolean {
+  if (!matchesRatingFilter(item, filters.minRating)) return false
+  if (filters.selectedCategories.length > 0 && !filters.selectedCategories.includes(item.category)) return false
+  if (filters.selectedSource != null && filters.selectedSource !== '' && item.brand_name !== filters.selectedSource) return false
+  return matchesKeywordFilter(item, filters.selectedKeywords)
 }
 
 function exportFeedbackCSV(filteredFeedback: FeedbackItem[], allItems: FeedbackItem[]) {
   const dataToExport = filteredFeedback.length > 0 ? filteredFeedback : allItems
   const csv = [
     ['ID', 'Source', 'Category', 'Sentiment', 'Rating', 'Text', 'Date'].join(','),
-    ...dataToExport.map(item => [
+    ...dataToExport.map((item) => [
       item.feedback_id,
       item.source_platform,
       item.category,
       item.sentiment_label,
-      item.rating || '',
-      `"${item.original_text.replace(/"/g, '""')}"`,
+      item.rating ?? '',
+      `"${item.original_text.replaceAll('"', '""')}"`,
       item.source_created_at,
     ].join(',')),
   ].join('\n')
@@ -117,7 +131,7 @@ function exportFeedbackCSV(filteredFeedback: FeedbackItem[], allItems: FeedbackI
 
 function computeAvgSentiment(sentiment: { percentages: Record<string, number> } | undefined): number {
   if (!sentiment) return 0
-  return (sentiment.percentages.positive || 0) - (sentiment.percentages.negative || 0)
+  return sentiment.percentages.positive - sentiment.percentages.negative
 }
 
 function safePDFExport<T>(exportFn: (data: T) => void, data: T): void {
@@ -130,10 +144,6 @@ function safePDFExport<T>(exportFn: (data: T) => void, data: T): void {
   }
 }
 
-function toggleArrayItem(arr: string[], item: string): string[] {
-  return arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item]
-}
-
 function buildFeedbackQueryParams(
   days: number,
   selectedSource: string | null,
@@ -142,16 +152,18 @@ function buildFeedbackQueryParams(
 ) {
   return {
     days,
-    source: selectedSource || undefined,
+    source: selectedSource ?? undefined,
     category: selectedCategories.length > 0 ? selectedCategories.join(',') : undefined,
-    sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
+    sentiment: sentimentFilter === 'all' ? undefined : sentimentFilter,
     limit: 100,
   }
 }
 
 export default function Categories() {
   const { t } = useTranslation('categories')
-  const { timeRange, config } = useConfigStore()
+  const {
+    timeRange, config,
+  } = useConfigStore()
   const days = getDaysFromRange(timeRange)
 
   // State
@@ -164,52 +176,69 @@ export default function Categories() {
   const [showFilters, setShowFilters] = useState(false)
 
   // Queries
-  const { data: categories, isLoading: categoriesLoading } = useQuery({
+  const {
+    data: categories, isLoading: categoriesLoading,
+  } = useQuery({
     queryKey: ['categories', days, selectedSource],
-    queryFn: () => api.getCategories(days, selectedSource || undefined),
-    enabled: !!config.apiEndpoint,
+    queryFn: () => api.getCategories(days, selectedSource ?? undefined),
+    enabled: config.apiEndpoint.length > 0,
   })
 
-  const { data: sentiment, isLoading: sentimentLoading } = useQuery({
+  const {
+    data: sentiment, isLoading: sentimentLoading,
+  } = useQuery({
     queryKey: ['sentiment', days, selectedSource],
-    queryFn: () => api.getSentiment(days, selectedSource || undefined),
-    enabled: !!config.apiEndpoint,
+    queryFn: () => api.getSentiment(days, selectedSource ?? undefined),
+    enabled: config.apiEndpoint.length > 0,
   })
 
   const { data: entities } = useQuery({
     queryKey: ['entities', days, selectedSource],
-    queryFn: () => api.getEntities({ days, limit: 50, source: selectedSource || undefined }),
-    enabled: !!config.apiEndpoint,
+    queryFn: () => api.getEntities({
+      days,
+      limit: 50,
+      source: selectedSource ?? undefined,
+    }),
+    enabled: config.apiEndpoint.length > 0,
   })
 
   const { data: allEntities } = useQuery({
     queryKey: ['entities-all-sources', days],
-    queryFn: () => api.getEntities({ days, limit: 50 }),
-    enabled: !!config.apiEndpoint,
+    queryFn: () => api.getEntities({
+      days,
+      limit: 50,
+    }),
+    enabled: config.apiEndpoint.length > 0,
   })
 
   const shouldFetchFeedback = selectedCategories.length > 0 || selectedKeywords.length > 0
 
-  const { data: feedbackData, isLoading: feedbackLoading } = useQuery({
+  const {
+    data: feedbackData, isLoading: feedbackLoading,
+  } = useQuery({
     queryKey: ['feedback', days, selectedCategories, sentimentFilter, selectedKeywords, selectedSource],
     queryFn: () => api.getFeedback(
-      buildFeedbackQueryParams(days, selectedSource, selectedCategories, sentimentFilter)
+      buildFeedbackQueryParams(days, selectedSource, selectedCategories, sentimentFilter),
     ),
-    enabled: !!config.apiEndpoint && shouldFetchFeedback,
+    enabled: config.apiEndpoint.length > 0 && shouldFetchFeedback,
   })
 
   // Computed data
   const allSources = useMemo(() => {
-    if (!allEntities?.entities?.sources) return []
+    if (!allEntities?.entities.sources) return []
     return Object.keys(allEntities.entities.sources).sort(
-      (a, b) => (allEntities.entities.sources[b] || 0) - (allEntities.entities.sources[a] || 0)
+      (a, b) => allEntities.entities.sources[b] - allEntities.entities.sources[a],
     )
   }, [allEntities])
 
   const categoryData: CategoryData[] = useMemo(() => {
     if (!categories) return []
     return Object.entries(categories.categories)
-      .map(([name, value]) => ({ name, value, color: categoryColors[name] || categoryColors.other }))
+      .map(([name, value]) => ({
+        name,
+        value,
+        color: categoryColors[name] ?? categoryColors.other,
+      }))
       .sort((a, b) => b.value - a.value)
   }, [categories])
 
@@ -223,27 +252,34 @@ export default function Categories() {
       color: getSentimentColor(name),
       percentage: sentiment.percentages[name] ?? 0,
     }))
+
   }, [sentiment])
 
   const wordCloudData: WordCloudItem[] = useMemo(
     () => buildWordCloudData(entities?.entities),
-    [entities]
+    [entities],
   )
 
   const filteredFeedback = useMemo(() => {
     if (!feedbackData?.items) return []
-    return feedbackData.items.filter(item =>
-      matchesFeedbackFilters(item, minRating, selectedCategories, selectedSource, selectedKeywords)
+    return feedbackData.items.filter((item) =>
+      matchesFeedbackFilters(item, {
+        selectedCategories,
+        selectedKeywords,
+        selectedSource,
+        sentimentFilter,
+        minRating,
+      }),
     )
-  }, [feedbackData, minRating, selectedCategories, selectedKeywords, selectedSource])
+  }, [feedbackData, minRating, selectedCategories, selectedKeywords, selectedSource, sentimentFilter])
 
   // Handlers
   const toggleCategory = (category: string) => {
-    setSelectedCategories(prev => toggleArrayItem(prev, category))
+    setSelectedCategories((prev) => toggleArrayItem(prev, category))
   }
 
   const toggleKeyword = (keyword: string) => {
-    setSelectedKeywords(prev => toggleArrayItem(prev, keyword))
+    setSelectedKeywords((prev) => toggleArrayItem(prev, keyword))
   }
 
   const clearFilters = () => {
@@ -263,10 +299,10 @@ export default function Categories() {
   })
 
   const exportData = () => {
-    exportFeedbackCSV(filteredFeedback, feedbackData?.items || [])
+    exportFeedbackCSV(filteredFeedback, feedbackData?.items ?? [])
   }
 
-  if (!config.apiEndpoint) {
+  if (config.apiEndpoint === '') {
     return (
       <div className="flex items-center justify-center h-full">
         <p className="text-gray-500">{t('configureApiEndpoint')}</p>
@@ -277,7 +313,7 @@ export default function Categories() {
   if (categoriesLoading || sentimentLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
       </div>
     )
   }
@@ -321,7 +357,7 @@ export default function Categories() {
           avgSentiment={avgSentiment}
           sentimentFilter={sentimentFilter}
           onSentimentFilterChange={setSentimentFilter}
-          percentages={sentiment?.percentages || {}}
+          percentages={sentiment?.percentages ?? {}}
         />
         <WordCloudCard
           wordCloudData={wordCloudData}
@@ -346,20 +382,18 @@ export default function Categories() {
         onSentimentFilterChange={setSentimentFilter}
       />
 
-      {shouldFetchFeedback && (
-        <FeedbackResults
-          filteredFeedback={filteredFeedback}
-          feedbackLoading={feedbackLoading}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          selectedSource={selectedSource}
-          selectedCategories={selectedCategories}
-          selectedKeywords={selectedKeywords}
-          sentimentFilter={sentimentFilter}
-          minRating={minRating}
-          onExport={exportData}
-        />
-      )}
+      {shouldFetchFeedback ? <FeedbackResults
+        filteredFeedback={filteredFeedback}
+        feedbackLoading={feedbackLoading}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        selectedSource={selectedSource}
+        selectedCategories={selectedCategories}
+        selectedKeywords={selectedKeywords}
+        sentimentFilter={sentimentFilter}
+        minRating={minRating}
+        onExport={exportData}
+      /> : null}
     </div>
   )
 }

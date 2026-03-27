@@ -2,8 +2,10 @@
  * ContextSummary component - displays summary of selected context
  */
 import { useTranslation } from 'react-i18next'
-import type { ProjectPersona, ProjectDocument } from '../../api/client'
 import type { ContextConfig } from './types'
+import type {
+  ProjectPersona, ProjectDocument,
+} from '../../api/types'
 
 interface ContextSummaryProps {
   readonly config: ContextConfig
@@ -33,43 +35,37 @@ function FeedbackSection({ config }: Readonly<{ config: ContextConfig }>) {
   )
 }
 
-export default function ContextSummary({ config, personas, documents }: ContextSummaryProps) {
+export default function ContextSummary({
+  config, personas, documents,
+}: ContextSummaryProps) {
   const { t } = useTranslation('components')
-  const selectedPersonas = personas.filter(p => config.selectedPersonaIds.includes(p.persona_id))
-  const researchDocs = documents.filter(d => d.document_type === 'research')
-  const otherDocs = documents.filter(d => d.document_type !== 'research')
-  const selectedDocs = otherDocs.filter(d => config.selectedDocumentIds.includes(d.document_id))
-  const selectedResearch = researchDocs.filter(d => config.selectedResearchIds.includes(d.document_id))
+  const selectedPersonas = personas.filter((p) => config.selectedPersonaIds.includes(p.persona_id))
+  const researchDocs = documents.filter((d) => d.document_type === 'research')
+  const otherDocs = documents.filter((d) => d.document_type !== 'research')
+  const selectedDocs = otherDocs.filter((d) => config.selectedDocumentIds.includes(d.document_id))
+  const selectedResearch = researchDocs.filter((d) => config.selectedResearchIds.includes(d.document_id))
 
   const hasNoSources = !config.useFeedback && !config.usePersonas && !config.useDocuments && !config.useResearch
 
   return (
     <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
       <h4 className="font-medium">{t('dataSourceWizard.contextSummary')}</h4>
-      
+
       <FeedbackSection config={config} />
-      
-      {config.usePersonas && (
-        <p><span className="text-gray-500">{t('dataSourceWizard.selectPersonas')}:</span> {
-          formatListOrAll(selectedPersonas.map(p => p.name), personas.length, 'personas')
-        }</p>
-      )}
-      
-      {config.useDocuments && (
-        <p><span className="text-gray-500">{t('dataSourceWizard.selectDocuments')}:</span> {
-          formatListOrAll(selectedDocs.map(d => d.title), otherDocs.length, 'documents')
-        }</p>
-      )}
-      
-      {config.useResearch && (
-        <p><span className="text-gray-500">{t('dataSourceWizard.selectResearchDocuments')}:</span> {
-          formatListOrAll(selectedResearch.map(d => d.title), researchDocs.length, 'research docs')
-        }</p>
-      )}
-      
-      {hasNoSources && (
-        <p className="text-gray-400 italic">{t('dataSourceWizard.noDataSourcesSelected')}</p>
-      )}
+
+      {config.usePersonas ? <p><span className="text-gray-500">{t('dataSourceWizard.selectPersonas')}:</span> {
+        formatListOrAll(selectedPersonas.map((p) => p.name), personas.length, 'personas')
+      }</p> : null}
+
+      {config.useDocuments ? <p><span className="text-gray-500">{t('dataSourceWizard.selectDocuments')}:</span> {
+        formatListOrAll(selectedDocs.map((d) => d.title), otherDocs.length, 'documents')
+      }</p> : null}
+
+      {config.useResearch ? <p><span className="text-gray-500">{t('dataSourceWizard.selectResearchDocuments')}:</span> {
+        formatListOrAll(selectedResearch.map((d) => d.title), researchDocs.length, 'research docs')
+      }</p> : null}
+
+      {hasNoSources ? <p className="text-gray-400 italic">{t('dataSourceWizard.noDataSourcesSelected')}</p> : null}
     </div>
   )
 }

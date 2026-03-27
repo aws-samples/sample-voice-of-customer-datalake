@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '../../test/test-utils'
 
 // Mock scrollIntoView for message scrolling
+// eslint-disable-next-line vitest/prefer-spy-on -- scrollIntoView doesn't exist in jsdom
 Element.prototype.scrollIntoView = vi.fn()
 
 // Mock API
@@ -18,6 +19,9 @@ vi.mock('../../api/client', () => ({
   api: {
     chatStream: (message: string, context?: string, days?: number) => mockChatStream(message, context, days),
   },
+}))
+
+vi.mock('../../api/baseUrl', () => ({
   getDaysFromRange: vi.fn(() => 7),
 }))
 
@@ -97,7 +101,7 @@ vi.mock('../../components/ChatMessage', () => ({
 }))
 
 vi.mock('../../components/ChatFilters', () => ({
-  default: ({ filters, onChange }: { filters: object; onChange: (f: object) => void }) => (
+  default: ({ onChange }: { filters: object; onChange: (f: object) => void }) => (
     <div data-testid="chat-filters">
       <button onClick={() => onChange({ source: 'webscraper' })}>Set Source Filter</button>
     </div>
@@ -225,6 +229,7 @@ describe('Chat', () => {
       await user.click(screen.getByRole('button', { name: /send/i }))
       
       await waitFor(() => {
+        // eslint-disable-next-line vitest/prefer-called-with
         expect(mockCreateConversation).toHaveBeenCalled()
         expect(mockAddMessage).toHaveBeenCalledWith('conv_123', expect.objectContaining({
           role: 'user',
@@ -275,6 +280,7 @@ describe('Chat', () => {
       await user.type(input, 'Test message{enter}')
       
       await waitFor(() => {
+        // eslint-disable-next-line vitest/prefer-called-with
         expect(mockAddMessage).toHaveBeenCalled()
       })
     })
@@ -375,6 +381,7 @@ describe('Chat', () => {
       await user.click(screen.getByRole('button', { name: /send/i }))
 
       // sendMessage was called
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockSendMessage).toHaveBeenCalled()
     })
   })

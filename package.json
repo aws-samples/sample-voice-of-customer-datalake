@@ -10,6 +10,7 @@
     "build": "npm run build --prefix voc-datalake/frontend",
     "lint": "npm run lint --prefix voc-datalake/frontend",
     "typecheck": "npm run typecheck --prefix voc-datalake/frontend",
+    "typecheck:tests": "npm run typecheck:tests --prefix voc-datalake/frontend",
     "typecheck:cdk": "cd voc-datalake && npx tsc --noEmit",
     "typecheck:stream": "cd voc-datalake/lambda/stream && npx tsc --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:cdk && npm run typecheck:stream",

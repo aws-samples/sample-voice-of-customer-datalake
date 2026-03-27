@@ -15,7 +15,10 @@ vi.mock('../../api/client', () => ({
     createApiToken: (...args: unknown[]) => mockCreateApiToken(...args),
     deleteApiToken: (...args: unknown[]) => mockDeleteApiToken(...args),
   },
-  stripTrailingSlashes: (url: string) => url.replace(/\/+$/, ''),
+}))
+
+vi.mock('../../api/baseUrl', () => ({
+  stripTrailingSlashes: (url: string) => url.replace(/\/$/, ''),
 }))
 
 vi.mock('../../store/configStore', () => ({
@@ -61,10 +64,14 @@ describe('McpAccessTab', () => {
   })
 
   it('shows empty state when no tokens exist', async () => {
+    const user = userEvent.setup()
     renderTab()
+    // Expand the Active Tokens section first (collapsed by default)
     await waitFor(() => {
-      expect(screen.getByText('No API tokens yet')).toBeInTheDocument()
+      expect(screen.getByText('Active Tokens (0)')).toBeInTheDocument()
     })
+    await user.click(screen.getByText('Active Tokens (0)'))
+    expect(screen.getByText('No API tokens yet')).toBeInTheDocument()
   })
 
   it('renders token list when tokens exist', async () => {
@@ -148,9 +155,11 @@ describe('McpAccessTab', () => {
   })
 
   it('renders MCP config snippet with project ID', async () => {
+    const user = userEvent.setup()
     renderTab()
     expect(screen.getByText('MCP Client Configuration')).toBeInTheDocument()
-    // The config should contain the project ID
+    // Expand the MCP Client Configuration section
+    await user.click(screen.getByText('MCP Client Configuration'))
     const pre = screen.getByText(/X-Project-Id/)
     expect(pre).toBeInTheDocument()
   })
@@ -158,6 +167,8 @@ describe('McpAccessTab', () => {
   it('copies MCP config to clipboard', async () => {
     const user = userEvent.setup()
     renderTab()
+    // Expand the MCP Client Configuration section first
+    await user.click(screen.getByText('MCP Client Configuration'))
     // The Copy button inside the MCP config section
     const copyButton = screen.getByRole('button', { name: /^Copy$/ })
     await user.click(copyButton)
@@ -248,9 +259,12 @@ describe('McpAccessTab', () => {
     expect(screen.getByText(/Last used/)).toBeInTheDocument()
   })
 
-  it('shows loading state', () => {
+  it('shows loading state', async () => {
+    const user = userEvent.setup()
     mockListApiTokens.mockReturnValue(new Promise(() => {})) // never resolves
     renderTab()
+    // Expand the Active Tokens section to see the loading state
+    await user.click(screen.getByText('Active Tokens (0)'))
     expect(screen.getByText('Loading tokens\u2026')).toBeInTheDocument()
   })
 })

@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { FeedbackResults } from './FeedbackResults'
-import type { FeedbackItem } from '../../api/client'
+import type { FeedbackItem } from '../../api/types'
 import type { SentimentFilter, ViewMode } from './types'
 
 const mockFeedback: FeedbackItem[] = [
@@ -149,19 +149,19 @@ describe('FeedbackResults', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} onExport={onExport} />)
 
       await user.click(screen.getByRole('button', { name: /export/i }))
-      expect(onExport).toHaveBeenCalled()
+      expect(onExport).toHaveBeenCalledWith(expect.any(Object))
     })
   })
 
   describe('loading state', () => {
-    it('shows loading spinner when feedbackLoading is true', () => {
+    it('does not show feedback items when feedbackLoading is true', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} feedbackLoading={true} />)
-      expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+      expect(screen.queryByText(/great delivery service/i)).not.toBeInTheDocument()
     })
 
-    it('hides loading spinner when feedbackLoading is false', () => {
+    it('shows feedback items when feedbackLoading is false', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} feedbackLoading={false} />)
-      expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
+      expect(screen.getByText(/great delivery service/i)).toBeInTheDocument()
     })
   })
 
@@ -179,14 +179,16 @@ describe('FeedbackResults', () => {
       expect(screen.getByText(/slow support response/i)).toBeInTheDocument()
     })
 
-    it('renders in grid layout when viewMode is grid', () => {
-      const { container } = renderWithRouter(<FeedbackResults {...defaultProps} viewMode="grid" />)
-      expect(container.querySelector('.grid')).toBeInTheDocument()
+    it('renders feedback cards in grid mode', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} viewMode="grid" />)
+      expect(screen.getByText(/great delivery service/i)).toBeInTheDocument()
+      expect(screen.getByText(/slow support response/i)).toBeInTheDocument()
     })
 
-    it('renders in list layout when viewMode is list', () => {
-      const { container } = renderWithRouter(<FeedbackResults {...defaultProps} viewMode="list" />)
-      expect(container.querySelector('.space-y-2')).toBeInTheDocument()
+    it('renders feedback cards in list mode', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} viewMode="list" />)
+      expect(screen.getByText(/great delivery service/i)).toBeInTheDocument()
+      expect(screen.getByText(/slow support response/i)).toBeInTheDocument()
     })
   })
 })

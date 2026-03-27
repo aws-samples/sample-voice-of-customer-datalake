@@ -3,9 +3,11 @@
  * @module pages/Login/LoginForms
  */
 
-import type { SyntheticEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ErrorAlert, SuccessMessage, SubmitButton, PasswordInput } from './LoginSharedComponents'
+import {
+  ErrorAlert, SuccessMessage, SubmitButton, PasswordInput,
+} from './LoginSharedComponents'
+import type { SyntheticEvent } from 'react'
 
 // Login Form Component
 interface LoginFormProps {
@@ -51,7 +53,6 @@ export function LoginForm({
             className="input"
             placeholder={t('enterUsername')}
             required
-            autoFocus
           />
         </div>
         <PasswordInput
@@ -63,8 +64,8 @@ export function LoginForm({
           label={t('password')}
         />
 
-        {error && <ErrorAlert message={error} />}
-        {message && <SuccessMessage message={message} />}
+        {error != null && error !== '' ? <ErrorAlert message={error} /> : null}
+        {message != null && message !== '' ? <SuccessMessage message={message} /> : null}
 
         <SubmitButton
           isLoading={isLoading}
@@ -154,7 +155,7 @@ export function NewPasswordForm({
           {t('newPassword.showPassword')}
         </label>
 
-        {error && <ErrorAlert message={error} />}
+        {error != null && error !== '' ? <ErrorAlert message={error} /> : null}
 
         <SubmitButton
           isLoading={isLoading}
@@ -206,7 +207,7 @@ export function ForgotPasswordForm({
           />
         </div>
 
-        {error && <ErrorAlert message={error} />}
+        {error != null && error !== '' ? <ErrorAlert message={error} /> : null}
 
         <SubmitButton
           isLoading={isLoading}
@@ -303,7 +304,7 @@ export function ConfirmPasswordForm({
           />
         </div>
 
-        {error && <ErrorAlert message={error} />}
+        {error != null && error !== '' ? <ErrorAlert message={error} /> : null}
 
         <SubmitButton
           isLoading={isLoading}

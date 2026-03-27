@@ -1,12 +1,12 @@
 /**
  * @fileoverview Plugin manifest types for frontend.
  * @module plugins/types
- * 
+ *
  * These types mirror the backend manifest schema but only include
  * UI-relevant fields. Runtime validation ensures type safety.
  */
 
-import { z } from 'zod';
+import { z } from 'zod'
 
 // ============================================
 // Zod Schemas for Runtime Validation
@@ -23,19 +23,19 @@ export const ConfigFieldSchema = z.object({
     value: z.string(),
     label: z.string(),
   })).optional(),
-});
+})
 
 export const WebhookInfoSchema = z.object({
   name: z.string(),
   events: z.array(z.string()),
   docUrl: z.string().optional(),
-});
+})
 
 export const SetupSchema = z.object({
   title: z.string(),
   color: z.enum(['blue', 'orange', 'green', 'gray']).optional(),
   steps: z.array(z.string()),
-});
+})
 
 export const PluginManifestSchema = z.object({
   id: z.string(),
@@ -51,18 +51,18 @@ export const PluginManifestSchema = z.object({
   hasS3Trigger: z.boolean(),
   version: z.string().optional(),
   enabled: z.boolean(),
-});
+})
 
-export const PluginManifestsSchema = z.array(PluginManifestSchema);
+export const PluginManifestsSchema = z.array(PluginManifestSchema)
 
 // ============================================
 // TypeScript Types (inferred from Zod)
 // ============================================
 
-export type PluginManifest = z.infer<typeof PluginManifestSchema>;
-export type ConfigField = z.infer<typeof ConfigFieldSchema>;
-export type WebhookInfo = z.infer<typeof WebhookInfoSchema>;
-export type SetupInfo = z.infer<typeof SetupSchema>;
+export type PluginManifest = z.infer<typeof PluginManifestSchema>
+export type ConfigField = z.infer<typeof ConfigFieldSchema>
+export type WebhookInfo = z.infer<typeof WebhookInfoSchema>
+export type SetupInfo = z.infer<typeof SetupSchema>
 
 // ============================================
 // Validation Functions
@@ -72,10 +72,10 @@ export type SetupInfo = z.infer<typeof SetupSchema>;
  * Safely validate manifests, returning null on failure.
  */
 export function safeValidateManifests(data: unknown): PluginManifest[] | null {
-  const result = PluginManifestsSchema.safeParse(data);
+  const result = PluginManifestsSchema.safeParse(data)
   if (result.success) {
-    return result.data;
+    return result.data
   }
-  console.error('Plugin manifest validation failed:', result.error);
-  return null;
+  console.error('Plugin manifest validation failed:', result.error)
+  return null
 }

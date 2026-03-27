@@ -1,13 +1,17 @@
 /**
  * TabContent - Renders the active tab content
  */
-import type { Project, ProjectPersona, ProjectDocument, ProjectJob } from '../../api/client'
-import type { Tab, NoteItem } from './types'
+import ChatTab from './ChatTab'
+import DocumentsTab from './DocumentsTab'
+import McpAccessTab from './McpAccessTab'
 import OverviewTab from './OverviewTab'
 import PersonasTab from './PersonasTab'
-import DocumentsTab from './DocumentsTab'
-import ChatTab from './ChatTab'
-import McpAccessTab from './McpAccessTab'
+import type {
+  Tab, NoteItem,
+} from './types'
+import type {
+  Project, ProjectPersona, ProjectDocument, ProjectJob,
+} from '../../api/types'
 
 interface TabContentProps {
   readonly activeTab: Tab
@@ -127,9 +131,5 @@ export default function TabContent({
     )
   }
 
-  if (activeTab === 'mcp') {
-    return <McpAccessTab projectId={project.project_id} personas={personas} documents={documents} />
-  }
-
-  return null
+  return <McpAccessTab projectId={project.project_id} personas={personas} documents={documents} />
 }

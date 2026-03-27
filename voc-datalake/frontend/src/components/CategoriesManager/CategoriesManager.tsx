@@ -10,32 +10,57 @@
  * @module components/CategoriesManager
  */
 
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
+import {
+  useQuery, useMutation, useQueryClient,
+} from '@tanstack/react-query'
+import {
   Plus, Trash2, Loader2, Sparkles, ChevronDown, ChevronRight,
-  Check, AlertCircle, GripVertical
+  Check, AlertCircle, GripVertical,
 } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import ConfirmModal from '../ConfirmModal'
 
-export interface Category {
+interface Category {
   id: string
   name: string
   description?: string
   subcategories: Subcategory[]
 }
 
-export interface Subcategory {
+interface Subcategory {
   id: string
   name: string
   description?: string
 }
 
-export interface CategoriesConfig {
-  categories: Category[]
-  updated_at?: string
+interface SaveStatusProps {
+  isPending: boolean
+  isSuccess: boolean
+  t: (key: string) => string
+}
+
+function SaveStatus({
+  isPending, isSuccess, t,
+}: Readonly<SaveStatusProps>) {
+  if (isPending) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-blue-600">
+        <Loader2 size={14} className="animate-spin" />
+        {t('categories.saving')}
+      </div>
+    )
+  }
+  if (isSuccess) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-green-600">
+        <Check size={14} />
+        {t('categories.saved')}
+      </div>
+    )
+  }
+  return null
 }
 
 export default function CategoriesManager() {
@@ -50,7 +75,9 @@ export default function CategoriesManager() {
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newSubcategoryName, setNewSubcategoryName] = useState<Record<string, string>>({})
 
-  const { data: categoriesConfig, isLoading } = useQuery({
+  const {
+    data: categoriesConfig, isLoading,
+  } = useQuery({
     queryKey: ['categories-config'],
     queryFn: () => api.getCategoriesConfig(),
   })
@@ -58,16 +85,14 @@ export default function CategoriesManager() {
   const saveMutation = useMutation({
     mutationFn: (categories: Category[]) => api.saveCategoriesConfig({ categories }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories-config'] })
+      void queryClient.invalidateQueries({ queryKey: ['categories-config'] })
     },
   })
 
   const generateMutation = useMutation({
     mutationFn: (description: string) => api.generateCategories(description),
     onSuccess: (data) => {
-      if (data.categories) {
-        saveMutation.mutate(data.categories)
-      }
+      saveMutation.mutate(data.categories)
       setIsGenerating(false)
     },
     onError: () => {
@@ -75,7 +100,7 @@ export default function CategoriesManager() {
     },
   })
 
-  const categories = categoriesConfig?.categories || []
+  const categories = categoriesConfig?.categories ?? []
 
   const toggleExpanded = (categoryId: string) => {
     const newExpanded = new Set(expandedCategories)
@@ -88,11 +113,11 @@ export default function CategoriesManager() {
   }
 
   const handleAddCategory = () => {
-    if (!newCategoryName.trim()) return
+    if (newCategoryName.trim() === '') return
     const id = crypto.randomUUID()
     const newCategory: Category = {
       id: `cat_${id}`,
-      name: newCategoryName.trim().toLowerCase().replace(/\s+/g, '_'),
+      name: newCategoryName.trim().toLowerCase().replaceAll(/\s+/g, '_'),
       description: newCategoryName.trim(),
       subcategories: [],
     }
@@ -103,50 +128,59 @@ export default function CategoriesManager() {
   const handleDeleteCategory = (categoryId: string) => {
     setDeleteCategoryId(categoryId)
   }
-  
+
   const confirmDeleteCategory = () => {
-    if (deleteCategoryId) {
-      saveMutation.mutate(categories.filter(c => c.id !== deleteCategoryId))
+    if (deleteCategoryId != null && deleteCategoryId !== '') {
+      saveMutation.mutate(categories.filter((c) => c.id !== deleteCategoryId))
       setDeleteCategoryId(null)
     }
   }
 
   const handleUpdateCategory = (categoryId: string, updates: Partial<Category>) => {
     saveMutation.mutate(
-      categories.map(c => c.id === categoryId ? { ...c, ...updates } : c)
+      categories.map((c) => c.id === categoryId ? {
+        ...c,
+        ...updates,
+      } : c),
     )
     setEditingCategory(null)
   }
 
   const handleAddSubcategory = (categoryId: string) => {
-    const name = newSubcategoryName[categoryId]?.trim()
-    if (!name) return
+    const name = (newSubcategoryName[categoryId] ?? '').trim()
+    if (name === '') return
     const id = crypto.randomUUID()
     const newSub: Subcategory = {
       id: `sub_${id}`,
-      name: name.toLowerCase().replace(/\s+/g, '_'),
+      name: name.toLowerCase().replaceAll(/\s+/g, '_'),
       description: name,
     }
     saveMutation.mutate(
-      categories.map(c => c.id === categoryId 
-        ? { ...c, subcategories: [...c.subcategories, newSub] }
-        : c
-      )
+      categories.map((c) => c.id === categoryId
+        ? {
+          ...c,
+          subcategories: [...c.subcategories, newSub],
+        }
+        : c,
+      ),
     )
-    setNewSubcategoryName(prev => ({ ...prev, [categoryId]: '' }))
+    setNewSubcategoryName((prev) => ({
+      ...prev,
+      [categoryId]: '',
+    }))
   }
 
   const handleUpdateSubcategory = (categoryId: string, subcategoryId: string, newValue: string) => {
-    const updated = categories.map(c => {
+    const updated = categories.map((c) => {
       if (c.id !== categoryId) return c
       return {
         ...c,
-        subcategories: c.subcategories.map(s => {
+        subcategories: c.subcategories.map((s) => {
           if (s.id !== subcategoryId) return s
           return {
             ...s,
             description: newValue,
-            name: newValue.toLowerCase().replace(/\s+/g, '_'),
+            name: newValue.toLowerCase().replaceAll(/\s+/g, '_'),
           }
         }),
       }
@@ -157,15 +191,18 @@ export default function CategoriesManager() {
 
   const handleDeleteSubcategory = (categoryId: string, subcategoryId: string) => {
     saveMutation.mutate(
-      categories.map(c => c.id === categoryId 
-        ? { ...c, subcategories: c.subcategories.filter(s => s.id !== subcategoryId) }
-        : c
-      )
+      categories.map((c) => c.id === categoryId
+        ? {
+          ...c,
+          subcategories: c.subcategories.filter((s) => s.id !== subcategoryId),
+        }
+        : c,
+      ),
     )
   }
 
   const handleGenerate = () => {
-    if (!companyDescription.trim()) return
+    if (companyDescription.trim() === '') return
     setIsGenerating(true)
     generateMutation.mutate(companyDescription)
   }
@@ -199,7 +236,7 @@ export default function CategoriesManager() {
             />
             <button
               onClick={handleGenerate}
-              disabled={isGenerating || !companyDescription.trim()}
+              disabled={isGenerating || companyDescription.trim() === ''}
               className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
             >
               {isGenerating ? (
@@ -214,12 +251,10 @@ export default function CategoriesManager() {
                 </>
               )}
             </button>
-            {generateMutation.isError && (
-              <p className="text-sm text-red-600 mt-2 flex items-center gap-1">
-                <AlertCircle size={14} />
-                {t('categories.generateError')}
-              </p>
-            )}
+            {generateMutation.isError ? <p className="text-sm text-red-600 mt-2 flex items-center gap-1">
+              <AlertCircle size={14} />
+              {t('categories.generateError')}
+            </p> : null}
           </div>
         </div>
       </div>
@@ -253,36 +288,37 @@ export default function CategoriesManager() {
                       <ChevronRight size={16} />
                     )}
                   </button>
-                  
+
                   {editingCategory === category.id ? (
                     <input
                       type="text"
-                      defaultValue={category.description || category.name}
-                      onBlur={(e) => handleUpdateCategory(category.id, { 
+                      defaultValue={category.description ?? category.name}
+                      onBlur={(e) => handleUpdateCategory(category.id, {
                         description: e.target.value,
-                        name: e.target.value.toLowerCase().replace(/\s+/g, '_')
+                        name: e.target.value.toLowerCase().replaceAll(/\s+/g, '_'),
                       })}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          handleUpdateCategory(category.id, { 
+                          handleUpdateCategory(category.id, {
                             description: e.currentTarget.value,
-                            name: e.currentTarget.value.toLowerCase().replace(/\s+/g, '_')
+                            name: e.currentTarget.value.toLowerCase().replaceAll(/\s+/g, '_'),
                           })
                         }
                         if (e.key === 'Escape') setEditingCategory(null)
                       }}
                       className="flex-1 min-w-0 px-2 py-1 border border-blue-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      autoFocus
+                      ref={(el) => el?.focus()}
                     />
                   ) : (
-                    <span 
-                      className="flex-1 min-w-0 font-medium text-gray-900 cursor-pointer hover:text-blue-600 truncate"
+                    <button
+                      type="button"
+                      className="flex-1 min-w-0 font-medium text-gray-900 cursor-pointer hover:text-blue-600 truncate text-left bg-transparent border-none p-0"
                       onClick={() => setEditingCategory(category.id)}
                     >
-                      {category.description || category.name}
-                    </span>
+                      {category.description ?? category.name}
+                    </button>
                   )}
-                  
+
                   <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded hidden sm:inline">
                     {category.name}
                   </span>
@@ -306,18 +342,19 @@ export default function CategoriesManager() {
                         {editingSubcategory === sub.id ? (
                           <input
                             type="text"
-                            defaultValue={sub.description || sub.name}
+                            defaultValue={sub.description ?? sub.name}
                             onBlur={(e) => handleUpdateSubcategory(category.id, sub.id, e.target.value)}
                             className="flex-1 min-w-0 px-2 py-1 border border-blue-300 rounded text-sm"
-                            autoFocus
+                            ref={(el) => el?.focus()}
                           />
                         ) : (
-                          <span 
-                            className="flex-1 min-w-0 text-gray-700 cursor-pointer hover:text-blue-600 truncate"
+                          <button
+                            type="button"
+                            className="flex-1 min-w-0 text-gray-700 cursor-pointer hover:text-blue-600 truncate text-left bg-transparent border-none p-0 text-sm"
                             onClick={() => setEditingSubcategory(sub.id)}
                           >
-                            {sub.description || sub.name}
-                          </span>
+                            {sub.description ?? sub.name}
+                          </button>
                         )}
                         <span className="text-xs text-gray-400 hidden sm:inline flex-shrink-0">{sub.name}</span>
                         <button
@@ -328,13 +365,16 @@ export default function CategoriesManager() {
                         </button>
                       </div>
                     ))}
-                    
+
                     {/* Add Subcategory */}
                     <div className="flex items-center gap-2 mt-2">
                       <input
                         type="text"
-                        value={newSubcategoryName[category.id] || ''}
-                        onChange={(e) => setNewSubcategoryName(prev => ({ ...prev, [category.id]: e.target.value }))}
+                        value={newSubcategoryName[category.id] ?? ''}
+                        onChange={(e) => setNewSubcategoryName((prev) => ({
+                          ...prev,
+                          [category.id]: e.target.value,
+                        }))}
                         placeholder={t('categories.addSubcategoryPlaceholder')}
                         className="flex-1 min-w-0 px-2 py-1.5 sm:py-1 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                         onKeyDown={(e) => {
@@ -343,7 +383,7 @@ export default function CategoriesManager() {
                       />
                       <button
                         onClick={() => handleAddSubcategory(category.id)}
-                        disabled={!newSubcategoryName[category.id]?.trim()}
+                        disabled={(newSubcategoryName[category.id] ?? '').trim() === ''}
                         className="p-1.5 sm:p-1 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50 flex-shrink-0"
                       >
                         <Plus size={16} />
@@ -370,7 +410,7 @@ export default function CategoriesManager() {
           />
           <button
             onClick={handleAddCategory}
-            disabled={!newCategoryName.trim() || saveMutation.isPending}
+            disabled={newCategoryName.trim() === '' || saveMutation.isPending}
             className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
           >
             <Plus size={16} />
@@ -380,18 +420,7 @@ export default function CategoriesManager() {
       </div>
 
       {/* Save Status */}
-      {saveMutation.isPending && (
-        <div className="flex items-center gap-2 text-sm text-blue-600">
-          <Loader2 size={14} className="animate-spin" />
-          {t('categories.saving')}
-        </div>
-      )}
-      {saveMutation.isSuccess && (
-        <div className="flex items-center gap-2 text-sm text-green-600">
-          <Check size={14} />
-          {t('categories.saved')}
-        </div>
-      )}
+      <SaveStatus isPending={saveMutation.isPending} isSuccess={saveMutation.isSuccess} t={t} />
 
       <ConfirmModal
         isOpen={deleteCategoryId !== null}

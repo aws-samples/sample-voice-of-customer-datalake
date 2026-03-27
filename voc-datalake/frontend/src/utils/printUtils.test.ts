@@ -73,6 +73,7 @@ describe('printUtils', () => {
         content: createElement(TestContent),
       })
 
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockWindow.document.write).toHaveBeenCalled()
       const writtenHtml = mockWindow.document.write.mock.calls[0][0] as string
       expect(writtenHtml).toContain('Test Title')
@@ -88,7 +89,7 @@ describe('printUtils', () => {
         content: createElement(TestContent),
       })
 
-      expect(mockWindow.document.close).toHaveBeenCalled()
+      expect(mockWindow.document.close).toHaveBeenCalledWith()
     })
 
     it('sets up onload handler to trigger print', async () => {

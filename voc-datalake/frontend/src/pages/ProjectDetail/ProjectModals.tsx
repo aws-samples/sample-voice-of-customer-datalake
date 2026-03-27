@@ -1,12 +1,14 @@
 /**
  * ProjectModals - Renders all modals for the project detail page
  */
-import type { ProjectPersona, ProjectDocument } from '../../api/client'
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal'
-import PersonaEditModal from './PersonaEditModal'
-import ImportPersonaModal from './ImportPersonaModal'
 import DocumentModal from './DocumentModal'
+import ImportPersonaModal from './ImportPersonaModal'
+import PersonaEditModal from './PersonaEditModal'
+import type {
+  ProjectPersona, ProjectDocument,
+} from '../../api/types'
 
 interface PersonaEditModalWrapperProps {
   readonly editingPersona: ProjectPersona | null
@@ -132,14 +134,14 @@ export function ConfirmModalWrapper({
   onCancel,
 }: ConfirmModalWrapperProps) {
   const { t } = useTranslation('projectDetail')
-  if (!type) return null
+  if (!Boolean(type)) return null
 
   const title = type === 'persona' ? t('confirmDelete.personaTitle') : t('confirmDelete.documentTitle')
   const message = type === 'persona' ? t('confirmDelete.personaMessage') : t('confirmDelete.documentMessage')
 
   return (
     <ConfirmModal
-      isOpen={!!type}
+      isOpen={type != null}
       title={title}
       message={message}
       confirmLabel={t('confirmDelete.confirm')}

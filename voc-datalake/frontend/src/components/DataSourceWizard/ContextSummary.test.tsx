@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import ContextSummary from './ContextSummary'
 import type { ContextConfig } from './types'
-import type { ProjectPersona, ProjectDocument } from '../../api/client'
+import type { ProjectPersona, ProjectDocument } from '../../api/types'
 
 const createConfig = (overrides: Partial<ContextConfig> = {}): ContextConfig => ({
   useFeedback: false,
@@ -51,7 +51,7 @@ describe('ContextSummary', () => {
   })
 
   describe('Feedback Section', () => {
-    it('shows feedback filters when useFeedback is true', () => {
+    it('shows feedback filter labels when useFeedback is true', () => {
       const config = createConfig({ useFeedback: true, days: 7 })
       render(<ContextSummary config={config} personas={[]} documents={[]} />)
 
@@ -59,6 +59,12 @@ describe('ContextSummary', () => {
       expect(screen.getByText('Categories:')).toBeInTheDocument()
       expect(screen.getByText('Sentiments:')).toBeInTheDocument()
       expect(screen.getByText('Time Range:')).toBeInTheDocument()
+    })
+
+    it('shows time range value when useFeedback is true', () => {
+      const config = createConfig({ useFeedback: true, days: 7 })
+      render(<ContextSummary config={config} personas={[]} documents={[]} />)
+
       expect(screen.getByText('Last 7 days')).toBeInTheDocument()
     })
 
@@ -178,7 +184,7 @@ describe('ContextSummary', () => {
   })
 
   describe('Multiple Sources', () => {
-    it('shows all enabled sources together', () => {
+    it('shows feedback and persona sections when enabled', () => {
       const config = createConfig({
         useFeedback: true,
         usePersonas: true,
@@ -190,10 +196,22 @@ describe('ContextSummary', () => {
 
       expect(screen.getByText('Sources:')).toBeInTheDocument()
       expect(screen.getByText('Select Personas:')).toBeInTheDocument()
-      expect(screen.getByText('Select Documents:')).toBeInTheDocument()
-      expect(screen.getByText('Select Research Documents:')).toBeInTheDocument()
       expect(screen.getByText('Last 14 days')).toBeInTheDocument()
       expect(screen.queryByText('No data sources selected')).not.toBeInTheDocument()
+    })
+
+    it('shows document and research sections when enabled', () => {
+      const config = createConfig({
+        useFeedback: true,
+        usePersonas: true,
+        useDocuments: true,
+        useResearch: true,
+        days: 14,
+      })
+      render(<ContextSummary config={config} personas={mockPersonas} documents={mockDocuments} />)
+
+      expect(screen.getByText('Select Documents:')).toBeInTheDocument()
+      expect(screen.getByText('Select Research Documents:')).toBeInTheDocument()
     })
   })
 })

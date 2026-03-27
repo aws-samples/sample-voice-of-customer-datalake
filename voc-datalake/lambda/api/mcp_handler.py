@@ -11,7 +11,6 @@ from the Authorization header against SHA-256 hashes in the projects table.
 
 import json
 import os
-import hashlib
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any
@@ -21,6 +20,7 @@ from boto3.dynamodb.conditions import Key
 
 from shared.aws import get_dynamodb_resource
 from shared.api import DecimalEncoder
+from shared.tokens import hash_token
 from projects import autoseed_project
 
 logger = Logger()
@@ -70,10 +70,6 @@ def _cors_response(body: dict, status_code: int = 200) -> dict:
 # Token authentication
 # ============================================
 
-def _hash_token(token: str) -> str:
-    """Hash a token for comparison with stored hashes."""
-    return hashlib.sha256(token.encode()).hexdigest()
-
 
 @tracer.capture_method
 def _authenticate(event: dict) -> dict | None:
@@ -95,7 +91,7 @@ def _authenticate(event: dict) -> dict | None:
     if not raw_token.startswith(TOKEN_PREFIX):
         return None
 
-    token_hash = _hash_token(raw_token)
+    token_hash = hash_token(raw_token)
 
     if not projects_table:
         logger.error("Projects table not configured")

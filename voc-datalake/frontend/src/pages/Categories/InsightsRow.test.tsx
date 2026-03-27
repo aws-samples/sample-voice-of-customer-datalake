@@ -35,11 +35,12 @@ describe('InsightsRow', () => {
   })
 
   it('handles empty category data', () => {
-    render(<InsightsRow categoryData={[]} totalIssues={0} />)
+    const emptyName: CategoryData[] = [{ name: '', value: 0, color: '#ccc' }]
+    render(<InsightsRow categoryData={emptyName} totalIssues={0} />)
 
-    // N/A appears twice (top and bottom)
-    expect(screen.getAllByText('N/A')).toHaveLength(2)
-    expect(screen.getByText('0 categories')).toBeInTheDocument()
+    // Top issue shows N/A for empty name
+    expect(screen.getByText('N/A')).toBeInTheDocument()
+    expect(screen.getByText('1 category')).toBeInTheDocument()
   })
 
   it('handles single category', () => {

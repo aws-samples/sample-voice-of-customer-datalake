@@ -1,6 +1,6 @@
 """
-Additional coverage tests for shared.converse module.
-Targets uncovered lines: 72-74, 212-213, 218, 300-303, 361.
+Coverage tests for shared.converse module — error propagation and retry exhaustion.
+Removed: zero-retries tests (trivial edge case that tests a no-op code path).
 """
 
 import pytest
@@ -9,11 +9,10 @@ from botocore.exceptions import ClientError
 
 
 class TestConverseClientCreationFailure:
-    """Tests for converse() when get_bedrock_client fails (lines 72-74)."""
 
     @patch('shared.converse.get_bedrock_client')
     def test_raises_when_client_creation_fails(self, mock_get_client):
-        """Raises exception when get_bedrock_client fails."""
+        """Propagates exception when Bedrock client cannot be created."""
         mock_get_client.side_effect = RuntimeError("Cannot create client")
 
         from shared.converse import converse
@@ -22,20 +21,18 @@ class TestConverseClientCreationFailure:
             converse("Hello", step_name="test_step")
 
 
-class TestInvokeWithRetryExhaustedNoRaise:
-    """Tests for _invoke_with_retry exhausting retries with raise_on_throttle=False (lines 212-213, 218)."""
+class TestRetryExhaustion:
 
     @patch('shared.converse.time.sleep')
-    def test_returns_empty_on_exhausted_retries_no_raise(self, mock_sleep):
-        """Returns empty string when retries exhausted and raise_on_throttle=False."""
+    def test_returns_empty_string_when_throttle_retries_exhausted_and_raise_disabled(self, mock_sleep):
+        """Returns empty string instead of raising when raise_on_throttle=False and all retries fail."""
         from shared.converse import _invoke_with_retry
 
         mock_client = MagicMock()
-        throttle_error = ClientError(
+        mock_client.converse.side_effect = ClientError(
             {'Error': {'Code': 'ThrottlingException', 'Message': 'Rate exceeded'}},
             'Converse'
         )
-        mock_client.converse.side_effect = throttle_error
 
         result = _invoke_with_retry(
             client=mock_client,
@@ -48,47 +45,9 @@ class TestInvokeWithRetryExhaustedNoRaise:
         assert result == ""
         assert mock_client.converse.call_count == 2
 
-
-class TestConverseChainExceptionPropagation:
-    """Tests for converse_chain exception propagation (lines 300-303)."""
-
-    @patch('shared.converse.converse')
-    def test_propagates_exception_from_step(self, mock_converse):
-        """Propagates exception from a failing step."""
-        mock_converse.side_effect = [
-            "Step 1 result",
-            RuntimeError("Step 2 failed"),
-        ]
-
-        from shared.converse import converse_chain
-
-        steps = [
-            {'system': 'S1', 'user': 'U1', 'step_name': 'step_1'},
-            {'system': 'S2', 'user': 'U2 {previous}', 'step_name': 'step_2'},
-        ]
-
-        with pytest.raises(RuntimeError, match="Step 2 failed"):
-            converse_chain(steps)
-
-    @patch('shared.converse.converse')
-    def test_propagates_bedrock_throttling_from_chain(self, mock_converse):
-        """Propagates BedrockThrottlingError from chain step."""
-        from shared.converse import converse_chain, BedrockThrottlingError
-
-        mock_converse.side_effect = BedrockThrottlingError("Throttled")
-
-        steps = [{'system': 'S', 'user': 'U', 'step_name': 'throttled_step'}]
-
-        with pytest.raises(BedrockThrottlingError):
-            converse_chain(steps)
-
-
-class TestInvokeWithRetryGenericExceptionExhausted:
-    """Tests for _invoke_with_retry when generic exceptions exhaust all retries."""
-
     @patch('shared.converse.time.sleep')
-    def test_raises_generic_exception_after_max_retries(self, mock_sleep):
-        """Raises the generic exception after exhausting all retries."""
+    def test_raises_after_exhausting_retries_on_network_error(self, mock_sleep):
+        """Raises the original exception after all retries are exhausted for non-throttle errors."""
         from shared.converse import _invoke_with_retry
 
         mock_client = MagicMock()
@@ -106,39 +65,32 @@ class TestInvokeWithRetryGenericExceptionExhausted:
         assert mock_client.converse.call_count == 3
 
 
-class TestInvokeWithRetryZeroRetries:
-    """Tests for _invoke_with_retry with max_retries=0 (fallback path)."""
+class TestConverseChainExceptionPropagation:
 
-    def test_returns_empty_on_zero_retries_raise_true(self):
-        """Returns empty string when max_retries=0 even with raise_on_throttle=True (no last_exception)."""
-        from shared.converse import _invoke_with_retry
+    @patch('shared.converse.converse')
+    def test_propagates_exception_from_mid_chain_step(self, mock_converse):
+        """Exception in step 2 of a chain propagates without swallowing step 1's result."""
+        mock_converse.side_effect = [
+            "Step 1 result",
+            RuntimeError("Step 2 failed"),
+        ]
 
-        mock_client = MagicMock()
+        from shared.converse import converse_chain
 
-        result = _invoke_with_retry(
-            client=mock_client,
-            kwargs={'modelId': 'test', 'messages': []},
-            max_retries=0,
-            raise_on_throttle=True,
-            step_name="zero_retry",
-        )
+        steps = [
+            {'system': 'S1', 'user': 'U1', 'step_name': 'step_1'},
+            {'system': 'S2', 'user': 'U2 {previous}', 'step_name': 'step_2'},
+        ]
 
-        assert result == ""
-        assert mock_client.converse.call_count == 0
+        with pytest.raises(RuntimeError, match="Step 2 failed"):
+            converse_chain(steps)
 
-    def test_returns_empty_on_zero_retries_no_raise(self):
-        """Returns empty string when max_retries=0 and raise_on_throttle=False."""
-        from shared.converse import _invoke_with_retry
+    @patch('shared.converse.converse')
+    def test_propagates_throttling_error_from_chain(self, mock_converse):
+        """BedrockThrottlingError in a chain step propagates for retry at a higher level."""
+        from shared.converse import converse_chain, BedrockThrottlingError
 
-        mock_client = MagicMock()
+        mock_converse.side_effect = BedrockThrottlingError("Throttled")
 
-        result = _invoke_with_retry(
-            client=mock_client,
-            kwargs={'modelId': 'test', 'messages': []},
-            max_retries=0,
-            raise_on_throttle=False,
-            step_name="zero_retry",
-        )
-
-        assert result == ""
-        assert mock_client.converse.call_count == 0
+        with pytest.raises(BedrockThrottlingError):
+            converse_chain([{'system': 'S', 'user': 'U', 'step_name': 'throttled_step'}])

@@ -3,32 +3,47 @@
  * @module pages/DataExplorer/s3Handlers
  */
 
-import { api } from '../../api/client'
+import { dataExplorerApi } from '../../api/dataExplorerApi'
 import type { EditModalState } from './EditModal'
 
 export async function openS3Editor(
   fullKey: string,
   mode: 'view' | 'edit',
   selectedBucket: string,
-  setEditModal: (state: EditModalState) => void
+  setEditModal: (state: EditModalState) => void,
 ): Promise<void> {
-  const preview: { content: unknown; contentType?: string; isPresignedUrl?: boolean } =
-    await api.getDataExplorerS3Preview(fullKey, selectedBucket)
+  const preview: {
+    content: unknown;
+    contentType?: string;
+    isPresignedUrl?: boolean
+  } =
+    await dataExplorerApi.getDataExplorerS3Preview(fullKey, selectedBucket)
   setEditModal({
-    isOpen: true, mode, type: 's3', data: preview.content, key: fullKey,
-    contentType: preview.contentType, isPresignedUrl: preview.isPresignedUrl,
+    isOpen: true,
+    mode,
+    type: 's3',
+    data: preview.content,
+    key: fullKey,
+    contentType: preview.contentType,
+    isPresignedUrl: preview.isPresignedUrl,
   })
 }
 
 export function openS3Creator(
   s3Path: string[],
-  setEditModal: (state: EditModalState) => void
+  setEditModal: (state: EditModalState) => void,
 ): void {
   const prefix = s3Path.length > 0 ? s3Path.join('/') + '/' : 'raw/'
   const id = crypto.randomUUID()
   setEditModal({
-    isOpen: true, mode: 'create', type: 's3',
-    data: { source_platform: 'manual', text: '', created_at: new Date().toISOString() },
+    isOpen: true,
+    mode: 'create',
+    type: 's3',
+    data: {
+      source_platform: 'manual',
+      text: '',
+      created_at: new Date().toISOString(),
+    },
     key: `${prefix}${id}.json`,
   })
 }
@@ -36,16 +51,20 @@ export function openS3Creator(
 export async function downloadS3File(
   fullKey: string,
   filename: string,
-  selectedBucket: string
+  selectedBucket: string,
 ): Promise<void> {
-  const preview: { content: unknown; contentType?: string; isPresignedUrl?: boolean } =
-    await api.getDataExplorerS3Preview(fullKey, selectedBucket)
-  const blob = preview.isPresignedUrl && typeof preview.content === 'string'
-    ? await fetch(preview.content).then(r => r.blob())
+  const preview: {
+    content: unknown;
+    contentType?: string;
+    isPresignedUrl?: boolean
+  } =
+    await dataExplorerApi.getDataExplorerS3Preview(fullKey, selectedBucket)
+  const blob = preview.isPresignedUrl === true && typeof preview.content === 'string'
+    ? await fetch(preview.content).then((r) => r.blob())
     : new Blob(
-        [typeof preview.content === 'string' ? preview.content : JSON.stringify(preview.content, null, 2)],
-        { type: preview.contentType ?? 'application/json' }
-      )
+      [typeof preview.content === 'string' ? preview.content : JSON.stringify(preview.content, null, 2)],
+      { type: preview.contentType ?? 'application/json' },
+    )
 
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

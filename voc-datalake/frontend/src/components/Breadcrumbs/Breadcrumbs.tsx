@@ -8,12 +8,16 @@
  * @module components/Breadcrumbs
  */
 
-import { Link, useLocation } from 'react-router-dom'
-import { ChevronRight, Home } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
+import {
+  ChevronRight, Home,
+} from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import {
+  Link, useLocation,
+} from 'react-router-dom'
 
-const routeKeys: Record<string, string> = {
+const routeKeys: Partial<Record<string, string>> = {
   '': 'breadcrumbs.dashboard',
   'feedback': 'breadcrumbs.feedback',
   'categories': 'breadcrumbs.categories',
@@ -38,39 +42,47 @@ export default function Breadcrumbs() {
   }
 
   const breadcrumbs = [
-    { label: t('breadcrumbs.home'), path: '/', isHome: true },
+    {
+      label: t('breadcrumbs.home'),
+      path: '/',
+      isHome: true,
+    },
     ...pathSegments.map((segment, index) => {
       const path = '/' + pathSegments.slice(0, index + 1).join('/')
       const key = routeKeys[segment]
-      const label = key ? t(key) : segment
-      return { label, path, isHome: false }
-    })
+      const label = key == null ? segment : t(key)
+      return {
+        label,
+        path,
+        isHome: false,
+      }
+    }),
   ]
 
   return (
-    <nav 
+    <nav
       className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-600 overflow-x-auto scrollbar-hide"
       aria-label="Breadcrumb"
     >
       {breadcrumbs.map((crumb, index) => {
         const isLast = index === breadcrumbs.length - 1
-        
+
         return (
           <div key={crumb.path} className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             {index > 0 && (
-              <ChevronRight 
-                size={14} 
-                className="text-gray-400 flex-shrink-0" 
-                aria-hidden="true" 
+              <ChevronRight
+                size={14}
+                className="text-gray-400 flex-shrink-0"
+                aria-hidden="true"
               />
             )}
-            
+
             {isLast ? (
-              <span 
+              <span
                 className="text-gray-900 font-medium flex items-center gap-1 sm:gap-1.5 max-w-[120px] sm:max-w-none truncate"
                 aria-current="page"
               >
-                {crumb.isHome && <Home size={14} className="flex-shrink-0" aria-hidden="true" />}
+                {crumb.isHome ? <Home size={14} className="flex-shrink-0" aria-hidden="true" /> : null}
                 <span className="truncate">{crumb.label}</span>
               </span>
             ) : (
@@ -78,10 +90,10 @@ export default function Breadcrumbs() {
                 to={crumb.path}
                 className={clsx(
                   'hover:text-blue-600 active:text-blue-700 transition-colors flex items-center gap-1 sm:gap-1.5 py-1',
-                  crumb.isHome && 'text-gray-500'
+                  crumb.isHome && 'text-gray-500',
                 )}
               >
-                {crumb.isHome && <Home size={14} className="flex-shrink-0" aria-hidden="true" />}
+                {crumb.isHome ? <Home size={14} className="flex-shrink-0" aria-hidden="true" /> : null}
                 <span className="hidden sm:inline">{crumb.label}</span>
               </Link>
             )}

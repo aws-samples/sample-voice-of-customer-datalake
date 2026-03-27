@@ -62,6 +62,7 @@ describe('MetricCard', () => {
         />
       )
       
+      // eslint-disable-next-line testing-library/no-node-access
       const iconContainer = screen.getByTestId('icon').parentElement
       expect(iconContainer).toHaveClass('bg-blue-50', 'text-blue-600')
     })
@@ -76,6 +77,7 @@ describe('MetricCard', () => {
         />
       )
       
+      // eslint-disable-next-line testing-library/no-node-access
       const iconContainer = screen.getByTestId('icon').parentElement
       expect(iconContainer).toHaveClass('bg-green-50', 'text-green-600')
     })
@@ -90,6 +92,7 @@ describe('MetricCard', () => {
         />
       )
       
+      // eslint-disable-next-line testing-library/no-node-access
       const iconContainer = screen.getByTestId('icon').parentElement
       expect(iconContainer).toHaveClass('bg-red-50', 'text-red-600')
     })
@@ -104,6 +107,7 @@ describe('MetricCard', () => {
         />
       )
       
+      // eslint-disable-next-line testing-library/no-node-access
       const iconContainer = screen.getByTestId('icon').parentElement
       expect(iconContainer).toHaveClass('bg-orange-50', 'text-orange-600')
     })

@@ -3,15 +3,20 @@
  * @module pages/DataExplorer/ProcessedFeedbackView
  */
 
+import {
+  Database, ChevronRight, ChevronDown, Eye, Pencil, Trash2, Loader2,
+} from 'lucide-react'
 import { useState } from 'react'
-import { Database, ChevronRight, ChevronDown, Eye, Pencil, Trash2, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { FeedbackItem } from '../../api/client'
 import SentimentBadge from '../../components/SentimentBadge'
 import { safeFormatDate } from '../../utils/dateUtils'
+import type { FeedbackItem } from '../../api/types'
 
 interface ProcessedFeedbackViewProps {
-  readonly data: { count: number; items: FeedbackItem[] } | undefined
+  readonly data: {
+    count: number;
+    items: FeedbackItem[]
+  } | undefined
   readonly loading: boolean
   readonly error: Error | null
   readonly searchQuery: string
@@ -20,7 +25,9 @@ interface ProcessedFeedbackViewProps {
   readonly onDelete: (item: FeedbackItem) => void
 }
 
-export default function ProcessedFeedbackView({ data, loading, error, searchQuery, onView, onEdit, onDelete }: ProcessedFeedbackViewProps) {
+export default function ProcessedFeedbackView({
+  data, loading, error, searchQuery, onView, onEdit, onDelete,
+}: ProcessedFeedbackViewProps) {
   const { t } = useTranslation('dataExplorer')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
@@ -39,12 +46,12 @@ export default function ProcessedFeedbackView({ data, loading, error, searchQuer
   }
 
   const items = data?.items ?? []
-  const filtered = searchQuery
-    ? items.filter(i =>
-        i.original_text?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        i.category?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : items
+  const filtered = searchQuery === ''
+    ? items
+    : items.filter((i) =>
+      i.original_text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        i.category.toLowerCase().includes(searchQuery.toLowerCase()),
+    )
 
   if (filtered.length === 0) {
     return (
@@ -62,7 +69,10 @@ export default function ProcessedFeedbackView({ data, loading, error, searchQuer
   return (
     <div>
       <div className="bg-gray-50 px-4 py-3 border-b text-sm text-gray-600">
-        {t('feedback.showingRecords', { filtered: filtered.length, total: data?.count ?? 0 })}
+        {t('feedback.showingRecords', {
+          filtered: filtered.length,
+          total: data?.count ?? 0,
+        })}
       </div>
       <div className="divide-y max-h-[600px] overflow-y-auto">
         {filtered.map((item) => (
@@ -90,13 +100,15 @@ interface FeedbackRowProps {
   readonly onDelete: (item: FeedbackItem) => void
 }
 
-function FeedbackRow({ item, isExpanded, onToggleExpand, onView, onEdit, onDelete }: FeedbackRowProps) {
+function FeedbackRow({
+  item, isExpanded, onToggleExpand, onView, onEdit, onDelete,
+}: FeedbackRowProps) {
   const { t } = useTranslation('dataExplorer')
 
   return (
     <div className="px-4 py-3">
       <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0 cursor-pointer" onClick={onToggleExpand}>
+        <button type="button" className="flex-1 min-w-0 cursor-pointer text-left bg-transparent border-none p-0" onClick={onToggleExpand}>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded">{item.source_platform}</span>
             <span className="text-xs text-gray-500">{safeFormatDate(item.source_created_at, 'MMM d, yyyy HH:mm')}</span>
@@ -109,7 +121,7 @@ function FeedbackRow({ item, isExpanded, onToggleExpand, onView, onEdit, onDelet
               <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded">{t('feedback.urgent')}</span>
             )}
           </div>
-        </div>
+        </button>
         <div className="flex items-center gap-1 ml-2">
           <button onClick={() => onView(item)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title={t('feedback.view')}>
             <Eye size={16} />
@@ -125,11 +137,9 @@ function FeedbackRow({ item, isExpanded, onToggleExpand, onView, onEdit, onDelet
           </button>
         </div>
       </div>
-      {isExpanded && (
-        <div className="mt-3 p-3 bg-gray-50 rounded-lg text-xs">
-          <pre className="whitespace-pre-wrap overflow-x-auto">{JSON.stringify(item, null, 2)}</pre>
-        </div>
-      )}
+      {isExpanded ? <div className="mt-3 p-3 bg-gray-50 rounded-lg text-xs">
+        <pre className="whitespace-pre-wrap overflow-x-auto">{JSON.stringify(item, null, 2)}</pre>
+      </div> : null}
     </div>
   )
 }

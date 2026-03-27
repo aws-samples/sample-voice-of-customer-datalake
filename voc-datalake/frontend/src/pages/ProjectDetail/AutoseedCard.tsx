@@ -2,12 +2,18 @@
  * AutoseedCard - Picker UI for selecting personas and documents to autoseed into a Kiro workspace.
  * Generates a Kiro prompt with curl command that includes selected IDs as query params.
  */
-import { useState, useCallback, useMemo } from 'react'
-import { Link, Copy, Check, ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  Link, Copy, Check, ChevronDown, ChevronRight,
+} from 'lucide-react'
+import {
+  useState, useCallback, useMemo,
+} from 'react'
 import { useTranslation } from 'react-i18next'
+import { stripTrailingSlashes } from '../../api/baseUrl'
 import { useConfigStore } from '../../store/configStore'
-import { stripTrailingSlashes } from '../../api/client'
-import type { ProjectPersona, ProjectDocument } from '../../api/types'
+import type {
+  ProjectPersona, ProjectDocument,
+} from '../../api/types'
 
 interface AutoseedCardProps {
   readonly projectId: string
@@ -25,7 +31,12 @@ const DOC_TYPE_LABELS: Record<DocType, string> = {
 }
 
 function groupDocumentsByType(documents: ProjectDocument[]): Record<DocType, ProjectDocument[]> {
-  const groups: Record<DocType, ProjectDocument[]> = { prd: [], prfaq: [], research: [], custom: [] }
+  const groups: Record<DocType, ProjectDocument[]> = {
+    prd: [],
+    prfaq: [],
+    research: [],
+    custom: [],
+  }
   for (const doc of documents) {
     const docType = isValidDocType(doc.document_type) ? doc.document_type : 'custom'
     groups[docType].push(doc)
@@ -37,18 +48,20 @@ function isValidDocType(value: string): value is DocType {
   return value === 'prd' || value === 'prfaq' || value === 'research' || value === 'custom'
 }
 
-export default function AutoseedCard({ projectId, personas, documents }: AutoseedCardProps) {
+export default function AutoseedCard({
+  projectId, personas, documents,
+}: AutoseedCardProps) {
   const { config } = useConfigStore()
   const { t } = useTranslation('projectDetail')
-  const [selectedPersonaIds, setSelectedPersonaIds] = useState<Set<string>>(() => new Set(personas.map(p => p.persona_id)))
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set(documents.map(d => d.document_id)))
+  const [selectedPersonaIds, setSelectedPersonaIds] = useState<Set<string>>(() => new Set(personas.map((p) => p.persona_id)))
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set(documents.map((d) => d.document_id)))
   const [copied, setCopied] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(['personas', 'documents']))
 
   const docGroups = useMemo(() => groupDocumentsByType(documents), [documents])
 
   const togglePersona = useCallback((id: string) => {
-    setSelectedPersonaIds(prev => {
+    setSelectedPersonaIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -57,7 +70,7 @@ export default function AutoseedCard({ projectId, personas, documents }: Autosee
   }, [])
 
   const toggleDocument = useCallback((id: string) => {
-    setSelectedDocumentIds(prev => {
+    setSelectedDocumentIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -66,15 +79,15 @@ export default function AutoseedCard({ projectId, personas, documents }: Autosee
   }, [])
 
   const toggleAllPersonas = useCallback((select: boolean) => {
-    setSelectedPersonaIds(select ? new Set(personas.map(p => p.persona_id)) : new Set())
+    setSelectedPersonaIds(select ? new Set(personas.map((p) => p.persona_id)) : new Set())
   }, [personas])
 
   const toggleAllDocuments = useCallback((select: boolean) => {
-    setSelectedDocumentIds(select ? new Set(documents.map(d => d.document_id)) : new Set())
+    setSelectedDocumentIds(select ? new Set(documents.map((d) => d.document_id)) : new Set())
   }, [documents])
 
   const toggleSection = useCallback((section: string) => {
-    setExpandedSections(prev => {
+    setExpandedSections((prev) => {
       const next = new Set(prev)
       if (next.has(section)) next.delete(section)
       else next.add(section)
@@ -82,7 +95,7 @@ export default function AutoseedCard({ projectId, personas, documents }: Autosee
     })
   }, [])
 
-  const apiBase = stripTrailingSlashes(config.apiEndpoint || '')
+  const apiBase = stripTrailingSlashes(config.apiEndpoint === '' ? '' : config.apiEndpoint)
   const hasSelection = selectedPersonaIds.size > 0 || selectedDocumentIds.size > 0
 
   const curlUrl = useMemo(() => {
@@ -95,7 +108,7 @@ export default function AutoseedCard({ projectId, personas, documents }: Autosee
     }
     const qs = params.toString()
     const base = `${apiBase}/projects/${projectId}/autoseed`
-    return qs ? `${base}?${qs}` : base
+    return qs === '' ? base : `${base}?${qs}`
   }, [apiBase, projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length])
 
   const kiroPrompt = useMemo(() => `Seed my workspace with project context from VoC Data Lake.
@@ -148,13 +161,16 @@ Replace \`<YOUR_API_TOKEN>\` with your API token from the MCP Access tab.`, [cur
           {/* Persona picker */}
           {personas.length > 0 && (
             <PickerSection
-              title={t('autoseed.personas', { selected: selectedPersonaIds.size, total: personas.length })}
+              title={t('autoseed.personas', {
+                selected: selectedPersonaIds.size,
+                total: personas.length,
+              })}
               expanded={expandedSections.has('personas')}
               onToggle={() => toggleSection('personas')}
               allSelected={selectedPersonaIds.size === personas.length}
               onToggleAll={(sel) => toggleAllPersonas(sel)}
             >
-              {personas.map(p => (
+              {personas.map((p) => (
                 <CheckboxItem
                   key={p.persona_id}
                   id={p.persona_id}
@@ -170,7 +186,10 @@ Replace \`<YOUR_API_TOKEN>\` with your API token from the MCP Access tab.`, [cur
           {/* Document picker grouped by type */}
           {documents.length > 0 && (
             <PickerSection
-              title={t('autoseed.documents', { selected: selectedDocumentIds.size, total: documents.length })}
+              title={t('autoseed.documents', {
+                selected: selectedDocumentIds.size,
+                total: documents.length,
+              })}
               expanded={expandedSections.has('documents')}
               onToggle={() => toggleSection('documents')}
               allSelected={selectedDocumentIds.size === documents.length}
@@ -182,19 +201,19 @@ Replace \`<YOUR_API_TOKEN>\` with your API token from the MCP Access tab.`, [cur
                 .map((type) => {
                   const docs = docGroups[type]
                   return (
-                  <div key={type} className="mb-2">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{DOC_TYPE_LABELS[type]}</p>
-                    {docs.map(d => (
-                      <CheckboxItem
-                        key={d.document_id}
-                        id={d.document_id}
-                        label={d.title}
-                        sublabel={d.document_type}
-                        checked={selectedDocumentIds.has(d.document_id)}
-                        onChange={() => toggleDocument(d.document_id)}
-                      />
-                    ))}
-                  </div>
+                    <div key={type} className="mb-2">
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{DOC_TYPE_LABELS[type]}</p>
+                      {docs.map((d) => (
+                        <CheckboxItem
+                          key={d.document_id}
+                          id={d.document_id}
+                          label={d.title}
+                          sublabel={d.document_type}
+                          checked={selectedDocumentIds.has(d.document_id)}
+                          onChange={() => toggleDocument(d.document_id)}
+                        />
+                      ))}
+                    </div>
                   )
                 })}
             </PickerSection>
@@ -205,8 +224,8 @@ Replace \`<YOUR_API_TOKEN>\` with your API token from the MCP Access tab.`, [cur
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-medium text-gray-700">{t('autoseed.generatedPrompt')}</p>
               <button
-                onClick={handleCopy}
-                disabled={!config.apiEndpoint || !hasSelection}
+                onClick={() => void handleCopy()}
+                disabled={config.apiEndpoint === '' || !hasSelection}
                 className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {copied ? <Check size={16} /> : <Copy size={16} />}
@@ -237,7 +256,9 @@ interface PickerSectionProps {
   readonly children: React.ReactNode
 }
 
-function PickerSection({ title, expanded, onToggle, allSelected, onToggleAll, children }: PickerSectionProps) {
+function PickerSection({
+  title, expanded, onToggle, allSelected, onToggleAll, children,
+}: PickerSectionProps) {
   const { t } = useTranslation('projectDetail')
   return (
     <div className="border rounded-lg mb-3">
@@ -250,21 +271,19 @@ function PickerSection({ title, expanded, onToggle, allSelected, onToggleAll, ch
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           {title}
         </span>
-        <span
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           className="text-xs text-indigo-600 hover:text-indigo-800"
-          onClick={(e) => { e.stopPropagation(); onToggleAll(!allSelected) }}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onToggleAll(!allSelected) } }}
+          onClick={(e) => {
+            e.stopPropagation(); onToggleAll(!allSelected)
+          }}
         >
           {allSelected ? t('autoseed.deselectAll') : t('autoseed.selectAll')}
-        </span>
+        </button>
       </button>
-      {expanded && (
-        <div className="px-3 pb-2 max-h-48 overflow-y-auto">
-          {children}
-        </div>
-      )}
+      {expanded ? <div className="px-3 pb-2 max-h-48 overflow-y-auto">
+        {children}
+      </div> : null}
     </div>
   )
 }
@@ -277,7 +296,9 @@ interface CheckboxItemProps {
   readonly onChange: () => void
 }
 
-function CheckboxItem({ id, label, sublabel, checked, onChange }: CheckboxItemProps) {
+function CheckboxItem({
+  id, label, sublabel, checked, onChange,
+}: CheckboxItemProps) {
   return (
     <label htmlFor={`cb-${id}`} className="flex items-center gap-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-1">
       <input
@@ -288,7 +309,7 @@ function CheckboxItem({ id, label, sublabel, checked, onChange }: CheckboxItemPr
         className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
       />
       <span className="text-sm text-gray-800 truncate">{label}</span>
-      {sublabel && <span className="text-xs text-gray-400 truncate">({sublabel})</span>}
+      {sublabel != null && sublabel !== '' ? <span className="text-xs text-gray-400 truncate">({sublabel})</span> : null}
     </label>
   )
 }

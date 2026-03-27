@@ -1,8 +1,12 @@
-import { PieChart, Pie, ResponsiveContainer, Tooltip } from 'recharts'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
-import type { SentimentData, SentimentFilter } from './types'
+import {
+  PieChart, Pie, ResponsiveContainer, Tooltip,
+} from 'recharts'
 import { getSentimentScoreColorClass } from './types'
+import type {
+  SentimentData, SentimentFilter,
+} from './types'
 
 interface SentimentGaugeProps {
   readonly sentimentData: SentimentData[]
@@ -20,7 +24,10 @@ export function SentimentGauge({
   percentages,
 }: SentimentGaugeProps) {
   const { t } = useTranslation('categories')
-  const dataWithFill = sentimentData.map(entry => ({ ...entry, fill: entry.color }))
+  const dataWithFill = sentimentData.map((entry) => ({
+    ...entry,
+    fill: entry.color,
+  }))
 
   return (
     <div className="card">
@@ -43,7 +50,7 @@ export function SentimentGauge({
               <Tooltip
                 formatter={(value, name) => {
                   const nameStr = String(name)
-                  const pct = percentages[nameStr]?.toFixed(1) ?? '0'
+                  const pct = percentages[nameStr].toFixed(1)
                   return [`${value} (${pct}%)`, name]
                 }}
               />
@@ -60,7 +67,7 @@ export function SentimentGauge({
         </div>
       </div>
       <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mt-3 sm:mt-4">
-        {sentimentData.map(s => {
+        {sentimentData.map((s) => {
           const filterValue = s.name === 'positive' || s.name === 'negative' || s.name === 'neutral' || s.name === 'mixed' ? s.name : 'all'
           return (
             <button
@@ -68,7 +75,7 @@ export function SentimentGauge({
               onClick={() => onSentimentFilterChange(sentimentFilter === s.name ? 'all' : filterValue)}
               className={clsx(
                 'flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm transition-all active:scale-95',
-                sentimentFilter === s.name ? 'bg-gray-900 text-white' : 'bg-gray-100 hover:bg-gray-200'
+                sentimentFilter === s.name ? 'bg-gray-900 text-white' : 'bg-gray-100 hover:bg-gray-200',
               )}
             >
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />

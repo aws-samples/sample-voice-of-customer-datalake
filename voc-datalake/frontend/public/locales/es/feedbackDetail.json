@@ -25,6 +25,28 @@
   "subcategory": "Subcategoría",
   "suggestedResponses": "Respuestas Sugeridas",
   "suggestedResponsesHint": "Copia estas respuestas para compartir con tu equipo o úsalas como punto de partida para tu respuesta.",
+  "responses": {
+    "delivery": [
+      "Nos disculpamos sinceramente por el retraso en su entrega. Estamos investigando de inmediato y nos aseguraremos de que su pedido le llegue lo antes posible.",
+      "Gracias por informarnos. Entendemos lo frustrante que pueden ser los problemas de entrega. Nuestro equipo está investigando y le dará seguimiento en breve."
+    ],
+    "customer_support": [
+      "Lamentamos su experiencia con nuestro equipo de soporte. Este no es el nivel de servicio al que aspiramos. Nos gustaría corregir esto.",
+      "Gracias por sus comentarios. Tomamos el servicio al cliente muy en serio y usaremos esto para mejorar nuestra capacitación."
+    ],
+    "product_quality": [
+      "Nos disculpamos porque nuestro producto no cumplió con sus expectativas. La calidad es nuestra máxima prioridad y nos gustaría ofrecerle un reemplazo o reembolso.",
+      "Gracias por informarnos sobre este problema. Estamos comprometidos con la calidad y nos gustaría resolverlo para usted."
+    ],
+    "pricing": [
+      "Agradecemos sus comentarios sobre nuestros precios. Nos esforzamos por ofrecer un valor competitivo y estaremos encantados de discutir las opciones disponibles.",
+      "Gracias por compartir sus inquietudes. Revisamos regularmente nuestros precios para asegurarnos de ofrecer un valor justo."
+    ],
+    "default": [
+      "Gracias por tomarse el tiempo de compartir sus comentarios. Valoramos su opinión y estamos comprometidos con la mejora.",
+      "Agradecemos que nos haya informado. Nuestro equipo revisará esto y trabajará para abordar sus inquietudes."
+    ]
+  },
   "tagsAndFilters": "Etiquetas y Filtros",
   "translatedFrom": "Traducido de {{language}}",
   "type": "Tipo",

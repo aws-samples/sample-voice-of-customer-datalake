@@ -24,7 +24,7 @@ import { projectsApi } from './projectsApi'
 describe('projectsApi', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    global.fetch = vi.fn()
+    vi.spyOn(global, 'fetch').mockImplementation()
   })
 
   afterEach(() => {
@@ -50,7 +50,7 @@ describe('projectsApi', () => {
           }),
         })
       )
-      expect(result).toEqual(mockProjects)
+      expect(result).toStrictEqual(mockProjects)
     })
   })
 
@@ -105,7 +105,7 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1',
         expect.any(Object)
       )
-      expect(result).toEqual(mockProject)
+      expect(result).toStrictEqual(mockProject)
     })
   })
 
@@ -162,7 +162,7 @@ describe('projectsApi', () => {
           body: JSON.stringify({}),
         })
       )
-      expect(result).toEqual(mockResponse)
+      expect(result).toStrictEqual(mockResponse)
     })
 
     it('includes filters when provided', async () => {
@@ -411,7 +411,7 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1/jobs/job1',
         expect.any(Object)
       )
-      expect(result).toEqual(mockJob)
+      expect(result).toStrictEqual(mockJob)
     })
   })
 
@@ -429,7 +429,7 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1/jobs',
         expect.any(Object)
       )
-      expect(result).toEqual(mockJobs)
+      expect(result).toStrictEqual(mockJobs)
     })
   })
 

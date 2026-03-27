@@ -1,6 +1,7 @@
 """
-Additional coverage tests for aggregator/handler.py.
-Covers: DynamoDB format conversion branches (M, L, BOOL - lines 154-159).
+Tests for aggregator/handler.py — DynamoDB format conversion branches.
+Strengthened: assertions verify the converted values passed to process_new_feedback,
+not just that status == 'success'.
 """
 import pytest
 from unittest.mock import patch, MagicMock
@@ -8,12 +9,13 @@ from decimal import Decimal
 
 
 class TestRecordHandlerDynamoDBFormats:
-    """Cover DynamoDB format conversion branches in record_handler."""
+    """Tests that DynamoDB stream format types (M, L, BOOL, S, N) are correctly
+    deserialized before being passed to process_new_feedback."""
 
     @patch('aggregator.handler.aggregates_table')
     @patch('aggregator.handler.process_new_feedback')
-    def test_handles_map_format(self, mock_process, mock_table):
-        """Cover the 'M' (Map) branch in DynamoDB format conversion."""
+    def test_deserializes_map_type_to_dict(self, mock_process, mock_table):
+        """DynamoDB 'M' (Map) type is converted to a plain Python dict."""
         from aggregator.handler import record_handler
 
         record = MagicMock()
@@ -26,19 +28,20 @@ class TestRecordHandlerDynamoDBFormats:
             'sentiment_score': {'N': '0.85'},
             'urgency': {'S': 'low'},
             'persona_name': {'S': 'Happy Customer'},
-            'persona_attributes': {'M': {'segment': 'loyal'}},
+            'persona_attributes': {'M': {'segment': 'loyal', 'age_range': '25-34'}},
         }
 
-        result = record_handler(record)
-        assert result['status'] == 'success'
-        # Verify the M value was extracted
-        call_args = mock_process.call_args[0][0]
-        assert call_args['persona_attributes'] == {'segment': 'loyal'}
+        record_handler(record)
+
+        feedback = mock_process.call_args[0][0]
+        assert feedback['persona_attributes'] == {'segment': 'loyal', 'age_range': '25-34'}
+        assert feedback['source_platform'] == 'webscraper'
+        assert feedback['sentiment_score'] == Decimal('0.85')
 
     @patch('aggregator.handler.aggregates_table')
     @patch('aggregator.handler.process_new_feedback')
-    def test_handles_list_format(self, mock_process, mock_table):
-        """Cover the 'L' (List) branch in DynamoDB format conversion."""
+    def test_deserializes_list_type_to_python_list(self, mock_process, mock_table):
+        """DynamoDB 'L' (List) type is converted to a plain Python list."""
         from aggregator.handler import record_handler
 
         record = MagicMock()
@@ -46,18 +49,18 @@ class TestRecordHandlerDynamoDBFormats:
         record.dynamodb.new_image = {
             'date': {'S': '2025-01-15'},
             'source_platform': {'S': 'webscraper'},
-            'tags': {'L': ['tag1', 'tag2']},
+            'tags': {'L': ['tag1', 'tag2', 'tag3']},
         }
 
-        result = record_handler(record)
-        assert result['status'] == 'success'
-        call_args = mock_process.call_args[0][0]
-        assert call_args['tags'] == ['tag1', 'tag2']
+        record_handler(record)
+
+        feedback = mock_process.call_args[0][0]
+        assert feedback['tags'] == ['tag1', 'tag2', 'tag3']
 
     @patch('aggregator.handler.aggregates_table')
     @patch('aggregator.handler.process_new_feedback')
-    def test_handles_bool_format(self, mock_process, mock_table):
-        """Cover the 'BOOL' branch in DynamoDB format conversion."""
+    def test_deserializes_bool_type_to_python_bool(self, mock_process, mock_table):
+        """DynamoDB 'BOOL' type is converted to a Python bool."""
         from aggregator.handler import record_handler
 
         record = MagicMock()
@@ -68,26 +71,27 @@ class TestRecordHandlerDynamoDBFormats:
             'is_urgent': {'BOOL': True},
         }
 
-        result = record_handler(record)
-        assert result['status'] == 'success'
-        call_args = mock_process.call_args[0][0]
-        assert call_args['is_urgent'] is True
+        record_handler(record)
+
+        feedback = mock_process.call_args[0][0]
+        assert feedback['is_urgent'] is True
 
     @patch('aggregator.handler.aggregates_table')
     @patch('aggregator.handler.process_new_feedback')
-    def test_handles_already_deserialized_values(self, mock_process, mock_table):
-        """Cover the 'else' branch for already deserialized values."""
+    def test_passes_through_already_deserialized_values(self, mock_process, mock_table):
+        """Values without DynamoDB type wrappers pass through unchanged."""
         from aggregator.handler import record_handler
 
         record = MagicMock()
         record.event_name = 'INSERT'
         record.dynamodb.new_image = {
-            'date': '2025-01-15',  # Already deserialized string
+            'date': '2025-01-15',
             'source_platform': 'webscraper',
-            'sentiment_score': Decimal('0.85'),  # Already deserialized Decimal
+            'sentiment_score': Decimal('0.85'),
         }
 
-        result = record_handler(record)
-        assert result['status'] == 'success'
-        call_args = mock_process.call_args[0][0]
-        assert call_args['date'] == '2025-01-15'
+        record_handler(record)
+
+        feedback = mock_process.call_args[0][0]
+        assert feedback['date'] == '2025-01-15'
+        assert feedback['sentiment_score'] == Decimal('0.85')

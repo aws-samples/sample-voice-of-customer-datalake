@@ -1,15 +1,15 @@
 /**
  * @fileoverview Authentication state management using Zustand with localStorage persistence.
- * 
+ *
  * Security model (mirrors Chrome extension pattern):
  * - Short-lived tokens (access, ID) persisted in localStorage for cross-tab UX
  * - Refresh token kept in memory only (never persisted) to limit XSS blast radius
  * - Non-secret data (user info, auth state) persisted in localStorage
- * 
+ *
  * When a new tab opens with expired short-lived tokens, the auth service
  * falls back to Cognito's getSession() which uses Cognito's own cookies
  * for silent re-authentication — no re-login needed.
- * 
+ *
  * @module store/authStore
  */
 
@@ -53,7 +53,11 @@ interface AuthState {
   /** Update the current user */
   setUser: (user: User | null) => void
   /** Store all authentication tokens */
-  setTokens: (tokens: { accessToken: string; idToken: string; refreshToken: string }) => void
+  setTokens: (tokens: {
+    accessToken: string;
+    idToken: string;
+    refreshToken: string
+  }) => void
   /** Mark session as validated and ready for API calls */
   setSessionReady: (ready: boolean) => void
   /** Set loading state */
@@ -75,7 +79,10 @@ export const useAuthStore = create<AuthState>()(
       sessionReady: false,
       isLoading: false,
       error: null,
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
+      setUser: (user) => set({
+        user,
+        isAuthenticated: !!user,
+      }),
       setTokens: (tokens) => set({
         accessToken: tokens.accessToken,
         idToken: tokens.idToken,
@@ -95,7 +102,7 @@ export const useAuthStore = create<AuthState>()(
         error: null,
       }),
     }),
-    { 
+    {
       name: 'voc-auth',
       // Persist short-lived tokens + user info in localStorage for cross-tab UX.
       // refreshToken is deliberately excluded — it stays in memory only.
@@ -107,8 +114,8 @@ export const useAuthStore = create<AuthState>()(
         idToken: state.idToken,
         isAuthenticated: state.isAuthenticated,
       }),
-    }
-  )
+    },
+  ),
 )
 
 /**
@@ -117,5 +124,5 @@ export const useAuthStore = create<AuthState>()(
  */
 export const useIsAdmin = (): boolean => {
   const user = useAuthStore((state) => state.user)
-  return user?.groups?.includes('admins') ?? false
+  return user?.groups.includes('admins') ?? false
 }

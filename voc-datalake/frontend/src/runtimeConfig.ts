@@ -1,14 +1,16 @@
 /**
  * @fileoverview Runtime configuration loader.
- * 
+ *
  * Fetches configuration from /config.json at runtime, allowing the same
  * build artifact to work across multiple environments (dev, staging, prod).
- * 
+ *
  * The config.json is deployed by CDK with environment-specific values.
  * Falls back to VITE_* environment variables for local development.
  */
 
 import { z } from 'zod'
+import { getEnvString } from './lib/env'
+import { ConfigError } from './lib/errors'
 
 // URL regex pattern for validation (replaces deprecated z.string().url())
 const urlPattern = /^https?:\/\/.+/
@@ -27,7 +29,10 @@ const RuntimeConfigSchema = z.object({
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>
 
 // Singleton state using a mutable container (const reference, mutable contents)
-const configState: { config: RuntimeConfig | null; promise: Promise<RuntimeConfig> | null } = {
+const configState: {
+  config: RuntimeConfig | null;
+  promise: Promise<RuntimeConfig> | null
+} = {
   config: null,
   promise: null,
 }
@@ -45,7 +50,7 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
 
   // Return existing promise if loading is in progress
   if (configState.promise) {
-    return configState.promise
+    return await configState.promise
   }
 
   configState.promise = fetchConfig()
@@ -59,7 +64,7 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
  */
 export function getRuntimeConfig(): RuntimeConfig {
   if (!configState.config) {
-    throw new Error('Runtime config not loaded. Call loadRuntimeConfig() first.')
+    throw new ConfigError('Runtime config not loaded. Call loadRuntimeConfig() first.')
   }
   return configState.config
 }
@@ -74,7 +79,8 @@ export function isConfigLoaded(): boolean {
 async function fetchConfig(): Promise<RuntimeConfig> {
   try {
     const response = await fetch('/config.json', {
-      cache: 'no-store', // Always fetch fresh config
+      /** Always fetch fresh config */
+      cache: 'no-store',
     })
 
     if (!response.ok) {
@@ -96,11 +102,6 @@ async function fetchConfig(): Promise<RuntimeConfig> {
     console.warn('Error fetching config.json, using env vars:', error)
     return getEnvConfig()
   }
-}
-
-function getEnvString(key: string, defaultValue = ''): string {
-  const value: unknown = import.meta.env[key]
-  return typeof value === 'string' ? value : defaultValue
 }
 
 /**

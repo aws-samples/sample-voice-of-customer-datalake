@@ -6,7 +6,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DataSourceWizard from './DataSourceWizard'
-import { defaultContextConfig, type ContextConfig } from './exports'
+import { defaultContextConfig } from './exports'
 import { Sparkles } from 'lucide-react'
 
 // Mock API before importing component
@@ -108,7 +108,7 @@ describe('DataSourceWizard', () => {
       
       await user.click(screen.getByLabelText('Close wizard'))
       
-      expect(onClose).toHaveBeenCalled()
+      expect(onClose).toHaveBeenCalledWith(expect.anything())
     })
   })
 
@@ -354,7 +354,7 @@ describe('DataSourceWizard', () => {
       
       await user.click(screen.getByRole('button', { name: /generate/i }))
       
-      expect(onSubmit).toHaveBeenCalled()
+      expect(onSubmit).toHaveBeenCalledWith(expect.anything())
     })
 
     it('disables submit button when finalStepValid is false', async () => {
@@ -401,6 +401,7 @@ describe('DataSourceWizard', () => {
     it('displays progress bar', () => {
       render(<DataSourceWizard {...defaultProps} />, { wrapper: createWrapper() })
       
+      // eslint-disable-next-line testing-library/no-node-access
       const progressBar = document.querySelector('.h-1.bg-gray-100')
       expect(progressBar).toBeInTheDocument()
     })

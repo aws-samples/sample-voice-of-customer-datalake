@@ -22,6 +22,9 @@ vi.mock('../../api/client', () => ({
     getSources: (days: number) => mockGetSources(days),
     getUrgentFeedback: (params: unknown) => mockGetUrgentFeedback(params),
   },
+}))
+
+vi.mock('../../api/baseUrl', () => ({
   getDaysFromRange: vi.fn(() => 7),
 }))
 
@@ -239,6 +242,7 @@ describe('Dashboard', () => {
       render(<Dashboard />, { wrapper: createWrapper() })
       
       await waitFor(() => {
+        // eslint-disable-next-line vitest/prefer-called-with
         expect(mockGetSummary).toHaveBeenCalled()
       })
     })
@@ -247,6 +251,7 @@ describe('Dashboard', () => {
       render(<Dashboard />, { wrapper: createWrapper() })
       
       await waitFor(() => {
+        // eslint-disable-next-line vitest/prefer-called-with
         expect(mockGetSentiment).toHaveBeenCalled()
       })
     })
@@ -255,6 +260,7 @@ describe('Dashboard', () => {
       render(<Dashboard />, { wrapper: createWrapper() })
       
       await waitFor(() => {
+        // eslint-disable-next-line vitest/prefer-called-with
         expect(mockGetCategories).toHaveBeenCalled()
       })
     })
@@ -263,6 +269,7 @@ describe('Dashboard', () => {
       render(<Dashboard />, { wrapper: createWrapper() })
       
       await waitFor(() => {
+        // eslint-disable-next-line vitest/prefer-called-with
         expect(mockGetSources).toHaveBeenCalled()
       })
     })

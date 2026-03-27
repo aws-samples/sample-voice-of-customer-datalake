@@ -21,8 +21,8 @@ const createDocumentInputSchema = z.object({
   document_type: z.enum(['prd', 'prfaq', 'custom']),
 });
 
-export type UpdateDocumentInput = z.infer<typeof updateDocumentInputSchema>;
-export type CreateDocumentInput = z.infer<typeof createDocumentInputSchema>;
+type UpdateDocumentInput = z.infer<typeof updateDocumentInputSchema>;
+type CreateDocumentInput = z.infer<typeof createDocumentInputSchema>;
 
 // ── Result type ──
 

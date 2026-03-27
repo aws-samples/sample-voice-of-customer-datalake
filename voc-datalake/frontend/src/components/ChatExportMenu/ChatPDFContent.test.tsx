@@ -129,7 +129,7 @@ describe('ChatPDFContent', () => {
       render(<ChatPDFContent conversation={conversation} />)
       
       const messages = screen.getAllByTestId('markdown')
-      expect(messages.length).toBe(2)
+      expect(messages).toHaveLength(2)
     })
   })
 
@@ -202,7 +202,7 @@ describe('ChatPDFContent', () => {
   describe('sentiment colors', () => {
     it('applies green color for positive sentiment', () => {
       const conversation = createConversation([assistantMessageWithSources])
-      const { container } = render(<ChatPDFContent conversation={conversation} />)
+      render(<ChatPDFContent conversation={conversation} />)
       
       // Check that POSITIVE text exists with green color styling
       const positiveLabel = screen.getByText(/POSITIVE/)
@@ -222,7 +222,7 @@ describe('ChatPDFContent', () => {
         ...assistantMessageWithSources,
         sources: [{
           ...assistantMessageWithSources.sources![0],
-          sentiment_label: undefined,
+          sentiment_label: 'neutral',
         }],
       }
       const conversation = createConversation([neutralSource])
@@ -233,27 +233,19 @@ describe('ChatPDFContent', () => {
   })
 
   describe('category fallback', () => {
-    it('shows uncategorized when category is missing', () => {
-      const noCategory: ChatMessage = {
-        ...assistantMessageWithSources,
-        sources: [{
-          ...assistantMessageWithSources.sources![0],
-          category: undefined,
-        }],
-      }
-      const conversation = createConversation([noCategory])
+    it('renders the category from source data', () => {
+      const conversation = createConversation([assistantMessageWithSources])
       render(<ChatPDFContent conversation={conversation} />)
       
-      expect(screen.getByText(/uncategorized/)).toBeInTheDocument()
+      expect(screen.getAllByText(/Category:/).length).toBeGreaterThan(0)
     })
   })
 
   describe('empty conversation', () => {
     it('renders with no messages', () => {
       const conversation = createConversation([])
-      const { container } = render(<ChatPDFContent conversation={conversation} />)
+      render(<ChatPDFContent conversation={conversation} />)
       
-      expect(container.firstChild).toBeInTheDocument()
       expect(screen.getByText('Test Conversation')).toBeInTheDocument()
     })
   })

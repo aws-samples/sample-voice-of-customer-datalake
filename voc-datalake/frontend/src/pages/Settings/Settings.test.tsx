@@ -148,13 +148,17 @@ describe('Settings', () => {
   })
 
   describe('tab navigation', () => {
-    it('displays all tabs for admin users', () => {
+    it('displays general, data sources, and categories tabs', () => {
       render(<Settings />, { wrapper: createWrapper() })
       
-      // Verify all tab buttons exist (getAllByRole since there are mobile + desktop versions)
       expect(screen.getAllByRole('button', { name: /General/i }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: /Data Sources/i }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: /Categories/i }).length).toBeGreaterThan(0)
+    })
+
+    it('displays logs and users tabs for admin users', () => {
+      render(<Settings />, { wrapper: createWrapper() })
+      
       expect(screen.getAllByRole('button', { name: /Logs/i }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: /Users/i }).length).toBeGreaterThan(0)
     })
@@ -274,7 +278,9 @@ describe('Settings', () => {
       await user.click(screen.getByRole('button', { name: /Save Changes/i }))
       
       await waitFor(() => {
+        // eslint-disable-next-line vitest/prefer-called-with
         expect(mockSetConfig).toHaveBeenCalled()
+        // eslint-disable-next-line vitest/prefer-called-with
         expect(mockSaveBrandSettings).toHaveBeenCalled()
       })
     })
@@ -376,6 +382,7 @@ describe('Settings', () => {
       render(<Settings />, { wrapper: createWrapper() })
       
       await waitFor(() => {
+        // eslint-disable-next-line vitest/prefer-called-with
         expect(mockGetBrandSettings).toHaveBeenCalled()
       })
     })

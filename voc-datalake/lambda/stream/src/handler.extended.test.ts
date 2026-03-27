@@ -277,7 +277,7 @@ describe('handler - extended', () => {
   });
 
   describe('project chat with documents', () => {
-    it('provides update_document and create_document tools when documents are selected', async () => {
+    it('provides search_feedback, update_document and create_document tools for project chat', async () => {
       const stream = mockStream();
       const event = makeEvent({
         message: 'edit the PRD',
@@ -289,10 +289,14 @@ describe('handler - extended', () => {
 
       expect(mockConverseStream).toHaveBeenCalledOnce();
       const callArgs = mockConverseStream.mock.calls[0][0];
-      expect(callArgs.tools).toHaveLength(2);
+      expect(callArgs.tools).toHaveLength(3);
+      const toolNames = callArgs.tools.map((t: { toolSpec?: { name: string } }) => t.toolSpec?.name);
+      expect(toolNames).toContain('search_feedback');
+      expect(toolNames).toContain('update_document');
+      expect(toolNames).toContain('create_document');
     });
 
-    it('provides only create_document tool when no documents are selected', async () => {
+    it('provides all three tools even when no documents are selected', async () => {
       const stream = mockStream();
       const event = makeEvent({
         message: 'create a new PRD',
@@ -302,7 +306,7 @@ describe('handler - extended', () => {
       await (handler as Function)(event, stream);
 
       const callArgs = mockConverseStream.mock.calls[0][0];
-      expect(callArgs.tools).toHaveLength(1);
+      expect(callArgs.tools).toHaveLength(3);
     });
 
     it('includes document_changes in done metadata for project chat', async () => {

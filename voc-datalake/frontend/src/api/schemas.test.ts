@@ -68,6 +68,14 @@ describe('FeedbackItemSchema', () => {
     expect(result.source_channel).toBe('unknown')
     expect(result.sentiment_score).toBe(0)
     expect(result.category).toBe('other')
+  })
+
+  it('defaults urgency to low for minimal items', () => {
+    const minimalItem = {
+      feedback_id: 'abc123',
+      source_platform: 'webscraper',
+    }
+    const result = FeedbackItemSchema.parse(minimalItem)
     expect(result.urgency).toBe('low')
   })
 
@@ -89,8 +97,6 @@ describe('FeedbackItemSchema', () => {
     }
     const result = FeedbackItemSchema.parse(dynamoDbItem)
     expect(result.feedback_id).toBe('abc123')
-    // With passthrough, DynamoDB-specific keys are preserved (not stripped)
-    // This ensures no validation errors from extra fields
     expect(result.sentiment_score).toBe(0.85)
   })
 
@@ -128,6 +134,14 @@ describe('FeedbackItemSchema', () => {
     expect(result.sentiment_score).toBe(-0.5)
     expect(result.rating).toBe(2)
     expect(typeof result.sentiment_score).toBe('number')
+  })
+
+  it('coerces rating type in realistic DynamoDB response', () => {
+    const result = FeedbackItemSchema.parse({
+      feedback_id: 'def456',
+      source_platform: 'webscraper',
+      rating: '2',
+    })
     expect(typeof result.rating).toBe('number')
   })
 
@@ -178,6 +192,18 @@ describe('MetricsSummarySchema', () => {
     expect(typeof result.urgent_count).toBe('number')
     expect(result.daily_totals[0].count).toBe(10)
     expect(typeof result.daily_totals[0].count).toBe('number')
+  })
+
+  it('coerces string sentiment in daily_sentiment from DynamoDB Decimal', () => {
+    const summary = {
+      period_days: 7,
+      total_feedback: 42,
+      avg_sentiment: 0.65,
+      urgent_count: '3',
+      daily_totals: [{ date: '2025-03-20', count: '10' }],
+      daily_sentiment: [{ date: '2025-03-20', avg_sentiment: '0.700', count: '10' }],
+    }
+    const result = MetricsSummarySchema.parse(summary)
     expect(result.daily_sentiment[0].avg_sentiment).toBe(0.7)
     expect(typeof result.daily_sentiment[0].avg_sentiment).toBe('number')
   })

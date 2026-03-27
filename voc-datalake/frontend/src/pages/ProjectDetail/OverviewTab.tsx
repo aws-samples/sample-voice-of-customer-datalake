@@ -1,12 +1,15 @@
 /**
  * OverviewTab - Project overview with action cards and jobs
  */
-import { Users, FileText, Search, Sparkles, Shuffle } from 'lucide-react'
+import {
+  Users, FileText, Search, Sparkles, Shuffle,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ProjectPersona, ProjectDocument, Project } from '../../api/client'
-import type { ProjectJob } from '../../api/client'
 import JobsSection from './JobsSection'
 import KiroExportSettings from './KiroExportSettings'
+import type {
+  ProjectPersona, ProjectDocument, Project, ProjectJob,
+} from '../../api/types'
 
 interface OverviewTabProps {
   readonly project: Project
@@ -38,7 +41,7 @@ export default function OverviewTab({
     <div className="space-y-6">
       {/* Running Jobs Section */}
       <JobsSection jobs={jobs} onDismiss={onDismissJob} />
-      
+
       {/* Action Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
         <ActionCard
@@ -133,19 +136,15 @@ function ActionCard({
           <p className="text-xs sm:text-sm text-gray-500">{description}</p>
         </div>
       </div>
-      <button 
-        onClick={onClick} 
+      <button
+        onClick={onClick}
         disabled={disabled}
         className={`w-full py-2 text-white rounded-lg flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed ${buttonColor}`}
       >
         {buttonIcon}
         <span className="hidden sm:inline">{configureLabel}</span>{buttonLabel}
       </button>
-      {disabled && disabledMessage && (
-        <p className="text-xs text-gray-400 mt-2 text-center">{disabledMessage}</p>
-      )}
+      {disabled === true && disabledMessage != null && disabledMessage !== '' ? <p className="text-xs text-gray-400 mt-2 text-center">{disabledMessage}</p> : null}
     </div>
   )
 }
-
-

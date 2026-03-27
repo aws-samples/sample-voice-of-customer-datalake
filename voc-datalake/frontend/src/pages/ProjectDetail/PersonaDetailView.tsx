@@ -1,16 +1,15 @@
 /**
  * PersonaDetailView - Displays full persona details with all sections
  */
-import type { ProjectPersona } from '../../api/client'
-import { Pencil, Trash2, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
+import {
+  Pencil, Trash2, Loader2,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import PersonaAvatar from './PersonaAvatar'
-import PersonaSection from './PersonaSection'
-import ResearchNotes from './ResearchNotes'
 import PersonaExportMenu from '../../components/PersonaExportMenu'
-import type { NoteItem } from './types'
+import PersonaAvatar from './PersonaAvatar'
 import { getConfidenceClass } from './personaHelpers'
+import PersonaSection from './PersonaSection'
 import {
   IdentitySection,
   GoalsSection,
@@ -20,6 +19,9 @@ import {
   QuotesSection,
   ScenarioSection,
 } from './PersonaSections'
+import ResearchNotes from './ResearchNotes'
+import type { NoteItem } from './types'
+import type { ProjectPersona } from '../../api/types'
 
 interface PersonaDetailViewProps {
   readonly persona: ProjectPersona
@@ -49,12 +51,10 @@ export default function PersonaDetailView({
             <div className="min-w-0">
               <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">@{persona.name}</h2>
               <p className="text-gray-600 text-sm sm:text-base line-clamp-2">{persona.tagline}</p>
-              {persona.confidence && (
-                <span className={clsx('inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium', getConfidenceClass(persona.confidence))}>
-                  {persona.confidence} confidence
-                  {persona.feedback_count ? ` • ${persona.feedback_count} reviews` : ''}
-                </span>
-              )}
+              {persona.confidence == null ? null : <span className={clsx('inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium', getConfidenceClass(persona.confidence))}>
+                {persona.confidence} confidence
+                {persona.feedback_count == null ? '' : ` • ${persona.feedback_count} reviews`}
+              </span>}
             </div>
           </div>
           <div className="flex items-center gap-1 self-end sm:self-start">

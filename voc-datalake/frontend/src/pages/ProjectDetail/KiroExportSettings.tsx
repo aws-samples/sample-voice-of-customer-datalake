@@ -1,8 +1,12 @@
 /**
  * KiroExportSettings - Configure context for "Copy to Kiro" exports
  */
-import { useState, useMemo } from 'react'
-import { Sparkles, Settings, Check } from 'lucide-react'
+import {
+  Sparkles, Settings, Check,
+} from 'lucide-react'
+import {
+  useState, useMemo,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import type { KiroExportSettingsProps } from './types'
 
@@ -51,7 +55,9 @@ function PromptPreview({ prompt }: Readonly<{ prompt: string }>) {
 }
 
 // Editor component
-function PromptEditor({ prompt, saved, onPromptChange, onSave, onCancel, onUseDefault }: Readonly<{
+function PromptEditor({
+  prompt, saved, onPromptChange, onSave, onCancel, onUseDefault,
+}: Readonly<{
   prompt: string
   saved: boolean
   onPromptChange: (value: string) => void
@@ -98,10 +104,12 @@ function PromptEditor({ prompt, saved, onPromptChange, onSave, onCancel, onUseDe
   )
 }
 
-export default function KiroExportSettings({ project, onSave }: Readonly<KiroExportSettingsProps>) {
+export default function KiroExportSettings({
+  project, onSave,
+}: Readonly<KiroExportSettingsProps>) {
   const initialPrompt = useMemo(() => project.kiro_export_prompt ?? '', [project.kiro_export_prompt])
   const { t } = useTranslation('projectDetail')
-  
+
   const [prompt, setPrompt] = useState(initialPrompt)
   const [isEditing, setIsEditing] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -131,7 +139,7 @@ export default function KiroExportSettings({ project, onSave }: Readonly<KiroExp
         />
       )
     }
-    if (prompt) {
+    if (prompt !== '') {
       return <PromptPreview prompt={prompt} />
     }
     return <EmptyState />
@@ -155,7 +163,7 @@ export default function KiroExportSettings({ project, onSave }: Readonly<KiroExp
             className="flex items-center gap-2 px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 rounded-lg"
           >
             <Settings size={16} />
-            {prompt ? t('kiroExport.edit') : t('kiroExport.configure')}
+            {prompt === '' ? t('kiroExport.configure') : t('kiroExport.edit')}
           </button>
         )}
       </div>

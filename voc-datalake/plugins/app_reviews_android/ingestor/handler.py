@@ -5,6 +5,7 @@ Uses google-play-scraper to fetch reviews across multiple countries,
 deduplicates by review ID, and yields to the base ingestor pipeline.
 """
 
+import json
 import random
 from datetime import datetime, timezone
 from typing import Generator
@@ -31,7 +32,30 @@ class AndroidAppReviewsIngestor(BaseIngestor):
         )
 
     def _load_app_configs(self) -> list[AndroidAppConfig]:
-        """Load app configuration from individual secret fields."""
+        """Load app configurations from JSON array or legacy flat keys."""
+        # Try new multi-app format first
+        configs_json = self.secrets.get("configs", "")
+        if configs_json:
+            try:
+                configs_list = json.loads(configs_json) if isinstance(configs_json, str) else configs_json
+                if isinstance(configs_list, list) and len(configs_list) > 0:
+                    result = []
+                    for cfg in configs_list:
+                        try:
+                            result.append(AndroidAppConfig(
+                                name=cfg.get("app_name", "").strip(),
+                                package_name=cfg.get("package_name", "").strip(),
+                                enabled=cfg.get("enabled", True),
+                                max_reviews_per_run=parse_int(str(cfg.get("max_reviews_per_run", "500")), 500),
+                            ))
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Skipping invalid Android app config: {e}")
+                    if result:
+                        return result
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Failed to parse Android configs array: {e}")
+
+        # Fallback to legacy single-app flat keys
         app_name = self.secrets.get("app_name", "").strip()
         package_name = self.secrets.get("package_name", "").strip()
         max_reviews = parse_int(
@@ -157,6 +181,9 @@ class AndroidAppReviewsIngestor(BaseIngestor):
 @tracer.capture_lambda_handler
 @metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event, context):
-    """Lambda entry point."""
+    """Lambda entry point. Optionally filters to a single app via event['app_id']."""
     ingestor = AndroidAppReviewsIngestor()
+    app_id = event.get("app_id") if isinstance(event, dict) else None
+    if app_id:
+        ingestor.app_configs = [c for c in ingestor.app_configs if c.package_name == app_id]
     return ingestor.run()

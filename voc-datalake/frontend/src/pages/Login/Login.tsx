@@ -10,12 +10,16 @@
  * @module pages/Login
  */
 
-import { useState, type SyntheticEvent } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { type CognitoUser } from 'amazon-cognito-identity-js'
 import { MessageSquare } from 'lucide-react'
+import {
+  useState, type SyntheticEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
+import {
+  useNavigate, useLocation,
+} from 'react-router-dom'
 import { authService } from '../../services/auth'
-import { CognitoUser } from 'amazon-cognito-identity-js'
 import {
   LoginForm,
   NewPasswordForm,
@@ -36,7 +40,7 @@ function isCognitoError(err: unknown): err is CognitoError {
 }
 
 function getFromPath(state: unknown): string {
-  if (state && typeof state === 'object' && 'from' in state) {
+  if (state != null && typeof state === 'object' && 'from' in state) {
     const fromValue = state.from
     if (typeof fromValue === 'string') return fromValue
   }
@@ -44,7 +48,7 @@ function getFromPath(state: unknown): string {
 }
 
 function extractErrorMessage(err: unknown, fallback: string): string {
-  if (isCognitoError(err) && err.message) {
+  if (isCognitoError(err) && err.message != null && err.message !== '') {
     return err.message
   }
   return fallback
@@ -192,7 +196,7 @@ export default function Login() {
 
     try {
       await authService.signIn(username, password)
-      navigate(from, { replace: true })
+      void navigate(from, { replace: true })
     } catch (err: unknown) {
       if (isCognitoError(err) && err.code === 'NewPasswordRequired') {
         setCognitoUser(err.cognitoUser ?? null)
@@ -230,7 +234,7 @@ export default function Login() {
 
     try {
       await authService.completeNewPassword(cognitoUser, newPassword)
-      navigate(from, { replace: true })
+      void navigate(from, { replace: true })
     } catch (err: unknown) {
       setError(extractErrorMessage(err, t('errors.failedNewPassword')))
     } finally {
@@ -326,10 +330,10 @@ export default function Login() {
             onVerificationCodeChange={setVerificationCode}
             onToggleShowPassword={handleToggleShowPassword}
             onSetShowPassword={setShowPassword}
-            onLogin={handleLogin}
-            onNewPassword={handleNewPassword}
-            onForgotPassword={handleForgotPassword}
-            onConfirmPassword={handleConfirmPassword}
+            onLogin={(e) => void handleLogin(e)}
+            onNewPassword={(e) => void handleNewPassword(e)}
+            onForgotPassword={(e) => void handleForgotPassword(e)}
+            onConfirmPassword={(e) => void handleConfirmPassword(e)}
             onSwitchToForgotPassword={handleSwitchToForgotPassword}
             onBackToLogin={handleBackToLogin}
           />

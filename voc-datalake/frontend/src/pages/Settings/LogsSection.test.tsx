@@ -26,6 +26,28 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
+vi.mock('../../api/scrapersApi', () => ({
+  scrapersApi: {
+    getScrapers: () => mockGetScrapers(),
+  },
+}))
+
+let mockScrapersData: { scrapers: Array<{ id: string; name: string; enabled: boolean }> } = { scrapers: [] }
+
+vi.mock('./ScraperLogsPanel', () => ({
+  ScraperLogsPanel: () => {
+    const scrapers = mockScrapersData.scrapers
+    if (scrapers.length === 0) return <div>No scrapers configured</div>
+    return (
+      <div>
+        {scrapers.map((s: { id: string; name: string }) => (
+          <div key={s.id}>{s.name}</div>
+        ))}
+      </div>
+    )
+  },
+}))
+
 function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -41,6 +63,7 @@ function createWrapper() {
 describe('LogsSection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockScrapersData = { scrapers: [] }
     mockGetLogsSummary.mockResolvedValue({
       summary: {
         validation_failures: {},
@@ -87,9 +110,8 @@ describe('LogsSection', () => {
 
       // Wait for loading to complete and check for zero counts
       await waitFor(() => {
-        // The summary card should show 0 for both validation and processing
-        const summarySection = screen.getByText('Validation Failures').closest('div')?.parentElement
-        expect(summarySection).toBeInTheDocument()
+        expect(screen.getByText('Validation Failures')).toBeInTheDocument()
+        expect(screen.getByText('Processing Errors')).toBeInTheDocument()
       })
     })
 
@@ -303,11 +325,11 @@ describe('LogsSection', () => {
 
     it('displays scraper cards when scrapers exist', async () => {
       const user = userEvent.setup()
-      mockGetScrapers.mockResolvedValue({
+      mockScrapersData = {
         scrapers: [
           { id: 'scraper-1', name: 'Test Scraper', enabled: true },
         ],
-      })
+      }
 
       render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
 

@@ -11,7 +11,9 @@ interface JobStatusBadgeProps {
   readonly isStale: boolean
 }
 
-export default function JobStatusBadge({ status, isStale }: JobStatusBadgeProps) {
+export default function JobStatusBadge({
+  status, isStale,
+}: JobStatusBadgeProps) {
   const { t } = useTranslation('projectDetail')
 
   const getStatusStyle = (): string => {

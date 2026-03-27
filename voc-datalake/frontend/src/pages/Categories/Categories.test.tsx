@@ -17,6 +17,9 @@ vi.mock('../../api/client', () => ({
     getEntities: (...args: unknown[]) => mockGetEntities(...args),
     getFeedback: (...args: unknown[]) => mockGetFeedback(...args),
   },
+}))
+
+vi.mock('../../api/baseUrl', () => ({
   getDaysFromRange: () => 7,
 }))
 
@@ -115,6 +118,7 @@ describe('Categories', () => {
 
       render(<Categories />, { wrapper: createWrapper() })
 
+      // eslint-disable-next-line testing-library/no-node-access
       expect(document.querySelector('.animate-spin')).toBeInTheDocument()
     })
   })
@@ -178,9 +182,8 @@ describe('Categories', () => {
       // Click on a category button (by its count which is unique)
       const categoryButtons = screen.getAllByRole('button')
       const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
-      if (deliveryButton) {
-        await user.click(deliveryButton)
-      }
+      expect(deliveryButton).toBeDefined()
+      await user.click(deliveryButton!)
 
       // After selecting, feedback results should appear
       await waitFor(() => {
@@ -198,12 +201,11 @@ describe('Categories', () => {
 
       const categoryButtons = screen.getAllByRole('button')
       const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
-      if (deliveryButton) {
-        await user.click(deliveryButton)
-      }
+      expect(deliveryButton).toBeDefined()
+      await user.click(deliveryButton!)
 
       await waitFor(() => {
-        expect(mockGetFeedback).toHaveBeenCalled()
+        expect(mockGetFeedback).toHaveBeenCalledWith(expect.anything())
       })
 
       // Verify single category is sent as the category param
@@ -223,17 +225,61 @@ describe('Categories', () => {
       const categoryButtons = screen.getAllByRole('button')
       const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
       const supportButton = categoryButtons.find(btn => btn.textContent?.includes('30'))
-      if (deliveryButton) await user.click(deliveryButton)
-      if (supportButton) await user.click(supportButton)
+      expect(deliveryButton).toBeDefined()
+      await user.click(deliveryButton!)
+      await user.click(supportButton!)
 
       await waitFor(() => {
-        expect(mockGetFeedback).toHaveBeenCalled()
+        expect(mockGetFeedback).toHaveBeenCalledWith(expect.anything())
       })
 
       // Find the call with both categories
       const lastCall = mockGetFeedback.mock.calls[mockGetFeedback.mock.calls.length - 1][0]
       expect(lastCall.category).toContain('delivery')
+    })
+
+    it('includes all selected categories in API call', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Select Categories to Explore')).toBeInTheDocument()
+      })
+
+      const categoryButtons = screen.getAllByRole('button')
+      const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
+      const supportButton = categoryButtons.find(btn => btn.textContent?.includes('30'))
+      expect(deliveryButton).toBeDefined()
+      await user.click(deliveryButton!)
+      await user.click(supportButton!)
+
+      await waitFor(() => {
+        expect(mockGetFeedback).toHaveBeenCalledWith(expect.anything())
+      })
+
+      const lastCall = mockGetFeedback.mock.calls[mockGetFeedback.mock.calls.length - 1][0]
       expect(lastCall.category).toContain('customer_support')
+    })
+
+    it('sends comma-separated categories with comma delimiter', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Select Categories to Explore')).toBeInTheDocument()
+      })
+
+      const categoryButtons = screen.getAllByRole('button')
+      const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
+      const supportButton = categoryButtons.find(btn => btn.textContent?.includes('30'))
+      await user.click(deliveryButton!)
+      await user.click(supportButton!)
+
+      await waitFor(() => {
+        expect(mockGetFeedback).toHaveBeenCalledWith(expect.anything())
+      })
+
+      const lastCall = mockGetFeedback.mock.calls[mockGetFeedback.mock.calls.length - 1][0]
       expect(lastCall.category).toContain(',')
     })
 
@@ -257,7 +303,7 @@ describe('Categories', () => {
       // Select delivery category
       const categoryButtons = screen.getAllByRole('button')
       const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
-      if (deliveryButton) await user.click(deliveryButton)
+      await user.click(deliveryButton!)
 
       await waitFor(() => {
         expect(screen.getByText('Feedback Results')).toBeInTheDocument()
@@ -295,9 +341,8 @@ describe('Categories', () => {
       // Select a category first by clicking on button with count 50
       const categoryButtons = screen.getAllByRole('button')
       const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
-      if (deliveryButton) {
-        await user.click(deliveryButton)
-      }
+      expect(deliveryButton).toBeDefined()
+      await user.click(deliveryButton!)
 
       await waitFor(() => {
         expect(screen.getByText('Clear filters')).toBeInTheDocument()
@@ -327,22 +372,5 @@ describe('Categories', () => {
         expect(mockGetCategories).toHaveBeenCalledWith(7, 'webscraper')
       })
     })
-  })
-})
-
-describe('Categories - no API endpoint', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('shows configuration message when API not configured', () => {
-    vi.doMock('../../store/configStore', () => ({
-      useConfigStore: () => ({
-        timeRange: '7d',
-        config: { apiEndpoint: '' },
-      }),
-    }))
-
-    // Re-import to get new mock - this is a limitation, test separately
   })
 })

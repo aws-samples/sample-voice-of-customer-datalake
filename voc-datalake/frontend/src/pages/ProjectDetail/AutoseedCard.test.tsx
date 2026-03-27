@@ -60,6 +60,10 @@ describe('AutoseedCard', () => {
     expect(screen.getByText('Feature PRD')).toBeInTheDocument()
     expect(screen.getByText('Launch PR/FAQ')).toBeInTheDocument()
     expect(screen.getByText('User Research')).toBeInTheDocument()
+  })
+
+  it('renders document type group labels', () => {
+    render(<AutoseedCard {...defaultProps} />)
     expect(screen.getByText('PRDs')).toBeInTheDocument()
     expect(screen.getByText('PR/FAQs')).toBeInTheDocument()
     expect(screen.getByText('Research')).toBeInTheDocument()

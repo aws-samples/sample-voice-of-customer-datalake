@@ -22,7 +22,7 @@ describe('authStore', () => {
       setUser(user)
 
       const state = useAuthStore.getState()
-      expect(state.user).toEqual(user)
+      expect(state.user).toStrictEqual(user)
       expect(state.isAuthenticated).toBe(true)
     })
 
@@ -73,6 +73,20 @@ describe('authStore', () => {
       expect(state.accessToken).toBeNull()
       expect(state.idToken).toBeNull()
       expect(state.refreshToken).toBeNull()
+    })
+
+    it('resets authenticated and error state on logout', () => {
+      const { setUser, setTokens, logout } = useAuthStore.getState()
+
+      setUser({ username: 'test', email: 'test@example.com', groups: ['admins'] })
+      setTokens({
+        accessToken: 'access',
+        idToken: 'id',
+        refreshToken: 'refresh',
+      })
+      logout()
+
+      const state = useAuthStore.getState()
       expect(state.isAuthenticated).toBe(false)
       expect(state.error).toBeNull()
     })

@@ -96,6 +96,7 @@ describe('authService', () => {
 
       const result = await authService.signIn('testuser', 'password123')
 
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockAuthenticateUser).toHaveBeenCalled()
       expect(result).toBe(mockSession)
     })
@@ -113,7 +114,7 @@ describe('authService', () => {
   describe('signOut', () => {
     it('calls logout on authStore', () => {
       authService.signOut()
-      expect(mockLogout).toHaveBeenCalled()
+      expect(mockLogout).toHaveBeenCalledWith()
     })
   })
 
@@ -124,6 +125,7 @@ describe('authService', () => {
       })
 
       await expect(authService.forgotPassword('testuser')).resolves.not.toThrow()
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockForgotPassword).toHaveBeenCalled()
     })
   })
@@ -135,6 +137,7 @@ describe('authService', () => {
       })
 
       await expect(authService.confirmPassword('testuser', '123456', 'newpassword')).resolves.not.toThrow()
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockConfirmPassword).toHaveBeenCalled()
     })
   })

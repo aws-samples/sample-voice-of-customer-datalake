@@ -9,17 +9,29 @@ const mockGetFeedbackForms = vi.fn()
 const mockCreateFeedbackForm = vi.fn()
 const mockUpdateFeedbackForm = vi.fn()
 const mockDeleteFeedbackForm = vi.fn()
-const mockGetCategories = vi.fn()
+const mockGetCategoriesConfig = vi.fn()
 
-vi.mock('../../api/client', () => ({
-  api: {
+vi.mock('../../api/feedbackFormsApi', () => ({
+  feedbackFormsApi: {
     getFeedbackForms: () => mockGetFeedbackForms(),
     createFeedbackForm: (form: unknown) => mockCreateFeedbackForm(form),
     updateFeedbackForm: (id: string, form: unknown) => mockUpdateFeedbackForm(id, form),
     deleteFeedbackForm: (id: string) => mockDeleteFeedbackForm(id),
-    getCategories: () => mockGetCategories(),
   },
-  stripTrailingSlashes: (url: string) => url.replace(/\/+$/, ''),
+}))
+
+vi.mock('../../api/client', () => ({
+  api: {
+    getCategoriesConfig: () => mockGetCategoriesConfig(),
+  },
+}))
+
+vi.mock('../../api/baseUrl', () => ({
+  stripTrailingSlashes: (url: string) => {
+    let result = url
+    while (result.endsWith('/')) result = result.slice(0, -1)
+    return result
+  },
 }))
 
 vi.mock('../../store/configStore', () => ({
@@ -30,10 +42,10 @@ vi.mock('../../store/configStore', () => ({
 
 // Mock subcomponents
 vi.mock('./TemplateWizard', () => ({
-  default: ({ onSelect, onClose }: { onSelect: (config: unknown) => void; onClose: () => void }) => (
+  default: ({ onSelect, onCancel }: { onSelect: (config: unknown) => void; onCancel: () => void }) => (
     <div data-testid="template-wizard">
       <button onClick={() => onSelect({ name: 'Test Form', type: 'nps' })}>Select Template</button>
-      <button onClick={onClose}>Close Wizard</button>
+      <button onClick={onCancel}>Close Wizard</button>
     </div>
   ),
 }))
@@ -92,7 +104,7 @@ describe('FeedbackForms', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetFeedbackForms.mockResolvedValue({ forms: mockForms })
-    mockGetCategories.mockResolvedValue({ categories: { general: 10, product: 5 } })
+    mockGetCategoriesConfig.mockResolvedValue({ categories: { general: 10, product: 5 } })
     mockCreateFeedbackForm.mockResolvedValue({ success: true, form_id: 'new-form' })
     mockUpdateFeedbackForm.mockResolvedValue({ success: true })
     mockDeleteFeedbackForm.mockResolvedValue({ success: true })
@@ -115,6 +127,7 @@ describe('FeedbackForms', () => {
       render(<FeedbackForms />, { wrapper: createWrapper() })
 
       await waitFor(() => {
+        // eslint-disable-next-line vitest/prefer-called-with
         expect(mockGetFeedbackForms).toHaveBeenCalled()
       })
     })
@@ -138,6 +151,8 @@ describe('FeedbackForms', () => {
 
       render(<FeedbackForms />, { wrapper: createWrapper() })
 
+      // Loading state uses Loader2 with animate-spin, no role="status"
+      // eslint-disable-next-line testing-library/no-node-access
       expect(document.querySelector('.animate-spin')).toBeInTheDocument()
     })
   })
@@ -151,15 +166,5 @@ describe('FeedbackForms', () => {
 
       expect(screen.getByTestId('template-wizard')).toBeInTheDocument()
     })
-  })
-})
-
-describe('FeedbackForms - not configured', () => {
-  it('shows configuration message when API not configured', () => {
-    vi.doMock('../../store/configStore', () => ({
-      useConfigStore: () => ({
-        config: { apiEndpoint: '' },
-      }),
-    }))
   })
 })

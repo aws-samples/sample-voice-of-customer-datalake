@@ -5,6 +5,7 @@ Uses app-store-web-scraper to fetch reviews across multiple countries,
 deduplicates by review ID, and yields to the base ingestor pipeline.
 """
 
+import json
 import random
 from datetime import datetime, timezone
 from typing import Generator
@@ -32,7 +33,30 @@ class IOSAppReviewsIngestor(BaseIngestor):
         self.session = create_session()
 
     def _load_app_configs(self) -> list[IOSAppConfig]:
-        """Load app configuration from individual secret fields."""
+        """Load app configurations from JSON array or legacy flat keys."""
+        # Try new multi-app format first
+        configs_json = self.secrets.get("configs", "")
+        if configs_json:
+            try:
+                configs_list = json.loads(configs_json) if isinstance(configs_json, str) else configs_json
+                if isinstance(configs_list, list) and len(configs_list) > 0:
+                    result = []
+                    for cfg in configs_list:
+                        try:
+                            result.append(IOSAppConfig(
+                                name=cfg.get("app_name", "").strip(),
+                                app_id=str(cfg.get("app_id", "")).strip(),
+                                enabled=cfg.get("enabled", True),
+                                max_reviews_per_run=parse_int(str(cfg.get("max_reviews_per_run", "500")), 500),
+                            ))
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Skipping invalid iOS app config: {e}")
+                    if result:
+                        return result
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Failed to parse iOS configs array: {e}")
+
+        # Fallback to legacy single-app flat keys
         app_name = self.secrets.get("app_name", "").strip()
         app_id = self.secrets.get("app_id", "").strip()
         max_reviews = parse_int(
@@ -152,6 +176,9 @@ class IOSAppReviewsIngestor(BaseIngestor):
 @tracer.capture_lambda_handler
 @metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event, context):
-    """Lambda entry point."""
+    """Lambda entry point. Optionally filters to a single app via event['app_id']."""
     ingestor = IOSAppReviewsIngestor()
+    app_id = event.get("app_id") if isinstance(event, dict) else None
+    if app_id:
+        ingestor.app_configs = [c for c in ingestor.app_configs if c.app_id == app_id]
     return ingestor.run()

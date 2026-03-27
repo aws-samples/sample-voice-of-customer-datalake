@@ -1,8 +1,10 @@
 /**
  * Stats bar for the Problem Analysis page.
  */
+import {
+  AlertTriangle, MessageSquare, TrendingUp, Layers,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, MessageSquare, TrendingUp, Layers } from 'lucide-react'
 
 interface ProblemStatsProps {
   readonly categoryCount: number
@@ -12,7 +14,9 @@ interface ProblemStatsProps {
   readonly urgentCount: number
 }
 
-export function ProblemStats({ categoryCount, subcategoryCount, problemCount, feedbackCount, urgentCount }: ProblemStatsProps) {
+export function ProblemStats({
+  categoryCount, subcategoryCount, problemCount, feedbackCount, urgentCount,
+}: ProblemStatsProps) {
   const { t } = useTranslation('problemAnalysis')
 
   return (
@@ -32,7 +36,13 @@ export function ProblemStats({ categoryCount, subcategoryCount, problemCount, fe
   )
 }
 
-function StatCard({ icon, label, value }: Readonly<{ icon: React.ReactNode; label: string; value: number }>) {
+function StatCard({
+  icon, label, value,
+}: Readonly<{
+  icon: React.ReactNode;
+  label: string;
+  value: number
+}>) {
   return (
     <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
       <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">

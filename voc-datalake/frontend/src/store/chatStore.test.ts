@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useChatStore } from './chatStore'
+import type { FeedbackItem } from '../api/types'
 
 describe('chatStore', () => {
   beforeEach(() => {
@@ -46,13 +47,13 @@ describe('chatStore', () => {
     })
 
     it('initializes conversation with empty messages and filters', () => {
-      const { createConversation, getActiveConversation } = useChatStore.getState()
+      const { createConversation } = useChatStore.getState()
       
       createConversation()
       
       const conversation = useChatStore.getState().getActiveConversation()
-      expect(conversation?.messages).toEqual([])
-      expect(conversation?.filters).toEqual({})
+      expect(conversation?.messages).toStrictEqual([])
+      expect(conversation?.filters).toStrictEqual({})
     })
   })
 
@@ -99,6 +100,16 @@ describe('chatStore', () => {
       
       // Verify first is active before deletion
       expect(useChatStore.getState().activeConversationId).toBe(firstId)
+    })
+
+    it('keeps active conversation intact after deleting a different one', async () => {
+      useChatStore.setState({ conversations: [], activeConversationId: null })
+      
+      const firstId = useChatStore.getState().createConversation()
+      await new Promise(resolve => setTimeout(resolve, 10))
+      const secondId = useChatStore.getState().createConversation()
+      
+      useChatStore.getState().setActiveConversation(firstId)
       
       // Delete the second conversation (not the active one)
       useChatStore.getState().deleteConversation(secondId)
@@ -200,12 +211,12 @@ describe('chatStore', () => {
       const { createConversation, addMessage } = useChatStore.getState()
       
       const convId = createConversation()
-      const sources = [{ feedback_id: '123', text: 'Sample feedback' }] as any
+      const sources = [{ feedback_id: '123', text: 'Sample feedback' }] as unknown as FeedbackItem[]
       addMessage(convId, { role: 'assistant', content: 'Response', sources })
       
       const state = useChatStore.getState()
       const conv = state.conversations.find(c => c.id === convId)
-      expect(conv?.messages[0].sources).toEqual(sources)
+      expect(conv?.messages[0].sources).toStrictEqual(sources)
     })
   })
 
@@ -231,13 +242,13 @@ describe('chatStore', () => {
       
       const state = useChatStore.getState()
       const conv = state.conversations.find(c => c.id === convId)
-      expect(conv?.filters).toEqual({ source: 'webscraper', sentiment: 'positive' })
+      expect(conv?.filters).toStrictEqual({ source: 'webscraper', sentiment: 'positive' })
     })
   })
 
   describe('getActiveConversation', () => {
     it('returns active conversation when set', () => {
-      const { createConversation, getActiveConversation } = useChatStore.getState()
+      const { createConversation } = useChatStore.getState()
       
       createConversation()
       

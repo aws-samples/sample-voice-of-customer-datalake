@@ -5,13 +5,25 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export interface ProjectChatMessage {
+interface ProjectChatMessage {
   role: 'user' | 'assistant'
   content: string
   thinking?: string
-  attachments?: Array<{ name: string; media_type: string; data: string }>
-  documentChanges?: Array<{ document_id: string; title: string; action: 'updated' | 'created'; summary: string }>
-  activePersona?: { name: string; avatar_url?: string }
+  attachments?: Array<{
+    name: string;
+    media_type: string;
+    data: string
+  }>
+  documentChanges?: Array<{
+    document_id: string;
+    title: string;
+    action: 'updated' | 'created';
+    summary: string
+  }>
+  activePersona?: {
+    name: string;
+    avatar_url?: string
+  }
 }
 
 interface ProjectChatState {
@@ -34,7 +46,10 @@ export const useProjectChatStore = create<ProjectChatState>()(
 
       setMessages: (projectId, messages) =>
         set((state) => ({
-          messagesByProject: { ...state.messagesByProject, [projectId]: messages },
+          messagesByProject: {
+            ...state.messagesByProject,
+            [projectId]: messages,
+          },
         })),
 
       addMessage: (projectId, message) =>
@@ -55,7 +70,10 @@ export const useProjectChatStore = create<ProjectChatState>()(
 
       clearMessages: (projectId) =>
         set((state) => ({
-          messagesByProject: { ...state.messagesByProject, [projectId]: [] },
+          messagesByProject: {
+            ...state.messagesByProject,
+            [projectId]: [],
+          },
         })),
     }),
     {
@@ -65,8 +83,14 @@ export const useProjectChatStore = create<ProjectChatState>()(
         messagesByProject: Object.fromEntries(
           Object.entries(state.messagesByProject).map(([pid, msgs]) => [
             pid,
-            msgs.map(({ role, content, thinking, documentChanges, activePersona }) => ({
+            msgs.map(({
               role, content, thinking, documentChanges, activePersona,
+            }) => ({
+              role,
+              content,
+              thinking,
+              documentChanges,
+              activePersona,
             })),
           ]),
         ),

@@ -3,10 +3,13 @@
  * @module pages/DataExplorer/S3Browser
  */
 
-import { FolderOpen, FileJson, ChevronRight, Eye, Pencil, Trash2, ArrowLeft, HardDrive, Image, FileText, Download, Loader2 } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
+import {
+  FolderOpen, FileJson, ChevronRight, Eye, Pencil, Trash2, ArrowLeft, HardDrive, Image, FileText, Download, Loader2,
+} from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { safeFormatDate } from '../../utils/dateUtils'
+import { formatFileSize } from '../../utils/file'
 
 export interface S3Object {
   key: string
@@ -18,7 +21,11 @@ export interface S3Object {
 
 interface S3BrowserProps {
   readonly path: string[]
-  readonly data: { objects: S3Object[]; bucket: string; prefix: string } | undefined
+  readonly data: {
+    objects: S3Object[];
+    bucket: string;
+    prefix: string
+  } | undefined
   readonly loading: boolean
   readonly error: Error | null
   readonly onNavigateToFolder: (folder: string) => void
@@ -28,12 +35,6 @@ interface S3BrowserProps {
   readonly onEdit: (key: string) => void
   readonly onDelete: (key: string) => void
   readonly onDownload: (key: string, filename: string) => void
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function getFileIcon(filename: string) {
@@ -53,7 +54,7 @@ function isEditableFile(filename: string): boolean {
 }
 
 export default function S3Browser({
-  path, data, loading, error, onNavigateToFolder, onNavigateUp, onNavigateToBreadcrumb, onView, onEdit, onDelete, onDownload
+  path, data, loading, error, onNavigateToFolder, onNavigateUp, onNavigateToBreadcrumb, onView, onEdit, onDelete, onDownload,
 }: S3BrowserProps) {
   const { t } = useTranslation('dataExplorer')
 
@@ -80,7 +81,7 @@ export default function S3Browser({
         <HardDrive size={16} className="text-gray-400" />
         <button onClick={() => onNavigateToBreadcrumb(-1)} className="text-blue-600 hover:underline">{bucket}</button>
         {path.map((segment, i) => (
-          <span key={i} className="flex items-center gap-2">
+          <span key={`${segment}-${path.slice(0, i + 1).join('/')}`} className="flex items-center gap-2">
             <ChevronRight size={14} className="text-gray-400" />
             <button
               onClick={() => onNavigateToBreadcrumb(i)}
@@ -133,7 +134,9 @@ interface S3ObjectRowProps {
   readonly onDownload: (key: string, filename: string) => void
 }
 
-function S3ObjectRow({ obj, onNavigateToFolder, onView, onEdit, onDelete, onDownload }: S3ObjectRowProps) {
+function S3ObjectRow({
+  obj, onNavigateToFolder, onView, onEdit, onDelete, onDownload,
+}: S3ObjectRowProps) {
   const { t } = useTranslation('dataExplorer')
   const fullKey = obj.fullKey ?? obj.key
 
@@ -147,7 +150,7 @@ function S3ObjectRow({ obj, onNavigateToFolder, onView, onEdit, onDelete, onDown
 
   return (
     <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
-      <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={handleClick}>
+      <button type="button" className="flex items-center gap-3 cursor-pointer flex-1 text-left bg-transparent border-none p-0" onClick={handleClick}>
         {obj.isFolder ? <FolderOpen size={20} className="text-yellow-500" /> : getFileIcon(obj.key)}
         <div>
           <p className="font-medium text-sm">{obj.key}</p>
@@ -157,7 +160,7 @@ function S3ObjectRow({ obj, onNavigateToFolder, onView, onEdit, onDelete, onDown
             </p>
           )}
         </div>
-      </div>
+      </button>
       {!obj.isFolder && (
         <div className="flex items-center gap-1">
           <button onClick={() => onView(fullKey)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title={t('s3Browser.view')}>

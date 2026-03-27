@@ -1,6 +1,8 @@
 // Scrapers & Manual Import API - extracted from client.ts for code splitting
 import { fetchApi } from './client'
-import type { ScraperConfig, ScraperTemplate } from './types'
+import type {
+  ScraperConfig, ScraperTemplate,
+} from './types'
 
 export const scrapersApi = {
   getScrapers: () => fetchApi<{ scrapers: ScraperConfig[] }>('/scrapers'),
@@ -8,9 +10,12 @@ export const scrapersApi = {
   getScraperTemplates: () => fetchApi<{ templates: ScraperTemplate[] }>('/scrapers/templates'),
 
   saveScraper: (scraper: ScraperConfig) =>
-    fetchApi<{ success: boolean; scraper: ScraperConfig }>('/scrapers', {
+    fetchApi<{
+      success: boolean;
+      scraper: ScraperConfig
+    }>('/scrapers', {
       method: 'POST',
-      body: JSON.stringify({ scraper })
+      body: JSON.stringify({ scraper }),
     }),
 
   deleteScraper: (id: string) =>
@@ -36,11 +41,15 @@ export const scrapersApi = {
       error?: string
     }>('/scrapers/analyze-url', {
       method: 'POST',
-      body: JSON.stringify({ url })
+      body: JSON.stringify({ url }),
     }),
 
   runScraper: (id: string) =>
-    fetchApi<{ success: boolean; execution_id: string; status: string }>(`/scrapers/${id}/run`, { method: 'POST' }),
+    fetchApi<{
+      success: boolean;
+      execution_id: string;
+      status: string
+    }>(`/scrapers/${id}/run`, { method: 'POST' }),
 
   getScraperStatus: (id: string) =>
     fetchApi<{
@@ -55,13 +64,31 @@ export const scrapersApi = {
     }>(`/scrapers/${id}/status`),
 
   getScraperRuns: (id: string) =>
-    fetchApi<{ runs: Array<{ sk: string; status: string; started_at: string; completed_at?: string; pages_scraped: number; items_found: number }> }>(`/scrapers/${id}/runs`),
+    fetchApi<{
+      runs: Array<{
+        sk: string;
+        status: string;
+        started_at: string;
+        completed_at?: string;
+        pages_scraped: number;
+        items_found: number
+      }>
+    }>(`/scrapers/${id}/runs`),
 
   // Manual Import (shares /scrapers/ route prefix)
   startManualImportParse: (sourceUrl: string, rawText: string) =>
-    fetchApi<{ success: boolean; job_id: string; source_origin?: string; message?: string; error?: string }>('/scrapers/manual/parse', {
+    fetchApi<{
+      success: boolean;
+      job_id: string;
+      source_origin?: string;
+      message?: string;
+      error?: string
+    }>('/scrapers/manual/parse', {
       method: 'POST',
-      body: JSON.stringify({ source_url: sourceUrl, raw_text: rawText })
+      body: JSON.stringify({
+        source_url: sourceUrl,
+        raw_text: rawText,
+      }),
     }),
 
   getManualImportStatus: (jobId: string) =>
@@ -69,20 +96,48 @@ export const scrapersApi = {
       status: 'processing' | 'completed' | 'failed' | 'not_found'
       source_origin?: string
       source_url?: string
-      reviews?: Array<{ text: string; rating: number | null; author: string | null; date: string | null; title: string | null }>
+      reviews?: Array<{
+        text: string;
+        rating: number | null;
+        author: string | null;
+        date: string | null;
+        title: string | null
+      }>
       unparsed_sections?: string[]
       error?: string
     }>(`/scrapers/manual/parse/${jobId}`),
 
-  confirmManualImport: (jobId: string, reviews: Array<{ text: string; rating: number | null; author: string | null; date: string | null; title: string | null }>) =>
-    fetchApi<{ success: boolean; imported_count?: number; s3_uri?: string; message?: string; error?: string; errors?: string[] }>('/scrapers/manual/confirm', {
+  confirmManualImport: (jobId: string, reviews: Array<{
+    text: string;
+    rating: number | null;
+    author: string | null;
+    date: string | null;
+    title: string | null
+  }>) =>
+    fetchApi<{
+      success: boolean;
+      imported_count?: number;
+      s3_uri?: string;
+      message?: string;
+      error?: string;
+      errors?: string[]
+    }>('/scrapers/manual/confirm', {
       method: 'POST',
-      body: JSON.stringify({ job_id: jobId, reviews })
+      body: JSON.stringify({
+        job_id: jobId,
+        reviews,
+      }),
     }),
 
   uploadJsonFeedback: (items: Array<Record<string, unknown>>) =>
-    fetchApi<{ success: boolean; imported_count: number; total_items: number; s3_uri?: string; errors?: string[] }>('/scrapers/manual/json-upload', {
+    fetchApi<{
+      success: boolean;
+      imported_count: number;
+      total_items: number;
+      s3_uri?: string;
+      errors?: string[]
+    }>('/scrapers/manual/json-upload', {
       method: 'POST',
-      body: JSON.stringify({ items })
+      body: JSON.stringify({ items }),
     }),
 }

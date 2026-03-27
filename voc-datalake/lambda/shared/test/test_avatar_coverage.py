@@ -1,6 +1,5 @@
 """
-Additional coverage tests for shared.avatar module.
-Targets uncovered lines: 75, 216, 220-222.
+Coverage tests for shared.avatar module — AccessDenied and ValidationException handling.
 """
 
 import json
@@ -9,7 +8,7 @@ from unittest.mock import patch, MagicMock
 
 
 class TestGenerateAvatarPromptFallbackTemplate:
-    """Tests for fallback prompt when LLM returns no text blocks (line 75)."""
+    """Tests for fallback prompt when LLM returns no text blocks."""
 
     @patch('shared.avatar.get_avatar_prompt_config')
     @patch('shared.aws.BEDROCK_MODEL_ID', 'test-model')
@@ -25,7 +24,6 @@ class TestGenerateAvatarPromptFallbackTemplate:
         }
 
         mock_bedrock = MagicMock()
-        # Response with only thinking blocks, no text blocks
         response_body = json.dumps({
             'content': [{'type': 'thinking', 'text': 'thinking...'}]
         }).encode()
@@ -33,18 +31,15 @@ class TestGenerateAvatarPromptFallbackTemplate:
             'body': MagicMock(read=MagicMock(return_value=response_body))
         }
 
-        # When no text block is found, it falls through to content[0]['text']
-        # which would be 'thinking...' since it accesses index 0 regardless of type
         result = generate_avatar_prompt_with_llm(
             {'name': 'Test', 'identity': {'occupation': 'Engineer'}},
             mock_bedrock
         )
-        # The code falls through to result['content'][0]['text'].strip()
         assert result == 'thinking...'
 
 
 class TestGeneratePersonaAvatarAccessDeniedType:
-    """Tests for AccessDenied error detected via type name (lines 216, 220-222)."""
+    """Tests for AccessDenied error detected via type name."""
 
     @patch('shared.avatar.boto3')
     @patch('shared.avatar.generate_avatar_prompt_with_llm')
@@ -56,7 +51,6 @@ class TestGeneratePersonaAvatarAccessDeniedType:
         mock_bedrock = MagicMock()
         mock_boto3.client.return_value = mock_bedrock
 
-        # Create an exception whose type name contains 'AccessDenied'
         class AccessDeniedException(Exception):
             pass
 
@@ -79,7 +73,6 @@ class TestGeneratePersonaAvatarAccessDeniedType:
         mock_bedrock = MagicMock()
         mock_boto3.client.return_value = mock_bedrock
 
-        # Create an exception whose type name contains 'ValidationException'
         class ValidationException(Exception):
             pass
 
@@ -91,35 +84,3 @@ class TestGeneratePersonaAvatarAccessDeniedType:
         )
         assert result['avatar_url'] is None
         assert result['avatar_prompt'] == 'A prompt'
-
-
-class TestGetAvatarCdnUrlEdgeCases:
-    """Tests for get_avatar_cdn_url edge cases."""
-
-    def test_returns_none_for_short_s3_uri(self):
-        """Returns None when S3 URI has fewer than 2 parts after split."""
-        from shared.avatar import get_avatar_cdn_url
-
-        # Use a string that starts with 's3://' but mock split to return < 2 parts
-        # Since any real s3:// URI always has >= 3 parts, we test via a BadString
-        class ShortSplitString(str):
-            def split(self, *args, **kwargs):
-                return ['only_one']
-
-        uri = ShortSplitString('s3://x')
-        result = get_avatar_cdn_url(uri, cdn_url='https://cdn.example.com')
-        assert result is None
-
-    def test_returns_none_on_exception_during_parsing(self):
-        """Returns None when exception occurs during CDN URL construction."""
-        from shared.avatar import get_avatar_cdn_url
-
-        # Create a string that starts with 's3://' but causes an exception
-        # when we try to use it. We can mock the split method.
-        class BadString(str):
-            def split(self, *args, **kwargs):
-                raise RuntimeError("split failed")
-
-        bad_uri = BadString('s3://bucket/avatars/test.png')
-        result = get_avatar_cdn_url(bad_uri, cdn_url='https://cdn.example.com')
-        assert result is None

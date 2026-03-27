@@ -9,16 +9,20 @@
  * @module pages/Projects
  */
 
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
-import { Plus, Briefcase, Users, FileText, Trash2, ArrowRight } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
-import { api } from '../../api/client'
-import type { Project } from '../../api/client'
-import { useConfigStore } from '../../store/configStore'
+import {
+  useQuery, useMutation, useQueryClient,
+} from '@tanstack/react-query'
 import { format } from 'date-fns'
+import {
+  Plus, Briefcase, Users, FileText, Trash2, ArrowRight,
+} from 'lucide-react'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
+import { projectsApi } from '../../api/projectsApi'
 import ConfirmModal from '../../components/ConfirmModal'
+import { useConfigStore } from '../../store/configStore'
+import type { Project } from '../../api/types'
 
 interface ProjectCardProps {
   project: Project
@@ -26,7 +30,9 @@ interface ProjectCardProps {
   onOpen: (id: string) => void
 }
 
-function ProjectCard({ project, onDelete, onOpen }: Readonly<ProjectCardProps>) {
+function ProjectCard({
+  project, onDelete, onOpen,
+}: Readonly<ProjectCardProps>) {
   const { t } = useTranslation('projects')
   return (
     <div className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all group">
@@ -52,11 +58,9 @@ function ProjectCard({ project, onDelete, onOpen }: Readonly<ProjectCardProps>) 
           <Trash2 size={16} />
         </button>
       </div>
-      
-      {project.description && (
-        <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4 line-clamp-2">{project.description}</p>
-      )}
-      
+
+      {project.description === '' ? null : <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4 line-clamp-2">{project.description}</p>}
+
       <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm text-gray-500 mb-3 sm:mb-4">
         <span className="flex items-center gap-1">
           <Users size={14} />
@@ -67,7 +71,7 @@ function ProjectCard({ project, onDelete, onOpen }: Readonly<ProjectCardProps>) 
           {t('card.docs', { count: project.document_count })}
         </span>
       </div>
-      
+
       <button
         onClick={() => onOpen(project.project_id)}
         className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-50 text-gray-700 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors text-sm"
@@ -93,9 +97,7 @@ function LoadingSkeleton() {
   )
 }
 
-interface EmptyStateProps {
-  onCreateClick: () => void
-}
+interface EmptyStateProps { onCreateClick: () => void }
 
 function EmptyState({ onCreateClick }: Readonly<EmptyStateProps>) {
   const { t } = useTranslation('projects')
@@ -121,36 +123,49 @@ export default function Projects() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
-  const [newProject, setNewProject] = useState({ name: '', description: '' })
+  const [newProject, setNewProject] = useState({
+    name: '',
+    description: '',
+  })
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const {
+    data, isLoading,
+  } = useQuery({
     queryKey: ['projects'],
-    queryFn: () => api.getProjects(),
-    enabled: !!config.apiEndpoint,
+    queryFn: () => projectsApi.getProjects(),
+    enabled: config.apiEndpoint.length > 0,
   })
 
   const createMutation = useMutation({
-    mutationFn: (projectData: { name: string; description: string }) => api.createProject(projectData),
+    mutationFn: (projectData: {
+      name: string;
+      description: string
+    }) => projectsApi.createProject(projectData),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      void queryClient.invalidateQueries({ queryKey: ['projects'] })
       setShowCreate(false)
-      setNewProject({ name: '', description: '' })
+      setNewProject({
+        name: '',
+        description: '',
+      })
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.deleteProject(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects'] }),
+    mutationFn: (id: string) => projectsApi.deleteProject(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['projects'] })
+    },
   })
 
   const handleCreate = () => {
-    if (newProject.name.trim()) {
+    if (newProject.name.trim() !== '') {
       createMutation.mutate(newProject)
     }
   }
 
-  if (!config.apiEndpoint) {
+  if (config.apiEndpoint === '') {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">{t('configureEndpoint')}</p>
@@ -162,11 +177,11 @@ export default function Projects() {
     if (isLoading) {
       return <LoadingSkeleton />
     }
-    
-    if (!data?.projects.length) {
+
+    if (data?.projects.length == null) {
       return <EmptyState onCreateClick={() => setShowCreate(true)} />
     }
-    
+
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {data.projects.map((project) => (
@@ -174,7 +189,9 @@ export default function Projects() {
             key={project.project_id}
             project={project}
             onDelete={setDeleteProjectId}
-            onOpen={(id) => navigate(`/projects/${id}`)}
+            onOpen={(id) => {
+              void navigate(`/projects/${id}`)
+            }}
           />
         ))}
       </div>
@@ -197,50 +214,54 @@ export default function Projects() {
         </button>
       </div>
 
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-          <div className="bg-white rounded-t-xl sm:rounded-xl p-4 sm:p-6 w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold mb-4">{t('createModal.title')}</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('createModal.nameLabel')}</label>
-                <input
-                  type="text"
-                  value={newProject.name}
-                  onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
-                  placeholder={t('createModal.namePlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('createModal.descriptionLabel')}</label>
-                <textarea
-                  value={newProject.description}
-                  onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
-                  placeholder={t('createModal.descriptionPlaceholder')}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
+      {showCreate ? <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+        <div className="bg-white rounded-t-xl sm:rounded-xl p-4 sm:p-6 w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+          <h2 className="text-lg font-semibold mb-4">{t('createModal.title')}</h2>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('createModal.nameLabel')}</label>
+              <input
+                type="text"
+                value={newProject.name}
+                onChange={(e) => setNewProject({
+                  ...newProject,
+                  name: e.target.value,
+                })}
+                placeholder={t('createModal.namePlaceholder')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
             </div>
-            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-6">
-              <button
-                onClick={() => setShowCreate(false)}
-                className="w-full sm:w-auto px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                {t('createModal.cancel')}
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={!newProject.name.trim() || createMutation.isPending}
-                className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {createMutation.isPending ? t('createModal.creating') : t('createModal.create')}
-              </button>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('createModal.descriptionLabel')}</label>
+              <textarea
+                value={newProject.description}
+                onChange={(e) => setNewProject({
+                  ...newProject,
+                  description: e.target.value,
+                })}
+                placeholder={t('createModal.descriptionPlaceholder')}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
             </div>
           </div>
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-6">
+            <button
+              onClick={() => setShowCreate(false)}
+              className="w-full sm:w-auto px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+            >
+              {t('createModal.cancel')}
+            </button>
+            <button
+              onClick={handleCreate}
+              disabled={newProject.name.trim() === '' || createMutation.isPending}
+              className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {createMutation.isPending ? t('createModal.creating') : t('createModal.create')}
+            </button>
+          </div>
         </div>
-      )}
+      </div> : null}
 
       {renderProjectsContent()}
 
@@ -252,7 +273,7 @@ export default function Projects() {
         variant="danger"
         isLoading={deleteMutation.isPending}
         onConfirm={() => {
-          if (deleteProjectId) {
+          if (deleteProjectId != null && deleteProjectId !== '') {
             deleteMutation.mutate(deleteProjectId, { onSettled: () => setDeleteProjectId(null) })
           }
         }}

@@ -39,7 +39,7 @@ async function handleSearchFeedback(
   return { content: result.formatted, sources: result.items.slice(0, 5) };
 }
 
-export interface ExecuteToolOptions {
+interface ExecuteToolOptions {
   docClient: DynamoDBDocumentClient;
   feedbackTable: string;
   projectsTable?: string;

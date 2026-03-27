@@ -1,13 +1,15 @@
 /**
  * PersonasTab - Personas list and detail view
  */
-import { Users, Sparkles, Upload } from 'lucide-react'
 import clsx from 'clsx'
+import {
+  Users, Sparkles, Upload,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ProjectPersona } from '../../api/client'
 import PersonaAvatar from './PersonaAvatar'
 import PersonaDetailView from './PersonaDetailView'
 import type { NoteItem } from './types'
+import type { ProjectPersona } from '../../api/types'
 
 interface PersonasTabProps {
   readonly personas: ProjectPersona[]
@@ -39,20 +41,20 @@ export default function PersonasTab({
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row justify-end gap-2">
-        <button 
-          onClick={onImportPersona} 
+        <button
+          onClick={onImportPersona}
           className="flex items-center justify-center gap-2 px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50 text-sm"
         >
           <Upload size={16} />{t('personas.importPersona')}
         </button>
-        <button 
-          onClick={onGeneratePersonas} 
+        <button
+          onClick={onGeneratePersonas}
           className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
         >
           <Sparkles size={16} />{t('personas.generatePersonas')}
         </button>
       </div>
-      
+
       {personas.length === 0 ? (
         <EmptyPersonasState onGenerate={onGeneratePersonas} />
       ) : (
@@ -60,14 +62,14 @@ export default function PersonasTab({
           {/* Persona List */}
           <div className="flex lg:flex-col gap-3 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0">
             {personas.map((p) => (
-              <button 
-                key={p.persona_id} 
+              <button
+                key={p.persona_id}
                 onClick={() => onSelectPersona(p)}
                 className={clsx(
-                  'flex-shrink-0 w-48 lg:w-full text-left p-3 lg:p-4 rounded-lg border transition-colors', 
-                  selectedPersona?.persona_id === p.persona_id 
-                    ? 'bg-purple-50 border-purple-300' 
-                    : 'bg-white hover:border-purple-200'
+                  'flex-shrink-0 w-48 lg:w-full text-left p-3 lg:p-4 rounded-lg border transition-colors',
+                  selectedPersona?.persona_id === p.persona_id
+                    ? 'bg-purple-50 border-purple-300'
+                    : 'bg-white hover:border-purple-200',
                 )}
               >
                 <div className="flex items-center gap-3">
@@ -80,7 +82,7 @@ export default function PersonasTab({
               </button>
             ))}
           </div>
-          
+
           {/* Persona Detail */}
           <div className="lg:col-span-2 bg-white rounded-xl border overflow-hidden">
             {selectedPersona ? (

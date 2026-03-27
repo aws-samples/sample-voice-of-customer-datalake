@@ -11,16 +11,23 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, BarChart, Bar } from 'recharts'
-import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap, FileDown } from 'lucide-react'
+import {
+  MessageSquare, TrendingUp, AlertTriangle, Users, Zap, FileDown,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { api, getDaysFromRange } from '../../api/client'
-import type { MetricsSummary, SentimentBreakdown, CategoryBreakdown, SourceBreakdown, FeedbackItem } from '../../api/client'
-import { useConfigStore } from '../../store/configStore'
-import MetricCard from '../../components/MetricCard'
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, BarChart, Bar,
+} from 'recharts'
+import { getDaysFromRange } from '../../api/baseUrl'
+import { api } from '../../api/client'
 import FeedbackCard from '../../components/FeedbackCard'
+import MetricCard from '../../components/MetricCard'
 import SocialFeed from '../../components/SocialFeed'
+import { useConfigStore } from '../../store/configStore'
 import { generateDashboardPDF } from './dashboardPdfGenerator'
+import type {
+  MetricsSummary, SentimentBreakdown, CategoryBreakdown, SourceBreakdown, FeedbackItem,
+} from '../../api/types'
 
 const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
 
@@ -52,7 +59,9 @@ interface MetricsGridProps {
   sourcesCount: number
 }
 
-function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
+function MetricsGrid({
+  summary, sourcesCount,
+}: Readonly<MetricsGridProps>) {
   const { t } = useTranslation()
   const avgSentiment = summary ? Number(summary.avg_sentiment) : 0
   const sentimentTrend = avgSentiment > 0 ? 'up' : 'down'
@@ -62,7 +71,7 @@ function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
       <MetricCard
         title={t('metrics.totalFeedback')}
-        value={summary?.total_feedback.toLocaleString() || 0}
+        value={summary?.total_feedback.toLocaleString() ?? 0}
         icon={<MessageSquare size={24} />}
         color="blue"
       />
@@ -75,7 +84,7 @@ function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
       />
       <MetricCard
         title={t('metrics.urgentIssues')}
-        value={summary?.urgent_count || 0}
+        value={summary?.urgent_count ?? 0}
         icon={<AlertTriangle size={24} />}
         color="orange"
       />
@@ -90,12 +99,15 @@ function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
 }
 
 interface TrendChartProps {
-  dailyTotals: Array<{ date: string; count: number }> | undefined
+  dailyTotals: Array<{
+    date: string;
+    count: number
+  }> | undefined
 }
 
 function TrendChart({ dailyTotals }: Readonly<TrendChartProps>) {
   const { t } = useTranslation('dashboard')
-  const sortedData = [...(dailyTotals || [])].sort((a, b) => a.date.localeCompare(b.date))
+  const sortedData = [...(dailyTotals ?? [])].sort((a, b) => a.date.localeCompare(b.date))
 
   return (
     <div className="card !p-4 sm:!p-6">
@@ -118,16 +130,30 @@ function TrendChart({ dailyTotals }: Readonly<TrendChartProps>) {
 function prepareSentimentPieData(sentiment: SentimentBreakdown | undefined, t: (key: string) => string) {
   if (!sentiment) return []
   return [
-    { name: t('sentiment.positive'), value: sentiment.breakdown.positive || 0, fill: COLORS[0] },
-    { name: t('sentiment.neutral'), value: sentiment.breakdown.neutral || 0, fill: COLORS[1] },
-    { name: t('sentiment.negative'), value: sentiment.breakdown.negative || 0, fill: COLORS[2] },
-    { name: t('sentiment.mixed'), value: sentiment.breakdown.mixed || 0, fill: COLORS[3] },
-  ].filter(d => d.value > 0)
+    {
+      name: t('sentiment.positive'),
+      value: sentiment.breakdown.positive,
+      fill: COLORS[0],
+    },
+    {
+      name: t('sentiment.neutral'),
+      value: sentiment.breakdown.neutral,
+      fill: COLORS[1],
+    },
+    {
+      name: t('sentiment.negative'),
+      value: sentiment.breakdown.negative,
+      fill: COLORS[2],
+    },
+    {
+      name: t('sentiment.mixed'),
+      value: sentiment.breakdown.mixed,
+      fill: COLORS[3],
+    },
+  ].filter((d) => d.value > 0)
 }
 
-interface SentimentChartProps {
-  sentiment: SentimentBreakdown | undefined
-}
+interface SentimentChartProps { sentiment: SentimentBreakdown | undefined }
 
 function SentimentChart({ sentiment }: Readonly<SentimentChartProps>) {
   const { t } = useTranslation()
@@ -148,7 +174,9 @@ function SentimentChart({ sentiment }: Readonly<SentimentChartProps>) {
               outerRadius="70%"
               paddingAngle={2}
               dataKey="value"
-              label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+              label={({
+                name, percent,
+              }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
               labelLine={{ strokeWidth: 1 }}
             />
             <Tooltip />
@@ -163,12 +191,13 @@ function prepareCategoryData(categories: CategoryBreakdown | undefined) {
   if (!categories) return []
   return Object.entries(categories.categories)
     .slice(0, 8)
-    .map(([name, value]) => ({ name, value }))
+    .map(([name, value]) => ({
+      name,
+      value,
+    }))
 }
 
-interface CategoryChartProps {
-  categories: CategoryBreakdown | undefined
-}
+interface CategoryChartProps { categories: CategoryBreakdown | undefined }
 
 function CategoryChart({ categories }: Readonly<CategoryChartProps>) {
   const { t } = useTranslation('dashboard')
@@ -179,7 +208,10 @@ function CategoryChart({ categories }: Readonly<CategoryChartProps>) {
       <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('topIssueCategories')}</h3>
       <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <BarChart data={barData} layout="vertical" margin={{ left: 0, right: 10 }}>
+          <BarChart data={barData} layout="vertical" margin={{
+            left: 0,
+            right: 10,
+          }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis type="number" tick={{ fontSize: 10 }} />
             <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={80} />
@@ -195,12 +227,13 @@ function CategoryChart({ categories }: Readonly<CategoryChartProps>) {
 function prepareSourceData(sources: SourceBreakdown | undefined) {
   if (!sources) return []
   return Object.entries(sources.sources)
-    .map(([name, value]) => ({ name: name.replace('_', ' '), value }))
+    .map(([name, value]) => ({
+      name: name.replace('_', ' '),
+      value,
+    }))
 }
 
-interface SourceChartProps {
-  sources: SourceBreakdown | undefined
-}
+interface SourceChartProps { sources: SourceBreakdown | undefined }
 
 function SourceChart({ sources }: Readonly<SourceChartProps>) {
   const { t } = useTranslation('dashboard')
@@ -211,7 +244,10 @@ function SourceChart({ sources }: Readonly<SourceChartProps>) {
       <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('feedbackBySource')}</h3>
       <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <BarChart data={barData} margin={{ left: 0, right: 10 }}>
+          <BarChart data={barData} margin={{
+            left: 0,
+            right: 10,
+          }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={60} />
             <YAxis tick={{ fontSize: 10 }} width={35} />
@@ -229,7 +265,9 @@ interface UrgentFeedbackProps {
   count: number
 }
 
-function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
+function UrgentFeedback({
+  items, count,
+}: Readonly<UrgentFeedbackProps>) {
   const { t } = useTranslation('dashboard')
   const hasItems = items && items.length > 0
 
@@ -239,7 +277,7 @@ function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
         <AlertTriangle className="text-orange-500 flex-shrink-0" size={20} />
         <span>{t('urgentIssues', { count })}</span>
       </h3>
-      {hasItems ? (
+      {hasItems === true ? (
         <div className="space-y-3 max-h-[400px] sm:max-h-[600px] overflow-y-auto">
           {items.slice(0, 6).map((item) => (
             <FeedbackCard key={item.feedback_id} feedback={item} compact />
@@ -256,49 +294,59 @@ function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
 
 function buildSentimentEntries(sentiment: SentimentBreakdown | undefined) {
   if (!sentiment) return []
-  return Object.entries(sentiment.breakdown).filter(([, v]) => v > 0).map(([name, value]) => ({ name, value }))
+  return Object.entries(sentiment.breakdown).filter(([, v]) => v > 0).map(([name, value]) => ({
+    name,
+    value,
+  }))
 }
 
 function buildCategoryEntries(categories: CategoryBreakdown | undefined) {
   if (!categories) return []
-  return Object.entries(categories.categories).sort(([, a], [, b]) => b - a).slice(0, 10).map(([name, value]) => ({ name, value }))
+  return Object.entries(categories.categories).sort(([, a], [, b]) => b - a).slice(0, 10).map(([name, value]) => ({
+    name,
+    value,
+  }))
 }
 
-function buildSourceEntries(sources: SourceBreakdown | undefined) {
-  if (!sources) return []
-  return Object.entries(sources.sources).map(([name, value]) => ({ name: name.replace('_', ' '), value }))
+interface PDFExportInput {
+  summary: MetricsSummary | undefined
+  sentiment: SentimentBreakdown | undefined
+  categories: CategoryBreakdown | undefined
+  sources: SourceBreakdown | undefined
+  urgentFeedback: {
+    items?: FeedbackItem[];
+    count?: number
+  } | undefined
+  timeRange: string
+  sourcesCount: number
 }
 
-function buildPDFExportData(
-  summary: MetricsSummary | undefined,
-  sentiment: SentimentBreakdown | undefined,
-  categories: CategoryBreakdown | undefined,
-  sources: SourceBreakdown | undefined,
-  urgentFeedback: { items?: FeedbackItem[]; count?: number } | undefined,
-  timeRange: string,
-  sourcesCount: number,
-) {
+function buildPDFExportData(input: PDFExportInput) {
   return {
-    timeRange,
-    totalFeedback: summary?.total_feedback ?? 0,
-    avgSentiment: summary ? Number(summary.avg_sentiment) : 0,
-    urgentCount: summary?.urgent_count ?? 0,
-    sourcesCount,
-    dailyTotals: summary?.daily_totals ?? [],
-    sentimentBreakdown: buildSentimentEntries(sentiment),
-    categoryBreakdown: buildCategoryEntries(categories),
-    sourceBreakdown: buildSourceEntries(sources),
-    urgentItems: urgentFeedback?.items ?? [],
+    timeRange: input.timeRange,
+    totalFeedback: input.summary?.total_feedback ?? 0,
+    avgSentiment: input.summary ? Number(input.summary.avg_sentiment) : 0,
+    urgentCount: input.summary?.urgent_count ?? 0,
+    sourcesCount: input.sourcesCount,
+    dailyTotals: input.summary?.daily_totals ?? [],
+    sentimentBreakdown: buildSentimentEntries(input.sentiment),
+    categoryBreakdown: buildCategoryEntries(input.categories),
+    sourceBreakdown: prepareSourceData(input.sources),
+    urgentItems: input.urgentFeedback?.items ?? [],
   }
 }
 
 export default function Dashboard() {
   const { t } = useTranslation('dashboard')
-  const { timeRange, customDateRange, config } = useConfigStore()
+  const {
+    timeRange, customDateRange, config,
+  } = useConfigStore()
   const days = getDaysFromRange(timeRange, customDateRange)
-  const isConfigured = !!config.apiEndpoint
+  const isConfigured = config.apiEndpoint !== ''
 
-  const { data: summary, isLoading: summaryLoading } = useQuery({
+  const {
+    data: summary, isLoading: summaryLoading,
+  } = useQuery({
     queryKey: ['summary', days],
     queryFn: () => api.getSummary(days),
     enabled: isConfigured,
@@ -324,7 +372,10 @@ export default function Dashboard() {
 
   const { data: urgentFeedback } = useQuery({
     queryKey: ['urgent', days],
-    queryFn: () => api.getUrgentFeedback({ days, limit: 5 }),
+    queryFn: () => api.getUrgentFeedback({
+      days,
+      limit: 5,
+    }),
     enabled: isConfigured,
   })
 
@@ -336,11 +387,19 @@ export default function Dashboard() {
     return <LoadingState />
   }
 
-  const sourcesCount = Object.keys(sources?.sources || {}).length
+  const sourcesCount = Object.keys(sources?.sources ?? {}).length
 
   const exportPDF = () => {
     try {
-      generateDashboardPDF(buildPDFExportData(summary, sentiment, categories, sources, urgentFeedback, timeRange, sourcesCount))
+      generateDashboardPDF(buildPDFExportData({
+        summary,
+        sentiment,
+        categories,
+        sources,
+        urgentFeedback,
+        timeRange,
+        sourcesCount,
+      }))
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error('PDF export failed:', error)
@@ -379,9 +438,9 @@ export default function Dashboard() {
             <Zap className="text-blue-500 flex-shrink-0" size={20} />
             {t('liveSocialFeed')}
           </h3>
-          <SocialFeed limit={8} showFilters={true} />
+          <SocialFeed limit={8} showFilters />
         </div>
-        <UrgentFeedback items={urgentFeedback?.items} count={urgentFeedback?.count || 0} />
+        <UrgentFeedback items={urgentFeedback?.items} count={urgentFeedback?.count ?? 0} />
       </div>
     </div>
   )

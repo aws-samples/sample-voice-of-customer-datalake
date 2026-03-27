@@ -18,7 +18,7 @@ describe('ConfirmModal', () => {
   describe('visibility', () => {
     it('renders nothing when isOpen is false', () => {
       const { container } = render(<ConfirmModal {...defaultProps} isOpen={false} />)
-      expect(container.firstChild).toBeNull()
+      expect(container).toBeEmptyDOMElement()
     })
 
     it('renders modal when isOpen is true', () => {
@@ -99,12 +99,9 @@ describe('ConfirmModal', () => {
       const onCancel = vi.fn()
       render(<ConfirmModal {...defaultProps} onCancel={onCancel} />)
       
-      // Click the backdrop (the absolute inset-0 div)
-      const backdrop = document.querySelector('.bg-black\\/50')
-      if (backdrop) {
-        await user.click(backdrop)
-        expect(onCancel).toHaveBeenCalledTimes(1)
-      }
+      const backdrop = screen.getByTestId('confirm-modal-backdrop')
+      await user.click(backdrop)
+      expect(onCancel).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -119,9 +116,7 @@ describe('ConfirmModal', () => {
     it('shows loading spinner when isLoading is true', () => {
       render(<ConfirmModal {...defaultProps} isLoading={true} />)
       
-      // The Loader2 icon should be present (it has animate-spin class)
-      const confirmButton = screen.getByRole('button', { name: 'Delete' })
-      expect(confirmButton.querySelector('.animate-spin')).toBeInTheDocument()
+      expect(screen.getByTestId('confirm-modal-spinner')).toBeInTheDocument()
     })
   })
 })

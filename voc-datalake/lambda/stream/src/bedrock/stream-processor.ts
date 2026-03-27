@@ -12,7 +12,7 @@ import type { ConverseStreamOutput } from '@aws-sdk/client-bedrock-runtime';
 import { sendSSE } from '../lib/streaming.js';
 
 /** Matches the Smithy DocumentType used by the Bedrock SDK for tool inputs. */
-export type DocumentType = null | boolean | number | string | DocumentType[] | { [prop: string]: DocumentType };
+type DocumentType = null | boolean | number | string | DocumentType[] | { [prop: string]: DocumentType };
 
 export interface StreamState {
   stopReason: string | null;

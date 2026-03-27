@@ -20,6 +20,9 @@ vi.mock('../../api/client', () => ({
     getFeedback: vi.fn(),
     getSources: vi.fn(),
   },
+}))
+
+vi.mock('../../api/baseUrl', () => ({
   getDaysFromRange: vi.fn().mockReturnValue(7),
 }))
 
@@ -100,6 +103,7 @@ describe('SocialFeed', () => {
       
       renderWithQueryClient(<SocialFeed />)
       
+      // eslint-disable-next-line testing-library/no-node-access
       const skeletons = document.querySelectorAll('.animate-pulse')
       expect(skeletons.length).toBeGreaterThan(0)
     })
@@ -137,8 +141,9 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
+        // eslint-disable-next-line testing-library/no-node-access
         const filledStars = document.querySelectorAll('.text-yellow-400.fill-yellow-400')
-        expect(filledStars.length).toBe(5)
+        expect(filledStars).toHaveLength(5)
       })
     })
 
@@ -249,6 +254,7 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
+        // eslint-disable-next-line testing-library/no-node-access
         const webscraperCard = document.querySelector('.border-l-blue-500')
         expect(webscraperCard).toBeInTheDocument()
       })
@@ -258,6 +264,7 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
+        // eslint-disable-next-line testing-library/no-node-access
         const manualImportCard = document.querySelector('.border-l-purple-500')
         expect(manualImportCard).toBeInTheDocument()
       })

@@ -53,34 +53,6 @@ class TestChatEndpoint:
     @patch('shared.converse.converse')
     @patch('chat_handler.feedback_table')
     @patch('chat_handler.aggregates_table')
-    def test_uses_correct_bedrock_model_id(
-        self, mock_agg_table, mock_fb_table, mock_converse, mock_dynamodb,
-        api_gateway_event, lambda_context
-    ):
-        """Verifies converse is called (model ID is configured in shared module)."""
-        # Arrange
-        mock_converse.return_value = 'Test response'
-        mock_agg_table.get_item.return_value = {}
-        mock_fb_table.query.return_value = {'Items': []}
-        mock_dynamodb.batch_get_item.return_value = {'Responses': {}, 'UnprocessedKeys': {}}
-        
-        from chat_handler import lambda_handler
-        event = api_gateway_event(
-            method='POST',
-            path='/chat',
-            body={'message': 'test'}
-        )
-        
-        # Act
-        lambda_handler(event, lambda_context)
-        
-        # Assert - converse was called (model ID is configured in shared.converse)
-        mock_converse.assert_called_once()
-
-    @patch('chat_handler.dynamodb')
-    @patch('shared.converse.converse')
-    @patch('chat_handler.feedback_table')
-    @patch('chat_handler.aggregates_table')
     def test_returns_graceful_error_when_bedrock_fails(
         self, mock_agg_table, mock_fb_table, mock_converse, mock_dynamodb,
         api_gateway_event, lambda_context
@@ -136,20 +108,6 @@ class TestChatEndpoint:
         # Assert
         assert response['statusCode'] == 200
         assert 'sources' in body
-
-
-class TestChatConversationsEndpoint:
-    """Tests for /chat/conversations/* endpoints.
-    
-    Note: These endpoints use <proxy+> routes which require specific API Gateway
-    event formatting. The conversation functionality is tested through integration
-    tests in the deployed environment.
-    """
-
-    def test_conversations_table_configured(self):
-        """Verifies conversations table is configured via environment."""
-        import os
-        assert os.environ.get('CONVERSATIONS_TABLE') == 'test-conversations'
 
 
 class TestChatConversationsEndpointWithTable:

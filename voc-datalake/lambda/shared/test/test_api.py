@@ -379,3 +379,4 @@ class TestApiHandlerDecorator:
         
         assert len(call_tracker) == 1
         assert call_tracker[0][0] == event
+

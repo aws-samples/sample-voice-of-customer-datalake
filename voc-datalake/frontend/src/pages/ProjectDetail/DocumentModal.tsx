@@ -1,7 +1,9 @@
 /**
  * DocumentModal - Modal for creating/editing documents
  */
-import { X, Loader2, FileText, Pencil } from 'lucide-react'
+import {
+  X, Loader2, FileText, Pencil,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -27,7 +29,7 @@ export default function DocumentModal({
   onSave,
   onClose,
 }: DocumentModalProps) {
-  const isValid = title.trim() && content.trim()
+  const isValid = title.trim() !== '' && content.trim() !== ''
   const { t } = useTranslation('projectDetail')
 
   return (
@@ -40,38 +42,36 @@ export default function DocumentModal({
         <div className="p-6 space-y-4 overflow-y-auto max-h-[60vh]">
           <div>
             <label className="block text-sm font-medium mb-1">{t('documentModal.titleLabel')}</label>
-            <input 
-              type="text" 
-              value={title} 
-              onChange={e => onTitleChange(e.target.value)} 
-              placeholder={t('documentModal.titlePlaceholder')} 
-              className="w-full px-3 py-2 border rounded-lg" 
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => onTitleChange(e.target.value)}
+              placeholder={t('documentModal.titlePlaceholder')}
+              className="w-full px-3 py-2 border rounded-lg"
             />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">{t('documentModal.contentLabel')}</label>
-            <textarea 
-              value={content} 
-              onChange={e => onContentChange(e.target.value)} 
-              placeholder={t('documentModal.contentPlaceholder')} 
-              rows={12} 
-              className="w-full px-3 py-2 border rounded-lg font-mono text-sm" 
+            <textarea
+              value={content}
+              onChange={(e) => onContentChange(e.target.value)}
+              placeholder={t('documentModal.contentPlaceholder')}
+              rows={12}
+              className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
             />
           </div>
-          {content && (
-            <div>
-              <label className="block text-sm font-medium mb-1">{t('documentModal.preview')}</label>
-              <div className="border rounded-lg p-4 prose prose-sm max-w-none bg-gray-50 max-h-48 overflow-y-auto">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-              </div>
+          {content === '' ? null : <div>
+            <label className="block text-sm font-medium mb-1">{t('documentModal.preview')}</label>
+            <div className="border rounded-lg p-4 prose prose-sm max-w-none bg-gray-50 max-h-48 overflow-y-auto">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
             </div>
-          )}
+          </div>}
         </div>
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('documentModal.cancel')}</button>
-          <button 
-            onClick={onSave} 
-            disabled={!isValid || isSaving} 
+          <button
+            onClick={onSave}
+            disabled={!isValid || isSaving}
             className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50"
           >
             {isSaving ? (

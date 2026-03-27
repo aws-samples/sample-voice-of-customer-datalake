@@ -1,8 +1,10 @@
 /**
  * ImportPersonaModal - Modal for importing personas from PDF, image, or text
  */
-import { Upload, FileUp, Image, FileText, CheckCircle, X, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
+import {
+  Upload, FileUp, Image, FileText, CheckCircle, X, Loader2,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 type ImportType = 'pdf' | 'image' | 'text'
@@ -34,7 +36,7 @@ function getUploadLabel(importType: ImportType): string {
 
 // Import type button component
 function ImportTypeButton({
-  icon: Icon,
+  icon,
   label,
   description,
   isSelected,
@@ -46,15 +48,16 @@ function ImportTypeButton({
   isSelected: boolean
   onClick: () => void
 }>) {
+  const IconElement = icon
   return (
     <button
       onClick={onClick}
       className={clsx(
         'p-4 rounded-lg border text-center',
-        isSelected ? 'bg-purple-50 border-purple-300' : 'bg-white border-gray-200 hover:border-purple-200'
+        isSelected ? 'bg-purple-50 border-purple-300' : 'bg-white border-gray-200 hover:border-purple-200',
       )}
     >
-      <Icon size={24} className="mx-auto mb-2 text-purple-500" />
+      <IconElement size={24} className="mx-auto mb-2 text-purple-500" />
       <div className="font-medium">{label}</div>
       <div className="text-xs text-gray-500">{description}</div>
     </button>
@@ -79,19 +82,19 @@ function FileUploadSection({
       <label className="block">
         <div className={clsx(
           'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
-          importFileName ? 'border-purple-300 bg-purple-50' : 'border-gray-300 hover:border-purple-300'
+          importFileName === '' ? 'border-gray-300 hover:border-purple-300' : 'border-purple-300 bg-purple-50',
         )}>
-          {importFileName ? (
-            <div>
-              <CheckCircle size={32} className="mx-auto mb-2 text-purple-500" />
-              <p className="font-medium text-purple-700">{importFileName}</p>
-              <p className="text-sm text-gray-500 mt-1">Click to change file</p>
-            </div>
-          ) : (
+          {importFileName === '' ? (
             <div>
               <Upload size={32} className="mx-auto mb-2 text-gray-400" />
               <p className="text-gray-600">Click to upload or drag and drop</p>
               <p className="text-sm text-gray-400 mt-1">{getFileTypeLabel(importType)}</p>
+            </div>
+          ) : (
+            <div>
+              <CheckCircle size={32} className="mx-auto mb-2 text-purple-500" />
+              <p className="font-medium text-purple-700">{importFileName}</p>
+              <p className="text-sm text-gray-500 mt-1">Click to change file</p>
             </div>
           )}
         </div>
@@ -184,7 +187,7 @@ export default function ImportPersonaModal({
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('importPersona.cancel')}</button>
           <button
             onClick={onImport}
-            disabled={!importContent || isImporting}
+            disabled={importContent === '' || isImporting}
             className="flex items-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50 hover:bg-purple-700"
           >
             {isImporting ? (

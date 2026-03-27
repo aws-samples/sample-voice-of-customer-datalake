@@ -17,7 +17,7 @@ export const attachmentSchema = z.object({
 
 export type Attachment = z.infer<typeof attachmentSchema>;
 
-export const historyMessageSchema = z.object({
+const historyMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string().min(1),
 });

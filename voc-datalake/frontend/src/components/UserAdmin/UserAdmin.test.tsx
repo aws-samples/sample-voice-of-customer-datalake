@@ -56,6 +56,7 @@ describe('UserAdmin', () => {
       
       render(<UserAdmin />, { wrapper: createWrapper() })
       
+      // eslint-disable-next-line testing-library/no-node-access
       expect(document.querySelector('.animate-spin')).toBeInTheDocument()
     })
   })

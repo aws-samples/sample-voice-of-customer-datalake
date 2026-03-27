@@ -140,7 +140,6 @@ const apiStack = new VocApiStack(app, 'VocApiStack', {
   userPool: coreStack.userPool,
   userPoolClient: coreStack.userPoolClient,
   identityPool: coreStack.identityPool,
-  authenticatedRole: coreStack.authenticatedRole,
   processingQueueUrl: ingestionStack.processingQueue.queueUrl,
   processingQueueArn: ingestionStack.processingQueue.queueArn,
   secretsArn: ingestionStack.secretsArn,

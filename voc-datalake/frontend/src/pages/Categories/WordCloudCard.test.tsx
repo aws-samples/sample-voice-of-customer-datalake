@@ -51,6 +51,7 @@ describe('WordCloudCard', () => {
     render(<WordCloudCard {...defaultProps} selectedKeywords={['delivery']} onClearKeywords={onClear} />)
 
     await user.click(screen.getByText(/clear \(1\)/i))
+    // eslint-disable-next-line vitest/prefer-called-with
     expect(onClear).toHaveBeenCalled()
   })
 

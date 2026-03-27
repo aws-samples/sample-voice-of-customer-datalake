@@ -121,7 +121,6 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── DocumentExportMenu/   # Export documents
     │   │   │   ├── FeedbackCard/         # Feedback item display
     │   │   │   ├── FeedbackCarousel/     # Carousel for feedback items
-    │   │   │   ├── LanguageSwitcher/     # i18n language switcher
     │   │   │   ├── Layout/               # Main layout with sidebar (reads menu-config.json)
     │   │   │   ├── MetricCard/           # Dashboard metric card
     │   │   │   ├── PageLoader/           # Page loading indicator

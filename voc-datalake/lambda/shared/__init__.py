@@ -3,7 +3,6 @@ Shared utilities for VoC Lambda functions.
 """
 
 from shared.logging import logger, tracer, metrics
-from shared.http import fetch_with_retry
 from shared.aws import (
     get_dynamodb_resource,
     get_s3_client,
@@ -57,8 +56,6 @@ __all__ = [
     "logger",
     "tracer",
     "metrics",
-    # HTTP
-    "fetch_with_retry",
     # AWS
     "get_dynamodb_resource",
     "get_s3_client",

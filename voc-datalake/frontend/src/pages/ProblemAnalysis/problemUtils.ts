@@ -2,30 +2,7 @@
  * Shared utilities for problem analysis — problem ID generation and resolved filtering.
  */
 
-import type { FeedbackItem } from '../../api/client'
-
-interface ProblemGroup {
-  problem: string
-  similarProblems: string[]
-  rootCause: string | null
-  items: FeedbackItem[]
-  avgSentiment: number
-  urgentCount: number
-}
-
-interface SubcategoryGroup {
-  subcategory: string
-  problems: ProblemGroup[]
-  totalItems: number
-  urgentCount: number
-}
-
-interface CategoryGroup {
-  category: string
-  subcategories: SubcategoryGroup[]
-  totalItems: number
-  urgentCount: number
-}
+import type { CategoryGroup } from './problemGrouping'
 
 /** Generate a deterministic problem ID from category + subcategory + problem text. */
 export function generateProblemId(category: string, subcategory: string, problem: string): string {
@@ -41,27 +18,37 @@ export function generateProblemId(category: string, subcategory: string, problem
 export function filterResolvedProblems(
   groups: CategoryGroup[],
   resolvedIds: Set<string>,
-  showResolved: boolean
+  showResolved: boolean,
 ): CategoryGroup[] {
   if (showResolved || resolvedIds.size === 0) return groups
 
   return groups
-    .map(cat => {
+    .map((cat) => {
       const subcategories = cat.subcategories
-        .map(sub => {
-          const problems = sub.problems.filter(p => {
+        .map((sub) => {
+          const problems = sub.problems.filter((p) => {
             const id = generateProblemId(cat.category, sub.subcategory, p.problem)
             return !resolvedIds.has(id)
           })
           const totalItems = problems.reduce((sum, p) => sum + p.items.length, 0)
           const urgentCount = problems.reduce((sum, p) => sum + p.urgentCount, 0)
-          return { ...sub, problems, totalItems, urgentCount }
+          return {
+            ...sub,
+            problems,
+            totalItems,
+            urgentCount,
+          }
         })
-        .filter(sub => sub.problems.length > 0)
+        .filter((sub) => sub.problems.length > 0)
 
       const totalItems = subcategories.reduce((sum, s) => sum + s.totalItems, 0)
       const urgentCount = subcategories.reduce((sum, s) => sum + s.urgentCount, 0)
-      return { ...cat, subcategories, totalItems, urgentCount }
+      return {
+        ...cat,
+        subcategories,
+        totalItems,
+        urgentCount,
+      }
     })
-    .filter(cat => cat.subcategories.length > 0)
+    .filter((cat) => cat.subcategories.length > 0)
 }

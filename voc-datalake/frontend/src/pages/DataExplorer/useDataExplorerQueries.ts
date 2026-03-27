@@ -4,7 +4,9 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { api, getDaysFromRange } from '../../api/client'
+import { getDaysFromRange } from '../../api/baseUrl'
+import { api } from '../../api/client'
+import { dataExplorerApi } from '../../api/dataExplorerApi'
 import { useConfigStore } from '../../store/configStore'
 
 type ViewMode = 's3-raw' | 'dynamodb-processed' | 'dynamodb-categories'
@@ -13,33 +15,39 @@ export function useDataExplorerQueries(
   viewMode: ViewMode,
   selectedBucket: string,
   s3Path: string[],
-  sourceFilter: string
+  sourceFilter: string,
 ) {
-  const { timeRange, customDateRange, config } = useConfigStore()
+  const {
+    timeRange, customDateRange, config,
+  } = useConfigStore()
   const days = getDaysFromRange(timeRange, customDateRange)
-  const isConfigured = !!config.apiEndpoint
+  const isConfigured = config.apiEndpoint !== ''
 
   const bucketsQuery = useQuery({
     queryKey: ['data-explorer-buckets'],
-    queryFn: () => api.getDataExplorerBuckets(),
+    queryFn: () => dataExplorerApi.getDataExplorerBuckets(),
     enabled: isConfigured,
   })
 
   const s3Query = useQuery({
     queryKey: ['data-explorer-s3', selectedBucket, s3Path.join('/')],
-    queryFn: () => api.getDataExplorerS3(s3Path.join('/'), selectedBucket),
+    queryFn: () => dataExplorerApi.getDataExplorerS3(s3Path.join('/'), selectedBucket),
     enabled: isConfigured && viewMode === 's3-raw',
   })
 
   const feedbackQuery = useQuery({
     queryKey: ['data-explorer-feedback', days, sourceFilter],
-    queryFn: () => api.getFeedback({ days, source: sourceFilter || undefined, limit: 100 }),
+    queryFn: () => api.getFeedback({
+      days,
+      source: sourceFilter === '' ? undefined : sourceFilter,
+      limit: 100,
+    }),
     enabled: isConfigured && viewMode === 'dynamodb-processed',
   })
 
   const categoriesQuery = useQuery({
     queryKey: ['data-explorer-categories', days, sourceFilter],
-    queryFn: () => api.getCategories(days, sourceFilter || undefined),
+    queryFn: () => api.getCategories(days, sourceFilter === '' ? undefined : sourceFilter),
     enabled: isConfigured && viewMode === 'dynamodb-categories',
   })
 
@@ -50,9 +58,9 @@ export function useDataExplorerQueries(
   })
 
   const refetch = () => {
-    if (viewMode === 's3-raw') s3Query.refetch()
-    else if (viewMode === 'dynamodb-processed') feedbackQuery.refetch()
-    else categoriesQuery.refetch()
+    if (viewMode === 's3-raw') void s3Query.refetch()
+    else if (viewMode === 'dynamodb-processed') void feedbackQuery.refetch()
+    else void categoriesQuery.refetch()
   }
 
   return {

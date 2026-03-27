@@ -77,6 +77,7 @@ Object.defineProperty(window, 'matchMedia', {
 })
 
 // Mock ResizeObserver for chart components
+// eslint-disable-next-line vitest/prefer-spy-on -- ResizeObserver doesn't exist in test env
 global.ResizeObserver = vi.fn().mockImplementation(() => ({
   observe: vi.fn(),
   unobserve: vi.fn(),
@@ -84,17 +85,26 @@ global.ResizeObserver = vi.fn().mockImplementation(() => ({
 }))
 
 // Mock IntersectionObserver for lazy loading
+// eslint-disable-next-line vitest/prefer-spy-on -- IntersectionObserver doesn't exist in test env
 global.IntersectionObserver = vi.fn().mockImplementation(() => ({
   observe: vi.fn(),
   unobserve: vi.fn(),
   disconnect: vi.fn(),
+  takeRecords: vi.fn(),
   root: null,
   rootMargin: '',
   thresholds: [],
 }))
 
 // Mock scrollTo for navigation tests
-window.scrollTo = vi.fn()
+ 
+window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
+
+// Mock URL.createObjectURL/revokeObjectURL for blob handling
+// eslint-disable-next-line vitest/prefer-spy-on -- doesn't exist in node env
+URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-url')
+// eslint-disable-next-line vitest/prefer-spy-on -- doesn't exist in node env
+URL.revokeObjectURL = vi.fn()
 
 // Mock localStorage
 const localStorageMock = {
@@ -106,16 +116,11 @@ const localStorageMock = {
 Object.defineProperty(window, 'localStorage', { value: localStorageMock })
 
 // Mock clipboard API
-const clipboardWriteText = vi.fn().mockResolvedValue(undefined)
-const clipboardReadText = vi.fn().mockResolvedValue('')
-
 Object.defineProperty(navigator, 'clipboard', {
   value: {
-    writeText: clipboardWriteText,
-    readText: clipboardReadText,
+    writeText: vi.fn().mockResolvedValue(undefined),
+    readText: vi.fn().mockResolvedValue(''),
   },
   writable: true,
   configurable: true,
 })
-
-export { clipboardWriteText, clipboardReadText }

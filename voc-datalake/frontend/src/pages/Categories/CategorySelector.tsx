@@ -1,7 +1,11 @@
-import { Filter, X, ChevronDown, Star } from 'lucide-react'
 import clsx from 'clsx'
+import {
+  Filter, X, ChevronDown, Star,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { CategoryData, SentimentFilter } from './types'
+import type {
+  CategoryData, SentimentFilter,
+} from './types'
 
 interface CategorySelectorProps {
   readonly categoryData: CategoryData[]
@@ -39,18 +43,16 @@ export function CategorySelector({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
         <h2 className="text-base sm:text-lg font-semibold">{t('selectCategoriesToExplore')}</h2>
         <div className="flex items-center gap-2">
-          {hasActiveFilters && (
-            <button onClick={onClearFilters} className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
-              <X size={14} />
-              <span className="hidden xs:inline">{t('clearFilters')}</span>
-              <span className="xs:hidden">{t('clear')}</span>
-            </button>
-          )}
+          {hasActiveFilters ? <button onClick={onClearFilters} className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+            <X size={14} />
+            <span className="hidden xs:inline">{t('clearFilters')}</span>
+            <span className="xs:hidden">{t('clear')}</span>
+          </button> : null}
           <button
             onClick={onToggleFilters}
             className={clsx(
               'flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors active:scale-95',
-              showFilters ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 hover:bg-gray-200'
+              showFilters ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 hover:bg-gray-200',
             )}
           >
             <Filter size={14} />
@@ -60,14 +62,12 @@ export function CategorySelector({
         </div>
       </div>
 
-      {showFilters && (
-        <AdvancedFilters
-          minRating={minRating}
-          onMinRatingChange={onMinRatingChange}
-          sentimentFilter={sentimentFilter}
-          onSentimentFilterChange={onSentimentFilterChange}
-        />
-      )}
+      {showFilters ? <AdvancedFilters
+        minRating={minRating}
+        onMinRatingChange={onMinRatingChange}
+        sentimentFilter={sentimentFilter}
+        onSentimentFilterChange={onSentimentFilterChange}
+      /> : null}
 
       <div className="flex flex-wrap gap-1.5 sm:gap-2">
         {categoryData.map((category) => {
@@ -79,7 +79,7 @@ export function CategorySelector({
               onClick={() => onToggleCategory(category.name)}
               className={clsx(
                 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full border-2 transition-all text-xs sm:text-sm active:scale-95',
-                isSelected ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                isSelected ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50',
               )}
             >
               <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
@@ -112,7 +112,7 @@ function AdvancedFilters({
       <div>
         <label className="block text-xs text-gray-500 mb-1">{t('minRating')}</label>
         <div className="flex gap-0.5 sm:gap-1">
-          {[0, 1, 2, 3, 4, 5].map(rating => (
+          {[0, 1, 2, 3, 4, 5].map((rating) => (
             <button
               key={rating}
               onClick={() => onMinRatingChange(rating)}

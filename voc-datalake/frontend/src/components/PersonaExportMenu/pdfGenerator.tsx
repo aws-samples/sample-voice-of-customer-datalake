@@ -4,9 +4,16 @@
  * @module components/PersonaExportMenu/pdfGenerator
  */
 
-import type { ProjectPersona } from '../../api/client'
 import { openPrintWindow } from '../../utils/printUtils'
 import PersonaPDFContent from './PersonaPDFContent'
+import type { ProjectPersona } from '../../api/types'
+
+class PdfGenerationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PdfGenerationError'
+  }
+}
 
 /**
  * Opens a print-friendly view of the persona profile.
@@ -19,6 +26,6 @@ export function generatePersonaPDF(persona: ProjectPersona): void {
   })
 
   if (!printWindow) {
-    throw new Error('Failed to open print window. Please allow popups for this site.')
+    throw new PdfGenerationError('Failed to open print window. Please allow popups for this site.')
   }
 }

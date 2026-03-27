@@ -3,17 +3,41 @@
  * @module pages/Scrapers/constants
  */
 
-import type { ScraperConfig } from '../../api/client'
+import type { ScraperConfig } from '../../api/types'
 
 export const FREQUENCY_OPTIONS = [
-  { value: 0, label: 'Manual only' },
-  { value: 15, label: 'Every 15 minutes' },
-  { value: 30, label: 'Every 30 minutes' },
-  { value: 60, label: 'Every hour' },
-  { value: 180, label: 'Every 3 hours' },
-  { value: 360, label: 'Every 6 hours' },
-  { value: 720, label: 'Every 12 hours' },
-  { value: 1440, label: 'Daily' },
+  {
+    value: 0,
+    label: 'Manual only',
+  },
+  {
+    value: 15,
+    label: 'Every 15 minutes',
+  },
+  {
+    value: 30,
+    label: 'Every 30 minutes',
+  },
+  {
+    value: 60,
+    label: 'Every hour',
+  },
+  {
+    value: 180,
+    label: 'Every 3 hours',
+  },
+  {
+    value: 360,
+    label: 'Every 6 hours',
+  },
+  {
+    value: 720,
+    label: 'Every 12 hours',
+  },
+  {
+    value: 1440,
+    label: 'Daily',
+  },
 ] as const
 
 export const DEFAULT_SCRAPER: Omit<ScraperConfig, 'id'> = {
@@ -30,5 +54,10 @@ export const DEFAULT_SCRAPER: Omit<ScraperConfig, 'id'> = {
   date_selector: '',
   author_selector: '',
   link_selector: 'a',
-  pagination: { enabled: false, param: 'page', max_pages: 5, start: 1 },
+  pagination: {
+    enabled: false,
+    param: 'page',
+    max_pages: 5,
+    start: 1,
+  },
 }

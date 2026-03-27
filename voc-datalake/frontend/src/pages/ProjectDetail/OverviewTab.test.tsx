@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import OverviewTab from './OverviewTab'
-import type { Project, ProjectPersona, ProjectDocument, ProjectJob } from '../../api/client'
+import type { Project, ProjectPersona, ProjectDocument, ProjectJob } from '../../api/types'
 
 vi.mock('../../store/configStore', () => ({
   useConfigStore: () => ({

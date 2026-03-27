@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable security/detect-non-literal-fs-filename -- build script uses dynamic paths */
 /**
  * Fix all missing/empty i18n translations using Amazon Bedrock (Claude Haiku).
  * Reads English source, finds gaps in target locales, translates in batches.
@@ -231,3 +232,4 @@ for (const lang of LANGUAGES) {
 }
 
 console.log(`\n✅ Fixed ${totalFixed} translations across ${LANGUAGES.length} locales`)
+/* eslint-enable security/detect-non-literal-fs-filename */

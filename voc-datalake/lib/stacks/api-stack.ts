@@ -34,7 +34,6 @@ export interface VocApiStackProps extends cdk.StackProps {
   userPool: cognito.UserPool;
   userPoolClient: cognito.UserPoolClient;
   identityPool: cognito.CfnIdentityPool;
-  authenticatedRole: iam.Role;
 
   // Ingestion stack resources
   processingQueueUrl: string;
@@ -926,6 +925,10 @@ export class VocApiStack extends cdk.Stack {
     intCredentialsResource.addMethod('PUT', integrationsIntegration, authMethodOptions);
     intCredentialsResource.addMethod('GET', integrationsIntegration, authMethodOptions);
     intSourceResource.addResource('test').addMethod('POST', integrationsIntegration, authMethodOptions);
+    const intAppsResource = intSourceResource.addResource('apps');
+    intAppsResource.addMethod('GET', integrationsIntegration, authMethodOptions);
+    intAppsResource.addMethod('POST', integrationsIntegration, authMethodOptions);
+    intAppsResource.addResource('{appId}').addMethod('DELETE', integrationsIntegration, authMethodOptions);
 
     // /sources/*
     const sourcesResource = this.api.root.addResource('sources');

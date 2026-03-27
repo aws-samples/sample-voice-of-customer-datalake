@@ -3,16 +3,23 @@
  * @module pages/DataExplorer/CategoriesView
  */
 
-import { FolderOpen, Loader2 } from 'lucide-react'
+import {
+  FolderOpen, Loader2,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 interface CategoriesViewProps {
-  readonly data: { period_days: number; categories: Record<string, number> } | undefined
+  readonly data: {
+    period_days: number;
+    categories: Record<string, number>
+  } | undefined
   readonly loading: boolean
   readonly error: Error | null
 }
 
-export default function CategoriesView({ data, loading, error }: CategoriesViewProps) {
+export default function CategoriesView({
+  data, loading, error,
+}: CategoriesViewProps) {
   const { t } = useTranslation('dataExplorer')
 
   if (loading) {
@@ -45,7 +52,11 @@ export default function CategoriesView({ data, loading, error }: CategoriesViewP
   return (
     <div>
       <div className="bg-gray-50 px-4 py-3 border-b text-sm text-gray-600">
-        {t('categories.summary', { count: sorted.length, total, days: data?.period_days })}
+        {t('categories.summary', {
+          count: sorted.length,
+          total,
+          days: data?.period_days,
+        })}
       </div>
       <div className="divide-y">
         {sorted.map(([cat, count]) => {

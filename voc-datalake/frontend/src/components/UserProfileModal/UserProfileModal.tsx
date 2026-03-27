@@ -8,12 +8,14 @@
  * @module components/UserProfileModal
  */
 
-import { useState } from 'react'
-import { X, User, Shield, Eye, Lock, Loader2, CheckCircle2, AlertCircle, EyeOff } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
-import { useAuthStore } from '../../store/authStore'
-import { authService } from '../../services/auth'
 import clsx from 'clsx'
+import {
+  X, User, Shield, Eye, Lock, Loader2, CheckCircle2, AlertCircle, EyeOff,
+} from 'lucide-react'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { authService } from '../../services/auth'
+import { useAuthStore } from '../../store/authStore'
 
 interface UserProfileModalProps {
   readonly isOpen: boolean
@@ -22,22 +24,27 @@ interface UserProfileModalProps {
 
 function getPasswordError(err: unknown, t: (key: string) => string): string {
   if (err instanceof Error) {
-    if (err.message?.includes('Incorrect')) return t('userProfile.incorrectPassword')
-    return err.message || t('userProfile.failedToChange')
+    if (err.message.includes('Incorrect')) return t('userProfile.incorrectPassword')
+    return err.message === '' ? t('userProfile.failedToChange') : err.message
   }
   return t('userProfile.failedToChange')
 }
 
 function validatePasswordChange(current: string, newPwd: string, confirm: string, t: (key: string) => string): string | null {
-  if (!current || !newPwd || !confirm) return t('userProfile.allFieldsRequired')
+  if (current === '' || newPwd === '' || confirm === '') return t('userProfile.allFieldsRequired')
   if (newPwd !== confirm) return t('userProfile.passwordsMismatch')
   if (newPwd.length < 8) return t('userProfile.passwordTooShort')
   return null
 }
 
 // Avatar component
-function UserAvatar({ name, email }: Readonly<{ name?: string; email?: string }>) {
-  const initial = name?.charAt(0).toUpperCase() || email?.charAt(0).toUpperCase() || 'U'
+function UserAvatar({
+  name, email,
+}: Readonly<{
+  name?: string;
+  email?: string
+}>) {
+  const initial = (name?.charAt(0).toUpperCase() ?? email?.charAt(0).toUpperCase()) ?? 'U'
   return (
     <div className="flex justify-center">
       <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xl sm:text-2xl font-bold">
@@ -48,7 +55,12 @@ function UserAvatar({ name, email }: Readonly<{ name?: string; email?: string }>
 }
 
 // Info field component
-function InfoField({ label, children }: Readonly<{ label: string; children: React.ReactNode }>) {
+function InfoField({
+  label, children,
+}: Readonly<{
+  label: string;
+  children: React.ReactNode
+}>) {
   return (
     <div>
       <label className="block text-xs text-gray-500 mb-1">{label}</label>
@@ -88,7 +100,7 @@ function GroupsDisplay({ groups }: Readonly<{ groups: string[] }>) {
             key={group}
             className={clsx(
               'px-2 py-1 text-xs rounded-full',
-              group === 'admins' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'
+              group === 'admins' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700',
             )}
           >
             {group}
@@ -100,17 +112,25 @@ function GroupsDisplay({ groups }: Readonly<{ groups: string[] }>) {
 }
 
 // Profile tab content
-function ProfileTab({ user, isAdmin }: Readonly<{ user: { name?: string; email?: string; username?: string; groups?: string[] }; isAdmin: boolean }>) {
+function ProfileTab({
+  user, isAdmin,
+}: Readonly<{
+  user: {
+    name?: string;
+    email?: string;
+    username?: string;
+    groups?: string[]
+  };
+  isAdmin: boolean
+}>) {
   const { t } = useTranslation('components')
   return (
     <div className="space-y-4">
       <UserAvatar name={user.name} email={user.email} />
       <div className="space-y-3">
-        {user.name && (
-          <InfoField label={t('userProfile.name')}>
-            <p className="text-gray-900 font-medium truncate">{user.name}</p>
-          </InfoField>
-        )}
+        {user.name != null && user.name !== '' ? <InfoField label={t('userProfile.name')}>
+          <p className="text-gray-900 font-medium truncate">{user.name}</p>
+        </InfoField> : null}
         <InfoField label={t('userProfile.email')}>
           <p className="text-gray-900 font-medium truncate">{user.email}</p>
         </InfoField>
@@ -205,23 +225,19 @@ function PasswordTab({
         {t('userProfile.showPasswords')}
       </label>
 
-      {passwordError && (
-        <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">
-          <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>{passwordError}</span>
-        </div>
-      )}
+      {passwordError === '' ? null : <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+        <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+        <span>{passwordError}</span>
+      </div>}
 
-      {passwordSuccess && (
-        <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded-lg">
-          <CheckCircle2 size={16} className="flex-shrink-0" />
-          {t('userProfile.passwordChanged')}
-        </div>
-      )}
+      {passwordSuccess ? <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded-lg">
+        <CheckCircle2 size={16} className="flex-shrink-0" />
+        {t('userProfile.passwordChanged')}
+      </div> : null}
 
       <button
         onClick={onSubmit}
-        disabled={isChanging || !currentPassword || !newPassword || !confirmPassword}
+        disabled={isChanging || currentPassword === '' || newPassword === '' || confirmPassword === ''}
         className="btn btn-primary w-full flex items-center justify-center gap-2 py-2.5"
       >
         {isChanging ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
@@ -235,7 +251,9 @@ function PasswordTab({
   )
 }
 
-export default function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
+export default function UserProfileModal({
+  isOpen, onClose,
+}: UserProfileModalProps) {
   const { t } = useTranslation('components')
   const { user } = useAuthStore()
   const [activeTab, setActiveTab] = useState<'profile' | 'password'>('profile')
@@ -250,14 +268,14 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
 
   if (!isOpen || !user) return null
 
-  const isAdmin = user.groups?.includes('admins') ?? false
+  const isAdmin = user.groups.includes('admins')
 
   const handleChangePassword = async () => {
     setPasswordError('')
     setPasswordSuccess(false)
 
     const validationError = validatePasswordChange(currentPassword, newPassword, confirmPassword, t)
-    if (validationError) {
+    if (validationError != null && validationError !== '') {
       setPasswordError(validationError)
       return
     }
@@ -331,7 +349,7 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
               onNewChange={setNewPassword}
               onConfirmChange={setConfirmPassword}
               onShowPasswordsChange={setShowPasswords}
-              onSubmit={handleChangePassword}
+              onSubmit={() => void handleChangePassword()}
             />
           )}
         </div>

@@ -4,9 +4,16 @@
  * @module components/ChatExportMenu/chatPdfGenerator
  */
 
-import type { Conversation } from '../../store/chatStore'
 import { openPrintWindow } from '../../utils/printUtils'
 import ChatPDFContent from './ChatPDFContent'
+import type { Conversation } from '../../store/chatStore'
+
+class PdfGenerationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PdfGenerationError'
+  }
+}
 
 /**
  * Opens a print-friendly view of the chat conversation.
@@ -19,6 +26,6 @@ export function generateChatPDF(conversation: Conversation): void {
   })
 
   if (!printWindow) {
-    throw new Error('Failed to open print window. Please allow popups for this site.')
+    throw new PdfGenerationError('Failed to open print window. Please allow popups for this site.')
   }
 }

@@ -1,5 +1,6 @@
-import { Trash2, Star } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import RatingStars from '../../components/RatingStars'
 import type { ParsedReview } from '../../store/manualImportStore'
 
 interface ParsedReviewCardProps {
@@ -10,30 +11,40 @@ interface ParsedReviewCardProps {
 }
 
 const RATING_OPTIONS = [
-  { value: null, labelKey: 'parsedReview.noRating' },
-  { value: 1, labelKey: 'parsedReview.star', count: 1 },
-  { value: 2, labelKey: 'parsedReview.star', count: 2 },
-  { value: 3, labelKey: 'parsedReview.star', count: 3 },
-  { value: 4, labelKey: 'parsedReview.star', count: 4 },
-  { value: 5, labelKey: 'parsedReview.star', count: 5 },
+  {
+    value: null,
+    labelKey: 'parsedReview.noRating',
+  },
+  {
+    value: 1,
+    labelKey: 'parsedReview.star',
+    count: 1,
+  },
+  {
+    value: 2,
+    labelKey: 'parsedReview.star',
+    count: 2,
+  },
+  {
+    value: 3,
+    labelKey: 'parsedReview.star',
+    count: 3,
+  },
+  {
+    value: 4,
+    labelKey: 'parsedReview.star',
+    count: 4,
+  },
+  {
+    value: 5,
+    labelKey: 'parsedReview.star',
+    count: 5,
+  },
 ]
 
-function RatingStars({ rating }: { readonly rating: number | null }) {
-  if (rating === null) return null
-  return (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <Star
-          key={star}
-          size={14}
-          className={star <= rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}
-        />
-      ))}
-    </div>
-  )
-}
-
-export default function ParsedReviewCard({ review, index, onUpdate, onDelete }: ParsedReviewCardProps) {
+export default function ParsedReviewCard({
+  review, index, onUpdate, onDelete,
+}: ParsedReviewCardProps) {
   const { t } = useTranslation('scrapers')
   return (
     <div className="border border-gray-200 rounded-lg p-4 bg-white">
@@ -42,26 +53,26 @@ export default function ParsedReviewCard({ review, index, onUpdate, onDelete }: 
           <RatingStars rating={review.rating} />
           <select
             value={review.rating ?? ''}
-            onChange={(e) => onUpdate(index, { rating: e.target.value ? Number(e.target.value) : null })}
+            onChange={(e) => onUpdate(index, { rating: e.target.value === '' ? null : Number(e.target.value) })}
             className="text-sm border border-gray-200 rounded px-2 py-1"
           >
             {RATING_OPTIONS.map((opt) => (
               <option key={opt.labelKey + (opt.count ?? '')} value={opt.value ?? ''}>
-                {opt.count ? t(opt.labelKey, { count: opt.count }) : t(opt.labelKey)}
+                {opt.count == null ? t(opt.labelKey) : t(opt.labelKey, { count: opt.count })}
               </option>
             ))}
           </select>
           <input
             type="text"
             value={review.author ?? ''}
-            onChange={(e) => onUpdate(index, { author: e.target.value || null })}
+            onChange={(e) => onUpdate(index, { author: e.target.value === '' ? null : e.target.value })}
             placeholder={t('parsedReview.authorPlaceholder')}
             className="text-sm border border-gray-200 rounded px-2 py-1 w-32"
           />
           <input
             type="date"
             value={review.date ?? ''}
-            onChange={(e) => onUpdate(index, { date: e.target.value || null })}
+            onChange={(e) => onUpdate(index, { date: e.target.value === '' ? null : e.target.value })}
             className="text-sm border border-gray-200 rounded px-2 py-1"
           />
         </div>
@@ -73,15 +84,15 @@ export default function ParsedReviewCard({ review, index, onUpdate, onDelete }: 
           <Trash2 size={16} />
         </button>
       </div>
-      
+
       <input
         type="text"
         value={review.title ?? ''}
-        onChange={(e) => onUpdate(index, { title: e.target.value || null })}
+        onChange={(e) => onUpdate(index, { title: e.target.value === '' ? null : e.target.value })}
         placeholder={t('parsedReview.titlePlaceholder')}
         className="w-full text-sm font-medium border border-gray-200 rounded px-3 py-2 mb-2"
       />
-      
+
       <textarea
         value={review.text}
         onChange={(e) => onUpdate(index, { text: e.target.value })}

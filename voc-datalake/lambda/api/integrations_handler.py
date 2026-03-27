@@ -140,20 +140,134 @@ def test_integration(source: str):
     return {'success': True, 'message': f'Integration {source} test not implemented'}
 
 
+# ============================================
+# App Config CRUD (multi-instance plugins)
+# ============================================
+
+APP_CONFIG_PLUGINS = {'app_reviews_ios', 'app_reviews_android'}
+
+
+def _get_app_configs_key(source: str) -> str:
+    """Get the Secrets Manager key for a plugin's app configs array."""
+    return f"{source}_configs"
+
+
+@app.get("/integrations/<source>/apps")
+@tracer.capture_method
+def list_app_configs(source: str):
+    """List all app configurations for a multi-instance plugin."""
+    if source not in APP_CONFIG_PLUGINS:
+        raise ValidationError(f'Source {source} does not support multiple app configs')
+    if not SECRETS_ARN:
+        return {'apps': []}
+
+    try:
+        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
+        secrets = json.loads(response.get('SecretString', '{}'))
+        configs_key = _get_app_configs_key(source)
+        configs = json.loads(secrets.get(configs_key, '[]'))
+        return {'apps': configs}
+    except (ConfigurationError, ValidationError):
+        raise
+    except Exception as e:
+        logger.warning(f"Could not read app configs for {source}: {e}")
+        return {'apps': []}
+
+
+@app.post("/integrations/<source>/apps")
+@tracer.capture_method
+def save_app_config(source: str):
+    """Save (create or update) an app configuration for a multi-instance plugin."""
+    if source not in APP_CONFIG_PLUGINS:
+        raise ValidationError(f'Source {source} does not support multiple app configs')
+    if not SECRETS_ARN:
+        raise ConfigurationError('Secrets not configured')
+
+    body = app.current_event.json_body or {}
+    app_config = body.get('app')
+    if not app_config:
+        raise ValidationError('No app config provided')
+
+    # Validate required fields
+    if not app_config.get('id'):
+        import uuid
+        app_config['id'] = str(uuid.uuid4())[:8]
+    if not app_config.get('app_name'):
+        raise ValidationError('app_name is required')
+
+    try:
+        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
+        secrets = json.loads(response.get('SecretString', '{}'))
+        configs_key = _get_app_configs_key(source)
+        configs = json.loads(secrets.get(configs_key, '[]'))
+
+        existing_idx = next((i for i, c in enumerate(configs) if c.get('id') == app_config['id']), -1)
+        if existing_idx >= 0:
+            configs[existing_idx] = app_config
+        else:
+            configs.append(app_config)
+
+        secrets[configs_key] = json.dumps(configs)
+        secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
+        return {'success': True, 'app': app_config}
+    except (ConfigurationError, ValidationError):
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to save app config for {source}: {e}")
+        raise ServiceError('Failed to save app configuration')
+
+
+@app.delete("/integrations/<source>/apps/<app_id>")
+@tracer.capture_method
+def delete_app_config(source: str, app_id: str):
+    """Delete an app configuration from a multi-instance plugin."""
+    if source not in APP_CONFIG_PLUGINS:
+        raise ValidationError(f'Source {source} does not support multiple app configs')
+    if not SECRETS_ARN:
+        raise ConfigurationError('Secrets not configured')
+
+    try:
+        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
+        secrets = json.loads(response.get('SecretString', '{}'))
+        configs_key = _get_app_configs_key(source)
+        configs = json.loads(secrets.get(configs_key, '[]'))
+        configs = [c for c in configs if c.get('id') != app_id]
+        secrets[configs_key] = json.dumps(configs)
+        secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
+        return {'success': True}
+    except (ConfigurationError, ValidationError):
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to delete app config for {source}: {e}")
+        raise ServiceError('Failed to delete app configuration')
+
+
 @app.post("/sources/<source>/run")
 @tracer.capture_method
 def run_source(source: str):
-    """Manually trigger a data source ingestor Lambda."""
+    """Manually trigger a data source ingestor Lambda.
+    
+    Optionally accepts a JSON body with `app_id` to run a single app
+    config instead of all configs for the source.
+    """
     # Function name follows uniqueName() pattern: voc-ingestor-{id}-{account}-{region}
     suffix = f"-{AWS_ACCOUNT_ID}-{AWS_REGION}" if AWS_ACCOUNT_ID and AWS_REGION else ""
     function_name = f"voc-ingestor-{source}{suffix}"
+
+    payload: dict = {"manual_trigger": True}
+    try:
+        body = app.current_event.json_body or {}
+        if body.get("app_id"):
+            payload["app_id"] = body["app_id"]
+    except Exception:
+        pass
 
     lambda_client = boto3.client("lambda")
     try:
         response = lambda_client.invoke(
             FunctionName=function_name,
             InvocationType="Event",
-            Payload=json.dumps({"manual_trigger": True}).encode(),
+            Payload=json.dumps(payload).encode(),
         )
         status_code = response.get("StatusCode", 0)
         if status_code == 202:

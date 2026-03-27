@@ -3,7 +3,6 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '../../test/test-utils'
@@ -15,6 +14,9 @@ vi.mock('../../api/client', () => ({
   api: {
     getUrgentFeedback: (params: unknown) => mockGetUrgentFeedback(params),
   },
+}))
+
+vi.mock('../../api/baseUrl', () => ({
   getDaysFromRange: vi.fn(() => 7),
 }))
 

@@ -27,6 +27,17 @@ vi.mock('./client', () => ({
 
 import { dataExplorerApi } from './dataExplorerApi'
 
+const s3BackendResponse = {
+  objects: [
+    { key: 'raw', size: 0, lastModified: '', isFolder: true },
+    { key: 'test.json', fullKey: 'raw/test.json', size: 512, lastModified: '2025-03-01T00:00:00Z', isFolder: false },
+  ],
+  bucket: 'voc-raw-data-123456-us-east-1',
+  bucketId: 'raw-data',
+  bucketLabel: 'VoC Raw Data',
+  prefix: '',
+}
+
 describe('dataExplorerApi', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -34,17 +45,7 @@ describe('dataExplorerApi', () => {
 
   describe('getDataExplorerS3', () => {
     it('returns objects array matching backend format', async () => {
-      const backendResponse = {
-        objects: [
-          { key: 'raw', size: 0, lastModified: '', isFolder: true },
-          { key: 'test.json', fullKey: 'raw/test.json', size: 512, lastModified: '2025-03-01T00:00:00Z', isFolder: false },
-        ],
-        bucket: 'voc-raw-data-123456-us-east-1',
-        bucketId: 'raw-data',
-        bucketLabel: 'VoC Raw Data',
-        prefix: '',
-      }
-      mockFetchApi.mockResolvedValue(backendResponse)
+      mockFetchApi.mockResolvedValue(s3BackendResponse)
 
       const result = await dataExplorerApi.getDataExplorerS3()
 
@@ -52,6 +53,13 @@ describe('dataExplorerApi', () => {
       expect(result.objects[0].isFolder).toBe(true)
       expect(result.objects[0].key).toBe('raw')
       expect(result.objects[1].isFolder).toBe(false)
+    })
+
+    it('includes bucket metadata and file details in response', async () => {
+      mockFetchApi.mockResolvedValue(s3BackendResponse)
+
+      const result = await dataExplorerApi.getDataExplorerS3()
+
       expect(result.objects[1].fullKey).toBe('raw/test.json')
       expect(result.bucket).toBe('voc-raw-data-123456-us-east-1')
       expect(result.bucketId).toBe('raw-data')
@@ -81,7 +89,7 @@ describe('dataExplorerApi', () => {
       mockFetchApi.mockResolvedValue(emptyResponse)
 
       const result = await dataExplorerApi.getDataExplorerS3()
-      expect(result.objects).toEqual([])
+      expect(result.objects).toStrictEqual([])
     })
   })
 
@@ -119,7 +127,7 @@ describe('dataExplorerApi', () => {
       mockFetchApi.mockResolvedValue(backendResponse)
 
       const result = await dataExplorerApi.getDataExplorerS3Preview('raw/test.json')
-      expect(result.content).toEqual({ text: 'Hello', rating: 5 })
+      expect(result.content).toStrictEqual({ text: 'Hello', rating: 5 })
       expect(result.key).toBe('raw/test.json')
     })
   })

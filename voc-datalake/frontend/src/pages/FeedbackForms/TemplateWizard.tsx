@@ -1,25 +1,29 @@
 /**
  * Template Wizard Component for creating new feedback forms
  */
-import { useState } from 'react'
-import { X, ArrowRight, User } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
-import type { FeedbackForm } from '../../api/client'
 import clsx from 'clsx'
+import {
+  X, ArrowRight, User,
+} from 'lucide-react'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { formTemplates } from './formTemplates'
+import type { FeedbackForm } from '../../api/types'
 
 interface TemplateWizardProps {
   readonly onSelect: (config: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>) => void
   readonly onCancel: () => void
 }
 
-export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardProps) {
+export default function TemplateWizard({
+  onSelect, onCancel,
+}: TemplateWizardProps) {
   const { t } = useTranslation('feedbackForms')
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
   const [collectPII, setCollectPII] = useState<'none' | 'name' | 'email' | 'both'>('none')
 
   const handleContinue = () => {
-    const template = formTemplates.find(t => t.id === selectedTemplate)
+    const template = formTemplates.find((tmpl) => tmpl.id === selectedTemplate)
     if (!template) return
 
     const config = {
@@ -34,10 +38,26 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
   }
 
   const piiOptions = [
-    { id: 'none', label: t('wizard.anonymous'), desc: t('wizard.anonymousDesc') },
-    { id: 'name', label: t('wizard.nameOnly'), desc: t('wizard.nameOnlyDesc') },
-    { id: 'email', label: t('wizard.emailOnly'), desc: t('wizard.emailOnlyDesc') },
-    { id: 'both', label: t('wizard.nameAndEmail'), desc: t('wizard.nameAndEmailDesc') },
+    {
+      id: 'none',
+      label: t('wizard.anonymous'),
+      desc: t('wizard.anonymousDesc'),
+    },
+    {
+      id: 'name',
+      label: t('wizard.nameOnly'),
+      desc: t('wizard.nameOnlyDesc'),
+    },
+    {
+      id: 'email',
+      label: t('wizard.emailOnly'),
+      desc: t('wizard.emailOnlyDesc'),
+    },
+    {
+      id: 'both',
+      label: t('wizard.nameAndEmail'),
+      desc: t('wizard.nameAndEmailDesc'),
+    },
   ] as const
 
   return (
@@ -64,7 +84,7 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
                   onClick={() => setSelectedTemplate(template.id)}
                   className={clsx(
                     'p-3 sm:p-4 rounded-xl border-2 text-left transition-all hover:shadow-md',
-                    isSelected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-gray-300'
+                    isSelected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-gray-300',
                   )}
                 >
                   <div className={clsx('w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center mb-2 sm:mb-3', template.color)}>
@@ -78,43 +98,41 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
             })}
           </div>
 
-          {selectedTemplate && (
-            <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
-              <h4 className="font-medium text-gray-900 mb-2 sm:mb-3 flex items-center gap-2 text-sm sm:text-base">
-                <User size={16} />
-                {t('wizard.contactInfoTitle')}
-              </h4>
-              <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4">
-                {t('wizard.contactInfoDescription')}
-              </p>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                {piiOptions.map((option) => (
-                  <button
-                    key={option.id}
-                    onClick={() => setCollectPII(option.id)}
-                    className={clsx(
-                      'p-2 sm:p-3 rounded-lg border-2 text-left transition-all',
-                      collectPII === option.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                    )}
-                  >
-                    <p className="font-medium text-xs sm:text-sm text-gray-900">{option.label}</p>
-                    <p className="text-xs text-gray-500 hidden sm:block">{option.desc}</p>
-                  </button>
-                ))}
-              </div>
+          {selectedTemplate != null && selectedTemplate !== '' ? <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
+            <h4 className="font-medium text-gray-900 mb-2 sm:mb-3 flex items-center gap-2 text-sm sm:text-base">
+              <User size={16} />
+              {t('wizard.contactInfoTitle')}
+            </h4>
+            <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4">
+              {t('wizard.contactInfoDescription')}
+            </p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+              {piiOptions.map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => setCollectPII(option.id)}
+                  className={clsx(
+                    'p-2 sm:p-3 rounded-lg border-2 text-left transition-all',
+                    collectPII === option.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300',
+                  )}
+                >
+                  <p className="font-medium text-xs sm:text-sm text-gray-900">{option.label}</p>
+                  <p className="text-xs text-gray-500 hidden sm:block">{option.desc}</p>
+                </button>
+              ))}
             </div>
-          )}
+          </div> : null}
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 sm:p-4 border-t bg-gray-50">
           <p className="text-xs sm:text-sm text-gray-500 text-center sm:text-left">
-            {selectedTemplate ? t('wizard.selectedTemplate', { name: formTemplates.find(t2 => t2.id === selectedTemplate)?.name }) : t('wizard.selectPrompt')}
+            {selectedTemplate != null && selectedTemplate !== '' ? t('wizard.selectedTemplate', { name: formTemplates.find((t2) => t2.id === selectedTemplate)?.name }) : t('wizard.selectPrompt')}
           </p>
           <div className="flex gap-2 sm:gap-3">
             <button onClick={onCancel} className="btn btn-secondary flex-1 sm:flex-none">{t('wizard.cancel')}</button>
             <button
               onClick={handleContinue}
-              disabled={!selectedTemplate}
+              disabled={(selectedTemplate == null || selectedTemplate === '')}
               className="btn btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
             >
               {t('wizard.continue')}

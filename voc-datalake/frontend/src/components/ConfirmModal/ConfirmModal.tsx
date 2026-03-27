@@ -9,8 +9,10 @@
  * @module components/ConfirmModal
  */
 
-import { Loader2, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
+import {
+  Loader2, AlertTriangle,
+} from 'lucide-react'
 
 interface ConfirmModalProps {
   isOpen: boolean
@@ -57,8 +59,14 @@ export default function ConfirmModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
-      
+      <button
+        type="button"
+        data-testid="confirm-modal-backdrop"
+        className="absolute inset-0 bg-black/50"
+        onClick={onCancel}
+        aria-label="Close modal"
+      />
+
       {/* Modal */}
       <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-4 sm:p-6">
         <div className="flex items-start gap-3 sm:gap-4">
@@ -70,7 +78,7 @@ export default function ConfirmModal({
             <p className="mt-2 text-sm text-gray-600">{message}</p>
           </div>
         </div>
-        
+
         <div className="mt-5 sm:mt-6 flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3">
           <button
             onClick={onCancel}
@@ -84,7 +92,7 @@ export default function ConfirmModal({
             disabled={isLoading}
             className={clsx('px-4 py-2.5 sm:py-2 text-sm font-medium rounded-lg disabled:opacity-50 flex items-center justify-center gap-2 w-full sm:w-auto', styles.button)}
           >
-            {isLoading && <Loader2 size={16} className="animate-spin" />}
+            {isLoading ? <Loader2 size={16} className="animate-spin" data-testid="confirm-modal-spinner" /> : null}
             {confirmLabel}
           </button>
         </div>

@@ -16,6 +16,10 @@ describe('ProjectTabs', () => {
     expect(screen.getByText('Overview')).toBeInTheDocument()
     expect(screen.getByText(/Personas/)).toBeInTheDocument()
     expect(screen.getByText(/Documents/)).toBeInTheDocument()
+  })
+
+  it('renders chat and mcp tabs', () => {
+    render(<ProjectTabs {...defaultProps} />)
     expect(screen.getByText('AI Chat')).toBeInTheDocument()
     expect(screen.getByText('MCP Access')).toBeInTheDocument()
   })
@@ -32,7 +36,7 @@ describe('ProjectTabs', () => {
 
   it('highlights active tab with blue styling', () => {
     render(<ProjectTabs {...defaultProps} activeTab="personas" />)
-    const personasTab = screen.getByText(/Personas/).closest('button')
+    const personasTab = screen.getByRole('button', { name: /Personas/ })
     expect(personasTab).toHaveClass('border-blue-600', 'text-blue-600')
   })
 

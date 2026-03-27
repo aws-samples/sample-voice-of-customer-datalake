@@ -39,6 +39,8 @@ try:
 except ImportError:
     logger.warning("Could not import validation schemas - validation disabled")
     VALIDATION_ENABLED = False
+    safe_validate_message = None  # noqa: N816
+    MessageValidationError = None  # noqa: N816
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()

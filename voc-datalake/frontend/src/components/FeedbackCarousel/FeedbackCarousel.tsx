@@ -9,46 +9,30 @@
  * @module components/FeedbackCarousel
  */
 
-import { useState, useRef } from 'react'
-import { Link } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
-import { ChevronLeft, ChevronRight, ExternalLink, Star, AlertTriangle } from 'lucide-react'
-import { format, isValid, parseISO } from 'date-fns'
-import type { FeedbackItem } from '../../api/client'
-import SentimentBadge from '../SentimentBadge'
 import clsx from 'clsx'
+import {
+  ChevronLeft, ChevronRight, ExternalLink, Star, AlertTriangle,
+} from 'lucide-react'
+import {
+  useState, useRef,
+} from 'react'
+import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
+import {
+  getSourceIcon, formatSourceName,
+} from '../../lib/sourceFormat'
+import { formatISODate } from '../../utils/dateUtils'
+import SentimentBadge from '../SentimentBadge'
+import type { FeedbackItem } from '../../api/types'
 
 interface FeedbackCarouselProps {
   items: FeedbackItem[]
   title?: string
 }
 
-const sourceIcons: Record<string, string> = {
-  web_scrape: '🌐',
-  web_scrape_jsonld: '🌐',
-  webscraper: '🌐',
-  manual_import: '📝',
-  s3_import: '📦',
-}
-
-function formatSourceName(source: string, t: (key: string) => string): string {
-  if (source.startsWith('scraper_') || source === 'web_scrape' || source === 'web_scrape_jsonld') {
-    return t('feedbackCarousel.webScraper')
-  }
-  return source.replace(/_/g, ' ')
-}
-
-function formatDate(dateStr: string | undefined, formatStr: string, fallback = 'N/A'): string {
-  if (!dateStr) return fallback
-  try {
-    const date = parseISO(dateStr)
-    return isValid(date) ? format(date, formatStr) : fallback
-  } catch {
-    return fallback
-  }
-}
-
-export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCarouselProps>) {
+export default function FeedbackCarousel({
+  items, title,
+}: Readonly<FeedbackCarouselProps>) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(items.length > 1)
@@ -56,7 +40,9 @@ export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCaro
 
   const checkScroll = () => {
     if (!scrollRef.current) return
-    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current
+    const {
+      scrollLeft, scrollWidth, clientWidth,
+    } = scrollRef.current
     setCanScrollLeft(scrollLeft > 0)
     setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10)
   }
@@ -65,7 +51,10 @@ export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCaro
     if (!scrollRef.current) return
     const cardWidth = 320
     const scrollAmount = direction === 'left' ? -cardWidth : cardWidth
-    scrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' })
+    scrollRef.current.scrollBy({
+      left: scrollAmount,
+      behavior: 'smooth',
+    })
     setTimeout(checkScroll, 300)
   }
 
@@ -73,42 +62,41 @@ export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCaro
 
   return (
     <div className="mt-3 w-full max-w-full overflow-hidden">
-      {title && (
-        <p className="text-xs text-gray-500 font-medium mb-2">{title}</p>
-      )}
-      
+      {title != null && title !== '' ? <p className="text-xs text-gray-500 font-medium mb-2">{title}</p> : null}
+
       <div className="relative group w-full max-w-full">
         {/* Left Arrow */}
-        {canScrollLeft && (
-          <button
-            onClick={() => scroll('left')}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white shadow-lg rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <ChevronLeft size={18} className="text-gray-600" />
-          </button>
-        )}
+        {canScrollLeft ? <button
+          onClick={() => scroll('left')}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white shadow-lg rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          <ChevronLeft size={18} className="text-gray-600" />
+        </button> : null}
 
         {/* Carousel Container */}
         <div
           ref={scrollRef}
           onScroll={checkScroll}
           className="flex gap-3 overflow-x-auto scrollbar-hide scroll-smooth pb-2 w-full max-w-full"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          style={{
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+          }}
         >
           {items.map((feedback) => (
             <div
               key={feedback.feedback_id}
               className={clsx(
                 'flex-shrink-0 w-64 sm:w-72 md:w-80 bg-white border rounded-lg p-3 hover:shadow-md transition-shadow',
-                feedback.urgency === 'high' && 'border-l-4 border-l-orange-500'
+                feedback.urgency === 'high' && 'border-l-4 border-l-orange-500',
               )}
             >
               {/* Header */}
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">{sourceIcons[feedback.source_platform] || '📝'}</span>
+                  <span className="text-lg">{getSourceIcon(feedback.source_platform)}</span>
                   <span className="text-sm font-medium text-gray-700 capitalize">
-                    {formatSourceName(feedback.source_platform, t)}
+                    {formatSourceName(feedback.source_platform, t, 'feedbackCarousel.webScraper')}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
@@ -139,26 +127,22 @@ export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCaro
               <p className="text-sm text-gray-700 line-clamp-3 mb-2">{feedback.original_text}</p>
 
               {/* Problem Summary */}
-              {feedback.problem_summary && (
-                <div className="bg-gray-50 rounded p-2 mb-2">
-                  <p className="text-xs font-medium text-gray-600 line-clamp-2">
-                    {t('feedbackCarousel.issue', { summary: feedback.problem_summary })}
-                  </p>
-                </div>
-              )}
+              {feedback.problem_summary != null && feedback.problem_summary !== '' ? <div className="bg-gray-50 rounded p-2 mb-2">
+                <p className="text-xs font-medium text-gray-600 line-clamp-2">
+                  {t('feedbackCarousel.issue', { summary: feedback.problem_summary })}
+                </p>
+              </div> : null}
 
               {/* Tags */}
               <div className="flex flex-wrap gap-1 mb-2">
                 <span className="badge bg-blue-100 text-blue-800 text-xs">{feedback.category}</span>
-                {feedback.subcategory && (
-                  <span className="badge bg-purple-100 text-purple-800 text-xs">{feedback.subcategory}</span>
-                )}
+                {feedback.subcategory != null && feedback.subcategory !== '' ? <span className="badge bg-purple-100 text-purple-800 text-xs">{feedback.subcategory}</span> : null}
               </div>
 
               {/* Footer */}
               <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                 <span className="text-xs text-gray-400">
-                  {formatDate(feedback.source_created_at, 'MMM d, h:mm a')}
+                  {formatISODate(feedback.source_created_at, 'MMM d, h:mm a')}
                 </span>
                 <div className="flex items-center gap-2">
                   <Link
@@ -167,16 +151,14 @@ export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCaro
                   >
                     {t('feedbackCarousel.viewDetails')}
                   </Link>
-                  {feedback.source_url && (
-                    <a
-                      href={feedback.source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-gray-400 hover:text-gray-600"
-                    >
-                      <ExternalLink size={12} />
-                    </a>
-                  )}
+                  {feedback.source_url != null && feedback.source_url !== '' ? <a
+                    href={feedback.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <ExternalLink size={12} />
+                  </a> : null}
                 </div>
               </div>
             </div>
@@ -184,14 +166,12 @@ export default function FeedbackCarousel({ items, title }: Readonly<FeedbackCaro
         </div>
 
         {/* Right Arrow */}
-        {canScrollRight && (
-          <button
-            onClick={() => scroll('right')}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white shadow-lg rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <ChevronRight size={18} className="text-gray-600" />
-          </button>
-        )}
+        {canScrollRight ? <button
+          onClick={() => scroll('right')}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white shadow-lg rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          <ChevronRight size={18} className="text-gray-600" />
+        </button> : null}
       </div>
     </div>
   )

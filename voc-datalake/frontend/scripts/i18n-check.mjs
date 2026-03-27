@@ -18,12 +18,26 @@
  */
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
-import { resolve, join, extname } from 'node:path'
+import { resolve, join, extname, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+/* eslint-disable security/detect-non-literal-fs-filename -- Build script with controlled paths from known base directories */
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
 const SRC_DIR = resolve(__dirname, '..', 'src')
+
+/**
+ * Validate that a resolved path stays within an allowed base directory.
+ * Prevents path-traversal attacks when building paths from dynamic segments.
+ */
+function safePath(base, ...segments) {
+  const resolved = normalize(resolve(base, ...segments))
+  if (!resolved.startsWith(normalize(base) + '/') && resolved !== normalize(base)) {
+    throw new Error(`Path traversal detected: ${resolved} is outside ${base}`)
+  }
+  return resolved
+}
 
 const SOURCE_LANG = 'en'
 const LANGUAGES = ['es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko']
@@ -56,7 +70,7 @@ function flattenEntries(obj, prefix = '') {
 }
 
 function loadLocale(lang, ns) {
-  const filePath = join(LOCALES_DIR, lang, `${ns}.json`)
+  const filePath = safePath(LOCALES_DIR, lang, `${ns}.json`)
   if (!existsSync(filePath)) return null
   return JSON.parse(readFileSync(filePath, 'utf-8'))
 }
@@ -70,8 +84,8 @@ function isValidPluralVariant(key, sourceKeys) {
 /** Recursively collect all .tsx / .ts files under a directory. */
 function collectSourceFiles(dir) {
   const files = []
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry)
+  for (const entry of readdirSync(safePath(dir, '.'))) {
+    const full = safePath(dir, entry)
     if (entry === 'node_modules' || entry === 'dist' || entry === 'test' || entry.endsWith('.test.tsx') || entry.endsWith('.test.ts')) continue
     const stat = statSync(full)
     if (stat.isDirectory()) {
@@ -105,6 +119,7 @@ function extractKeysFromSource(files) {
     // Match t('...') and t("...")
     // Handles: t('key'), t('key', ...), t(`key`)
     // Extract t('key') and t('key', { ns: 'foo' }) calls
+    // eslint-disable-next-line security/detect-unsafe-regex -- Bounded by line-level input; no user-controlled data
     const tCallRegex = /\bt\(\s*['"`]([^'"`]+)['"`](?:\s*,\s*\{[^}]*?ns:\s*['"](\w+)['"])?/g
     let match
     while ((match = tCallRegex.exec(content)) !== null) {
@@ -354,5 +369,7 @@ if (untranslatedPages.length > 0 || untranslatedComponents.length > 0) {
     }
   }
 }
+
+/* eslint-enable security/detect-non-literal-fs-filename */
 
 process.exit(hasProblems ? 1 : 0)

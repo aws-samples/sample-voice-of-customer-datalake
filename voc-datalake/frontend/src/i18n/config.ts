@@ -8,9 +8,9 @@
  */
 
 import i18n from 'i18next'
-import { initReactI18next } from 'react-i18next'
-import HttpBackend from 'i18next-http-backend'
 import LanguageDetector from 'i18next-browser-languagedetector'
+import HttpBackend from 'i18next-http-backend'
+import { initReactI18next } from 'react-i18next'
 
 export const supportedLanguages = ['en', 'es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko'] as const
 export type SupportedLanguage = (typeof supportedLanguages)[number]
@@ -30,10 +30,10 @@ const defaultNS = 'common'
 const namespaces = ['common', 'dashboard', 'dataExplorer', 'feedback', 'feedbackDetail', 'chat', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail'] as const
 
 function isSupportedLanguage(lang: string): lang is SupportedLanguage {
-  return supportedLanguages.some((supported) => supported === lang)
+  return new Set<string>(supportedLanguages).has(lang)
 }
 
-i18n
+void i18n
   .use(HttpBackend)
   .use(LanguageDetector)
   .use(initReactI18next)
@@ -42,9 +42,7 @@ i18n
     defaultNS,
     ns: [...namespaces],
 
-    backend: {
-      loadPath: '/locales/{{lng}}/{{ns}}.json',
-    },
+    backend: { loadPath: '/locales/{{lng}}/{{ns}}.json' },
 
     detection: {
       order: ['localStorage', 'navigator'],
@@ -52,13 +50,10 @@ i18n
       caches: ['localStorage'],
     },
 
-    interpolation: {
-      escapeValue: false, // React already escapes
-    },
+    // React already escapes
+    interpolation: { escapeValue: false },
 
-    react: {
-      useSuspense: true,
-    },
+    react: { useSuspense: true },
   })
 
 /**
@@ -68,7 +63,9 @@ export function changeLanguage(lang: string): Promise<void> {
   if (!isSupportedLanguage(lang)) {
     return Promise.resolve()
   }
-  return i18n.changeLanguage(lang).then(() => undefined)
+  return i18n.changeLanguage(lang).then(() => {
+    return
+  })
 }
 
 export default i18n

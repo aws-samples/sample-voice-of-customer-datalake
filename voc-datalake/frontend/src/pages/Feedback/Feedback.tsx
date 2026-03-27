@@ -10,28 +10,25 @@
  * @module pages/Feedback
  */
 
-import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
-import { Search, Filter, SortDesc, X, FileDown } from 'lucide-react'
+import {
+  Search, Filter, SortDesc, X, FileDown,
+} from 'lucide-react'
+import {
+  useState, useEffect, useMemo,
+} from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, getDaysFromRange } from '../../api/client'
-import type { FeedbackItem } from '../../api/client'
-import { useConfigStore } from '../../store/configStore'
+import { useSearchParams } from 'react-router-dom'
+import { getDaysFromRange } from '../../api/baseUrl'
+import { api } from '../../api/client'
 import FeedbackCard from '../../components/FeedbackCard'
+import PageLoader from '../../components/PageLoader'
+import { useConfigStore } from '../../store/configStore'
 import { generateFeedbackPDF } from './feedbackPdfGenerator'
+import type { FeedbackItem } from '../../api/types'
 
 const sentiments = ['all', 'positive', 'neutral', 'negative', 'mixed']
 const defaultCategories = ['all', 'delivery', 'customer_support', 'product_quality', 'pricing', 'website', 'app', 'billing', 'returns', 'communication', 'other']
-
-// Loading spinner component
-function LoadingSpinner() {
-  return (
-    <div className="flex items-center justify-center py-12">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-    </div>
-  )
-}
 
 // Empty state component
 function EmptyState() {
@@ -55,8 +52,13 @@ function FeedbackGrid({ items }: Readonly<{ items: readonly FeedbackItem[] }>) {
 }
 
 // Feedback list content - handles loading/empty/list states
-function FeedbackListContent({ isLoading, items }: Readonly<{ isLoading: boolean; items: readonly FeedbackItem[] }>) {
-  if (isLoading) return <LoadingSpinner />
+function FeedbackListContent({
+  isLoading, items,
+}: Readonly<{
+  isLoading: boolean;
+  items: readonly FeedbackItem[]
+}>) {
+  if (isLoading) return <PageLoader />
   if (items.length === 0) return <EmptyState />
   return <FeedbackGrid items={items} />
 }
@@ -78,14 +80,8 @@ function buildCategoriesList(entitiesData: { entities?: { categories?: Record<st
 }
 
 // Helper to check if any filters are active
-function checkHasActiveFilters(
-  search: string,
-  sourceFilter: string,
-  sentimentFilter: string,
-  categoryFilter: string,
-  showUrgentOnly: boolean
-): boolean {
-  return Boolean(search) || sourceFilter !== 'all' || sentimentFilter !== 'all' || categoryFilter !== 'all' || showUrgentOnly
+function checkHasActiveFilters(filters: FilterState): boolean {
+  return Boolean(filters.search) || filters.sourceFilter !== 'all' || filters.sentimentFilter !== 'all' || filters.categoryFilter !== 'all' || filters.showUrgentOnly
 }
 
 // Filter state interface
@@ -135,14 +131,14 @@ function FiltersCard({
           <div className="flex items-center gap-2 min-w-0">
             <Filter size={16} className="text-gray-400 flex-shrink-0 hidden sm:block" />
             <select value={filters.sourceFilter} onChange={(e) => onSourceChange(e.target.value)} className="input w-full sm:w-auto text-sm">
-              {sources.map(s => <option key={s} value={s}>{s === 'all' ? t('filters.allSources') : s}</option>)}
+              {sources.map((s) => <option key={s} value={s}>{s === 'all' ? t('filters.allSources') : s}</option>)}
             </select>
           </div>
           <select value={filters.sentimentFilter} onChange={(e) => onSentimentChange(e.target.value)} className="input w-full sm:w-auto text-sm flex-1 sm:flex-none">
-            {sentiments.map(s => <option key={s} value={s}>{s === 'all' ? t('filters.allSentiments') : t(`sentiment.${s}`)}</option>)}
+            {sentiments.map((s) => <option key={s} value={s}>{s === 'all' ? t('filters.allSentiments') : t(`sentiment.${s}`)}</option>)}
           </select>
           <select value={filters.categoryFilter} onChange={(e) => onCategoryChange(e.target.value)} className="input w-full sm:w-auto text-sm flex-1 sm:flex-none">
-            {categories.map(c => <option key={c} value={c}>{c === 'all' ? t('filters.allCategories') : c.replace('_', ' ')}</option>)}
+            {categories.map((c) => <option key={c} value={c}>{c === 'all' ? t('filters.allCategories') : c.replace('_', ' ')}</option>)}
           </select>
           <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap">
             <input type="checkbox" checked={filters.showUrgentOnly} onChange={(e) => onUrgentChange(e.target.checked)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
@@ -172,16 +168,17 @@ function ResultsHeader({
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
       <p className="text-sm text-gray-500">
-        {t('showingOf', { count: itemCount, total: totalCount })}
-        {search && <span className="ml-1">{t('forQuery', { query: search })}</span>}
+        {t('showingOf', {
+          count: itemCount,
+          total: totalCount,
+        })}
+        {search === '' ? null : <span className="ml-1">{t('forQuery', { query: search })}</span>}
       </p>
       <div className="flex items-center gap-3">
-        {hasActiveFilters && (
-          <button onClick={onClearFilters} className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700">
-            <X size={14} />
-            {t('filters.clearFilters')}
-          </button>
-        )}
+        {hasActiveFilters ? <button onClick={onClearFilters} className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700">
+          <X size={14} />
+          {t('filters.clearFilters')}
+        </button> : null}
         <button className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
           <SortDesc size={14} />
           {t('filters.mostRecent')}
@@ -194,10 +191,16 @@ function ResultsHeader({
 // Helper to build URL params from filters
 function buildUrlParams(search: string, sourceFilter: string, sentimentFilter: string, categoryFilter: string): URLSearchParams {
   const params = new URLSearchParams()
-  if (search) params.set('q', search)
-  if (sourceFilter !== 'all') params.set('source', sourceFilter)
-  if (sentimentFilter !== 'all') params.set('sentiment', sentimentFilter)
-  if (categoryFilter !== 'all') params.set('category', categoryFilter)
+  if (search !== '') params.set('q', search)
+  if (sourceFilter !== 'all') {
+    params.set('source', sourceFilter)
+  }
+  if (sentimentFilter !== 'all') {
+    params.set('sentiment', sentimentFilter)
+  }
+  if (categoryFilter !== 'all') {
+    params.set('category', categoryFilter)
+  }
   return params
 }
 
@@ -206,13 +209,19 @@ function buildFeedbackQueryParams(
   days: number,
   sourceFilter: string,
   sentimentFilter: string,
-  categoryFilter: string
-): { days: number; source?: string; sentiment?: string; category?: string; limit: number } {
+  categoryFilter: string,
+): {
+  days: number;
+  source?: string;
+  sentiment?: string;
+  category?: string;
+  limit: number
+} {
   return {
     days,
-    source: sourceFilter !== 'all' ? sourceFilter : undefined,
-    sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
-    category: categoryFilter !== 'all' ? categoryFilter : undefined,
+    source: sourceFilter === 'all' ? undefined : sourceFilter,
+    sentiment: sentimentFilter === 'all' ? undefined : sentimentFilter,
+    category: categoryFilter === 'all' ? undefined : categoryFilter,
     limit: 100,
   }
 }
@@ -221,7 +230,7 @@ function buildFeedbackQueryParams(
 function getFeedbackQueryFn(
   showUrgentOnly: boolean,
   days: number,
-  feedbackQueryParams: ReturnType<typeof buildFeedbackQueryParams>
+  feedbackQueryParams: ReturnType<typeof buildFeedbackQueryParams>,
 ) {
   if (showUrgentOnly) {
     return () => api.getUrgentFeedback({
@@ -236,21 +245,29 @@ function getFeedbackQueryFn(
 }
 
 interface FeedbackDataResult {
-  data: { items?: FeedbackItem[]; count?: number } | undefined
+  data: {
+    items?: FeedbackItem[];
+    count?: number
+  } | undefined
   isLoading: boolean
   isSearching: boolean
 }
 
 // Custom hook for feedback data fetching
-function useFeedbackData(
-  hasApiEndpoint: boolean,
-  days: number,
-  search: string,
-  sourceFilter: string,
-  sentimentFilter: string,
-  categoryFilter: string,
+interface FeedbackDataParams {
+  hasApiEndpoint: boolean
+  days: number
+  search: string
+  sourceFilter: string
+  sentimentFilter: string
+  categoryFilter: string
   showUrgentOnly: boolean
-): FeedbackDataResult {
+}
+
+function useFeedbackData(params: FeedbackDataParams): FeedbackDataResult {
+  const {
+    hasApiEndpoint, days, search, sourceFilter, sentimentFilter, categoryFilter, showUrgentOnly,
+  } = params
   const isSearching = search.length >= 2
   const feedbackQueryParams = buildFeedbackQueryParams(days, sourceFilter, sentimentFilter, categoryFilter)
   const feedbackQueryFn = getFeedbackQueryFn(showUrgentOnly, days, feedbackQueryParams)
@@ -258,13 +275,13 @@ function useFeedbackData(
   // Server-side search when search term is provided (includes filters)
   const searchQuery = useQuery({
     queryKey: ['feedback-search', search, days, sourceFilter, sentimentFilter, categoryFilter],
-    queryFn: () => api.searchFeedback({ 
-      q: search, 
-      days, 
+    queryFn: () => api.searchFeedback({
+      q: search,
+      days,
       limit: 100,
-      source: sourceFilter !== 'all' ? sourceFilter : undefined,
-      sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
-      category: categoryFilter !== 'all' ? categoryFilter : undefined,
+      source: sourceFilter === 'all' ? undefined : sourceFilter,
+      sentiment: sentimentFilter === 'all' ? undefined : sentimentFilter,
+      category: categoryFilter === 'all' ? undefined : categoryFilter,
     }),
     enabled: hasApiEndpoint && isSearching,
   })
@@ -277,18 +294,78 @@ function useFeedbackData(
   })
 
   if (isSearching) {
-    return { data: searchQuery.data, isLoading: searchQuery.isLoading, isSearching }
+    return {
+      data: searchQuery.data,
+      isLoading: searchQuery.isLoading,
+      isSearching,
+    }
   }
-  return { data: feedbackQuery.data, isLoading: feedbackQuery.isLoading, isSearching }
+  return {
+    data: feedbackQuery.data,
+    isLoading: feedbackQuery.isLoading,
+    isSearching,
+  }
+}
+
+function buildPDFFilters(filterState: FilterState) {
+  return {
+    source: filterState.sourceFilter === 'all' ? undefined : filterState.sourceFilter,
+    sentiment: filterState.sentimentFilter === 'all' ? undefined : filterState.sentimentFilter,
+    category: filterState.categoryFilter === 'all' ? undefined : filterState.categoryFilter,
+    search: filterState.search === '' ? undefined : filterState.search,
+    urgentOnly: filterState.showUrgentOnly,
+  }
+}
+
+function safePDFExport(items: FeedbackItem[], timeRange: string, filterState: FilterState) {
+  try {
+    generateFeedbackPDF({
+      items,
+      timeRange,
+      filters: buildPDFFilters(filterState),
+    })
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('PDF export failed:', error)
+    }
+  }
+}
+
+// PDF export button component
+function PDFExportButton({
+  items, timeRange, filterState,
+}: Readonly<{
+  items: FeedbackItem[]
+  timeRange: string
+  filterState: FilterState
+}>) {
+  if (items.length === 0) return null
+  const exportPDF = () => {
+    safePDFExport(items, timeRange, filterState)
+  }
+  return (
+    <div className="flex justify-end">
+      <button
+        onClick={exportPDF}
+        className="btn btn-secondary text-xs sm:text-sm px-3 py-1.5 active:scale-95 flex items-center gap-1.5"
+        title="Export as PDF"
+      >
+        <FileDown size={14} />
+        PDF
+      </button>
+    </div>
+  )
 }
 
 export default function Feedback() {
   const { t } = useTranslation('feedback')
-  const { timeRange, config } = useConfigStore()
+  const {
+    timeRange, config,
+  } = useConfigStore()
   const days = getDaysFromRange(timeRange)
   const [searchParams, setSearchParams] = useSearchParams()
-  const hasApiEndpoint = !!config.apiEndpoint
-  
+  const hasApiEndpoint = config.apiEndpoint !== ''
+
   // Initialize from URL params
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [sourceFilter, setSourceFilter] = useState(searchParams.get('source') ?? 'all')
@@ -299,7 +376,10 @@ export default function Feedback() {
   // Fetch dynamic sources and categories from entities API
   const { data: entitiesData } = useQuery({
     queryKey: ['entities', days],
-    queryFn: () => api.getEntities({ days, limit: 100 }),
+    queryFn: () => api.getEntities({
+      days,
+      limit: 100,
+    }),
     enabled: hasApiEndpoint,
   })
 
@@ -316,15 +396,17 @@ export default function Feedback() {
   }, [search, sourceFilter, sentimentFilter, categoryFilter, setSearchParams])
 
   // Fetch feedback data
-  const { data: activeData, isLoading: activeLoading } = useFeedbackData(
+  const {
+    data: activeData, isLoading: activeLoading,
+  } = useFeedbackData({
     hasApiEndpoint,
     days,
     search,
     sourceFilter,
     sentimentFilter,
     categoryFilter,
-    showUrgentOnly
-  )
+    showUrgentOnly,
+  })
 
   const filteredItems = activeData?.items ?? []
 
@@ -336,37 +418,23 @@ export default function Feedback() {
     setShowUrgentOnly(false)
   }
 
-  const hasActiveFilters = checkHasActiveFilters(search, sourceFilter, sentimentFilter, categoryFilter, showUrgentOnly)
-
-  const exportPDF = () => {
-    try {
-      generateFeedbackPDF({
-        items: filteredItems,
-        timeRange,
-        filters: {
-          source: sourceFilter !== 'all' ? sourceFilter : undefined,
-          sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
-          category: categoryFilter !== 'all' ? categoryFilter : undefined,
-          search: search || undefined,
-          urgentOnly: showUrgentOnly,
-        },
-      })
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error('PDF export failed:', error)
-      }
-    }
+  const filterState: FilterState = {
+    search,
+    sourceFilter,
+    sentimentFilter,
+    categoryFilter,
+    showUrgentOnly,
   }
 
-  if (!config.apiEndpoint) {
+  const hasActiveFilters = checkHasActiveFilters(filterState)
+
+  if (config.apiEndpoint === '') {
     return (
       <div className="flex items-center justify-center h-full">
         <p className="text-gray-500">{t('configureEndpoint')}</p>
       </div>
     )
   }
-
-  const filterState: FilterState = { search, sourceFilter, sentimentFilter, categoryFilter, showUrgentOnly }
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -389,18 +457,7 @@ export default function Feedback() {
         onClearFilters={clearFilters}
       />
 
-      {filteredItems.length > 0 && (
-        <div className="flex justify-end">
-          <button
-            onClick={exportPDF}
-            className="btn btn-secondary text-xs sm:text-sm px-3 py-1.5 active:scale-95 flex items-center gap-1.5"
-            title="Export as PDF"
-          >
-            <FileDown size={14} />
-            PDF
-          </button>
-        </div>
-      )}
+      <PDFExportButton items={filteredItems} timeRange={timeRange} filterState={filterState} />
 
       <FeedbackListContent isLoading={activeLoading} items={filteredItems} />
     </div>

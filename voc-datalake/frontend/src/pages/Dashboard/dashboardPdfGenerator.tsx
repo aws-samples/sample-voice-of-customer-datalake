@@ -19,6 +19,6 @@ export function generateDashboardPDF(props: DashboardPDFProps): void {
   })
 
   if (!printWindow) {
-    throw new Error('Failed to open print window. Please allow popups for this site.')
+    throw new TypeError('Failed to open print window. Please allow popups for this site.')
   }
 }

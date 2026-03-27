@@ -1,117 +1,36 @@
 /**
  * @fileoverview Plugin configuration modal for the Scrapers page.
  * @module pages/Scrapers/PluginConfigModal
- * 
+ *
  * Allows configuring and enabling auto-discovered plugins (e.g. iOS/Android app reviews)
  * directly from the Scrapers page, reusing the same integrations API as Settings.
  */
 
-import { useState, useEffect, useRef } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, Check, Loader2, Eye, EyeOff, TestTube, Play, AlertCircle, CheckCircle2 } from 'lucide-react'
+import {
+  useMutation, useQuery, useQueryClient,
+} from '@tanstack/react-query'
+import clsx from 'clsx'
+import {
+  Save, Check, Loader2, Eye, EyeOff, TestTube, Play,
+} from 'lucide-react'
+import {
+  useState, useEffect, useRef,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
-import type { PluginManifest, ConfigField, SetupInfo } from '../../plugins/types'
-import clsx from 'clsx'
+import {
+  PluginField, SetupInstructions, ResultMessage,
+} from './PluginConfigParts'
+import type { PluginManifest } from '../../plugins/types'
 
 interface PluginConfigModalProps {
   readonly plugin: PluginManifest
   readonly onClose: () => void
 }
 
-function getSetupColors(color: string): { bg: string; border: string; title: string; text: string } {
-  if (color === 'blue') return { bg: 'bg-blue-50', border: 'border-blue-200', title: 'text-blue-900', text: 'text-blue-800' }
-  if (color === 'green') return { bg: 'bg-green-50', border: 'border-green-200', title: 'text-green-900', text: 'text-green-800' }
-  if (color === 'orange') return { bg: 'bg-orange-50', border: 'border-orange-200', title: 'text-orange-900', text: 'text-orange-800' }
-  return { bg: 'bg-gray-50', border: 'border-gray-200', title: 'text-gray-900', text: 'text-gray-700' }
-}
-
-function PluginField({ field, value, showSecrets, onChange }: {
-  readonly field: ConfigField
-  readonly value: string
-  readonly showSecrets: boolean
-  readonly onChange: (value: string) => void
-}) {
-  const { t } = useTranslation('scrapers')
-  const placeholder = field.placeholder ?? `Enter ${field.label.toLowerCase()}`
-
-  if (field.type === 'select' && field.options) {
-    return (
-      <div>
-        <label className="block text-sm font-medium text-gray-600 mb-1">
-          {field.label}
-          {field.required && <span className="text-red-500 ml-1">*</span>}
-        </label>
-        <select value={value} onChange={(e) => onChange(e.target.value)} className="input text-sm">
-          <option value="">{t('pluginConfig.select')}</option>
-          {field.options.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      </div>
-    )
-  }
-
-  if (field.type === 'textarea') {
-    return (
-      <div>
-        <label className="block text-sm font-medium text-gray-600 mb-1">
-          {field.label}
-          {field.required && <span className="text-red-500 ml-1">*</span>}
-        </label>
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="input text-sm min-h-[80px]"
-        />
-      </div>
-    )
-  }
-
-  const inputType = field.type === 'password' && !showSecrets ? 'password' : 'text'
-
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-600 mb-1">
-        {field.label}
-        {field.required && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      <input
-        type={inputType}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="input text-sm"
-      />
-    </div>
-  )
-}
-
-function SetupInstructions({ setup }: { readonly setup: SetupInfo }) {
-  const colors = getSetupColors(setup.color ?? 'blue')
-  return (
-    <div className={clsx('p-3 rounded-lg text-sm border', colors.bg, colors.border)}>
-      <h5 className={clsx('font-semibold mb-2', colors.title)}>{setup.title}</h5>
-      <ol className={clsx('list-decimal list-inside space-y-1 text-xs', colors.text)}>
-        {setup.steps.map((step, i) => <li key={i}>{step}</li>)}
-      </ol>
-    </div>
-  )
-}
-
-function ResultMessage({ success, message }: { readonly success: boolean; readonly message: string }) {
-  const bgClass = success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-  const Icon = success ? CheckCircle2 : AlertCircle
-  return (
-    <div className={clsx('p-3 rounded-lg text-sm', bgClass)}>
-      <Icon size={14} className="inline mr-2" />
-      {message}
-    </div>
-  )
-}
-
-export default function PluginConfigModal({ plugin, onClose }: PluginConfigModalProps) {
+export default function PluginConfigModal({
+  plugin, onClose,
+}: PluginConfigModalProps) {
   const { t } = useTranslation('scrapers')
   const queryClient = useQueryClient()
   const [credentials, setCredentials] = useState<Record<string, string>>({})
@@ -124,7 +43,7 @@ export default function PluginConfigModal({ plugin, onClose }: PluginConfigModal
   // Fetch existing credentials
   const { data: fetchedCredentials } = useQuery({
     queryKey: ['integration-credentials', plugin.id],
-    queryFn: () => api.getIntegrationCredentials(plugin.id, plugin.config.map(f => f.key)),
+    queryFn: () => api.getIntegrationCredentials(plugin.id, plugin.config.map((f) => f.key)),
     enabled: plugin.config.length > 0,
   })
 
@@ -133,10 +52,10 @@ export default function PluginConfigModal({ plugin, onClose }: PluginConfigModal
     if (!fetchedCredentials || hasFetchedCredentials.current) return
     hasFetchedCredentials.current = true
     queueMicrotask(() => {
-      setCredentials(prev => {
+      setCredentials((prev) => {
         const merged = { ...prev }
         for (const [key, value] of Object.entries(fetchedCredentials)) {
-          if (!merged[key]) merged[key] = value
+          if (merged[key] === '') merged[key] = value
         }
         return merged
       })
@@ -145,10 +64,18 @@ export default function PluginConfigModal({ plugin, onClose }: PluginConfigModal
 
   // Fetch schedule status
   useEffect(() => {
-    api.getSourcesStatus([plugin.id]).then(response => {
-      const status = response.sources?.[plugin.id]
-      if (status) setScheduleEnabled(status.enabled)
-    }).catch(() => {}).finally(() => setScheduleLoading(false))
+    const fetchStatus = async () => {
+      try {
+        const response = await api.getSourcesStatus([plugin.id])
+        const status = response.sources[plugin.id]
+        setScheduleEnabled(status.enabled)
+      } catch {
+        /* ignore */
+      } finally {
+        setScheduleLoading(false)
+      }
+    }
+    void fetchStatus()
   }, [plugin.id])
 
   const saveMutation = useMutation({
@@ -157,25 +84,23 @@ export default function PluginConfigModal({ plugin, onClose }: PluginConfigModal
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
       hasFetchedCredentials.current = false
-      queryClient.invalidateQueries({ queryKey: ['integration-status'] })
-      queryClient.invalidateQueries({ queryKey: ['integration-credentials', plugin.id] })
+      void queryClient.invalidateQueries({ queryKey: ['integration-status'] })
+      void queryClient.invalidateQueries({ queryKey: ['integration-credentials', plugin.id] })
     },
   })
 
-  const testMutation = useMutation({
-    mutationFn: () => api.testIntegration(plugin.id),
-  })
+  const testMutation = useMutation({ mutationFn: () => api.testIntegration(plugin.id) })
 
-  const runMutation = useMutation({
-    mutationFn: () => api.runSource(plugin.id),
-  })
+  const runMutation = useMutation({ mutationFn: () => api.runSource(plugin.id) })
 
   const handleToggleSchedule = async (enabled: boolean) => {
     setScheduleLoading(true)
     try {
       const response = enabled ? await api.enableSource(plugin.id) : await api.disableSource(plugin.id)
       setScheduleEnabled(response.enabled)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     setScheduleLoading(false)
   }
 
@@ -187,7 +112,7 @@ export default function PluginConfigModal({ plugin, onClose }: PluginConfigModal
         completeCreds[field.key] = current
       } else if (field.options && field.options.length > 0) {
         completeCreds[field.key] = field.options[0].value
-      } else if (field.placeholder) {
+      } else if (field.placeholder != null && field.placeholder !== '') {
         completeCreds[field.key] = field.placeholder
       }
     }
@@ -213,7 +138,7 @@ export default function PluginConfigModal({ plugin, onClose }: PluginConfigModal
           <ScheduleToggle
             scheduleLoading={scheduleLoading}
             scheduleEnabled={scheduleEnabled}
-            onToggle={handleToggleSchedule}
+            onToggle={(enabled) => void handleToggleSchedule(enabled)}
           />
 
           {plugin.config.length > 0 && (
@@ -232,7 +157,7 @@ export default function PluginConfigModal({ plugin, onClose }: PluginConfigModal
             />
           )}
 
-          {plugin.setup && <SetupInstructions setup={plugin.setup} />}
+          {plugin.setup ? <SetupInstructions setup={plugin.setup} /> : null}
         </div>
 
         {/* Footer */}
@@ -244,7 +169,12 @@ export default function PluginConfigModal({ plugin, onClose }: PluginConfigModal
   )
 }
 
-function PluginModalHeader({ plugin, onClose }: { readonly plugin: PluginManifest; readonly onClose: () => void }) {
+function PluginModalHeader({
+  plugin, onClose,
+}: {
+  readonly plugin: PluginManifest;
+  readonly onClose: () => void
+}) {
   return (
     <div className="p-4 border-b flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -253,7 +183,7 @@ function PluginModalHeader({ plugin, onClose }: { readonly plugin: PluginManifes
         </span>
         <div>
           <h3 className="font-semibold text-lg">{plugin.name}</h3>
-          {plugin.description && <p className="text-sm text-gray-500">{plugin.description}</p>}
+          {plugin.description != null && plugin.description !== '' ? <p className="text-sm text-gray-500">{plugin.description}</p> : null}
         </div>
       </div>
       <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
@@ -261,7 +191,9 @@ function PluginModalHeader({ plugin, onClose }: { readonly plugin: PluginManifes
   )
 }
 
-function ScheduleToggle({ scheduleLoading, scheduleEnabled, onToggle }: {
+function ScheduleToggle({
+  scheduleLoading, scheduleEnabled, onToggle,
+}: {
   readonly scheduleLoading: boolean
   readonly scheduleEnabled: boolean
   readonly onToggle: (enabled: boolean) => void
@@ -297,11 +229,80 @@ interface PluginConfigSectionProps {
   readonly saveSuccess: boolean
   readonly saveIcon: React.ReactElement
   readonly saveMutation: { isPending: boolean }
-  readonly testMutation: { isPending: boolean; data?: { success: boolean; message?: string; error?: string }; mutate: () => void }
-  readonly runMutation: { isPending: boolean; data?: { success: boolean; message?: string }; mutate: () => void }
+  readonly testMutation: {
+    isPending: boolean;
+    data?: {
+      success: boolean;
+      message?: string;
+      error?: string
+    };
+    mutate: () => void
+  }
+  readonly runMutation: {
+    isPending: boolean;
+    data?: {
+      success: boolean;
+      message?: string
+    };
+    mutate: () => void
+  }
   readonly onCredentialsChange: (creds: Record<string, string>) => void
   readonly onToggleSecrets: () => void
   readonly onSave: () => void
+}
+
+function PluginActionButtons({
+  showSecrets, saveSuccess, saveIcon, saveMutation, testMutation, runMutation,
+  onToggleSecrets, onSave,
+}: {
+  readonly showSecrets: boolean
+  readonly saveSuccess: boolean
+  readonly saveIcon: React.ReactElement
+  readonly saveMutation: { isPending: boolean }
+  readonly testMutation: {
+    isPending: boolean;
+    mutate: () => void
+  }
+  readonly runMutation: {
+    isPending: boolean;
+    mutate: () => void
+  }
+  readonly onToggleSecrets: () => void
+  readonly onSave: () => void
+}) {
+  const { t } = useTranslation('scrapers')
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button onClick={onToggleSecrets} className="btn btn-secondary flex items-center gap-2 text-sm">
+        {showSecrets ? <EyeOff size={14} /> : <Eye size={14} />}
+        {showSecrets ? t('pluginConfig.hide') : t('pluginConfig.show')}
+      </button>
+      <button
+        onClick={onSave}
+        disabled={saveMutation.isPending}
+        className={clsx('btn flex items-center gap-2 text-sm', saveSuccess ? 'bg-green-600 text-white' : 'btn-primary')}
+      >
+        {saveIcon}
+        {saveSuccess ? t('pluginConfig.saved') : t('pluginConfig.save')}
+      </button>
+      <button
+        onClick={() => testMutation.mutate()}
+        disabled={testMutation.isPending}
+        className="btn btn-secondary flex items-center gap-2 text-sm"
+      >
+        {testMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
+        {t('pluginConfig.test')}
+      </button>
+      <button
+        onClick={() => runMutation.mutate()}
+        disabled={runMutation.isPending}
+        className="btn btn-secondary flex items-center gap-2 text-sm"
+      >
+        {runMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+        {t('pluginConfig.runNow')}
+      </button>
+    </div>
+  )
 }
 
 function PluginConfigSection({
@@ -313,54 +314,33 @@ function PluginConfigSection({
     <div className="space-y-4">
       <h4 className="text-sm font-semibold text-gray-700">{t('pluginConfig.configuration')}</h4>
       <div className="grid gap-4">
-        {plugin.config.map(field => (
+        {plugin.config.map((field) => (
           <PluginField
             key={field.key}
             field={field}
             value={credentials[field.key] ?? ''}
             showSecrets={showSecrets}
-            onChange={(value) => onCredentialsChange({ ...credentials, [field.key]: value })}
+            onChange={(value) => onCredentialsChange({
+              ...credentials,
+              [field.key]: value,
+            })}
           />
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button onClick={onToggleSecrets} className="btn btn-secondary flex items-center gap-2 text-sm">
-          {showSecrets ? <EyeOff size={14} /> : <Eye size={14} />}
-          {showSecrets ? t('pluginConfig.hide') : t('pluginConfig.show')}
-        </button>
-        <button
-          onClick={onSave}
-          disabled={saveMutation.isPending}
-          className={clsx('btn flex items-center gap-2 text-sm', saveSuccess ? 'bg-green-600 text-white' : 'btn-primary')}
-        >
-          {saveIcon}
-          {saveSuccess ? t('pluginConfig.saved') : t('pluginConfig.save')}
-        </button>
-        <button
-          onClick={() => testMutation.mutate()}
-          disabled={testMutation.isPending}
-          className="btn btn-secondary flex items-center gap-2 text-sm"
-        >
-          {testMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
-          {t('pluginConfig.test')}
-        </button>
-        <button
-          onClick={() => runMutation.mutate()}
-          disabled={runMutation.isPending}
-          className="btn btn-secondary flex items-center gap-2 text-sm"
-        >
-          {runMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-          {t('pluginConfig.runNow')}
-        </button>
-      </div>
+      <PluginActionButtons
+        showSecrets={showSecrets}
+        saveSuccess={saveSuccess}
+        saveIcon={saveIcon}
+        saveMutation={saveMutation}
+        testMutation={testMutation}
+        runMutation={runMutation}
+        onToggleSecrets={onToggleSecrets}
+        onSave={onSave}
+      />
 
-      {testMutation.data && (
-        <ResultMessage success={testMutation.data.success} message={testMutation.data.message || testMutation.data.error || 'Unknown result'} />
-      )}
-      {runMutation.data && (
-        <ResultMessage success={runMutation.data.success} message={runMutation.data.message || t('pluginConfig.runTriggered')} />
-      )}
+      {testMutation.data ? <ResultMessage success={testMutation.data.success} message={testMutation.data.message ?? testMutation.data.error ?? 'Unknown result'} /> : null}
+      {runMutation.data ? <ResultMessage success={runMutation.data.success} message={runMutation.data.message ?? t('pluginConfig.runTriggered')} /> : null}
     </div>
   )
 }

@@ -1,20 +1,22 @@
 /**
  * @fileoverview Template selector modal component.
  * @module pages/Scrapers/TemplateSelector
- * 
+ *
  * Shows web scraper templates AND auto-discovered plugins (e.g. iOS/Android)
  * so users can configure all data sources from the Scrapers page.
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, FileJson, Globe, Smartphone, ClipboardPaste, Upload } from 'lucide-react'
+import clsx from 'clsx'
+import {
+  Loader2, FileJson, Globe, Smartphone, ClipboardPaste, Upload,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { api } from '../../api/client'
-import type { ScraperTemplate } from '../../api/client'
-import type { PluginManifest } from '../../plugins/types'
+import { scrapersApi } from '../../api/scrapersApi'
 import { getPluginManifests } from '../../plugins'
 import { useConfigStore } from '../../store/configStore'
-import clsx from 'clsx'
+import type { ScraperTemplate } from '../../api/types'
+import type { PluginManifest } from '../../plugins/types'
 
 interface TemplateSelectorProps {
   readonly onSelect: (template: ScraperTemplate) => void
@@ -38,11 +40,21 @@ const BUILTIN_TEMPLATES: ScraperTemplate[] = [
     url_pattern: '',
     url_placeholder: '',
     supports_pagination: true,
-    pagination: { enabled: true, param: 'page', max_pages: 10, start: 1 },
+    pagination: {
+      enabled: true,
+      param: 'page',
+      max_pages: 10,
+      start: 1,
+    },
     config: {
       extraction_method: 'jsonld',
       template: 'review_jsonld',
-      pagination: { enabled: true, param: 'page', max_pages: 10, start: 1 },
+      pagination: {
+        enabled: true,
+        param: 'page',
+        max_pages: 10,
+        start: 1,
+      },
     },
   },
   {
@@ -54,12 +66,22 @@ const BUILTIN_TEMPLATES: ScraperTemplate[] = [
     url_pattern: '',
     url_placeholder: '',
     supports_pagination: true,
-    pagination: { enabled: false, param: 'page', max_pages: 10, start: 1 },
+    pagination: {
+      enabled: false,
+      param: 'page',
+      max_pages: 10,
+      start: 1,
+    },
     config: {
       extraction_method: 'css',
       container_selector: '.review',
       text_selector: '.review-text',
-      pagination: { enabled: false, param: 'page', max_pages: 10, start: 1 },
+      pagination: {
+        enabled: false,
+        param: 'page',
+        max_pages: 10,
+        start: 1,
+      },
     },
   },
 ]
@@ -85,7 +107,7 @@ function getPluginBorderClass(category?: string): string {
  */
 function getDiscoverablePlugins(): PluginManifest[] {
   return getPluginManifests().filter(
-    p => p.id !== 'webscraper' && p.hasIngestor
+    (p) => p.id !== 'webscraper' && p.hasIngestor,
   )
 }
 
@@ -98,14 +120,18 @@ function mergeTemplates(apiTemplates: ScraperTemplate[]): ScraperTemplate[] {
   return BUILTIN_TEMPLATES
 }
 
-export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImport, onJsonUpload, onClose }: TemplateSelectorProps) {
+export default function TemplateSelector({
+  onSelect, onSelectPlugin, onManualImport, onJsonUpload, onClose,
+}: TemplateSelectorProps) {
   const { t } = useTranslation('scrapers')
   const { config } = useConfigStore()
 
-  const { data, isLoading } = useQuery({
+  const {
+    data, isLoading,
+  } = useQuery({
     queryKey: ['scraper-templates'],
-    queryFn: api.getScraperTemplates,
-    enabled: !!config.apiEndpoint,
+    queryFn: scrapersApi.getScraperTemplates,
+    enabled: config.apiEndpoint.length > 0,
   })
 
   const templates = mergeTemplates(data?.templates ?? [])
@@ -125,13 +151,13 @@ export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImp
             <div>
               <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('templateSelector.appReviewSources')}</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {discoverablePlugins.map(plugin => (
+                {discoverablePlugins.map((plugin) => (
                   <button
                     key={plugin.id}
                     onClick={() => onSelectPlugin(plugin)}
                     className={clsx(
                       'p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-purple-400 hover:bg-purple-50',
-                      getPluginBorderClass(plugin.category)
+                      getPluginBorderClass(plugin.category),
                     )}
                   >
                     <div className="flex items-center gap-2 sm:gap-3 mb-2">
@@ -159,13 +185,13 @@ export default function TemplateSelector({ onSelect, onSelectPlugin, onManualImp
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {templates.map(template => (
+                {templates.map((template) => (
                   <button
                     key={template.id}
                     onClick={() => onSelect(template)}
                     className={clsx(
                       'p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-blue-400 hover:bg-blue-50',
-                      template.extraction_method === 'jsonld' ? 'border-green-200 bg-green-50/30' : 'border-gray-200'
+                      template.extraction_method === 'jsonld' ? 'border-green-200 bg-green-50/30' : 'border-gray-200',
                     )}
                   >
                     <div className="flex items-center gap-2 sm:gap-3 mb-2">

@@ -3,224 +3,28 @@
  * @module pages/Scrapers
  */
 
-import { useState, useEffect, type ReactElement } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Play, Settings, Globe, AlertCircle, CheckCircle, Loader2, XCircle, RefreshCw } from 'lucide-react'
+import {
+  useQuery, useMutation, useQueryClient,
+} from '@tanstack/react-query'
+import {
+  Plus, Globe, AlertCircle, Loader2, RefreshCw,
+} from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api } from '../../api/client'
-import type { ScraperConfig, ScraperTemplate } from '../../api/client'
+import { scrapersApi } from '../../api/scrapersApi'
+import ConfirmModal from '../../components/ConfirmModal'
 import { useConfigStore } from '../../store/configStore'
 import { useManualImportStore } from '../../store/manualImportStore'
-import clsx from 'clsx'
-import ConfirmModal from '../../components/ConfirmModal'
+import JsonUploadModal from './JsonUploadModal'
+import ManualImportModal from './ManualImportModal'
+import PluginConfigModal from './PluginConfigModal'
+import ScraperCard from './ScraperCard'
 import ScraperEditor from './ScraperEditor'
 import TemplateSelector from './TemplateSelector'
-import PluginConfigModal from './PluginConfigModal'
-import ManualImportModal from './ManualImportModal'
-import JsonUploadModal from './JsonUploadModal'
-import { FREQUENCY_OPTIONS } from './constants'
+import type {
+  ScraperConfig, ScraperTemplate,
+} from '../../api/types'
 import type { PluginManifest } from '../../plugins/types'
-
-interface RunStatus {
-  status: string
-  pages_scraped: number
-  items_found: number
-  errors: string[]
-  started_at?: string
-}
-
-function getStatusStyle(status: RunStatus): string {
-  if (status.status === 'running') return 'bg-blue-50 border-blue-200'
-  if (status.status === 'error') return 'bg-red-50 border-red-200'
-  if (status.errors?.length > 0) return 'bg-amber-50 border-amber-200'
-  return 'bg-green-50 border-green-200'
-}
-
-function StatusIndicator({ status }: { readonly status: RunStatus }): ReactElement | null {
-  const { t } = useTranslation('scrapers')
-  if (status.status === 'running') {
-    return <><Loader2 size={16} className="animate-spin text-blue-600" /><span className="font-medium text-blue-700">{t('status.running')}</span></>
-  }
-  if (status.status === 'error') {
-    return <><XCircle size={16} className="text-red-600" /><span className="font-medium text-red-700">{t('status.failed')}</span></>
-  }
-  if (status.errors?.length > 0) {
-    return <><AlertCircle size={16} className="text-amber-600" /><span className="font-medium text-amber-700">{t('status.completedWithErrors')}</span></>
-  }
-  return <><CheckCircle size={16} className="text-green-600" /><span className="font-medium text-green-700">{t('status.completed')}</span></>
-}
-
-function ScraperRunStatus({ scraperId, onComplete }: { readonly scraperId: string; readonly onComplete?: () => void }) {
-  const { t } = useTranslation('scrapers')
-  const [status, setStatus] = useState<RunStatus | null>(null)
-  const [polling, setPolling] = useState(true)
-
-  useEffect(() => {
-    if (!polling) return
-
-    const poll = async () => {
-      try {
-        const result = await api.getScraperStatus(scraperId)
-        setStatus(result)
-        if (['completed', 'completed_with_errors', 'error'].includes(result.status)) {
-          setPolling(false)
-          onComplete?.()
-        }
-      } catch {
-        // Ignore polling errors
-      }
-    }
-
-    poll()
-    const interval = setInterval(poll, 2000)
-    return () => clearInterval(interval)
-  }, [scraperId, polling, onComplete])
-
-  if (!status || status.status === 'never_run') return null
-
-  const hasErrors = status.errors?.length > 0
-
-  return (
-    <div className={clsx('mt-3 p-3 rounded-lg text-sm border', getStatusStyle(status))}>
-      <div className="flex items-center gap-2 mb-2">
-        <StatusIndicator status={status} />
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div>{t('status.pagesScraped')} <span className="font-semibold">{status.pages_scraped}</span></div>
-        <div>{t('status.reviewsFound')} <span className="font-semibold">{status.items_found}</span></div>
-      </div>
-      {hasErrors && (
-        <div className="mt-2 text-xs text-red-600">
-          {status.errors.slice(0, 2).map((err, i) => <div key={i} className="truncate">{err}</div>)}
-          {status.errors.length > 2 && <div>{t('status.moreErrors', { count: status.errors.length - 2 })}</div>}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function getLastRunBadge(status: string): { className: string; icon: string } {
-  if (status === 'completed') return { className: 'bg-green-100 text-green-700', icon: '✓' }
-  if (status === 'error') return { className: 'bg-red-100 text-red-700', icon: '✗' }
-  return { className: 'bg-amber-100 text-amber-700', icon: '⚠' }
-}
-
-function LastRunSummary({ lastRunInfo }: { readonly lastRunInfo: RunStatus }) {
-  const { t } = useTranslation('scrapers')
-  const badge = getLastRunBadge(lastRunInfo.status)
-  return (
-    <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-      <div className="flex items-center justify-between">
-        <span>{t('card.lastSummary', { pages: lastRunInfo.pages_scraped, reviews: lastRunInfo.items_found })}</span>
-        <span className={clsx('px-2 py-0.5 rounded', badge.className)}>{badge.icon}</span>
-      </div>
-      {lastRunInfo.errors?.length > 0 && <p className="text-red-500 truncate mt-1">{lastRunInfo.errors[0]}</p>}
-    </div>
-  )
-}
-
-function ScraperCardHeader({ scraper, isRunning, onRun, onEdit, onDelete }: {
-  readonly scraper: ScraperConfig
-  readonly isRunning: boolean
-  readonly onRun: () => void
-  readonly onEdit: () => void
-  readonly onDelete: () => void
-}) {
-  const { t } = useTranslation('scrapers')
-  const domain = scraper.base_url ? new URL(scraper.base_url).hostname : t('card.notConfigured')
-  return (
-    <div className="flex items-start justify-between mb-3">
-      <div className="flex items-center gap-3">
-        <div className={clsx('w-10 h-10 rounded-lg flex items-center justify-center', scraper.enabled ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400')}>
-          <Globe size={20} />
-        </div>
-        <div>
-          <h3 className="font-semibold">{scraper.name}</h3>
-          <p className="text-sm text-gray-500">{domain}</p>
-        </div>
-      </div>
-      <div className="flex items-center gap-1">
-        <button onClick={onRun} disabled={isRunning || !scraper.base_url} className={clsx("p-2 rounded transition-colors", isRunning ? "bg-blue-100 text-blue-600" : "hover:bg-green-100 text-green-600")} title={t('card.runNow')}>
-          {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-        </button>
-        <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title={t('card.edit')}><Settings size={16} /></button>
-        <button onClick={onDelete} className="p-2 hover:bg-gray-100 rounded text-red-500" title={t('card.delete')}><Trash2 size={16} /></button>
-      </div>
-    </div>
-  )
-}
-
-function calculateTotalUrls(scraper: ScraperConfig): number {
-  const additionalUrls = scraper.urls?.length ?? 0
-  const baseUrlCount = scraper.base_url ? 1 : 0
-  const paginationCount = scraper.base_url && scraper.pagination?.enabled ? scraper.pagination.max_pages - 1 : 0
-  return additionalUrls + baseUrlCount + paginationCount
-}
-
-function getFrequencyLabel(minutes: number): string {
-  return FREQUENCY_OPTIONS.find(f => f.value === minutes)?.label ?? `${minutes}m`
-}
-
-function ScraperCardStats({ scraper, lastRunInfo }: { readonly scraper: ScraperConfig; readonly lastRunInfo: RunStatus | null }) {
-  const { t } = useTranslation('scrapers')
-  const totalUrls = calculateTotalUrls(scraper)
-  const frequencyLabel = getFrequencyLabel(scraper.frequency_minutes)
-  const lastRunDate = lastRunInfo?.started_at ? new Date(lastRunInfo.started_at).toLocaleDateString() : t('card.never')
-
-  return (
-    <div className="grid grid-cols-3 gap-4 text-sm">
-      <div><span className="text-gray-500">{t('card.frequency')}</span><p className="font-medium">{frequencyLabel}</p></div>
-      <div><span className="text-gray-500">{t('card.urls')}</span><p className="font-medium">{totalUrls}</p></div>
-      <div><span className="text-gray-500">{t('card.lastRun')}</span><p className="font-medium">{lastRunDate}</p></div>
-    </div>
-  )
-}
-
-function useScraperStatus(scraperId: string) {
-  const [showStatus, setShowStatus] = useState(false)
-  const [isRunning, setIsRunning] = useState(false)
-  const [lastRunInfo, setLastRunInfo] = useState<RunStatus | null>(null)
-
-  useEffect(() => {
-    api.getScraperStatus(scraperId).then(result => {
-      if (result.status !== 'never_run') setLastRunInfo(result)
-    }).catch(() => {})
-  }, [scraperId])
-
-  const handleRun = (onRun: () => void) => {
-    setIsRunning(true)
-    setShowStatus(true)
-    onRun()
-  }
-
-  const handleComplete = () => {
-    setIsRunning(false)
-    api.getScraperStatus(scraperId).then(result => {
-      if (result.status !== 'never_run') setLastRunInfo(result)
-    })
-  }
-
-  return { showStatus, isRunning, lastRunInfo, handleRun, handleComplete }
-}
-
-function ScraperCard({ scraper, onEdit, onDelete, onRun }: {
-  readonly scraper: ScraperConfig
-  readonly onEdit: () => void
-  readonly onDelete: () => void
-  readonly onRun: () => void
-}) {
-  const { showStatus, isRunning, lastRunInfo, handleRun, handleComplete } = useScraperStatus(scraper.id)
-  const showLastRunSummary = lastRunInfo && lastRunInfo.status !== 'never_run' && !showStatus
-
-  return (
-    <div className={clsx('card border-2 transition-all', scraper.enabled ? 'border-green-200 bg-green-50/30' : 'border-gray-200 opacity-60')}>
-      <ScraperCardHeader scraper={scraper} isRunning={isRunning} onRun={() => handleRun(onRun)} onEdit={onEdit} onDelete={onDelete} />
-      <ScraperCardStats scraper={scraper} lastRunInfo={lastRunInfo} />
-      {showLastRunSummary && <LastRunSummary lastRunInfo={lastRunInfo} />}
-      {showStatus && <ScraperRunStatus scraperId={scraper.id} onComplete={handleComplete} />}
-    </div>
-  )
-}
 
 function EmptyState({ onCreateClick }: { readonly onCreateClick: () => void }) {
   const { t } = useTranslation('scrapers')
@@ -236,7 +40,9 @@ function EmptyState({ onCreateClick }: { readonly onCreateClick: () => void }) {
   )
 }
 
-function ScraperList({ scrapers, onEdit, onDelete, onRun }: {
+function ScraperList({
+  scrapers, onEdit, onDelete, onRun,
+}: {
   readonly scrapers: ScraperConfig[]
   readonly onEdit: (s: ScraperConfig) => void
   readonly onDelete: (id: string) => void
@@ -244,7 +50,7 @@ function ScraperList({ scrapers, onEdit, onDelete, onRun }: {
 }) {
   return (
     <div className="grid gap-4">
-      {scrapers.map(scraper => (
+      {scrapers.map((scraper) => (
         <ScraperCard
           key={scraper.id}
           scraper={scraper}
@@ -261,23 +67,27 @@ function useScraperMutations() {
   const queryClient = useQueryClient()
 
   const saveMutation = useMutation({
-    mutationFn: (scraper: ScraperConfig) => api.saveScraper(scraper),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scrapers'] })
+    mutationFn: (scraper: ScraperConfig) => scrapersApi.saveScraper(scraper),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scrapers'] }),
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.deleteScraper(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scrapers'] })
+    mutationFn: (id: string) => scrapersApi.deleteScraper(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scrapers'] }),
   })
 
-  const runMutation = useMutation({
-    mutationFn: (id: string) => api.runScraper(id),
-  })
+  const runMutation = useMutation({ mutationFn: (id: string) => scrapersApi.runScraper(id) })
 
-  return { saveMutation, deleteMutation, runMutation }
+  return {
+    saveMutation,
+    deleteMutation,
+    runMutation,
+  }
 }
 
-function ScrapersContent({ scrapers, isLoading, onRefresh, onShowTemplates, onEdit, onDelete, onRun }: {
+function ScrapersContent({
+  scrapers, isLoading, onRefresh, onShowTemplates, onEdit, onDelete, onRun,
+}: {
   readonly scrapers: ScraperConfig[]
   readonly isLoading: boolean
   readonly onRefresh: () => void
@@ -287,6 +97,17 @@ function ScrapersContent({ scrapers, isLoading, onRefresh, onShowTemplates, onEd
   readonly onRun: (id: string) => void
 }) {
   const { t } = useTranslation('scrapers')
+
+  function renderContent() {
+    if (isLoading) {
+      return <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /></div>
+    }
+    if (scrapers.length === 0) {
+      return <EmptyState onCreateClick={onShowTemplates} />
+    }
+    return <ScraperList scrapers={scrapers} onEdit={onEdit} onDelete={onDelete} onRun={onRun} />
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -304,9 +125,7 @@ function ScrapersContent({ scrapers, isLoading, onRefresh, onShowTemplates, onEd
         </div>
       </div>
 
-      {isLoading && <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /></div>}
-      {!isLoading && scrapers.length === 0 && <EmptyState onCreateClick={onShowTemplates} />}
-      {!isLoading && scrapers.length > 0 && <ScraperList scrapers={scrapers} onEdit={onEdit} onDelete={onDelete} onRun={onRun} />}
+      {renderContent()}
     </div>
   )
 }
@@ -323,13 +142,19 @@ export default function Scrapers() {
   const [selectedPlugin, setSelectedPlugin] = useState<PluginManifest | null>(null)
   const [showJsonUpload, setShowJsonUpload] = useState(false)
 
-  const { data, isLoading, refetch } = useQuery({
+  const {
+    data, isLoading, refetch,
+  } = useQuery({
     queryKey: ['scrapers'],
-    queryFn: api.getScrapers,
-    enabled: !!config.apiEndpoint,
+    queryFn: scrapersApi.getScrapers,
+    enabled: config.apiEndpoint.length > 0,
   })
 
-  const { saveMutation, deleteMutation, runMutation } = useScraperMutations()
+  const {
+    saveMutation,
+    deleteMutation,
+    runMutation,
+  } = useScraperMutations()
   const scrapers = data?.scrapers ?? []
 
   const handleSelectTemplate = (template: ScraperTemplate) => {
@@ -357,13 +182,13 @@ export default function Scrapers() {
   }
 
   const handleConfirmDelete = () => {
-    if (deleteScraperId) {
+    if (deleteScraperId != null && deleteScraperId !== '') {
       deleteMutation.mutate(deleteScraperId)
       setDeleteScraperId(null)
     }
   }
 
-  if (!config.apiEndpoint) {
+  if (config.apiEndpoint === '') {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
@@ -380,39 +205,37 @@ export default function Scrapers() {
       <ScrapersContent
         scrapers={scrapers}
         isLoading={isLoading}
-        onRefresh={() => refetch()}
+        onRefresh={() => void refetch()}
         onShowTemplates={() => setShowTemplates(true)}
         onEdit={setEditingScraper}
         onDelete={setDeleteScraperId}
-        onRun={id => runMutation.mutate(id)}
+        onRun={(id) => runMutation.mutate(id)}
       />
 
       <ManualImportModal />
       <JsonUploadModal isOpen={showJsonUpload} onClose={() => setShowJsonUpload(false)} />
 
-      {showTemplates && <TemplateSelector onSelect={handleSelectTemplate} onSelectPlugin={handleSelectPlugin} onManualImport={() => { setShowTemplates(false); setIsModalOpen(true) }} onJsonUpload={() => { setShowTemplates(false); setShowJsonUpload(true) }} onClose={() => setShowTemplates(false)} />}
+      {showTemplates ? <TemplateSelector onSelect={handleSelectTemplate} onSelectPlugin={handleSelectPlugin} onManualImport={() => {
+        setShowTemplates(false); setIsModalOpen(true)
+      }} onJsonUpload={() => {
+        setShowTemplates(false); setShowJsonUpload(true)
+      }} onClose={() => setShowTemplates(false)} /> : null}
 
-      {selectedPlugin && (
-        <PluginConfigModal
-          plugin={selectedPlugin}
-          onClose={() => setSelectedPlugin(null)}
-        />
-      )}
+      {selectedPlugin == null ? null : <PluginConfigModal
+        plugin={selectedPlugin}
+        onClose={() => setSelectedPlugin(null)}
+      />}
 
-      {(isCreating || editingScraper) && (
-        <ScraperEditor scraper={editingScraper} template={selectedTemplate} onSave={handleSaveScraper} onClose={handleCloseEditor} />
-      )}
+      {(isCreating || editingScraper != null) ? <ScraperEditor scraper={editingScraper} template={selectedTemplate} onSave={handleSaveScraper} onClose={handleCloseEditor} /> : null}
 
-      {deleteScraperId && (
-        <ConfirmModal
-          isOpen={!!deleteScraperId}
-          title={t('deleteConfirmTitle')}
-          message={t('deleteConfirmMessage')}
-          confirmLabel={t('deleteConfirmLabel')}
-          onConfirm={handleConfirmDelete}
-          onCancel={() => setDeleteScraperId(null)}
-        />
-      )}
+      {deleteScraperId != null && deleteScraperId !== '' ? <ConfirmModal
+        isOpen={deleteScraperId !== ''}
+        title={t('deleteConfirmTitle')}
+        message={t('deleteConfirmMessage')}
+        confirmLabel={t('deleteConfirmLabel')}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteScraperId(null)}
+      /> : null}
     </>
   )
 }

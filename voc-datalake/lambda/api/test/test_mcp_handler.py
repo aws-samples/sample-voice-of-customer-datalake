@@ -634,8 +634,8 @@ class TestAutoseed:
 class TestHelpers:
 
     def test_hash_token(self):
-        from mcp_handler import _hash_token
-        result = _hash_token('test')
+        from shared.tokens import hash_token
+        result = hash_token('test')
         assert result == hashlib.sha256(b'test').hexdigest()
 
     def test_cors_response_structure(self):

@@ -301,12 +301,12 @@ class TestDeleteApiToken:
 
 
 class TestHashToken:
-    """Tests for _hash_token helper."""
+    """Tests for hash_token helper."""
 
     def test_produces_consistent_hash(self):
-        from projects_handler import _hash_token
-        assert _hash_token('voc_abc123') == _hash_token('voc_abc123')
+        from shared.tokens import hash_token
+        assert hash_token('voc_abc123') == hash_token('voc_abc123')
 
     def test_different_tokens_produce_different_hashes(self):
-        from projects_handler import _hash_token
-        assert _hash_token('voc_abc') != _hash_token('voc_xyz')
+        from shared.tokens import hash_token
+        assert hash_token('voc_abc') != hash_token('voc_xyz')

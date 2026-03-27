@@ -6,7 +6,6 @@ Separate Lambda to handle projects endpoints and avoid policy size limits.
 import json
 import os
 import secrets
-import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,6 +15,7 @@ from shared.api import create_api_resolver, validate_days, validate_int, api_han
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
 from shared.jobs import create_job
 from shared.exceptions import NotFoundError, ServiceError, ValidationError
+from shared.tokens import hash_token
 
 from boto3.dynamodb.conditions import Key
 import boto3
@@ -369,11 +369,6 @@ TOKEN_PREFIX = 'voc_'
 TOKEN_BYTE_LENGTH = 32
 
 
-def _hash_token(token: str) -> str:
-    """Hash a token for secure storage."""
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
 @app.get("/projects/<project_id>/api-tokens")
 @tracer.capture_method
 def api_list_tokens(project_id: str):
@@ -433,7 +428,7 @@ def api_create_token(project_id: str):
         'token_id': token_id,
         'name': name,
         'scope': scope,
-        'token_hash': _hash_token(raw_token),
+        'token_hash': hash_token(raw_token),
         'created_at': now,
         'project_id': project_id,
     })

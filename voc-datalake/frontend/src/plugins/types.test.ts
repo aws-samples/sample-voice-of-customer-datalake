@@ -37,10 +37,8 @@ describe('ConfigFieldSchema', () => {
     const result = ConfigFieldSchema.safeParse(field);
 
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.secret).toBe(true);
-      expect(result.data.required).toBe(true);
-    }
+    expect(result.data?.secret).toBe(true);
+    expect(result.data?.required).toBe(true);
   });
 
   it('accepts select type with options', () => {
@@ -57,9 +55,7 @@ describe('ConfigFieldSchema', () => {
     const result = ConfigFieldSchema.safeParse(field);
 
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.options).toHaveLength(2);
-    }
+    expect(result.data?.options).toHaveLength(2);
   });
 
   it('rejects invalid type', () => {
@@ -108,9 +104,7 @@ describe('WebhookInfoSchema', () => {
     const result = WebhookInfoSchema.safeParse(webhook);
 
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.docUrl).toBe('https://docs.example.com/webhooks');
-    }
+    expect(result.data?.docUrl).toBe('https://docs.example.com/webhooks');
   });
 
   it('rejects missing name', () => {
@@ -161,9 +155,7 @@ describe('SetupSchema', () => {
     const result = SetupSchema.safeParse(setup);
 
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.color).toBe('gray');
-    }
+    expect(result.data?.color).toBe('gray');
   });
 
   it('rejects invalid color', () => {
@@ -200,10 +192,8 @@ describe('PluginManifestSchema', () => {
     const result = PluginManifestSchema.safeParse(validManifest);
 
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.id).toBe('webscraper');
-      expect(result.data.hasIngestor).toBe(true);
-    }
+    expect(result.data?.id).toBe('webscraper');
+    expect(result.data?.hasIngestor).toBe(true);
   });
 
 
@@ -218,9 +208,7 @@ describe('PluginManifestSchema', () => {
     const result = PluginManifestSchema.safeParse(manifest);
 
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.webhooks).toHaveLength(1);
-    }
+    expect(result.data?.webhooks).toHaveLength(1);
   });
 
   it('accepts manifest with setup info', () => {
@@ -236,9 +224,7 @@ describe('PluginManifestSchema', () => {
     const result = PluginManifestSchema.safeParse(manifest);
 
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.setup?.title).toBe('Web Scraper Setup');
-    }
+    expect(result.data?.setup?.title).toBe('Web Scraper Setup');
   });
 
   it('rejects manifest without required fields', () => {
@@ -293,9 +279,7 @@ describe('PluginManifestsSchema', () => {
     const result = PluginManifestsSchema.safeParse(manifests);
 
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data).toHaveLength(2);
-    }
+    expect(result.data).toHaveLength(2);
   });
 
 
@@ -303,9 +287,7 @@ describe('PluginManifestsSchema', () => {
     const result = PluginManifestsSchema.safeParse([]);
 
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data).toHaveLength(0);
-    }
+    expect(result.data).toHaveLength(0);
   });
 
   it('rejects array with invalid manifest', () => {
@@ -371,7 +353,7 @@ describe('Validation Functions', () => {
     it('returns empty array for empty input', () => {
       const result = safeValidateManifests([]);
 
-      expect(result).toEqual([]);
+      expect(result).toStrictEqual([]);
     });
   });
 });
@@ -438,8 +420,6 @@ describe('Real-World Manifest Examples', () => {
     const result = PluginManifestSchema.safeParse(s3ImportManifest);
 
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.hasS3Trigger).toBe(true);
-    }
+    expect(result.data?.hasS3Trigger).toBe(true);
   });
 });

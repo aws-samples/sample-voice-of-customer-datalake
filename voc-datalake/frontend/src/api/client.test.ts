@@ -24,13 +24,17 @@ vi.mock('../services/auth', () => ({
   },
 }))
 
-import { api, getDaysFromRange, getDateRangeParams } from './client'
+import { api } from './client'
+import { getDaysFromRange } from './baseUrl'
 import { authService } from '../services/auth'
+import { scrapersApi } from './scrapersApi'
+import { projectsApi } from './projectsApi'
+import type { ScraperConfig } from './types'
 
 describe('API Client', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    global.fetch = vi.fn()
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response())
   })
 
   afterEach(() => {
@@ -92,7 +96,7 @@ describe('API Client', () => {
           }),
         })
       )
-      expect(result).toEqual(mockResponse)
+      expect(result).toStrictEqual(mockResponse)
     })
 
     it('throws error on non-ok response', async () => {
@@ -104,7 +108,7 @@ describe('API Client', () => {
       await expect(api.getFeedback({ days: 7 })).rejects.toThrow('API Error: 500')
     })
 
-    it('includes all filter parameters when provided', async () => {
+    it('includes days, source, and category filter parameters', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ count: 0, items: [] }),
@@ -130,6 +134,22 @@ describe('API Client', () => {
         expect.stringContaining('category=delivery'),
         expect.any(Object)
       )
+    })
+
+    it('includes sentiment and limit filter parameters', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ count: 0, items: [] }),
+      })
+
+      await api.getFeedback({ 
+        days: 30, 
+        source: 'webscraper', 
+        category: 'delivery', 
+        sentiment: 'negative',
+        limit: 50 
+      })
+
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('sentiment=negative'),
         expect.any(Object)
@@ -162,7 +182,7 @@ describe('API Client', () => {
 
       await api.getFeedback({ days: 7 })
 
-      expect(authService.refreshSession).toHaveBeenCalled()
+      expect(authService.refreshSession).toHaveBeenCalledWith()
       expect(global.fetch).toHaveBeenCalledTimes(2)
     })
 
@@ -173,14 +193,17 @@ describe('API Client', () => {
 
       const originalLocation = window.location
       Object.defineProperty(window, 'location', {
-        value: { href: '' },
+        value: { href: '' } as unknown as Location,
         writable: true,
       })
 
       await expect(api.getFeedback({ days: 7 })).rejects.toThrow('Session expired')
-      expect(authService.signOut).toHaveBeenCalled()
+      expect(authService.signOut).toHaveBeenCalledWith()
 
-      window.location = originalLocation
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
     })
   })
 
@@ -198,7 +221,7 @@ describe('API Client', () => {
         'https://api.example.com/feedback/abc123',
         expect.any(Object)
       )
-      expect(result).toEqual(mockFeedback)
+      expect(result).toStrictEqual(mockFeedback)
     })
   })
 
@@ -240,7 +263,7 @@ describe('API Client', () => {
         'https://api.example.com/metrics/summary?days=30',
         expect.any(Object)
       )
-      expect(result).toEqual(mockSummary)
+      expect(result).toStrictEqual(mockSummary)
     })
 
     it('includes source filter when provided', async () => {
@@ -280,7 +303,7 @@ describe('API Client', () => {
         'https://api.example.com/metrics/sentiment?days=7',
         expect.any(Object)
       )
-      expect(result).toEqual(mockSentiment)
+      expect(result).toStrictEqual(mockSentiment)
     })
   })
 
@@ -298,7 +321,7 @@ describe('API Client', () => {
         'https://api.example.com/metrics/categories?days=14',
         expect.any(Object)
       )
-      expect(result).toEqual(mockCategories)
+      expect(result).toStrictEqual(mockCategories)
     })
   })
 
@@ -316,7 +339,7 @@ describe('API Client', () => {
         'https://api.example.com/metrics/sources?days=7',
         expect.any(Object)
       )
-      expect(result).toEqual(mockSources)
+      expect(result).toStrictEqual(mockSources)
     })
   })
 
@@ -328,25 +351,25 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockScrapers),
       })
 
-      const result = await api.getScrapers()
+      const result = await scrapersApi.getScrapers()
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/scrapers',
         expect.any(Object)
       )
-      expect(result).toEqual(mockScrapers)
+      expect(result).toStrictEqual(mockScrapers)
     })
   })
 
   describe('saveScraper', () => {
     it('sends POST request with scraper config', async () => {
-      const scraper = { id: 's1', name: 'Test', enabled: true } as any
+      const scraper: Partial<ScraperConfig> = { id: 's1', name: 'Test', enabled: true }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ success: true, scraper }),
       })
 
-      await api.saveScraper(scraper)
+      await scrapersApi.saveScraper(scraper as ScraperConfig)
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/scrapers',
@@ -365,7 +388,7 @@ describe('API Client', () => {
         json: () => Promise.resolve({ success: true }),
       })
 
-      await api.deleteScraper('scraper-123')
+      await scrapersApi.deleteScraper('scraper-123')
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/scrapers/scraper-123',
@@ -382,13 +405,13 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockProjects),
       })
 
-      const result = await api.getProjects()
+      const result = await projectsApi.getProjects()
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/projects',
         expect.any(Object)
       )
-      expect(result).toEqual(mockProjects)
+      expect(result).toStrictEqual(mockProjects)
     })
   })
 
@@ -400,7 +423,7 @@ describe('API Client', () => {
         json: () => Promise.resolve({ success: true, project: { ...projectData, id: 'p1' } }),
       })
 
-      await api.createProject(projectData)
+      await projectsApi.createProject(projectData)
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/projects',
@@ -426,13 +449,13 @@ describe('API Client', () => {
         'https://api.example.com/users',
         expect.any(Object)
       )
-      expect(result).toEqual(mockUsers)
+      expect(result).toStrictEqual(mockUsers)
     })
   })
 
   describe('createUser', () => {
     it('sends POST request with user data', async () => {
-      const userData = { email: 'new@example.com', name: 'New User', group: 'viewers' as const }
+      const userData = { username: 'newuser', email: 'new@example.com', name: 'New User', group: 'users' as const }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ success: true, message: 'User created' }),
@@ -464,7 +487,7 @@ describe('API Client', () => {
         'https://api.example.com/settings/brand',
         expect.any(Object)
       )
-      expect(result).toEqual(mockSettings)
+      expect(result).toStrictEqual(mockSettings)
     })
   })
 
@@ -507,7 +530,7 @@ describe('API Client', () => {
         'https://api.example.com/settings/categories',
         expect.any(Object)
       )
-      expect(result).toEqual(mockConfig)
+      expect(result).toStrictEqual(mockConfig)
     })
   })
 
@@ -582,7 +605,7 @@ describe('API Client', () => {
         'https://api.example.com/integrations/status',
         expect.any(Object)
       )
-      expect(result).toEqual(mockStatus)
+      expect(result).toStrictEqual(mockStatus)
     })
   })
 
@@ -625,7 +648,7 @@ describe('API Client', () => {
           }),
         })
       )
-      expect(result).toEqual(mockCredentials)
+      expect(result).toStrictEqual(mockCredentials)
     })
 
     it('handles single key', async () => {
@@ -640,927 +663,10 @@ describe('API Client', () => {
         'https://api.example.com/integrations/app_reviews_ios/credentials?keys=app_id',
         expect.any(Object)
       )
-      expect(result).toEqual({ app_id: '585629514' })
+      expect(result).toStrictEqual({ app_id: '585629514' })
     })
   })
 
-  describe('testIntegration', () => {
-    it('sends POST request to test integration', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'Connection successful' }),
-      })
-
-      await api.testIntegration('webscraper')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/integrations/webscraper/test',
-        expect.objectContaining({ method: 'POST' })
-      )
-    })
-  })
-
-  describe('getFeedbackFormConfig', () => {
-    it('fetches feedback form configuration', async () => {
-      const mockConfig = { success: true, config: { enabled: true, title: 'Feedback' } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockConfig),
-      })
-
-      const result = await api.getFeedbackFormConfig()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/config',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockConfig)
-    })
-  })
-
-  describe('getS3ImportSources', () => {
-    it('fetches S3 import sources', async () => {
-      const mockResponse = { sources: [{ name: 'default', display_name: 'Default' }], bucket: 'test-bucket' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      const result = await api.getS3ImportSources()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/s3-import/sources',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockResponse)
-    })
-  })
-
-  describe('deleteS3ImportFile', () => {
-    it('sends DELETE request for file', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true }),
-      })
-
-      await api.deleteS3ImportFile('default/file.json')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/s3-import/file/'),
-        expect.objectContaining({ method: 'DELETE' })
-      )
-    })
-  })
-
-  describe('getPersonas', () => {
-    it('fetches personas with days parameter', async () => {
-      const mockResponse = { period_days: 7, personas: { 'Power User': 50, 'Casual User': 30 } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      const result = await api.getPersonas(7)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/metrics/personas?days=7',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockResponse)
-    })
-
-    it('includes source filter when provided', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ period_days: 7, personas: {} }),
-      })
-
-      await api.getPersonas(7, 'webscraper')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/metrics/personas?days=7&source=webscraper',
-        expect.any(Object)
-      )
-    })
-  })
-
-  describe('getEntities', () => {
-    it('fetches entities with parameters', async () => {
-      const mockResponse = { entities: { keywords: [], categories: [], issues: [] } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      await api.getEntities({ days: 30, limit: 10, source: 'webscraper' })
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('days=30'),
-        expect.any(Object)
-      )
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('limit=10'),
-        expect.any(Object)
-      )
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('source=webscraper'),
-        expect.any(Object)
-      )
-    })
-  })
-
-  describe('getSourcesStatus', () => {
-    it('fetches source schedule status', async () => {
-      const mockResponse = { sources: { webscraper: { enabled: true, schedule: 'rate(5 minutes)' } } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      const result = await api.getSourcesStatus()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/sources/status',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockResponse)
-    })
-  })
-
-  describe('enableSource', () => {
-    it('sends PUT request to enable source', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, source: 'webscraper', enabled: true }),
-      })
-
-      await api.enableSource('webscraper')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/sources/webscraper/enable',
-        expect.objectContaining({ method: 'PUT' })
-      )
-    })
-  })
-
-  describe('disableSource', () => {
-    it('sends PUT request to disable source', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, source: 'webscraper', enabled: false }),
-      })
-
-      await api.disableSource('webscraper')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/sources/webscraper/disable',
-        expect.objectContaining({ method: 'PUT' })
-      )
-    })
-  })
-
-  describe('saveCategoriesConfig', () => {
-    it('sends PUT request with categories config', async () => {
-      const config = { categories: [{ id: 'cat1', name: 'Category 1', subcategories: [] }] }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'Saved' }),
-      })
-
-      await api.saveCategoriesConfig(config)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/settings/categories',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify(config),
-        })
-      )
-    })
-  })
-
-  describe('getScraperTemplates', () => {
-    it('fetches scraper templates', async () => {
-      const mockTemplates = { templates: [{ id: 't1', name: 'Template 1' }] }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockTemplates),
-      })
-
-      const result = await api.getScraperTemplates()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/scrapers/templates',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockTemplates)
-    })
-  })
-
-  describe('analyzeUrlForSelectors', () => {
-    it('sends POST request with URL to analyze', async () => {
-      const mockResponse = { success: true, selectors: { container_selector: '.review' } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      await api.analyzeUrlForSelectors('https://example.com/reviews')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/scrapers/analyze-url',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ url: 'https://example.com/reviews' }),
-        })
-      )
-    })
-  })
-
-  describe('runScraper', () => {
-    it('sends POST request to run scraper', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, execution_id: 'exec-1', status: 'running' }),
-      })
-
-      await api.runScraper('scraper-123')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/scrapers/scraper-123/run',
-        expect.objectContaining({ method: 'POST' })
-      )
-    })
-  })
-
-  describe('getScraperStatus', () => {
-    it('fetches scraper status', async () => {
-      const mockStatus = { scraper_id: 's1', status: 'completed', pages_scraped: 5, items_found: 50 }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockStatus),
-      })
-
-      const result = await api.getScraperStatus('s1')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/scrapers/s1/status',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockStatus)
-    })
-  })
-
-  describe('getScraperRuns', () => {
-    it('fetches scraper run history', async () => {
-      const mockRuns = { runs: [{ sk: 'run-1', status: 'completed' }] }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockRuns),
-      })
-
-      const result = await api.getScraperRuns('s1')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/scrapers/s1/runs',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockRuns)
-    })
-  })
-
-  describe('startManualImportParse', () => {
-    it('sends POST request with source URL and raw text', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, job_id: 'job-1' }),
-      })
-
-      await api.startManualImportParse('https://example.com', 'Review text here')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/scrapers/manual/parse',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ source_url: 'https://example.com', raw_text: 'Review text here' }),
-        })
-      )
-    })
-  })
-
-  describe('getManualImportStatus', () => {
-    it('fetches manual import job status', async () => {
-      const mockStatus = { status: 'completed', reviews: [{ text: 'Review 1' }] }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockStatus),
-      })
-
-      const result = await api.getManualImportStatus('job-1')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/scrapers/manual/parse/job-1',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockStatus)
-    })
-  })
-
-  describe('confirmManualImport', () => {
-    it('sends POST request with job ID and reviews', async () => {
-      const reviews = [{ text: 'Review 1', rating: 5, author: null, date: null, title: null }]
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, imported_count: 1 }),
-      })
-
-      await api.confirmManualImport('job-1', reviews)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/scrapers/manual/confirm',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ job_id: 'job-1', reviews }),
-        })
-      )
-    })
-  })
-
-  describe('saveFeedbackFormConfig', () => {
-    it('sends PUT request with form config', async () => {
-      const config = { enabled: true, title: 'Feedback', description: 'Share your thoughts' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'Saved' }),
-      })
-
-      await api.saveFeedbackFormConfig(config as any)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/config',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify(config),
-        })
-      )
-    })
-  })
-
-  describe('submitFeedbackForm', () => {
-    it('sends POST request with feedback data', async () => {
-      const data = { text: 'Great product!', rating: 5, email: 'test@example.com' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, feedback_id: 'fb-1' }),
-      })
-
-      await api.submitFeedbackForm(data)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/submit',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify(data),
-        })
-      )
-    })
-  })
-
-  describe('getFeedbackForms', () => {
-    it('fetches all feedback forms', async () => {
-      const mockForms = { success: true, forms: [{ form_id: 'f1', name: 'Form 1' }] }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockForms),
-      })
-
-      const result = await api.getFeedbackForms()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-forms',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockForms)
-    })
-  })
-
-  describe('createFeedbackForm', () => {
-    it('sends POST request with form data', async () => {
-      const form = { name: 'New Form', enabled: true }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, form: { ...form, form_id: 'f1' } }),
-      })
-
-      await api.createFeedbackForm(form as any)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-forms',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify(form),
-        })
-      )
-    })
-  })
-
-  describe('updateFeedbackForm', () => {
-    it('sends PUT request with form updates', async () => {
-      const updates = { name: 'Updated Form' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, form: { form_id: 'f1', ...updates } }),
-      })
-
-      await api.updateFeedbackForm('f1', updates)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-forms/f1',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify(updates),
-        })
-      )
-    })
-  })
-
-  describe('deleteFeedbackForm', () => {
-    it('sends DELETE request for form', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true }),
-      })
-
-      await api.deleteFeedbackForm('f1')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-forms/f1',
-        expect.objectContaining({ method: 'DELETE' })
-      )
-    })
-  })
-
-  describe('updateUserGroup', () => {
-    it('sends PUT request with new group', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'Updated' }),
-      })
-
-      await api.updateUserGroup('user1', 'admins')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/users/user1/group',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify({ group: 'admins' }),
-        })
-      )
-    })
-  })
-
-  describe('resetUserPassword', () => {
-    it('sends POST request to reset password', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'Password reset' }),
-      })
-
-      await api.resetUserPassword('user1')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/users/user1/reset-password',
-        expect.objectContaining({ method: 'POST' })
-      )
-    })
-  })
-
-  describe('enableUser', () => {
-    it('sends PUT request to enable user', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'User enabled' }),
-      })
-
-      await api.enableUser('user1')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/users/user1/enable',
-        expect.objectContaining({ method: 'PUT' })
-      )
-    })
-  })
-
-  describe('disableUser', () => {
-    it('sends PUT request to disable user', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'User disabled' }),
-      })
-
-      await api.disableUser('user1')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/users/user1/disable',
-        expect.objectContaining({ method: 'PUT' })
-      )
-    })
-  })
-
-  describe('deleteUser', () => {
-    it('sends DELETE request for user', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'User deleted' }),
-      })
-
-      await api.deleteUser('user1')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/users/user1',
-        expect.objectContaining({ method: 'DELETE' })
-      )
-    })
-  })
-
-  describe('getPrioritizationScores', () => {
-    it('fetches prioritization scores', async () => {
-      const mockScores = { scores: { issue1: { impact: 5, effort: 3 } } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockScores),
-      })
-
-      const result = await api.getPrioritizationScores()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/prioritization',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockScores)
-    })
-  })
-
-  describe('savePrioritizationScores', () => {
-    it('sends PUT request with scores', async () => {
-      const scores = { issue1: { impact: 5, effort: 3 } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true }),
-      })
-
-      await api.savePrioritizationScores(scores as any)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/prioritization',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify({ scores }),
-        })
-      )
-    })
-  })
-
-  describe('patchPrioritizationScores', () => {
-    it('sends PATCH request with only changed scores', async () => {
-      const changedScores = { doc1: { document_id: 'doc1', impact: 4, time_to_market: 2, confidence: 3, strategic_fit: 4, notes: 'test' } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, updated_count: 1 }),
-      })
-
-      await api.patchPrioritizationScores(changedScores as any)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/prioritization',
-        expect.objectContaining({
-          method: 'PATCH',
-          body: JSON.stringify({ scores: changedScores }),
-        })
-      )
-    })
-  })
-
-  describe('createS3ImportSource', () => {
-    it('sends POST request with source name', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, source: { name: 'new-source' } }),
-      })
-
-      await api.createS3ImportSource('new-source')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/s3-import/sources',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ name: 'new-source' }),
-        })
-      )
-    })
-  })
-
-  describe('getS3ImportFiles', () => {
-    it('fetches files with source filter', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ files: [], bucket: 'test-bucket' }),
-      })
-
-      await api.getS3ImportFiles({ source: 'default', include_processed: true })
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('source=default'),
-        expect.any(Object)
-      )
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('include_processed=true'),
-        expect.any(Object)
-      )
-    })
-  })
-
-  describe('getS3UploadUrl', () => {
-    it('sends POST request for presigned URL', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, upload_url: 'https://s3.example.com/upload' }),
-      })
-
-      await api.getS3UploadUrl('file.json', 'default', 'application/json')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/s3-import/upload-url',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ filename: 'file.json', source: 'default', content_type: 'application/json' }),
-        })
-      )
-    })
-  })
-
-  describe('getDataExplorerBuckets', () => {
-    it('fetches available buckets', async () => {
-      const mockBuckets = { buckets: [{ id: 'raw', name: 'voc-raw-data', label: 'Raw Data' }] }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockBuckets),
-      })
-
-      const result = await api.getDataExplorerBuckets()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/data-explorer/buckets',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockBuckets)
-    })
-  })
-
-  describe('getDataExplorerS3', () => {
-    it('fetches S3 objects with prefix and bucket', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ objects: [], bucket: 'test', prefix: 'raw/' }),
-      })
-
-      await api.getDataExplorerS3('raw/', 'test-bucket')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('prefix=raw'),
-        expect.any(Object)
-      )
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('bucket=test-bucket'),
-        expect.any(Object)
-      )
-    })
-  })
-
-  describe('getDataExplorerS3Preview', () => {
-    it('fetches file preview', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ content: { test: 'data' }, size: 100 }),
-      })
-
-      await api.getDataExplorerS3Preview('raw/file.json', 'test-bucket')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('key=raw'),
-        expect.any(Object)
-      )
-    })
-  })
-
-  describe('saveDataExplorerS3', () => {
-    it('sends PUT request with content', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true }),
-      })
-
-      await api.saveDataExplorerS3('raw/file.json', '{"test": "data"}', true, 'test-bucket')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/data-explorer/s3',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify({ key: 'raw/file.json', content: '{"test": "data"}', sync_to_dynamo: true, bucket: 'test-bucket' }),
-        })
-      )
-    })
-  })
-
-  describe('deleteDataExplorerS3', () => {
-    it('sends DELETE request for S3 file', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true }),
-      })
-
-      await api.deleteDataExplorerS3('raw/file.json', 'test-bucket')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('key=raw'),
-        expect.objectContaining({ method: 'DELETE' })
-      )
-    })
-  })
-
-  describe('saveDataExplorerFeedback', () => {
-    it('sends PUT request with feedback data', async () => {
-      const data = { text: 'Updated feedback' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true }),
-      })
-
-      await api.saveDataExplorerFeedback('fb-1', data as any, true)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/data-explorer/feedback',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify({ feedback_id: 'fb-1', data, sync_to_s3: true }),
-        })
-      )
-    })
-  })
-
-  describe('deleteDataExplorerFeedback', () => {
-    it('sends DELETE request for feedback', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true }),
-      })
-
-      await api.deleteDataExplorerFeedback('fb-1')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('feedback_id=fb-1'),
-        expect.objectContaining({ method: 'DELETE' })
-      )
-    })
-  })
-
-  describe('getValidationLogs', () => {
-    it('fetches validation logs with default parameters', async () => {
-      const mockResponse = { logs: [], count: 0, days: 7 }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      const result = await api.getValidationLogs()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/logs/validation?',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockResponse)
-    })
-
-    it('includes source and days parameters when provided', async () => {
-      const mockResponse = { logs: [{ source_platform: 'webscraper', message_id: 'msg-1' }], count: 1, days: 7 }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      await api.getValidationLogs({ source: 'webscraper', days: 7, limit: 50 })
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('source=webscraper'),
-        expect.any(Object)
-      )
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('days=7'),
-        expect.any(Object)
-      )
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('limit=50'),
-        expect.any(Object)
-      )
-    })
-  })
-
-  describe('getProcessingLogs', () => {
-    it('fetches processing logs with parameters', async () => {
-      const mockResponse = { logs: [{ error_type: 'BedrockError', error_message: 'Failed' }], count: 1, days: 7 }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      const result = await api.getProcessingLogs({ days: 7 })
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/logs/processing'),
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockResponse)
-    })
-  })
-
-  describe('getLogsSummary', () => {
-    it('fetches logs summary with days parameter', async () => {
-      const mockResponse = {
-        summary: {
-          validation_failures: { webscraper: 5 },
-          processing_errors: { manual_import: 2 },
-          total_validation_failures: 5,
-          total_processing_errors: 2,
-        },
-        days: 7,
-      }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      const result = await api.getLogsSummary(7)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/logs/summary?days=7',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockResponse)
-    })
-
-    it('uses default days when not provided', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ summary: {}, days: 7 }),
-      })
-
-      await api.getLogsSummary()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/logs/summary'),
-        expect.any(Object)
-      )
-    })
-  })
-
-  describe('getScraperLogs', () => {
-    it('fetches scraper logs by scraper ID', async () => {
-      const mockResponse = {
-        scraper_id: 'scraper-123',
-        logs: [{ run_id: 'run-1', status: 'completed', pages_scraped: 10 }],
-        count: 1,
-      }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-
-      const result = await api.getScraperLogs('scraper-123', { days: 7, limit: 10 })
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/logs/scraper/scraper-123'),
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockResponse)
-    })
-  })
-
-  describe('clearValidationLogs', () => {
-    it('sends DELETE request to clear validation logs for source', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, deleted: 5 }),
-      })
-
-      const result = await api.clearValidationLogs('webscraper')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/logs/validation/webscraper',
-        expect.objectContaining({ method: 'DELETE' })
-      )
-      expect(result).toEqual({ success: true, deleted: 5 })
-    })
-  })
 })
 
 describe('getDaysFromRange', () => {

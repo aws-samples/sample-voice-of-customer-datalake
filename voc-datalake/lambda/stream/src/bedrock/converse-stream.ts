@@ -25,7 +25,7 @@ export function getBedrockClient(): BedrockRuntimeClient {
   return clientHolder.instance;
 }
 
-export interface ConverseStreamParams {
+interface ConverseStreamParams {
   messages: Message[];
   systemPrompt: string;
   tools?: Tool[];

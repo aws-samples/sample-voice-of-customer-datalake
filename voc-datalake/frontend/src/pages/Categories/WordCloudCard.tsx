@@ -1,5 +1,5 @@
-import { X } from 'lucide-react'
 import clsx from 'clsx'
+import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { WordCloudItem } from './types'
 
@@ -17,7 +17,7 @@ export function WordCloudCard({
   onClearKeywords,
 }: WordCloudCardProps) {
   const { t } = useTranslation('categories')
-  const maxCount = Math.max(...wordCloudData.map(w => w.count), 1)
+  const maxCount = Math.max(...wordCloudData.map((w) => w.count), 1)
 
   return (
     <div className="card">
@@ -34,7 +34,9 @@ export function WordCloudCard({
         )}
       </div>
       <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center items-center min-h-[150px] sm:min-h-[200px]">
-        {wordCloudData.map(({ word, count }) => {
+        {wordCloudData.map(({
+          word, count,
+        }) => {
           const size = 0.65 + (count / maxCount) * 0.6
           const isSelected = selectedKeywords.includes(word)
           return (
@@ -45,7 +47,7 @@ export function WordCloudCard({
                 'px-1.5 sm:px-2 py-0.5 sm:py-1 rounded transition-all cursor-pointer active:scale-95',
                 isSelected
                   ? 'bg-blue-600 text-white ring-2 ring-blue-300 shadow-md'
-                  : 'bg-blue-100 text-blue-800 hover:bg-blue-200 sm:hover:scale-105'
+                  : 'bg-blue-100 text-blue-800 hover:bg-blue-200 sm:hover:scale-105',
               )}
               style={{ fontSize: `${size}rem` }}
               title={t('mentionsTooltip', { count })}
