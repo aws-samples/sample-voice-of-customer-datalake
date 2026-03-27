@@ -5,10 +5,8 @@ Tests: Bedrock retry/error handling, job status updates, step function routing, 
 Removed: import/existence checks (TestSharedModuleImports, TestBedrockThrottlingException.test_exception_exists),
          mock-passthrough test (TestInvokeBedrockWithRetry.test_successful_invocation).
 """
-import json
 import pytest
-from unittest.mock import patch, MagicMock, call
-from decimal import Decimal
+from unittest.mock import patch, MagicMock
 from botocore.exceptions import ClientError
 
 

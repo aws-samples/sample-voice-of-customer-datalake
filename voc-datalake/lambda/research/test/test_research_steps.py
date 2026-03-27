@@ -1,6 +1,6 @@
 """Tests for research step functions (initialize, analyze, synthesize, validate, save)."""
 import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 from decimal import Decimal
 
 
@@ -306,7 +306,7 @@ class TestLambdaHandlerRouting:
         from research_step_handler import lambda_handler
         mock_step.return_value = {'synthesis': 'test'}
         event = {'step': 'synthesize', 'project_id': 'p1', 'job_id': 'j1'}
-        result = lambda_handler(event, lambda_context)
+        lambda_handler(event, lambda_context)
         mock_step.assert_called_once()
 
     @patch('research_step_handler.step_validate')
@@ -314,7 +314,7 @@ class TestLambdaHandlerRouting:
         from research_step_handler import lambda_handler
         mock_step.return_value = {'validation': 'test'}
         event = {'step': 'validate', 'project_id': 'p1', 'job_id': 'j1'}
-        result = lambda_handler(event, lambda_context)
+        lambda_handler(event, lambda_context)
         mock_step.assert_called_once()
 
     @patch('research_step_handler.step_save')
@@ -322,7 +322,7 @@ class TestLambdaHandlerRouting:
         from research_step_handler import lambda_handler
         mock_step.return_value = {'success': True}
         event = {'step': 'save', 'project_id': 'p1', 'job_id': 'j1'}
-        result = lambda_handler(event, lambda_context)
+        lambda_handler(event, lambda_context)
         mock_step.assert_called_once()
 
     def test_bedrock_throttling_propagates(self, lambda_context):

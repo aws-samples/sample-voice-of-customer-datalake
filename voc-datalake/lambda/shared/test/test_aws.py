@@ -5,7 +5,6 @@ Focuses on behavioral tests: caching, secret parsing, error handling.
 Removed: client factory tests that only verify boto3 is called with the right service name.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 
 

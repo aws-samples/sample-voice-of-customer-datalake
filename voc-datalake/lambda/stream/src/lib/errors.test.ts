@@ -8,8 +8,6 @@ import {
   NotFoundError,
   ConfigurationError,
   ServiceError,
-  AuthorizationError,
-  ConflictError,
   isApiError,
 } from './errors.js';
 
@@ -65,22 +63,6 @@ describe('ServiceError', () => {
     const err = new ServiceError('bedrock down');
     expect(err.statusCode).toBe(500);
     expect(err.name).toBe('ServiceError');
-  });
-});
-
-describe('AuthorizationError', () => {
-  it('has status code 403', () => {
-    const err = new AuthorizationError('forbidden');
-    expect(err.statusCode).toBe(403);
-    expect(err.name).toBe('AuthorizationError');
-  });
-});
-
-describe('ConflictError', () => {
-  it('has status code 409', () => {
-    const err = new ConflictError('already exists');
-    expect(err.statusCode).toBe(409);
-    expect(err.name).toBe('ConflictError');
   });
 });
 

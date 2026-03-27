@@ -167,6 +167,34 @@ export function openPrintWindow(options: PrintOptions): Window | null {
 }
 
 /**
+ * Creates a PDF generator function that opens a print window with the given content.
+ * Eliminates boilerplate across per-page PDF generators.
+ *
+ * @example
+ * ```ts
+ * export const generateFeedbackPDF = createPdfGenerator<FeedbackPDFProps>(
+ *   'Feedback Report',
+ *   (props) => <FeedbackPDFContent {...props} />,
+ * )
+ * ```
+ */
+export function createPdfGenerator<T>(
+  title: string | ((props: T) => string),
+  render: (props: T) => ReactElement,
+): (props: T) => void {
+  return (props: T) => {
+    const resolvedTitle = typeof title === 'function' ? title(props) : title
+    const printWindow = openPrintWindow({
+      title: resolvedTitle,
+      content: render(props),
+    })
+    if (!printWindow) {
+      throw new TypeError('Failed to open print window. Please allow popups for this site.')
+    }
+  }
+}
+
+/**
  * Escapes HTML special characters to prevent XSS.
  */
 function escapeHtml(text: string): string {

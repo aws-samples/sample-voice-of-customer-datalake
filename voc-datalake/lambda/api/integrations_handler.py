@@ -7,7 +7,7 @@ import json
 import os
 from typing import Any
 
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_secrets_client
 from shared.api import create_api_resolver, api_handler
 from shared.exceptions import ConfigurationError, ServiceError, ValidationError
@@ -131,13 +131,6 @@ def update_credentials(source: str):
     except Exception as e:
         logger.exception(f"Failed to update credentials: {e}")
         raise ServiceError('Failed to update credentials')
-
-
-@app.post("/integrations/<source>/test")
-@tracer.capture_method
-def test_integration(source: str):
-    """Test an integration connection."""
-    return {'success': True, 'message': f'Integration {source} test not implemented'}
 
 
 # ============================================

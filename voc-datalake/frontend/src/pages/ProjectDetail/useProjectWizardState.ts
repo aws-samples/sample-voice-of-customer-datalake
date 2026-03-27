@@ -33,7 +33,7 @@ const DEFAULT_MERGE_CONFIG: MergeToolConfig = {
   instructions: '',
 }
 
-export function useWizardState() {
+export function useProjectWizardState() {
   const [activeWizard, setActiveWizard] = useState<WizardType>(null)
   const [contextConfig, setContextConfig] = useState<ContextConfig>(defaultContextConfig)
   const [personaConfig, setPersonaConfig] = useState<PersonaToolConfig>(DEFAULT_PERSONA_CONFIG)

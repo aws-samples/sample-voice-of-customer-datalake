@@ -1,7 +1,6 @@
 """Tests for document merger job handler."""
 
 import pytest
-from unittest.mock import MagicMock
 
 
 class TestDocumentMergerHandler:

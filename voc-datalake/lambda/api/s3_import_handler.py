@@ -3,14 +3,12 @@ S3 Import API Lambda - File explorer for S3 import bucket.
 Dedicated Lambda to avoid 20KB IAM policy limit on OpsApi.
 """
 
-import json
 import os
 import re
 import urllib.parse
-from datetime import datetime, timezone
 from typing import Any
 
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_s3_client
 from shared.api import create_api_resolver, api_handler
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
@@ -19,8 +17,6 @@ s3_client = get_s3_client()
 S3_IMPORT_BUCKET = os.environ.get("S3_IMPORT_BUCKET", "")
 
 app = create_api_resolver()
-
-
 @app.get("/s3-import/sources")
 @tracer.capture_method
 def list_sources():
@@ -39,8 +35,6 @@ def list_sources():
     except Exception as e:
         logger.exception(f"Failed to list S3 sources: {e}")
         raise ServiceError('Failed to list sources')
-
-
 @app.post("/s3-import/sources")
 @tracer.capture_method
 def create_source():
@@ -62,8 +56,6 @@ def create_source():
     except Exception as e:
         logger.exception(f"Failed to create source folder: {e}")
         raise ServiceError('Failed to create source folder')
-
-
 @app.get("/s3-import/files")
 @tracer.capture_method
 def list_files():
@@ -102,8 +94,6 @@ def list_files():
     except Exception as e:
         logger.exception(f"Failed to list S3 files: {e}")
         raise ServiceError('Failed to list files')
-
-
 @app.post("/s3-import/upload-url")
 @tracer.capture_method
 def get_upload_url():
@@ -137,8 +127,6 @@ def get_upload_url():
     except Exception as e:
         logger.exception(f"Failed to generate upload URL: {e}")
         raise ServiceError('Failed to generate upload URL')
-
-
 @app.delete("/s3-import/file/<key>")
 @tracer.capture_method
 def delete_file(key: str):
@@ -154,8 +142,6 @@ def delete_file(key: str):
     except Exception as e:
         logger.exception(f"Failed to delete file: {e}")
         raise ServiceError('Failed to delete file')
-
-
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

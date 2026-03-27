@@ -12,12 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
-from shared.exceptions import ConfigurationError
-
 # Import from api/projects.py - the business logic stays there
 from api.projects import generate_personas
-
-
 @job_handler(error_message='Persona generation failed')
 def handle_job(ctx: JobContext, project_id: str, job_id: str, filters: dict) -> dict:
     """Handle async persona generation job.
@@ -36,8 +32,6 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, filters: dict) -> 
     
     result = generate_personas(project_id, filters, progress_callback=progress_callback)
     return result
-
-
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 @metrics.log_metrics(capture_cold_start_metric=True)

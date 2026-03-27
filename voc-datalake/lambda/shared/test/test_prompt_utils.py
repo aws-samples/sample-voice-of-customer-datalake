@@ -1,5 +1,4 @@
 """Tests for shared.prompts module."""
-import json
 import pytest
 from unittest.mock import patch, mock_open, MagicMock
 from pathlib import Path
@@ -29,7 +28,7 @@ class TestGetPromptsDir:
         """get_prompts_dir raises FileNotFoundError when no dir exists."""
         from shared.prompts import get_prompts_dir
         # Patch __file__ to point to a location with no prompts dir nearby
-        fake_file = str(tmp_path / "shared" / "prompts.py")
+        str(tmp_path / "shared" / "prompts.py")
         with patch('shared.prompts.Path') as mp:
             mock_false = MagicMock()
             mock_false.exists.return_value = False

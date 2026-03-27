@@ -11,7 +11,6 @@ Provides Cognito user management for admins:
 Only accessible by users in the 'admins' group.
 """
 import os
-import json
 import uuid
 import boto3
 from typing import Any

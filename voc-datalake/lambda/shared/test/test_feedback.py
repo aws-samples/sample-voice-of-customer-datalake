@@ -2,9 +2,7 @@
 Tests for shared/feedback.py - Feedback utilities for LLM context building.
 """
 
-import pytest
-from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone, timedelta
+from unittest.mock import MagicMock
 
 
 class TestGetFeedbackContext:
@@ -47,7 +45,7 @@ class TestGetFeedbackContext:
             {'feedback_id': '1', 'category': 'delivery'}
         ]}
         
-        result = get_feedback_context(
+        get_feedback_context(
             mock_table,
             {'categories': ['delivery', 'support']},
             limit=10

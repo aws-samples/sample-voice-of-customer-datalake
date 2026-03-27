@@ -4,19 +4,17 @@ Manages brand configuration and categories.
 """
 
 import json
-import os
 import re
 from datetime import datetime, timezone
 from typing import Any
 
-from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.logging import logger, tracer
+
 from shared.api import create_api_resolver, api_handler
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
+from shared.tables import get_aggregates_table
 
-dynamodb = get_dynamodb_resource()
-AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+aggregates_table = get_aggregates_table()
 
 SETTINGS_PK = "SETTINGS#brand"
 SETTINGS_SK = "config"
@@ -38,8 +36,6 @@ SUPPORTED_LANGUAGES = {
 }
 
 app = create_api_resolver()
-
-
 @app.get("/settings/brand")
 @tracer.capture_method
 def get_brand_settings():
@@ -58,8 +54,6 @@ def get_brand_settings():
     except Exception as e:
         logger.exception(f"Failed to get brand settings: {e}")
         raise ServiceError('Failed to retrieve brand settings')
-
-
 @app.put("/settings/brand")
 @tracer.capture_method
 def save_brand_settings():
@@ -76,8 +70,6 @@ def save_brand_settings():
     except Exception as e:
         logger.exception(f"Failed to save brand settings: {e}")
         raise ServiceError('Failed to save brand settings')
-
-
 @app.get("/settings/review")
 @tracer.capture_method
 def get_review_settings():
@@ -95,8 +87,6 @@ def get_review_settings():
     except Exception as e:
         logger.exception(f"Failed to get review settings: {e}")
         raise ServiceError('Failed to retrieve review settings')
-
-
 @app.put("/settings/review")
 @tracer.capture_method
 def save_review_settings():
@@ -120,8 +110,6 @@ def save_review_settings():
     except Exception as e:
         logger.exception(f"Failed to save review settings: {e}")
         raise ServiceError('Failed to save review settings')
-
-
 @app.get("/settings/categories")
 @tracer.capture_method
 def get_categories_config():
@@ -137,8 +125,6 @@ def get_categories_config():
     except Exception as e:
         logger.exception(f"Failed to get categories config: {e}")
         return {'categories': [], 'error': 'Failed to retrieve categories'}
-
-
 @app.put("/settings/categories")
 @tracer.capture_method
 def save_categories_config():
@@ -154,8 +140,6 @@ def save_categories_config():
     except Exception as e:
         logger.exception(f"Failed to save categories config: {e}")
         raise ServiceError('Failed to save categories')
-
-
 @app.post("/settings/categories/generate")
 @tracer.capture_method
 def generate_categories():
@@ -200,8 +184,6 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
     except Exception as e:
         logger.exception(f"Failed to generate categories: {e}")
         raise ServiceError('Failed to generate categories')
-
-
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

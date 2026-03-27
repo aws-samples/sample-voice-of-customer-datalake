@@ -3,8 +3,7 @@ Tests for integrations_handler.py - /integrations/*, /sources/* endpoints.
 Manages API credentials and data source schedules.
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestGetIntegrationStatus:
@@ -261,7 +260,7 @@ class TestUpdateCredentials:
         )
         
         # Act
-        response = lambda_handler(event, lambda_context)
+        lambda_handler(event, lambda_context)
         
         # Assert
         assert mock_secrets.put_secret_value.called
@@ -296,31 +295,6 @@ class TestUpdateCredentials:
         # Assert - now returns 500 with error key
         assert response['statusCode'] == 500
         assert 'error' in body
-
-
-class TestTestIntegration:
-    """Tests for POST /integrations/<source>/test endpoint."""
-
-    def test_returns_not_implemented_message(
-        self, api_gateway_event, lambda_context
-    ):
-        """Returns not implemented message for test endpoint."""
-        # Arrange
-        from integrations_handler import lambda_handler
-        event = api_gateway_event(
-            method='POST',
-            path='/integrations/webscraper/test',
-            path_params={'source': 'webscraper'}
-        )
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        assert 'not implemented' in body['message'].lower()
 
 
 class TestGetSourcesStatus:

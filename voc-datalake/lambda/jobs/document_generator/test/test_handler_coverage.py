@@ -3,7 +3,6 @@ Additional coverage tests for document_generator/handler.py.
 Covers: feedback gathering with filtering (lines 71-96), personas gathering (lines 100-110),
 documents/research gathering (lines 91, 93-96).
 """
-import pytest
 from unittest.mock import MagicMock
 
 

@@ -9,20 +9,12 @@ import {
 import { useTranslation } from 'react-i18next'
 import { feedbackFormsApi } from '../../api/feedbackFormsApi'
 import RatingStars from '../../components/RatingStars'
+import { sentimentTailwindColor } from '../../lib/sentiment'
 
 interface SubmissionsModalProps {
   readonly formId: string
   readonly formName: string
   readonly onClose: () => void
-}
-
-function getSentimentColor(sentiment: string): string {
-  switch (sentiment) {
-    case 'positive': return 'text-green-600 bg-green-50'
-    case 'negative': return 'text-red-600 bg-red-50'
-    case 'mixed': return 'text-yellow-600 bg-yellow-50'
-    default: return 'text-gray-600 bg-gray-50'
-  }
 }
 
 function formatDate(dateStr: string): string {
@@ -63,7 +55,7 @@ function SubmissionCard({ submission }: SubmissionCardProps) {
         <span
           className={clsx(
             'px-2 py-0.5 rounded text-xs font-medium capitalize',
-            getSentimentColor(submission.sentiment_label),
+            sentimentTailwindColor(submission.sentiment_label),
           )}
         >
           {submission.sentiment_label === '' ? 'neutral' : submission.sentiment_label}

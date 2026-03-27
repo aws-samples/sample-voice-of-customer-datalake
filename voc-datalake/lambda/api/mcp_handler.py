@@ -10,9 +10,7 @@ from the Authorization header against SHA-256 hashes in the projects table.
 """
 
 import json
-import os
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
 from typing import Any
 
 from aws_lambda_powertools import Logger, Tracer, Metrics
@@ -21,6 +19,7 @@ from boto3.dynamodb.conditions import Key
 from shared.aws import get_dynamodb_resource
 from shared.api import DecimalEncoder
 from shared.tokens import hash_token
+from shared.tables import get_projects_table, get_feedback_table, get_aggregates_table
 from projects import autoseed_project
 
 logger = Logger()
@@ -31,13 +30,9 @@ metrics = Metrics(namespace="VoC-MCP")
 dynamodb = get_dynamodb_resource()
 
 # Configuration
-PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
-FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
-AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
-
-projects_table = dynamodb.Table(PROJECTS_TABLE) if PROJECTS_TABLE else None
-feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+projects_table = get_projects_table()
+feedback_table = get_feedback_table()
+aggregates_table = get_aggregates_table()
 
 # MCP Protocol version
 MCP_PROTOCOL_VERSION = "2024-11-05"

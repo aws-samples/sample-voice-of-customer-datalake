@@ -4,7 +4,6 @@ Covers json_upload endpoint (lines 357-464), confirm_import edge cases,
 and start_parse configuration errors.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 
 

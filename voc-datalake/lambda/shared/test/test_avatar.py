@@ -1,7 +1,6 @@
 """Tests for shared.avatar module - avatar generation utilities."""
 
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 import base64
 

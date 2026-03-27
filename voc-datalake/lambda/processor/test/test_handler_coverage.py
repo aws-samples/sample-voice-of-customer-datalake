@@ -10,7 +10,6 @@ import json
 import time
 import pytest
 from unittest.mock import patch, MagicMock
-from decimal import Decimal
 
 
 class TestValidationEnabled:
@@ -89,8 +88,8 @@ class TestGetPrimaryLanguage:
 
 class TestGetCategoriesConfigCaching:
 
-    @patch('processor.handler._categories_cache', [{'name': 'cached'}])
-    @patch('processor.handler._categories_cache_time', time.time())
+    @patch('shared.api._categories_cache', [{'name': 'cached'}])
+    @patch('shared.api._categories_cache_time', time.time())
     def test_returns_cached_categories(self):
         """Returns cached categories without hitting DynamoDB."""
         from processor.handler import get_categories_config

@@ -3,7 +3,6 @@ Coverage tests for shared.avatar module — AccessDenied and ValidationException
 """
 
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 
 

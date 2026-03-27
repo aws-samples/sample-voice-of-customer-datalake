@@ -3,20 +3,17 @@ Logs API Lambda - Handles /logs/*
 Provides access to validation failures and processing errors for user visibility.
 """
 
-import os
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
-from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource
+from shared.logging import logger, tracer
 from shared.api import create_api_resolver, api_handler
 from shared.exceptions import ConfigurationError, ServiceError
+from shared.tables import get_aggregates_table
 
-from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.conditions import Key
 
-dynamodb = get_dynamodb_resource()
-AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+aggregates_table = get_aggregates_table()
 
 app = create_api_resolver()
 
@@ -136,7 +133,7 @@ def get_scraper_logs(scraper_id: str):
     limit = min(int(params.get('limit', '50')), 200)
     
     try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         
         # Key format matches scrapers_handler: SCRAPER_RUN#{scraper_id}
         response = aggregates_table.query(

@@ -24,7 +24,7 @@ import {
 import {
   useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations,
 } from './useProjectData'
-import { useWizardState } from './useWizardState'
+import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
 import type { Tab } from './types'
 
@@ -37,7 +37,7 @@ export default function ProjectDetail() {
   const { t } = useTranslation('projectDetail')
 
   // Custom hooks for state management
-  const wizard = useWizardState()
+  const wizard = useProjectWizardState()
   const selection = useSelectionState()
   const docModal = useDocModalState()
   const importModal = useImportModalState()

@@ -5,7 +5,6 @@ update_credentials no-secrets, run_source, sources_status with custom sources,
 enable/disable error paths.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 
 

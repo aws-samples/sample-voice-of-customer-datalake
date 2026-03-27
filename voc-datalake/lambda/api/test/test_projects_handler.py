@@ -2,9 +2,7 @@
 Tests for projects_handler.py - /projects/* endpoints.
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
+from unittest.mock import patch
 
 
 class TestValidatePersonaCount:
@@ -141,7 +139,7 @@ class TestGetProjectEndpoint:
         )
         
         response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
+        json.loads(response['body'])
         
         mock_get_project.assert_called_once_with('proj-123')
 

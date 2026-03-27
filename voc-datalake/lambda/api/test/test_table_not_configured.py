@@ -8,7 +8,6 @@ if not table: raise ConfigurationError("...not configured").
 import importlib
 import json
 import pytest
-from unittest.mock import MagicMock
 
 
 def _make_event(method: str, path: str, body: dict = None) -> dict:

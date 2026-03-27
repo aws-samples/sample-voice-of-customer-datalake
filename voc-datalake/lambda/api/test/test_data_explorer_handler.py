@@ -4,7 +4,6 @@ Full CRUD for S3 raw data and DynamoDB feedback.
 """
 import json
 import os
-import pytest
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
 
@@ -30,7 +29,6 @@ class TestListS3Objects:
         }
         
         import sys
-        import os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from data_explorer_handler import lambda_handler
         
@@ -268,14 +266,14 @@ class TestDeleteS3File:
 class TestSaveFeedback:
     """Tests for PUT /data-explorer/feedback endpoint."""
 
-    @patch('data_explorer_handler.dynamodb')
+    @patch('data_explorer_handler.get_feedback_table')
     def test_updates_feedback_record(
-        self, mock_dynamodb, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Updates feedback record in DynamoDB."""
         # Arrange
         mock_table = MagicMock()
-        mock_dynamodb.Table.return_value = mock_table
+        mock_get_table.return_value = mock_table
         mock_table.update_item.return_value = {}
         
         from data_explorer_handler import lambda_handler
@@ -301,9 +299,9 @@ class TestSaveFeedback:
         assert response['statusCode'] == 200
         assert body['success'] is True
 
-    @patch('data_explorer_handler.dynamodb')
+    @patch('data_explorer_handler.get_feedback_table')
     def test_returns_error_when_feedback_id_missing(
-        self, mock_dynamodb, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns error when feedback_id not provided."""
         # Arrange
@@ -327,14 +325,14 @@ class TestSaveFeedback:
 class TestDeleteFeedback:
     """Tests for DELETE /data-explorer/feedback endpoint."""
 
-    @patch('data_explorer_handler.dynamodb')
+    @patch('data_explorer_handler.get_feedback_table')
     def test_deletes_feedback_record(
-        self, mock_dynamodb, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Deletes feedback record from DynamoDB."""
         # Arrange
         mock_table = MagicMock()
-        mock_dynamodb.Table.return_value = mock_table
+        mock_get_table.return_value = mock_table
         mock_table.query.return_value = {
             'Items': [{'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#fb-123'}]
         }
@@ -355,14 +353,14 @@ class TestDeleteFeedback:
         assert response['statusCode'] == 200
         assert body['success'] is True
 
-    @patch('data_explorer_handler.dynamodb')
+    @patch('data_explorer_handler.get_feedback_table')
     def test_returns_error_when_feedback_not_found(
-        self, mock_dynamodb, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns error when feedback record not found."""
         # Arrange
         mock_table = MagicMock()
-        mock_dynamodb.Table.return_value = mock_table
+        mock_get_table.return_value = mock_table
         mock_table.query.return_value = {'Items': []}
         
         from data_explorer_handler import lambda_handler

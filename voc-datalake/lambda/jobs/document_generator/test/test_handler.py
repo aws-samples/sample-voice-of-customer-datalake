@@ -1,7 +1,7 @@
 """Tests for document generator job handler."""
 
 import pytest
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 # Constants for max_tokens validation
 PRD_MIN_TOKENS = 5000

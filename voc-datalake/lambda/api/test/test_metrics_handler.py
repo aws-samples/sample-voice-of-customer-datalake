@@ -2,9 +2,8 @@
 Tests for metrics_handler.py - /feedback/* and /metrics/* endpoints.
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone, timedelta
+from unittest.mock import patch
+from datetime import datetime, timezone
 
 
 class TestListFeedbackEndpoint:
@@ -247,7 +246,7 @@ class TestGetUrgentFeedback:
         )
         
         response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
+        json.loads(response['body'])
         
         assert response['statusCode'] == 200
 

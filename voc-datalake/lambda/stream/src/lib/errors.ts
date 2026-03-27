@@ -46,20 +46,6 @@ export class ServiceError extends ApiError {
   }
 }
 
-export class AuthorizationError extends ApiError {
-  constructor(message: string) {
-    super(message, 403);
-    this.name = 'AuthorizationError';
-  }
-}
-
-export class ConflictError extends ApiError {
-  constructor(message: string) {
-    super(message, 409);
-    this.name = 'ConflictError';
-  }
-}
-
 /**
  * Type guard to check if an unknown value is an ApiError.
  */

@@ -22,7 +22,7 @@ import boto3
 
 from projects import (
     list_projects, create_project, get_project, update_project, delete_project,
-    generate_personas, run_research,
+    run_research,
     create_document, update_document, delete_document,
     create_persona, update_persona, delete_persona,
     add_persona_note, update_persona_note, delete_persona_note,

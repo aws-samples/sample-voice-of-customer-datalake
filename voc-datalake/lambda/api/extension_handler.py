@@ -9,10 +9,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_s3_client, get_sqs_client
 from shared.api import create_api_resolver, api_handler, decimal_default
-from shared.exceptions import ValidationError, ConfigurationError, ServiceError
+from shared.exceptions import ValidationError
 
 s3 = get_s3_client()
 sqs = get_sqs_client()
@@ -24,8 +24,6 @@ app = create_api_resolver()
 
 MAX_TEXT_LENGTH = 50000  # 50KB max for selected text
 MAX_REVIEWS = 100  # Max reviews per submission
-
-
 def _get_user_id() -> str:
     """Extract user ID from Cognito claims."""
     try:
@@ -33,8 +31,6 @@ def _get_user_id() -> str:
         return claims.get('sub', claims.get('cognito:username', 'unknown'))
     except Exception:
         return 'unknown'
-
-
 @app.post("/extension/reviews")
 @tracer.capture_method
 def submit_reviews():
@@ -131,8 +127,6 @@ def submit_reviews():
         result['errors'] = errors
 
     return result
-
-
 @app.get("/extension/status")
 @tracer.capture_method
 def get_status():
@@ -143,8 +137,6 @@ def get_status():
         'user_id': user_id,
         'configured': bool(PROCESSING_QUEUE_URL),
     }
-
-
 def _store_raw_to_s3(
     batch_id: str,
     body: dict,
@@ -175,8 +167,6 @@ def _store_raw_to_s3(
     except Exception as e:
         logger.warning(f"Failed to store raw data to S3: {e}")
         return None
-
-
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

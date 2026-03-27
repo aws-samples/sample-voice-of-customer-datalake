@@ -3,7 +3,6 @@ Tests for app config CRUD endpoints in integrations_handler.py.
 Tests /integrations/{source}/apps GET, POST, DELETE for multi-instance plugins.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 
 

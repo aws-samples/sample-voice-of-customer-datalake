@@ -13,11 +13,11 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_secrets_client, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.logging import logger, tracer
+from shared.aws import get_secrets_client
 from shared.api import create_api_resolver, api_handler
 from shared.tables import get_aggregates_table
-from shared.exceptions import ConfigurationError, ValidationError, ServiceError, NotFoundError
+from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 from boto3.dynamodb.conditions import Key
 import boto3
 
@@ -47,8 +47,6 @@ BLOCKED_IP_RANGES = [
     ipaddress.ip_network('fc00::/7'),          # IPv6 private
     ipaddress.ip_network('fe80::/10'),         # IPv6 link-local
 ]
-
-
 def validate_url(url: str) -> tuple[bool, str]:
     """
     Validate URL to prevent SSRF attacks.
@@ -96,8 +94,6 @@ def validate_url(url: str) -> tuple[bool, str]:
         return False, 'URL validation failed'
     
     return True, ''
-
-
 @app.get("/scrapers")
 @tracer.capture_method
 def list_scrapers():
@@ -112,8 +108,6 @@ def list_scrapers():
     except Exception as e:
         logger.warning(f"Could not read scraper configs: {e}")
         return {'scrapers': []}
-
-
 @app.post("/scrapers")
 @tracer.capture_method
 def save_scraper():
@@ -143,8 +137,6 @@ def save_scraper():
     except Exception as e:
         logger.exception(f"Failed to save scraper: {e}")
         raise ServiceError('Failed to save scraper configuration')
-
-
 @app.delete("/scrapers/<scraper_id>")
 @tracer.capture_method
 def delete_scraper(scraper_id: str):
@@ -162,8 +154,6 @@ def delete_scraper(scraper_id: str):
     except Exception as e:
         logger.exception(f"Failed to delete scraper: {e}")
         raise ServiceError('Failed to delete scraper configuration')
-
-
 @app.get("/scrapers/templates")
 @tracer.capture_method
 def get_templates():
@@ -200,8 +190,6 @@ def get_templates():
         },
     ]
     return {'templates': templates}
-
-
 @app.post("/scrapers/<scraper_id>/run")
 @tracer.capture_method
 def run_scraper(scraper_id: str):
@@ -221,8 +209,6 @@ def run_scraper(scraper_id: str):
     except Exception as e:
         logger.exception(f"Failed to run scraper: {e}")
         raise ServiceError('Failed to start scraper run')
-
-
 @app.get("/scrapers/<scraper_id>/status")
 @tracer.capture_method
 def get_scraper_status(scraper_id: str):
@@ -242,8 +228,6 @@ def get_scraper_status(scraper_id: str):
     except Exception as e:
         logger.warning(f"Failed to get scraper status: {e}")
         return {'scraper_id': scraper_id, 'status': 'unknown', 'error': 'Failed to retrieve status'}
-
-
 @app.get("/scrapers/<scraper_id>/runs")
 @tracer.capture_method
 def get_scraper_runs(scraper_id: str):
@@ -257,8 +241,6 @@ def get_scraper_runs(scraper_id: str):
     except Exception as e:
         logger.warning(f"Failed to get scraper runs: {e}")
         return {'runs': [], 'error': 'Failed to retrieve run history'}
-
-
 @app.post("/scrapers/analyze-url")
 @tracer.capture_method
 def analyze_url():
@@ -293,8 +275,6 @@ def analyze_url():
     except Exception as e:
         logger.exception(f"Failed to analyze URL: {e}")
         raise ServiceError('Failed to analyze URL')
-
-
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

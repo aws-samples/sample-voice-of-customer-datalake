@@ -4,28 +4,20 @@ Handles read-only queries: /feedback/*, /metrics/*
 Split from main handler to reduce Lambda resource policy size.
 """
 
-import os
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from shared.logging import logger, tracer
-from shared.aws import get_dynamodb_resource
 from shared.api import (
     create_api_resolver, validate_days, validate_limit,
     get_configured_categories, api_handler, DEFAULT_CATEGORIES
 )
 from shared.exceptions import NotFoundError
+from shared.tables import get_feedback_table, get_aggregates_table
 from boto3.dynamodb.conditions import Key
 
-# AWS Clients
-dynamodb = get_dynamodb_resource()
-
-# Configuration
-FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
-AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
-
-feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+feedback_table = get_feedback_table()
+aggregates_table = get_aggregates_table()
 
 # API resolver with standard CORS
 app = create_api_resolver()

@@ -4,7 +4,6 @@ Tests for chat_handler.py - /chat/* endpoints with Bedrock AI integration.
 import json
 import pytest
 from unittest.mock import patch, MagicMock
-import importlib
 
 # Bedrock model ID used in production
 BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'

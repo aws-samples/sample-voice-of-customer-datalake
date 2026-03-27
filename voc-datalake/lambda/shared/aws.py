@@ -4,7 +4,6 @@ Provides pre-configured clients with connection reuse.
 """
 
 import json
-import os
 import boto3
 from functools import lru_cache
 from shared.logging import logger

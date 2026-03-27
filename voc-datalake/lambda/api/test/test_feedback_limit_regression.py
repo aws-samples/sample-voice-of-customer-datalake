@@ -6,9 +6,8 @@ causing the page to show 0 categories/problems when there were more than 100 ite
 spread across many categories.
 """
 import json
-import pytest
 from unittest.mock import patch
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 
 class TestFeedbackLimitRegression:

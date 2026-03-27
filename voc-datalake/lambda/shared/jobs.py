@@ -6,13 +6,11 @@ Provides centralized job creation, status management, and job handler decorator.
 import uuid
 from functools import wraps
 from datetime import datetime, timezone, timedelta
-from typing import Callable, Any
+from typing import Callable
 
 from shared.logging import logger
 from shared.tables import get_jobs_table
 from shared.exceptions import ServiceError
-
-
 def create_job(
     project_id: str,
     job_type: str,
@@ -60,8 +58,6 @@ def create_job(
     }
     jobs_table.put_item(Item=item)
     return job_id, now
-
-
 def update_job_status(
     project_id: str,
     job_id: str,
@@ -127,8 +123,6 @@ def update_job_status(
         )
     except Exception as e:
         logger.error(f"Failed to update job status: {e}")
-
-
 class JobContext:
     """Context object passed to job handlers for progress updates."""
     
@@ -144,8 +138,6 @@ class JobContext:
             step: Current step description
         """
         update_job_status(self.project_id, self.job_id, 'running', progress, step)
-
-
 def job_handler(error_message: str = 'Job execution failed'):
     """Decorator for async job handlers that standardizes error handling and status updates.
     

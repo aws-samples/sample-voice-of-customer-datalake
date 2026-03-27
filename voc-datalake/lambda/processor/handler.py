@@ -7,13 +7,12 @@ Validates incoming messages using Pydantic schemas before processing.
 """
 import json
 import os
-import uuid
+
 import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
-from aws_lambda_powertools.utilities.batch.exceptions import BatchProcessingError
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
 
 # Add plugins directory to path for schema imports
@@ -22,8 +21,9 @@ sys.path.insert(0, plugins_dir)
 
 # Shared module imports
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.aws import get_dynamodb_resource
 from shared.converse import converse, BedrockThrottlingError
+from shared.api import get_raw_categories_config
 from shared.idempotency import (
     get_persistence_layer,
     get_idempotency_config,
@@ -75,8 +75,6 @@ else:
     persistence_layer = None
     idempotency_config = None
     logger.warning("IDEMPOTENCY_TABLE not configured - duplicate protection disabled")
-
-
 # ============================================
 # Validation Logging
 # ============================================
@@ -108,8 +106,6 @@ def log_validation_failure(source_platform: str, message_id: str, errors: list[s
         logger.info(f"Logged validation failure for {source_platform}/{message_id}")
     except Exception as e:
         logger.error(f"Failed to log validation failure: {e}")
-
-
 def log_processing_error(source_platform: str, message_id: str, error_type: str, error_message: str):
     """
     Log a processing error to DynamoDB for user visibility.
@@ -133,8 +129,6 @@ def log_processing_error(source_platform: str, message_id: str, error_type: str,
         aggregates_table.put_item(Item=log_entry)
     except Exception as e:
         logger.error(f"Failed to log processing error: {e}")
-
-
 def validate_sqs_message(raw_record: dict) -> tuple[dict | None, list[str]]:
     """
     Validate an SQS message using Pydantic schemas.
@@ -180,17 +174,10 @@ Text: {original_text}
 Return ONLY this JSON structure:
 {{"category":"<one of the categories above>","subcategory":"string or null","journey_stage":"awareness|consideration|purchase|delivery|usage|support|retention|advocacy|unknown","sentiment_label":"positive|neutral|negative|mixed","sentiment_score":-1.0 to 1.0,"urgency":"low|medium|high","impact_area":"product|operations|cx|tech|pricing|brand|legal|other","problem_summary":"string or null","problem_root_cause_hypothesis":"string or null","direct_customer_quote":"string or null","persona":{{"name":"string or null","type":"existing_customer|prospect|churn_risk|advocate|unknown|null","attributes":{{"inferred_segment":"string or null","confidence":"low|medium|high"}}}}}}"""
 
-# Cache for categories config
-_categories_cache = None
-_categories_cache_time = None
-CATEGORIES_CACHE_TTL = 300  # 5 minutes
-
 # Cache for primary language setting
 _language_cache = None
 _language_cache_time = None
 LANGUAGE_CACHE_TTL = 300  # 5 minutes
-
-
 @tracer.capture_method
 def get_primary_language() -> str:
     """Fetch primary language setting from DynamoDB with caching.
@@ -220,46 +207,10 @@ def get_primary_language() -> str:
     _language_cache_time = now
     logger.info(f"Using default primary language: {_language_cache}")
     return _language_cache
-
-
 @tracer.capture_method
 def get_categories_config() -> list:
     """Fetch categories configuration from DynamoDB with caching."""
-    global _categories_cache, _categories_cache_time
-    
-    now = datetime.now(timezone.utc).timestamp()
-    
-    # Return cached if still valid
-    if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
-        logger.debug(f"Using cached categories: {len(_categories_cache)} items")
-        return _categories_cache
-    
-    try:
-        # Fetch from aggregates table (same location as settings API saves)
-        logger.info(f"Fetching categories from DynamoDB table: {AGGREGATES_TABLE}")
-        response = aggregates_table.get_item(
-            Key={'pk': 'SETTINGS#categories', 'sk': 'config'}
-        )
-        item = response.get('Item')
-        logger.info(f"DynamoDB response item keys: {list(item.keys()) if item else 'None'}")
-        
-        if item and item.get('categories'):
-            _categories_cache = item.get('categories', [])
-            _categories_cache_time = now
-            logger.info(f"Loaded {len(_categories_cache)} categories from DynamoDB: {[c.get('name') for c in _categories_cache]}")
-            return _categories_cache
-        else:
-            logger.warning(f"No categories found in DynamoDB item. Item: {item}")
-    except Exception as e:
-        logger.exception(f"Could not fetch categories from DynamoDB: {e}")
-    
-    # Cache empty result to avoid repeated failed lookups
-    _categories_cache = []
-    _categories_cache_time = now
-    logger.warning("Returning empty categories - will use defaults")
-    return []
-
-
+    return get_raw_categories_config(aggregates_table)
 def build_categories_instruction() -> str:
     """Build the categories instruction for the LLM prompt."""
     categories_config = get_categories_config()
@@ -294,8 +245,6 @@ def build_categories_instruction() -> str:
     return instruction
 
 processor = BatchProcessor(event_type=EventType.SQS)
-
-
 @tracer.capture_method
 def detect_language(text: str) -> str:
     """Detect dominant language using Comprehend."""
@@ -306,8 +255,6 @@ def detect_language(text: str) -> str:
     except Exception as e:
         logger.warning(f"Language detection failed: {e}")
         return 'en'
-
-
 @tracer.capture_method
 def translate_text(text: str, source_lang: str, target_lang: str) -> str:
     """Translate text if needed."""
@@ -323,8 +270,6 @@ def translate_text(text: str, source_lang: str, target_lang: str) -> str:
     except Exception as e:
         logger.warning(f"Translation failed: {e}")
         return text
-
-
 @tracer.capture_method
 def get_comprehend_sentiment(text: str, language: str) -> dict:
     """Get sentiment from Comprehend."""
@@ -339,8 +284,6 @@ def get_comprehend_sentiment(text: str, language: str) -> dict:
     except Exception as e:
         logger.warning(f"Comprehend sentiment failed: {e}")
         return {'label': 'neutral', 'score': 0.0}
-
-
 @tracer.capture_method
 def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict:
     """
@@ -407,8 +350,6 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
             'insights': {},
             'metadata': {'error': str(e)}
         }
-
-
 def _parse_llm_json_response(content: str) -> str:
     """
     Parse JSON from LLM response, handling markdown code blocks.
@@ -467,8 +408,6 @@ def generate_deterministic_id(source_platform: str, source_id: str, text: str = 
         logger.info(f"Generated fallback ID for {source_platform} (no source_id): text_hash={text_hash}")
     
     return hashlib.sha256(content.encode()).hexdigest()[:32]
-
-
 @tracer.capture_method
 def check_duplicate(source_platform: str, feedback_id: str) -> bool:
     """Check if feedback already exists in DynamoDB."""
@@ -481,8 +420,6 @@ def check_duplicate(source_platform: str, feedback_id: str) -> bool:
     except Exception as e:
         logger.warning(f"Duplicate check failed: {e}")
         return False
-
-
 @tracer.capture_method
 def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
     """
@@ -592,14 +529,10 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
     item = {k: v for k, v in item.items() if v is not None}
     
     return item
-
-
 def write_to_dynamodb(item: dict):
     """Write processed feedback to DynamoDB."""
     feedback_table.put_item(Item=item)
     logger.info(f"Wrote feedback {item['feedback_id']} to DynamoDB")
-
-
 def record_handler(record: SQSRecord) -> dict:
     """
     Process a single SQS record with idempotency protection.
@@ -677,8 +610,6 @@ def record_handler(record: SQSRecord) -> dict:
         logger.exception(f"Unexpected error processing {source_platform}/{source_id}: {e}")
         log_processing_error(source_platform, source_id, type(e).__name__, str(e))
         raise
-
-
 def _process_feedback_idempotent(raw_record: dict, idempotency_key: str) -> dict:
     """
     Wrapper to apply idempotency decorator dynamically.
@@ -695,8 +626,6 @@ def _process_feedback_idempotent(raw_record: dict, idempotency_key: str) -> dict
         return process_feedback(raw_record, idempotency_key)
     
     return _inner(raw_record=raw_record, idempotency_key=idempotency_key)
-
-
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 @metrics.log_metrics(capture_cold_start_metric=True)

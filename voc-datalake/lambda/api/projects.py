@@ -3,7 +3,6 @@ Projects API endpoints for VoC Analytics.
 Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 """
 import json
-import os
 import re
 from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
@@ -12,7 +11,7 @@ from boto3.dynamodb.conditions import Key
 from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
 from shared.api import validate_days
-from shared.converse import converse, converse_chain
+from shared.converse import converse_chain
 from shared.exceptions import (
     ConfigurationError,
     NotFoundError,
@@ -34,6 +33,8 @@ from shared.avatar import (
     generate_persona_avatar as _generate_persona_avatar,
     get_avatar_cdn_url,
 )
+
+from shared.tables import get_projects_table, get_feedback_table
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -58,11 +59,8 @@ def get_feedback_context(filters: dict, limit: int = 50) -> list[dict]:
     return _get_feedback_context(feedback_table, filters, limit)
 
 
-PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
-FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
-
-projects_table = dynamodb.Table(PROJECTS_TABLE) if PROJECTS_TABLE else None
-feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
+projects_table = get_projects_table()
+feedback_table = get_feedback_table()
 
 
 def fix_persona_name(name: str) -> str:

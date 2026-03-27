@@ -2,7 +2,6 @@
 Additional coverage tests for document_merger/handler.py.
 Covers: use_feedback=True path (lines 80-107), feedback filtering (line 115).
 """
-import pytest
 from unittest.mock import MagicMock
 
 

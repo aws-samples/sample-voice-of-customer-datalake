@@ -3,7 +3,6 @@ Additional coverage tests for manual_import_processor.py.
 Covers: parse_llm_response edge cases, process_job branches, rating sanitization.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 
 

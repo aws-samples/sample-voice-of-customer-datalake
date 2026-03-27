@@ -1,10 +1,8 @@
 """
 Tests for shared/jobs.py - Job utilities.
 """
-import os
 import pytest
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
 
 
 class TestCreateJob:

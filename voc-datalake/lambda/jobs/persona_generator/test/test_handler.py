@@ -1,7 +1,6 @@
 """Tests for persona generator job handler."""
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestPersonaGeneratorHandler:

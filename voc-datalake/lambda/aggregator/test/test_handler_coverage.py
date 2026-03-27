@@ -3,7 +3,6 @@ Tests for aggregator/handler.py — DynamoDB format conversion branches.
 Strengthened: assertions verify the converted values passed to process_new_feedback,
 not just that status == 'success'.
 """
-import pytest
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
 

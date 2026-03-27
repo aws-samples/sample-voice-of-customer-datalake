@@ -3,8 +3,7 @@ Tests for users_handler.py - /users/* endpoints.
 Cognito user management for admins.
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 

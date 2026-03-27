@@ -4,7 +4,6 @@ Manages AI chat conversations.
 """
 
 import os
-import sys
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -12,19 +11,13 @@ from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource
 from shared.api import create_api_resolver, api_handler, validate_days, get_configured_categories
 from shared.exceptions import ConfigurationError, NotFoundError
+from shared.tables import get_feedback_table, get_aggregates_table, get_conversations_table
 from boto3.dynamodb.conditions import Key
 
-# AWS Clients
 dynamodb = get_dynamodb_resource()
-
-# Configuration
-FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
-AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
-CONVERSATIONS_TABLE = os.environ.get("CONVERSATIONS_TABLE", "")
-
-feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
-conversations_table = dynamodb.Table(CONVERSATIONS_TABLE) if CONVERSATIONS_TABLE else None
+feedback_table = get_feedback_table()
+aggregates_table = get_aggregates_table()
+conversations_table = get_conversations_table()
 
 app = create_api_resolver()
 
@@ -43,7 +36,7 @@ def _batch_get_aggregates(keys: list[dict]) -> list[dict]:
     if not keys:
         return []
     
-    table_name = AGGREGATES_TABLE
+    table_name = os.environ.get('AGGREGATES_TABLE', '')
     all_items = []
     
     # batch_get_item supports max 100 keys per call

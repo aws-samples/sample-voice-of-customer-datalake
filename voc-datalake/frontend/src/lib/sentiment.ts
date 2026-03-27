@@ -21,3 +21,15 @@ export function sentimentLabelFromScore(score: number): 'positive' | 'negative' 
   if (score < -0.3) return 'negative'
   return 'neutral'
 }
+
+const TAILWIND_COLORS: Record<string, string> = {
+  positive: 'text-green-600 bg-green-50',
+  negative: 'text-red-600 bg-red-50',
+  mixed: 'text-yellow-600 bg-yellow-50',
+  neutral: 'text-gray-600 bg-gray-50',
+}
+
+/** Returns Tailwind CSS classes for a sentiment label (text + background). */
+export function sentimentTailwindColor(label: string): string {
+  return TAILWIND_COLORS[label] ?? TAILWIND_COLORS.neutral
+}

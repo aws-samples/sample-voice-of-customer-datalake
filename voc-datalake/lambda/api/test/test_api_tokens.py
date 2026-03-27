@@ -3,9 +3,7 @@ Tests for API token management endpoints in projects_handler.py.
 Covers GET/POST/DELETE /projects/{id}/api-tokens.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
 
 
 class TestListApiTokens:
@@ -224,7 +222,7 @@ class TestCreateApiToken:
             body={'name': 'Token'}
         )
         response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
+        json.loads(response['body'])
 
         assert response['statusCode'] == 200
         put_call = mock_table.put_item.call_args
