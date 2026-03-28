@@ -3,9 +3,7 @@ Tests for settings_handler.py - /settings/* endpoints.
 Manages brand configuration and categories.
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
+from unittest.mock import patch
 
 
 class TestGetBrandSettings:

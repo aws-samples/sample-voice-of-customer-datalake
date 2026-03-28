@@ -170,6 +170,39 @@ const handlers = {
   // Scrapers
   'GET /scrapers': () => ({ scrapers: mockScrapers }),
   'POST /scrapers': (body) => ({ success: true, scraper: { id: 'scraper_' + Date.now(), ...body } }),
+  'GET /scrapers/templates': () => ({
+    templates: [
+      {
+        id: 'review_jsonld',
+        name: 'Review JSON-LD',
+        description: 'Extract reviews using JSON-LD structured data.',
+        icon: '⭐',
+        extraction_method: 'jsonld',
+        url_pattern: '',
+        supports_pagination: true,
+        config: {
+          extraction_method: 'jsonld',
+          template: 'review_jsonld',
+          pagination: { enabled: true, param: 'page', max_pages: 10, start: 1 }
+        }
+      },
+      {
+        id: 'custom_css',
+        name: 'Custom (CSS Selectors)',
+        description: 'Create a custom scraper with CSS selectors.',
+        icon: '🔧',
+        extraction_method: 'css',
+        url_pattern: '',
+        supports_pagination: true,
+        config: {
+          extraction_method: 'css',
+          container_selector: '.review',
+          text_selector: '.review-text',
+          pagination: { enabled: false, param: 'page', max_pages: 10, start: 1 }
+        }
+      },
+    ]
+  }),
 
   'GET /feedback': () => ({ count: mockFeedback.length, items: mockFeedback }),
   'GET /feedback/urgent': () => ({ count: 1, items: mockFeedback.filter(f => f.urgency === 'high') }),

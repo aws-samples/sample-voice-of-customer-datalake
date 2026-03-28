@@ -1,10 +1,12 @@
 /**
  * Form templates for common CX research types
  */
-import { Gauge, Star, MessageSquare, ClipboardList, ThumbsUp, FileText } from 'lucide-react'
-import type { FeedbackForm } from '../../api/client'
+import {
+  Gauge, Star, MessageSquare, ClipboardList, ThumbsUp, FileText,
+} from 'lucide-react'
+import type { FeedbackForm } from '../../api/types'
 
-export type FormTemplate = {
+export interface FormTemplate {
   id: string
   name: string
   description: string
@@ -32,13 +34,18 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 10,
       submit_button_text: 'Submit',
       success_message: 'Thank you for your feedback! Your response helps us improve.',
-      theme: { primary_color: '#8B5CF6', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '12px' },
+      theme: {
+        primary_color: '#8B5CF6',
+        background_color: '#FFFFFF',
+        text_color: '#1F2937',
+        border_radius: '12px',
+      },
       collect_email: false,
       collect_name: false,
       custom_fields: [],
       category: '',
       subcategory: '',
-    }
+    },
   },
   {
     id: 'csat',
@@ -58,13 +65,18 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 5,
       submit_button_text: 'Submit Feedback',
       success_message: 'Thanks for rating your experience!',
-      theme: { primary_color: '#22C55E', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
+      theme: {
+        primary_color: '#22C55E',
+        background_color: '#FFFFFF',
+        text_color: '#1F2937',
+        border_radius: '8px',
+      },
       collect_email: false,
       collect_name: false,
       custom_fields: [],
       category: '',
       subcategory: '',
-    }
+    },
   },
   {
     id: 'product-feedback',
@@ -84,13 +96,18 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 5,
       submit_button_text: 'Submit Feedback',
       success_message: 'Thank you! Your feedback helps us build better products.',
-      theme: { primary_color: '#EAB308', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
+      theme: {
+        primary_color: '#EAB308',
+        background_color: '#FFFFFF',
+        text_color: '#1F2937',
+        border_radius: '8px',
+      },
       collect_email: false,
       collect_name: false,
       custom_fields: [],
       category: '',
       subcategory: '',
-    }
+    },
   },
   {
     id: 'general-feedback',
@@ -110,13 +127,18 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 5,
       submit_button_text: 'Send Feedback',
       success_message: 'Thank you for sharing your thoughts with us!',
-      theme: { primary_color: '#3B82F6', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
+      theme: {
+        primary_color: '#3B82F6',
+        background_color: '#FFFFFF',
+        text_color: '#1F2937',
+        border_radius: '8px',
+      },
       collect_email: false,
       collect_name: false,
       custom_fields: [],
       category: '',
       subcategory: '',
-    }
+    },
   },
   {
     id: 'experience-survey',
@@ -136,13 +158,18 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 5,
       submit_button_text: 'Complete Survey',
       success_message: 'Survey completed! Thank you for your valuable input.',
-      theme: { primary_color: '#6366F1', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '10px' },
+      theme: {
+        primary_color: '#6366F1',
+        background_color: '#FFFFFF',
+        text_color: '#1F2937',
+        border_radius: '10px',
+      },
       collect_email: false,
       collect_name: false,
       custom_fields: [],
       category: '',
       subcategory: '',
-    }
+    },
   },
   {
     id: 'blank',
@@ -162,18 +189,23 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 5,
       submit_button_text: 'Submit Feedback',
       success_message: 'Thank you for your feedback!',
-      theme: { primary_color: '#3B82F6', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
+      theme: {
+        primary_color: '#3B82F6',
+        background_color: '#FFFFFF',
+        text_color: '#1F2937',
+        border_radius: '8px',
+      },
       collect_email: false,
       collect_name: false,
       custom_fields: [],
       category: '',
       subcategory: '',
-    }
+    },
   },
 ]
 
-const blankTemplate = formTemplates.find(t => t.id === 'blank')
+const blankTemplate = formTemplates.find((t) => t.id === 'blank')
 if (!blankTemplate) {
-  throw new Error('Blank template not found in formTemplates')
+  throw new RangeError('Blank template not found in formTemplates')
 }
 export const defaultFormConfig = blankTemplate.config

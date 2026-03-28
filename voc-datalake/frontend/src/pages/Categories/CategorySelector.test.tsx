@@ -32,6 +32,10 @@ describe('CategorySelector', () => {
     expect(screen.getByText('delivery')).toBeInTheDocument()
     expect(screen.getByText('50')).toBeInTheDocument()
     expect(screen.getByText('(50.0%)')).toBeInTheDocument()
+  })
+
+  it('renders remaining categories', () => {
+    render(<CategorySelector {...defaultProps} />)
 
     expect(screen.getByText('customer support')).toBeInTheDocument()
     expect(screen.getByText('30')).toBeInTheDocument()
@@ -65,7 +69,7 @@ describe('CategorySelector', () => {
     render(<CategorySelector {...defaultProps} hasActiveFilters={true} onClearFilters={onClear} />)
 
     await user.click(screen.getByText('Clear filters'))
-    expect(onClear).toHaveBeenCalled()
+    expect(onClear).toHaveBeenCalledWith(expect.any(Object))
   })
 
   it('calls onToggleFilters when filters button clicked', async () => {
@@ -74,7 +78,7 @@ describe('CategorySelector', () => {
     render(<CategorySelector {...defaultProps} onToggleFilters={onToggle} />)
 
     await user.click(screen.getByRole('button', { name: /filters/i }))
-    expect(onToggle).toHaveBeenCalled()
+    expect(onToggle).toHaveBeenCalledWith(expect.any(Object))
   })
 
   it('shows advanced filters when showFilters is true', () => {
@@ -109,6 +113,7 @@ describe('CategorySelector', () => {
   it('highlights selected categories', () => {
     render(<CategorySelector {...defaultProps} selectedCategories={['delivery']} />)
 
+    // eslint-disable-next-line testing-library/no-node-access
     const deliveryButton = screen.getByText('delivery').closest('button')
     expect(deliveryButton).toHaveClass('border-blue-500')
   })

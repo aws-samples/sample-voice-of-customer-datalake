@@ -96,25 +96,27 @@ interface PrintOptions {
 /**
  * Opens a new browser window with print-optimized content and triggers the print dialog.
  * Users can save as PDF or print directly from the browser's native dialog.
- * 
+ *
  * @param options - Print configuration options
  * @returns The opened window reference, or null if blocked by popup blocker
  */
 export function openPrintWindow(options: PrintOptions): Window | null {
-  const { title, content, onClose } = options
-  
+  const {
+    title, content, onClose,
+  } = options
+
   // Must be called from a user action to avoid popup blockers
   const printWindow = window.open('', '_blank')
-  
+
   if (!printWindow) {
     // Popup was blocked
     return null
   }
-  
+
   // Render React content to static HTML
   const contentHtml = renderToStaticMarkup(content)
-  
-  // Build the full HTML document
+
+  // Build the full HTML document (no inline event handlers to avoid CSP/browser blocking)
   const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -126,7 +128,7 @@ export function openPrintWindow(options: PrintOptions): Window | null {
 </head>
 <body>
   <div class="no-print">
-    <button class="print-button" onclick="window.print()">
+    <button class="print-button" id="print-btn">
       Print / Save as PDF
     </button>
   </div>
@@ -134,17 +136,25 @@ export function openPrintWindow(options: PrintOptions): Window | null {
 </body>
 </html>
 `
-  
+
   // Using document.write is the standard way to populate a new window's document
-  // eslint-disable-next-line sonarjs/deprecation
+  // eslint-disable-next-line sonarjs/deprecation, @typescript-eslint/no-deprecated
   printWindow.document.write(html)
   printWindow.document.close()
-  
+
+  // Attach print button handler programmatically (inline onclick can be blocked by browsers)
+  const printBtn = printWindow.document.getElementById('print-btn')
+  if (printBtn) {
+    printBtn.addEventListener('click', () => {
+      printWindow.print()
+    })
+  }
+
   // Set up close handler if provided
   if (onClose) {
     printWindow.onbeforeunload = onClose
   }
-  
+
   // Auto-trigger print dialog after content loads
   printWindow.onload = () => {
     // Small delay to ensure styles are applied
@@ -152,8 +162,36 @@ export function openPrintWindow(options: PrintOptions): Window | null {
       printWindow.print()
     }, 100)
   }
-  
+
   return printWindow
+}
+
+/**
+ * Creates a PDF generator function that opens a print window with the given content.
+ * Eliminates boilerplate across per-page PDF generators.
+ *
+ * @example
+ * ```ts
+ * export const generateFeedbackPDF = createPdfGenerator<FeedbackPDFProps>(
+ *   'Feedback Report',
+ *   (props) => <FeedbackPDFContent {...props} />,
+ * )
+ * ```
+ */
+export function createPdfGenerator<T>(
+  title: string | ((props: T) => string),
+  render: (props: T) => ReactElement,
+): (props: T) => void {
+  return (props: T) => {
+    const resolvedTitle = typeof title === 'function' ? title(props) : title
+    const printWindow = openPrintWindow({
+      title: resolvedTitle,
+      content: render(props),
+    })
+    if (!printWindow) {
+      throw new TypeError('Failed to open print window. Please allow popups for this site.')
+    }
+  }
 }
 
 /**

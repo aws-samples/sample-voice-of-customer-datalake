@@ -2,9 +2,8 @@
 Tests for metrics_handler.py - /feedback/* and /metrics/* endpoints.
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone, timedelta
+from unittest.mock import patch
+from datetime import datetime, timezone
 
 
 class TestListFeedbackEndpoint:
@@ -247,7 +246,7 @@ class TestGetUrgentFeedback:
         )
         
         response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
+        json.loads(response['body'])
         
         assert response['statusCode'] == 200
 
@@ -502,3 +501,133 @@ class TestGetPersonaMetrics:
         
         assert response['statusCode'] == 200
         assert 'personas' in body
+
+
+class TestListFeedbackCategoryFiltering:
+    """Tests for category filtering in GET /feedback — regression tests for
+    the bug where selecting categories on the Categories page returned 0 results."""
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_single_category_queries_gsi2_and_filters_by_date(
+        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """Single category param queries GSI2 and excludes items outside the date range."""
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        old_date = '2020-01-01'
+
+        mock_fb_table.query.return_value = {
+            'Items': [
+                {'feedback_id': '1', 'category': 'ease_of_use', 'date': today},
+                {'feedback_id': '2', 'category': 'ease_of_use', 'date': old_date},
+            ]
+        }
+
+        from metrics_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback',
+            query_params={'category': 'ease_of_use', 'days': '7'}
+        )
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        # Old item should be filtered out by date
+        assert body['count'] == 1
+        assert body['items'][0]['feedback_id'] == '1'
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_multiple_comma_separated_categories_returns_items_from_all(
+        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """Comma-separated categories query GSI2 for each and merge results."""
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+
+        mock_fb_table.query.side_effect = [
+            {'Items': [
+                {'feedback_id': '1', 'category': 'ease_of_use', 'date': today},
+            ]},
+            {'Items': [
+                {'feedback_id': '2', 'category': 'integration_compatibility', 'date': today},
+            ]},
+        ]
+
+        from metrics_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback',
+            query_params={'category': 'ease_of_use,integration_compatibility', 'days': '30'}
+        )
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['count'] == 2
+        returned_ids = {item['feedback_id'] for item in body['items']}
+        assert returned_ids == {'1', '2'}
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_category_with_source_filters_both(
+        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """When both category and source are provided, items are filtered by both."""
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+
+        # When source is provided, the code queries by date GSI (not category GSI)
+        # Return items on first day query, empty for the rest
+        mock_fb_table.query.side_effect = [
+            {'Items': [
+                {'feedback_id': '1', 'source_platform': 'webscraper', 'category': 'delivery', 'date': today},
+                {'feedback_id': '2', 'source_platform': 'manual_import', 'category': 'delivery', 'date': today},
+                {'feedback_id': '3', 'source_platform': 'webscraper', 'category': 'pricing', 'date': today},
+            ]},
+        ] + [{'Items': []}] * 6  # remaining 6 days return empty
+
+        from metrics_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback',
+            query_params={'category': 'delivery', 'source': 'webscraper', 'days': '7'}
+        )
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['count'] == 1
+        assert body['items'][0]['feedback_id'] == '1'
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_no_category_param_queries_by_date(
+        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """Without category param, queries by date GSI as before."""
+        # Return items on first day query, empty for the rest
+        mock_fb_table.query.side_effect = [
+            {'Items': [
+                {'feedback_id': '1', 'category': 'delivery', 'date': '2026-03-25'},
+            ]},
+        ] + [{'Items': []}] * 6  # remaining 6 days return empty
+
+        from metrics_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback',
+            query_params={'days': '7'}
+        )
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['count'] == 1

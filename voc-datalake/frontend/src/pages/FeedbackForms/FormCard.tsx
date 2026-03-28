@@ -1,13 +1,17 @@
 /**
  * FormCard Component - displays a single feedback form with embed options and stats
  */
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Trash2, Copy, Check, Code, ExternalLink, ToggleLeft, ToggleRight, Edit2, MessageSquare, Star, BarChart3 } from 'lucide-react'
-import type { FeedbackForm } from '../../api/client'
-import { api } from '../../api/client'
 import clsx from 'clsx'
+import {
+  Trash2, Copy, Check, Code, ExternalLink, ToggleLeft, ToggleRight, Edit2, MessageSquare, Star, BarChart3,
+} from 'lucide-react'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { feedbackFormsApi } from '../../api/feedbackFormsApi'
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import SubmissionsModal from './SubmissionsModal'
+import type { FeedbackForm } from '../../api/types'
 
 interface FormCardProps {
   readonly form: FeedbackForm
@@ -29,11 +33,17 @@ function getCollectsLabel(collectName: boolean, collectEmail: boolean): string {
 }
 
 interface FormStatsProps {
-  readonly stats: { total_submissions: number; avg_rating: number | null } | undefined
+  readonly stats: {
+    total_submissions: number;
+    avg_rating: number | null
+  } | undefined
   readonly onViewSubmissions: () => void
 }
 
-function FormStats({ stats, onViewSubmissions }: FormStatsProps) {
+function FormStats({
+  stats, onViewSubmissions,
+}: FormStatsProps) {
+  const { t } = useTranslation('feedbackForms')
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
       <div className="flex items-center gap-2">
@@ -42,7 +52,7 @@ function FormStats({ stats, onViewSubmissions }: FormStatsProps) {
         </div>
         <div>
           <p className="text-lg font-bold text-gray-900">{stats?.total_submissions ?? '—'}</p>
-          <p className="text-xs text-gray-500">Submissions</p>
+          <p className="text-xs text-gray-500">{t('card.submissions')}</p>
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -51,11 +61,11 @@ function FormStats({ stats, onViewSubmissions }: FormStatsProps) {
         </div>
         <div>
           <p className="text-lg font-bold text-gray-900">
-            {stats?.avg_rating !== null && stats?.avg_rating !== undefined 
-              ? stats.avg_rating.toFixed(1) 
+            {stats?.avg_rating !== null && stats?.avg_rating !== undefined
+              ? stats.avg_rating.toFixed(1)
               : '—'}
           </p>
-          <p className="text-xs text-gray-500">Avg Rating</p>
+          <p className="text-xs text-gray-500">{t('card.avgRating')}</p>
         </div>
       </div>
       <div className="col-span-2 sm:col-span-2 flex items-center justify-end">
@@ -65,7 +75,7 @@ function FormStats({ stats, onViewSubmissions }: FormStatsProps) {
           disabled={!stats || stats.total_submissions === 0}
         >
           <BarChart3 size={16} />
-          View Submissions
+          {t('card.viewSubmissions')}
         </button>
       </div>
     </div>
@@ -79,19 +89,22 @@ interface EmbedCodeSectionProps {
   readonly onCopy: (text: string, id: string) => void
 }
 
-function EmbedCodeSection({ iframeUrl, iframeEmbed, copied, onCopy }: EmbedCodeSectionProps) {
+function EmbedCodeSection({
+  iframeUrl, iframeEmbed, copied, onCopy,
+}: EmbedCodeSectionProps) {
+  const { t } = useTranslation('feedbackForms')
   return (
     <div className="mt-3 space-y-3">
       <div>
         <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-gray-500">Direct Link</span>
+          <span className="text-xs text-gray-500">{t('card.directLink')}</span>
           <div className="flex gap-2">
             <a href={iframeUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1">
-              Preview <ExternalLink size={12} />
+              {t('card.preview')} <ExternalLink size={12} />
             </a>
             <button onClick={() => onCopy(iframeUrl, 'url')} className="text-xs text-gray-600 hover:text-gray-800 flex items-center gap-1">
               {copied === 'url' ? <Check size={12} className="text-green-600" /> : <Copy size={12} />}
-              Copy
+              {t('card.copy')}
             </button>
           </div>
         </div>
@@ -99,10 +112,10 @@ function EmbedCodeSection({ iframeUrl, iframeEmbed, copied, onCopy }: EmbedCodeS
       </div>
       <div>
         <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-gray-500">iFrame Embed</span>
+          <span className="text-xs text-gray-500">{t('card.iframeEmbed')}</span>
           <button onClick={() => onCopy(iframeEmbed, 'iframe')} className="text-xs text-gray-600 hover:text-gray-800 flex items-center gap-1">
             {copied === 'iframe' ? <Check size={12} className="text-green-600" /> : <Copy size={12} />}
-            Copy
+            {t('card.copy')}
           </button>
         </div>
         <pre className="bg-gray-900 text-gray-100 p-2 rounded text-xs overflow-x-auto">
@@ -113,22 +126,67 @@ function EmbedCodeSection({ iframeUrl, iframeEmbed, copied, onCopy }: EmbedCodeS
   )
 }
 
-export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: FormCardProps) {
-  const [copied, setCopied] = useState<string | null>(null)
+interface FormCardHeaderProps {
+  readonly form: FeedbackForm
+  readonly onEdit: (form: FeedbackForm) => void
+  readonly onDelete: (formId: string) => void
+  readonly onToggle: (formId: string, enabled: boolean) => void
+}
+
+function FormCardHeader({
+  form, onEdit, onDelete, onToggle,
+}: FormCardHeaderProps) {
+  const { t } = useTranslation('feedbackForms')
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <h3 className="font-semibold text-base sm:text-lg">{form.name}</h3>
+          <span className={clsx(
+            'px-2 py-0.5 rounded text-xs font-medium',
+            form.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600',
+          )}>
+            {form.enabled ? t('card.active') : t('card.disabled')}
+          </span>
+        </div>
+        <p className="text-sm text-gray-500 mt-1 line-clamp-2">{form.title}</p>
+        {form.category === '' ? null : <p className="text-xs text-blue-600 mt-2">
+          {t('card.category')} <span className="font-medium">{form.category}</span>
+          {form.subcategory === '' ? null : <span> → {form.subcategory}</span>}
+        </p>}
+      </div>
+      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+        <button onClick={() => onToggle(form.form_id, !form.enabled)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title={form.enabled ? t('card.disableForm') : t('card.enableForm')}>
+          {form.enabled ? <ToggleRight size={20} className="text-green-600" /> : <ToggleLeft size={20} className="text-gray-400" />}
+        </button>
+        <button onClick={() => onEdit(form)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title={t('card.editForm')}>
+          <Edit2 size={18} className="text-gray-600" />
+        </button>
+        <button onClick={() => onDelete(form.form_id)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title={t('card.deleteForm')}>
+          <Trash2 size={18} className="text-red-500" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function FormCard({
+  form, onEdit, onDelete, onToggle, apiEndpoint,
+}: FormCardProps) {
+  const { t } = useTranslation('feedbackForms')
+  const {
+    copy, copiedKey: copied,
+  } = useCopyToClipboard()
   const [showEmbed, setShowEmbed] = useState(false)
   const [showSubmissions, setShowSubmissions] = useState(false)
 
   const { data: statsData } = useQuery({
     queryKey: ['form-stats', form.form_id],
-    queryFn: () => api.getFeedbackFormStats(form.form_id),
+    queryFn: () => feedbackFormsApi.getFeedbackFormStats(form.form_id),
     staleTime: 30000,
   })
 
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text)
-    setCopied(id)
-    setTimeout(() => setCopied(null), 2000)
-  }
+  const copyToClipboard = (text: string, id: string) => copy(text, id)
 
   const iframeUrl = `${apiEndpoint}/feedback-forms/${form.form_id}/iframe`
   const iframeEmbed = `<iframe 
@@ -140,51 +198,21 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
   return (
     <>
       <div className="card">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <h3 className="font-semibold text-base sm:text-lg">{form.name}</h3>
-              <span className={clsx(
-                'px-2 py-0.5 rounded text-xs font-medium',
-                form.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-              )}>
-                {form.enabled ? 'Active' : 'Disabled'}
-              </span>
-            </div>
-            <p className="text-sm text-gray-500 mt-1 line-clamp-2">{form.title}</p>
-            {form.category && (
-              <p className="text-xs text-blue-600 mt-2">
-                Category: <span className="font-medium">{form.category}</span>
-                {form.subcategory && <span> → {form.subcategory}</span>}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-            <button onClick={() => onToggle(form.form_id, !form.enabled)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title={form.enabled ? 'Disable form' : 'Enable form'}>
-              {form.enabled ? <ToggleRight size={20} className="text-green-600" /> : <ToggleLeft size={20} className="text-gray-400" />}
-            </button>
-            <button onClick={() => onEdit(form)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit form">
-              <Edit2 size={18} className="text-gray-600" />
-            </button>
-            <button onClick={() => onDelete(form.form_id)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete form">
-              <Trash2 size={18} className="text-red-500" />
-            </button>
-          </div>
-        </div>
+        <FormCardHeader form={form} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle} />
 
         <FormStats stats={statsData?.stats} onViewSubmissions={() => setShowSubmissions(true)} />
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
           <div>
-            <p className="text-xs text-gray-500">Rating Type</p>
+            <p className="text-xs text-gray-500">{t('card.ratingType')}</p>
             <p className="font-medium text-sm">{getRatingTypeLabel(form.rating_type)}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Collects</p>
+            <p className="text-xs text-gray-500">{t('card.collects')}</p>
             <p className="font-medium text-sm">{getCollectsLabel(form.collect_name, form.collect_email)}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Theme</p>
+            <p className="text-xs text-gray-500">{t('card.themeLabel')}</p>
             <div className="flex items-center gap-1">
               <div className="w-4 h-4 rounded flex-shrink-0" style={{ backgroundColor: form.theme.primary_color }} />
               <span className="text-sm font-mono truncate">{form.theme.primary_color}</span>
@@ -195,27 +223,23 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
         <div className="border-t pt-4">
           <button onClick={() => setShowEmbed(!showEmbed)} className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700">
             <Code size={16} />
-            {showEmbed ? 'Hide Embed Code' : 'Show Embed Code'}
+            {showEmbed ? t('card.hideEmbedCode') : t('card.showEmbedCode')}
           </button>
-          
-          {showEmbed && (
-            <EmbedCodeSection
-              iframeUrl={iframeUrl}
-              iframeEmbed={iframeEmbed}
-              copied={copied}
-              onCopy={copyToClipboard}
-            />
-          )}
+
+          {showEmbed ? <EmbedCodeSection
+            iframeUrl={iframeUrl}
+            iframeEmbed={iframeEmbed}
+            copied={copied}
+            onCopy={copyToClipboard}
+          /> : null}
         </div>
       </div>
 
-      {showSubmissions && (
-        <SubmissionsModal
-          formId={form.form_id}
-          formName={form.name}
-          onClose={() => setShowSubmissions(false)}
-        />
-      )}
+      {showSubmissions ? <SubmissionsModal
+        formId={form.form_id}
+        formName={form.name}
+        onClose={() => setShowSubmissions(false)}
+      /> : null}
     </>
   )
 }

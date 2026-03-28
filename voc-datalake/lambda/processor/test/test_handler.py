@@ -8,7 +8,6 @@ Tests the core feedback processing functions:
 - check_duplicate()
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
 
@@ -626,9 +625,9 @@ class TestLogProcessingError:
 class TestGetCategoriesConfig:
     """Tests for get_categories_config() function."""
 
+    @patch('shared.api._categories_cache', None)
+    @patch('shared.api._categories_cache_time', None)
     @patch('processor.handler.aggregates_table')
-    @patch('processor.handler._categories_cache', None)
-    @patch('processor.handler._categories_cache_time', None)
     def test_fetches_categories_from_dynamodb(self, mock_table):
         """Fetches categories from DynamoDB."""
         from processor.handler import get_categories_config
@@ -647,9 +646,9 @@ class TestGetCategoriesConfig:
         assert len(result) == 2
         assert result[0]['name'] == 'product_quality'
 
+    @patch('shared.api._categories_cache', None)
+    @patch('shared.api._categories_cache_time', None)
     @patch('processor.handler.aggregates_table')
-    @patch('processor.handler._categories_cache', None)
-    @patch('processor.handler._categories_cache_time', None)
     def test_returns_empty_list_when_no_categories(self, mock_table):
         """Returns empty list when no categories configured."""
         from processor.handler import get_categories_config
@@ -660,9 +659,9 @@ class TestGetCategoriesConfig:
         
         assert result == []
 
+    @patch('shared.api._categories_cache', None)
+    @patch('shared.api._categories_cache_time', None)
     @patch('processor.handler.aggregates_table')
-    @patch('processor.handler._categories_cache', None)
-    @patch('processor.handler._categories_cache_time', None)
     def test_returns_empty_list_on_dynamodb_error(self, mock_table):
         """Returns empty list on DynamoDB error."""
         from processor.handler import get_categories_config
@@ -743,7 +742,6 @@ class TestRecordHandler:
     ):
         """Processes valid SQS record successfully."""
         from processor.handler import record_handler
-        from unittest.mock import MagicMock
         
         mock_validate.return_value = (sample_sqs_record, [])
         mock_process.return_value = {
@@ -766,7 +764,6 @@ class TestRecordHandler:
     def test_skips_invalid_message(self, mock_validate, sample_sqs_record):
         """Skips message that fails validation."""
         from processor.handler import record_handler
-        from unittest.mock import MagicMock
         
         mock_validate.return_value = (None, ['Missing required field: text'])
         
@@ -788,7 +785,6 @@ class TestRecordHandler:
     ):
         """Skips duplicate feedback."""
         from processor.handler import record_handler
-        from unittest.mock import MagicMock
         
         mock_validate.return_value = (sample_sqs_record, [])
         mock_process.return_value = None  # Indicates duplicate

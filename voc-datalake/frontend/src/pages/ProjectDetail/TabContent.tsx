@@ -1,12 +1,17 @@
 /**
  * TabContent - Renders the active tab content
  */
-import type { Project, ProjectPersona, ProjectDocument, ProjectJob } from '../../api/client'
-import type { Tab, NoteItem } from './types'
+import ChatTab from './ChatTab'
+import DocumentsTab from './DocumentsTab'
+import McpAccessTab from './McpAccessTab'
 import OverviewTab from './OverviewTab'
 import PersonasTab from './PersonasTab'
-import DocumentsTab from './DocumentsTab'
-import ChatTab from './ChatTab'
+import type {
+  Tab, NoteItem,
+} from './types'
+import type {
+  Project, ProjectPersona, ProjectDocument, ProjectJob,
+} from '../../api/types'
 
 interface TabContentProps {
   readonly activeTab: Tab
@@ -16,8 +21,6 @@ interface TabContentProps {
   readonly jobs: ProjectJob[]
   readonly selectedPersona: ProjectPersona | null
   readonly selectedDoc: ProjectDocument | null
-  readonly chatMessages: Array<{ role: 'user' | 'assistant'; content: string }>
-  readonly isChatPending: boolean
   readonly isDeleting: boolean
   readonly isSavingNotes: boolean
   readonly onGeneratePersonas: () => void
@@ -35,8 +38,8 @@ interface TabContentProps {
   readonly onEditDoc: () => void
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
-  readonly onSendChat: (message: string, personaIds: string[], documentIds: string[]) => void
   readonly onSaveAsDocument: (content: string) => void
+  readonly onDocumentChanged?: () => void
 }
 
 export default function TabContent({
@@ -47,8 +50,6 @@ export default function TabContent({
   jobs,
   selectedPersona,
   selectedDoc,
-  chatMessages,
-  isChatPending,
   isDeleting,
   isSavingNotes,
   onGeneratePersonas,
@@ -66,8 +67,8 @@ export default function TabContent({
   onEditDoc,
   onDeleteDoc,
   onCreateDoc,
-  onSendChat,
   onSaveAsDocument,
+  onDocumentChanged,
 }: TabContentProps) {
   if (activeTab === 'overview') {
     return (
@@ -121,15 +122,14 @@ export default function TabContent({
   if (activeTab === 'chat') {
     return (
       <ChatTab
+        projectId={project.project_id}
         personas={personas}
         documents={documents}
-        messages={chatMessages}
-        isPending={isChatPending}
-        onSendMessage={onSendChat}
         onSaveAsDocument={onSaveAsDocument}
+        onDocumentChanged={onDocumentChanged}
       />
     )
   }
 
-  return null
+  return <McpAccessTab projectId={project.project_id} personas={personas} documents={documents} />
 }

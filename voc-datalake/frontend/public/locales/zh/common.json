@@ -1,0 +1,84 @@
+{
+  "appDescription": "统一客户反馈智能平台",
+  "appName": "VoC Analytics",
+  "appTagline": "Voice of the Customer Analytics",
+  "breadcrumbs": {
+    "categories": "分类",
+    "chat": "AI聊天",
+    "dashboard": "仪表板",
+    "dataExplorer": "数据浏览器",
+    "feedback": "反馈",
+    "feedbackForms": "反馈表单",
+    "home": "首页",
+    "prioritization": "优先级排序",
+    "problems": "问题分析",
+    "projects": "项目",
+    "scrapers": "网页抓取器",
+    "settings": "设置"
+  },
+  "configureBrand": "配置品牌",
+  "filters": {
+    "allCategories": "所有分类",
+    "allSentiments": "所有情感",
+    "allSources": "所有来源",
+    "clearFilters": "清除筛选",
+    "mostRecent": "最新",
+    "searchFeedback": "搜索反馈...",
+    "urgentOnly": "仅紧急"
+  },
+  "forQuery": "关于\"{{query}}\"",
+  "goToSettings": "前往设置",
+  "loading": "加载中...",
+  "metrics": {
+    "avgSentiment": "平均情感",
+    "sourcesActive": "活跃来源",
+    "totalFeedback": "反馈总数",
+    "urgentIssues": "紧急问题"
+  },
+  "nav": {
+    "aiChat": "AI聊天",
+    "categories": "分类",
+    "dashboard": "仪表板",
+    "dataExplorer": "数据浏览器",
+    "feedback": "反馈",
+    "feedbackForms": "反馈表单",
+    "prioritization": "优先级排序",
+    "problemAnalysis": "问题分析",
+    "projects": "项目",
+    "scrapers": "抓取器",
+    "settings": "设置"
+  },
+  "send": "发送",
+  "sentiment": {
+    "mixed": "混合",
+    "negative": "消极",
+    "neutral": "中性",
+    "positive": "积极"
+  },
+  "showingOf_one": "显示{{total}}条中的{{count}}条",
+  "showingOf_other": "显示{{total}}条中的{{count}}条",
+  "sidebar": {
+    "closeMenu": "关闭菜单",
+    "collapseSidebar": "折叠侧边栏",
+    "expandSidebar": "展开侧边栏",
+    "openMenu": "打开菜单",
+    "signOut": "退出登录"
+  },
+  "timeRange": {
+    "24h": "24小时",
+    "24hFull": "24小时",
+    "30d": "30天",
+    "30dFull": "30天",
+    "48h": "48小时",
+    "48hFull": "48小时",
+    "7d": "7天",
+    "7dFull": "7天",
+    "apply": "应用",
+    "cancel": "取消",
+    "clear": "清除",
+    "custom": "自定义",
+    "endDate": "结束日期",
+    "selectDateRange": "选择日期范围",
+    "startDate": "开始日期"
+  }
+}

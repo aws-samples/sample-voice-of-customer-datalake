@@ -7,6 +7,21 @@ fileMatchPattern: "lambda/**/*.py"
 
 This guide applies when working with Python Lambda functions in this project.
 
+> **⚠️ IMPORTANT — Streaming Chat Handler (TypeScript)**
+>
+> The **chat and project chat** endpoints are implemented in **TypeScript** at `lambda/stream/` (Node.js 22).
+> The Python `shared/project_chat.py` and `chat_stream_handler.py` have been **deleted** — they were fully ported to TypeScript.
+> All new chat-related features (attachments, tool use, context building) MUST be implemented in `lambda/stream/`, NOT in Python.
+> If an issue or doc references the old Python chat handlers, ignore that and implement in `lambda/stream/` instead.
+>
+> Key TypeScript files:
+> - `lambda/stream/src/handler.ts` — Entry point, routes VoC chat vs project chat
+> - `lambda/stream/src/schema.ts` — Zod request validation
+> - `lambda/stream/src/context/project-context.ts` — Project chat context builder (replaces `shared/project_chat.py`)
+> - `lambda/stream/src/context/voc-context.ts` — VoC chat context builder
+> - `lambda/stream/src/bedrock/converse-stream.ts` — Bedrock ConverseStream wrapper
+> - `lambda/stream/src/attachments.ts` — Attachment validation and Bedrock content block conversion
+
 ## Required Imports
 
 All Lambda handlers MUST use AWS Lambda Powertools:

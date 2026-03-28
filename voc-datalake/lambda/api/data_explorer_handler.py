@@ -11,24 +11,20 @@ Dedicated Lambda to avoid 20KB IAM policy limit.
 
 import json
 import os
-import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from shared.logging import logger, tracer
-from shared.aws import get_s3_client, get_dynamodb_resource, get_sqs_client
+from shared.aws import get_s3_client, get_sqs_client
 from shared.api import create_api_resolver, api_handler, DecimalEncoder
 from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
+from shared.tables import get_feedback_table
 
 s3_client = get_s3_client()
-dynamodb = get_dynamodb_resource()
 sqs_client = get_sqs_client()
 
 RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
-FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
 PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 
 # Available buckets for browsing
@@ -37,17 +33,6 @@ AVAILABLE_BUCKETS = {
 }
 
 app = create_api_resolver()
-
-
-def decimal_to_native(obj):
-    """Convert Decimal to native Python types recursively."""
-    if isinstance(obj, Decimal):
-        return float(obj) if obj % 1 else int(obj)
-    elif isinstance(obj, dict):
-        return {k: decimal_to_native(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [decimal_to_native(i) for i in obj]
-    return obj
 
 
 # ============================================
@@ -283,7 +268,8 @@ def delete_s3_file():
 @tracer.capture_method
 def save_feedback():
     """Update a feedback record in DynamoDB."""
-    if not FEEDBACK_TABLE:
+    table = get_feedback_table()
+    if not table:
         raise ConfigurationError('Feedback table not configured')
     
     body = app.current_event.json_body
@@ -295,8 +281,6 @@ def save_feedback():
         raise ValidationError('Feedback ID is required')
     
     try:
-        table = dynamodb.Table(FEEDBACK_TABLE)
-        
         # Get existing item to find the PK/SK
         # feedback_id format is typically: {source}_{id}
         source_platform = data.get('source_platform', '')
@@ -398,7 +382,8 @@ def save_feedback():
 @tracer.capture_method
 def delete_feedback():
     """Delete a feedback record from DynamoDB."""
-    if not FEEDBACK_TABLE:
+    table = get_feedback_table()
+    if not table:
         raise ConfigurationError('Feedback table not configured')
     
     params = app.current_event.query_string_parameters or {}
@@ -408,8 +393,6 @@ def delete_feedback():
         raise ValidationError('Feedback ID is required')
     
     try:
-        table = dynamodb.Table(FEEDBACK_TABLE)
-        
         # Find the item first using GSI
         response = table.query(
             IndexName='feedback-id-index',
@@ -460,7 +443,7 @@ def get_data_stats():
             'buckets': [],
             'configured': bool(RAW_DATA_BUCKET)
         },
-        'dynamodb': {'table': FEEDBACK_TABLE, 'configured': bool(FEEDBACK_TABLE)}
+        'dynamodb': {'table': os.environ.get('FEEDBACK_TABLE', ''), 'configured': get_feedback_table() is not None}
     }
     
     # Add info for each configured bucket

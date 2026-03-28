@@ -1,0 +1,56 @@
+{
+  "back": "Zurück",
+  "backToFeedback": "Zurück zum Feedback",
+  "backToList": "Zurück zur Feedback-Liste",
+  "category": "Kategorie",
+  "classification": "Klassifizierung",
+  "copyToClipboard": "In die Zwischenablage kopieren",
+  "created": "Erstellt: {{date}}",
+  "customerPersona": "Kundenpersona",
+  "hide": "Ausblenden",
+  "impactArea": "Wirkungsbereich",
+  "issue": "Problem:",
+  "journeyStage": "Journey-Phase",
+  "language": "Sprache: {{lang}}",
+  "loadingSimilar": "Ähnliches Feedback wird geladen...",
+  "notFound": "Feedback nicht gefunden",
+  "originalFeedback": "Ursprüngliches Feedback",
+  "persona": "Persona",
+  "possibleRootCause": "Mögliche Ursache:",
+  "problemAnalysis": "Problemanalyse",
+  "rating": "Bewertung",
+  "show": "Anzeigen",
+  "similar": "Ähnlich",
+  "similarFeedback": "Ähnliches Feedback",
+  "subcategory": "Unterkategorie",
+  "suggestedResponses": "Vorgeschlagene Antworten",
+  "suggestedResponsesHint": "Kopieren Sie diese Antworten, um sie mit Ihrem Team zu teilen oder als Ausgangspunkt für Ihre Antwort zu verwenden.",
+  "responses": {
+    "delivery": [
+      "Wir entschuldigen uns aufrichtig für die Verzögerung Ihrer Lieferung. Wir kümmern uns sofort darum und stellen sicher, dass Ihre Bestellung Sie so schnell wie möglich erreicht.",
+      "Vielen Dank, dass Sie uns darauf aufmerksam gemacht haben. Wir verstehen, wie frustrierend Lieferprobleme sein können. Unser Team untersucht den Fall und wird sich in Kürze bei Ihnen melden."
+    ],
+    "customer_support": [
+      "Es tut uns leid, von Ihrer Erfahrung mit unserem Support-Team zu hören. Das entspricht nicht dem Serviceniveau, das wir anstreben. Wir möchten das wieder gutmachen.",
+      "Vielen Dank für Ihr Feedback. Wir nehmen den Kundenservice sehr ernst und werden dies nutzen, um unsere Schulungen zu verbessern."
+    ],
+    "product_quality": [
+      "Wir entschuldigen uns, dass unser Produkt Ihre Erwartungen nicht erfüllt hat. Qualität hat für uns höchste Priorität, und wir möchten Ihnen einen Ersatz oder eine Rückerstattung anbieten.",
+      "Vielen Dank, dass Sie uns über dieses Problem informiert haben. Wir sind der Qualität verpflichtet und möchten dies für Sie lösen."
+    ],
+    "pricing": [
+      "Wir schätzen Ihr Feedback zu unseren Preisen. Wir bemühen uns, wettbewerbsfähigen Wert zu bieten, und besprechen gerne die verfügbaren Optionen mit Ihnen.",
+      "Vielen Dank, dass Sie Ihre Bedenken teilen. Wir überprüfen regelmäßig unsere Preise, um sicherzustellen, dass wir einen fairen Wert bieten."
+    ],
+    "default": [
+      "Vielen Dank, dass Sie sich die Zeit genommen haben, Ihr Feedback zu teilen. Wir schätzen Ihren Beitrag und sind bestrebt, uns zu verbessern.",
+      "Wir schätzen es, dass Sie uns darauf aufmerksam gemacht haben. Unser Team wird dies prüfen und daran arbeiten, Ihre Anliegen zu berücksichtigen."
+    ]
+  },
+  "tagsAndFilters": "Tags & Filter",
+  "translatedFrom": "Übersetzt aus {{language}}",
+  "type": "Typ",
+  "unknown": "Unbekannt",
+  "urgent": "Dringend",
+  "viewOriginal": "Original ansehen"
+}

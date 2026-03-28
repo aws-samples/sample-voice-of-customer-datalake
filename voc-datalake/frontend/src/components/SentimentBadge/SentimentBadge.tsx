@@ -38,12 +38,14 @@ function getSentimentColor(sentiment: string): string {
   return SENTIMENT_COLORS.neutral
 }
 
-export default function SentimentBadge({ sentiment, score, size = 'sm' }: Readonly<SentimentBadgeProps>) {
+export default function SentimentBadge({
+  sentiment, score, size = 'sm',
+}: Readonly<SentimentBadgeProps>) {
   return (
     <span className={clsx(
       'inline-flex items-center rounded-full font-medium',
       getSentimentColor(sentiment),
-      size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-3 py-1 text-sm'
+      size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-3 py-1 text-sm',
     )}>
       {sentiment}
       {score !== undefined && (

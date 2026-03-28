@@ -20,6 +20,9 @@ vi.mock('../../api/client', () => ({
     getFeedback: vi.fn(),
     getSources: vi.fn(),
   },
+}))
+
+vi.mock('../../api/baseUrl', () => ({
   getDaysFromRange: vi.fn().mockReturnValue(7),
 }))
 
@@ -100,6 +103,7 @@ describe('SocialFeed', () => {
       
       renderWithQueryClient(<SocialFeed />)
       
+      // eslint-disable-next-line testing-library/no-node-access
       const skeletons = document.querySelectorAll('.animate-pulse')
       expect(skeletons.length).toBeGreaterThan(0)
     })
@@ -137,8 +141,9 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
+        // eslint-disable-next-line testing-library/no-node-access
         const filledStars = document.querySelectorAll('.text-yellow-400.fill-yellow-400')
-        expect(filledStars.length).toBe(5)
+        expect(filledStars).toHaveLength(5)
       })
     })
 
@@ -249,6 +254,7 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
+        // eslint-disable-next-line testing-library/no-node-access
         const webscraperCard = document.querySelector('.border-l-blue-500')
         expect(webscraperCard).toBeInTheDocument()
       })
@@ -258,9 +264,46 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
+        // eslint-disable-next-line testing-library/no-node-access
         const manualImportCard = document.querySelector('.border-l-purple-500')
         expect(manualImportCard).toBeInTheDocument()
       })
+    })
+  })
+
+  describe('incomplete data handling', () => {
+    it('renders items with missing optional fields (regression: Zod schema too strict)', async () => {
+      // Simulates DynamoDB items where processor stripped None values
+      const incompleteItems = [
+        {
+          feedback_id: 'fb-incomplete',
+          source_id: '',
+          source_platform: 'webscraper',
+          source_channel: 'unknown',
+          brand_name: '',
+          source_created_at: '',
+          processed_at: '',
+          original_text: 'This review has minimal fields',
+          original_language: 'unknown',
+          category: 'other',
+          journey_stage: 'unknown',
+          sentiment_label: 'negative',
+          sentiment_score: -0.8,
+          urgency: 'high',
+          impact_area: 'other',
+        },
+      ]
+      ;(api.getFeedback as ReturnType<typeof vi.fn>).mockResolvedValue({
+        count: 1,
+        items: incompleteItems,
+      })
+
+      renderWithQueryClient(<SocialFeed />)
+
+      await waitFor(() => {
+        expect(screen.getByText('This review has minimal fields')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('No feedback found for this period')).not.toBeInTheDocument()
     })
   })
 })

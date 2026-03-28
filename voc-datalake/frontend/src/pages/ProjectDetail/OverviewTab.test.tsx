@@ -2,7 +2,13 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import OverviewTab from './OverviewTab'
-import type { Project, ProjectPersona, ProjectDocument, ProjectJob } from '../../api/client'
+import type { Project, ProjectPersona, ProjectDocument, ProjectJob } from '../../api/types'
+
+vi.mock('../../store/configStore', () => ({
+  useConfigStore: () => ({
+    config: { apiEndpoint: 'https://api.example.com/v1' },
+  }),
+}))
 
 const mockProject: Project = {
   project_id: 'proj-1',
@@ -85,5 +91,15 @@ describe('OverviewTab', () => {
     render(<OverviewTab {...defaultProps} documents={docs} />)
     const remixButton = screen.getByRole('button', { name: /Remix/i })
     expect(remixButton).not.toBeDisabled()
+  })
+
+  it('renders Kiro Export Settings card', () => {
+    render(<OverviewTab {...defaultProps} />)
+    expect(screen.getByText('Kiro Export Settings')).toBeInTheDocument()
+  })
+
+  it('shows empty state when no export prompt configured', () => {
+    render(<OverviewTab {...defaultProps} />)
+    expect(screen.getByText(/No Kiro export prompt configured/)).toBeInTheDocument()
   })
 })

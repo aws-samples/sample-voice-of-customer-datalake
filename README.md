@@ -44,7 +44,7 @@ A fully serverless AWS platform for ingesting, processing, and analyzing custome
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-Each plugin is self-contained with a `manifest.json` that defines infrastructure, UI config, and credentials. See [Plugin Architecture](docs/plugin-architecture.md).
+Each plugin is self-contained with a `manifest.json` that defines infrastructure, UI config, and credentials. See [System Documentation](.kiro/SYSTEM_DOCUMENTATION.md#plugin-architecture).
 
 ## 🚀 Quick Start
 
@@ -64,7 +64,7 @@ npm run cdk:bootstrap
 npm run deploy:all
 ```
 
-See [Deployment Guide](docs/deployment.md) for detailed instructions.
+See [Deployment Guide](.kiro/steering/deployment.md) for detailed instructions.
 
 ## 🔐 Initial Login
 
@@ -119,7 +119,7 @@ cp -r plugins/_template plugins/my_source
 npm run validate:plugins
 ```
 
-See [Getting Started with Plugins](docs/getting-started-plugins.md).
+See [System Documentation](.kiro/SYSTEM_DOCUMENTATION.md#creating-plugins).
 
 ## 📊 Tech Stack
 
@@ -134,13 +134,11 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 
 | Document | Description |
 |----------|-------------|
-| [Deployment Guide](docs/deployment.md) | How to deploy the platform |
-| [Plugin Architecture](docs/plugin-architecture.md) | Technical plugin system design |
-| [Getting Started with Plugins](docs/getting-started-plugins.md) | Creating new data source plugins |
-| [Feedback Forms](docs/feedback-forms.md) | Embeddable feedback forms |
-| [Scrapers](docs/scrapers.md) | Web scraper configuration |
-| [Data Lake Structure](docs/data-lake-structure.md) | S3 and DynamoDB organization |
-| [Processing Pipeline](docs/processing-pipeline.md) | How feedback is processed |
+| [System Documentation](.kiro/SYSTEM_DOCUMENTATION.md) | Complete technical documentation |
+| [Deployment Guide](.kiro/steering/deployment.md) | How to deploy the platform |
+| [Tech Stack](.kiro/steering/tech.md) | Technology stack and best practices |
+| [Project Structure](.kiro/steering/structure.md) | Repository organization |
+| [Product Overview](.kiro/steering/product.md) | Product features and capabilities |
 
 ## 📄 License
 

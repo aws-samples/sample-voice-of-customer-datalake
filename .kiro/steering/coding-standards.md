@@ -142,7 +142,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. When a single Lamb
 3. **Minimal permissions** - Each Lambda only gets IAM permissions for resources it actually uses
 4. **Naming convention** - Use `{domain}_handler.py` naming (e.g., `metrics_handler.py`, `chat_handler.py`)
 
-**Current API Lambda Structure (12 handlers):**
+**Current API Lambda Structure (15 handlers):**
 
 ```
 lambda/api/
@@ -156,10 +156,15 @@ lambda/api/
 ├── users_handler.py         # /users/* (Cognito admin)
 ├── feedback_form_handler.py # /feedback-form/*, /feedback-forms/*
 ├── data_explorer_handler.py # /data-explorer/* (S3 raw data & DynamoDB browser)
+├── logs_handler.py          # /logs/* (system logs)
+├── manual_import_handler.py # /manual-import/* (manual data import)
+├── extension_handler.py     # /extension/* (Chrome extension review ingestion)
+├── s3_import_handler.py     # /s3-import/* (S3 file import browser)
+├── mcp_handler.py           # /mcp (MCP JSON-RPC server)
 └── projects.py              # Shared business logic for projects
 ```
 
-**Domain-to-Permission Mapping (12 handlers):**
+**Domain-to-Permission Mapping (15 handlers):**
 
 | Domain | Handler | AWS Permissions |
 |--------|---------|-----------------|
@@ -173,13 +178,18 @@ lambda/api/
 | Users | `users_handler.py` | Cognito admin |
 | Feedback Forms | `feedback_form_handler.py` | DynamoDB (aggregates), SQS |
 | Data Explorer | `data_explorer_handler.py` | S3, DynamoDB (feedback) |
+| Logs | `logs_handler.py` | CloudWatch Logs read |
+| Manual Import | `manual_import_handler.py` | DynamoDB, SQS, S3 |
+| Extension | `extension_handler.py` | S3, SQS |
+| S3 Import | `s3_import_handler.py` | S3 (import bucket) |
+| MCP | `mcp_handler.py` | DynamoDB read (feedback, aggregates, projects) |
 
 **When adding new API endpoints:**
 
 1. Identify which domain the endpoint belongs to
 2. Add the route to the appropriate existing handler
 3. If creating a new domain, create a new `{domain}_handler.py` file
-4. Update `analytics-stack.ts` to create the Lambda and wire API Gateway routes
+4. Update `api-stack.ts` to create the Lambda and wire API Gateway routes
 5. Grant only the minimum required permissions
 
 **Example - Adding a new endpoint to existing domain:**
@@ -278,7 +288,7 @@ export class MyStack extends cdk.Stack {
 
 AWS Lambda execution roles have a **20KB policy size limit**. The CDK stack must create separate Lambdas for each domain with isolated permissions.
 
-**Current Lambda Architecture in `analytics-stack.ts`:**
+**Current Lambda Architecture in `api-stack.ts`:**
 
 ```typescript
 // 1. Metrics Lambda - read-only feedback/metrics queries

@@ -85,6 +85,9 @@ describe('ChatExportMenu', () => {
     vi.clearAllMocks()
     mockWriteText.mockClear()
     mockShare.mockClear()
+
+    // Prevent jsdom "Not implemented: navigation" errors from anchor clicks
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mockWriteText },
@@ -100,14 +103,18 @@ describe('ChatExportMenu', () => {
 
   describe('visibility', () => {
     it('returns null when conversation is null', () => {
-      const { container } = render(<ChatExportMenu conversation={null} />)
-      expect(container.firstChild).toBeNull()
+      render(<ChatExportMenu conversation={null} />)
+      expect(screen.queryByLabelText('Export options')).not.toBeInTheDocument()
     })
+
+
+
+
 
     it('returns null when conversation has no messages', () => {
       const emptyConv = { ...mockConversation, messages: [] }
-      const { container } = render(<ChatExportMenu conversation={emptyConv} />)
-      expect(container.firstChild).toBeNull()
+      render(<ChatExportMenu conversation={emptyConv} />)
+      expect(screen.queryByLabelText('Export options')).not.toBeInTheDocument()
     })
 
     it('renders when conversation has messages', () => {
@@ -164,7 +171,7 @@ describe('ChatExportMenu', () => {
   })
 
   describe('menu items', () => {
-    it('displays all export options when menu is open', async () => {
+    it('displays copy and share options when menu is open', async () => {
       const user = userEvent.setup()
       render(<ChatExportMenu conversation={mockConversation} />)
       
@@ -172,6 +179,14 @@ describe('ChatExportMenu', () => {
       
       expect(screen.getByText('Copy conversation')).toBeInTheDocument()
       expect(screen.getByText('Share')).toBeInTheDocument()
+    })
+
+    it('displays download options when menu is open', async () => {
+      const user = userEvent.setup()
+      render(<ChatExportMenu conversation={mockConversation} />)
+      
+      await user.click(screen.getByLabelText('Export options'))
+      
       expect(screen.getByText('Download as Markdown')).toBeInTheDocument()
       expect(screen.getByText('Download as JSON')).toBeInTheDocument()
       expect(screen.getByText('Download as PDF')).toBeInTheDocument()
@@ -184,7 +199,7 @@ describe('ChatExportMenu', () => {
       await user.click(screen.getByLabelText('Export options'))
       
       const menuItems = screen.getAllByRole('menuitem')
-      expect(menuItems.length).toBe(5)
+      expect(menuItems).toHaveLength(5)
     })
   })
 
@@ -266,7 +281,9 @@ describe('ChatExportMenu', () => {
       await user.click(screen.getByText('Share'))
       
       // Should not throw, gracefully handles error
-      expect(mockShare).toHaveBeenCalled()
+      expect(mockShare).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Test Conversation',
+      }))
     })
 
     it('closes menu after sharing', async () => {
@@ -285,24 +302,24 @@ describe('ChatExportMenu', () => {
   describe('download as markdown', () => {
     it('triggers download when clicked', async () => {
       const user = userEvent.setup()
-      const createObjectURL = vi.fn().mockReturnValue('blob:url')
-      const revokeObjectURL = vi.fn()
-      global.URL.createObjectURL = createObjectURL
-      global.URL.revokeObjectURL = revokeObjectURL
+      const createSpy = vi.spyOn(global.URL, 'createObjectURL').mockReturnValue('blob:url')
+      const revokeSpy = vi.spyOn(global.URL, 'revokeObjectURL').mockReturnValue(undefined)
       
       render(<ChatExportMenu conversation={mockConversation} />)
       
       await user.click(screen.getByLabelText('Export options'))
       await user.click(screen.getByText('Download as Markdown'))
       
-      expect(createObjectURL).toHaveBeenCalled()
-      expect(revokeObjectURL).toHaveBeenCalled()
+      expect(createSpy).toHaveBeenCalledWith(expect.any(Blob))
+      expect(revokeSpy).toHaveBeenCalledWith('blob:url')
+      createSpy.mockRestore()
+      revokeSpy.mockRestore()
     })
 
     it('closes menu after download', async () => {
       const user = userEvent.setup()
-      global.URL.createObjectURL = vi.fn().mockReturnValue('blob:url')
-      global.URL.revokeObjectURL = vi.fn()
+      vi.spyOn(global.URL, 'createObjectURL').mockImplementation(() => 'blob:url')
+      vi.spyOn(global.URL, 'revokeObjectURL').mockImplementation(() => {})
       
       render(<ChatExportMenu conversation={mockConversation} />)
       
@@ -316,23 +333,23 @@ describe('ChatExportMenu', () => {
   describe('download as JSON', () => {
     it('triggers download when clicked', async () => {
       const user = userEvent.setup()
-      const createObjectURL = vi.fn().mockReturnValue('blob:url')
-      const revokeObjectURL = vi.fn()
-      global.URL.createObjectURL = createObjectURL
-      global.URL.revokeObjectURL = revokeObjectURL
+      const createSpy = vi.spyOn(global.URL, 'createObjectURL').mockReturnValue('blob:url')
+      const revokeSpy = vi.spyOn(global.URL, 'revokeObjectURL').mockReturnValue(undefined)
       
       render(<ChatExportMenu conversation={mockConversation} />)
       
       await user.click(screen.getByLabelText('Export options'))
       await user.click(screen.getByText('Download as JSON'))
       
-      expect(createObjectURL).toHaveBeenCalled()
+      expect(createSpy).toHaveBeenCalledWith(expect.any(Blob))
+      createSpy.mockRestore()
+      revokeSpy.mockRestore()
     })
 
     it('closes menu after download', async () => {
       const user = userEvent.setup()
-      global.URL.createObjectURL = vi.fn().mockReturnValue('blob:url')
-      global.URL.revokeObjectURL = vi.fn()
+      vi.spyOn(global.URL, 'createObjectURL').mockImplementation(() => 'blob:url')
+      vi.spyOn(global.URL, 'revokeObjectURL').mockImplementation(() => {})
       
       render(<ChatExportMenu conversation={mockConversation} />)
       
@@ -396,8 +413,8 @@ describe('ChatExportMenu', () => {
     it('sanitizes special characters in filename', async () => {
       const user = userEvent.setup()
       const specialConv = { ...mockConversation, title: 'Test/Conversation:With*Special?Chars' }
-      global.URL.createObjectURL = vi.fn().mockReturnValue('blob:url')
-      global.URL.revokeObjectURL = vi.fn()
+      vi.spyOn(global.URL, 'createObjectURL').mockImplementation(() => 'blob:url')
+      vi.spyOn(global.URL, 'revokeObjectURL').mockImplementation(() => {})
       
       render(<ChatExportMenu conversation={specialConv} />)
       
@@ -405,7 +422,7 @@ describe('ChatExportMenu', () => {
       await user.click(screen.getByText('Download as Markdown'))
       
       // Should not throw error
-      expect(global.URL.createObjectURL).toHaveBeenCalled()
+      expect(global.URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
     })
   })
 
@@ -492,28 +509,28 @@ describe('ChatExportMenu', () => {
     it('includes all conversation metadata in JSON', async () => {
       const user = userEvent.setup()
       
-      global.URL.createObjectURL = vi.fn().mockReturnValue('blob:url')
-      global.URL.revokeObjectURL = vi.fn()
+      vi.spyOn(global.URL, 'createObjectURL').mockImplementation(() => 'blob:url')
+      vi.spyOn(global.URL, 'revokeObjectURL').mockImplementation(() => {})
       
       render(<ChatExportMenu conversation={mockConversation} />)
       
       await user.click(screen.getByLabelText('Export options'))
       await user.click(screen.getByText('Download as JSON'))
       
-      expect(global.URL.createObjectURL).toHaveBeenCalled()
+      expect(global.URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
     })
 
     it('includes message sources count in JSON', async () => {
       const user = userEvent.setup()
-      global.URL.createObjectURL = vi.fn().mockReturnValue('blob:url')
-      global.URL.revokeObjectURL = vi.fn()
+      vi.spyOn(global.URL, 'createObjectURL').mockImplementation(() => 'blob:url')
+      vi.spyOn(global.URL, 'revokeObjectURL').mockImplementation(() => {})
       
       render(<ChatExportMenu conversation={conversationWithSources} />)
       
       await user.click(screen.getByLabelText('Export options'))
       await user.click(screen.getByText('Download as JSON'))
       
-      expect(global.URL.createObjectURL).toHaveBeenCalled()
+      expect(global.URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
     })
   })
 
@@ -521,28 +538,28 @@ describe('ChatExportMenu', () => {
     it('includes conversation title as heading', async () => {
       const user = userEvent.setup()
       
-      global.URL.createObjectURL = vi.fn().mockReturnValue('blob:url')
-      global.URL.revokeObjectURL = vi.fn()
+      vi.spyOn(global.URL, 'createObjectURL').mockImplementation(() => 'blob:url')
+      vi.spyOn(global.URL, 'revokeObjectURL').mockImplementation(() => {})
       
       render(<ChatExportMenu conversation={mockConversation} />)
       
       await user.click(screen.getByLabelText('Export options'))
       await user.click(screen.getByText('Download as Markdown'))
       
-      expect(global.URL.createObjectURL).toHaveBeenCalled()
+      expect(global.URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
     })
 
     it('includes source feedback in markdown', async () => {
       const user = userEvent.setup()
-      global.URL.createObjectURL = vi.fn().mockReturnValue('blob:url')
-      global.URL.revokeObjectURL = vi.fn()
+      vi.spyOn(global.URL, 'createObjectURL').mockImplementation(() => 'blob:url')
+      vi.spyOn(global.URL, 'revokeObjectURL').mockImplementation(() => {})
       
       render(<ChatExportMenu conversation={conversationWithSources} />)
       
       await user.click(screen.getByLabelText('Export options'))
       await user.click(screen.getByText('Download as Markdown'))
       
-      expect(global.URL.createObjectURL).toHaveBeenCalled()
+      expect(global.URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
     })
   })
 

@@ -235,15 +235,13 @@ describe('Login', () => {
       const passwordInput = screen.getByPlaceholderText(/Enter your password/i)
       expect(passwordInput).toHaveAttribute('type', 'password')
       
-      // Find the toggle button by its position relative to the password input
-      const passwordContainer = passwordInput.parentElement
-      const toggleButton = passwordContainer?.querySelector('button')
+      // The toggle button is inside the same container as the password input
+      // eslint-disable-next-line testing-library/no-node-access
+      const toggleButton = passwordInput.parentElement!.querySelector('button')!
       expect(toggleButton).toBeInTheDocument()
       
-      if (toggleButton) {
-        await user.click(toggleButton)
-        expect(passwordInput).toHaveAttribute('type', 'text')
-      }
+      await user.click(toggleButton)
+      expect(passwordInput).toHaveAttribute('type', 'text')
     })
   })
 

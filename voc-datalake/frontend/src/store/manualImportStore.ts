@@ -18,13 +18,13 @@ interface ManualImportState {
   jobId: string | null
   sourceOrigin: string | null
   lastUpdated: string | null
-  
+
   // UI state (not persisted)
   isModalOpen: boolean
   isProcessing: boolean
   processingError: string | null
   step: 'input' | 'processing' | 'preview'
-  
+
   // Actions
   setSourceUrl: (url: string) => void
   setRawText: (text: string) => void
@@ -36,12 +36,12 @@ interface ManualImportState {
   setIsProcessing: (processing: boolean) => void
   setProcessingError: (error: string | null) => void
   setStep: (step: 'input' | 'processing' | 'preview') => void
-  
+
   // Review editing
   updateReview: (index: number, review: Partial<ParsedReview>) => void
   deleteReview: (index: number) => void
   addEmptyReview: () => void
-  
+
   // Clear state
   clearDraft: () => void
   resetModal: () => void
@@ -65,10 +65,19 @@ export const useManualImportStore = create<ManualImportState>()(
   persist(
     (set) => ({
       ...initialState,
-      
-      setSourceUrl: (url) => set({ sourceUrl: url, lastUpdated: new Date().toISOString() }),
-      setRawText: (text) => set({ rawText: text, lastUpdated: new Date().toISOString() }),
-      setParsedReviews: (reviews) => set({ parsedReviews: reviews, lastUpdated: new Date().toISOString() }),
+
+      setSourceUrl: (url) => set({
+        sourceUrl: url,
+        lastUpdated: new Date().toISOString(),
+      }),
+      setRawText: (text) => set({
+        rawText: text,
+        lastUpdated: new Date().toISOString(),
+      }),
+      setParsedReviews: (reviews) => set({
+        parsedReviews: reviews,
+        lastUpdated: new Date().toISOString(),
+      }),
       setUnparsedSections: (sections) => set({ unparsedSections: sections }),
       setJobId: (id) => set({ jobId: id }),
       setSourceOrigin: (origin) => set({ sourceOrigin: origin }),
@@ -76,26 +85,38 @@ export const useManualImportStore = create<ManualImportState>()(
       setIsProcessing: (processing) => set({ isProcessing: processing }),
       setProcessingError: (error) => set({ processingError: error }),
       setStep: (step) => set({ step }),
-      
+
       updateReview: (index, review) => set((state) => {
         const reviews = [...state.parsedReviews]
-        reviews[index] = { ...reviews[index], ...review }
-        return { parsedReviews: reviews, lastUpdated: new Date().toISOString() }
+        reviews[index] = {
+          ...reviews[index],
+          ...review,
+        }
+        return {
+          parsedReviews: reviews,
+          lastUpdated: new Date().toISOString(),
+        }
       }),
-      
+
       deleteReview: (index) => set((state) => ({
         parsedReviews: state.parsedReviews.filter((_, i) => i !== index),
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
       })),
-      
+
       addEmptyReview: () => set((state) => ({
         parsedReviews: [
           ...state.parsedReviews,
-          { text: '', rating: null, author: null, date: null, title: null }
+          {
+            text: '',
+            rating: null,
+            author: null,
+            date: null,
+            title: null,
+          },
         ],
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
       })),
-      
+
       clearDraft: () => set({
         sourceUrl: '',
         rawText: '',
@@ -107,7 +128,7 @@ export const useManualImportStore = create<ManualImportState>()(
         processingError: null,
         step: 'input',
       }),
-      
+
       resetModal: () => set({
         isModalOpen: false,
         isProcessing: false,
@@ -127,6 +148,6 @@ export const useManualImportStore = create<ManualImportState>()(
         sourceOrigin: state.sourceOrigin,
         lastUpdated: state.lastUpdated,
       }),
-    }
-  )
+    },
+  ),
 )

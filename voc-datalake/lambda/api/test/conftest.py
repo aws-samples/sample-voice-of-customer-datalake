@@ -5,7 +5,7 @@ import os
 import sys
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from datetime import datetime, timezone
 
 # Add lambda directory to path for shared module imports

@@ -3,7 +3,7 @@
 ## Infrastructure (AWS CDK)
 
 - **Language**: TypeScript
-- **CDK Version**: ^2.229.0
+- **CDK Version**: ^2.244.0
 - **Runtime**: Node.js 18+
 - **Entry Point**: `bin/voc-datalake.ts`
 
@@ -33,6 +33,9 @@
 |--------|------|------|----------|
 | Web Scraper | HTTP | None | Configurable |
 | Feedback Forms | API | None (public) | Real-time |
+| Chrome Extension | Browser extension | Cognito | Manual |
+| App Reviews (Android) | Google Play Store | API key | Configurable |
+| App Reviews (iOS) | Apple App Store | API key | Configurable |
 
 ## Backend (Lambda - Python)
 
@@ -47,7 +50,7 @@
 
 ### API Lambda Split (20KB IAM Policy Limit)
 
-AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into 15 focused, domain-specific Lambdas:
+AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into focused, domain-specific Lambdas:
 
 | Lambda | Handler | Routes | Permissions |
 |--------|---------|--------|-------------|
@@ -63,6 +66,9 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 | `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read |
 | `voc-manual-import-api` | `manual_import_handler.py` | `/manual-import/*` | DynamoDB, SQS, S3 |
+| `voc-extension-api` | `extension_handler.py` | `/extension/*` | S3, SQS |
+| `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` | S3 (import bucket) |
+| `voc-mcp-api` | `mcp_handler.py` | `/mcp` | DynamoDB read (feedback, aggregates, projects) |
 
 **Benefits:**
 - Each Lambda stays under 20KB policy limit
@@ -94,17 +100,20 @@ def lambda_handler(event, context):
 |------|---------|---------|
 | React | ^19.2.0 | UI framework |
 | Vite | ^7.2.4 | Build tool |
-| Tailwind CSS | ^4.1.17 | Styling |
-| Zustand | ^5.0.8 | State management (persisted) |
-| TanStack Query | ^5.90.10 | Data fetching/caching |
-| React Router | ^7.9.6 | Routing (react-router-dom) |
-| Recharts | ^3.5.0 | Charts (Line, Bar, Pie) |
+| Tailwind CSS | ^4.2.2 | Styling |
+| Zustand | ^5.0.12 | State management (persisted) |
+| TanStack Query | ^5.91.3 | Data fetching/caching |
+| React Router | ^7.13.1 | Routing (react-router-dom) |
+| Recharts | ^3.8.0 | Charts (Line, Bar, Pie) |
 | Lucide React | ^0.554.0 | Icons |
 | date-fns | ^4.1.0 | Date formatting |
 | clsx | ^2.1.1 | Conditional classes |
 | react-markdown | ^10.1.0 | Markdown rendering |
 | remark-gfm | ^4.0.1 | GitHub Flavored Markdown |
 | amazon-cognito-identity-js | ^6.3.12 | Cognito authentication |
+| aws-amplify | ^6.16.3 | AWS Amplify integration |
+| i18next | ^25.9.0 | Internationalization framework |
+| react-i18next | ^16.5.8 | React i18n bindings |
 | Zod | ^4.3.5 | Runtime validation (frontend) |
 | TypeScript | ~5.9.3 | Type safety |
 | Vitest | ^3.2.3 | Testing framework (frontend) |

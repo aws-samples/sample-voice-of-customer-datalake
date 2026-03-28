@@ -1,0 +1,17 @@
+{
+  "configureEndpoint": "Veuillez configurer votre point de terminaison API dans les Paramètres",
+  "filters": {
+    "allCategories": "Toutes les catégories",
+    "allSentiments": "Tous les sentiments",
+    "allSources": "Toutes les sources",
+    "clearFilters": "Effacer les filtres",
+    "mostRecent": "Plus récent",
+    "searchFeedback": "Rechercher des retours...",
+    "urgentOnly": "Urgents uniquement"
+  },
+  "forQuery": "pour \"{{query}}\"",
+  "noFeedbackFound": "Aucun retour trouvé correspondant à vos filtres",
+  "showingOf_one": "Affichage de {{count}} sur {{total}} résultat",
+  "showingOf_many": "Affichage de {{count}} sur {{total}} résultats",
+  "showingOf_other": "Affichage de {{count}} sur {{total}} résultats"
+}

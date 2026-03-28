@@ -9,30 +9,29 @@ import PageLoader from './PageLoader'
 describe('PageLoader', () => {
   it('renders loading spinner', () => {
     render(<PageLoader />)
-    
-    // Check for the spinner element with animation class
-    const spinner = document.querySelector('.animate-spin')
-    expect(spinner).toBeTruthy()
+
+    expect(screen.getByRole('status')).toBeTruthy()
   })
 
   it('renders centered container', () => {
-    const { container } = render(<PageLoader />)
-    
-    const wrapper = container.firstChild as HTMLElement
-    expect(wrapper).toHaveClass('flex', 'items-center', 'justify-center')
+    render(<PageLoader />)
+
+    const spinner = screen.getByRole('status')
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(spinner.parentElement).toHaveClass('flex', 'items-center', 'justify-center')
   })
 
   it('has correct height', () => {
-    const { container } = render(<PageLoader />)
-    
-    const wrapper = container.firstChild as HTMLElement
-    expect(wrapper).toHaveClass('h-64')
+    render(<PageLoader />)
+
+    const spinner = screen.getByRole('status')
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(spinner.parentElement).toHaveClass('h-64')
   })
 
   it('spinner has correct styling', () => {
     render(<PageLoader />)
-    
-    const spinner = document.querySelector('.animate-spin')
-    expect(spinner).toHaveClass('rounded-full', 'h-8', 'w-8', 'border-b-2', 'border-blue-600')
+
+    expect(screen.getByRole('status')).toHaveClass('rounded-full', 'h-8', 'w-8', 'border-b-2', 'border-blue-600')
   })
 })

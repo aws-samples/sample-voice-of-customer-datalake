@@ -1,0 +1,56 @@
+{
+  "back": "뒤로",
+  "backToFeedback": "피드백으로 돌아가기",
+  "backToList": "피드백 목록으로 돌아가기",
+  "category": "카테고리",
+  "classification": "분류",
+  "copyToClipboard": "클립보드에 복사",
+  "created": "생성됨: {{date}}",
+  "customerPersona": "고객 페르소나",
+  "hide": "숨기기",
+  "impactArea": "영향 범위",
+  "issue": "문제:",
+  "journeyStage": "여정 단계",
+  "language": "언어: {{lang}}",
+  "loadingSimilar": "유사한 피드백 로드 중...",
+  "notFound": "피드백을 찾을 수 없음",
+  "originalFeedback": "원본 피드백",
+  "persona": "페르소나",
+  "possibleRootCause": "가능한 근본 원인:",
+  "problemAnalysis": "문제 분석",
+  "rating": "평점",
+  "show": "표시",
+  "similar": "유사",
+  "similarFeedback": "유사한 피드백",
+  "subcategory": "하위 카테고리",
+  "suggestedResponses": "제안된 응답",
+  "suggestedResponsesHint": "이 응답을 팀과 공유하거나 회신의 시작점으로 사용하세요.",
+  "responses": {
+    "delivery": [
+      "배송 지연에 대해 진심으로 사과드립니다. 즉시 조사하여 가능한 빨리 주문이 도착하도록 하겠습니다.",
+      "알려주셔서 감사합니다. 배송 문제가 얼마나 불편한지 이해합니다. 팀이 조사 중이며 곧 연락드리겠습니다."
+    ],
+    "customer_support": [
+      "지원팀과의 경험에 대해 유감입니다. 이것은 우리가 추구하는 서비스 수준이 아닙니다. 바로잡고 싶습니다.",
+      "피드백 감사합니다. 고객 서비스를 진지하게 받아들이며 교육 개선에 활용하겠습니다."
+    ],
+    "product_quality": [
+      "제품이 기대에 미치지 못해 죄송합니다. 품질이 최우선이며, 교환 또는 환불을 제안드립니다.",
+      "이 문제를 알려주셔서 감사합니다. 품질에 전념하고 있으며 해결해 드리겠습니다."
+    ],
+    "pricing": [
+      "가격에 대한 피드백 감사합니다. 경쟁력 있는 가치를 제공하기 위해 노력하며, 이용 가능한 옵션에 대해 기꺼이 논의하겠습니다.",
+      "우려를 공유해 주셔서 감사합니다. 공정한 가치를 제공하기 위해 정기적으로 가격을 검토합니다."
+    ],
+    "default": [
+      "피드백을 공유해 주셔서 감사합니다. 의견을 소중히 여기며 개선에 전념하겠습니다.",
+      "알려주셔서 감사합니다. 팀이 이를 검토하고 우려 사항을 해결하겠습니다."
+    ]
+  },
+  "tagsAndFilters": "태그 및 필터",
+  "translatedFrom": "{{language}}에서 번역됨",
+  "type": "유형",
+  "unknown": "알 수 없음",
+  "urgent": "긴급",
+  "viewOriginal": "원본 보기"
+}

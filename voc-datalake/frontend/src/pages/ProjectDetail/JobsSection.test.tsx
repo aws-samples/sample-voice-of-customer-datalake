@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import JobsSection from './JobsSection'
-import type { ProjectJob } from '../../api/client'
+import type { ProjectJob } from '../../api/types'
 
 const createJob = (overrides: Partial<ProjectJob> = {}): ProjectJob => ({
   job_id: 'job-1',
@@ -18,6 +18,7 @@ const createJob = (overrides: Partial<ProjectJob> = {}): ProjectJob => ({
 describe('JobsSection', () => {
   it('returns null when jobs array is empty', () => {
     const { container } = render(<JobsSection jobs={[]} onDismiss={vi.fn()} />)
+    // eslint-disable-next-line testing-library/no-node-access -- checking null render
     expect(container.firstChild).toBeNull()
   })
 

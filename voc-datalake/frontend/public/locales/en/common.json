@@ -1,0 +1,84 @@
+{
+  "appDescription": "Unified customer feedback intelligence platform",
+  "appName": "VoC Analytics",
+  "appTagline": "Voice of the Customer Analytics",
+  "breadcrumbs": {
+    "categories": "Categories",
+    "chat": "AI Chat",
+    "dashboard": "Dashboard",
+    "dataExplorer": "Data Explorer",
+    "feedback": "Feedback",
+    "feedbackForms": "Feedback Forms",
+    "home": "Home",
+    "prioritization": "Prioritization",
+    "problems": "Problem Analysis",
+    "projects": "Projects",
+    "scrapers": "Web Scrapers",
+    "settings": "Settings"
+  },
+  "configureBrand": "Configure brand",
+  "filters": {
+    "allCategories": "All Categories",
+    "allSentiments": "All Sentiments",
+    "allSources": "All Sources",
+    "clearFilters": "Clear Filters",
+    "mostRecent": "Most Recent",
+    "searchFeedback": "Search feedback...",
+    "urgentOnly": "Urgent Only"
+  },
+  "forQuery": "for \"{{query}}\"",
+  "goToSettings": "Go to Settings",
+  "loading": "Loading...",
+  "metrics": {
+    "avgSentiment": "Avg Sentiment",
+    "sourcesActive": "Sources Active",
+    "totalFeedback": "Total Feedback",
+    "urgentIssues": "Urgent Issues"
+  },
+  "nav": {
+    "aiChat": "AI Chat",
+    "categories": "Categories",
+    "dashboard": "Dashboard",
+    "dataExplorer": "Data Explorer",
+    "feedback": "Feedback",
+    "feedbackForms": "Feedback Forms",
+    "prioritization": "Prioritization",
+    "problemAnalysis": "Problem Analysis",
+    "projects": "Projects",
+    "scrapers": "Scrapers",
+    "settings": "Settings"
+  },
+  "send": "Send",
+  "sentiment": {
+    "mixed": "Mixed",
+    "negative": "Negative",
+    "neutral": "Neutral",
+    "positive": "Positive"
+  },
+  "showingOf_one": "Showing {{count}} of {{total}} result",
+  "showingOf_other": "Showing {{count}} of {{total}} results",
+  "sidebar": {
+    "closeMenu": "Close menu",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
+    "openMenu": "Open menu",
+    "signOut": "Sign out"
+  },
+  "timeRange": {
+    "24h": "24h",
+    "24hFull": "24 Hours",
+    "30d": "30d",
+    "30dFull": "30 Days",
+    "48h": "48h",
+    "48hFull": "48 Hours",
+    "7d": "7d",
+    "7dFull": "7 Days",
+    "apply": "Apply",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "custom": "Custom",
+    "endDate": "End Date",
+    "selectDateRange": "Select Date Range",
+    "startDate": "Start Date"
+  }
+}

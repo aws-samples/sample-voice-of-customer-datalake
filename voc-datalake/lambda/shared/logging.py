@@ -16,22 +16,4 @@ tracer = Tracer()
 metrics = Metrics(namespace="VoC")
 
 
-def get_logger(service: str = None) -> Logger:
-    """Get a logger instance with optional service name override."""
-    if service:
-        return Logger(service=service)
-    return logger
 
-
-def get_tracer(service: str = None) -> Tracer:
-    """Get a tracer instance with optional service name override."""
-    if service:
-        return Tracer(service=service)
-    return tracer
-
-
-def get_metrics(namespace: str = None) -> Metrics:
-    """Get a metrics instance with optional namespace override."""
-    if namespace:
-        return Metrics(namespace=namespace)
-    return metrics

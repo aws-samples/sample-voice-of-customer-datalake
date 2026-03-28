@@ -5,10 +5,6 @@ Used by projects API and research step handler.
 
 from datetime import datetime, timezone, timedelta
 from boto3.dynamodb.conditions import Key
-
-from shared.logging import logger
-
-
 def get_feedback_context(feedback_table, filters: dict, limit: int = 50) -> list[dict]:
     """Get feedback items based on filters for LLM context.
     
@@ -70,8 +66,6 @@ def get_feedback_context(feedback_table, filters: dict, limit: int = 50) -> list
         items = [i for i in items if i.get('category') in categories]
     
     return items[:limit]
-
-
 def format_feedback_for_llm(items: list[dict]) -> str:
     """Format feedback items for LLM context with rich details.
     
@@ -105,8 +99,6 @@ def format_feedback_for_llm(items: list[dict]) -> str:
 {f'- Root Cause Hypothesis: {root_cause}' if root_cause else ''}
 """)
     return '\n'.join(lines)
-
-
 def get_feedback_statistics(items: list[dict]) -> str:
     """Generate summary statistics from feedback items.
     

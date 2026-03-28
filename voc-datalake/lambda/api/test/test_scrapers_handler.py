@@ -3,9 +3,7 @@ Tests for scrapers_handler.py - /scrapers/* endpoints.
 Manages web scraper configurations and runs.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
 
 
 class TestValidateUrl:

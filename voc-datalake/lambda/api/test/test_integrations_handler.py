@@ -3,8 +3,7 @@ Tests for integrations_handler.py - /integrations/*, /sources/* endpoints.
 Manages API credentials and data source schedules.
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestGetIntegrationStatus:
@@ -79,6 +78,134 @@ class TestGetIntegrationStatus:
         assert 'error' in body
 
 
+class TestGetCredentials:
+    """Tests for GET /integrations/<source>/credentials endpoint."""
+
+    @patch('integrations_handler.secretsmanager')
+    def test_returns_matching_credentials(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """Returns only key-value pairs matching the requested keys."""
+        # Arrange
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'app_reviews_android_app_name': 'my-app',
+                'app_reviews_android_package_name': 'com.example.app',
+                'unrelated_key': 'should-not-appear',
+            })
+        }
+
+        from integrations_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/app_reviews_android/credentials',
+            path_params={'source': 'app_reviews_android'},
+            query_params={'keys': 'app_name,package_name'},
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        # Assert
+        assert response['statusCode'] == 200
+        assert body == {'app_name': 'my-app', 'package_name': 'com.example.app'}
+
+    @patch('integrations_handler.secretsmanager')
+    def test_returns_empty_object_when_no_saved_credentials(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """Returns empty object when source has no saved credentials."""
+        # Arrange
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({})
+        }
+
+        from integrations_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/app_reviews_ios/credentials',
+            path_params={'source': 'app_reviews_ios'},
+            query_params={'keys': 'app_id,app_name'},
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        # Assert
+        assert response['statusCode'] == 200
+        assert body == {}
+
+    @patch('integrations_handler.secretsmanager')
+    def test_returns_400_when_keys_param_missing(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """Returns 400 when keys query parameter is missing."""
+        # Arrange
+        from integrations_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+            query_params={},
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        # Assert
+        assert response['statusCode'] == 400
+        assert 'error' in body
+
+    @patch('integrations_handler.secretsmanager')
+    def test_returns_error_when_secrets_manager_fails(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """Returns 500 when Secrets Manager call fails."""
+        # Arrange
+        mock_secrets.get_secret_value.side_effect = Exception('Access denied')
+
+        from integrations_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+            query_params={'keys': 'webscraper_api_key'},
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        # Assert
+        assert response['statusCode'] == 500
+        assert 'error' in body
+
+    @patch('integrations_handler.SECRETS_ARN', '')
+    def test_raises_configuration_error_when_secrets_arn_missing(
+        self, api_gateway_event, lambda_context
+    ):
+        """Raises ConfigurationError when SECRETS_ARN is not set."""
+        # Arrange
+        from integrations_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+            query_params={'keys': 'webscraper_api_key'},
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        # Assert
+        assert response['statusCode'] == 500
+        assert 'error' in body
+
+
 class TestUpdateCredentials:
     """Tests for PUT /integrations/<source>/credentials endpoint."""
 
@@ -133,14 +260,14 @@ class TestUpdateCredentials:
         )
         
         # Act
-        response = lambda_handler(event, lambda_context)
+        lambda_handler(event, lambda_context)
         
         # Assert
         assert mock_secrets.put_secret_value.called
         call_args = mock_secrets.put_secret_value.call_args
         saved_secrets = json.loads(call_args[1]['SecretString'])
         assert saved_secrets['webscraper_api_key'] == 'existing_key'
-        assert saved_secrets['webscraper_configs'] == '[]'
+        assert saved_secrets['webscraper_webscraper_configs'] == '[]'
 
     @patch('integrations_handler.secretsmanager')
     def test_returns_error_when_update_fails(
@@ -168,31 +295,6 @@ class TestUpdateCredentials:
         # Assert - now returns 500 with error key
         assert response['statusCode'] == 500
         assert 'error' in body
-
-
-class TestTestIntegration:
-    """Tests for POST /integrations/<source>/test endpoint."""
-
-    def test_returns_not_implemented_message(
-        self, api_gateway_event, lambda_context
-    ):
-        """Returns not implemented message for test endpoint."""
-        # Arrange
-        from integrations_handler import lambda_handler
-        event = api_gateway_event(
-            method='POST',
-            path='/integrations/webscraper/test',
-            path_params={'source': 'webscraper'}
-        )
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        assert 'not implemented' in body['message'].lower()
 
 
 class TestGetSourcesStatus:

@@ -8,17 +8,37 @@
  * @module components/ChatExportMenu
  */
 
-import { useState, useRef, useEffect } from 'react'
-import { Download, Share2, FileText, Copy, Check, FileDown, MoreVertical } from 'lucide-react'
-import type { Conversation } from '../../store/chatStore'
+import {
+  Download, Share2, FileText, Copy, Check, FileDown, MoreVertical,
+} from 'lucide-react'
+import {
+  useState, useRef, useEffect,
+} from 'react'
+import { useTranslation } from 'react-i18next'
+import {
+  downloadFile, sanitizeFilename,
+} from '../../utils/file'
 import { generateChatPDF } from './chatPdfGenerator'
+import type { FeedbackItem } from '../../api/types'
+import type { Conversation } from '../../store/chatStore'
 
-interface ChatExportMenuProps {
-  readonly conversation: Conversation | null
-}
+interface ChatExportMenuProps { readonly conversation: Conversation | null }
 
-function sanitizeFilename(name: string): string {
-  return name.replace(/[^a-z0-9]/gi, '_')
+function formatSourceAsText(source: FeedbackItem, idx: number): string[] {
+  const lines: string[] = []
+  lines.push(`#### ${idx + 1}. ${source.source_platform} - ${new Date(source.source_created_at).toLocaleDateString()}`)
+  lines.push(`**Sentiment:** ${source.sentiment_label} | **Category:** ${source.category}`)
+  if (source.rating != null) lines.push(`**Rating:** ${source.rating}/5`)
+  lines.push('')
+  lines.push(source.original_text)
+  if (source.direct_customer_quote != null && source.direct_customer_quote !== '') {
+    lines.push('')
+    lines.push(`> "${source.direct_customer_quote}"`)
+  }
+  lines.push('')
+  lines.push('---')
+  lines.push('')
+  return lines
 }
 
 function formatConversationAsText(conversation: Conversation): string {
@@ -30,7 +50,7 @@ function formatConversationAsText(conversation: Conversation): string {
     '',
   ]
 
-  conversation.messages.forEach((msg) => {
+  for (const msg of conversation.messages) {
     const role = msg.role === 'user' ? 'You' : 'VoC AI'
     const time = new Date(msg.timestamp).toLocaleTimeString()
     lines.push(`**${role}** (${time}):`)
@@ -41,37 +61,17 @@ function formatConversationAsText(conversation: Conversation): string {
       lines.push(`### Referenced Customer Feedback (${msg.sources.length} items)`)
       lines.push('')
 
-      msg.sources.forEach((source, idx) => {
-        lines.push(`#### ${idx + 1}. ${source.source_platform} - ${new Date(source.source_created_at).toLocaleDateString()}`)
-        lines.push(`**Sentiment:** ${source.sentiment_label ?? 'neutral'} | **Category:** ${source.category ?? 'uncategorized'}`)
-        if (source.rating) lines.push(`**Rating:** ${source.rating}/5`)
-        lines.push('')
-        lines.push(source.original_text)
-        if (source.direct_customer_quote) {
-          lines.push('')
-          lines.push(`> "${source.direct_customer_quote}"`)
-        }
-        lines.push('')
-        lines.push('---')
-        lines.push('')
-      })
+      for (const [idx, source] of msg.sources.entries()) {
+        lines.push(...formatSourceAsText(source, idx))
+      }
     }
-  })
+  }
 
   return lines.join('\n')
 }
 
-function downloadFile(content: string, filename: string, mimeType: string): void {
-  const blob = new Blob([content], { type: mimeType })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
+  const { t } = useTranslation('chat')
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -133,13 +133,12 @@ export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
 
   const shareConversation = async () => {
     const text = formatConversationAsText(conversation)
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: conversation.title, text })
-      } catch {
-        // User cancelled or share failed
-      }
-    } else {
+    try {
+      await navigator.share({
+        title: conversation.title,
+        text,
+      })
+    } catch {
       await copyConversation()
     }
     setIsOpen(false)
@@ -150,68 +149,66 @@ export default function ChatExportMenu({ conversation }: ChatExportMenuProps) {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-        title="Export options"
-        aria-label="Export options"
+        title={t('export.exportOptions')}
+        aria-label={t('export.exportOptions')}
         aria-expanded={isOpen}
         aria-haspopup="menu"
       >
         <MoreVertical size={18} />
       </button>
 
-      {isOpen && (
-        <div
-          className="absolute right-0 sm:right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 w-48 sm:w-48 py-1 max-w-[calc(100vw-2rem)]"
-          role="menu"
-          aria-orientation="vertical"
+      {isOpen ? <div
+        className="absolute right-0 sm:right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 w-48 sm:w-48 py-1 max-w-[calc(100vw-2rem)]"
+        role="menu"
+        aria-orientation="vertical"
+      >
+        <button
+          onClick={() => void copyConversation()}
+          className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+          role="menuitem"
         >
-          <button
-            onClick={copyConversation}
-            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
-            role="menuitem"
-          >
-            {copied ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Copy size={16} className="flex-shrink-0" />}
-            <span className="truncate">{copied ? 'Copied!' : 'Copy conversation'}</span>
-          </button>
+          {copied ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Copy size={16} className="flex-shrink-0" />}
+          <span className="truncate">{copied ? t('export.copied') : t('export.copyConversation')}</span>
+        </button>
 
-          <button
-            onClick={shareConversation}
-            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
-            role="menuitem"
-          >
-            <Share2 size={16} className="flex-shrink-0" />
-            <span className="truncate">Share</span>
-          </button>
+        <button
+          onClick={() => void shareConversation()}
+          className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+          role="menuitem"
+        >
+          <Share2 size={16} className="flex-shrink-0" />
+          <span className="truncate">{t('export.share')}</span>
+        </button>
 
-          <hr className="my-1 border-gray-100" />
+        <hr className="my-1 border-gray-100" />
 
-          <button
-            onClick={downloadAsMarkdown}
-            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
-            role="menuitem"
-          >
-            <FileText size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as Markdown</span>
-          </button>
+        <button
+          onClick={downloadAsMarkdown}
+          className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+          role="menuitem"
+        >
+          <FileText size={16} className="flex-shrink-0" />
+          <span className="truncate">{t('export.downloadMarkdown')}</span>
+        </button>
 
-          <button
-            onClick={downloadAsJSON}
-            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
-            role="menuitem"
-          >
-            <Download size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as JSON</span>
-          </button>
+        <button
+          onClick={downloadAsJSON}
+          className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+          role="menuitem"
+        >
+          <Download size={16} className="flex-shrink-0" />
+          <span className="truncate">{t('export.downloadJson')}</span>
+        </button>
 
-          <button
-            onClick={downloadAsPDF}
-            className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
-            role="menuitem"
-          >
-            <FileDown size={16} className="flex-shrink-0" />
-            <span className="truncate">Download as PDF</span>
-          </button>
-        </div>
-      )}
+        <button
+          onClick={downloadAsPDF}
+          className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+          role="menuitem"
+        >
+          <FileDown size={16} className="flex-shrink-0" />
+          <span className="truncate">{t('export.downloadPdf')}</span>
+        </button>
+      </div> : null}
     </div>
   )
 }

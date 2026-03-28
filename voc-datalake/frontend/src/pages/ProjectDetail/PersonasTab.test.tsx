@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import PersonasTab from './PersonasTab'
-import type { ProjectPersona } from '../../api/client'
+import type { ProjectPersona } from '../../api/types'
 
 const mockPersona: ProjectPersona = {
   persona_id: '1',
@@ -96,6 +96,7 @@ describe('PersonasTab', () => {
     // Click the Generate button in empty state
     const buttons = screen.getAllByRole('button', { name: /Generate/i })
     await user.click(buttons[buttons.length - 1]) // Last one is in empty state
+    // eslint-disable-next-line vitest/prefer-called-with
     expect(onGeneratePersonas).toHaveBeenCalled()
   })
 })

@@ -3,20 +3,16 @@ Research Step Lambda Handler
 Handles individual steps of the research workflow orchestrated by Step Functions.
 Each step can run up to 15 minutes, allowing for deep analysis.
 """
-import json
+
 import os
-import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 
 # Shared module imports
 from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
-from shared.api import api_handler, DecimalEncoder
+from shared.api import api_handler
 from shared.converse import converse, BedrockThrottlingError
 from shared.feedback import (
     get_feedback_context as _get_feedback_context,
@@ -37,28 +33,20 @@ feedback_table = None
 projects_table = None
 
 MODEL_ID = BEDROCK_MODEL_ID
-
-
 def _get_feedback_table():
     """Get feedback table, initializing if needed."""
     global feedback_table
     if feedback_table is None:
         feedback_table = get_feedback_table()
     return feedback_table
-
-
 def _get_projects_table():
     """Get projects table, initializing if needed."""
     global projects_table
     if projects_table is None:
         projects_table = get_projects_table()
     return projects_table
-
-
 # Alias for backward compatibility with Step Functions error handling
 BedrockThrottlingException = BedrockThrottlingError
-
-
 def invoke_bedrock_with_retry(system_prompt: str, user_message: str, max_tokens: int = 4096, max_retries: int = 3) -> str:
     """Invoke Bedrock with retry support using shared converse module."""
     return converse(
@@ -68,14 +56,10 @@ def invoke_bedrock_with_retry(system_prompt: str, user_message: str, max_tokens:
         max_retries=max_retries,
         raise_on_throttle=True,
     )
-
-
 # Wrapper function to pass module-level table reference to shared function
 def get_feedback_context(filters: dict, limit: int = 100) -> list[dict]:
     """Get feedback items based on filters for LLM context."""
     return _get_feedback_context(_get_feedback_table(), filters, limit)
-
-
 @tracer.capture_method
 def step_initialize(event: dict) -> dict:
     """Step 1: Initialize research - fetch data and prepare context."""
@@ -153,8 +137,6 @@ def step_initialize(event: dict) -> dict:
         'personas_context': personas_context,
         'documents_context': documents_context
     }
-
-
 @tracer.capture_method
 def step_analyze(event: dict) -> dict:
     """Step 2: Deep analysis of feedback data."""
@@ -174,6 +156,14 @@ def step_analyze(event: dict) -> dict:
     system_prompt = """You are a senior user researcher conducting rigorous analysis of REAL customer feedback data.
 Your analysis must be grounded in the actual feedback provided - cite specific reviews, quote customers directly, and identify patterns from the data.
 Be thorough, data-driven, and cite specific examples."""
+
+    # Inject language instruction if non-English
+    response_language = config.get('response_language')
+    if response_language:
+        from shared.prompts import get_response_language_instruction
+        lang_instruction = get_response_language_instruction(response_language)
+        if lang_instruction:
+            system_prompt += f"\n\n{lang_instruction}"
     
     # Build additional context sections
     additional_context = ""
@@ -210,20 +200,27 @@ IMPORTANT: Base ALL findings on the actual feedback data provided. Do not make a
     update_job_status(project_id, job_id, 'running', 45, 'analysis_complete')
     
     return {'analysis': analysis}
-
-
 @tracer.capture_method
 def step_synthesize(event: dict) -> dict:
     """Step 3: Synthesize findings into actionable insights."""
     project_id = event['project_id']
     job_id = event['job_id']
     analysis = event['analysis']
+    config = event.get('research_config', {})
     
     logger.info(f"Synthesizing findings for job {job_id}")
     update_job_status(project_id, job_id, 'running', 50, 'preparing_synthesis')
     
     system_prompt = """You are synthesizing research findings into actionable insights.
 Focus on clarity, prioritization, and recommendations."""
+
+    # Inject language instruction if non-English
+    response_language = config.get('response_language')
+    if response_language:
+        from shared.prompts import get_response_language_instruction
+        lang_instruction = get_response_language_instruction(response_language)
+        if lang_instruction:
+            system_prompt += f"\n\n{lang_instruction}"
     
     user_prompt = f"""Synthesize the analysis into clear findings.
 
@@ -243,8 +240,6 @@ Provide:
     update_job_status(project_id, job_id, 'running', 70, 'synthesis_complete')
     
     return {'synthesis': synthesis}
-
-
 @tracer.capture_method
 def step_validate(event: dict) -> dict:
     """Step 4: Validate and cross-check findings."""
@@ -252,12 +247,21 @@ def step_validate(event: dict) -> dict:
     job_id = event['job_id']
     analysis = event['analysis']
     synthesis = event['synthesis']
+    config = event.get('research_config', {})
     
     logger.info(f"Validating research for job {job_id}")
     update_job_status(project_id, job_id, 'running', 75, 'preparing_validation')
     
     system_prompt = """You are a critical reviewer ensuring research quality.
 Challenge assumptions and verify conclusions."""
+
+    # Inject language instruction if non-English
+    response_language = config.get('response_language')
+    if response_language:
+        from shared.prompts import get_response_language_instruction
+        lang_instruction = get_response_language_instruction(response_language)
+        if lang_instruction:
+            system_prompt += f"\n\n{lang_instruction}"
     
     user_prompt = f"""Review and validate the research findings.
 
@@ -281,8 +285,6 @@ Provide a final validated research report."""
     update_job_status(project_id, job_id, 'running', 90, 'validation_complete')
     
     return {'validation': validation}
-
-
 @tracer.capture_method
 def step_save(event: dict) -> dict:
     """Step 5: Save final research results."""
@@ -371,8 +373,6 @@ def step_save(event: dict) -> dict:
         'document_id': research_id,
         'feedback_count': feedback_count
     }
-
-
 @tracer.capture_method
 def step_error(event: dict) -> dict:
     """Handle errors - update job status."""
@@ -386,8 +386,6 @@ def step_error(event: dict) -> dict:
     update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_message)
     
     return {'success': False, 'error': error_message}
-
-
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler - routes to appropriate step function."""

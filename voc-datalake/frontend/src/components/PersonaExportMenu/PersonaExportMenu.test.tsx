@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import PersonaExportMenu from './PersonaExportMenu'
-import type { ProjectPersona } from '../../api/client'
+import type { ProjectPersona } from '../../api/types'
 
 describe('PersonaExportMenu', () => {
   const mockPersona: ProjectPersona = {
@@ -28,6 +28,7 @@ describe('PersonaExportMenu', () => {
   describe('visibility', () => {
     it('returns null when persona is null', () => {
       const { container } = render(<PersonaExportMenu persona={null} />)
+      // eslint-disable-next-line testing-library/no-node-access
       expect(container.firstChild).toBeNull()
     })
   })

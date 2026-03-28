@@ -198,6 +198,7 @@ describe('ProblemRow', () => {
       )
 
       await user.click(screen.getByText('Slow delivery times'))
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(onToggle).toHaveBeenCalled()
     })
   })

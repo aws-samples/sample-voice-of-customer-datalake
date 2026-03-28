@@ -1,0 +1,44 @@
+{
+  "assistantDescription": "Stellen Sie Fragen zu Ihren Kundenfeedback-Daten",
+  "assistantName": "VoC KI-Assistent",
+  "configureEndpoint": "Bitte konfigurieren Sie Ihren API-Endpunkt in den Einstellungen, um den KI-Chat zu nutzen",
+  "copyMessage": "Nachricht kopieren",
+  "emptyState": "Starten Sie ein Gespräch über Ihr Kundenfeedback",
+  "export": {
+    "copied": "Kopiert!",
+    "copyConversation": "Unterhaltung kopieren",
+    "downloadJson": "Als JSON herunterladen",
+    "downloadMarkdown": "Als Markdown herunterladen",
+    "downloadPdf": "Als PDF herunterladen",
+    "exportOptions": "Exportoptionen",
+    "share": "Teilen"
+  },
+  "filters": {
+    "clear": "Löschen",
+    "focusingOn": "Fokus auf: {{summary}}",
+    "title": "Filterkontext (max. 30 Bewertungen)"
+  },
+  "hideHistory": "Verlauf ausblenden",
+  "inputPlaceholder": "Fragen Sie zu Ihrem Feedback...",
+  "message": {
+    "reasoning": "Begründung",
+    "relatedFeedback": "Zugehöriges Feedback:"
+  },
+  "showHistory": "Verlauf anzeigen",
+  "sidebar": {
+    "clearAll": "Alle Unterhaltungen löschen",
+    "messagesCount": "{{count}} Nachrichten",
+    "messagesCount_one": "{{count}} Nachrichten",
+    "messagesCount_other": "{{count}} Nachrichten",
+    "newChat": "Neuer Chat",
+    "noConversations": "Noch keine Unterhaltungen"
+  },
+  "suggestedQuestions": {
+    "mainProblems": "Was sind die Hauptprobleme, die Kunden melden?",
+    "negativeSource": "Welche Quelle hat das meiste negative Feedback?",
+    "pricing": "Was sagen Kunden über die Preisgestaltung?",
+    "sentimentTrend": "Wie hat sich die Stimmung im letzten Monat verändert?",
+    "topComplaints": "Was sind die häufigsten Kundenbeschwerden diese Woche?",
+    "urgentIssues": "Zeige mir die dringendsten Probleme"
+  }
+}

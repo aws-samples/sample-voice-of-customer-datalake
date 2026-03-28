@@ -1,0 +1,84 @@
+{
+  "appDescription": "統合カスタマーフィードバックインテリジェンスプラットフォーム",
+  "appName": "VoC Analytics",
+  "appTagline": "Voice of the Customer Analytics",
+  "breadcrumbs": {
+    "categories": "カテゴリ",
+    "chat": "AIチャット",
+    "dashboard": "ダッシュボード",
+    "dataExplorer": "データエクスプローラー",
+    "feedback": "フィードバック",
+    "feedbackForms": "フィードバックフォーム",
+    "home": "ホーム",
+    "prioritization": "優先順位付け",
+    "problems": "問題分析",
+    "projects": "プロジェクト",
+    "scrapers": "Webスクレイパー",
+    "settings": "設定"
+  },
+  "configureBrand": "ブランドを設定",
+  "filters": {
+    "allCategories": "すべてのカテゴリ",
+    "allSentiments": "すべての感情",
+    "allSources": "すべてのソース",
+    "clearFilters": "フィルターをクリア",
+    "mostRecent": "最新",
+    "searchFeedback": "フィードバックを検索...",
+    "urgentOnly": "緊急のみ"
+  },
+  "forQuery": "「{{query}}」の結果",
+  "goToSettings": "設定へ移動",
+  "loading": "読み込み中...",
+  "metrics": {
+    "avgSentiment": "平均感情",
+    "sourcesActive": "アクティブなソース",
+    "totalFeedback": "フィードバック合計",
+    "urgentIssues": "緊急の問題"
+  },
+  "nav": {
+    "aiChat": "AIチャット",
+    "categories": "カテゴリ",
+    "dashboard": "ダッシュボード",
+    "dataExplorer": "データエクスプローラー",
+    "feedback": "フィードバック",
+    "feedbackForms": "フィードバックフォーム",
+    "prioritization": "優先順位付け",
+    "problemAnalysis": "問題分析",
+    "projects": "プロジェクト",
+    "scrapers": "スクレイパー",
+    "settings": "設定"
+  },
+  "send": "送信",
+  "sentiment": {
+    "mixed": "混合",
+    "negative": "ネガティブ",
+    "neutral": "ニュートラル",
+    "positive": "ポジティブ"
+  },
+  "showingOf_one": "{{total}}件中{{count}}件を表示",
+  "showingOf_other": "{{total}}件中{{count}}件を表示",
+  "sidebar": {
+    "closeMenu": "メニューを閉じる",
+    "collapseSidebar": "サイドバーを折りたたむ",
+    "expandSidebar": "サイドバーを展開",
+    "openMenu": "メニューを開く",
+    "signOut": "サインアウト"
+  },
+  "timeRange": {
+    "24h": "24時間",
+    "24hFull": "24時間",
+    "30d": "30日",
+    "30dFull": "30日間",
+    "48h": "48時間",
+    "48hFull": "48時間",
+    "7d": "7日",
+    "7dFull": "7日間",
+    "apply": "適用",
+    "cancel": "キャンセル",
+    "clear": "クリア",
+    "custom": "カスタム",
+    "endDate": "終了日",
+    "selectDateRange": "期間を選択",
+    "startDate": "開始日"
+  }
+}

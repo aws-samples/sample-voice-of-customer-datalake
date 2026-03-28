@@ -4,32 +4,20 @@ Manages AI chat conversations.
 """
 
 import os
-import sys
 from datetime import datetime, timezone, timedelta
 from typing import Any
-
-# Add shared module to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource
 from shared.api import create_api_resolver, api_handler, validate_days, get_configured_categories
-from shared.exceptions import ConfigurationError, NotFoundError as AppNotFoundError
-
-from aws_lambda_powertools.event_handler.exceptions import NotFoundError
+from shared.exceptions import ConfigurationError, NotFoundError
+from shared.tables import get_feedback_table, get_aggregates_table, get_conversations_table
 from boto3.dynamodb.conditions import Key
 
-# AWS Clients
 dynamodb = get_dynamodb_resource()
-
-# Configuration
-FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
-AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
-CONVERSATIONS_TABLE = os.environ.get("CONVERSATIONS_TABLE", "")
-
-feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
-conversations_table = dynamodb.Table(CONVERSATIONS_TABLE) if CONVERSATIONS_TABLE else None
+feedback_table = get_feedback_table()
+aggregates_table = get_aggregates_table()
+conversations_table = get_conversations_table()
 
 app = create_api_resolver()
 
@@ -37,6 +25,53 @@ app = create_api_resolver()
 # ============================================
 # Chat Endpoint
 # ============================================
+
+@tracer.capture_method
+def _batch_get_aggregates(keys: list[dict]) -> list[dict]:
+    """
+    Fetch multiple aggregate items using batch_get_item (up to 100 keys per call).
+    
+    Returns all items found across all batches.
+    """
+    if not keys:
+        return []
+    
+    table_name = os.environ.get('AGGREGATES_TABLE', '')
+    all_items = []
+    
+    # batch_get_item supports max 100 keys per call
+    for batch_start in range(0, len(keys), 100):
+        batch_keys = keys[batch_start:batch_start + 100]
+        
+        response = dynamodb.batch_get_item(
+            RequestItems={
+                table_name: {
+                    'Keys': batch_keys,
+                    'ProjectionExpression': 'pk, sk, #c',
+                    'ExpressionAttributeNames': {'#c': 'count'},
+                }
+            }
+        )
+        
+        all_items.extend(response.get('Responses', {}).get(table_name, []))
+        
+        # Handle unprocessed keys (throttling)
+        unprocessed = response.get('UnprocessedKeys', {}).get(table_name, {}).get('Keys', [])
+        while unprocessed:
+            retry_response = dynamodb.batch_get_item(
+                RequestItems={
+                    table_name: {
+                        'Keys': unprocessed,
+                        'ProjectionExpression': 'pk, sk, #c',
+                        'ExpressionAttributeNames': {'#c': 'count'},
+                    }
+                }
+            )
+            all_items.extend(retry_response.get('Responses', {}).get(table_name, []))
+            unprocessed = retry_response.get('UnprocessedKeys', {}).get(table_name, {}).get('Keys', [])
+    
+    return all_items
+
 
 @app.post("/chat")
 @tracer.capture_method
@@ -49,45 +84,45 @@ def chat():
     days = validate_days(params.get('days'), default=7)
     
     current_date = datetime.now(timezone.utc)
+    dates = [(current_date - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days)]
+    categories = get_configured_categories(aggregates_table)
+    sentiments = ['positive', 'negative', 'neutral', 'mixed']
     
-    # Get metrics
-    total_feedback = 0
-    for i in range(days):
-        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        response = aggregates_table.get_item(Key={'pk': 'METRIC#daily_total', 'sk': date})
-        item = response.get('Item')
-        if item:
-            total_feedback += item.get('count', 0)
+    # Build all keys upfront and fetch in batches instead of N+1 individual calls
+    all_keys = []
+    for date in dates:
+        all_keys.append({'pk': 'METRIC#daily_total', 'sk': date})
+        all_keys.append({'pk': 'METRIC#urgent', 'sk': date})
+        for s in sentiments:
+            all_keys.append({'pk': f'METRIC#daily_sentiment#{s}', 'sk': date})
+        for cat in categories:
+            all_keys.append({'pk': f'METRIC#daily_category#{cat}', 'sk': date})
     
-    sentiment_counts = {'positive': 0, 'negative': 0, 'neutral': 0, 'mixed': 0}
-    for sentiment in sentiment_counts.keys():
-        for i in range(days):
-            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_sentiment#{sentiment}', 'sk': date})
-            item = response.get('Item')
-            if item:
-                sentiment_counts[sentiment] += item.get('count', 0)
+    # Single batched fetch replaces hundreds of individual get_item calls
+    items = _batch_get_aggregates(all_keys)
+    
+    # Index results by (pk, sk) for O(1) lookup
+    items_by_key = {(item['pk'], item['sk']): item for item in items}
+    
+    # Tally totals from batch results
+    total_feedback = sum(
+        items_by_key.get(('METRIC#daily_total', d), {}).get('count', 0) for d in dates
+    )
+    
+    sentiment_counts = {
+        s: sum(items_by_key.get((f'METRIC#daily_sentiment#{s}', d), {}).get('count', 0) for d in dates)
+        for s in sentiments
+    }
     
     category_counts = {}
-    categories = get_configured_categories(aggregates_table)
-    for category in categories:
-        total = 0
-        for i in range(days):
-            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_category#{category}', 'sk': date})
-            item = response.get('Item')
-            if item:
-                total += item.get('count', 0)
+    for cat in categories:
+        total = sum(items_by_key.get((f'METRIC#daily_category#{cat}', d), {}).get('count', 0) for d in dates)
         if total > 0:
-            category_counts[category] = total
+            category_counts[cat] = total
     
-    urgent_count = 0
-    for i in range(days):
-        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        response = aggregates_table.get_item(Key={'pk': 'METRIC#urgent', 'sk': date})
-        item = response.get('Item')
-        if item:
-            urgent_count += item.get('count', 0)
+    urgent_count = sum(
+        items_by_key.get(('METRIC#urgent', d), {}).get('count', 0) for d in dates
+    )
     
     # Get recent feedback
     feedback_items = []
@@ -125,6 +160,14 @@ When answering questions:
 3. Quote actual customer feedback when relevant
 4. Highlight urgent issues
 5. Provide actionable recommendations"""
+
+    # Inject language instruction if non-English
+    response_language = body.get('response_language')
+    if response_language:
+        from shared.prompts import get_response_language_instruction
+        lang_instruction = get_response_language_instruction(response_language)
+        if lang_instruction:
+            system_prompt += f"\n\n{lang_instruction}"
 
     data_context = f"""## Data Summary (Last {days} days)
 Total Feedback: {total_feedback}
@@ -242,7 +285,7 @@ def delete_conversation(proxy: str):
     if not conversations_table:
         raise ConfigurationError('Conversations table not configured')
     if not proxy:
-        raise AppNotFoundError('Conversation ID is required')
+        raise NotFoundError('Conversation ID is required')
     
     conversations_table.delete_item(Key={'pk': 'USER#default', 'sk': f'CONV#{proxy}'})
     return {'success': True}

@@ -1,5 +1,225 @@
 [
   {
+    "id": "app_reviews_android",
+    "name": "Android App Reviews",
+    "icon": "Android",
+    "description": "Collect customer reviews from the Google Play Store",
+    "category": "reviews",
+    "config": [
+      {
+        "key": "app_name",
+        "label": "App Name",
+        "type": "text",
+        "required": true,
+        "placeholder": "my-app",
+        "secret": false
+      },
+      {
+        "key": "package_name",
+        "label": "Package Name",
+        "type": "text",
+        "required": true,
+        "placeholder": "com.example.app",
+        "secret": false
+      },
+      {
+        "key": "sort_by",
+        "label": "Review Sort Order",
+        "type": "select",
+        "required": false,
+        "secret": false,
+        "options": [
+          {
+            "value": "newest",
+            "label": "Newest (recommended)"
+          },
+          {
+            "value": "rating",
+            "label": "By Rating"
+          }
+        ]
+      },
+      {
+        "key": "max_countries_per_run",
+        "label": "Max Countries Per Run",
+        "type": "text",
+        "required": false,
+        "placeholder": "20",
+        "secret": false
+      },
+      {
+        "key": "max_reviews_per_run",
+        "label": "Max Reviews Per Run",
+        "type": "text",
+        "required": false,
+        "placeholder": "500",
+        "secret": false
+      },
+      {
+        "key": "frequency_minutes",
+        "label": "Run Frequency",
+        "type": "select",
+        "required": false,
+        "secret": false,
+        "options": [
+          {
+            "value": "15",
+            "label": "Every 15 minutes"
+          },
+          {
+            "value": "30",
+            "label": "Every 30 minutes"
+          },
+          {
+            "value": "60",
+            "label": "Every hour"
+          },
+          {
+            "value": "180",
+            "label": "Every 3 hours"
+          },
+          {
+            "value": "360",
+            "label": "Every 6 hours"
+          },
+          {
+            "value": "720",
+            "label": "Every 12 hours"
+          },
+          {
+            "value": "1440",
+            "label": "Daily"
+          }
+        ]
+      }
+    ],
+    "setup": {
+      "title": "Android App Reviews Setup",
+      "color": "green",
+      "steps": [
+        "Find your app's package name from the Play Store URL (e.g. com.example.app)",
+        "Enter the App Name and Package Name above",
+        "Choose a run frequency and optionally adjust country limits",
+        "Enable the schedule to start collecting reviews"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0",
+    "enabled": true
+  },
+  {
+    "id": "app_reviews_ios",
+    "name": "iOS App Reviews",
+    "icon": "iOS",
+    "description": "Collect customer reviews from the Apple App Store",
+    "category": "reviews",
+    "config": [
+      {
+        "key": "app_name",
+        "label": "App Name",
+        "type": "text",
+        "required": true,
+        "placeholder": "my-app",
+        "secret": false
+      },
+      {
+        "key": "app_id",
+        "label": "App Store ID",
+        "type": "text",
+        "required": true,
+        "placeholder": "585629514",
+        "secret": false
+      },
+      {
+        "key": "sort_by",
+        "label": "Review Sort Order",
+        "type": "select",
+        "required": false,
+        "secret": false,
+        "options": [
+          {
+            "value": "most_recent",
+            "label": "Most Recent (recommended)"
+          },
+          {
+            "value": "most_critical",
+            "label": "Most Critical"
+          }
+        ]
+      },
+      {
+        "key": "max_countries_per_run",
+        "label": "Max Countries Per Run",
+        "type": "text",
+        "required": false,
+        "placeholder": "40",
+        "secret": false
+      },
+      {
+        "key": "max_reviews_per_run",
+        "label": "Max Reviews Per Run",
+        "type": "text",
+        "required": false,
+        "placeholder": "500",
+        "secret": false
+      },
+      {
+        "key": "frequency_minutes",
+        "label": "Run Frequency",
+        "type": "select",
+        "required": false,
+        "secret": false,
+        "options": [
+          {
+            "value": "15",
+            "label": "Every 15 minutes"
+          },
+          {
+            "value": "30",
+            "label": "Every 30 minutes"
+          },
+          {
+            "value": "60",
+            "label": "Every hour"
+          },
+          {
+            "value": "180",
+            "label": "Every 3 hours"
+          },
+          {
+            "value": "360",
+            "label": "Every 6 hours"
+          },
+          {
+            "value": "720",
+            "label": "Every 12 hours"
+          },
+          {
+            "value": "1440",
+            "label": "Daily"
+          }
+        ]
+      }
+    ],
+    "setup": {
+      "title": "iOS App Reviews Setup",
+      "color": "blue",
+      "steps": [
+        "Find your app's numeric ID from the App Store URL (e.g. 585629514)",
+        "Enter the App Name and App Store ID above",
+        "Choose a run frequency and optionally adjust country limits",
+        "Enable the schedule to start collecting reviews"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": false,
+    "hasS3Trigger": false,
+    "version": "1.0.0",
+    "enabled": true
+  },
+  {
     "id": "s3_import",
     "name": "S3 Bulk Import",
     "icon": "📦",
@@ -51,7 +271,7 @@
   {
     "id": "webscraper",
     "name": "Web Scraper",
-    "icon": "🕷️",
+    "icon": "Web",
     "description": "Configurable scraper for extracting feedback from websites",
     "category": "import",
     "config": [

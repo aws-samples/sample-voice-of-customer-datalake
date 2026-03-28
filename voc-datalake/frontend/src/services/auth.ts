@@ -1,17 +1,19 @@
 /**
  * @fileoverview AWS Cognito authentication service.
- * 
+ *
  * Provides authentication operations using Amazon Cognito User Pools:
  * - Sign in with username/password
  * - Token refresh with automatic expiration handling
  * - Password reset flow (forgot password + confirmation)
  * - New password challenge handling (first login)
- * 
+ *
  * Security features:
- * - Tokens stored in sessionStorage via authStore
+ * - Short-lived tokens persisted in localStorage for cross-tab UX
+ * - Refresh token kept in memory only (never persisted to disk)
  * - Automatic token refresh 5 minutes before expiration
+ * - Fallback to Cognito getSession() for tabs without in-memory refresh token
  * - Graceful handling of expired sessions
- * 
+ *
  * @module services/auth
  */
 
@@ -19,11 +21,15 @@ import {
   CognitoUserPool,
   CognitoUser,
   AuthenticationDetails,
-  CognitoUserSession,
+  type CognitoUserSession,
   CognitoRefreshToken,
 } from 'amazon-cognito-identity-js'
 import { fetchAuthSession } from 'aws-amplify/auth'
-import { getConfig } from '../config'
+import {
+  AuthError, ConfigError,
+} from '../lib/errors'
+import { isRecord } from '../lib/typeGuards'
+import { getRuntimeConfig } from '../runtimeConfig'
 import { useAuthStore } from '../store/authStore'
 import type { User } from '../store/authStore'
 
@@ -45,19 +51,14 @@ function isStringArray(value: unknown): value is string[] {
  * @returns CognitoUserPool instance or null if not configured
  */
 const getUserPool = (): CognitoUserPool | null => {
-  const cfg = getConfig()
-  if (!cfg.cognito.userPoolId || !cfg.cognito.clientId) {
+  const cfg = getRuntimeConfig()
+  if (cfg.cognito.userPoolId === '' || cfg.cognito.clientId === '') {
     return null
   }
   return new CognitoUserPool({
     UserPoolId: cfg.cognito.userPoolId,
     ClientId: cfg.cognito.clientId,
   })
-}
-
-// Type guard for Record<string, unknown>
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
@@ -68,12 +69,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const parseJwt = (token: string): Record<string, unknown> => {
   try {
     const base64Url = token.split('.')[1]
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+    const base64 = base64Url.replaceAll('-', '+').replaceAll('_', '/')
     const jsonPayload = decodeURIComponent(
       atob(base64)
         .split('')
         .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
+        .join(''),
     )
     const parsed: unknown = JSON.parse(jsonPayload)
     if (isRecord(parsed)) {
@@ -96,7 +97,7 @@ const extractUser = (idToken: string): User => {
   const email = payload['email']
   const name = payload['name']
   const groups = payload['cognito:groups']
-  
+
   return {
     username: isString(username) ? username : '',
     email: isString(email) ? email : '',
@@ -114,14 +115,14 @@ export const authService = {
    * @returns true if Cognito environment variables are set
    */
   isConfigured: (): boolean => {
-    const cfg = getConfig()
-    return !!(cfg.cognito.userPoolId && cfg.cognito.clientId)
+    const cfg = getRuntimeConfig()
+    return !!(cfg.cognito.userPoolId !== '' && cfg.cognito.clientId !== '')
   },
 
   /**
    * Syncs the current Cognito session with Amplify.
    * This allows Amplify to exchange JWT tokens for AWS credentials.
-   * 
+   *
    * Call this after:
    * - Successful sign in
    * - Token refresh
@@ -140,7 +141,7 @@ export const authService = {
   /**
    * Authenticates a user with username and password.
    * On success, stores tokens in authStore and returns the session.
-   * 
+   *
    * @param username - Cognito username or email
    * @param password - User's password
    * @returns Promise resolving to CognitoUserSession
@@ -151,7 +152,7 @@ export const authService = {
     return new Promise((resolve, reject) => {
       const userPool = getUserPool()
       if (!userPool) {
-        reject(new Error('Cognito not configured'))
+        reject(new ConfigError('Cognito not configured'))
         return
       }
 
@@ -166,32 +167,38 @@ export const authService = {
       })
 
       cognitoUser.authenticateUser(authDetails, {
-        onSuccess: async (session) => {
+        onSuccess: (session) => {
           const idToken = session.getIdToken().getJwtToken()
           const accessToken = session.getAccessToken().getJwtToken()
           const refreshToken = session.getRefreshToken().getToken()
 
           const user = extractUser(idToken)
-          
-          useAuthStore.getState().setTokens({ accessToken, idToken, refreshToken })
+
+          useAuthStore.getState().setTokens({
+            accessToken,
+            idToken,
+            refreshToken,
+          })
           useAuthStore.getState().setUser(user)
-          
+          useAuthStore.getState().setSessionReady(true)
+
           // Sync session with Amplify for IAM signing
-          await authService.syncAmplifySession()
-          
+          void authService.syncAmplifySession()
+
           resolve(session)
         },
-        onFailure: (err) => {
-          reject(err)
+        onFailure: (err: unknown) => {
+          reject(err instanceof Error ? err : new AuthError(String(err)))
         },
         newPasswordRequired: (userAttributes: Record<string, unknown>) => {
           // Handle new password required (first login)
-          reject({ 
-            code: 'NewPasswordRequired', 
-            message: 'New password required',
+          const error = new AuthError('New password required')
+          Object.assign(error, {
+            code: 'NewPasswordRequired',
             userAttributes,
             cognitoUser,
           })
+          reject(error)
         },
       })
     })
@@ -199,7 +206,7 @@ export const authService = {
 
   /**
    * Completes the new password challenge for first-time login.
-   * 
+   *
    * @param cognitoUser - CognitoUser instance from signIn rejection
    * @param newPassword - The new password to set
    * @returns Promise resolving to CognitoUserSession
@@ -207,7 +214,7 @@ export const authService = {
    */
   completeNewPassword: (
     cognitoUser: CognitoUser,
-    newPassword: string
+    newPassword: string,
   ): Promise<CognitoUserSession> => {
     return new Promise((resolve, reject) => {
       cognitoUser.completeNewPasswordChallenge(newPassword, {}, {
@@ -217,14 +224,18 @@ export const authService = {
           const refreshToken = session.getRefreshToken().getToken()
 
           const user = extractUser(idToken)
-          
-          useAuthStore.getState().setTokens({ accessToken, idToken, refreshToken })
+
+          useAuthStore.getState().setTokens({
+            accessToken,
+            idToken,
+            refreshToken,
+          })
           useAuthStore.getState().setUser(user)
-          
+
           resolve(session)
         },
-        onFailure: (err) => {
-          reject(err)
+        onFailure: (err: unknown) => {
+          reject(err instanceof Error ? err : new AuthError(String(err)))
         },
       })
     })
@@ -246,8 +257,11 @@ export const authService = {
 
   /**
    * Refreshes the current session using the stored refresh token.
+   * If no refresh token is in memory (e.g., new tab), falls back to
+   * Cognito's getSession() which uses Cognito's own cookies for
+   * silent re-authentication.
    * Updates all tokens in authStore on success.
-   * 
+   *
    * @returns Promise resolving to new CognitoUserSession
    * @throws Error if refresh fails (triggers logout)
    */
@@ -255,63 +269,84 @@ export const authService = {
     return new Promise((resolve, reject) => {
       const userPool = getUserPool()
       if (!userPool) {
-        reject(new Error('Cognito not configured'))
+        reject(new ConfigError('Cognito not configured'))
         return
       }
 
       const cognitoUser = userPool.getCurrentUser()
       if (!cognitoUser) {
-        reject(new Error('No current user'))
+        useAuthStore.getState().logout()
+        reject(new AuthError('No current user'))
         return
       }
 
       const refreshToken = useAuthStore.getState().refreshToken
-      if (!refreshToken) {
-        reject(new Error('No refresh token'))
-        return
+
+      /**
+       * Handles a successful session by extracting tokens and updating the store.
+       */
+      const handleSession = async (session: CognitoUserSession) => {
+        const idToken = session.getIdToken().getJwtToken()
+        const accessToken = session.getAccessToken().getJwtToken()
+        const newRefreshToken = session.getRefreshToken().getToken()
+
+        const user = extractUser(idToken)
+
+        useAuthStore.getState().setTokens({
+          accessToken,
+          idToken,
+          refreshToken: newRefreshToken,
+        })
+        useAuthStore.getState().setUser(user)
+
+        await authService.syncAmplifySession()
+
+        resolve(session)
       }
 
-      cognitoUser.refreshSession(
-        new CognitoRefreshToken({ RefreshToken: refreshToken }),
-        async (err: Error | null, session: CognitoUserSession | null) => {
-          if (err || !session) {
-            useAuthStore.getState().logout()
-            reject(err ?? new Error('Session refresh failed'))
-            return
-          }
-
-          const idToken = session.getIdToken().getJwtToken()
-          const accessToken = session.getAccessToken().getJwtToken()
-          const newRefreshToken = session.getRefreshToken().getToken()
-
-          const user = extractUser(idToken)
-          
-          useAuthStore.getState().setTokens({ 
-            accessToken, 
-            idToken, 
-            refreshToken: newRefreshToken 
-          })
-          useAuthStore.getState().setUser(user)
-          
-          // Sync with Amplify after refresh
-          await authService.syncAmplifySession()
-          
-          resolve(session)
-        }
-      )
+      if (refreshToken != null && refreshToken !== '') {
+        // Primary path: use the in-memory refresh token
+        cognitoUser.refreshSession(
+          new CognitoRefreshToken({ RefreshToken: refreshToken }),
+          (err: Error | null, session: CognitoUserSession | null) => {
+            if (err || !session) {
+              useAuthStore.getState().logout()
+              reject(err ?? new AuthError('Session refresh failed'))
+              return
+            }
+            void handleSession(session)
+          },
+        )
+      } else {
+        // Fallback: no refresh token in memory (new tab).
+        // Cognito SDK's getSession() uses its own cookies to silently
+        // re-authenticate without requiring the refresh token from our store.
+        cognitoUser.getSession(
+          (err: Error | null, session: CognitoUserSession | null) => {
+            if (err || !session) {
+              useAuthStore.getState().logout()
+              reject(err ?? new AuthError('No session available — please sign in again'))
+              return
+            }
+            void handleSession(session)
+          },
+        )
+      }
     })
   },
 
   /**
    * Gets a valid access token, automatically refreshing if expiring soon.
    * Refreshes if token expires within 5 minutes.
-   * 
+   *
    * @returns Promise resolving to access token string or null if unavailable
    */
   getAccessToken: async (): Promise<string | null> => {
-    const { accessToken, idToken } = useAuthStore.getState()
-    
-    if (!accessToken || !idToken) {
+    const {
+      accessToken, idToken,
+    } = useAuthStore.getState()
+
+    if ((accessToken == null || accessToken === '') || (idToken == null || idToken === '')) {
       return null
     }
 
@@ -321,10 +356,10 @@ export const authService = {
     if (!isNumber(exp)) {
       return accessToken
     }
-    
+
     const expMs = exp * 1000
     const now = Date.now()
-    
+
     if (expMs - now < 5 * 60 * 1000) {
       try {
         const session = await authService.refreshSession()
@@ -347,7 +382,7 @@ export const authService = {
 
   /**
    * Initiates the forgot password flow, sending a verification code to the user's email.
-   * 
+   *
    * @param username - Cognito username or email
    * @returns Promise resolving when code is sent
    * @throws Error if request fails
@@ -356,7 +391,7 @@ export const authService = {
     return new Promise((resolve, reject) => {
       const userPool = getUserPool()
       if (!userPool) {
-        reject(new Error('Cognito not configured'))
+        reject(new ConfigError('Cognito not configured'))
         return
       }
 
@@ -374,7 +409,7 @@ export const authService = {
 
   /**
    * Confirms a password reset using the verification code.
-   * 
+   *
    * @param username - Cognito username or email
    * @param code - Verification code from email
    * @param newPassword - New password to set
@@ -384,12 +419,12 @@ export const authService = {
   confirmPassword: (
     username: string,
     code: string,
-    newPassword: string
+    newPassword: string,
   ): Promise<void> => {
     return new Promise((resolve, reject) => {
       const userPool = getUserPool()
       if (!userPool) {
-        reject(new Error('Cognito not configured'))
+        reject(new ConfigError('Cognito not configured'))
         return
       }
 
@@ -417,13 +452,13 @@ export const authService = {
     return new Promise((resolve, reject) => {
       const userPool = getUserPool()
       if (!userPool) {
-        reject(new Error('Cognito not configured'))
+        reject(new ConfigError('Cognito not configured'))
         return
       }
 
       const cognitoUser = userPool.getCurrentUser()
       if (!cognitoUser) {
-        reject(new Error('No current user'))
+        reject(new AuthError('No current user'))
         return
       }
 
@@ -431,7 +466,7 @@ export const authService = {
       cognitoUser.getSession(
         (err: Error | null, session: CognitoUserSession | null) => {
           if (err || !session) {
-            reject(err ?? new Error('No session'))
+            reject(err ?? new AuthError('No session'))
             return
           }
 
@@ -442,7 +477,7 @@ export const authService = {
             }
             resolve()
           })
-        }
+        },
       )
     })
   },

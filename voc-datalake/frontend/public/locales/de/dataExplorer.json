@@ -1,0 +1,67 @@
+{
+  "categories": {
+    "errorLoading": "Fehler beim Laden der Kategorien",
+    "noCategories": "Keine Kategorien",
+    "summary": "{{count}} Kategorien • {{total}} Einträge • Letzte {{days}} Tage",
+    "summary_one": "{{count}} Kategorien • {{total}} Elemente • Letzte {{days}} Tage",
+    "summary_other": "{{count}} Kategorien • {{total}} Elemente • Letzte {{days}} Tage"
+  },
+  "deleteConfirm": {
+    "deleteFeedback": "Feedback löschen",
+    "deleteS3File": "S3-Datei löschen",
+    "message": "Sind Sie sicher? Dies kann nicht rückgängig gemacht werden."
+  },
+  "description": "Rohe S3-Daten und verarbeitete DynamoDB-Datensätze durchsuchen, bearbeiten und synchronisieren",
+  "editModal": {
+    "cancel": "Abbrechen",
+    "close": "Schließen",
+    "create": "Erstellen",
+    "createNewFile": "Neue Datei erstellen",
+    "editFeedback": "Feedback bearbeiten",
+    "editS3File": "S3-Datei bearbeiten",
+    "id": "ID",
+    "invalidJson": "Ungültiges JSON: {{error}}",
+    "key": "Schlüssel",
+    "save": "Speichern",
+    "syncToDynamo": "Auch DynamoDB aktualisieren",
+    "syncToS3": "Auch S3 aktualisieren",
+    "type": "Typ",
+    "viewFeedback": "Feedback anzeigen",
+    "viewS3File": "S3-Datei anzeigen"
+  },
+  "feedback": {
+    "category": "Kategorie: {{category}}",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "errorLoading": "Fehler beim Laden des Feedbacks",
+    "noFeedback": "Kein Feedback gefunden",
+    "showingRecords": "{{filtered}} von {{total}} Datensätzen",
+    "urgent": "Dringend",
+    "view": "Anzeigen"
+  },
+  "filters": {
+    "allSources": "Alle Quellen",
+    "searchPlaceholder": "Suchen..."
+  },
+  "newFile": "Neue Datei",
+  "notConfigured": "API-Endpunkt in den Einstellungen konfigurieren, um Daten zu erkunden",
+  "refresh": "Aktualisieren",
+  "s3Browser": {
+    "back": "Zurück",
+    "delete": "Löschen",
+    "download": "Herunterladen",
+    "edit": "Bearbeiten",
+    "errorLoading": "Fehler beim Laden der Dateien",
+    "noFiles": "Keine Dateien gefunden",
+    "view": "Anzeigen"
+  },
+  "tabs": {
+    "categories": "Kategorien",
+    "categoriesShort": "Kategorien",
+    "feedbackShort": "Feedback",
+    "processedFeedback": "Verarbeitetes Feedback",
+    "s3RawData": "S3-Rohdaten",
+    "s3Short": "S3"
+  },
+  "title": "Daten-Explorer"
+}

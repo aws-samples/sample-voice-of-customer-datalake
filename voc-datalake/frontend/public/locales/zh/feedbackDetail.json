@@ -1,0 +1,56 @@
+{
+  "back": "返回",
+  "backToFeedback": "返回反馈",
+  "backToList": "返回反馈列表",
+  "category": "类别",
+  "classification": "分类",
+  "copyToClipboard": "复制到剪贴板",
+  "created": "创建时间：{{date}}",
+  "customerPersona": "客户角色",
+  "hide": "隐藏",
+  "impactArea": "影响范围",
+  "issue": "问题：",
+  "journeyStage": "旅程阶段",
+  "language": "语言：{{lang}}",
+  "loadingSimilar": "加载相似反馈中...",
+  "notFound": "未找到反馈",
+  "originalFeedback": "原始反馈",
+  "persona": "角色",
+  "possibleRootCause": "可能的根本原因：",
+  "problemAnalysis": "问题分析",
+  "rating": "评分",
+  "show": "显示",
+  "similar": "相似",
+  "similarFeedback": "相似反馈",
+  "subcategory": "子类别",
+  "suggestedResponses": "建议回复",
+  "suggestedResponsesHint": "复制这些回复与团队分享或作为您回复的起点。",
+  "responses": {
+    "delivery": [
+      "对于您的配送延迟，我们深表歉意。我们正在立即调查，确保您的订单尽快送达。",
+      "感谢您告知我们。我们理解配送问题会带来多大的不便。我们的团队正在调查，将很快与您联系。"
+    ],
+    "customer_support": [
+      "很抱歉听到您与我们支持团队的体验。这不是我们追求的服务水平。我们希望纠正这一点。",
+      "感谢您的反馈。我们非常重视客户服务，将利用这些反馈来改进我们的培训。"
+    ],
+    "product_quality": [
+      "很抱歉我们的产品未能达到您的期望。质量是我们的首要任务，我们愿意为您提供更换或退款。",
+      "感谢您告知我们这个问题。我们致力于质量，希望为您解决此问题。"
+    ],
+    "pricing": [
+      "感谢您对我们定价的反馈。我们努力提供有竞争力的价值，很乐意与您讨论可用的选项。",
+      "感谢您分享您的顾虑。我们定期审查价格，以确保提供公平的价值。"
+    ],
+    "default": [
+      "感谢您花时间分享您的反馈。我们重视您的意见，致力于不断改进。",
+      "感谢您告知我们。我们的团队将审查此事并努力解决您的顾虑。"
+    ]
+  },
+  "tagsAndFilters": "标签和筛选",
+  "translatedFrom": "翻译自 {{language}}",
+  "type": "类型",
+  "unknown": "未知",
+  "urgent": "紧急",
+  "viewOriginal": "查看原文"
+}

@@ -1,0 +1,33 @@
+{
+  "card": {
+    "docs_one": "{{count}} doc",
+    "docs_other": "{{count}} docs",
+    "personas_one": "{{count}} persona",
+    "personas_other": "{{count}} personas"
+  },
+  "configureEndpoint": "Configure API endpoint in Settings first",
+  "createModal": {
+    "cancel": "Cancel",
+    "create": "Create Project",
+    "creating": "Creating...",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "What is this project about?",
+    "nameLabel": "Project Name",
+    "namePlaceholder": "e.g., Q1 Product Improvements",
+    "title": "Create New Project"
+  },
+  "deleteModal": {
+    "confirm": "Delete",
+    "message": "Are you sure you want to delete this project? All personas and documents will be permanently deleted.",
+    "title": "Delete Project"
+  },
+  "description": "Create projects to build personas, PRDs, and PR/FAQs from feedback",
+  "emptyState": {
+    "createButton": "Create Project",
+    "description": "Create your first project to start building personas and documents",
+    "title": "No projects yet"
+  },
+  "newProject": "New Project",
+  "openProject": "Open Project",
+  "title": "Projects"
+}

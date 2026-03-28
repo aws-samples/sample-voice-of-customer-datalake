@@ -75,6 +75,8 @@ const coreStack = new VocCoreStack(app, 'VocCoreStack', {
   env,
   description: 'VoC Data Lake - Core Infrastructure (Storage, Auth, Frontend Hosting) (uksb-0q2jyqfvlm)(tag:VocCoreStack)',
   brandName: config.brandName,
+  customDomain: app.node.tryGetContext('customDomain') || undefined,
+  certificateArn: app.node.tryGetContext('certificateArn') || undefined,
 });
 tagStack(coreStack, 'Core');
 
@@ -138,7 +140,6 @@ const apiStack = new VocApiStack(app, 'VocApiStack', {
   userPool: coreStack.userPool,
   userPoolClient: coreStack.userPoolClient,
   identityPool: coreStack.identityPool,
-  authenticatedRole: coreStack.authenticatedRole,
   processingQueueUrl: ingestionStack.processingQueue.queueUrl,
   processingQueueArn: ingestionStack.processingQueue.queueArn,
   secretsArn: ingestionStack.secretsArn,

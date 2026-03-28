@@ -1,0 +1,26 @@
+{
+  "feedbackBySource": "Feedback por Fonte",
+  "feedbackVolumeTrend": "Volume de Feedback e Tendência de Sentimento",
+  "liveSocialFeed": "Feed Social ao Vivo",
+  "loading": "carregando",
+  "metrics": {
+    "avgSentiment": "Sentimento Médio",
+    "sourcesActive": "Fontes Ativas",
+    "totalFeedback": "Total de Feedback",
+    "urgentIssues": "Problemas Urgentes"
+  },
+  "noUrgentIssues": "Sem problemas urgentes - bom trabalho! 🎉",
+  "sentiment": {
+    "mixed": "Misto",
+    "negative": "Negativo",
+    "neutral": "Neutro",
+    "positive": "Positivo"
+  },
+  "sentimentDistribution": "Distribuição de sentimento",
+  "topIssueCategories": "Principais Categorias de Problemas",
+  "urgentIssues_one": "{{count}} problema urgente",
+  "urgentIssues_many": "{{count}} problemas urgentes",
+  "urgentIssues_other": "{{count}} problemas urgentes",
+  "welcome": "Bem-vindo ao VoC Analytics",
+  "welcomeDescription": "Configure o endpoint da API e as configurações de marca para começar a analisar o feedback dos clientes."
+}

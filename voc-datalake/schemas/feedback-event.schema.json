@@ -25,7 +25,7 @@
     },
     "source_platform": {
       "type": "string",
-      "enum": ["webscraper", "manual_import", "s3_import", "web", "other"],
+      "enum": ["webscraper", "manual_import", "s3_import", "chrome_extension", "web", "other"],
       "description": "Platform where feedback originated"
     },
     "source_channel": {

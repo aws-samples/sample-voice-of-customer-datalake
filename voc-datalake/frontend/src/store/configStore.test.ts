@@ -62,7 +62,7 @@ describe('configStore', () => {
       setConfig({ brandHandles: ['@brand', '@company'] })
 
       const { config } = useConfigStore.getState()
-      expect(config.brandHandles).toEqual(['@brand', '@company'])
+      expect(config.brandHandles).toStrictEqual(['@brand', '@company'])
     })
   })
 
@@ -104,7 +104,7 @@ describe('configStore', () => {
 
       const { customDateRange, timeRange } = useConfigStore.getState()
       expect(timeRange).toBe('custom')
-      expect(customDateRange).toEqual({ start: '2025-01-01', end: '2025-01-31' })
+      expect(customDateRange).toStrictEqual({ start: '2025-01-01', end: '2025-01-31' })
     })
 
     it('clears custom date range when set to null', () => {

@@ -4,22 +4,17 @@ Invoked asynchronously by manual_import_handler.py
 """
 
 import json
-import os
 import re
-import sys
 from typing import Any
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import get_bedrock_client, BEDROCK_MODEL_ID
 from shared.exceptions import ValidationError
+from shared.tables import get_aggregates_table
 
-dynamodb = get_dynamodb_resource()
 bedrock = get_bedrock_client()
 
-AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+aggregates_table = get_aggregates_table()
 
 PARSE_SYSTEM_PROMPT = """You are a review parser. Your job is to extract individual reviews from raw pasted text.
 

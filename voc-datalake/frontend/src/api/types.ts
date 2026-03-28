@@ -32,8 +32,15 @@ export interface MetricsSummary {
   total_feedback: number
   avg_sentiment: number
   urgent_count: number
-  daily_totals: { date: string; count: number }[]
-  daily_sentiment: { date: string; avg_sentiment: number; count: number }[]
+  daily_totals: {
+    date: string;
+    count: number
+  }[]
+  daily_sentiment: {
+    date: string;
+    avg_sentiment: number;
+    count: number
+  }[]
 }
 
 export interface SentimentBreakdown {
@@ -113,62 +120,6 @@ export interface ScraperTemplate {
   config: Partial<ScraperConfig>
 }
 
-export interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  sources?: FeedbackItem[]
-  timestamp: string
-  filters?: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-}
-
-export interface ChatConversation {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  filters: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  sources?: FeedbackItem[]
-  timestamp: string
-  filters?: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-}
-
-export interface ChatConversation {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  filters: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-  createdAt: string
-  updatedAt: string
-}
-
 export interface EntitiesResponse {
   period_days: number
   feedback_count: number
@@ -210,28 +161,28 @@ export interface ProjectPersona {
   avatar_url?: string
   avatar_prompt?: string
   // Section 1: Identity & Demographics
-  identity?: { 
+  identity?: {
     age_range?: string
     location?: string
     occupation?: string
     income_bracket?: string
     education?: string
     family_status?: string
-    bio?: string 
+    bio?: string
   }
   // Section 2: Goals & Motivations
-  goals_motivations?: { 
+  goals_motivations?: {
     primary_goal?: string
     secondary_goals?: string[]
     success_definition?: string
-    underlying_motivations?: string[] 
+    underlying_motivations?: string[]
   }
   // Section 3: Pain Points & Frustrations
-  pain_points?: { 
+  pain_points?: {
     current_challenges?: string[]
     blockers?: string[]
     workarounds?: string[]
-    emotional_impact?: string 
+    emotional_impact?: string
   }
   // Section 4: Behaviors & Habits
   behaviors?: {
@@ -242,7 +193,7 @@ export interface ProjectPersona {
     decision_style?: string
   }
   // Section 5: Context & Environment
-  context_environment?: { 
+  context_environment?: {
     usage_context?: string
     devices?: string[]
     time_constraints?: string
@@ -250,16 +201,25 @@ export interface ProjectPersona {
     influencers?: string[]
   }
   // Section 6: Representative Quotes
-  quotes?: Array<{ text: string; context?: string }>
+  quotes?: Array<{
+    text: string;
+    context?: string
+  }>
   // Section 7: Scenario/User Story
-  scenario?: { 
+  scenario?: {
     title?: string
     narrative?: string
     trigger?: string
-    outcome?: string 
+    outcome?: string
   }
   // Section 8: Research Notes
-  research_notes?: Array<string | { note_id?: string; text: string; author?: string; created_at?: string; tags?: string[] }>
+  research_notes?: Array<string | {
+    note_id?: string;
+    text: string;
+    author?: string;
+    created_at?: string;
+    tags?: string[]
+  }>
   // Metadata
   supporting_evidence?: string[]
   source_breakdown?: Record<string, number>
@@ -318,8 +278,8 @@ export interface S3ImportFile {
   status: 'pending' | 'processed'
 }
 
-export interface FeedbackFormConfig {
-  enabled: boolean
+/** Shared form configuration fields used by both FeedbackFormConfig and FeedbackForm. */
+interface FeedbackFormFields {
   title: string
   description: string
   question: string
@@ -337,32 +297,23 @@ export interface FeedbackFormConfig {
   }
   collect_email: boolean
   collect_name: boolean
-  custom_fields: Array<{ id: string; label: string; type: string; required: boolean }>
+  custom_fields: Array<{
+    id: string;
+    label: string;
+    type: string;
+    required: boolean
+  }>
+}
+
+export interface FeedbackFormConfig extends FeedbackFormFields {
+  enabled: boolean
   brand_name: string
 }
 
-export interface FeedbackForm {
+export interface FeedbackForm extends FeedbackFormFields {
   form_id: string
   name: string
   enabled: boolean
-  title: string
-  description: string
-  question: string
-  placeholder: string
-  rating_enabled: boolean
-  rating_type: 'stars' | 'numeric' | 'emoji'
-  rating_max: number
-  submit_button_text: string
-  success_message: string
-  theme: {
-    primary_color: string
-    background_color: string
-    text_color: string
-    border_radius: string
-  }
-  collect_email: boolean
-  collect_name: boolean
-  custom_fields: Array<{ id: string; label: string; type: string; required: boolean }>
   category: string
   subcategory: string
   created_at: string
@@ -373,6 +324,8 @@ export interface CognitoUser {
   username: string
   email: string
   name: string
+  given_name?: string
+  family_name?: string
   status: string
   enabled: boolean
   groups: string[]
@@ -414,4 +367,31 @@ export interface LogsSummary {
   processing_errors: Record<string, number>
   total_validation_failures: number
   total_processing_errors: number
+}
+
+export interface ResolvedProblem {
+  problem_id: string
+  category: string
+  subcategory: string
+  problem_text: string
+  resolved_at: string
+  resolved_by: string
+}
+
+// API Token types
+export interface ApiToken {
+  token_id: string
+  name: string
+  scope: 'read' | 'read-write'
+  created_at: string
+  last_used_at?: string
+  project_id: string
+}
+
+export interface CreateApiTokenResponse {
+  success: boolean
+  token: string
+  token_id: string
+  name: string
+  message?: string
 }

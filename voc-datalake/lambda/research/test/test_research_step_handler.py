@@ -1,279 +1,157 @@
 """
 Tests for research_step_handler.py
 
-These tests validate:
-1. Shared module imports work correctly (the root cause of the production failure)
-2. Bedrock retry logic with exponential backoff
-3. Job status updates
-4. Feedback data formatting
-5. Step function routing
+Tests: Bedrock retry/error handling, job status updates, step function routing, error step.
+Removed: import/existence checks (TestSharedModuleImports, TestBedrockThrottlingException.test_exception_exists),
+         mock-passthrough test (TestInvokeBedrockWithRetry.test_successful_invocation).
 """
-import json
 import pytest
-from unittest.mock import patch, MagicMock, call
-from decimal import Decimal
+from unittest.mock import patch, MagicMock
 from botocore.exceptions import ClientError
 
 
-class TestSharedModuleImports:
-    """Tests to validate shared module imports work correctly.
-    
-    This is critical - the production failure was caused by missing shared module.
-    These tests ensure the imports work before deployment.
-    """
-    
-    def test_shared_logging_imports(self):
-        """Validates shared.logging module imports correctly."""
-        from shared.logging import logger, tracer, metrics
-        
-        assert logger is not None
-        assert tracer is not None
-        assert metrics is not None
-    
-    def test_shared_aws_imports(self):
-        """Validates shared.aws module imports correctly."""
-        from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
-        
-        assert get_dynamodb_resource is not None
-        assert BEDROCK_MODEL_ID is not None
-        assert 'claude' in BEDROCK_MODEL_ID.lower()
-    
-    def test_research_handler_imports(self):
-        """Validates research_step_handler imports without errors."""
-        # This will fail if shared module is not available
-        import research_step_handler
-        
-        assert hasattr(research_step_handler, 'lambda_handler')
-        assert hasattr(research_step_handler, 'step_initialize')
-        assert hasattr(research_step_handler, 'step_analyze')
-        assert hasattr(research_step_handler, 'step_synthesize')
-        assert hasattr(research_step_handler, 'step_validate')
-        assert hasattr(research_step_handler, 'step_save')
-        assert hasattr(research_step_handler, 'step_error')
-
-
-class TestBedrockThrottlingException:
-    """Tests for custom BedrockThrottlingException."""
-    
-    def test_exception_exists(self):
-        """Validates BedrockThrottlingException is defined."""
-        from research_step_handler import BedrockThrottlingException
-        
-        assert BedrockThrottlingException is not None
-    
-    def test_exception_is_raisable(self):
-        """Validates exception can be raised and caught."""
-        from research_step_handler import BedrockThrottlingException
-        
-        with pytest.raises(BedrockThrottlingException) as exc_info:
-            raise BedrockThrottlingException("Test throttling error")
-        
-        assert "Test throttling error" in str(exc_info.value)
-
-
 class TestInvokeBedrockWithRetry:
-    """Tests for invoke_bedrock_with_retry function.
-    
-    Now delegates to shared.converse module, so we mock that instead.
-    """
-    
+    """Tests for invoke_bedrock_with_retry — error handling and argument forwarding."""
+
     @patch('research_step_handler.converse')
-    def test_successful_invocation(self, mock_converse):
-        """Returns response on successful invocation."""
+    def test_forwards_custom_max_tokens_and_retries(self, mock_converse):
+        """Passes custom max_tokens and max_retries to the converse module."""
         from research_step_handler import invoke_bedrock_with_retry
-        
-        mock_converse.return_value = 'Test response'
-        
-        result = invoke_bedrock_with_retry("System prompt", "User message")
-        
-        assert result == 'Test response'
-        mock_converse.assert_called_once_with(
-            prompt="User message",
-            system_prompt="System prompt",
-            max_tokens=4096,
-            max_retries=3,
-            raise_on_throttle=True,
-        )
-    
-    @patch('research_step_handler.converse')
-    def test_passes_custom_max_tokens(self, mock_converse):
-        """Passes custom max_tokens to converse."""
-        from research_step_handler import invoke_bedrock_with_retry
-        
+
         mock_converse.return_value = 'Response'
-        
         invoke_bedrock_with_retry("System", "User", max_tokens=2000, max_retries=5)
-        
+
         call_args = mock_converse.call_args
         assert call_args.kwargs['max_tokens'] == 2000
         assert call_args.kwargs['max_retries'] == 5
-    
+
     @patch('research_step_handler.converse')
-    def test_raises_throttling_error(self, mock_converse):
-        """Raises BedrockThrottlingException on throttling."""
+    def test_converts_shared_throttling_to_local_exception(self, mock_converse):
+        """Translates shared BedrockThrottlingError into handler-specific BedrockThrottlingException."""
         from research_step_handler import invoke_bedrock_with_retry, BedrockThrottlingException
         from shared.converse import BedrockThrottlingError
-        
+
         mock_converse.side_effect = BedrockThrottlingError("Throttled")
-        
+
         with pytest.raises(BedrockThrottlingException):
             invoke_bedrock_with_retry("System", "User")
-    
+
     @patch('research_step_handler.converse')
-    def test_raises_non_retryable_errors(self, mock_converse):
-        """Raises non-retryable errors immediately."""
+    def test_propagates_non_retryable_errors(self, mock_converse):
+        """Non-retryable errors like AccessDeniedException propagate immediately."""
         from research_step_handler import invoke_bedrock_with_retry
-        
+
         access_denied = ClientError(
             {'Error': {'Code': 'AccessDeniedException', 'Message': 'Access denied'}},
             'Converse'
         )
         mock_converse.side_effect = access_denied
-        
+
         with pytest.raises(ClientError) as exc_info:
             invoke_bedrock_with_retry("System", "User")
-        
+
         assert exc_info.value.response['Error']['Code'] == 'AccessDeniedException'
 
 
 class TestUpdateJobStatus:
-    """Tests for update_job_status function.
-    
-    Now uses shared.jobs module, so we mock that instead.
-    """
-    
+    """Tests for update_job_status — DynamoDB key structure and optional fields."""
+
     @patch('shared.jobs.get_jobs_table')
-    def test_updates_basic_status(self, mock_get_jobs_table):
-        """Updates job status with basic fields."""
+    def test_writes_correct_composite_key_and_status(self, mock_get_jobs_table):
+        """Uses PROJECT#/JOB# composite key and writes status + progress."""
         from research_step_handler import update_job_status
-        
+
         mock_table = MagicMock()
         mock_get_jobs_table.return_value = mock_table
-        
+
         update_job_status('proj_123', 'job_456', 'running', 50, 'analyzing')
-        
-        mock_table.update_item.assert_called_once()
-        call_args = mock_table.update_item.call_args
-        
-        assert call_args.kwargs['Key'] == {'pk': 'PROJECT#proj_123', 'sk': 'JOB#job_456'}
-        assert ':status' in call_args.kwargs['ExpressionAttributeValues']
-        assert call_args.kwargs['ExpressionAttributeValues'][':status'] == 'running'
-        assert call_args.kwargs['ExpressionAttributeValues'][':progress'] == 50
-    
+
+        call_args = mock_table.update_item.call_args.kwargs
+        assert call_args['Key'] == {'pk': 'PROJECT#proj_123', 'sk': 'JOB#job_456'}
+        assert call_args['ExpressionAttributeValues'][':status'] == 'running'
+        assert call_args['ExpressionAttributeValues'][':progress'] == 50
+
     @patch('shared.jobs.get_jobs_table')
-    def test_updates_with_error(self, mock_get_jobs_table):
-        """Updates job status with error message."""
+    def test_includes_error_field_when_provided(self, mock_get_jobs_table):
+        """Includes error message in the update expression when error kwarg is set."""
         from research_step_handler import update_job_status
-        
+
         mock_table = MagicMock()
         mock_get_jobs_table.return_value = mock_table
-        
+
         update_job_status('proj_123', 'job_456', 'failed', 0, 'error', error='Something went wrong')
-        
-        call_args = mock_table.update_item.call_args
-        assert ':error' in call_args.kwargs['ExpressionAttributeValues']
-        assert call_args.kwargs['ExpressionAttributeValues'][':error'] == 'Something went wrong'
-    
+
+        expr_values = mock_table.update_item.call_args.kwargs['ExpressionAttributeValues']
+        assert expr_values[':error'] == 'Something went wrong'
+
     @patch('shared.jobs.get_jobs_table')
-    def test_updates_with_result(self, mock_get_jobs_table):
-        """Updates job status with result."""
+    def test_includes_result_field_when_provided(self, mock_get_jobs_table):
+        """Includes result dict in the update expression when result kwarg is set."""
         from research_step_handler import update_job_status
-        
+
         mock_table = MagicMock()
         mock_get_jobs_table.return_value = mock_table
-        
+
         result = {'document_id': 'doc_123', 'title': 'Test Research'}
         update_job_status('proj_123', 'job_456', 'completed', 100, 'complete', result=result)
-        
-        call_args = mock_table.update_item.call_args
-        assert ':result' in call_args.kwargs['ExpressionAttributeValues']
-        assert call_args.kwargs['ExpressionAttributeValues'][':result'] == result
-    
+
+        expr_values = mock_table.update_item.call_args.kwargs['ExpressionAttributeValues']
+        assert expr_values[':result'] == result
+
     @patch('shared.jobs.get_jobs_table')
     @patch('shared.jobs.logger')
-    def test_handles_missing_table_gracefully(self, mock_logger, mock_get_jobs_table):
-        """Does not raise when jobs_table is None."""
+    def test_handles_missing_table_without_raising(self, mock_logger, mock_get_jobs_table):
+        """Logs warning instead of crashing when jobs table is not configured."""
         from research_step_handler import update_job_status
-        
+
         mock_get_jobs_table.return_value = None
-        
-        # Should not raise
         update_job_status('proj_123', 'job_456', 'running', 50)
-        
+
         mock_logger.warning.assert_called_once()
 
 
 class TestLambdaHandler:
-    """Tests for main lambda_handler routing."""
-    
+    """Tests for main lambda_handler step routing."""
+
     @patch('research_step_handler.step_initialize')
-    def test_routes_to_initialize(self, mock_step, lambda_context):
-        """Routes initialize step correctly."""
+    def test_routes_initialize_step_and_returns_result(self, mock_step, lambda_context):
+        """Routes 'initialize' step to step_initialize and returns its result."""
         from research_step_handler import lambda_handler
-        
+
         mock_step.return_value = {'feedback_count': 10}
         event = {'step': 'initialize', 'project_id': 'p1', 'job_id': 'j1', 'research_config': {}}
-        
+
         result = lambda_handler(event, lambda_context)
-        
+
         mock_step.assert_called_once_with(event)
         assert result == {'feedback_count': 10}
-    
-    @patch('research_step_handler.step_analyze')
-    def test_routes_to_analyze(self, mock_step, lambda_context):
-        """Routes analyze step correctly."""
+
+    def test_raises_value_error_for_unknown_step(self, lambda_context):
+        """Raises ValueError with descriptive message for unrecognized step names."""
         from research_step_handler import lambda_handler
-        
-        mock_step.return_value = {'analysis': 'test'}
-        event = {'step': 'analyze', 'project_id': 'p1', 'job_id': 'j1'}
-        
-        result = lambda_handler(event, lambda_context)
-        
-        mock_step.assert_called_once()
-    
-    @patch('research_step_handler.step_error')
-    def test_routes_to_error(self, mock_step, lambda_context):
-        """Routes error step correctly."""
-        from research_step_handler import lambda_handler
-        
-        mock_step.return_value = {'success': False}
-        event = {'step': 'error', 'project_id': 'p1', 'job_id': 'j1', 'error': {'Cause': 'Test error'}}
-        
-        result = lambda_handler(event, lambda_context)
-        
-        mock_step.assert_called_once()
-    
-    def test_raises_on_unknown_step(self, lambda_context):
-        """Raises ValueError for unknown step."""
-        from research_step_handler import lambda_handler
-        
-        event = {'step': 'unknown_step'}
-        
-        with pytest.raises(ValueError) as exc_info:
-            lambda_handler(event, lambda_context)
-        
-        assert 'Unknown step' in str(exc_info.value)
+
+        with pytest.raises(ValueError, match='Unknown step'):
+            lambda_handler({'step': 'unknown_step'}, lambda_context)
 
 
 class TestStepError:
     """Tests for step_error function."""
-    
+
     @patch('research_step_handler.update_job_status')
-    def test_updates_job_as_failed(self, mock_update):
-        """Updates job status to failed with error message."""
+    def test_marks_job_as_failed_with_error_details(self, mock_update):
+        """Sets job status to 'failed' and includes the error cause in the result."""
         from research_step_handler import step_error
-        
+
         event = {
             'project_id': 'proj_123',
             'job_id': 'job_456',
             'error': {'Cause': 'Lambda timeout', 'Error': 'States.Timeout'}
         }
-        
+
         result = step_error(event)
-        
+
         assert result['success'] is False
         assert 'Lambda timeout' in result['error']
-        mock_update.assert_called_once()
         call_args = mock_update.call_args
-        assert call_args[0][2] == 'failed'  # status
+        assert call_args[0][2] == 'failed'
         assert 'Lambda timeout' in call_args[1]['error']

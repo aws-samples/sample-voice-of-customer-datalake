@@ -1,0 +1,1 @@
+"""Persona generator job Lambda."""

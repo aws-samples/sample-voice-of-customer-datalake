@@ -1,0 +1,16 @@
+{
+  "configureEndpoint": "Bitte konfigurieren Sie Ihren API-Endpunkt in den Einstellungen",
+  "filters": {
+    "allCategories": "Alle Kategorien",
+    "allSentiments": "Alle Stimmungen",
+    "allSources": "Alle Quellen",
+    "clearFilters": "Filter zurücksetzen",
+    "mostRecent": "Neueste",
+    "searchFeedback": "Feedback suchen...",
+    "urgentOnly": "Nur dringende"
+  },
+  "forQuery": "für \"{{query}}\"",
+  "noFeedbackFound": "Kein Feedback gefunden, das Ihren Filtern entspricht",
+  "showingOf_one": "{{count}} von {{total}} Ergebnis angezeigt",
+  "showingOf_other": "{{count}} von {{total}} Ergebnissen angezeigt"
+}
