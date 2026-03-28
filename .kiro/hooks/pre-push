@@ -322,20 +322,27 @@ if [ $HAS_SUGGESTIONS -eq 1 ] || [ $HAS_WARNINGS -eq 1 ] || [ $HAS_MISSING_TESTS
   [ $HAS_MISSING_TESTS -eq 1 ] && echo -e "${YELLOW}    🧪 Missing test coverage${NC}"
   echo ""
 
-  # Check if we're in a terminal that supports interactive input
-  if [ -t 0 ]; then
-    echo -e "${BOLD}${YELLOW}  Do you want to proceed with the push? [y/N]${NC} "
-    read -r -n 1 REPLY < /dev/tty
+  # Git hooks have stdin redirected, so -t 0 always fails.
+  # Instead, try to open /dev/tty directly — this works in real terminals
+  # but fails in CI/CD or piped environments.
+  if [ -e /dev/tty ]; then
+    echo -en "${BOLD}${YELLOW}  Do you want to proceed with the push? [y/N] ${NC}"
+    REPLY=""
+    read -r -n 1 REPLY < /dev/tty 2>/dev/null || true
     echo ""
     if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
-      echo -e "${RED}  ✗ Push cancelled by developer${NC}"
+      echo -e "${RED}  ✗ Push cancelled by developer — fix suggestions above and retry${NC}"
+      echo -e "${YELLOW}  To skip review: SKIP_AI_REVIEW=1 git push${NC}"
       echo ""
       exit 1
     fi
     echo -e "${GREEN}  ✓ Developer acknowledged findings — proceeding${NC}"
   else
-    # Non-interactive mode (CI/CD) — treat suggestions as non-blocking
-    echo -e "${YELLOW}  Non-interactive mode — suggestions are non-blocking, proceeding${NC}"
+    # No TTY available (CI/CD, Docker, etc.) — block on suggestions too
+    echo -e "${RED}  ✗ Push blocked — suggestions found and no TTY for confirmation${NC}"
+    echo -e "${YELLOW}  Fix the suggestions or set SKIP_AI_REVIEW=1 to bypass${NC}"
+    echo ""
+    exit 1
   fi
   echo ""
 fi
