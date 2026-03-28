@@ -14,7 +14,7 @@ type UserGroup = 'admins' | 'users'
 export type ActionType = 'delete' | 'disable' | 'enable' | 'reset' | 'edit'
 
 function getDisplayName(user: CognitoUser): string {
-  return (user.given_name?.length ?? 0) > 0 || (user.family_name?.length ?? 0) > 0
+  return user.given_name || user.family_name
     ? `${user.given_name ?? ''} ${user.family_name ?? ''}`.trim()
     : user.name
 }

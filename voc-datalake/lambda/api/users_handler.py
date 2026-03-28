@@ -14,6 +14,7 @@ import os
 import uuid
 import boto3
 from typing import Any
+from botocore.exceptions import ClientError, BotoCoreError
 
 from shared.logging import logger, tracer
 from shared.api import create_api_resolver, api_handler
@@ -246,9 +247,7 @@ def update_user(username: str):
 
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
-    except ValidationError:
-        raise
-    except Exception as e:
+    except (ClientError, BotoCoreError) as e:
         logger.exception(f'Error updating user: {e}')
         raise ServiceError(str(e))
 
