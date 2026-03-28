@@ -85,6 +85,9 @@ describe('ChatExportMenu', () => {
     vi.clearAllMocks()
     mockWriteText.mockClear()
     mockShare.mockClear()
+
+    // Prevent jsdom "Not implemented: navigation" errors from anchor clicks
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mockWriteText },

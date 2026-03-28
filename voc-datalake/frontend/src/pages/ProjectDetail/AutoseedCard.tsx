@@ -262,25 +262,23 @@ function PickerSection({
   const { t } = useTranslation('projectDetail')
   return (
     <div className="border rounded-lg mb-3">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-t-lg"
-      >
-        <span className="flex items-center gap-2">
+      <div className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 rounded-t-lg">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex items-center gap-2 hover:text-gray-900"
+        >
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           {title}
-        </span>
+        </button>
         <button
           type="button"
           className="text-xs text-indigo-600 hover:text-indigo-800"
-          onClick={(e) => {
-            e.stopPropagation(); onToggleAll(!allSelected)
-          }}
+          onClick={() => onToggleAll(!allSelected)}
         >
           {allSelected ? t('autoseed.deselectAll') : t('autoseed.selectAll')}
         </button>
-      </button>
+      </div>
       {expanded ? <div className="px-3 pb-2 max-h-48 overflow-y-auto">
         {children}
       </div> : null}

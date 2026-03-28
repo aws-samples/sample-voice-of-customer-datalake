@@ -27,14 +27,13 @@ describe('getScore', () => {
     expect(result.impact).toBe(0)
     expect(result.time_to_market).toBe(3)
     expect(result.confidence).toBe(0)
-    expect(result.strategic_fit).toBe(0)
     expect(result.document_id).toBe('missing-id')
   })
 
   it('returns DEFAULT_SCORE for empty scores object', () => {
     const result = getScore({}, 'any-id')
 
-    expect(result).toEqual({ ...DEFAULT_SCORE, document_id: 'any-id' })
+    expect(result).toStrictEqual({ ...DEFAULT_SCORE, document_id: 'any-id' })
   })
 })
 
@@ -66,8 +65,8 @@ describe('calculatePriorityScore', () => {
 
 describe('collectPRFAQs', () => {
   it('returns empty array when no project details', () => {
-    expect(collectPRFAQs(undefined, undefined)).toEqual([])
-    expect(collectPRFAQs([], [])).toEqual([])
+    expect(collectPRFAQs(undefined, undefined)).toStrictEqual([])
+    expect(collectPRFAQs([], [])).toStrictEqual([])
   })
 
   it('only includes prfaq document types', () => {

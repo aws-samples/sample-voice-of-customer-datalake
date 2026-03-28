@@ -7,11 +7,12 @@ import { useMutation } from '@tanstack/react-query'
 import {
   Pencil, Loader2, AlertCircle,
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
-import type { CognitoUser } from '../../api/types'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 import NameFields from './NameFields'
+import type { CognitoUser } from '../../api/types'
 
 interface EditUserModalProps {
   readonly isOpen: boolean
@@ -20,52 +21,34 @@ interface EditUserModalProps {
   readonly onSuccess: () => void
 }
 
-export default function EditUserModal({
-  isOpen, user, onClose, onSuccess,
-}: EditUserModalProps) {
+function EditUserModalContent({
+  user, onClose, onSuccess,
+}: {
+  readonly user: CognitoUser;
+  readonly onClose: () => void;
+  readonly onSuccess: () => void
+}) {
   const { t } = useTranslation('components')
-  const [givenName, setGivenName] = useState('')
-  const [familyName, setFamilyName] = useState('')
+  const [givenName, setGivenName] = useState(user.given_name)
+  const [familyName, setFamilyName] = useState(user.family_name)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    if (user) {
-      setGivenName(user.given_name)
-      setFamilyName(user.family_name)
-      setError('')
-    }
-  }, [user])
-
-  useEffect(() => {
-    if (!isOpen) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
-
   const updateMutation = useMutation({
-    mutationFn: () => {
-      if (!user) throw new Error('No user selected')
-      return api.updateUser(user.username, {
-        given_name: givenName,
-        family_name: familyName,
-      })
-    },
+    mutationFn: () => api.updateUser(user.username, {
+      given_name: givenName,
+      family_name: familyName,
+    }),
     onSuccess: (data) => {
       if (data.success) {
         setError('')
         onSuccess()
         onClose()
       } else {
-        setError(data.message || 'Failed to update user')
+        setError(data.message.length > 0 ? data.message : 'Failed to update user')
       }
     },
     onError: (err: Error) => setError(err.message),
   })
-
-  if (!isOpen || !user) return null
 
   const hasChanges = givenName !== user.given_name || familyName !== user.family_name
   const hasName = givenName.trim() !== '' || familyName.trim() !== ''
@@ -116,5 +99,22 @@ export default function EditUserModal({
         </div>
       </div>
     </div>
+  )
+}
+
+export default function EditUserModal({
+  isOpen, user, onClose, onSuccess,
+}: EditUserModalProps) {
+  useEscapeKey(isOpen, onClose)
+
+  if (!isOpen || !user) return null
+
+  return (
+    <EditUserModalContent
+      key={user.username}
+      user={user}
+      onClose={onClose}
+      onSuccess={onSuccess}
+    />
   )
 }

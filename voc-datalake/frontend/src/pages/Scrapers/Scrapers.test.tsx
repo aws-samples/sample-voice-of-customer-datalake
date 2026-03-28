@@ -326,8 +326,8 @@ describe('Scrapers', () => {
 
       await waitFor(() => {
         expect(mockGetAppConfigs).toHaveBeenCalledWith('app_reviews_ios')
-        expect(mockGetAppConfigs).toHaveBeenCalledWith('app_reviews_android')
       })
+      expect(mockGetAppConfigs).toHaveBeenCalledWith('app_reviews_android')
     })
   })
 })

@@ -309,8 +309,8 @@ describe('UserAdmin', () => {
       })
       
       await user.type(screen.getByPlaceholderText('user@example.com'), 'new@example.com')
-      await user.type(screen.getByPlaceholderText('Matias'), 'New')
-      await user.type(screen.getByPlaceholderText('Undurraga'), 'User')
+      await user.type(screen.getByPlaceholderText('Jane'), 'New')
+      await user.type(screen.getByPlaceholderText('Doe'), 'User')
       await user.click(screen.getByRole('button', { name: /send invite/i }))
       
       await waitFor(() => {

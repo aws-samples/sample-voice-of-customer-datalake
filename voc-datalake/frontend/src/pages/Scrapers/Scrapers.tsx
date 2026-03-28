@@ -106,16 +106,25 @@ function AppConfigList({
     }), 3000)
   }
 
-  const { data: allAppConfigs, isLoading: isLoadingApps } = useQuery({
+  const {
+    data: allAppConfigs, isLoading: isLoadingApps,
+  } = useQuery({
     queryKey: ['all-app-configs', plugins.map((p) => p.id).join(',')],
     queryFn: async () => {
+      const emptyApps: AppConfig[] = []
       const results = await Promise.all(plugins.map(async (plugin) => {
         try {
           const response = await api.getAppConfigs(plugin.id)
-          return { pluginId: plugin.id, apps: response.apps }
+          return {
+            pluginId: plugin.id,
+            apps: response.apps,
+          }
         } catch (err) {
           console.warn(`Failed to fetch app configs for plugin "${plugin.id}":`, err)
-          return { pluginId: plugin.id, apps: [] as AppConfig[] }
+          return {
+            pluginId: plugin.id,
+            apps: emptyApps,
+          }
         }
       }))
       return results

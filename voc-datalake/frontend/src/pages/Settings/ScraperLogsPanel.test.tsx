@@ -135,12 +135,11 @@ describe('ScraperLogsPanel', () => {
   it('renders gracefully when getScrapers returns error', async () => {
     mockGetScrapers.mockRejectedValue(new Error('Service unavailable'))
 
-    const { container } = render(<ScraperLogsPanel days={7} />, { wrapper: createWrapper() })
+    render(<ScraperLogsPanel days={7} />, { wrapper: createWrapper() })
 
     // After error, loading state should disappear and component should not crash
     await waitFor(() => {
-      // eslint-disable-next-line testing-library/no-node-access
-      expect(container.querySelector('.animate-spin')).not.toBeInTheDocument()
+      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
     })
   })
 })

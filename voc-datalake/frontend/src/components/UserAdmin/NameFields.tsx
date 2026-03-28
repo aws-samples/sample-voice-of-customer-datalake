@@ -24,6 +24,7 @@ export default function NameFields({
           onChange={(e) => onGivenNameChange(e.target.value)}
           placeholder="Jane"
           className="input"
+          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus={autoFocusFirst}
         />
       </div>

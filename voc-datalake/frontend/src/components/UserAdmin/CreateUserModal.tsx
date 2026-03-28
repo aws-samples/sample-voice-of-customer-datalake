@@ -7,9 +7,10 @@ import { useMutation } from '@tanstack/react-query'
 import {
   UserPlus, Shield, Eye, Loader2, AlertCircle, Mail,
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 import NameFields from './NameFields'
 
 type UserGroup = 'admins' | 'users'
@@ -30,14 +31,7 @@ export default function CreateUserModal({
   const [group, setGroup] = useState<UserGroup>('users')
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    if (!isOpen) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+  useEscapeKey(isOpen, onClose)
 
   const createMutation = useMutation({
     mutationFn: () => api.createUser({

@@ -199,9 +199,9 @@ def update_user(username: str):
 
     try:
         user_attrs = []
-        if given_name:
+        if 'given_name' in body:
             user_attrs.append({'Name': 'given_name', 'Value': given_name})
-        if family_name:
+        if 'family_name' in body:
             user_attrs.append({'Name': 'family_name', 'Value': family_name})
         # Update display name
         display_name = f'{given_name} {family_name}'.strip()
