@@ -195,6 +195,11 @@ def update_user(username: str):
     if 'given_name' not in body and 'family_name' not in body:
         raise ValidationError('At least one of given_name or family_name is required')
 
+    # Validate types
+    for field in ('given_name', 'family_name'):
+        if field in body and not isinstance(body[field], str):
+            raise ValidationError(f'{field} must be a string')
+
     try:
         # Fetch current attributes to merge with incoming changes
         current_user = cognito.admin_get_user(
@@ -206,8 +211,8 @@ def update_user(username: str):
             for attr in current_user.get('UserAttributes', [])
         }
 
-        given_name = str(body['given_name']).strip() if 'given_name' in body else current_attrs.get('given_name', '')
-        family_name = str(body['family_name']).strip() if 'family_name' in body else current_attrs.get('family_name', '')
+        given_name = body['given_name'].strip() if 'given_name' in body else current_attrs.get('given_name', '')
+        family_name = body['family_name'].strip() if 'family_name' in body else current_attrs.get('family_name', '')
 
         user_attrs = []
         if 'given_name' in body:

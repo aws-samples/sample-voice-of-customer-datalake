@@ -44,7 +44,7 @@ function EditUserModalContent({
         onSuccess()
         onClose()
       } else {
-        setError(data.message.length > 0 ? data.message : 'Failed to update user')
+        setError(data.message || 'Failed to update user')
       }
     },
     onError: (err: Error) => setError(err.message),
