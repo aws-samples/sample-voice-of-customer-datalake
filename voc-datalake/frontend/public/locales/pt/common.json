@@ -29,6 +29,18 @@
   "forQuery": "para \"{{query}}\"",
   "goToSettings": "Ir para Configurações",
   "loading": "Carregando...",
+  "logs": {
+    "daysAgo_one": "",
+    "daysAgo_many": "",
+    "daysAgo_other": "",
+    "hoursAgo_one": "",
+    "hoursAgo_many": "",
+    "hoursAgo_other": "",
+    "justNow": "",
+    "minutesAgo_one": "",
+    "minutesAgo_many": "",
+    "minutesAgo_other": ""
+  },
   "metrics": {
     "avgSentiment": "Sentimento médio",
     "sourcesActive": "Fontes ativas",
@@ -47,6 +59,12 @@
     "projects": "Projetos",
     "scrapers": "Scrapers",
     "settings": "Configurações"
+  },
+  "priority": {
+    "high": "",
+    "low": "",
+    "medium": "",
+    "none": ""
   },
   "send": "Enviar",
   "sentiment": {

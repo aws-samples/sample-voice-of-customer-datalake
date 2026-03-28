@@ -29,6 +29,12 @@
   "forQuery": "关于\"{{query}}\"",
   "goToSettings": "前往设置",
   "loading": "加载中...",
+  "logs": {
+    "daysAgo_other": "",
+    "hoursAgo_other": "",
+    "justNow": "",
+    "minutesAgo_other": ""
+  },
   "metrics": {
     "avgSentiment": "平均情感",
     "sourcesActive": "活跃来源",
@@ -47,6 +53,12 @@
     "projects": "项目",
     "scrapers": "抓取器",
     "settings": "设置"
+  },
+  "priority": {
+    "high": "",
+    "low": "",
+    "medium": "",
+    "none": ""
   },
   "send": "发送",
   "sentiment": {

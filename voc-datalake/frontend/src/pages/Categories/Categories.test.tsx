@@ -100,6 +100,9 @@ const mockFeedbackData = {
     },
   ],
   count: 1,
+  total: 1,
+  offset: 0,
+  limit: 50,
 }
 
 describe('Categories', () => {
@@ -291,6 +294,9 @@ describe('Categories', () => {
           { ...mockFeedbackData.items[0], feedback_id: '2', category: 'pricing' },
         ],
         count: 2,
+        total: 2,
+        offset: 0,
+        limit: 50,
       })
 
       const user = userEvent.setup()
@@ -311,7 +317,7 @@ describe('Categories', () => {
 
       // Only delivery items should show (client-side filter)
       await waitFor(() => {
-        expect(screen.getByText('(1)')).toBeInTheDocument()
+        expect(screen.getByText(/\(1\b/)).toBeInTheDocument()
       })
     })
   })

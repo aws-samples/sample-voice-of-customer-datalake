@@ -433,3 +433,235 @@ class TestGetFeedbackContextEdgeCases:
         
         # Should stop early since we have enough items
         assert len(result) == 10
+
+    def test_does_not_break_early_when_source_filter_active(self):
+        """Regression: early break must not skip dates when source filtering is active.
+
+        When recent dates have many items from *other* sources, the loop
+        must keep scanning older dates so that the target source's items
+        (which may only exist on older dates) are not missed.
+        """
+        from shared.feedback import get_feedback_context
+
+        mock_table = MagicMock()
+
+        # Day 0-2: 200 items each from "other_source" (total 600, well above limit*3=150)
+        other_items = [{'feedback_id': f'other_{i}', 'source_platform': 'other_source'} for i in range(200)]
+        # Day 10: 50 items from the target source
+        target_items = [{'feedback_id': f'target_{i}', 'source_platform': 'target_source'} for i in range(50)]
+
+        # Build side_effect list: 30 days of responses
+        responses = [{'Items': []} for _ in range(30)]
+        responses[0] = {'Items': list(other_items)}  # day 0
+        responses[1] = {'Items': list(other_items)}  # day 1
+        responses[2] = {'Items': list(other_items)}  # day 2
+        responses[10] = {'Items': list(target_items)}  # day 10
+
+        mock_table.query.side_effect = responses
+
+        result = get_feedback_context(
+            mock_table,
+            {'days': 30, 'sources': ['target_source']},
+            limit=50
+        )
+
+        # Must find the target source items despite early dates having 600+ other items
+        assert len(result) == 50
+        assert all(item['source_platform'] == 'target_source' for item in result)
+        # Must have queried past day 2 (where the early break would have triggered before the fix)
+        assert mock_table.query.call_count >= 11
+
+    def test_does_not_break_early_when_sentiment_filter_active(self):
+        """Early break must not skip dates when sentiment filtering is active."""
+        from shared.feedback import get_feedback_context
+
+        mock_table = MagicMock()
+
+        # Day 0: 200 negative items (exceeds limit*3=150)
+        negative_items = [{'feedback_id': f'neg_{i}', 'sentiment_label': 'negative'} for i in range(200)]
+        # Day 5: 10 positive items
+        positive_items = [{'feedback_id': f'pos_{i}', 'sentiment_label': 'positive'} for i in range(10)]
+
+        def query_side_effect(**kwargs):
+            call_num = mock_table.query.call_count
+            if call_num == 1:
+                return {'Items': list(negative_items)}
+            if call_num == 6:  # day 5
+                return {'Items': list(positive_items)}
+            return {'Items': []}
+
+        mock_table.query.side_effect = query_side_effect
+
+        result = get_feedback_context(
+            mock_table,
+            {'days': 30, 'sentiments': ['positive']},
+            limit=50
+        )
+
+        assert len(result) == 10
+        assert all(item['sentiment_label'] == 'positive' for item in result)
+
+    def test_still_breaks_early_when_no_filters(self):
+        """Early break optimization still works when no source/sentiment filters are active."""
+        from shared.feedback import get_feedback_context
+
+        mock_table = MagicMock()
+        # Return 200 items on every query
+        mock_table.query.return_value = {'Items': [
+            {'feedback_id': str(i)} for i in range(200)
+        ]}
+
+        result = get_feedback_context(mock_table, {'days': 30}, limit=10)
+
+        assert len(result) == 10
+        # Should break early — not query all 30 days
+        assert mock_table.query.call_count < 30
+
+
+class TestQueryFeedbackByDate:
+    """Tests for query_feedback_by_date — the shared low-level query function."""
+
+    def test_returns_empty_when_table_is_none(self):
+        """Returns empty list when feedback_table is None."""
+        from shared.feedback import query_feedback_by_date
+
+        assert query_feedback_by_date(None, days=7) == []
+
+    def test_single_source_filter_as_list(self):
+        """Accepts a single source wrapped in a list (API handler pattern)."""
+        from shared.feedback import query_feedback_by_date
+
+        mock_table = MagicMock()
+        mock_table.query.side_effect = [
+            {'Items': [
+                {'feedback_id': '1', 'source_platform': 'target'},
+                {'feedback_id': '2', 'source_platform': 'other'},
+            ]},
+        ] + [{'Items': []} for _ in range(29)]
+
+        result = query_feedback_by_date(mock_table, days=30, sources=['target'], limit=50)
+
+        assert len(result) == 1
+        assert result[0]['source_platform'] == 'target'
+
+    def test_none_filters_treated_as_no_filter(self):
+        """Passing None for sources/categories/sentiments means no filtering."""
+        from shared.feedback import query_feedback_by_date
+
+        mock_table = MagicMock()
+        mock_table.query.side_effect = [
+            {'Items': [{'feedback_id': '1'}, {'feedback_id': '2'}]},
+        ] + [{'Items': []} for _ in range(29)]
+
+        result = query_feedback_by_date(
+            mock_table, days=30, sources=None, categories=None, sentiments=None, limit=50,
+        )
+
+        assert len(result) == 2
+
+    def test_per_day_limit_is_forwarded(self):
+        """The per_day_limit parameter is passed to DynamoDB Limit."""
+        from shared.feedback import query_feedback_by_date
+
+        mock_table = MagicMock()
+        mock_table.query.return_value = {'Items': []}
+
+        query_feedback_by_date(mock_table, days=1, per_day_limit=123, limit=50)
+
+        call_kwargs = mock_table.query.call_args.kwargs
+        assert call_kwargs['Limit'] == 123
+
+    def test_days_capped_at_max_lookback(self):
+        """Days parameter is capped at MAX_LOOKBACK_DAYS."""
+        from shared.feedback import query_feedback_by_date, MAX_LOOKBACK_DAYS
+
+        mock_table = MagicMock()
+        mock_table.query.return_value = {'Items': []}
+
+        query_feedback_by_date(mock_table, days=9999, limit=10)
+
+        assert mock_table.query.call_count == MAX_LOOKBACK_DAYS
+
+    def test_gsi2_category_query_filters_by_date_range(self):
+        """GSI2 category queries filter out items outside the date range."""
+        from shared.feedback import query_feedback_by_date
+        from datetime import datetime, timezone
+
+        mock_table = MagicMock()
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        mock_table.query.return_value = {
+            'Items': [
+                {'feedback_id': '1', 'category': 'delivery', 'date': today},
+                {'feedback_id': '2', 'category': 'delivery', 'date': '2020-01-01'},
+            ]
+        }
+
+        result = query_feedback_by_date(
+            mock_table, days=7, categories=['delivery'], limit=50,
+        )
+
+        assert len(result) == 1
+        assert result[0]['feedback_id'] == '1'
+
+
+class TestQueryFeedbackPage:
+    """Tests for query_feedback_page — returns (page, total) for pagination."""
+
+    def test_returns_empty_tuple_when_table_is_none(self):
+        from shared.feedback import query_feedback_page
+        page, total = query_feedback_page(None, days=7)
+        assert page == []
+        assert total == 0
+
+    def test_returns_total_count_and_page_slice(self):
+        from shared.feedback import query_feedback_page
+
+        mock_table = MagicMock()
+        all_items = [{'feedback_id': str(i)} for i in range(50)]
+        mock_table.query.side_effect = [
+            {'Items': list(all_items)},
+        ] + [{'Items': []} for _ in range(29)]
+
+        page, total = query_feedback_page(mock_table, days=30, limit=10, offset=0)
+
+        assert total == 50
+        assert len(page) == 10
+        assert page[0]['feedback_id'] == '0'
+
+    def test_offset_skips_items(self):
+        from shared.feedback import query_feedback_page
+
+        mock_table = MagicMock()
+        all_items = [{'feedback_id': str(i)} for i in range(50)]
+        mock_table.query.side_effect = [
+            {'Items': list(all_items)},
+        ] + [{'Items': []} for _ in range(29)]
+
+        page, total = query_feedback_page(mock_table, days=30, limit=10, offset=20)
+
+        assert total == 50
+        assert len(page) == 10
+        assert page[0]['feedback_id'] == '20'
+
+    def test_scans_all_dates_for_accurate_total_with_source_filter(self):
+        """query_feedback_page must NOT early-break so total is accurate."""
+        from shared.feedback import query_feedback_page
+
+        mock_table = MagicMock()
+        other_items = [{'feedback_id': f'o{i}', 'source_platform': 'other'} for i in range(200)]
+        target_items = [{'feedback_id': f't{i}', 'source_platform': 'target'} for i in range(30)]
+
+        responses = [{'Items': []} for _ in range(30)]
+        responses[0] = {'Items': list(other_items)}
+        responses[15] = {'Items': list(target_items)}
+        mock_table.query.side_effect = responses
+
+        page, total = query_feedback_page(
+            mock_table, days=30, sources=['target'], limit=10, offset=0,
+        )
+
+        assert total == 30
+        assert len(page) == 10
+        assert all(i['source_platform'] == 'target' for i in page)
+        # Must have queried all 30 days (no early break)
+        assert mock_table.query.call_count == 30

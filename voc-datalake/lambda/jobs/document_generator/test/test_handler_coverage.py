@@ -58,8 +58,8 @@ class TestDocumentGeneratorFeedbackGathering:
 
         mock_feedback_table.query.return_value = {
             'Items': [
-                {'original_text': 'Billing issue', 'source_platform': 'ws', 'sentiment_label': 'negative', 'category': 'billing'},
-                {'original_text': 'Good delivery', 'source_platform': 'ws', 'sentiment_label': 'positive', 'category': 'delivery'},
+                {'original_text': 'Billing issue', 'source_platform': 'ws', 'sentiment_label': 'negative', 'category': 'billing', 'date': '2026-03-28'},
+                {'original_text': 'Good delivery', 'source_platform': 'ws', 'sentiment_label': 'positive', 'category': 'delivery', 'date': '2026-03-28'},
             ]
         }
 

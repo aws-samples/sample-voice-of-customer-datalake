@@ -5,6 +5,7 @@ Tests for mcp_handler.py — MCP JSON-RPC server Lambda handler.
 import json
 import hashlib
 import pytest
+from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 
@@ -274,7 +275,7 @@ class TestToolSearchFeedback:
     def test_filters_by_category_only(self, tables):
         from mcp_handler import _tool_search_feedback
         tables['feedback'].query.return_value = {
-            'Items': [{'id': 'f1', 'category': 'delivery', 'original_text': 'Late'}]
+            'Items': [{'id': 'f1', 'category': 'delivery', 'original_text': 'Late', 'date': datetime.now(timezone.utc).strftime('%Y-%m-%d')}]
         }
         result = _tool_search_feedback({'category': 'delivery'}, {})
         parsed = json.loads(result[0]['text'])

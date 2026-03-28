@@ -1,71 +1,179 @@
 """
-Shared feedback utilities for LLM context building.
-Used by projects API and research step handler.
+Shared feedback utilities for LLM context building and API queries.
+Used by metrics API, projects API, research step handler, MCP handler,
+and job Lambdas (document generator, document merger).
 """
 
+import logging
 from datetime import datetime, timezone, timedelta
 from boto3.dynamodb.conditions import Key
-def get_feedback_context(feedback_table, filters: dict, limit: int = 50) -> list[dict]:
-    """Get feedback items based on filters for LLM context.
-    
+
+logger = logging.getLogger(__name__)
+
+# Maximum number of days to look back when querying by date
+MAX_LOOKBACK_DAYS = 90
+
+
+def _fetch_and_filter(
+    feedback_table,
+    days: int,
+    sources: list[str],
+    categories: list[str],
+    sentiments: list[str],
+    fetch_ceiling: int,
+    per_day_limit: int,
+) -> list[dict]:
+    """Internal: fetch items from DynamoDB and apply in-memory filters.
+
     Args:
-        feedback_table: DynamoDB Table resource for feedback
-        filters: Dict with keys: days, categories, sentiments, sources
-        limit: Maximum number of items to return
-        
-    Returns:
-        List of feedback items matching filters
+        fetch_ceiling: When no post-filters are active, stop querying
+            once we have this many raw items (early-break optimisation).
+            Pass 0 to disable early break (scan all dates).
     """
-    if not feedback_table:
-        return []
-    
-    days = filters.get('days', 30)
-    categories = filters.get('categories', [])
-    sentiments = filters.get('sentiments', [])
-    sources = filters.get('sources', [])
-    
-    items = []
+    has_post_filters = bool(sources or sentiments)
+    items: list[dict] = []
     current_date = datetime.now(timezone.utc)
-    
-    # Query by date or category, then filter by source_platform in memory
-    # This ensures consistent filtering with metrics aggregation
+
     if categories and not sources:
-        # If only categories are selected, query each category
+        per_cat = max(fetch_ceiling // len(categories) + 1 if fetch_ceiling else 5000, 10)
         for category in categories:
             response = feedback_table.query(
                 IndexName='gsi2-by-category',
                 KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{category}'),
-                Limit=limit // len(categories) + 1,
-                ScanIndexForward=False
+                Limit=per_cat,
+                ScanIndexForward=False,
             )
             items.extend(response.get('Items', []))
+        cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+        items = [i for i in items if i.get('date', '') >= cutoff_date]
     else:
-        # Query by date
-        for i in range(min(days, 30)):
+        for i in range(days):
             date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
             response = feedback_table.query(
                 IndexName='gsi1-by-date',
                 KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=500,
-                ScanIndexForward=False
+                Limit=per_day_limit,
+                ScanIndexForward=False,
             )
             items.extend(response.get('Items', []))
-            if len(items) >= limit * 3:
+            if not has_post_filters and fetch_ceiling and len(items) >= fetch_ceiling:
                 break
-    
-    # Apply source filter using source_platform field
+
     if sources:
         items = [i for i in items if i.get('source_platform') in sources]
-    
-    # Apply sentiment filter
     if sentiments:
         items = [i for i in items if i.get('sentiment_label') in sentiments]
-    
-    # Apply category filter if we queried by date
     if categories and sources:
         items = [i for i in items if i.get('category') in categories]
-    
-    return items[:limit]
+
+    return items
+
+
+def query_feedback_by_date(
+    feedback_table,
+    days: int = 30,
+    sources: list[str] | None = None,
+    categories: list[str] | None = None,
+    sentiments: list[str] | None = None,
+    limit: int = 500,
+    offset: int = 0,
+    per_day_limit: int = 500,
+) -> list[dict]:
+    """Query feedback items by date range with optional filters.
+
+    This is the single source of truth for date-based feedback queries.
+    All handlers should use this instead of reimplementing the date loop.
+
+    Args:
+        feedback_table: DynamoDB Table resource for feedback.
+        days: Number of days to look back from today.
+        sources: Optional list of source_platform values to keep.
+        categories: Optional list of category values to keep.
+            When set *without* sources, queries GSI2 by category instead.
+        sentiments: Optional list of sentiment_label values to keep.
+        limit: Maximum number of items to return after filtering.
+        offset: Number of items to skip (for pagination).
+        per_day_limit: DynamoDB Limit per date query (default 500).
+
+    Returns:
+        Filtered list of feedback items, sliced by offset/limit.
+    """
+    if not feedback_table:
+        logger.warning("No feedback table provided, returning empty list")
+        return []
+
+    target = offset + limit
+    items = _fetch_and_filter(
+        feedback_table,
+        days=min(days, MAX_LOOKBACK_DAYS),
+        sources=sources or [],
+        categories=categories or [],
+        sentiments=sentiments or [],
+        fetch_ceiling=target * 3,
+        per_day_limit=per_day_limit,
+    )
+    return items[offset:offset + limit]
+
+
+def query_feedback_page(
+    feedback_table,
+    days: int = 30,
+    sources: list[str] | None = None,
+    categories: list[str] | None = None,
+    sentiments: list[str] | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    per_day_limit: int = 500,
+) -> tuple[list[dict], int]:
+    """Query a page of feedback items and return the total count.
+
+    Same as :func:`query_feedback_by_date` but scans all matching dates
+    to return an accurate total count for pagination.
+
+    Returns:
+        Tuple of (page_items, total_count).
+    """
+    if not feedback_table:
+        return [], 0
+
+    # fetch_ceiling=0 disables early break so we get the true total
+    items = _fetch_and_filter(
+        feedback_table,
+        days=min(days, MAX_LOOKBACK_DAYS),
+        sources=sources or [],
+        categories=categories or [],
+        sentiments=sentiments or [],
+        fetch_ceiling=0,
+        per_day_limit=per_day_limit,
+    )
+    total = len(items)
+    page = items[offset:offset + limit]
+    return page, total
+
+
+def get_feedback_context(feedback_table, filters: dict, limit: int = 50) -> list[dict]:
+    """Get feedback items based on filters for LLM context.
+
+    Thin wrapper around :func:`query_feedback_by_date` that unpacks a
+    filters dict.  Kept for backward compatibility with callers that pass
+    a dict (research handler, projects API, persona generator).
+
+    Args:
+        feedback_table: DynamoDB Table resource for feedback
+        filters: Dict with keys: days, categories, sentiments, sources
+        limit: Maximum number of items to return
+
+    Returns:
+        List of feedback items matching filters
+    """
+    return query_feedback_by_date(
+        feedback_table,
+        days=filters.get('days', 30),
+        sources=filters.get('sources'),
+        categories=filters.get('categories'),
+        sentiments=filters.get('sentiments'),
+        limit=limit,
+    )
 def format_feedback_for_llm(items: list[dict]) -> str:
     """Format feedback items for LLM context with rich details.
     

@@ -292,7 +292,8 @@ def api_list_jobs(project_id: str):
         ScanIndexForward=False, Limit=50
     )
     jobs = [{
-        'job_id': i.get('job_id'), 'job_type': i.get('job_type'), 'status': i.get('status'),
+        'job_id': i.get('job_id') or i.get('sk', '').removeprefix('JOB#') or None,
+        'job_type': i.get('job_type'), 'status': i.get('status'),
         'progress': i.get('progress', 0), 'current_step': i.get('current_step'),
         'created_at': i.get('created_at'), 'updated_at': i.get('updated_at'),
         'completed_at': i.get('completed_at'), 'error': i.get('error'), 'result': i.get('result')

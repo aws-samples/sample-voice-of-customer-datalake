@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "name": "Quality Review on Agent Stop",
+  "description": "When the agent finishes a task, review all changes for code quality — duplicates, logic errors, missing error handling, naming. Fix blocking issues immediately. Stay silent if everything is clean.",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "You just finished a task. Before the developer commits, do a code quality review of all the files you created or modified in this session. Use getDiagnostics and read the changed files if needed.\n\nCheck for:\n- Duplicated code across files that should be shared\n- Logic errors, off-by-one, missing edge cases\n- Missing error handling (try/catch, unhandled promises)\n- Inconsistent naming conventions with the codebase\n- Code that contradicts existing patterns\n\nDo NOT check for missing tests — a separate test generation agent handles that.\n\nIf you find a blocking issue (duplicate code, logic bug, missing error handling), fix it immediately. If you notice minor suggestions, mention them briefly. If everything is clean, say nothing — do not output confirmation messages."
+  },
+  "workspaceFolderName": "sample-voice-of-customer-datalake",
+  "shortName": "quality-review-on-stop"
+}

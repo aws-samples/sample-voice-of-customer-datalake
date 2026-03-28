@@ -70,6 +70,9 @@ describe('Feedback', () => {
     vi.clearAllMocks()
     mockGetFeedback.mockResolvedValue({
       count: 3,
+      total: 3,
+      offset: 0,
+      limit: 24,
       items: mockFeedbackItems,
     })
     mockGetEntities.mockResolvedValue({
@@ -136,7 +139,7 @@ describe('Feedback', () => {
     })
 
     it('displays empty state when no feedback found', async () => {
-      mockGetFeedback.mockResolvedValue({ count: 0, items: [] })
+      mockGetFeedback.mockResolvedValue({ count: 0, total: 0, offset: 0, limit: 24, items: [] })
       
       render(<Feedback />, { wrapper: createWrapper() })
       
@@ -360,7 +363,8 @@ describe('Feedback', () => {
           source: undefined,
           sentiment: undefined,
           category: undefined,
-          limit: 100,
+          limit: 24,
+          offset: 0,
         })
       })
     })

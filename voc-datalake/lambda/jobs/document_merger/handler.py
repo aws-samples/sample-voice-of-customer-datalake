@@ -6,7 +6,7 @@ Merges multiple documents into a single document using LLM.
 
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 # Add parent directory to path for shared module imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -17,6 +17,7 @@ from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
 from shared.aws import get_dynamodb_resource
 from shared.converse import converse
+from shared.feedback import query_feedback_by_date
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -82,23 +83,13 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
         feedback_categories = merge_config.get('feedback_categories', [])
         days = merge_config.get('days', 30)
         
-        feedback_items = []
-        current_date = datetime.now(timezone.utc)
-        for i in range(min(days, 14)):
-            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            resp = feedback_table.query(
-                IndexName='gsi1-by-date',
-                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=100, ScanIndexForward=False
-            )
-            feedback_items.extend(resp.get('Items', []))
-            if len(feedback_items) >= 100:
-                break
-        
-        if feedback_sources:
-            feedback_items = [f for f in feedback_items if f.get('source_platform') in feedback_sources]
-        if feedback_categories:
-            feedback_items = [f for f in feedback_items if f.get('category') in feedback_categories]
+        feedback_items = query_feedback_by_date(
+            feedback_table,
+            days=days,
+            sources=feedback_sources or None,
+            categories=feedback_categories or None,
+            limit=100,
+        )
         
         if feedback_items:
             feedback_text = "## ADDITIONAL CUSTOMER FEEDBACK\n\n"

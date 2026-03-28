@@ -79,7 +79,7 @@ describe('API Client', () => {
           impact_area: 'product',
         },
       ]
-      const mockResponse = { count: 2, items: mockItems }
+      const mockResponse = { count: 2, total: 2, offset: 0, limit: 50, items: mockItems }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockResponse),
@@ -111,7 +111,7 @@ describe('API Client', () => {
     it('includes days, source, and category filter parameters', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ count: 0, items: [] }),
+        json: () => Promise.resolve({ count: 0, total: 0, offset: 0, limit: 50, items: [] }),
       })
 
       await api.getFeedback({ 
@@ -139,7 +139,7 @@ describe('API Client', () => {
     it('includes sentiment and limit filter parameters', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ count: 0, items: [] }),
+        json: () => Promise.resolve({ count: 0, total: 0, offset: 0, limit: 50, items: [] }),
       })
 
       await api.getFeedback({ 
@@ -163,7 +163,7 @@ describe('API Client', () => {
     it('omits undefined parameters from query string', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ count: 0, items: [] }),
+        json: () => Promise.resolve({ count: 0, total: 0, offset: 0, limit: 50, items: [] }),
       })
 
       await api.getFeedback({ days: 7 })
@@ -178,7 +178,7 @@ describe('API Client', () => {
     it('refreshes session and retries on 401 response', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce({ ok: false, status: 401 })
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ count: 0, items: [] }) })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ count: 0, total: 0, offset: 0, limit: 50, items: [] }) })
 
       await api.getFeedback({ days: 7 })
 

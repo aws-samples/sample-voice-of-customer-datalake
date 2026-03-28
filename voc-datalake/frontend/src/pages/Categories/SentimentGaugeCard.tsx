@@ -50,7 +50,7 @@ export function SentimentGauge({
               <Tooltip
                 formatter={(value, name) => {
                   const nameStr = String(name)
-                  const pct = percentages[nameStr].toFixed(1)
+                  const pct = (percentages[nameStr] ?? 0).toFixed(1)
                   return [`${value} (${pct}%)`, name]
                 }}
               />

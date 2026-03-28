@@ -1,7 +1,9 @@
 /**
  * Shared picker UI components used by AutoseedCard and AutoseedContent.
  */
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  ChevronDown, ChevronRight,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 interface PickerSectionProps {

@@ -20,6 +20,10 @@ interface FeedbackResultsProps {
   readonly sentimentFilter: SentimentFilter
   readonly minRating: number
   readonly onExport: () => void
+  readonly totalCount?: number
+  readonly hasMore?: boolean
+  readonly isFetchingMore?: boolean
+  readonly onLoadMore?: () => void
 }
 
 function buildFilterDescription(
@@ -46,6 +50,10 @@ export function FeedbackResults({
   sentimentFilter,
   minRating,
   onExport,
+  totalCount,
+  hasMore = false,
+  isFetchingMore = false,
+  onLoadMore,
 }: FeedbackResultsProps) {
   const { t } = useTranslation('categories')
   const filterDescription = buildFilterDescription({
@@ -67,7 +75,9 @@ export function FeedbackResults({
         <div className="min-w-0">
           <h2 className="text-base sm:text-lg font-semibold">
             {t('feedbackResults')}
-            <span className="ml-2 text-sm font-normal text-gray-500">({filteredFeedback.length})</span>
+            <span className="ml-2 text-sm font-normal text-gray-500">
+              ({filteredFeedback.length}{totalCount != null && totalCount > filteredFeedback.length ? ` of ${totalCount}` : ''})
+            </span>
           </h2>
           <p className="text-xs sm:text-sm text-gray-500 truncate">
             {filterDescription}
@@ -97,6 +107,17 @@ export function FeedbackResults({
         </div>
       </div>
       <FeedbackContentDisplay isLoading={feedbackLoading} items={filteredFeedback} viewMode={viewMode} />
+      {hasMore && onLoadMore != null ? (
+        <div className="flex justify-center pt-3 pb-1">
+          <button
+            onClick={onLoadMore}
+            disabled={isFetchingMore}
+            className="btn btn-secondary text-sm px-6 py-2 disabled:opacity-50"
+          >
+            {isFetchingMore ? 'Loading...' : 'Load more'}
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

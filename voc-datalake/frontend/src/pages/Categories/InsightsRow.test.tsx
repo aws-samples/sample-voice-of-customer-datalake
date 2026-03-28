@@ -43,6 +43,11 @@ describe('InsightsRow', () => {
     expect(screen.getByText('1 category')).toBeInTheDocument()
   })
 
+  it('returns null when categoryData is empty array', () => {
+    const { container } = render(<InsightsRow categoryData={[]} totalIssues={0} />)
+    expect(container.innerHTML).toBe('')
+  })
+
   it('handles single category', () => {
     const single: CategoryData[] = [{ name: 'delivery', value: 100, color: '#ef4444' }]
     render(<InsightsRow categoryData={single} totalIssues={100} />)
@@ -59,5 +64,14 @@ describe('InsightsRow', () => {
     render(<InsightsRow categoryData={categories} totalIssues={50} />)
 
     expect(screen.getAllByText('customer support')).toHaveLength(2)
+  })
+
+  it('shows 0% when totalIssues is zero', () => {
+    const categories: CategoryData[] = [
+      { name: 'delivery', value: 0, color: '#ef4444' },
+    ]
+    render(<InsightsRow categoryData={categories} totalIssues={0} />)
+
+    expect(screen.getByText('0 issues (0%)')).toBeInTheDocument()
   })
 })

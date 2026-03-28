@@ -118,9 +118,24 @@ function UserAvatar({
   )
 }
 
-function getUserInitial(email?: string): string {
-  const initial = email?.charAt(0).toUpperCase()
+function getUserInitial(user?: {
+  name?: string
+  email?: string
+}): string {
+  const source = user?.name ?? user?.email
+  const initial = source?.charAt(0).toUpperCase()
   return initial != null && initial !== '' ? initial : 'U'
+}
+
+// Resolve the best display label for the user
+function getUserDisplayName(user: {
+  name?: string
+  email?: string
+  username?: string
+}): string {
+  if (user.name != null && user.name !== '') return user.name
+  if (user.email != null && user.email !== '') return user.email
+  return user.username ?? ''
 }
 
 // Profile button - renders expanded or collapsed variant
@@ -131,6 +146,7 @@ function ProfileButton({
   onShowProfile,
 }: Readonly<{
   user: {
+    name?: string;
     email?: string;
     username?: string
   }
@@ -146,7 +162,7 @@ function ProfileButton({
         title="View profile"
       >
         <UserAvatar initial={userInitial} size="sm" />
-        <span className="text-gray-300 truncate">{user.email != null && user.email !== '' || user.username}</span>
+        <span className="text-gray-300 truncate">{getUserDisplayName(user)}</span>
       </button>
     )
   }
@@ -170,6 +186,7 @@ export function UserSection({
   onLogout,
 }: Readonly<{
   user: {
+    name?: string;
     email?: string;
     username?: string
   }
@@ -181,7 +198,7 @@ export function UserSection({
   const { t } = useTranslation()
   const showExpanded = !sidebarCollapsed || mobileMenuOpen
   const showCollapsed = sidebarCollapsed && !mobileMenuOpen
-  const userInitial = getUserInitial(user.email)
+  const userInitial = getUserInitial(user)
 
   return (
     <div className={clsx('border-t border-gray-700 p-4 flex-shrink-0', showCollapsed && 'lg:px-2')}>
@@ -227,6 +244,7 @@ export function Sidebar({
   urgentCount: number
   isAuthenticated: boolean
   user: {
+    name?: string;
     email?: string;
     username?: string
   } | null

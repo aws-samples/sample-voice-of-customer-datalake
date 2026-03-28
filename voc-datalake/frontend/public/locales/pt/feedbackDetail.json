@@ -19,34 +19,34 @@
   "possibleRootCause": "Possível Causa Raiz:",
   "problemAnalysis": "Análise do Problema",
   "rating": "Avaliação",
+  "responses": {
+    "customer_support": [
+      "Lamentamos saber sobre sua experiência com nossa equipe de suporte. Este não é o nível de serviço que buscamos. Gostaríamos de corrigir isso.",
+      "Obrigado pelo seu feedback. Levamos o atendimento ao cliente a sério e usaremos isso para melhorar nosso treinamento."
+    ],
+    "default": [
+      "Obrigado por dedicar seu tempo para compartilhar seu feedback. Valorizamos sua opinião e estamos comprometidos em melhorar.",
+      "Agradecemos por nos informar. Nossa equipe revisará isso e trabalhará para atender suas preocupações."
+    ],
+    "delivery": [
+      "Pedimos sinceras desculpas pelo atraso na sua entrega. Estamos investigando imediatamente e garantiremos que seu pedido chegue o mais rápido possível.",
+      "Obrigado por nos informar. Entendemos como problemas de entrega podem ser frustrantes. Nossa equipe está investigando e entrará em contato em breve."
+    ],
+    "pricing": [
+      "Agradecemos seu feedback sobre nossos preços. Nos esforçamos para oferecer valor competitivo e ficaremos felizes em discutir as opções disponíveis.",
+      "Obrigado por compartilhar suas preocupações. Revisamos regularmente nossos preços para garantir que estamos oferecendo um valor justo."
+    ],
+    "product_quality": [
+      "Pedimos desculpas por nosso produto não ter atendido às suas expectativas. Qualidade é nossa prioridade máxima e gostaríamos de oferecer uma substituição ou reembolso.",
+      "Obrigado por nos informar sobre este problema. Estamos comprometidos com a qualidade e gostaríamos de resolver isso para você."
+    ]
+  },
   "show": "Mostrar",
   "similar": "Similar",
   "similarFeedback": "Feedback Similar",
   "subcategory": "Subcategoria",
   "suggestedResponses": "Respostas Sugeridas",
   "suggestedResponsesHint": "Copie essas respostas para compartilhar com sua equipe ou use como ponto de partida para sua resposta.",
-  "responses": {
-    "delivery": [
-      "Pedimos sinceras desculpas pelo atraso na sua entrega. Estamos investigando imediatamente e garantiremos que seu pedido chegue o mais rápido possível.",
-      "Obrigado por nos informar. Entendemos como problemas de entrega podem ser frustrantes. Nossa equipe está investigando e entrará em contato em breve."
-    ],
-    "customer_support": [
-      "Lamentamos saber sobre sua experiência com nossa equipe de suporte. Este não é o nível de serviço que buscamos. Gostaríamos de corrigir isso.",
-      "Obrigado pelo seu feedback. Levamos o atendimento ao cliente a sério e usaremos isso para melhorar nosso treinamento."
-    ],
-    "product_quality": [
-      "Pedimos desculpas por nosso produto não ter atendido às suas expectativas. Qualidade é nossa prioridade máxima e gostaríamos de oferecer uma substituição ou reembolso.",
-      "Obrigado por nos informar sobre este problema. Estamos comprometidos com a qualidade e gostaríamos de resolver isso para você."
-    ],
-    "pricing": [
-      "Agradecemos seu feedback sobre nossos preços. Nos esforçamos para oferecer valor competitivo e ficaremos felizes em discutir as opções disponíveis.",
-      "Obrigado por compartilhar suas preocupações. Revisamos regularmente nossos preços para garantir que estamos oferecendo um valor justo."
-    ],
-    "default": [
-      "Obrigado por dedicar seu tempo para compartilhar seu feedback. Valorizamos sua opinião e estamos comprometidos em melhorar.",
-      "Agradecemos por nos informar. Nossa equipe revisará isso e trabalhará para atender suas preocupações."
-    ]
-  },
   "tagsAndFilters": "Tags e Filtros",
   "translatedFrom": "Traduzido de {{language}}",
   "type": "Tipo",

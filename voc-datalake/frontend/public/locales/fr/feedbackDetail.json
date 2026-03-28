@@ -19,34 +19,34 @@
   "possibleRootCause": "Cause racine possible :",
   "problemAnalysis": "Analyse du problème",
   "rating": "Évaluation",
+  "responses": {
+    "customer_support": [
+      "Nous sommes désolés d'apprendre votre expérience avec notre équipe de support. Ce n'est pas le niveau de service que nous visons. Nous aimerions rectifier cela.",
+      "Merci pour vos commentaires. Nous prenons le service client très au sérieux et utiliserons cela pour améliorer notre formation."
+    ],
+    "default": [
+      "Merci d'avoir pris le temps de partager vos commentaires. Nous apprécions votre contribution et nous nous engageons à nous améliorer.",
+      "Nous vous remercions de nous avoir signalé cela. Notre équipe examinera cela et travaillera à répondre à vos préoccupations."
+    ],
+    "delivery": [
+      "Nous nous excusons sincèrement pour le retard de votre livraison. Nous examinons cela immédiatement et veillerons à ce que votre commande vous parvienne dès que possible.",
+      "Merci de nous avoir signalé ce problème. Nous comprenons à quel point les problèmes de livraison peuvent être frustrants. Notre équipe enquête et vous recontactera sous peu."
+    ],
+    "pricing": [
+      "Nous apprécions vos commentaires sur nos tarifs. Nous nous efforçons d'offrir une valeur compétitive et serions heureux de discuter des options disponibles.",
+      "Merci de partager vos préoccupations. Nous révisons régulièrement nos tarifs pour nous assurer d'offrir un rapport qualité-prix équitable."
+    ],
+    "product_quality": [
+      "Nous nous excusons que notre produit n'ait pas répondu à vos attentes. La qualité est notre priorité absolue et nous aimerions vous proposer un remplacement ou un remboursement.",
+      "Merci de nous avoir informés de ce problème. Nous sommes engagés envers la qualité et aimerions résoudre cela pour vous."
+    ]
+  },
   "show": "Afficher",
   "similar": "Similaire",
   "similarFeedback": "Commentaires similaires",
   "subcategory": "Sous-catégorie",
   "suggestedResponses": "Réponses suggérées",
   "suggestedResponsesHint": "Copiez ces réponses pour les partager avec votre équipe ou les utiliser comme point de départ pour votre réponse.",
-  "responses": {
-    "delivery": [
-      "Nous nous excusons sincèrement pour le retard de votre livraison. Nous examinons cela immédiatement et veillerons à ce que votre commande vous parvienne dès que possible.",
-      "Merci de nous avoir signalé ce problème. Nous comprenons à quel point les problèmes de livraison peuvent être frustrants. Notre équipe enquête et vous recontactera sous peu."
-    ],
-    "customer_support": [
-      "Nous sommes désolés d'apprendre votre expérience avec notre équipe de support. Ce n'est pas le niveau de service que nous visons. Nous aimerions rectifier cela.",
-      "Merci pour vos commentaires. Nous prenons le service client très au sérieux et utiliserons cela pour améliorer notre formation."
-    ],
-    "product_quality": [
-      "Nous nous excusons que notre produit n'ait pas répondu à vos attentes. La qualité est notre priorité absolue et nous aimerions vous proposer un remplacement ou un remboursement.",
-      "Merci de nous avoir informés de ce problème. Nous sommes engagés envers la qualité et aimerions résoudre cela pour vous."
-    ],
-    "pricing": [
-      "Nous apprécions vos commentaires sur nos tarifs. Nous nous efforçons d'offrir une valeur compétitive et serions heureux de discuter des options disponibles.",
-      "Merci de partager vos préoccupations. Nous révisons régulièrement nos tarifs pour nous assurer d'offrir un rapport qualité-prix équitable."
-    ],
-    "default": [
-      "Merci d'avoir pris le temps de partager vos commentaires. Nous apprécions votre contribution et nous nous engageons à nous améliorer.",
-      "Nous vous remercions de nous avoir signalé cela. Notre équipe examinera cela et travaillera à répondre à vos préoccupations."
-    ]
-  },
   "tagsAndFilters": "Étiquettes et filtres",
   "translatedFrom": "Traduit de {{language}}",
   "type": "Type",

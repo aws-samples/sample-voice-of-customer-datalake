@@ -21,6 +21,7 @@ import { SourceFilter } from './SourceFilter'
 import {
   categoryColors, getSentimentColor,
 } from './types'
+import { useCategoryFeedback } from './useCategoryFeedback'
 import { WordCloudCard } from './WordCloudCard'
 import type {
   SentimentFilter, ViewMode, CategoryData, SentimentData, WordCloudItem,
@@ -44,7 +45,7 @@ function extractWordsFromIssues(issuesData: Record<string, number>): Record<stri
     const words = issue.toLowerCase().replaceAll(/[^a-z\s]/g, '').split(/\s+/).filter(isValidWord)
     const countNum = typeof count === 'number' ? count : 0
     for (const word of words) {
-      wordCounts[word] = wordCounts[word] + countNum
+      wordCounts[word] = (wordCounts[word] ?? 0) + countNum
     }
   }
   return wordCounts
@@ -60,7 +61,7 @@ function buildWordCloudData(entities: {
   for (const [cat, count] of Object.entries(entities.categories ?? {})) {
     const word = cat.replace('_', ' ')
     const countNum = typeof count === 'number' ? count : 0
-    wordCounts[word] = wordCounts[word] + countNum
+    wordCounts[word] = (wordCounts[word] ?? 0) + countNum
   }
 
   return Object.entries(wordCounts)
@@ -144,21 +145,6 @@ function safePDFExport<T>(exportFn: (data: T) => void, data: T): void {
   }
 }
 
-function buildFeedbackQueryParams(
-  days: number,
-  selectedSource: string | null,
-  selectedCategories: string[],
-  sentimentFilter: SentimentFilter,
-) {
-  return {
-    days,
-    source: selectedSource ?? undefined,
-    category: selectedCategories.length > 0 ? selectedCategories.join(',') : undefined,
-    sentiment: sentimentFilter === 'all' ? undefined : sentimentFilter,
-    limit: 100,
-  }
-}
-
 export default function Categories() {
   const { t } = useTranslation('categories')
   const {
@@ -211,16 +197,21 @@ export default function Categories() {
     enabled: config.apiEndpoint.length > 0,
   })
 
-  const shouldFetchFeedback = selectedCategories.length > 0 || selectedKeywords.length > 0
-
   const {
-    data: feedbackData, isLoading: feedbackLoading,
-  } = useQuery({
-    queryKey: ['feedback', days, selectedCategories, sentimentFilter, selectedKeywords, selectedSource],
-    queryFn: () => api.getFeedback(
-      buildFeedbackQueryParams(days, selectedSource, selectedCategories, sentimentFilter),
-    ),
-    enabled: config.apiEndpoint.length > 0 && shouldFetchFeedback,
+    allItems: allFeedbackItems,
+    total: feedbackTotal,
+    isLoading: feedbackLoading,
+    shouldFetch: shouldFetchFeedback,
+    hasMore: feedbackHasMore,
+    isFetchingMore,
+    loadMore: loadMoreFeedback,
+  } = useCategoryFeedback({
+    days,
+    selectedSource,
+    selectedCategories,
+    selectedKeywords,
+    sentimentFilter,
+    enabled: config.apiEndpoint.length > 0,
   })
 
   // Computed data
@@ -261,8 +252,8 @@ export default function Categories() {
   )
 
   const filteredFeedback = useMemo(() => {
-    if (!feedbackData?.items) return []
-    return feedbackData.items.filter((item) =>
+    if (allFeedbackItems.length === 0) return []
+    return allFeedbackItems.filter((item) =>
       matchesFeedbackFilters(item, {
         selectedCategories,
         selectedKeywords,
@@ -271,7 +262,7 @@ export default function Categories() {
         minRating,
       }),
     )
-  }, [feedbackData, minRating, selectedCategories, selectedKeywords, selectedSource, sentimentFilter])
+  }, [allFeedbackItems, minRating, selectedCategories, selectedKeywords, selectedSource, sentimentFilter])
 
   // Handlers
   const toggleCategory = (category: string) => {
@@ -299,7 +290,7 @@ export default function Categories() {
   })
 
   const exportData = () => {
-    exportFeedbackCSV(filteredFeedback, feedbackData?.items ?? [])
+    exportFeedbackCSV(filteredFeedback, allFeedbackItems)
   }
 
   if (config.apiEndpoint === '') {
@@ -393,6 +384,10 @@ export default function Categories() {
         sentimentFilter={sentimentFilter}
         minRating={minRating}
         onExport={exportData}
+        totalCount={feedbackTotal}
+        hasMore={feedbackHasMore}
+        isFetchingMore={isFetchingMore}
+        onLoadMore={loadMoreFeedback}
       /> : null}
     </div>
   )

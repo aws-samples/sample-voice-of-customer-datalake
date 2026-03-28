@@ -6,6 +6,7 @@
  * - Filter by source, sentiment, category, urgency
  * - URL-synced filter state for shareable links
  * - Dynamic filter options from entities API
+ * - Server-side pagination with "Load more"
  *
  * @module pages/Feedback
  */
@@ -25,12 +26,12 @@ import FeedbackCard from '../../components/FeedbackCard'
 import PageLoader from '../../components/PageLoader'
 import { useConfigStore } from '../../store/configStore'
 import { generateFeedbackPDF } from './feedbackPdfGenerator'
+import { useFeedbackData } from './useFeedbackData'
 import type { FeedbackItem } from '../../api/types'
 
 const sentiments = ['all', 'positive', 'neutral', 'negative', 'mixed']
 const defaultCategories = ['all', 'delivery', 'customer_support', 'product_quality', 'pricing', 'website', 'app', 'billing', 'returns', 'communication', 'other']
 
-// Empty state component
 function EmptyState() {
   const { t } = useTranslation('feedback')
   return (
@@ -40,7 +41,6 @@ function EmptyState() {
   )
 }
 
-// Feedback grid component
 function FeedbackGrid({ items }: Readonly<{ items: readonly FeedbackItem[] }>) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
@@ -51,40 +51,53 @@ function FeedbackGrid({ items }: Readonly<{ items: readonly FeedbackItem[] }>) {
   )
 }
 
-// Feedback list content - handles loading/empty/list states
 function FeedbackListContent({
-  isLoading, items,
+  isLoading, items, hasMore, isFetchingMore, onLoadMore,
 }: Readonly<{
-  isLoading: boolean;
+  isLoading: boolean
   items: readonly FeedbackItem[]
+  hasMore: boolean
+  isFetchingMore: boolean
+  onLoadMore: () => void
 }>) {
   if (isLoading) return <PageLoader />
   if (items.length === 0) return <EmptyState />
-  return <FeedbackGrid items={items} />
+  return (
+    <>
+      <FeedbackGrid items={items} />
+      {hasMore ? (
+        <div className="flex justify-center pt-2 pb-4">
+          <button
+            onClick={onLoadMore}
+            disabled={isFetchingMore}
+            className="btn btn-secondary text-sm px-6 py-2 disabled:opacity-50"
+          >
+            {isFetchingMore ? 'Loading...' : 'Load more'}
+          </button>
+        </div>
+      ) : null}
+    </>
+  )
 }
 
-// Helper to build sources list from entities
 function buildSourcesList(entitiesData: { entities?: { sources?: Record<string, number> } } | undefined): string[] {
-  if (!entitiesData?.entities?.sources) return ['all']
+  if (entitiesData?.entities?.sources == null) return ['all']
   const sourceNames = Object.keys(entitiesData.entities.sources)
     .sort((a, b) => (entitiesData.entities?.sources?.[b] ?? 0) - (entitiesData.entities?.sources?.[a] ?? 0))
   return ['all', ...sourceNames]
 }
 
-// Helper to build categories list from entities
 function buildCategoriesList(entitiesData: { entities?: { categories?: Record<string, number> } } | undefined): string[] {
-  if (!entitiesData?.entities?.categories) return defaultCategories
+  if (entitiesData?.entities?.categories == null) return defaultCategories
   const categoryNames = Object.keys(entitiesData.entities.categories)
     .sort((a, b) => (entitiesData.entities?.categories?.[b] ?? 0) - (entitiesData.entities?.categories?.[a] ?? 0))
   return ['all', ...categoryNames]
 }
 
-// Helper to check if any filters are active
 function checkHasActiveFilters(filters: FilterState): boolean {
   return Boolean(filters.search) || filters.sourceFilter !== 'all' || filters.sentimentFilter !== 'all' || filters.categoryFilter !== 'all' || filters.showUrgentOnly
 }
 
-// Filter state interface
 interface FilterState {
   search: string
   sourceFilter: string
@@ -93,7 +106,6 @@ interface FilterState {
   showUrgentOnly: boolean
 }
 
-// Filters card component
 function FiltersCard({
   filters,
   sources,
@@ -150,7 +162,6 @@ function FiltersCard({
   )
 }
 
-// Results header component
 function ResultsHeader({
   itemCount,
   totalCount,
@@ -188,123 +199,13 @@ function ResultsHeader({
   )
 }
 
-// Helper to build URL params from filters
 function buildUrlParams(search: string, sourceFilter: string, sentimentFilter: string, categoryFilter: string): URLSearchParams {
   const params = new URLSearchParams()
   if (search !== '') params.set('q', search)
-  if (sourceFilter !== 'all') {
-    params.set('source', sourceFilter)
-  }
-  if (sentimentFilter !== 'all') {
-    params.set('sentiment', sentimentFilter)
-  }
-  if (categoryFilter !== 'all') {
-    params.set('category', categoryFilter)
-  }
+  if (sourceFilter !== 'all') params.set('source', sourceFilter)
+  if (sentimentFilter !== 'all') params.set('sentiment', sentimentFilter)
+  if (categoryFilter !== 'all') params.set('category', categoryFilter)
   return params
-}
-
-// Helper to build feedback query params
-function buildFeedbackQueryParams(
-  days: number,
-  sourceFilter: string,
-  sentimentFilter: string,
-  categoryFilter: string,
-): {
-  days: number;
-  source?: string;
-  sentiment?: string;
-  category?: string;
-  limit: number
-} {
-  return {
-    days,
-    source: sourceFilter === 'all' ? undefined : sourceFilter,
-    sentiment: sentimentFilter === 'all' ? undefined : sentimentFilter,
-    category: categoryFilter === 'all' ? undefined : categoryFilter,
-    limit: 100,
-  }
-}
-
-// Helper to get feedback query function
-function getFeedbackQueryFn(
-  showUrgentOnly: boolean,
-  days: number,
-  feedbackQueryParams: ReturnType<typeof buildFeedbackQueryParams>,
-) {
-  if (showUrgentOnly) {
-    return () => api.getUrgentFeedback({
-      days,
-      limit: 100,
-      source: feedbackQueryParams.source,
-      sentiment: feedbackQueryParams.sentiment,
-      category: feedbackQueryParams.category,
-    })
-  }
-  return () => api.getFeedback(feedbackQueryParams)
-}
-
-interface FeedbackDataResult {
-  data: {
-    items?: FeedbackItem[];
-    count?: number
-  } | undefined
-  isLoading: boolean
-  isSearching: boolean
-}
-
-// Custom hook for feedback data fetching
-interface FeedbackDataParams {
-  hasApiEndpoint: boolean
-  days: number
-  search: string
-  sourceFilter: string
-  sentimentFilter: string
-  categoryFilter: string
-  showUrgentOnly: boolean
-}
-
-function useFeedbackData(params: FeedbackDataParams): FeedbackDataResult {
-  const {
-    hasApiEndpoint, days, search, sourceFilter, sentimentFilter, categoryFilter, showUrgentOnly,
-  } = params
-  const isSearching = search.length >= 2
-  const feedbackQueryParams = buildFeedbackQueryParams(days, sourceFilter, sentimentFilter, categoryFilter)
-  const feedbackQueryFn = getFeedbackQueryFn(showUrgentOnly, days, feedbackQueryParams)
-
-  // Server-side search when search term is provided (includes filters)
-  const searchQuery = useQuery({
-    queryKey: ['feedback-search', search, days, sourceFilter, sentimentFilter, categoryFilter],
-    queryFn: () => api.searchFeedback({
-      q: search,
-      days,
-      limit: 100,
-      source: sourceFilter === 'all' ? undefined : sourceFilter,
-      sentiment: sentimentFilter === 'all' ? undefined : sentimentFilter,
-      category: categoryFilter === 'all' ? undefined : categoryFilter,
-    }),
-    enabled: hasApiEndpoint && isSearching,
-  })
-
-  // Regular feedback query
-  const feedbackQuery = useQuery({
-    queryKey: ['feedback', days, sourceFilter, sentimentFilter, categoryFilter, showUrgentOnly],
-    queryFn: feedbackQueryFn,
-    enabled: hasApiEndpoint && !isSearching,
-  })
-
-  if (isSearching) {
-    return {
-      data: searchQuery.data,
-      isLoading: searchQuery.isLoading,
-      isSearching,
-    }
-  }
-  return {
-    data: feedbackQuery.data,
-    isLoading: feedbackQuery.isLoading,
-    isSearching,
-  }
 }
 
 function buildPDFFilters(filterState: FilterState) {
@@ -317,21 +218,6 @@ function buildPDFFilters(filterState: FilterState) {
   }
 }
 
-function safePDFExport(items: FeedbackItem[], timeRange: string, filterState: FilterState) {
-  try {
-    generateFeedbackPDF({
-      items,
-      timeRange,
-      filters: buildPDFFilters(filterState),
-    })
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.error('PDF export failed:', error)
-    }
-  }
-}
-
-// PDF export button component
 function PDFExportButton({
   items, timeRange, filterState,
 }: Readonly<{
@@ -341,15 +227,19 @@ function PDFExportButton({
 }>) {
   if (items.length === 0) return null
   const exportPDF = () => {
-    safePDFExport(items, timeRange, filterState)
+    try {
+      generateFeedbackPDF({
+        items,
+        timeRange,
+        filters: buildPDFFilters(filterState),
+      })
+    } catch {
+      // PDF generation is best-effort
+    }
   }
   return (
     <div className="flex justify-end">
-      <button
-        onClick={exportPDF}
-        className="btn btn-secondary text-xs sm:text-sm px-3 py-1.5 active:scale-95 flex items-center gap-1.5"
-        title="Export as PDF"
-      >
+      <button onClick={exportPDF} className="btn btn-secondary text-xs sm:text-sm px-3 py-1.5 active:scale-95 flex items-center gap-1.5" title="Export as PDF">
         <FileDown size={14} />
         PDF
       </button>
@@ -366,14 +256,12 @@ export default function Feedback() {
   const [searchParams, setSearchParams] = useSearchParams()
   const hasApiEndpoint = config.apiEndpoint !== ''
 
-  // Initialize from URL params
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [sourceFilter, setSourceFilter] = useState(searchParams.get('source') ?? 'all')
   const [sentimentFilter, setSentimentFilter] = useState(searchParams.get('sentiment') ?? 'all')
   const [categoryFilter, setCategoryFilter] = useState(searchParams.get('category') ?? 'all')
   const [showUrgentOnly, setShowUrgentOnly] = useState(false)
 
-  // Fetch dynamic sources and categories from entities API
   const { data: entitiesData } = useQuery({
     queryKey: ['entities', days],
     queryFn: () => api.getEntities({
@@ -383,21 +271,16 @@ export default function Feedback() {
     enabled: hasApiEndpoint,
   })
 
-  // Build dynamic sources list from entities
   const sources = useMemo(() => buildSourcesList(entitiesData), [entitiesData])
-
-  // Build dynamic categories list from entities
   const categories = useMemo(() => buildCategoriesList(entitiesData), [entitiesData])
 
-  // Update URL when filters change
   useEffect(() => {
     const params = buildUrlParams(search, sourceFilter, sentimentFilter, categoryFilter)
     setSearchParams(params, { replace: true })
   }, [search, sourceFilter, sentimentFilter, categoryFilter, setSearchParams])
 
-  // Fetch feedback data
   const {
-    data: activeData, isLoading: activeLoading,
+    data: activeData, isLoading, isFetchingMore, hasMore, loadMore,
   } = useFeedbackData({
     hasApiEndpoint,
     days,
@@ -408,7 +291,15 @@ export default function Feedback() {
     showUrgentOnly,
   })
 
-  const filteredItems = activeData?.items ?? []
+  const items = activeData?.items ?? []
+  const filterState: FilterState = {
+    search,
+    sourceFilter,
+    sentimentFilter,
+    categoryFilter,
+    showUrgentOnly,
+  }
+  const hasActiveFilters = checkHasActiveFilters(filterState)
 
   const clearFilters = () => {
     setSearch('')
@@ -417,16 +308,6 @@ export default function Feedback() {
     setCategoryFilter('all')
     setShowUrgentOnly(false)
   }
-
-  const filterState: FilterState = {
-    search,
-    sourceFilter,
-    sentimentFilter,
-    categoryFilter,
-    showUrgentOnly,
-  }
-
-  const hasActiveFilters = checkHasActiveFilters(filterState)
 
   if (config.apiEndpoint === '') {
     return (
@@ -448,18 +329,21 @@ export default function Feedback() {
         onCategoryChange={setCategoryFilter}
         onUrgentChange={setShowUrgentOnly}
       />
-
       <ResultsHeader
-        itemCount={filteredItems.length}
-        totalCount={activeData?.count ?? 0}
+        itemCount={items.length}
+        totalCount={activeData?.total ?? 0}
         search={search}
         hasActiveFilters={hasActiveFilters}
         onClearFilters={clearFilters}
       />
-
-      <PDFExportButton items={filteredItems} timeRange={timeRange} filterState={filterState} />
-
-      <FeedbackListContent isLoading={activeLoading} items={filteredItems} />
+      <PDFExportButton items={items} timeRange={timeRange} filterState={filterState} />
+      <FeedbackListContent
+        isLoading={isLoading}
+        items={items}
+        hasMore={hasMore}
+        isFetchingMore={isFetchingMore}
+        onLoadMore={loadMore}
+      />
     </div>
   )
 }

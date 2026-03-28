@@ -29,6 +29,15 @@
   "forQuery": "for \"{{query}}\"",
   "goToSettings": "Go to Settings",
   "loading": "Loading...",
+  "logs": {
+    "daysAgo_one": "logs.daysAgo",
+    "daysAgo_other": "logs.daysAgo",
+    "hoursAgo_one": "logs.hoursAgo",
+    "hoursAgo_other": "logs.hoursAgo",
+    "justNow": "logs.justNow",
+    "minutesAgo_one": "logs.minutesAgo",
+    "minutesAgo_other": "logs.minutesAgo"
+  },
   "metrics": {
     "avgSentiment": "Avg Sentiment",
     "sourcesActive": "Sources Active",
@@ -47,6 +56,12 @@
     "projects": "Projects",
     "scrapers": "Scrapers",
     "settings": "Settings"
+  },
+  "priority": {
+    "high": "priority.high",
+    "low": "priority.low",
+    "medium": "priority.medium",
+    "none": "priority.none"
   },
   "send": "Send",
   "sentiment": {

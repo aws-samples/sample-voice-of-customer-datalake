@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Security Review on Agent Stop",
+  "description": "When the agent finishes a task, review all changes made during the session for security issues — secrets, injection, missing auth, IAM, PII. Fix critical issues immediately. Stay silent if everything is clean.",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "You just finished a task. Before the developer commits, do a security review of all the files you created or modified in this session. Use getDiagnostics and read the changed files if needed.\n\nCheck for:\n- Hardcoded secrets, API keys, tokens, passwords\n- Injection vulnerabilities (SQL, XSS, command injection, prompt injection)\n- Missing input validation or sanitization\n- Overly permissive IAM policies or CORS configs\n- PII exposure in logs or responses\n- Missing authentication/authorization checks\n- Insecure dependencies or patterns\n\nIf you find a CRITICAL security issue, fix it immediately. If you find a minor concern, mention it briefly. If everything is clean, say nothing — do not output confirmation messages."
+  }
+}

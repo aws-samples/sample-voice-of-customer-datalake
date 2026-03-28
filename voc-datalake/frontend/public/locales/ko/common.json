@@ -29,6 +29,12 @@
   "forQuery": "\"{{query}}\" 검색 결과",
   "goToSettings": "설정으로 이동",
   "loading": "로딩 중...",
+  "logs": {
+    "daysAgo_other": "",
+    "hoursAgo_other": "",
+    "justNow": "",
+    "minutesAgo_other": ""
+  },
   "metrics": {
     "avgSentiment": "평균 감정",
     "sourcesActive": "활성 소스",
@@ -47,6 +53,12 @@
     "projects": "프로젝트",
     "scrapers": "스크레이퍼",
     "settings": "설정"
+  },
+  "priority": {
+    "high": "",
+    "low": "",
+    "medium": "",
+    "none": ""
   },
   "send": "보내기",
   "sentiment": {

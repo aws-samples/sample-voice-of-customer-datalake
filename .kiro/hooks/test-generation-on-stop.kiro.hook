@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Test Generation on Agent Stop",
+  "description": "When the agent finishes a task, analyze all changes to classify them as bug fix or feature, then generate targeted tests — regression tests for bugs, behavior tests for features.",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "You just finished a task. Now analyze all the files you created or modified in this session and generate appropriate tests.\n\nFollow this process:\n\n1. READ the changed files to understand what was done.\n\n2. CLASSIFY the change:\n   - Bug fix? Think deeply about WHY the bug happened. What was the root cause? What assumption was wrong? Write a regression test that would FAIL if the fix were reverted. Then think: are there related scenarios with the same flawed assumption? Test those too.\n   - New feature? Think about what the feature does from the caller's perspective. Write tests for: happy path, edge cases (empty input, missing params, boundaries), and error scenarios (what if a dependency fails?).\n   - Refactor or trivial change? Check if existing tests cover it. If yes, just verify they pass. If no tests exist, write characterization tests.\n\n3. CHECK existing tests first — don't duplicate coverage that already exists.\n\n4. WRITE the tests following project conventions:\n   - Python: pytest in the appropriate test/ directory, mock AWS at import boundary\n   - TypeScript: vitest with *.test.ts (unit) or *.component.test.tsx (component)\n   - Name tests as outcomes: 'returns X when Y', not 'test X'\n\n5. RUN the tests to verify they pass. Fix any failures.\n\nIf the change is trivial (config, comments, formatting), skip test generation and say nothing."
+  }
+}

@@ -11,8 +11,10 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { stripTrailingSlashes } from '../../api/baseUrl'
-import { PickerSection, CheckboxItem } from './PickerComponents'
 import { useConfigStore } from '../../store/configStore'
+import {
+  PickerSection, CheckboxItem,
+} from './PickerComponents'
 import type {
   ProjectPersona, ProjectDocument,
 } from '../../api/types'
@@ -238,4 +240,3 @@ Replace \`<YOUR_API_TOKEN>\` with your API token from the MCP Access tab.`, [cur
 }
 
 // --- Sub-components ---
-

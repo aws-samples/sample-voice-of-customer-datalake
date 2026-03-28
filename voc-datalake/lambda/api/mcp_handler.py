@@ -18,6 +18,7 @@ from boto3.dynamodb.conditions import Key
 
 from shared.aws import get_dynamodb_resource
 from shared.api import DecimalEncoder
+from shared.feedback import query_feedback_by_date
 from shared.tokens import hash_token
 from shared.tables import get_projects_table, get_feedback_table, get_aggregates_table
 from projects import autoseed_project
@@ -237,41 +238,18 @@ def _tool_search_feedback(args: dict, _token_info: dict) -> list[dict]:
     query = args.get('query', '').lower()
     limit = min(args.get('limit', 20), 50)
 
-    items = []
-    current_date = datetime.now(timezone.utc)
+    items = query_feedback_by_date(
+        feedback_table,
+        days=days,
+        sources=[source] if source else None,
+        categories=[category] if category else None,
+        sentiments=[sentiment] if sentiment else None,
+        limit=limit,
+    )
 
-    if category and not source:
-        response = feedback_table.query(
-            IndexName='gsi2-by-category',
-            KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{category}'),
-            Limit=limit * 3,
-            ScanIndexForward=False,
-        )
-        items = response.get('Items', [])
-    else:
-        for i in range(days):
-            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            response = feedback_table.query(
-                IndexName='gsi1-by-date',
-                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=500,
-                ScanIndexForward=False,
-            )
-            items.extend(response.get('Items', []))
-            if len(items) >= limit * 5:
-                break
-
-    # Apply filters
-    if source:
-        items = [i for i in items if i.get('source_platform') == source]
-    if category and source:
-        items = [i for i in items if i.get('category') == category]
-    if sentiment:
-        items = [i for i in items if i.get('sentiment_label') == sentiment]
     if query:
         items = [i for i in items if query in (i.get('original_text', '') or '').lower()]
-
-    items = items[:limit]
+        items = items[:limit]
 
     if not items:
         return [{"type": "text", "text": "No feedback items found matching the filters."}]

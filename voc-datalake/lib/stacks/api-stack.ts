@@ -455,7 +455,8 @@ export class VocApiStack extends cdk.Stack {
             `mkdir -p /asset-output/api && ` +
             `cp /asset-input/jobs/${jobFolder}/handler.py /asset-output/ && ` +
             `cp -r /asset-input/shared /asset-output/ && ` +
-            `cp /asset-input/api/projects.py /asset-output/api/`
+            `cp /asset-input/api/projects.py /asset-output/api/ && ` +
+            `cp -r /asset-input/api/prompts /asset-output/prompts`
           ],
           platform: 'linux/arm64',
         },

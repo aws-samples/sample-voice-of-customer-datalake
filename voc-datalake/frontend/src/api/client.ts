@@ -152,17 +152,24 @@ export const api = {
     source?: string;
     category?: string;
     sentiment?: string;
-    limit?: number
+    limit?: number;
+    offset?: number
   }) => {
     const searchParams = buildSearchParams(params)
     return fetchApi<{
       count: number;
+      total: number;
+      offset: number;
+      limit: number;
       items: FeedbackItem[]
     }>(
       `/feedback?${searchParams}`,
       undefined,
       z.object({
         count: z.coerce.number(),
+        total: z.coerce.number(),
+        offset: z.coerce.number(),
+        limit: z.coerce.number(),
         items: z.array(FeedbackItemSchema),
       }),
     )

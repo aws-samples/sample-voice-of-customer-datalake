@@ -82,7 +82,7 @@ export function useMentions(
 
   const getMentionItems = useCallback(() => {
     if (mentionState.type === 'persona') {
-      const filtered = personas.filter((p) => p.name.toLowerCase().includes(mentionState.filter)).slice(0, 6)
+      const filtered = personas.filter((p) => p.name.toLowerCase().includes(mentionState.filter))
       if (personas.length >= 2 && 'all'.includes(mentionState.filter)) {
         const allItem: ProjectPersona = {
           persona_id: ALL_PERSONAS_ID,
@@ -95,7 +95,7 @@ export function useMentions(
       return filtered
     }
     if (mentionState.type === 'document') {
-      return documents.filter((d) => d.title.toLowerCase().includes(mentionState.filter)).slice(0, 6)
+      return documents.filter((d) => d.title.toLowerCase().includes(mentionState.filter))
     }
     return []
   }, [mentionState.type, mentionState.filter, personas, documents])

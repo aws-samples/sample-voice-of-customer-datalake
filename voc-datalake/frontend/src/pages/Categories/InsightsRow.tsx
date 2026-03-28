@@ -13,9 +13,14 @@ export function InsightsRow({
   categoryData, totalIssues,
 }: InsightsRowProps) {
   const { t } = useTranslation('categories')
+  if (categoryData.length === 0) {
+    return null
+  }
+
   const topCategory = categoryData[0]
   const bottomCategory = categoryData.at(-1)
-  const topPercentage = ((topCategory.value / totalIssues) * 100).toFixed(0)
+
+  const topPercentage = totalIssues > 0 ? ((topCategory.value / totalIssues) * 100).toFixed(0) : '0'
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
