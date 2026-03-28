@@ -106,27 +106,17 @@ function AppConfigList({
     }), 3000)
   }
 
-  const { data: allAppConfigs } = useQuery({
+  const { data: allAppConfigs, isLoading: isLoadingApps } = useQuery({
     queryKey: ['all-app-configs', plugins.map((p) => p.id).join(',')],
     queryFn: async () => {
-      const results: Array<{
-        pluginId: string;
-        apps: AppConfig[]
-      }> = []
-      for (const plugin of plugins) {
+      const results = await Promise.all(plugins.map(async (plugin) => {
         try {
           const response = await api.getAppConfigs(plugin.id)
-          results.push({
-            pluginId: plugin.id,
-            apps: response.apps,
-          })
+          return { pluginId: plugin.id, apps: response.apps }
         } catch {
-          results.push({
-            pluginId: plugin.id,
-            apps: [],
-          })
+          return { pluginId: plugin.id, apps: [] as AppConfig[] }
         }
-      }
+      }))
       return results
     },
     enabled: config.apiEndpoint.length > 0 && plugins.length > 0,
@@ -145,6 +135,13 @@ function AppConfigList({
       plugin,
     })
   }
+
+  if (isLoadingApps) return (
+    <div className="card border-2 border-purple-200 bg-purple-50/30 flex items-center justify-center py-8">
+      <Loader2 className="animate-spin text-purple-400 mr-2" size={20} />
+      <span className="text-sm text-purple-500">Loading app configurations…</span>
+    </div>
+  )
 
   if (allApps.length === 0) return null
 

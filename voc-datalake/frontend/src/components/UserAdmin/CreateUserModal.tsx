@@ -24,7 +24,8 @@ export default function CreateUserModal({
 }: CreateUserModalProps) {
   const { t } = useTranslation('components')
   const [email, setEmail] = useState('')
-  const [name, setName] = useState('')
+  const [givenName, setGivenName] = useState('')
+  const [familyName, setFamilyName] = useState('')
   const [group, setGroup] = useState<UserGroup>('users')
   const [error, setError] = useState('')
 
@@ -32,13 +33,15 @@ export default function CreateUserModal({
     mutationFn: () => api.createUser({
       username: email,
       email,
-      name,
+      given_name: givenName,
+      family_name: familyName,
       group,
     }),
     onSuccess: (data) => {
       if (data.success) {
         setEmail('')
-        setName('')
+        setGivenName('')
+        setFamilyName('')
         setGroup('users')
         setError('')
         onSuccess()
@@ -81,13 +84,26 @@ export default function CreateUserModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('userAdmin.nameLabel')}
+              {t('userAdmin.firstNameLabel')}
             </label>
             <input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="John Doe"
+              value={givenName}
+              onChange={(e) => setGivenName(e.target.value)}
+              placeholder="Matias"
+              className="input"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {t('userAdmin.lastNameLabel')}
+            </label>
+            <input
+              type="text"
+              value={familyName}
+              onChange={(e) => setFamilyName(e.target.value)}
+              placeholder="Undurraga"
               className="input"
             />
           </div>

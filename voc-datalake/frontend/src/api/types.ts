@@ -324,6 +324,8 @@ export interface CognitoUser {
   username: string
   email: string
   name: string
+  given_name: string
+  family_name: string
   status: string
   enabled: boolean
   groups: string[]

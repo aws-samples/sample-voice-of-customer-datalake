@@ -113,7 +113,7 @@ function TrendChart({ dailyTotals }: Readonly<TrendChartProps>) {
     <div className="card !p-4 sm:!p-6">
       <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('feedbackVolumeTrend')}</h3>
       <div className="h-[200px] sm:h-[300px] -mx-2 sm:mx-0">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <LineChart data={sortedData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
@@ -164,7 +164,7 @@ function SentimentChart({ sentiment }: Readonly<SentimentChartProps>) {
     <div className="card !p-4 sm:!p-6">
       <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{td('sentimentDistribution')}</h3>
       <div className="h-[200px] sm:h-[300px]">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <PieChart>
             <Pie
               data={pieData}
@@ -207,7 +207,7 @@ function CategoryChart({ categories }: Readonly<CategoryChartProps>) {
     <div className="card !p-4 sm:!p-6">
       <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('topIssueCategories')}</h3>
       <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <BarChart data={barData} layout="vertical" margin={{
             left: 0,
             right: 10,
@@ -243,7 +243,7 @@ function SourceChart({ sources }: Readonly<SourceChartProps>) {
     <div className="card !p-4 sm:!p-6">
       <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('feedbackBySource')}</h3>
       <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <BarChart data={barData} margin={{
             left: 0,
             right: 10,

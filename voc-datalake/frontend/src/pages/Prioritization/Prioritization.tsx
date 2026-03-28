@@ -40,12 +40,12 @@ function StatsCards({
 }) {
   const { t } = useTranslation('prioritization')
   const highPriority = allPRFAQs.filter((p) => {
-    const s = scores[p.document_id]; return calculatePriorityScore(s) >= 4
+    const s = getScore(scores, p.document_id); return calculatePriorityScore(s) >= 4
   }).length
   const mediumPriority = allPRFAQs.filter((p) => {
-    const s = scores[p.document_id]; return calculatePriorityScore(s) >= 3 && calculatePriorityScore(s) < 4
+    const s = getScore(scores, p.document_id); return calculatePriorityScore(s) >= 3 && calculatePriorityScore(s) < 4
   }).length
-  const notScored = allPRFAQs.filter((p) => scores[p.document_id].impact === 0).length
+  const notScored = allPRFAQs.filter((p) => getScore(scores, p.document_id).impact === 0).length
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
@@ -228,7 +228,7 @@ export default function Prioritization() {
     mutationFn: () => {
       const changedScores: Record<string, PrioritizationScore> = {}
       for (const docId of changedDocIds) {
-        changedScores[docId] = scores[docId]
+        changedScores[docId] = getScore(scores, docId)
       }
       return api.patchPrioritizationScores(changedScores)
     },

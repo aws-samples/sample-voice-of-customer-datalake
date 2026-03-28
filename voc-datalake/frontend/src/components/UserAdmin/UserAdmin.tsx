@@ -26,6 +26,7 @@ import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import ConfirmModal from '../ConfirmModal'
 import CreateUserModal from './CreateUserModal'
+import EditUserModal from './EditUserModal'
 import {
   UsersTable, UsersCards,
 } from './UserAdminComponents'
@@ -70,6 +71,7 @@ export default function UserAdmin() {
   const { t } = useTranslation('components')
   const queryClient = useQueryClient()
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingUser, setEditingUser] = useState<CognitoUser | null>(null)
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
@@ -160,6 +162,10 @@ export default function UserAdmin() {
   }
 
   const handleAction = (type: ActionType, user: CognitoUser) => {
+    if (type === 'edit') {
+      setEditingUser(user)
+      return
+    }
     setConfirmAction({
       type,
       user,
@@ -226,6 +232,13 @@ export default function UserAdmin() {
       <CreateUserModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
+        onSuccess={() => void queryClient.invalidateQueries({ queryKey: ['users'] })}
+      />
+
+      <EditUserModal
+        isOpen={editingUser !== null}
+        user={editingUser}
+        onClose={() => setEditingUser(null)}
         onSuccess={() => void queryClient.invalidateQueries({ queryKey: ['users'] })}
       />
 

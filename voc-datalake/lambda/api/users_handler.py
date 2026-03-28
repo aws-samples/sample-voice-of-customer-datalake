@@ -91,6 +91,8 @@ def list_users():
                     'username': user['Username'],
                     'email': attrs.get('email', ''),
                     'name': attrs.get('name', ''),
+                    'given_name': attrs.get('given_name', ''),
+                    'family_name': attrs.get('family_name', ''),
                     'status': user['UserStatus'],
                     'enabled': user['Enabled'],
                     'groups': groups,
@@ -118,6 +120,8 @@ def create_user():
     body = app.current_event.json_body or {}
     email = body.get('email', '').strip()
     name = body.get('name', '').strip()
+    given_name = body.get('given_name', '').strip()
+    family_name = body.get('family_name', '').strip()
     group = body.get('group', 'users')  # Default to users
     
     if not email:
@@ -132,8 +136,15 @@ def create_user():
             {'Name': 'email', 'Value': email},
             {'Name': 'email_verified', 'Value': 'true'},
         ]
-        if name:
-            user_attrs.append({'Name': 'name', 'Value': name})
+        # Build display name from given/family name if provided
+        if given_name:
+            user_attrs.append({'Name': 'given_name', 'Value': given_name})
+        if family_name:
+            user_attrs.append({'Name': 'family_name', 'Value': family_name})
+        # Use given_name + family_name as display name, or fall back to provided name
+        display_name = f'{given_name} {family_name}'.strip() if (given_name or family_name) else name
+        if display_name:
+            user_attrs.append({'Name': 'name', 'Value': display_name})
         
         response = cognito.admin_create_user(
             UserPoolId=USER_POOL_ID,
@@ -151,13 +162,16 @@ def create_user():
             GroupName=group
         )
         
+        display_name = f'{given_name} {family_name}'.strip() if (given_name or family_name) else name
         return {
             'success': True,
             'message': f'User created. Temporary password sent to {email}',
             'user': {
                 'username': username,
                 'email': email,
-                'name': name,
+                'name': display_name,
+                'given_name': given_name,
+                'family_name': family_name,
                 'groups': [group],
                 'status': 'FORCE_CHANGE_PASSWORD',
             }
@@ -167,6 +181,52 @@ def create_user():
         raise ConflictError('A user with this email already exists')
     except Exception as e:
         logger.exception(f'Error creating user: {e}')
+        raise ServiceError(str(e))
+
+
+@app.put('/users/<username>')
+@tracer.capture_method
+def update_user(username: str):
+    """Update user attributes (given_name, family_name)."""
+    require_admin(app.current_event._data)
+
+    body = app.current_event.json_body or {}
+    given_name = body.get('given_name', '').strip()
+    family_name = body.get('family_name', '').strip()
+
+    if not given_name and not family_name:
+        raise ValidationError('At least one of given_name or family_name is required')
+
+    try:
+        user_attrs = []
+        if given_name is not None:
+            user_attrs.append({'Name': 'given_name', 'Value': given_name})
+        if family_name is not None:
+            user_attrs.append({'Name': 'family_name', 'Value': family_name})
+        # Update display name
+        display_name = f'{given_name} {family_name}'.strip()
+        if display_name:
+            user_attrs.append({'Name': 'name', 'Value': display_name})
+
+        cognito.admin_update_user_attributes(
+            UserPoolId=USER_POOL_ID,
+            Username=username,
+            UserAttributes=user_attrs,
+        )
+
+        return {
+            'success': True,
+            'message': 'User updated',
+            'username': username,
+            'given_name': given_name,
+            'family_name': family_name,
+            'name': display_name,
+        }
+
+    except cognito.exceptions.UserNotFoundException:
+        raise NotFoundError('User not found')
+    except Exception as e:
+        logger.exception(f'Error updating user: {e}')
         raise ServiceError(str(e))
 
 

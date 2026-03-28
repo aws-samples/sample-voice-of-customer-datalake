@@ -34,7 +34,7 @@ export function SentimentGauge({
       <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('overallSentiment')}</h2>
       <div className="flex items-center justify-center">
         <div className="relative w-full max-w-[280px]">
-          <ResponsiveContainer width="100%" height={160} minWidth={0} className="sm:!h-[200px]">
+          <ResponsiveContainer width="100%" height={160} minWidth={0} minHeight={0} className="sm:!h-[200px]">
             <PieChart>
               <Pie
                 data={dataWithFill}

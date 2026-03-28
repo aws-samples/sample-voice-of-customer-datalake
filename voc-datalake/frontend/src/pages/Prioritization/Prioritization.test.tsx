@@ -207,6 +207,37 @@ describe('Prioritization', () => {
     })
   })
 
+  describe('regression: missing scores do not crash', () => {
+    /**
+     * Regression test for: TypeError: Cannot read properties of undefined (reading 'impact')
+     * When the API returns no saved scores, StatsCards must not crash accessing scores[id].impact.
+     */
+    it('renders stats cards when scores API returns empty object', async () => {
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+
+      // StatsCards should render without crashing
+      expect(screen.getByText('Total PR/FAQs')).toBeInTheDocument()
+    })
+
+    it('renders stats cards when scores API returns no scores key', async () => {
+      mockGetPrioritizationScores.mockResolvedValue({})
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+
+      expect(screen.getByText('Total PR/FAQs')).toBeInTheDocument()
+    })
+  })
+
   describe('save functionality', () => {
     it('save button is disabled when no changes', async () => {
       renderPrioritization()

@@ -28,6 +28,8 @@ export const logsApi = {
     username: string;
     email: string;
     name?: string;
+    given_name?: string;
+    family_name?: string;
     group: 'admins' | 'users'
   }) =>
     fetchApi<{
@@ -47,6 +49,21 @@ export const logsApi = {
     }>(`/users/${encodeURIComponent(username)}/group`, {
       method: 'PUT',
       body: JSON.stringify({ group }),
+    }),
+
+  updateUser: (username: string, data: {
+    given_name: string;
+    family_name: string
+  }) =>
+    fetchApi<{
+      success: boolean;
+      message: string;
+      given_name: string;
+      family_name: string;
+      name: string
+    }>(`/users/${encodeURIComponent(username)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
 
   resetUserPassword: (username: string) =>

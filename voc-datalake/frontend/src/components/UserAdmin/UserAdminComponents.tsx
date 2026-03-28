@@ -5,13 +5,13 @@
 
 import clsx from 'clsx'
 import {
-  Key, UserX, UserCheck, Trash2,
+  Key, UserX, UserCheck, Trash2, Pencil,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { CognitoUser } from '../../api/types'
 
 type UserGroup = 'admins' | 'users'
-export type ActionType = 'delete' | 'disable' | 'enable' | 'reset'
+export type ActionType = 'delete' | 'disable' | 'enable' | 'reset' | 'edit'
 
 // Status Badge Component
 export function StatusBadge({ user }: Readonly<{ user: CognitoUser }>) {
@@ -82,6 +82,13 @@ export function UserActionButtons({
   return (
     <div className="flex items-center gap-1">
       <button
+        onClick={() => onAction('edit', user)}
+        className={clsx(buttonPadding, 'text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded')}
+        title={t('userAdmin.editUserTitle')}
+      >
+        <Pencil size={iconSize} />
+      </button>
+      <button
         onClick={() => onAction('reset', user)}
         className={clsx(buttonPadding, 'text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded')}
         title={t('userAdmin.resetPasswordTitle')}
@@ -132,7 +139,7 @@ function UserTableRow({
       <td className="px-4 py-3">
         <div>
           <p className="font-medium text-gray-900">{user.email}</p>
-          {user.name === '' ? null : <p className="text-sm text-gray-500">{user.name}</p>}
+          {user.name === '' ? null : <p className="text-sm text-gray-500">{user.given_name || user.family_name ? `${user.given_name} ${user.family_name}`.trim() : user.name}</p>}
         </div>
       </td>
       <td className="px-4 py-3">
@@ -166,7 +173,7 @@ function UserCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="font-medium text-gray-900 truncate">{user.email}</p>
-          {user.name === '' ? null : <p className="text-sm text-gray-500">{user.name}</p>}
+          {user.name === '' ? null : <p className="text-sm text-gray-500">{user.given_name || user.family_name ? `${user.given_name} ${user.family_name}`.trim() : user.name}</p>}
         </div>
         <StatusBadge user={user} />
       </div>

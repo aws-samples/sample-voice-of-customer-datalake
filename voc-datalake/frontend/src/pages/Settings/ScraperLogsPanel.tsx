@@ -77,7 +77,7 @@ function ScraperLogCard({
         <div className="flex items-center gap-2">
           <RefreshCw size={16} className="text-gray-500" />
           <span className="font-medium">{scraperName}</span>
-          <ScraperStatusBadge status={latestRun.status} />
+          {latestRun != null ? <ScraperStatusBadge status={latestRun.status} /> : null}
         </div>
         <ChevronDown size={16} className={clsx('text-gray-400 transition-transform', isExpanded && 'rotate-180')} />
       </button>

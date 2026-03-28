@@ -10,6 +10,15 @@ const mockSaveScraper = vi.fn()
 const mockDeleteScraper = vi.fn()
 const mockRunScraper = vi.fn()
 const mockGetScraperStatus = vi.fn()
+const mockGetAppConfigs = vi.fn()
+
+vi.mock('../../api/client', () => ({
+  api: {
+    getAppConfigs: (source: string) => mockGetAppConfigs(source),
+    deleteAppConfig: vi.fn().mockResolvedValue({ success: true }),
+    runSource: vi.fn().mockResolvedValue({ success: true }),
+  },
+}))
 
 vi.mock('../../api/scrapersApi', () => ({
   scrapersApi: {
@@ -32,6 +41,15 @@ vi.mock('../../store/manualImportStore', () => ({
     setIsModalOpen: vi.fn(),
     isModalOpen: false,
   }),
+}))
+
+const mockPluginManifests = [
+  { id: 'app_reviews_ios', name: 'iOS App Reviews', icon: '🍎', config: [], hasIngestor: true, hasWebhook: false, hasS3Trigger: false, enabled: true },
+  { id: 'app_reviews_android', name: 'Android App Reviews', icon: '🤖', config: [], hasIngestor: true, hasWebhook: false, hasS3Trigger: false, enabled: true },
+]
+
+vi.mock('../../plugins', () => ({
+  getPluginManifests: () => mockPluginManifests,
 }))
 
 // Mock subcomponents
@@ -99,6 +117,7 @@ describe('Scrapers', () => {
     mockSaveScraper.mockResolvedValue({ success: true })
     mockDeleteScraper.mockResolvedValue({ success: true })
     mockRunScraper.mockResolvedValue({ success: true })
+    mockGetAppConfigs.mockResolvedValue({ apps: [] })
   })
 
   describe('rendering', () => {
@@ -273,6 +292,42 @@ describe('Scrapers', () => {
 
       // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
       expect(container.querySelector('.animate-spin')).toBeInTheDocument()
+    })
+  })
+
+  describe('app config loading', () => {
+    it('shows loading placeholder while app configs are fetching', async () => {
+      mockGetAppConfigs.mockReturnValue(new Promise(() => {}))
+
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText(/loading app configurations/i)).toBeInTheDocument()
+      })
+    })
+
+    it('renders app config cards after loading', async () => {
+      mockGetAppConfigs.mockImplementation((source: string) => {
+        if (source === 'app_reviews_ios') return Promise.resolve({ apps: [{ id: 'app-1', app_name: 'My iOS App', app_id: '123456' }] })
+        return Promise.resolve({ apps: [] })
+      })
+
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('My iOS App')).toBeInTheDocument()
+      })
+    })
+
+    it('fetches all plugins in parallel', async () => {
+      mockGetAppConfigs.mockResolvedValue({ apps: [] })
+
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(mockGetAppConfigs).toHaveBeenCalledWith('app_reviews_ios')
+        expect(mockGetAppConfigs).toHaveBeenCalledWith('app_reviews_android')
+      })
     })
   })
 })
