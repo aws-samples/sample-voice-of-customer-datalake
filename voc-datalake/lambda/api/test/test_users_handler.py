@@ -377,6 +377,31 @@ class TestUpdateUser:
         assert response['statusCode'] == 400
 
     @patch('users_handler.cognito')
+    def test_rejects_whitespace_only_names(
+        self, mock_cognito, api_gateway_event, lambda_context
+    ):
+        """Returns 400 when names are whitespace-only and no existing names."""
+        mock_cognito.exceptions.UserNotFoundException = type(
+            'UserNotFoundException', (Exception,), {}
+        )
+        mock_cognito.admin_get_user.return_value = {
+            'UserAttributes': []
+        }
+
+        from users_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/users/testuser',
+            path_params={'username': 'testuser'},
+            body={'given_name': '   ', 'family_name': '  '}
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
+
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+
+    @patch('users_handler.cognito')
     def test_returns_not_found_for_nonexistent_user(
         self, mock_cognito, api_gateway_event, lambda_context
     ):

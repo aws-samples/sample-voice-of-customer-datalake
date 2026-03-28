@@ -29,8 +29,8 @@ function EditUserModalContent({
   readonly onSuccess: () => void
 }) {
   const { t } = useTranslation('components')
-  const [givenName, setGivenName] = useState(user.given_name)
-  const [familyName, setFamilyName] = useState(user.family_name)
+  const [givenName, setGivenName] = useState(user.given_name ?? '')
+  const [familyName, setFamilyName] = useState(user.family_name ?? '')
   const [error, setError] = useState('')
 
   const updateMutation = useMutation({
@@ -50,7 +50,7 @@ function EditUserModalContent({
     onError: (err: Error) => setError(err.message),
   })
 
-  const hasChanges = givenName !== user.given_name || familyName !== user.family_name
+  const hasChanges = givenName !== (user.given_name ?? '') || familyName !== (user.family_name ?? '')
   const hasName = givenName.trim() !== '' || familyName.trim() !== ''
 
   return (

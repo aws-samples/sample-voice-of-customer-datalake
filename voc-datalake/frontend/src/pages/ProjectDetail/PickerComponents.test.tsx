@@ -58,7 +58,9 @@ describe('PickerSection', () => {
       </PickerSection>,
     )
 
-    await user.click(screen.getByText(/selectAll|select all/i))
+    const buttons = screen.getAllByRole('button')
+    // Second button is the select/deselect all toggle
+    await user.click(buttons[1])
     expect(onToggleAll).toHaveBeenCalledWith(true)
   })
 })

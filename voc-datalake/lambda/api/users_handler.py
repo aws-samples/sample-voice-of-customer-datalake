@@ -214,6 +214,10 @@ def update_user(username: str):
         given_name = body['given_name'].strip() if 'given_name' in body else current_attrs.get('given_name', '')
         family_name = body['family_name'].strip() if 'family_name' in body else current_attrs.get('family_name', '')
 
+        # After merging, at least one name must be non-empty
+        if not given_name and not family_name:
+            raise ValidationError('At least one of given_name or family_name must be non-empty')
+
         user_attrs = []
         if 'given_name' in body:
             user_attrs.append({'Name': 'given_name', 'Value': given_name})
@@ -242,6 +246,8 @@ def update_user(username: str):
 
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ValidationError:
+        raise
     except Exception as e:
         logger.exception(f'Error updating user: {e}')
         raise ServiceError(str(e))
