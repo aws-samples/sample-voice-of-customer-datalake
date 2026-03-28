@@ -206,8 +206,8 @@ def update_user(username: str):
             for attr in current_user.get('UserAttributes', [])
         }
 
-        given_name = body['given_name'].strip() if 'given_name' in body else current_attrs.get('given_name', '')
-        family_name = body['family_name'].strip() if 'family_name' in body else current_attrs.get('family_name', '')
+        given_name = str(body['given_name']).strip() if 'given_name' in body else current_attrs.get('given_name', '')
+        family_name = str(body['family_name']).strip() if 'family_name' in body else current_attrs.get('family_name', '')
 
         user_attrs = []
         if 'given_name' in body:

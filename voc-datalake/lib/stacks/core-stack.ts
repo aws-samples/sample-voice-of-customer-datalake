@@ -393,6 +393,8 @@ export class VocCoreStack extends cdk.Stack {
       autoVerify: { email: true },
       standardAttributes: {
         email: { required: true, mutable: true },
+        givenName: { required: false, mutable: true },
+        familyName: { required: false, mutable: true },
         fullname: { required: false, mutable: true },
       },
       passwordPolicy: {
