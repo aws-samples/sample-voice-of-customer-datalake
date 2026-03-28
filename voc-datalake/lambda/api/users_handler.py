@@ -191,19 +191,31 @@ def update_user(username: str):
     require_admin(app.current_event._data)
 
     body = app.current_event.json_body or {}
-    given_name = body.get('given_name', '').strip()
-    family_name = body.get('family_name', '').strip()
 
-    if not given_name and not family_name:
+    if 'given_name' not in body and 'family_name' not in body:
         raise ValidationError('At least one of given_name or family_name is required')
 
     try:
+        # Fetch current attributes to merge with incoming changes
+        current_user = cognito.admin_get_user(
+            UserPoolId=USER_POOL_ID,
+            Username=username,
+        )
+        current_attrs = {
+            attr['Name']: attr['Value']
+            for attr in current_user.get('UserAttributes', [])
+        }
+
+        given_name = body['given_name'].strip() if 'given_name' in body else current_attrs.get('given_name', '')
+        family_name = body['family_name'].strip() if 'family_name' in body else current_attrs.get('family_name', '')
+
         user_attrs = []
         if 'given_name' in body:
             user_attrs.append({'Name': 'given_name', 'Value': given_name})
         if 'family_name' in body:
             user_attrs.append({'Name': 'family_name', 'Value': family_name})
-        # Update display name
+
+        # Compute display name from merged values
         display_name = f'{given_name} {family_name}'.strip()
         if display_name:
             user_attrs.append({'Name': 'name', 'Value': display_name})
