@@ -113,7 +113,8 @@ function AppConfigList({
         try {
           const response = await api.getAppConfigs(plugin.id)
           return { pluginId: plugin.id, apps: response.apps }
-        } catch {
+        } catch (err) {
+          console.warn(`Failed to fetch app configs for plugin "${plugin.id}":`, err)
           return { pluginId: plugin.id, apps: [] as AppConfig[] }
         }
       }))

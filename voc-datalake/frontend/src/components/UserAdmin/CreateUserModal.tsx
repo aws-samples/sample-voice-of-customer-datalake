@@ -7,9 +7,10 @@ import { useMutation } from '@tanstack/react-query'
 import {
   UserPlus, Shield, Eye, Loader2, AlertCircle, Mail,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
+import NameFields from './NameFields'
 
 type UserGroup = 'admins' | 'users'
 
@@ -28,6 +29,15 @@ export default function CreateUserModal({
   const [familyName, setFamilyName] = useState('')
   const [group, setGroup] = useState<UserGroup>('users')
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
 
   const createMutation = useMutation({
     mutationFn: () => api.createUser({
@@ -82,31 +92,12 @@ export default function CreateUserModal({
             </p>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('userAdmin.firstNameLabel')}
-            </label>
-            <input
-              type="text"
-              value={givenName}
-              onChange={(e) => setGivenName(e.target.value)}
-              placeholder="Matias"
-              className="input"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('userAdmin.lastNameLabel')}
-            </label>
-            <input
-              type="text"
-              value={familyName}
-              onChange={(e) => setFamilyName(e.target.value)}
-              placeholder="Undurraga"
-              className="input"
-            />
-          </div>
+          <NameFields
+            givenName={givenName}
+            familyName={familyName}
+            onGivenNameChange={setGivenName}
+            onFamilyNameChange={setFamilyName}
+          />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

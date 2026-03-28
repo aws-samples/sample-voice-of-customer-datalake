@@ -11,6 +11,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import type { CognitoUser } from '../../api/types'
+import NameFields from './NameFields'
 
 interface EditUserModalProps {
   readonly isOpen: boolean
@@ -34,6 +35,15 @@ export default function EditUserModal({
       setError('')
     }
   }, [user])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
 
   const updateMutation = useMutation({
     mutationFn: () => {
@@ -71,32 +81,13 @@ export default function EditUserModal({
         <p className="text-sm text-gray-500 mb-4">{user.email}</p>
 
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('userAdmin.firstNameLabel')}
-            </label>
-            <input
-              type="text"
-              value={givenName}
-              onChange={(e) => setGivenName(e.target.value)}
-              placeholder="Matias"
-              className="input"
-              autoFocus
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('userAdmin.lastNameLabel')}
-            </label>
-            <input
-              type="text"
-              value={familyName}
-              onChange={(e) => setFamilyName(e.target.value)}
-              placeholder="Undurraga"
-              className="input"
-            />
-          </div>
+          <NameFields
+            givenName={givenName}
+            familyName={familyName}
+            onGivenNameChange={setGivenName}
+            onFamilyNameChange={setFamilyName}
+            autoFocusFirst
+          />
 
           {error === '' ? null : (
             <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">

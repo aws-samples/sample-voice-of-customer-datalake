@@ -112,4 +112,35 @@ describe('ScraperLogsPanel', () => {
       expect(screen.getAllByText('completed').length).toBeGreaterThan(0)
     })
   })
+
+  it('shows loading state when getScrapers is pending', () => {
+    mockGetScrapers.mockReturnValue(new Promise(() => {}))
+
+    render(<ScraperLogsPanel days={7} />, { wrapper: createWrapper() })
+
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+  })
+
+  it('shows empty state when getScrapers returns empty list', async () => {
+    mockGetScrapers.mockResolvedValue({ scrapers: [] })
+
+    render(<ScraperLogsPanel days={7} />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText(/no scrapers configured/i)).toBeInTheDocument()
+    })
+  })
+
+  it('renders gracefully when getScrapers returns error', async () => {
+    mockGetScrapers.mockRejectedValue(new Error('Service unavailable'))
+
+    const { container } = render(<ScraperLogsPanel days={7} />, { wrapper: createWrapper() })
+
+    // After error, loading state should disappear and component should not crash
+    await waitFor(() => {
+      // eslint-disable-next-line testing-library/no-node-access
+      expect(container.querySelector('.animate-spin')).not.toBeInTheDocument()
+    })
+  })
 })

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Pre-Push Hook: AI Code Review with Kiro CLI Agents
-# Runs two dedicated agents in parallel:
-#   1. security-reviewer  — vulnerabilities, secrets, auth issues
-#   2. quality-reviewer   — duplicates, structure, logic, missing tests
+# - Chunks large diffs by top-level folder for thorough review
+# - Blocks on CRITICAL/BLOCKING issues (exit 1)
+# - Pauses on SUGGESTIONS/WARNINGS for developer confirmation
 # =============================================================================
 
 set -euo pipefail
@@ -17,63 +17,50 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 BOLD='\033[1m'
 
+# Config
+MAX_CHUNK_CHARS=60000  # Per-chunk limit sent to each agent
+
 # ── Escape hatch ─────────────────────────────────────────
 if [ "${SKIP_AI_REVIEW:-}" = "1" ]; then
   echo -e "${YELLOW}⏭  Skipping AI code review (SKIP_AI_REVIEW=1)${NC}"
   exit 0
 fi
 
-# ── Check kiro-cli is available ──────────────────────────
 if ! command -v kiro-cli &> /dev/null; then
   echo -e "${YELLOW}⚠  kiro-cli not found — skipping AI review${NC}"
-  echo -e "${YELLOW}   Install kiro-cli or set SKIP_AI_REVIEW=1 to suppress${NC}"
   exit 0
 fi
 
-# ── Collect the diff being pushed ────────────────────────
+# ── Collect the full diff being pushed ───────────────────
 REMOTE="$1"
 URL="$2"
 
-CHANGES=""
+FULL_DIFF=""
 while read -r LOCAL_REF LOCAL_OID REMOTE_REF REMOTE_OID; do
   if [ "$LOCAL_OID" = "0000000000000000000000000000000000000000" ]; then
-    continue  # branch deletion
+    continue
   fi
 
+  DIFF_EXCLUDES='-- *.py *.ts *.tsx *.js *.jsx *.json :!package-lock.json :!**/node_modules/** :!**/dist/** :!**/cdk.out/** :!**/.ruff_cache/** :!**/coverage_html/**'
+
   if [ "$REMOTE_OID" = "0000000000000000000000000000000000000000" ]; then
-    # New branch — diff against main/master
     BASE=$(git merge-base HEAD main 2>/dev/null || git merge-base HEAD master 2>/dev/null || echo "")
     if [ -n "$BASE" ]; then
-      CHANGES=$(git diff "$BASE" HEAD -- '*.py' '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' \
-        ':!package-lock.json' ':!**/node_modules/**' ':!**/dist/**' \
-        ':!**/cdk.out/**' ':!**/.ruff_cache/**' ':!**/coverage_html/**')
+      FULL_DIFF=$(eval "git diff $BASE HEAD $DIFF_EXCLUDES")
     else
-      CHANGES=$(git diff HEAD~1 HEAD -- '*.py' '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' \
-        ':!package-lock.json' ':!**/node_modules/**' ':!**/dist/**' \
-        ':!**/cdk.out/**' ':!**/.ruff_cache/**' ':!**/coverage_html/**')
+      FULL_DIFF=$(eval "git diff HEAD~1 HEAD $DIFF_EXCLUDES")
     fi
   else
-    CHANGES=$(git diff "$REMOTE_OID" "$LOCAL_OID" -- '*.py' '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' \
-      ':!package-lock.json' ':!**/node_modules/**' ':!**/dist/**' \
-      ':!**/cdk.out/**' ':!**/.ruff_cache/**' ':!**/coverage_html/**')
+    FULL_DIFF=$(eval "git diff $REMOTE_OID $LOCAL_OID $DIFF_EXCLUDES")
   fi
 done
 
-if [ -z "$CHANGES" ]; then
+if [ -z "$FULL_DIFF" ]; then
   echo -e "${GREEN}✓ No code changes to review${NC}"
   exit 0
 fi
 
-# Truncate large diffs to stay within token limits
-MAX_CHARS=80000
-if [ ${#CHANGES} -gt $MAX_CHARS ]; then
-  CHANGES="${CHANGES:0:$MAX_CHARS}
-
-... [DIFF TRUNCATED — first ~80K chars shown] ..."
-  echo -e "${YELLOW}⚠  Large diff — truncated to ${MAX_CHARS} chars${NC}"
-fi
-
-FILE_COUNT=$(echo "$CHANGES" | grep -c '^diff --git' || true)
+FILE_COUNT=$(echo "$FULL_DIFF" | grep -c '^diff --git' || true)
 
 echo ""
 echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
@@ -83,78 +70,277 @@ echo -e "${BLUE}  Files changed: ${FILE_COUNT}${NC}"
 echo -e "${BLUE}  Remote: ${REMOTE} (${URL})${NC}"
 echo ""
 
-# ── Temp files for output ────────────────────────────────
-SECURITY_OUTPUT=$(mktemp)
-QUALITY_OUTPUT=$(mktemp)
-trap 'rm -f "$SECURITY_OUTPUT" "$QUALITY_OUTPUT"' EXIT
+# ── Split diff into chunks by top-level folder ──────────
+# Groups files by their first path segment (e.g., voc-datalake/frontend/...,
+# voc-datalake/lambda/..., .kiro/..., scripts/...) and builds chunks that
+# stay under MAX_CHUNK_CHARS. Small folders get merged into one chunk.
 
-# ── Build review prompts ─────────────────────────────────
-SECURITY_PROMPT="Review the following git diff for security issues. Follow your system prompt instructions exactly.
+build_chunks() {
+  local diff="$1"
+  local -a chunks=()
+  local current_chunk=""
+  local current_size=0
+  local current_label=""
+
+  # Extract unique top-level folders from diff headers
+  # e.g., "diff --git a/voc-datalake/frontend/src/foo.tsx b/..." → "voc-datalake/frontend"
+  local folders
+  folders=$(echo "$diff" | grep '^diff --git' | sed 's|diff --git a/||' | sed 's| b/.*||' | \
+    awk -F'/' '{
+      if (NF >= 3) print $1"/"$2
+      else if (NF == 2) print $1
+      else print $1
+    }' | sort -u)
+
+  for folder in $folders; do
+    # Extract all diff hunks for files under this folder
+    local folder_diff
+    folder_diff=$(echo "$diff" | awk -v prefix="$folder" '
+      /^diff --git/ {
+        match($0, /a\/([^ ]+)/, arr)
+        file = arr[1]
+        if (index(file, prefix) == 1) { printing = 1 } else { printing = 0 }
+      }
+      printing { print }
+    ')
+
+    local folder_size=${#folder_diff}
+
+    if [ -z "$folder_diff" ]; then
+      continue
+    fi
+
+    # If this single folder exceeds the limit, it becomes its own chunk
+    if [ "$folder_size" -gt "$MAX_CHUNK_CHARS" ]; then
+      # Flush current accumulated chunk first
+      if [ -n "$current_chunk" ]; then
+        chunks+=("$current_label|$current_chunk")
+        current_chunk=""
+        current_size=0
+        current_label=""
+      fi
+      # Truncate oversized folder chunk with note
+      local truncated="${folder_diff:0:$MAX_CHUNK_CHARS}
+
+... [CHUNK TRUNCATED — ${folder} exceeded ${MAX_CHUNK_CHARS} chars, showing first portion] ..."
+      chunks+=("$folder|$truncated")
+      continue
+    fi
+
+    # If adding this folder would exceed the limit, flush and start new chunk
+    if [ $((current_size + folder_size)) -gt "$MAX_CHUNK_CHARS" ]; then
+      if [ -n "$current_chunk" ]; then
+        chunks+=("$current_label|$current_chunk")
+      fi
+      current_chunk="$folder_diff"
+      current_size=$folder_size
+      current_label="$folder"
+    else
+      # Accumulate into current chunk
+      if [ -n "$current_chunk" ]; then
+        current_chunk="$current_chunk
+$folder_diff"
+        current_label="${current_label}, ${folder}"
+      else
+        current_chunk="$folder_diff"
+        current_label="$folder"
+      fi
+      current_size=$((current_size + folder_size))
+    fi
+  done
+
+  # Flush remaining
+  if [ -n "$current_chunk" ]; then
+    chunks+=("$current_label|$current_chunk")
+  fi
+
+  # Output chunks — one per line, pipe-separated: "label|content"
+  # We write to temp files since bash arrays with large strings are fragile
+  local i=0
+  for chunk in "${chunks[@]}"; do
+    local label="${chunk%%|*}"
+    local content="${chunk#*|}"
+    echo "$content" > "${CHUNK_DIR}/chunk_${i}.txt"
+    echo "$label" > "${CHUNK_DIR}/chunk_${i}.label"
+    i=$((i + 1))
+  done
+  echo "$i"
+}
+
+# ── Run agents on a single chunk ─────────────────────────
+# Args: $1=chunk_file $2=chunk_index $3=total_chunks $4=label
+# Writes results to $RESULTS_DIR/security_N.txt and quality_N.txt
+run_agents_on_chunk() {
+  local chunk_file="$1"
+  local idx="$2"
+  local total="$3"
+  local label="$4"
+  local chunk_content
+  chunk_content=$(cat "$chunk_file")
+
+  local chunk_header="[Chunk $((idx + 1))/${total}: ${label}]"
+
+  local sec_prompt="Review the following git diff chunk for security issues. Follow your system prompt instructions exactly.
+
+${chunk_header}
 
 GIT DIFF:
-$CHANGES"
+${chunk_content}"
 
-QUALITY_PROMPT="Review the following git diff for code quality issues. Follow your system prompt instructions exactly.
+  local qual_prompt="Review the following git diff chunk for code quality issues. Follow your system prompt instructions exactly.
+
+${chunk_header}
 
 GIT DIFF:
-$CHANGES"
+${chunk_content}"
 
-# ── Run both agents in parallel ──────────────────────────
-echo -e "${YELLOW}▶ Agent 1: security-reviewer${NC}"
-echo -e "${YELLOW}▶ Agent 2: quality-reviewer${NC}"
-echo ""
+  echo -e "${YELLOW}  ▶ Chunk $((idx + 1))/${total} [${label}] — launching agents${NC}"
 
-kiro-cli chat --agent security-reviewer --no-interactive --trust-all-tools "$SECURITY_PROMPT" > "$SECURITY_OUTPUT" 2>&1 &
-SECURITY_PID=$!
+  kiro-cli chat --agent security-reviewer --no-interactive --trust-all-tools "$sec_prompt" \
+    > "${RESULTS_DIR}/security_${idx}.txt" 2>&1 &
+  local sec_pid=$!
 
-kiro-cli chat --agent quality-reviewer --no-interactive --trust-all-tools "$QUALITY_PROMPT" > "$QUALITY_OUTPUT" 2>&1 &
-QUALITY_PID=$!
+  kiro-cli chat --agent quality-reviewer --no-interactive --trust-all-tools "$qual_prompt" \
+    > "${RESULTS_DIR}/quality_${idx}.txt" 2>&1 &
+  local qual_pid=$!
 
-SECURITY_EXIT=0
-QUALITY_EXIT=0
-wait $SECURITY_PID || SECURITY_EXIT=$?
-wait $QUALITY_PID || QUALITY_EXIT=$?
+  # Store PIDs for waiting
+  echo "$sec_pid" >> "${RESULTS_DIR}/pids.txt"
+  echo "$qual_pid" >> "${RESULTS_DIR}/pids.txt"
+  echo "${idx}|${label}|${sec_pid}|${qual_pid}" >> "${RESULTS_DIR}/jobs.txt"
+}
 
-# ── Display results ──────────────────────────────────────
-echo -e "${BOLD}${CYAN}┌──────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BOLD}${CYAN}│  🛡️  Security Review                                     │${NC}"
-echo -e "${BOLD}${CYAN}└──────────────────────────────────────────────────────────┘${NC}"
-if [ $SECURITY_EXIT -ne 0 ]; then
-  echo -e "${YELLOW}⚠  Security agent failed (exit $SECURITY_EXIT)${NC}"
+# ── Create temp directories ──────────────────────────────
+CHUNK_DIR=$(mktemp -d)
+RESULTS_DIR=$(mktemp -d)
+trap 'rm -rf "$CHUNK_DIR" "$RESULTS_DIR"' EXIT
+
+# ── Build chunks ─────────────────────────────────────────
+DIFF_SIZE=${#FULL_DIFF}
+
+if [ "$DIFF_SIZE" -le "$MAX_CHUNK_CHARS" ]; then
+  # Small diff — single chunk, no splitting needed
+  NUM_CHUNKS=1
+  echo "$FULL_DIFF" > "${CHUNK_DIR}/chunk_0.txt"
+  echo "all files" > "${CHUNK_DIR}/chunk_0.label"
+  echo -e "${BLUE}  Diff size: ${DIFF_SIZE} chars (single chunk)${NC}"
+else
+  echo -e "${BLUE}  Diff size: ${DIFF_SIZE} chars — splitting by folder...${NC}"
+  NUM_CHUNKS=$(build_chunks "$FULL_DIFF")
+  echo -e "${BLUE}  Split into ${NUM_CHUNKS} chunks${NC}"
 fi
-cat "$SECURITY_OUTPUT"
 
 echo ""
-echo -e "${BOLD}${CYAN}┌──────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BOLD}${CYAN}│  🧹 Code Quality Review                                  │${NC}"
-echo -e "${BOLD}${CYAN}└──────────────────────────────────────────────────────────┘${NC}"
-if [ $QUALITY_EXIT -ne 0 ]; then
-  echo -e "${YELLOW}⚠  Quality agent failed (exit $QUALITY_EXIT)${NC}"
-fi
-cat "$QUALITY_OUTPUT"
+
+# ── Launch all agents in parallel across all chunks ──────
+touch "${RESULTS_DIR}/pids.txt" "${RESULTS_DIR}/jobs.txt"
+
+for ((i = 0; i < NUM_CHUNKS; i++)); do
+  label=$(cat "${CHUNK_DIR}/chunk_${i}.label")
+  run_agents_on_chunk "${CHUNK_DIR}/chunk_${i}.txt" "$i" "$NUM_CHUNKS" "$label"
+done
 
 echo ""
+echo -e "${YELLOW}⏳ Waiting for all agents to complete...${NC}"
+echo ""
+
+# Wait for all PIDs
+ANY_FAILED=0
+while read -r pid; do
+  wait "$pid" 2>/dev/null || ANY_FAILED=1
+done < "${RESULTS_DIR}/pids.txt"
+
+# ── Display results and collect verdicts ─────────────────
+HAS_CRITICAL=0
+HAS_BLOCKING=0
+HAS_SUGGESTIONS=0
+HAS_WARNINGS=0
+HAS_MISSING_TESTS=0
+
+while IFS='|' read -r idx label sec_pid qual_pid; do
+  chunk_header="Chunk $((idx + 1))/${NUM_CHUNKS}: ${label}"
+
+  echo -e "${BOLD}${CYAN}┌──────────────────────────────────────────────────────────┐${NC}"
+  echo -e "${BOLD}${CYAN}│  🛡️  Security Review — ${chunk_header}${NC}"
+  echo -e "${BOLD}${CYAN}└──────────────────────────────────────────────────────────┘${NC}"
+  if [ -f "${RESULTS_DIR}/security_${idx}.txt" ]; then
+    cat "${RESULTS_DIR}/security_${idx}.txt"
+    if grep -q '🚨 CRITICAL SECURITY ISSUES FOUND' "${RESULTS_DIR}/security_${idx}.txt"; then
+      HAS_CRITICAL=1
+    fi
+    if grep -q '⚠️ SECURITY WARNINGS' "${RESULTS_DIR}/security_${idx}.txt"; then
+      HAS_WARNINGS=1
+    fi
+  else
+    echo -e "${YELLOW}  ⚠ No output from security agent${NC}"
+  fi
+
+  echo ""
+  echo -e "${BOLD}${CYAN}┌──────────────────────────────────────────────────────────┐${NC}"
+  echo -e "${BOLD}${CYAN}│  🧹 Code Quality — ${chunk_header}${NC}"
+  echo -e "${BOLD}${CYAN}└──────────────────────────────────────────────────────────┘${NC}"
+  if [ -f "${RESULTS_DIR}/quality_${idx}.txt" ]; then
+    cat "${RESULTS_DIR}/quality_${idx}.txt"
+    if grep -q '🚫 CODE QUALITY ISSUES — BLOCKING' "${RESULTS_DIR}/quality_${idx}.txt"; then
+      HAS_BLOCKING=1
+    fi
+    if grep -q '💡 CODE QUALITY SUGGESTIONS' "${RESULTS_DIR}/quality_${idx}.txt"; then
+      HAS_SUGGESTIONS=1
+    fi
+    if grep -q '🧪 MISSING TESTS' "${RESULTS_DIR}/quality_${idx}.txt"; then
+      HAS_MISSING_TESTS=1
+    fi
+  else
+    echo -e "${YELLOW}  ⚠ No output from quality agent${NC}"
+  fi
+
+  echo ""
+done < "${RESULTS_DIR}/jobs.txt"
 
 # ── Gate decision ────────────────────────────────────────
-BLOCK_PUSH=0
+echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}${CYAN}║          📋 Review Summary                              ║${NC}"
+echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
+echo ""
 
-if [ $SECURITY_EXIT -eq 0 ] && grep -q '🚨 CRITICAL SECURITY ISSUES FOUND' "$SECURITY_OUTPUT"; then
-  BLOCK_PUSH=1
-  echo -e "${RED}${BOLD}✗ Blocked by security review — fix critical issues above${NC}"
-fi
-
-if [ $QUALITY_EXIT -eq 0 ] && grep -q '🚫 CODE QUALITY ISSUES — BLOCKING' "$QUALITY_OUTPUT"; then
-  BLOCK_PUSH=1
-  echo -e "${RED}${BOLD}✗ Blocked by quality review — fix blocking issues above${NC}"
-fi
-
-if [ $BLOCK_PUSH -eq 1 ]; then
+# Hard block — critical security or blocking quality issues
+if [ $HAS_CRITICAL -eq 1 ] || [ $HAS_BLOCKING -eq 1 ]; then
+  [ $HAS_CRITICAL -eq 1 ] && echo -e "${RED}${BOLD}  🚨 CRITICAL security issues found — push BLOCKED${NC}"
+  [ $HAS_BLOCKING -eq 1 ] && echo -e "${RED}${BOLD}  🚫 BLOCKING quality issues found — push BLOCKED${NC}"
   echo ""
-  echo -e "${YELLOW}To bypass (use sparingly):  SKIP_AI_REVIEW=1 git push${NC}"
+  echo -e "${YELLOW}  Fix the issues above and try again.${NC}"
+  echo -e "${YELLOW}  To force push (use sparingly): SKIP_AI_REVIEW=1 git push${NC}"
   echo ""
   exit 1
 fi
 
-echo -e "${GREEN}${BOLD}✓ AI code review passed — push proceeding${NC}"
+# Soft gate — suggestions, warnings, or missing tests require confirmation
+if [ $HAS_SUGGESTIONS -eq 1 ] || [ $HAS_WARNINGS -eq 1 ] || [ $HAS_MISSING_TESTS -eq 1 ]; then
+  echo -e "${YELLOW}  Review findings:${NC}"
+  [ $HAS_WARNINGS -eq 1 ]      && echo -e "${YELLOW}    ⚠️  Security warnings${NC}"
+  [ $HAS_SUGGESTIONS -eq 1 ]   && echo -e "${YELLOW}    💡 Code quality suggestions${NC}"
+  [ $HAS_MISSING_TESTS -eq 1 ] && echo -e "${YELLOW}    🧪 Missing test coverage${NC}"
+  echo ""
+
+  # Check if we're in a terminal that supports interactive input
+  if [ -t 0 ]; then
+    echo -e "${BOLD}${YELLOW}  Do you want to proceed with the push? [y/N]${NC} "
+    read -r -n 1 REPLY < /dev/tty
+    echo ""
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+      echo -e "${RED}  ✗ Push cancelled by developer${NC}"
+      echo ""
+      exit 1
+    fi
+    echo -e "${GREEN}  ✓ Developer acknowledged findings — proceeding${NC}"
+  else
+    # Non-interactive mode (CI/CD) — treat suggestions as non-blocking
+    echo -e "${YELLOW}  Non-interactive mode — suggestions are non-blocking, proceeding${NC}"
+  fi
+  echo ""
+fi
+
+# All clear
+echo -e "${GREEN}${BOLD}  ✓ AI code review passed — push proceeding${NC}"
 echo ""
 exit 0

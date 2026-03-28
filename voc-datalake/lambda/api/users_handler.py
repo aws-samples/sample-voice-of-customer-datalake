@@ -199,9 +199,9 @@ def update_user(username: str):
 
     try:
         user_attrs = []
-        if given_name is not None:
+        if given_name:
             user_attrs.append({'Name': 'given_name', 'Value': given_name})
-        if family_name is not None:
+        if family_name:
             user_attrs.append({'Name': 'family_name', 'Value': family_name})
         # Update display name
         display_name = f'{given_name} {family_name}'.strip()

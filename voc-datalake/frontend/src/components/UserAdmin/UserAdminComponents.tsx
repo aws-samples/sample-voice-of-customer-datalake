@@ -13,6 +13,12 @@ import type { CognitoUser } from '../../api/types'
 type UserGroup = 'admins' | 'users'
 export type ActionType = 'delete' | 'disable' | 'enable' | 'reset' | 'edit'
 
+function getDisplayName(user: CognitoUser): string {
+  return user.given_name || user.family_name
+    ? `${user.given_name} ${user.family_name}`.trim()
+    : user.name
+}
+
 // Status Badge Component
 export function StatusBadge({ user }: Readonly<{ user: CognitoUser }>) {
   const { t } = useTranslation('components')
@@ -139,7 +145,7 @@ function UserTableRow({
       <td className="px-4 py-3">
         <div>
           <p className="font-medium text-gray-900">{user.email}</p>
-          {user.name === '' ? null : <p className="text-sm text-gray-500">{user.given_name || user.family_name ? `${user.given_name} ${user.family_name}`.trim() : user.name}</p>}
+          {user.name === '' ? null : <p className="text-sm text-gray-500">{getDisplayName(user)}</p>}
         </div>
       </td>
       <td className="px-4 py-3">
@@ -173,7 +179,7 @@ function UserCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="font-medium text-gray-900 truncate">{user.email}</p>
-          {user.name === '' ? null : <p className="text-sm text-gray-500">{user.given_name || user.family_name ? `${user.given_name} ${user.family_name}`.trim() : user.name}</p>}
+          {user.name === '' ? null : <p className="text-sm text-gray-500">{getDisplayName(user)}</p>}
         </div>
         <StatusBadge user={user} />
       </div>
