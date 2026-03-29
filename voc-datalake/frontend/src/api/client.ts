@@ -316,11 +316,22 @@ export const api = {
   runSource: (source: string, appId?: string) => fetchApi<{
     success: boolean;
     message: string;
-    source: string
+    source: string;
+    execution_id?: string
   }>(`/sources/${source}/run`, {
     method: 'POST',
     ...(appId != null && appId !== '' ? { body: JSON.stringify({ app_id: appId }) } : {}),
   }),
+
+  getSourceRunStatus: (source: string) => fetchApi<{
+    source: string;
+    status: string;
+    execution_id?: string;
+    started_at?: string;
+    completed_at?: string;
+    items_found?: number;
+    errors?: string[]
+  }>(`/sources/status?run_status=${source}`),
 
   // App Config CRUD (multi-instance plugins like iOS/Android app reviews)
   getAppConfigs: (source: string) =>

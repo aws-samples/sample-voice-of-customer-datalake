@@ -6,11 +6,12 @@
 import {
   useQuery, useMutation, useQueryClient,
 } from '@tanstack/react-query'
-import clsx from 'clsx'
 import {
-  Plus, Globe, AlertCircle, Loader2, RefreshCw, Smartphone, Play, Settings, Trash2,
+  Plus, Globe, AlertCircle, Loader2, RefreshCw,
 } from 'lucide-react'
-import { useState } from 'react'
+import {
+  useState, useEffect,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import { scrapersApi } from '../../api/scrapersApi'
@@ -18,12 +19,16 @@ import ConfirmModal from '../../components/ConfirmModal'
 import { getPluginManifests } from '../../plugins'
 import { useConfigStore } from '../../store/configStore'
 import { useManualImportStore } from '../../store/manualImportStore'
+import {
+  AppConfigCard, getAppIdentifier,
+} from './AppConfigComponents'
 import JsonUploadModal from './JsonUploadModal'
 import ManualImportModal from './ManualImportModal'
 import PluginConfigModal from './PluginConfigModal'
 import ScraperCard from './ScraperCard'
 import ScraperEditor from './ScraperEditor'
 import TemplateSelector from './TemplateSelector'
+import type { RunStatusInfo } from './AppConfigComponents'
 import type {
   ScraperConfig, ScraperTemplate,
 } from '../../api/types'
@@ -35,57 +40,6 @@ function getAppConfigPlugins(): PluginManifest[] {
   return getPluginManifests().filter((p) => p.id !== 'webscraper' && p.id !== 's3_import' && p.hasIngestor)
 }
 
-function getAppIdentifier(app: AppConfig, pluginId: string): string {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- keys may be undefined at runtime
-  if (pluginId === 'app_reviews_ios') return app.app_id ?? ''
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- keys may be undefined at runtime
-  if (pluginId === 'app_reviews_android') return app.package_name ?? ''
-  return ''
-}
-
-function getPlatformLabel(pluginId: string): string {
-  if (pluginId === 'app_reviews_ios') return 'iOS'
-  if (pluginId === 'app_reviews_android') return 'Android'
-  return 'App'
-}
-
-function AppConfigCard({
-  app, plugin, onEdit, onDelete, onRun, isRunning,
-}: {
-  readonly app: AppConfig;
-  readonly plugin: PluginManifest;
-  readonly onEdit: () => void
-  readonly onDelete: () => void;
-  readonly onRun: () => void;
-  readonly isRunning: boolean
-}) {
-  return (
-    <div className="card border-2 border-purple-200 bg-purple-50/30 transition-all">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center"><Smartphone size={20} /></div>
-          <div>
-            <h3 className="font-semibold">{app.app_name === '' ? 'Unnamed App' : app.app_name}</h3>
-            <p className="text-sm text-gray-500">{getAppIdentifier(app, plugin.id)}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={onRun} disabled={isRunning} className={clsx('p-2 rounded transition-colors', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600')} title="Run now">
-            {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-          </button>
-          <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title="Edit"><Settings size={16} className="text-gray-500" /></button>
-          <button onClick={onDelete} className="p-2 hover:bg-gray-100 rounded text-red-500" title="Delete"><Trash2 size={16} /></button>
-        </div>
-      </div>
-      <div className="grid grid-cols-3 gap-4 text-sm">
-        <div><span className="text-gray-500">Platform</span><p className="font-medium">{getPlatformLabel(plugin.id)}</p></div>
-        <div><span className="text-gray-500">Source</span><p className="font-medium">{plugin.name}</p></div>
-        <div><span className="text-gray-500">Max Reviews</span><p className="font-medium">{app.max_reviews_per_run === '' ? '500' : app.max_reviews_per_run}</p></div>
-      </div>
-    </div>
-  )
-}
-
 function AppConfigList({
   plugins, onEditPlugin, onDeleteApp, onRunApp,
 }: {
@@ -95,15 +49,58 @@ function AppConfigList({
   readonly onRunApp: (pluginId: string, appIdentifier: string) => void
 }) {
   const { config } = useConfigStore()
-  const [runningApps, setRunningApps] = useState<Set<string>>(new Set())
+  const [runningPlugins, setRunningPlugins] = useState<Set<string>>(new Set())
+  const [runStatuses, setRunStatuses] = useState<Record<string, RunStatusInfo>>({})
+
+  // Poll run status for running plugins
+  useEffect(() => {
+    if (runningPlugins.size === 0) return
+    const updateStatus = (pluginId: string, result: {
+      status: string
+      items_found?: number
+      errors?: string[]
+    }) => {
+      setRunStatuses((prev) => ({
+        ...prev,
+        [pluginId]: {
+          status: result.status,
+          items_found: result.items_found ?? 0,
+          errors: result.errors ?? [],
+        },
+      }))
+      if (result.status === 'completed' || result.status === 'error') {
+        setRunningPlugins((prev) => {
+          const next = new Set(prev)
+          next.delete(pluginId)
+          return next
+        })
+      }
+    }
+    const pollStatus = () => {
+      for (const pluginId of runningPlugins) {
+        void api.getSourceRunStatus(pluginId)
+          .then((result) => {
+            updateStatus(pluginId, result)
+            return null
+          })
+          .catch(() => null)
+      }
+    }
+    const interval = setInterval(pollStatus, 2000)
+    return () => clearInterval(interval)
+  }, [runningPlugins])
 
   const handleRun = (pluginId: string, appIdentifier: string) => {
-    const key = `${pluginId}-${appIdentifier}`
-    setRunningApps((prev) => new Set(prev).add(key))
+    setRunningPlugins((prev) => new Set(prev).add(pluginId))
+    setRunStatuses((prev) => ({
+      ...prev,
+      [pluginId]: {
+        status: 'running',
+        items_found: 0,
+        errors: [],
+      },
+    }))
     onRunApp(pluginId, appIdentifier)
-    setTimeout(() => setRunningApps((prev) => {
-      const next = new Set(prev); next.delete(key); return next
-    }), 3000)
   }
 
   const {
@@ -163,7 +160,8 @@ function AppConfigList({
         <AppConfigCard key={`${plugin.id}-${app.id}`} app={app} plugin={plugin}
           onEdit={() => onEditPlugin(plugin)} onDelete={() => onDeleteApp(plugin.id, app.id)}
           onRun={() => handleRun(plugin.id, getAppIdentifier(app, plugin.id))}
-          isRunning={runningApps.has(`${plugin.id}-${getAppIdentifier(app, plugin.id)}`)} />
+          isRunning={runningPlugins.has(plugin.id)}
+          runStatus={runStatuses[plugin.id]} />
       ))}
     </>
   )

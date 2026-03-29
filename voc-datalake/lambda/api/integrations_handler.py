@@ -243,17 +243,33 @@ def run_source(source: str):
     Optionally accepts a JSON body with `app_id` to run a single app
     config instead of all configs for the source.
     """
+    from datetime import datetime, timezone
+    from shared.tables import get_aggregates_table
+
     # Function name follows uniqueName() pattern: voc-ingestor-{id}-{account}-{region}
     suffix = f"-{AWS_ACCOUNT_ID}-{AWS_REGION}" if AWS_ACCOUNT_ID and AWS_REGION else ""
     function_name = f"voc-ingestor-{source}{suffix}"
 
-    payload: dict = {"manual_trigger": True}
+    execution_id = f"run_{source}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    payload: dict = {"manual_trigger": True, "execution_id": execution_id}
     try:
         body = app.current_event.json_body or {}
         if body.get("app_id"):
             payload["app_id"] = body["app_id"]
     except Exception:
         pass
+
+    # Create initial run status record
+    try:
+        table = get_aggregates_table()
+        if table:
+            table.put_item(Item={
+                'pk': f'SOURCE_RUN#{source}', 'sk': execution_id,
+                'status': 'running', 'items_found': 0,
+                'started_at': datetime.now(timezone.utc).isoformat(),
+            })
+    except Exception as e:
+        logger.warning(f"Failed to create run status: {e}")
 
     lambda_client = boto3.client("lambda")
     try:
@@ -264,7 +280,7 @@ def run_source(source: str):
         )
         status_code = response.get("StatusCode", 0)
         if status_code == 202:
-            return {"success": True, "message": f"Triggered {source} ingestor", "source": source}
+            return {"success": True, "message": f"Triggered {source} ingestor", "source": source, "execution_id": execution_id}
         raise ServiceError(f"Lambda invoke returned status {status_code}")
     except lambda_client.exceptions.ResourceNotFoundException:
         raise ServiceError(f"Ingestor Lambda not found for source: {source}")
@@ -275,11 +291,48 @@ def run_source(source: str):
         raise ServiceError(f"Failed to trigger {source} ingestor")
 
 
+def _get_source_run_status(source: str):
+    """Get the latest run status for a data source plugin."""
+    from boto3.dynamodb.conditions import Key
+    from shared.tables import get_aggregates_table
+
+    table = get_aggregates_table()
+    if not table:
+        return {'source': source, 'status': 'unknown'}
+    try:
+        response = table.query(
+            KeyConditionExpression=Key('pk').eq(f'SOURCE_RUN#{source}'),
+            ScanIndexForward=False, Limit=1,
+        )
+        items = response.get('Items', [])
+        if not items:
+            return {'source': source, 'status': 'never_run'}
+        run = items[0]
+        return {
+            'source': source,
+            'execution_id': run.get('sk'),
+            'status': run.get('status', 'unknown'),
+            'started_at': run.get('started_at'),
+            'completed_at': run.get('completed_at'),
+            'items_found': run.get('items_found', 0),
+            'errors': run.get('errors', []),
+        }
+    except Exception as e:
+        logger.warning(f"Failed to get source run status: {e}")
+        return {'source': source, 'status': 'unknown'}
+
+
 @app.get("/sources/status")
 @tracer.capture_method
 def get_sources_status():
-    """Get status of all data source schedules."""
+    """Get status of all data source schedules, or run status for a specific source."""
     params = app.current_event.query_string_parameters or {}
+    
+    # If source param provided, return run status for that source
+    run_status_source = params.get('run_status')
+    if run_status_source:
+        return _get_source_run_status(run_status_source)
+    
     sources_param = params.get('sources', '')
     
     # Use requested sources or fall back to defaults

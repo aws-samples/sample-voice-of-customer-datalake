@@ -17,7 +17,7 @@ import hashlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
-from shared.http import fetch_with_retry
+from shared.http_utils import fetch_with_retry
 from shared.aws import (
     get_dynamodb_resource,
     get_s3_client,
@@ -38,6 +38,7 @@ SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
 BRAND_NAME = os.environ.get("BRAND_NAME", "")
 BRAND_HANDLES = json.loads(os.environ.get("BRAND_HANDLES", "[]"))
 SOURCE_PLATFORM = os.environ.get("SOURCE_PLATFORM", "")
+AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
 
 
 class BaseIngestor(ABC):
@@ -52,6 +53,8 @@ class BaseIngestor(ABC):
         self._s3 = get_s3_client()
         self._sqs = get_sqs_client()
         self.circuit_breaker = CircuitBreaker(self.source_platform)
+        self.aggregates_table = get_dynamodb_resource().Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+        self.execution_id: str | None = None
 
     def _load_secrets(self) -> dict:
         """
@@ -240,6 +243,28 @@ class BaseIngestor(ABC):
         metrics.add_metric(name="ItemsIngested", unit="Count", value=len(items))
 
     @tracer.capture_method
+    def _update_run_status(self, updates: dict):
+        """Update run status in DynamoDB for progress tracking."""
+        if not self.aggregates_table or not self.execution_id:
+            return
+        try:
+            expr_parts = []
+            expr_names = {}
+            expr_values = {}
+            for key, value in updates.items():
+                safe_key = f"#{key}"
+                expr_parts.append(f"{safe_key} = :{key}")
+                expr_names[safe_key] = key
+                expr_values[f":{key}"] = value
+            self.aggregates_table.update_item(
+                Key={'pk': f'SOURCE_RUN#{self.source_platform}', 'sk': self.execution_id},
+                UpdateExpression='SET ' + ', '.join(expr_parts),
+                ExpressionAttributeNames=expr_names,
+                ExpressionAttributeValues=expr_values,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update run status: {e}")
+
     def run(self) -> dict:
         """Main execution method with circuit breaker support."""
         # Check circuit breaker before running
@@ -249,6 +274,14 @@ class BaseIngestor(ABC):
 
         emit_audit_event("plugin.invoked", self.source_platform, True)
         
+        # Initialize run status tracking
+        if self.aggregates_table and self.execution_id:
+            self._update_run_status({
+                'status': 'running',
+                'items_found': 0,
+                'started_at': datetime.now(timezone.utc).isoformat(),
+            })
+
         items = []
         last_id = None
         total_processed = 0
@@ -268,6 +301,7 @@ class BaseIngestor(ABC):
                     self.send_to_queue(items)
                     total_processed += len(items)
                     items = []
+                    self._update_run_status({'items_found': total_processed})
 
             # Send remaining items
             if items:
@@ -281,6 +315,12 @@ class BaseIngestor(ABC):
             # Record success
             self.circuit_breaker.record_success()
             
+            self._update_run_status({
+                'status': 'completed',
+                'items_found': total_processed,
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+            })
+
             emit_audit_event("plugin.completed", self.source_platform, True, {
                 "items_processed": total_processed,
             })
@@ -291,6 +331,13 @@ class BaseIngestor(ABC):
             logger.exception(f"Ingestion failed: {e}")
             metrics.add_metric(name="IngestionErrors", unit="Count", value=1)
             
+            self._update_run_status({
+                'status': 'error',
+                'items_found': total_processed,
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+                'errors': [str(e)],
+            })
+
             # Record failure for circuit breaker
             self.circuit_breaker.record_failure(str(e))
             

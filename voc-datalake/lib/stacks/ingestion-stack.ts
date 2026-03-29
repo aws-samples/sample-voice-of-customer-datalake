@@ -322,10 +322,8 @@ export class VocIngestionStack extends cdk.Stack {
       PLUGIN_ID: plugin.id,
     };
 
-    // Webscraper needs aggregates table for progress tracking
-    if (plugin.id === 'webscraper') {
-      lambdaEnv.AGGREGATES_TABLE = aggregatesTable.tableName;
-    }
+    // All plugins need aggregates table for run status tracking
+    lambdaEnv.AGGREGATES_TABLE = aggregatesTable.tableName;
 
     // Bundle plugin code from plugins/ directory
     const ingestorCode = this.bundlePluginCode(plugin.id);

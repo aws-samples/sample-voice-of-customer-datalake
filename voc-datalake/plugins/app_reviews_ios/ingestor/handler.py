@@ -178,7 +178,10 @@ class IOSAppReviewsIngestor(BaseIngestor):
 def lambda_handler(event, context):
     """Lambda entry point. Optionally filters to a single app via event['app_id']."""
     ingestor = IOSAppReviewsIngestor()
-    app_id = event.get("app_id") if isinstance(event, dict) else None
-    if app_id:
-        ingestor.app_configs = [c for c in ingestor.app_configs if c.app_id == app_id]
+    if isinstance(event, dict):
+        app_id = event.get("app_id")
+        if app_id:
+            ingestor.app_configs = [c for c in ingestor.app_configs if c.app_id == app_id]
+        if event.get("execution_id"):
+            ingestor.execution_id = event["execution_id"]
     return ingestor.run()

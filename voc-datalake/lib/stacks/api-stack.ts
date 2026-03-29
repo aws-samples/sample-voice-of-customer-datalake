@@ -183,10 +183,11 @@ export class VocApiStack extends cdk.Stack {
       role: integrationsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION },
+      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, AGGREGATES_TABLE: aggregatesTable.tableName },
       layers: [apiLayer],
       logGroup: this.createLogGroup('IntegrationsApiLogs', uniqueName('voc-integrations-api')),
     });
+    aggregatesTable.grantReadWriteData(integrationsRole);
 
     // Scrapers API
     const scrapersRole = this.createLambdaRole('ScrapersLambdaRole');
@@ -937,7 +938,8 @@ export class VocApiStack extends cdk.Stack {
     const srcSourceResource = sourcesResource.addResource('{source}');
     srcSourceResource.addResource('enable').addMethod('PUT', integrationsIntegration, authMethodOptions);
     srcSourceResource.addResource('disable').addMethod('PUT', integrationsIntegration, authMethodOptions);
-    srcSourceResource.addResource('run').addMethod('POST', integrationsIntegration, authMethodOptions);
+    const srcRunResource = srcSourceResource.addResource('run');
+    srcRunResource.addMethod('POST', integrationsIntegration, authMethodOptions);
 
     // /scrapers/*
     const scrapersResource = this.api.root.addResource('scrapers');

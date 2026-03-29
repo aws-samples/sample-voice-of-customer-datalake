@@ -430,3 +430,48 @@ class TestDisableSource:
         assert body['success'] is True
         assert body['enabled'] is False
         mock_events.disable_rule.assert_called_once_with(Name='voc-ingest-webscraper-schedule')
+
+
+class TestGetSourceRunStatus:
+    """Tests for GET /sources/{source}/run-status endpoint."""
+
+    @patch('shared.tables.get_aggregates_table')
+    def test_returns_latest_run_status(self, mock_get_table, api_gateway_event, lambda_context):
+        """Returns the latest run status from DynamoDB."""
+        from integrations_handler import lambda_handler
+
+        mock_table = mock_get_table.return_value
+        mock_table.query.return_value = {
+            'Items': [{
+                'pk': 'SOURCE_RUN#app_reviews_android',
+                'sk': 'run_app_reviews_android_20260329',
+                'status': 'completed',
+                'items_found': 42,
+                'started_at': '2026-03-29T10:00:00Z',
+                'completed_at': '2026-03-29T10:01:00Z',
+                'errors': [],
+            }]
+        }
+
+        event = api_gateway_event(method='GET', path='/sources/status', query_params={'run_status': 'app_reviews_android'})
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['status'] == 'completed'
+        assert body['items_found'] == 42
+
+    @patch('shared.tables.get_aggregates_table')
+    def test_returns_never_run_when_no_records(self, mock_get_table, api_gateway_event, lambda_context):
+        """Returns never_run when no run records exist."""
+        from integrations_handler import lambda_handler
+
+        mock_table = mock_get_table.return_value
+        mock_table.query.return_value = {'Items': []}
+
+        event = api_gateway_event(method='GET', path='/sources/status', query_params={'run_status': 'app_reviews_ios'})
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['status'] == 'never_run'

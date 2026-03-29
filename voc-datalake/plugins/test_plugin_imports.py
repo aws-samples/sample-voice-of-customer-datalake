@@ -17,12 +17,12 @@ class TestSharedModuleImports:
         
         This would have caught the webscraper Lambda import failure.
         """
-        from shared.http import fetch_with_retry
+        from shared.http_utils import fetch_with_retry
         assert callable(fetch_with_retry)
 
     def test_shared_http_fetch_json_exists(self):
         """fetch_json_with_retry must also be available."""
-        from shared.http import fetch_json_with_retry
+        from shared.http_utils import fetch_json_with_retry
         assert callable(fetch_json_with_retry)
 
     def test_base_ingestor_imports_successfully(self):
