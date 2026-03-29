@@ -552,3 +552,150 @@ class TestAnalyzeUrl:
         # Assert - now returns 500 with error key
         assert response['statusCode'] == 500
         assert 'error' in body
+
+
+class TestGetScraperStatusTimeout:
+    """Tests for stale 'running' status detection in GET /scrapers/<scraper_id>/status."""
+
+    @patch('scrapers_handler.get_aggregates_table')
+    def test_detects_stale_running_status_as_timeout(
+        self, mock_get_table, api_gateway_event, lambda_context
+    ):
+        """Returns 'timeout' when a run has been 'running' for over 12 minutes."""
+        from datetime import datetime, timezone, timedelta
+
+        mock_table = MagicMock()
+        stale_start = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
+        mock_table.query.return_value = {
+            'Items': [{
+                'pk': 'SCRAPER_RUN#stale-scraper',
+                'sk': 'run_stale-scraper_20260329174622',
+                'status': 'running',
+                'started_at': stale_start,
+                'completed_at': None,
+                'pages_scraped': 0,
+                'items_found': 0,
+                'errors': []
+            }]
+        }
+        mock_get_table.return_value = mock_table
+
+        from scrapers_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/scrapers/stale-scraper/status',
+            path_params={'scraper_id': 'stale-scraper'}
+        )
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['status'] == 'timeout'
+
+    @patch('scrapers_handler.get_aggregates_table')
+    def test_keeps_running_status_when_recent(
+        self, mock_get_table, api_gateway_event, lambda_context
+    ):
+        """Keeps 'running' status when the run started less than 12 minutes ago."""
+        from datetime import datetime, timezone, timedelta
+
+        mock_table = MagicMock()
+        recent_start = (datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat()
+        mock_table.query.return_value = {
+            'Items': [{
+                'pk': 'SCRAPER_RUN#active-scraper',
+                'sk': 'run_active-scraper_20260329180000',
+                'status': 'running',
+                'started_at': recent_start,
+                'completed_at': None,
+                'pages_scraped': 2,
+                'items_found': 10,
+                'errors': []
+            }]
+        }
+        mock_get_table.return_value = mock_table
+
+        from scrapers_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/scrapers/active-scraper/status',
+            path_params={'scraper_id': 'active-scraper'}
+        )
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['status'] == 'running'
+
+    @patch('scrapers_handler.get_aggregates_table')
+    def test_does_not_affect_completed_status(
+        self, mock_get_table, api_gateway_event, lambda_context
+    ):
+        """Does not change status for completed runs regardless of age."""
+        from datetime import datetime, timezone, timedelta
+
+        mock_table = MagicMock()
+        old_start = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        mock_table.query.return_value = {
+            'Items': [{
+                'pk': 'SCRAPER_RUN#old-scraper',
+                'sk': 'run_old-scraper_20260329150000',
+                'status': 'completed',
+                'started_at': old_start,
+                'completed_at': (datetime.now(timezone.utc) - timedelta(hours=1, minutes=55)).isoformat(),
+                'pages_scraped': 10,
+                'items_found': 200,
+                'errors': []
+            }]
+        }
+        mock_get_table.return_value = mock_table
+
+        from scrapers_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/scrapers/old-scraper/status',
+            path_params={'scraper_id': 'old-scraper'}
+        )
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['status'] == 'completed'
+
+
+class TestRunScraperTTL:
+    """Tests for TTL on scraper run records."""
+
+    @patch('scrapers_handler.require_webscraper_function')
+    @patch('scrapers_handler.lambda_client')
+    @patch('scrapers_handler.get_aggregates_table')
+    def test_run_record_includes_ttl(
+        self, mock_get_table, mock_lambda, mock_require_fn, api_gateway_event, lambda_context
+    ):
+        """Scraper run record includes a TTL attribute for auto-cleanup."""
+        import time
+
+        mock_table = MagicMock()
+        mock_table.put_item.return_value = {}
+        mock_get_table.return_value = mock_table
+        mock_lambda.invoke.return_value = {}
+        mock_require_fn.return_value = 'test-webscraper-function'
+
+        from scrapers_handler import lambda_handler
+        event = api_gateway_event(
+            method='POST',
+            path='/scrapers/ttl-scraper/run',
+            path_params={'scraper_id': 'ttl-scraper'}
+        )
+
+        lambda_handler(event, lambda_context)
+
+        mock_table.put_item.assert_called_once()
+        item = mock_table.put_item.call_args.kwargs['Item']
+        assert 'ttl' in item
+        # TTL should be ~7 days from now (within 60s tolerance)
+        expected_ttl = int(time.time()) + (7 * 24 * 3600)
+        assert abs(item['ttl'] - expected_ttl) < 60

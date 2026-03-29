@@ -9,7 +9,7 @@ import os
 import re
 import socket
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -198,9 +198,12 @@ def run_scraper(scraper_id: str):
     try:
         table = get_aggregates_table()
         if table:
+            # TTL: auto-delete run records after 7 days
+            ttl = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
             table.put_item(Item={
                 'pk': f'SCRAPER_RUN#{scraper_id}', 'sk': execution_id, 'status': 'running',
-                'started_at': datetime.now(timezone.utc).isoformat(), 'pages_scraped': 0, 'items_found': 0, 'errors': []
+                'started_at': datetime.now(timezone.utc).isoformat(), 'pages_scraped': 0, 'items_found': 0, 'errors': [],
+                'ttl': ttl
             })
         function_name = require_webscraper_function()
         lambda_client.invoke(FunctionName=function_name, InvocationType='Event',
@@ -222,7 +225,16 @@ def get_scraper_status(scraper_id: str):
         if not items:
             return {'scraper_id': scraper_id, 'status': 'never_run'}
         run = items[0]
-        return {'scraper_id': scraper_id, 'execution_id': run.get('sk'), 'status': run.get('status', 'unknown'),
+        status = run.get('status', 'unknown')
+        # Detect stale "running" status from Lambda timeouts (10 min timeout + 2 min buffer)
+        if status == 'running' and run.get('started_at'):
+            try:
+                started = datetime.fromisoformat(run['started_at'].replace('Z', '+00:00'))
+                if datetime.now(timezone.utc) - started > timedelta(minutes=12):
+                    status = 'timeout'
+            except (ValueError, TypeError):
+                pass
+        return {'scraper_id': scraper_id, 'execution_id': run.get('sk'), 'status': status,
                 'started_at': run.get('started_at'), 'completed_at': run.get('completed_at'),
                 'pages_scraped': run.get('pages_scraped', 0), 'items_found': run.get('items_found', 0), 'errors': run.get('errors', [])}
     except Exception as e:

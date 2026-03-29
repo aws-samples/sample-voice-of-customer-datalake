@@ -5,7 +5,6 @@
   "description": "Configurable scraper for extracting feedback from websites",
   "category": "import",
   "version": "1.0.0",
-
   "infrastructure": {
     "ingestor": {
       "enabled": true,
@@ -14,7 +13,6 @@
       "memory": 512
     }
   },
-
   "config": [
     {
       "key": "configs",
@@ -25,7 +23,6 @@
       "secret": false
     }
   ],
-
   "setup": {
     "title": "Web Scraper Setup",
     "color": "gray",
@@ -37,7 +34,6 @@
       "Scrapers run automatically based on their configured frequency"
     ]
   },
-
   "secrets": {
     "configs": "[]"
   }

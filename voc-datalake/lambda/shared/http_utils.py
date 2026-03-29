@@ -13,12 +13,16 @@ from tenacity import (
 )
 from shared.logging import logger
 
-# Exceptions that should trigger a retry
+# Exceptions that should trigger a retry (transient network issues only)
 RETRYABLE_EXCEPTIONS = (
     requests.exceptions.Timeout,
     requests.exceptions.ConnectionError,
-    requests.exceptions.HTTPError,
 )
+
+
+class RetryableHTTPError(requests.exceptions.HTTPError):
+    """HTTPError subclass for server errors (429, 5xx) that should be retried."""
+    pass
 
 
 def create_retry_decorator(
@@ -38,7 +42,7 @@ def create_retry_decorator(
     return retry(
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
-        retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
+        retry=retry_if_exception_type((*RETRYABLE_EXCEPTIONS, RetryableHTTPError)),
         before_sleep=before_sleep_log(logger, log_level=20),  # INFO level
         reraise=True,
     )
@@ -94,9 +98,12 @@ def fetch_with_retry(
         **kwargs,
     )
 
-    # Retry on 429 (rate limit) and 5xx errors
+    # Only retry on 429 (rate limit) and 5xx server errors
     if response.status_code == 429 or response.status_code >= 500:
-        response.raise_for_status()
+        raise RetryableHTTPError(
+            f"{response.status_code} Server Error: {response.reason}",
+            response=response,
+        )
 
     return response
 

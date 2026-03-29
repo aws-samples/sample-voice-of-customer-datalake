@@ -886,8 +886,7 @@ export class VocApiStack extends cdk.Stack {
     feedbackIdResource.addResource('similar').addMethod('GET', metricsIntegration, authMethodOptions);
     feedbackResource.addResource('urgent').addMethod('GET', metricsIntegration, authMethodOptions);
     feedbackResource.addResource('entities').addMethod('GET', metricsIntegration, authMethodOptions);
-
-    // /feedback/problems/* (problem resolution)
+    feedbackResource.addResource('search').addMethod('GET', metricsIntegration, authMethodOptions);
     const problemsResource = feedbackResource.addResource('problems');
     problemsResource.addResource('resolved').addMethod('GET', metricsIntegration, authMethodOptions);
     const problemIdResource = problemsResource.addResource('{problemId}');
@@ -895,13 +894,9 @@ export class VocApiStack extends cdk.Stack {
     problemResolveResource.addMethod('PUT', metricsIntegration, authMethodOptions);
     problemResolveResource.addMethod('DELETE', metricsIntegration, authMethodOptions);
 
-    // /metrics/*
+    // /metrics/* — proxy to metrics Lambda
     const metricsResource = this.api.root.addResource('metrics');
-    metricsResource.addResource('summary').addMethod('GET', metricsIntegration, authMethodOptions);
-    metricsResource.addResource('sentiment').addMethod('GET', metricsIntegration, authMethodOptions);
-    metricsResource.addResource('categories').addMethod('GET', metricsIntegration, authMethodOptions);
-    metricsResource.addResource('sources').addMethod('GET', metricsIntegration, authMethodOptions);
-    metricsResource.addResource('personas').addMethod('GET', metricsIntegration, authMethodOptions);
+    metricsResource.addProxy({ defaultIntegration: metricsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /chat/*
     const chatResource = this.api.root.addResource('chat');
@@ -923,80 +918,37 @@ export class VocApiStack extends cdk.Stack {
     const integrationsResource = this.api.root.addResource('integrations');
     integrationsResource.addResource('status').addMethod('GET', integrationsIntegration, authMethodOptions);
     const intSourceResource = integrationsResource.addResource('{source}');
-    const intCredentialsResource = intSourceResource.addResource('credentials');
-    intCredentialsResource.addMethod('PUT', integrationsIntegration, authMethodOptions);
-    intCredentialsResource.addMethod('GET', integrationsIntegration, authMethodOptions);
-    intSourceResource.addResource('test').addMethod('POST', integrationsIntegration, authMethodOptions);
-    const intAppsResource = intSourceResource.addResource('apps');
-    intAppsResource.addMethod('GET', integrationsIntegration, authMethodOptions);
-    intAppsResource.addMethod('POST', integrationsIntegration, authMethodOptions);
-    intAppsResource.addResource('{appId}').addMethod('DELETE', integrationsIntegration, authMethodOptions);
+    intSourceResource.addProxy({ defaultIntegration: integrationsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /sources/*
+    // /sources/* — proxy to integrations Lambda
     const sourcesResource = this.api.root.addResource('sources');
     sourcesResource.addResource('status').addMethod('GET', integrationsIntegration, authMethodOptions);
     const srcSourceResource = sourcesResource.addResource('{source}');
-    srcSourceResource.addResource('enable').addMethod('PUT', integrationsIntegration, authMethodOptions);
-    srcSourceResource.addResource('disable').addMethod('PUT', integrationsIntegration, authMethodOptions);
-    const srcRunResource = srcSourceResource.addResource('run');
-    srcRunResource.addMethod('POST', integrationsIntegration, authMethodOptions);
+    srcSourceResource.addProxy({ defaultIntegration: integrationsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /scrapers/*
     const scrapersResource = this.api.root.addResource('scrapers');
     scrapersResource.addMethod('GET', scrapersIntegration, authMethodOptions);
     scrapersResource.addMethod('POST', scrapersIntegration, authMethodOptions);
     const manualResource = scrapersResource.addResource('manual');
-    const manualParseResource = manualResource.addResource('parse');
-    manualParseResource.addMethod('POST', manualImportIntegration, authMethodOptions);
-    manualParseResource.addResource('{jobId}').addMethod('GET', manualImportIntegration, authMethodOptions);
-    manualResource.addResource('confirm').addMethod('POST', manualImportIntegration, authMethodOptions);
-    manualResource.addResource('json-upload').addMethod('POST', manualImportIntegration, authMethodOptions);
+    manualResource.addProxy({ defaultIntegration: manualImportIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
     scrapersResource.addProxy({ defaultIntegration: scrapersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /s3-import/*
+    // /s3-import/* — proxy to s3 import Lambda
     const s3ImportResource = this.api.root.addResource('s3-import');
-    s3ImportResource.addResource('files').addMethod('GET', s3ImportIntegration, authMethodOptions);
-    const s3SourcesResource = s3ImportResource.addResource('sources');
-    s3SourcesResource.addMethod('GET', s3ImportIntegration, authMethodOptions);
-    s3SourcesResource.addMethod('POST', s3ImportIntegration, authMethodOptions);
-    s3ImportResource.addResource('upload-url').addMethod('POST', s3ImportIntegration, authMethodOptions);
-    s3ImportResource.addResource('file').addResource('{key}').addMethod('DELETE', s3ImportIntegration, authMethodOptions);
+    s3ImportResource.addProxy({ defaultIntegration: s3ImportIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /data-explorer/*
+    // /data-explorer/* — proxy to data explorer Lambda
     const dataExplorerResource = this.api.root.addResource('data-explorer');
-    const dataExplorerS3Resource = dataExplorerResource.addResource('s3');
-    dataExplorerS3Resource.addMethod('GET', dataExplorerIntegration, authMethodOptions);
-    dataExplorerS3Resource.addMethod('PUT', dataExplorerIntegration, authMethodOptions);
-    dataExplorerS3Resource.addMethod('DELETE', dataExplorerIntegration, authMethodOptions);
-    dataExplorerS3Resource.addResource('preview').addMethod('GET', dataExplorerIntegration, authMethodOptions);
-    const dataExplorerFeedbackResource = dataExplorerResource.addResource('feedback');
-    dataExplorerFeedbackResource.addMethod('PUT', dataExplorerIntegration, authMethodOptions);
-    dataExplorerFeedbackResource.addMethod('DELETE', dataExplorerIntegration, authMethodOptions);
-    dataExplorerResource.addResource('stats').addMethod('GET', dataExplorerIntegration, authMethodOptions);
-    dataExplorerResource.addResource('buckets').addMethod('GET', dataExplorerIntegration, authMethodOptions);
+    dataExplorerResource.addProxy({ defaultIntegration: dataExplorerIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /settings/*
+    // /settings/* — proxy to settings Lambda
     const settingsResource = this.api.root.addResource('settings');
-    const brandResource = settingsResource.addResource('brand');
-    brandResource.addMethod('GET', settingsIntegration, authMethodOptions);
-    brandResource.addMethod('PUT', settingsIntegration, authMethodOptions);
-    const settingsCategoriesResource = settingsResource.addResource('categories');
-    settingsCategoriesResource.addMethod('GET', settingsIntegration, authMethodOptions);
-    settingsCategoriesResource.addMethod('PUT', settingsIntegration, authMethodOptions);
-    settingsCategoriesResource.addResource('generate').addMethod('POST', settingsIntegration, authMethodOptions);
+    settingsResource.addProxy({ defaultIntegration: settingsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    const reviewResource = settingsResource.addResource('review');
-    reviewResource.addMethod('GET', settingsIntegration, authMethodOptions);
-    reviewResource.addMethod('PUT', settingsIntegration, authMethodOptions);
-
-    // /logs/*
+    // /logs/* — proxy to logs Lambda
     const logsResource = this.api.root.addResource('logs');
-    const logsValidationResource = logsResource.addResource('validation');
-    logsValidationResource.addMethod('GET', logsIntegration, authMethodOptions);
-    logsValidationResource.addResource('{source}').addMethod('DELETE', logsIntegration, authMethodOptions);
-    logsResource.addResource('processing').addMethod('GET', logsIntegration, authMethodOptions);
-    logsResource.addResource('summary').addMethod('GET', logsIntegration, authMethodOptions);
-    logsResource.addResource('scraper').addResource('{scraper_id}').addMethod('GET', logsIntegration, authMethodOptions);
+    logsResource.addProxy({ defaultIntegration: logsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /users/*
     const usersResource = this.api.root.addResource('users');
@@ -1004,19 +956,10 @@ export class VocApiStack extends cdk.Stack {
     usersResource.addMethod('POST', usersIntegration, authMethodOptions);
     usersResource.addProxy({ defaultIntegration: usersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /feedback-form/* (legacy single form - public endpoints)
+    // /feedback-form/* (legacy single form - public endpoints, proxy to feedback form Lambda)
     const feedbackFormResource = this.api.root.addResource('feedback-form');
-    const feedbackFormConfigResource = feedbackFormResource.addResource('config');
-    const feedbackFormConfigGet = feedbackFormConfigResource.addMethod('GET', feedbackFormIntegration);
-    feedbackFormConfigResource.addMethod('PUT', feedbackFormIntegration, authMethodOptions);
-    const feedbackFormSubmit = feedbackFormResource.addResource('submit').addMethod('POST', feedbackFormIntegration);
-    const feedbackFormEmbed = feedbackFormResource.addResource('embed').addMethod('GET', feedbackFormIntegration);
-    const feedbackFormIframe = feedbackFormResource.addResource('iframe').addMethod('GET', feedbackFormIntegration);
-
-    NagSuppressions.addResourceSuppressions(feedbackFormConfigGet, publicFeedbackEndpointSuppressions);
-    NagSuppressions.addResourceSuppressions(feedbackFormSubmit, publicFeedbackEndpointSuppressions);
-    NagSuppressions.addResourceSuppressions(feedbackFormEmbed, publicFeedbackEndpointSuppressions);
-    NagSuppressions.addResourceSuppressions(feedbackFormIframe, publicFeedbackEndpointSuppressions);
+    const feedbackFormProxy = feedbackFormResource.addProxy({ defaultIntegration: feedbackFormIntegration, anyMethod: true });
+    NagSuppressions.addResourceSuppressions(feedbackFormProxy, publicFeedbackEndpointSuppressions, true);
 
     // /feedback-forms/* (multiple forms)
     const feedbackFormsResource = this.api.root.addResource('feedback-forms');
@@ -1031,10 +974,9 @@ export class VocApiStack extends cdk.Stack {
     projectsResource.addMethod('POST', projectsIntegration, authMethodOptions);
     projectsResource.addProxy({ defaultIntegration: projectsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /extension/*
+    // /extension/* — proxy to extension Lambda
     const extensionResource = this.api.root.addResource('extension');
-    extensionResource.addResource('reviews').addMethod('POST', extensionIntegration, authMethodOptions);
-    extensionResource.addResource('status').addMethod('GET', extensionIntegration, authMethodOptions);
+    extensionResource.addProxy({ defaultIntegration: extensionIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /webhooks/{pluginId}
     const webhooksResource = this.api.root.addResource('webhooks');
@@ -1114,11 +1056,7 @@ exports.handler = async (event) => {
     // /mcp — protected by token format authorizer + per-method throttling
     const mcpResource = this.api.root.addResource('mcp');
     const mcpMethod = mcpResource.addMethod('POST', mcpIntegration, mcpMethodOptions);
-
-    // /mcp/autoseed/{project_id} — same authorizer
-    const mcpAutoseedResource = mcpResource.addResource('autoseed');
-    const mcpAutoseedProjectResource = mcpAutoseedResource.addResource('{project_id}');
-    const autoseedMethod = mcpAutoseedProjectResource.addMethod('GET', mcpIntegration, mcpMethodOptions);
+    const mcpProxy = mcpResource.addProxy({ defaultIntegration: mcpIntegration, anyMethod: true, defaultMethodOptions: mcpMethodOptions });
 
     // Per-method throttling for MCP endpoints (10 req/s, burst 20)
     // Much lower than the global 100 req/s to limit brute-force exposure
@@ -1134,16 +1072,15 @@ exports.handler = async (event) => {
       stage: this.api.deploymentStage,
       throttle: [
         { method: mcpMethod, throttle: { rateLimit: 10, burstLimit: 20 } },
-        { method: autoseedMethod, throttle: { rateLimit: 10, burstLimit: 20 } },
       ],
     });
 
-    NagSuppressions.addResourceSuppressions(autoseedMethod, [
+    NagSuppressions.addResourceSuppressions(mcpProxy, [
       {
         id: 'AwsSolutions-COG4',
         reason: 'MCP autoseed uses a custom Lambda token authorizer instead of Cognito — MCP clients cannot use Cognito auth flow',
       },
-    ]);
+    ], true);
 
     NagSuppressions.addResourceSuppressions(mcpMethod, [
       {

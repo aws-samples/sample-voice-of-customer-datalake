@@ -7,6 +7,7 @@ import clsx from 'clsx'
 import {
   Play, Settings, Trash2, Smartphone, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react'
+import { getAppIdentifier } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
 
 type AppConfig = Record<string, string>
@@ -15,12 +16,6 @@ export interface RunStatusInfo {
   status: string
   items_found: number
   errors: string[]
-}
-
-function getAppIdentifier(app: AppConfig, pluginId: string): string {
-  if (pluginId === 'app_reviews_ios') return app.app_id === '' ? '' : app.app_id
-  if (pluginId === 'app_reviews_android') return app.package_name === '' ? '' : app.package_name
-  return ''
 }
 
 function getPlatformLabel(pluginId: string): string {
@@ -67,8 +62,6 @@ function AppRunStatusBar({ status }: Readonly<{ status: RunStatusInfo }>) {
     </div>
   )
 }
-
-export { getAppIdentifier }
 
 export function AppConfigCard({
   app, plugin, onEdit, onDelete, onRun, isRunning, runStatus,
