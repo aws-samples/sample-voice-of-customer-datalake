@@ -48,35 +48,46 @@ function AppConfigList({
   readonly onRunApp: (pluginId: string, appIdentifier: string) => void
 }) {
   const { config } = useConfigStore()
-  const [runningPlugins, setRunningPlugins] = useState<Set<string>>(new Set())
+  const [runningApps, setRunningApps] = useState<Set<string>>(new Set())
   const [runStatuses, setRunStatuses] = useState<Record<string, RunStatusInfo>>({})
 
-  // Poll run status for running plugins
+  // Poll run status for running apps
   useEffect(() => {
-    if (runningPlugins.size === 0) return
+    if (runningApps.size === 0) return
+    // Extract unique plugin IDs from running app keys
+    const runningPluginIds = new Set([...runningApps].map((key) => key.split('-')[0]))
     const updateStatus = (pluginId: string, result: {
       status: string
       items_found?: number
       errors?: string[]
     }) => {
-      setRunStatuses((prev) => ({
-        ...prev,
-        [pluginId]: {
-          status: result.status,
-          items_found: result.items_found ?? 0,
-          errors: result.errors ?? [],
-        },
-      }))
+      const statusInfo: RunStatusInfo = {
+        status: result.status,
+        items_found: result.items_found ?? 0,
+        errors: result.errors ?? [],
+      }
+      // Update all running apps for this plugin with the same status
+      setRunStatuses((prev) => {
+        const next = { ...prev }
+        for (const key of runningApps) {
+          if (key.startsWith(`${pluginId}-`)) {
+            next[key] = statusInfo
+          }
+        }
+        return next
+      })
       if (result.status === 'completed' || result.status === 'error') {
-        setRunningPlugins((prev) => {
+        setRunningApps((prev) => {
           const next = new Set(prev)
-          next.delete(pluginId)
+          for (const key of prev) {
+            if (key.startsWith(`${pluginId}-`)) next.delete(key)
+          }
           return next
         })
       }
     }
     const pollStatus = () => {
-      for (const pluginId of runningPlugins) {
+      for (const pluginId of runningPluginIds) {
         void api.getSourceRunStatus(pluginId)
           .then((result) => {
             updateStatus(pluginId, result)
@@ -87,13 +98,14 @@ function AppConfigList({
     }
     const interval = setInterval(pollStatus, 2000)
     return () => clearInterval(interval)
-  }, [runningPlugins])
+  }, [runningApps])
 
   const handleRun = (pluginId: string, appIdentifier: string) => {
-    setRunningPlugins((prev) => new Set(prev).add(pluginId))
+    const appKey = `${pluginId}-${appIdentifier}`
+    setRunningApps((prev) => new Set(prev).add(appKey))
     setRunStatuses((prev) => ({
       ...prev,
-      [pluginId]: {
+      [appKey]: {
         status: 'running',
         items_found: 0,
         errors: [],
@@ -159,8 +171,8 @@ function AppConfigList({
         <AppConfigCard key={`${plugin.id}-${app.id}`} app={app} plugin={plugin}
           onEdit={() => onEditPlugin(plugin)} onDelete={() => onDeleteApp(plugin.id, app.id)}
           onRun={() => handleRun(plugin.id, getAppIdentifier(app, plugin.id))}
-          isRunning={runningPlugins.has(plugin.id)}
-          runStatus={runStatuses[plugin.id]} />
+          isRunning={runningApps.has(`${plugin.id}-${getAppIdentifier(app, plugin.id)}`)}
+          runStatus={runStatuses[`${plugin.id}-${getAppIdentifier(app, plugin.id)}`]} />
       ))}
     </>
   )

@@ -7,7 +7,9 @@ import clsx from 'clsx'
 import {
   Play, Settings, Trash2, Smartphone, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react'
-import { getAppIdentifier } from './scraper-helpers'
+import {
+  getAppIdentifier, getFrequencyLabel,
+} from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
 
 type AppConfig = Record<string, string>
@@ -74,6 +76,9 @@ export function AppConfigCard({
   isRunning: boolean
   runStatus?: RunStatusInfo
 }>) {
+  const frequencyMinutes = Number.parseInt(app.frequency_minutes === '' ? '1440' : app.frequency_minutes, 10)
+  const frequencyLabel = getFrequencyLabel(frequencyMinutes)
+
   return (
     <div className="card border-2 border-purple-200 bg-purple-50/30 transition-all">
       <div className="flex items-start justify-between mb-3">
@@ -93,8 +98,8 @@ export function AppConfigCard({
         </div>
       </div>
       <div className="grid grid-cols-3 gap-4 text-sm">
+        <div><span className="text-gray-500">Frequency</span><p className="font-medium">{frequencyLabel}</p></div>
         <div><span className="text-gray-500">Platform</span><p className="font-medium">{getPlatformLabel(plugin.id)}</p></div>
-        <div><span className="text-gray-500">Source</span><p className="font-medium">{plugin.name}</p></div>
         <div><span className="text-gray-500">Max Reviews</span><p className="font-medium">{app.max_reviews_per_run === '' ? '500' : app.max_reviews_per_run}</p></div>
       </div>
       {runStatus == null ? null : <AppRunStatusBar status={runStatus} />}

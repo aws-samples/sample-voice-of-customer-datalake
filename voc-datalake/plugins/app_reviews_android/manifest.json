@@ -66,6 +66,7 @@
       "required": false,
       "secret": false,
       "options": [
+        { "value": "0", "label": "Manual only" },
         { "value": "15", "label": "Every 15 minutes" },
         { "value": "30", "label": "Every 30 minutes" },
         { "value": "60", "label": "Every hour" },
