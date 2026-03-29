@@ -243,7 +243,7 @@ class BaseIngestor(ABC):
         metrics.add_metric(name="ItemsIngested", unit="Count", value=len(items))
 
     @tracer.capture_method
-    def _update_run_status(self, updates: dict):
+    def _update_source_run_status(self, updates: dict):
         """Update run status in DynamoDB for progress tracking."""
         if not self.aggregates_table or not self.execution_id:
             return
@@ -276,7 +276,7 @@ class BaseIngestor(ABC):
         
         # Initialize run status tracking
         if self.aggregates_table and self.execution_id:
-            self._update_run_status({
+            self._update_source_run_status({
                 'status': 'running',
                 'items_found': 0,
                 'started_at': datetime.now(timezone.utc).isoformat(),
@@ -301,7 +301,7 @@ class BaseIngestor(ABC):
                     self.send_to_queue(items)
                     total_processed += len(items)
                     items = []
-                    self._update_run_status({'items_found': total_processed})
+                    self._update_source_run_status({'items_found': total_processed})
 
             # Send remaining items
             if items:
@@ -315,7 +315,7 @@ class BaseIngestor(ABC):
             # Record success
             self.circuit_breaker.record_success()
             
-            self._update_run_status({
+            self._update_source_run_status({
                 'status': 'completed',
                 'items_found': total_processed,
                 'completed_at': datetime.now(timezone.utc).isoformat(),
@@ -331,7 +331,7 @@ class BaseIngestor(ABC):
             logger.exception(f"Ingestion failed: {e}")
             metrics.add_metric(name="IngestionErrors", unit="Count", value=1)
             
-            self._update_run_status({
+            self._update_source_run_status({
                 'status': 'error',
                 'items_found': total_processed,
                 'completed_at': datetime.now(timezone.utc).isoformat(),
