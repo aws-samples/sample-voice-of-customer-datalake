@@ -84,11 +84,11 @@ function ProblemLabel({
 
   return (
     <div className="flex-1 min-w-0">
-      <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
+      <div className="flex items-start gap-1.5 sm:gap-2 mb-1">
         {isResolved === true ? (
-          <CheckCircle2 size={12} className="text-green-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
+          <CheckCircle2 size={12} className="text-green-500 flex-shrink-0 mt-0.5 sm:w-[14px] sm:h-[14px]" />
         ) : (
-          <AlertTriangle size={12} className="text-orange-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
+          <AlertTriangle size={12} className="text-orange-500 flex-shrink-0 mt-0.5 sm:w-[14px] sm:h-[14px]" />
         )}
         <span className={`font-medium text-xs sm:text-sm ${isResolved === true ? 'text-gray-500 line-through' : 'text-gray-800'}`}>
           {problemGroup.problem}
