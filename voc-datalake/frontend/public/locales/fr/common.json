@@ -30,16 +30,16 @@
   "goToSettings": "Aller aux Paramètres",
   "loading": "Chargement...",
   "logs": {
-    "daysAgo_one": "",
-    "daysAgo_many": "",
-    "daysAgo_other": "",
-    "hoursAgo_one": "",
-    "hoursAgo_many": "",
-    "hoursAgo_other": "",
-    "justNow": "",
-    "minutesAgo_one": "",
-    "minutesAgo_many": "",
-    "minutesAgo_other": ""
+    "daysAgo_one": "il y a {{count}} jour",
+    "daysAgo_many": "il y a {{count}} jours",
+    "daysAgo_other": "il y a {{count}} jours",
+    "hoursAgo_one": "il y a {{count}} heure",
+    "hoursAgo_many": "il y a {{count}} heures",
+    "hoursAgo_other": "il y a {{count}} heures",
+    "justNow": "À l'instant",
+    "minutesAgo_one": "il y a {{count}} minute",
+    "minutesAgo_many": "il y a {{count}} minutes",
+    "minutesAgo_other": "il y a {{count}} minutes"
   },
   "metrics": {
     "avgSentiment": "Sentiment moyen",
@@ -61,10 +61,10 @@
     "settings": "Paramètres"
   },
   "priority": {
-    "high": "",
-    "low": "",
-    "medium": "",
-    "none": ""
+    "high": "Haute",
+    "low": "Basse",
+    "medium": "Moyenne",
+    "none": "Aucune"
   },
   "send": "Envoyer",
   "sentiment": {

@@ -30,13 +30,13 @@
   "goToSettings": "Go to Settings",
   "loading": "Loading...",
   "logs": {
-    "daysAgo_one": "logs.daysAgo",
-    "daysAgo_other": "logs.daysAgo",
-    "hoursAgo_one": "logs.hoursAgo",
-    "hoursAgo_other": "logs.hoursAgo",
-    "justNow": "logs.justNow",
-    "minutesAgo_one": "logs.minutesAgo",
-    "minutesAgo_other": "logs.minutesAgo"
+    "daysAgo_one": "{{count}} day ago",
+    "daysAgo_other": "{{count}} days ago",
+    "hoursAgo_one": "{{count}} hour ago",
+    "hoursAgo_other": "{{count}} hours ago",
+    "justNow": "Just now",
+    "minutesAgo_one": "{{count}} minute ago",
+    "minutesAgo_other": "{{count}} minutes ago"
   },
   "metrics": {
     "avgSentiment": "Avg Sentiment",
@@ -58,10 +58,10 @@
     "settings": "Settings"
   },
   "priority": {
-    "high": "priority.high",
-    "low": "priority.low",
-    "medium": "priority.medium",
-    "none": "priority.none"
+    "high": "High",
+    "low": "Low",
+    "medium": "Medium",
+    "none": "None"
   },
   "send": "Send",
   "sentiment": {

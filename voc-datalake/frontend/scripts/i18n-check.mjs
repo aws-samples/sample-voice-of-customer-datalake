@@ -41,7 +41,7 @@ function safePath(base, ...segments) {
 
 const SOURCE_LANG = 'en'
 const LANGUAGES = ['es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko']
-const NAMESPACES = ['categories', 'chat', 'common', 'components', 'dashboard', 'dataExplorer', 'feedback', 'feedbackDetail', 'feedbackForms', 'login', 'prioritization', 'problemAnalysis', 'projects', 'scrapers', 'settings']
+const NAMESPACES = ['categories', 'chat', 'common', 'components', 'dashboard', 'dataExplorer', 'feedback', 'feedbackDetail', 'feedbackForms', 'login', 'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'scrapers', 'settings']
 const DEFAULT_NS = 'common'
 
 // ── helpers ──────────────────────────────────────────────────────────

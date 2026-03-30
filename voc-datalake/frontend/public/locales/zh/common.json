@@ -30,10 +30,13 @@
   "goToSettings": "前往设置",
   "loading": "加载中...",
   "logs": {
-    "daysAgo_other": "",
-    "hoursAgo_other": "",
-    "justNow": "",
-    "minutesAgo_other": ""
+    "daysAgo_one": "{{count}}天前",
+    "daysAgo_other": "{{count}}天前",
+    "hoursAgo_one": "{{count}}小时前",
+    "hoursAgo_other": "{{count}}小时前",
+    "justNow": "刚刚",
+    "minutesAgo_one": "{{count}}分钟前",
+    "minutesAgo_other": "{{count}}分钟前"
   },
   "metrics": {
     "avgSentiment": "平均情感",
@@ -55,10 +58,10 @@
     "settings": "设置"
   },
   "priority": {
-    "high": "",
-    "low": "",
-    "medium": "",
-    "none": ""
+    "high": "高",
+    "low": "低",
+    "medium": "中",
+    "none": "无"
   },
   "send": "发送",
   "sentiment": {

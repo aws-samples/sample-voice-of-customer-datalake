@@ -30,13 +30,13 @@
   "goToSettings": "Zu den Einstellungen",
   "loading": "Wird geladen...",
   "logs": {
-    "daysAgo_one": "",
-    "daysAgo_other": "",
-    "hoursAgo_one": "",
-    "hoursAgo_other": "",
-    "justNow": "",
-    "minutesAgo_one": "",
-    "minutesAgo_other": ""
+    "daysAgo_one": "vor {{count}} Tag",
+    "daysAgo_other": "vor {{count}} Tagen",
+    "hoursAgo_one": "vor {{count}} Stunde",
+    "hoursAgo_other": "vor {{count}} Stunden",
+    "justNow": "Gerade eben",
+    "minutesAgo_one": "vor {{count}} Minute",
+    "minutesAgo_other": "vor {{count}} Minuten"
   },
   "metrics": {
     "avgSentiment": "Durchschnittliche Stimmung",
@@ -58,10 +58,10 @@
     "settings": "Einstellungen"
   },
   "priority": {
-    "high": "",
-    "low": "",
-    "medium": "",
-    "none": ""
+    "high": "Hoch",
+    "low": "Niedrig",
+    "medium": "Mittel",
+    "none": "Keine"
   },
   "send": "Senden",
   "sentiment": {

@@ -30,10 +30,13 @@
   "goToSettings": "설정으로 이동",
   "loading": "로딩 중...",
   "logs": {
-    "daysAgo_other": "",
-    "hoursAgo_other": "",
-    "justNow": "",
-    "minutesAgo_other": ""
+    "daysAgo_one": "{{count}}일 전",
+    "daysAgo_other": "{{count}}일 전",
+    "hoursAgo_one": "{{count}}시간 전",
+    "hoursAgo_other": "{{count}}시간 전",
+    "justNow": "방금",
+    "minutesAgo_one": "{{count}}분 전",
+    "minutesAgo_other": "{{count}}분 전"
   },
   "metrics": {
     "avgSentiment": "평균 감정",
@@ -55,10 +58,10 @@
     "settings": "설정"
   },
   "priority": {
-    "high": "",
-    "low": "",
-    "medium": "",
-    "none": ""
+    "high": "높음",
+    "low": "낮음",
+    "medium": "보통",
+    "none": "없음"
   },
   "send": "보내기",
   "sentiment": {

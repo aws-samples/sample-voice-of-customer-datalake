@@ -30,10 +30,13 @@
   "goToSettings": "設定へ移動",
   "loading": "読み込み中...",
   "logs": {
-    "daysAgo_other": "",
-    "hoursAgo_other": "",
-    "justNow": "",
-    "minutesAgo_other": ""
+    "daysAgo_one": "{{count}}日前",
+    "daysAgo_other": "{{count}}日前",
+    "hoursAgo_one": "{{count}}時間前",
+    "hoursAgo_other": "{{count}}時間前",
+    "justNow": "たった今",
+    "minutesAgo_one": "{{count}}分前",
+    "minutesAgo_other": "{{count}}分前"
   },
   "metrics": {
     "avgSentiment": "平均感情",
@@ -55,10 +58,10 @@
     "settings": "設定"
   },
   "priority": {
-    "high": "",
-    "low": "",
-    "medium": "",
-    "none": ""
+    "high": "高",
+    "low": "低",
+    "medium": "中",
+    "none": "なし"
   },
   "send": "送信",
   "sentiment": {

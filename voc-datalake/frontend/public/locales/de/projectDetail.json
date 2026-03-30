@@ -126,8 +126,8 @@
   },
   "mcp": {
     "activeTokens": "Aktive Tokens ({{count}})",
-    "activeTokens_one": "",
-    "activeTokens_other": "",
+    "activeTokens_one": "Aktive Tokens ({{count}})",
+    "activeTokens_other": "Aktive Tokens ({{count}})",
     "cancel": "Abbrechen",
     "collapseLabel": "Einklappen",
     "copied": "Kopiert",

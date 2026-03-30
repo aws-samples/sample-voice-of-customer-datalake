@@ -24,11 +24,13 @@ class AndroidAppReviewsIngestor(BaseIngestor):
         super().__init__()
         self.app_configs = self._load_app_configs()
         self.sort_by = self.secrets.get("sort_by", "newest")
-        self.max_countries = parse_int(
-            self.secrets.get("max_countries_per_run", "20"), 20
-        )
+        # Android Play Store returns the same global reviews regardless of country.
+        # Multiple countries just fetch duplicates, so we hardcode to 1 to avoid
+        # wasted API calls. The library paginates internally to get all available
+        # reviews (typically ~1000-2000 per app).
+        self.max_countries = 1
         self.frequency_minutes = parse_int(
-            self.secrets.get("frequency_minutes", "60"), 60
+            self.secrets.get("frequency_minutes", "60"), 60, allow_zero=True
         )
 
     def _load_app_configs(self) -> list[AndroidAppConfig]:
@@ -95,7 +97,7 @@ class AndroidAppReviewsIngestor(BaseIngestor):
             reviews = fetch_reviews_for_country(
                 package_name=app.package_name,
                 country=country,
-                count=100,
+                count=app.max_reviews_per_run,
                 sort_by=self.sort_by,
             )
             for review in reviews:
@@ -142,7 +144,7 @@ class AndroidAppReviewsIngestor(BaseIngestor):
             "url": f"https://play.google.com/store/apps/details?id={app.package_name}",
             "author": review.get("userName", "Anonymous"),
             "brand_handles_matched": [self.brand_name] if self.brand_name else [],
-            "source_platform_override": f"{app.name}_android",
+            "source_platform_override": f"{app.name}_Android",
             "app_name": app.name,
             "app_identifier": app.package_name,
             "country": review.get("country", ""),
@@ -174,6 +176,7 @@ class AndroidAppReviewsIngestor(BaseIngestor):
                 frequency_minutes=self.frequency_minutes,
                 collect_fn=self._collect_reviews_for_app,
                 format_fn=self._format_review,
+                execution_id=self.execution_id,
             )
 
 
@@ -182,6 +185,11 @@ class AndroidAppReviewsIngestor(BaseIngestor):
 @metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event, context):
     """Lambda entry point. Optionally filters to a single app via event['app_id']."""
+    # Clear secret cache on manual runs to pick up newly added app configs
+    if isinstance(event, dict) and event.get("execution_id"):
+        from shared.aws import clear_secret_cache
+        clear_secret_cache()
+
     ingestor = AndroidAppReviewsIngestor()
     if isinstance(event, dict):
         app_id = event.get("app_id")

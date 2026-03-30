@@ -30,16 +30,16 @@
   "goToSettings": "Ir para Configurações",
   "loading": "Carregando...",
   "logs": {
-    "daysAgo_one": "",
-    "daysAgo_many": "",
-    "daysAgo_other": "",
-    "hoursAgo_one": "",
-    "hoursAgo_many": "",
-    "hoursAgo_other": "",
-    "justNow": "",
-    "minutesAgo_one": "",
-    "minutesAgo_many": "",
-    "minutesAgo_other": ""
+    "daysAgo_one": "há {{count}} dia",
+    "daysAgo_many": "há {{count}} dias",
+    "daysAgo_other": "há {{count}} dias",
+    "hoursAgo_one": "há {{count}} hora",
+    "hoursAgo_many": "há {{count}} horas",
+    "hoursAgo_other": "há {{count}} horas",
+    "justNow": "Agora mesmo",
+    "minutesAgo_one": "há {{count}} minuto",
+    "minutesAgo_many": "há {{count}} minutos",
+    "minutesAgo_other": "há {{count}} minutos"
   },
   "metrics": {
     "avgSentiment": "Sentimento médio",
@@ -61,10 +61,10 @@
     "settings": "Configurações"
   },
   "priority": {
-    "high": "",
-    "low": "",
-    "medium": "",
-    "none": ""
+    "high": "Alta",
+    "low": "Baixa",
+    "medium": "Média",
+    "none": "Nenhuma"
   },
   "send": "Enviar",
   "sentiment": {

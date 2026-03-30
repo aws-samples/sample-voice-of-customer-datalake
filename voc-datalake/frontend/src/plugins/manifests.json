@@ -40,14 +40,6 @@
         ]
       },
       {
-        "key": "max_countries_per_run",
-        "label": "Max Countries Per Run",
-        "type": "text",
-        "required": false,
-        "placeholder": "20",
-        "secret": false
-      },
-      {
         "key": "max_reviews_per_run",
         "label": "Max Reviews Per Run",
         "type": "text",
@@ -103,7 +95,7 @@
       "steps": [
         "Find your app's package name from the Play Store URL (e.g. com.example.app)",
         "Enter the App Name and Package Name above",
-        "Choose a run frequency and optionally adjust country limits",
+        "Choose a run frequency to start collecting reviews",
         "Enable the schedule to start collecting reviews"
       ]
     },
@@ -152,14 +144,6 @@
             "label": "Most Critical"
           }
         ]
-      },
-      {
-        "key": "max_countries_per_run",
-        "label": "Max Countries Per Run",
-        "type": "text",
-        "required": false,
-        "placeholder": "40",
-        "secret": false
       },
       {
         "key": "max_reviews_per_run",
@@ -217,7 +201,7 @@
       "steps": [
         "Find your app's numeric ID from the App Store URL (e.g. 585629514)",
         "Enter the App Name and App Store ID above",
-        "Choose a run frequency and optionally adjust country limits",
+        "Choose a run frequency to start collecting reviews",
         "Enable the schedule to start collecting reviews"
       ]
     },

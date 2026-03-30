@@ -11,10 +11,18 @@ from typing import Generator
 from _shared.base_ingestor import logger, metrics
 
 
-def parse_int(value: str, default: int) -> int:
-    """Safely parse a positive integer from string, returning default on failure."""
+def parse_int(value: str, default: int, *, allow_zero: bool = False) -> int:
+    """Safely parse a non-negative integer from string, returning default on failure.
+
+    Args:
+        value: String to parse.
+        default: Fallback when parsing fails or value is out of range.
+        allow_zero: When True, 0 is accepted (e.g. frequency_minutes=0 means manual-only).
+    """
     try:
         parsed = int(value)
+        if allow_zero and parsed == 0:
+            return 0
         return parsed if parsed > 0 else default
     except (ValueError, TypeError):
         return default
@@ -92,26 +100,44 @@ def process_app_reviews(
     frequency_minutes: int,
     collect_fn,
     format_fn,
+    execution_id: str | None = None,
 ) -> Generator[dict, None, None]:
     """
     Shared review processing pipeline for a single app.
 
     Handles frequency throttling, watermark loading, review collection,
     filtering, yielding, watermark updates, and metrics emission.
+
+    When execution_id is set (manual run), frequency checks are skipped —
+    matching the webscraper pattern.
     """
-    # Check frequency-based throttling
-    if not is_due_for_run(get_watermark_fn, app_name, frequency_minutes):
-        logger.info(
-            f"Skipping {platform_label} {app_name} - not due yet "
-            f"(frequency: {frequency_minutes}m)"
-        )
-        return
+    # Manual run (has execution_id): always run, skip frequency check
+    # Scheduled run (no execution_id): check frequency, skip if manual-only (0)
+    if not execution_id:
+        if frequency_minutes == 0:
+            logger.info(
+                f"Skipping {platform_label} {app_name} - manual-only frequency"
+            )
+            return
+        if not is_due_for_run(get_watermark_fn, app_name, frequency_minutes):
+            logger.info(
+                f"Skipping {platform_label} {app_name} - not due yet "
+                f"(frequency: {frequency_minutes}m)"
+            )
+            return
 
     logger.info(f"Collecting {platform_label} reviews for {app_name}")
 
-    # Load watermark
+    # Load watermark — skip date filtering on manual runs to allow backfilling.
+    # When max_reviews_per_run increases, older reviews that were never fetched
+    # would be permanently blocked by the watermark. The processor deduplicates
+    # by review ID, so re-sending already-ingested reviews is safe.
     watermark_key = f"{app_name}_last_published_at"
-    watermark_dt = load_watermark_dt(get_watermark_fn, watermark_key)
+    if execution_id:
+        watermark_dt = None
+        logger.info("Manual run: skipping watermark filter for backfill")
+    else:
+        watermark_dt = load_watermark_dt(get_watermark_fn, watermark_key)
 
     try:
         reviews = collect_fn(app_config)

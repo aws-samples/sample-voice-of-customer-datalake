@@ -24,11 +24,13 @@ class IOSAppReviewsIngestor(BaseIngestor):
         super().__init__()
         self.app_configs = self._load_app_configs()
         self.sort_by = self.secrets.get("sort_by", "most_recent")
-        self.max_countries = parse_int(
-            self.secrets.get("max_countries_per_run", "40"), 40
-        )
+        # iOS App Store returns different reviews per country storefront (500 cap each).
+        # Unlike Android, countries provide unique coverage, so we use all available
+        # countries from the curated list (40 high-traffic storefronts) to maximize
+        # review collection. No need to expose this as a user config.
+        self.max_countries = None  # None = use all countries in the list
         self.frequency_minutes = parse_int(
-            self.secrets.get("frequency_minutes", "60"), 60
+            self.secrets.get("frequency_minutes", "60"), 60, allow_zero=True
         )
         self.session = create_session()
 
@@ -97,7 +99,7 @@ class IOSAppReviewsIngestor(BaseIngestor):
                 app_id=app.app_id,
                 country=country,
                 session=self.session,
-                limit=50,
+                limit=app.max_reviews_per_run,
                 sort_by=self.sort_by,
             )
             for review in reviews:
@@ -144,7 +146,7 @@ class IOSAppReviewsIngestor(BaseIngestor):
             "url": f"https://apps.apple.com/app/id{app.app_id}",
             "author": review.get("user_name", "Anonymous"),
             "brand_handles_matched": [self.brand_name] if self.brand_name else [],
-            "source_platform_override": f"{app.name}_ios",
+            "source_platform_override": f"{app.name}_iOS",
             "app_name": app.name,
             "app_identifier": app.app_id,
             "country": review.get("country", ""),
@@ -169,6 +171,7 @@ class IOSAppReviewsIngestor(BaseIngestor):
                 frequency_minutes=self.frequency_minutes,
                 collect_fn=self._collect_reviews_for_app,
                 format_fn=self._format_review,
+                execution_id=self.execution_id,
             )
 
 
@@ -177,6 +180,11 @@ class IOSAppReviewsIngestor(BaseIngestor):
 @metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event, context):
     """Lambda entry point. Optionally filters to a single app via event['app_id']."""
+    # Clear secret cache on manual runs to pick up newly added app configs
+    if isinstance(event, dict) and event.get("execution_id"):
+        from shared.aws import clear_secret_cache
+        clear_secret_cache()
+
     ingestor = IOSAppReviewsIngestor()
     if isinstance(event, dict):
         app_id = event.get("app_id")
