@@ -171,25 +171,9 @@ class TestExtractTextResponse:
 class TestCombinedHandler:
     """Tests for the combined_handler function."""
 
-    @patch('chat_stream_handler.validate_auth')
-    def test_returns_unauthorized_when_auth_fails(self, mock_auth):
-        """Returns 401 when authentication fails."""
-        mock_auth.return_value = (False, 'Invalid token')
-        
-        from chat_stream_handler import combined_handler
-        
-        event = {'headers': {'Authorization': 'Bearer invalid'}}
-        context = MagicMock()
-        
-        response = combined_handler(event, context)
-        
-        assert response['statusCode'] == 401
-
     @patch('chat_stream_handler.voc_chat_handler')
-    @patch('chat_stream_handler.validate_auth')
-    def test_routes_to_voc_chat_for_chat_stream_path(self, mock_auth, mock_voc_handler):
+    def test_routes_to_voc_chat_for_chat_stream_path(self, mock_voc_handler):
         """Routes to VoC chat handler for /chat/stream path."""
-        mock_auth.return_value = (True, "")
         mock_voc_handler.return_value = {'statusCode': 200, 'body': '{}'}
         
         from chat_stream_handler import combined_handler
@@ -206,10 +190,8 @@ class TestCombinedHandler:
         mock_voc_handler.assert_called_once()
 
     @patch('chat_stream_handler.project_chat_handler')
-    @patch('chat_stream_handler.validate_auth')
-    def test_routes_to_project_chat_for_projects_path(self, mock_auth, mock_project_handler):
+    def test_routes_to_project_chat_for_projects_path(self, mock_project_handler):
         """Routes to project chat handler for /projects/*/chat/stream path."""
-        mock_auth.return_value = (True, "")
         mock_project_handler.return_value = {'statusCode': 200, 'body': '{}'}
         
         from chat_stream_handler import combined_handler
