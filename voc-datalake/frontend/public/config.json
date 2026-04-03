@@ -1,8 +1,0 @@
-{
-  "apiEndpoint": "/api",
-  "cognito": {
-    "userPoolId": "",
-    "clientId": "",
-    "region": "us-east-1"
-  }
-}

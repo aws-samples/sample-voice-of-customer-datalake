@@ -472,12 +472,13 @@ The VoC Analytics Team`,
     const initialAdminUsername = 'admin';
     const initialAdminEmail = 'admin@local.host';
     
-    // Generate random password (16 chars: uppercase, lowercase, numbers, special chars)
-    const randomPassword = Array.from({ length: 16 }, () => {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*';
-      return chars[randomInt(0, chars.length)];
-    }).join('');
-    const initialAdminPassword = randomPassword;
+    // Generate random password with guaranteed uppercase, lowercase, digit, and special char
+    const r = (s: string) => s[randomInt(0, s.length)];
+    const required = [r('ABCDEFGHJKLMNPQRSTUVWXYZ'), r('abcdefghjkmnpqrstuvwxyz'), r('123456789'), r('!@#$%^&*')];
+    const pool = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789!@#$%^&*';
+    const rest = Array.from({ length: 12 }, () => r(pool));
+    const all = [...required, ...rest].sort(() => randomInt(0, 2) - 1);
+    const initialAdminPassword = all.join('');
 
     // Create the admin user
     const createAdminUser = new cr.AwsCustomResource(this, 'CreateAdminUser', {

@@ -539,6 +539,51 @@ class TestProcessFeedback:
         
         assert isinstance(result['sentiment_score'], Decimal)
 
+    @patch('processor.handler.invoke_bedrock_llm')
+    @patch('processor.handler.get_comprehend_sentiment')
+    @patch('processor.handler.translate_text')
+    @patch('processor.handler.detect_language')
+    @patch('processor.handler.check_duplicate')
+    def test_converts_rating_to_decimal(
+        self, mock_dup, mock_lang, mock_trans, mock_sent, mock_llm,
+        sample_sqs_record, sample_llm_insights
+    ):
+        """Rating from raw_record is stored as Decimal."""
+        from processor.handler import process_feedback
+
+        mock_dup.return_value = False
+        mock_lang.return_value = 'en'
+        mock_trans.return_value = sample_sqs_record['text']
+        mock_sent.return_value = {'label': 'positive', 'score': 0.8}
+        mock_llm.return_value = {'insights': sample_llm_insights, 'metadata': {}}
+        sample_sqs_record['rating'] = 5
+
+        result = process_feedback(sample_sqs_record)
+
+        assert result['rating'] == Decimal('5')
+
+    @patch('processor.handler.invoke_bedrock_llm')
+    @patch('processor.handler.get_comprehend_sentiment')
+    @patch('processor.handler.translate_text')
+    @patch('processor.handler.detect_language')
+    @patch('processor.handler.check_duplicate')
+    def test_rating_absent_when_not_in_record(
+        self, mock_dup, mock_lang, mock_trans, mock_sent, mock_llm,
+        sample_sqs_record, sample_llm_insights
+    ):
+        """Rating is excluded from item when not in raw_record."""
+        from processor.handler import process_feedback
+
+        mock_dup.return_value = False
+        mock_lang.return_value = 'en'
+        mock_trans.return_value = sample_sqs_record['text']
+        mock_sent.return_value = {'label': 'positive', 'score': 0.8}
+        mock_llm.return_value = {'insights': sample_llm_insights, 'metadata': {}}
+        sample_sqs_record.pop('rating', None)
+
+        result = process_feedback(sample_sqs_record)
+
+        assert 'rating' not in result
 
 
 class TestLogValidationFailure:

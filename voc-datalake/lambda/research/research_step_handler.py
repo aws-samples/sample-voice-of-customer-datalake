@@ -379,8 +379,18 @@ def step_error(event: dict) -> dict:
     project_id = event['project_id']
     job_id = event['job_id']
     error = event.get('error', {})
-    
-    error_message = str(error.get('Cause', error.get('Error', 'Unknown error')))
+    logger.error(error)
+    raw_cause = error.get('Cause', '{}')
+    try:
+        cause = json.loads(raw_cause)
+    except (json.JSONDecodeError, TypeError):
+        cause = {}
+    if 'errorMessage' in cause:
+        error_message = cause['errorMessage']
+    elif raw_cause and raw_cause != '{}':
+        error_message = raw_cause
+    else:
+        error_message = error.get('Error', 'Unknown error')
     logger.error(f"Research job {job_id} failed: {error_message}")
     
     update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_message)
