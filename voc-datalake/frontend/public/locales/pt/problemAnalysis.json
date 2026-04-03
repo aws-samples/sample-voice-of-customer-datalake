@@ -38,10 +38,10 @@
     "reviews_one": "{{count}} avaliação",
     "reviews_many": "{{count}} avaliações",
     "reviews_other": "{{count}} avaliações",
-    "similar": "Similar:",
-    "sub_one": "{{count}} sub",
-    "sub_many": "{{count}} sub",
-    "sub_other": "{{count}} sub",
+    "similar": "Semelhante:",
+    "sub_one": "{{count}} subcategoria",
+    "sub_many": "{{count}} subcategorias",
+    "sub_other": "{{count}} subcategorias",
     "unknown": "Desconhecido"
   }
 }

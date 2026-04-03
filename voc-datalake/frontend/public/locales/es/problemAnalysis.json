@@ -39,9 +39,9 @@
     "reviews_many": "{{count}} reseñas",
     "reviews_other": "{{count}} reseñas",
     "similar": "Similares:",
-    "sub_one": "{{count}} sub",
-    "sub_many": "{{count}} sub",
-    "sub_other": "{{count}} sub",
+    "sub_one": "{{count}} subcategoría",
+    "sub_many": "{{count}} subcategorías",
+    "sub_other": "{{count}} subcategorías",
     "unknown": "Desconocido"
   }
 }

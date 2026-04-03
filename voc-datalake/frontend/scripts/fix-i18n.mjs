@@ -6,8 +6,8 @@
  *
  * Usage: node scripts/fix-i18n.mjs
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
-import { resolve, join } from 'node:path'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { resolve, join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 
@@ -15,7 +15,7 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
 const NAMESPACES = ['categories', 'chat', 'common', 'components', 'dashboard',
   'dataExplorer', 'feedback', 'feedbackDetail', 'feedbackForms', 'login',
-  'prioritization', 'problemAnalysis', 'projects', 'scrapers', 'settings']
+  'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'scrapers', 'settings']
 const LANGUAGES = ['es', 'fr', 'de', 'ko', 'pt', 'ja', 'zh']
 const LANG_NAMES = {
   es: 'Spanish', fr: 'French', de: 'German',
@@ -24,6 +24,116 @@ const LANG_NAMES = {
 const MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
 const REGION = 'us-east-1'
 const BATCH_SIZE = 60
+
+// Context descriptions for each namespace so the LLM understands
+// where these strings appear in the UI
+const NS_CONTEXT = {
+  categories: 'Category breakdown page — shows feedback categories, sentiment filters, keyword clouds, and PDF export for a customer feedback analytics dashboard.',
+  chat: 'AI Chat page — conversational interface where users ask questions about their customer feedback data. Includes suggested questions, chat history sidebar, and export options.',
+  common: 'Shared UI strings — navigation menu, sidebar, breadcrumbs, time range selectors, sentiment labels, pagination, and global filter controls used across all pages.',
+  components: 'Reusable UI components — data source wizard (multi-step form), feedback cards, social feed, S3 file import, user administration panel, user profile/password management, document/persona export menus.',
+  dashboard: 'Main dashboard — overview page with metric cards (total feedback, sentiment, urgent issues), charts (volume trend, source breakdown, sentiment distribution), and a live social feed.',
+  dataExplorer: 'Data Explorer page — browse raw S3 data files and processed DynamoDB feedback records. Includes file editing, JSON preview, and category statistics.',
+  feedback: 'Feedback list page — filterable, searchable, paginated list of all customer feedback items with sentiment and source filters.',
+  feedbackDetail: 'Feedback detail page — single feedback item view showing classification, persona, problem analysis, root cause, suggested customer responses, similar feedback, and translation info.',
+  feedbackForms: 'Feedback Forms page — create and manage embeddable Typeform-style feedback collection forms with rating types, themes, category routing, and embed code generation.',
+  login: 'Login page — Cognito authentication with username/password, forgot password flow, verification code, and new password setup.',
+  prioritization: 'Prioritization page — score and rank PR/FAQ documents across projects using Impact, Time to Market, Strategic Fit, and Confidence dimensions.',
+  problemAnalysis: 'Problem Analysis page — hierarchical tree view of problems grouped by category/subcategory with similarity clustering, urgency flags, and resolve/unresolve actions.',
+  projectDetail: 'Project Detail page — single research project view with tabs for Overview (generate personas/PRDs/PR-FAQs), Personas (view/edit/import user personas with AI avatars), Documents (PRDs, PR-FAQs, research), AI Chat (project-scoped), and MCP Access (API tokens). Includes Working Backwards wizard with Amazon\'s 5 Customer Questions.',
+  projects: 'Projects list page — shows all research projects with persona/document counts, create/delete project modals.',
+  scrapers: 'Data Sources page — configure web scrapers (CSS selectors, pagination, auto-detect), manual import (paste reviews with AI parsing), JSON upload, and app review plugin configuration.',
+  settings: 'Settings page — tabs for General (API endpoint, brand config, language), Categories (AI-generated feedback categories), Data Sources (integrations), Users (Cognito admin), and Logs (scraper runs, processing errors).',
+}
+
+const SRC_DIR = resolve(__dirname, '..', 'src')
+
+// ── Source code context extraction ──
+// Scans frontend source files to find where each i18n key is used,
+// extracting surrounding JSX/TSX lines so the LLM can see the UI context
+// (e.g. button label vs tooltip vs paragraph).
+
+function collectSourceFiles(dir) {
+  const files = []
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry)
+    if (entry === 'node_modules' || entry === 'dist' || entry === 'test') continue
+    if (entry.endsWith('.test.tsx') || entry.endsWith('.test.ts')) continue
+    const stat = statSync(full)
+    if (stat.isDirectory()) files.push(...collectSourceFiles(full))
+    else if (['.ts', '.tsx'].includes(extname(entry))) files.push(full)
+  }
+  return files
+}
+
+/** Extract i18n key usages from a single source file. */
+function extractFileKeyUsages(file) {
+  const content = readFileSync(file, 'utf-8')
+  if (!content.includes('useTranslation') && !content.includes("t('") && !content.includes('t("')) return []
+
+  const lines = content.split('\n')
+  let fileNs = 'common'
+  const nsMatch = content.match(/useTranslation\(\s*['"](\w+)['"]\s*\)/)
+  if (nsMatch) fileNs = nsMatch[1]
+
+  const results = []
+  for (let i = 0; i < lines.length; i++) {
+    const tMatches = lines[i].matchAll(/\bt\(\s*['"]([^'"]+)['"]/g)
+    for (const m of tMatches) {
+      const rawKey = m[1]
+      const [ns, key] = rawKey.includes(':') ? rawKey.split(':', 2) : [fileNs, rawKey]
+      const start = Math.max(0, i - 1)
+      const end = Math.min(lines.length - 1, i + 1)
+      const snippet = lines.slice(start, end + 1).map(l => l.trim()).join('\n')
+      results.push([`${ns}:${key}`, snippet])
+    }
+  }
+  return results
+}
+
+/** Build a map of i18n key → source code snippet showing where it's used. */
+function buildKeyUsageMap() {
+  const sourceFiles = collectSourceFiles(SRC_DIR)
+  const usageMap = new Map()
+  for (const file of sourceFiles) {
+    for (const [fullKey, snippet] of extractFileKeyUsages(file)) {
+      if (!usageMap.has(fullKey)) usageMap.set(fullKey, snippet)
+    }
+  }
+  return usageMap
+}
+
+let _keyUsageMap = null
+function getKeyUsageMap() {
+  if (!_keyUsageMap) {
+    console.log('📖 Scanning source code for key usage context...')
+    _keyUsageMap = buildKeyUsageMap()
+    console.log(`   Found usage context for ${_keyUsageMap.size} keys`)
+  }
+  return _keyUsageMap
+}
+
+/**
+ * Build a compact UI context string for a batch of keys.
+ * Shows where each key appears in the source code (JSX context).
+ */
+function buildSourceContext(keys, namespace) {
+  const usageMap = getKeyUsageMap()
+  const snippets = []
+  for (const key of keys) {
+    const fullKey = `${namespace}:${key}`
+    const snippet = usageMap.get(fullKey)
+    if (snippet) snippets.push(`"${key}" is used in:\n${snippet}`)
+  }
+  if (snippets.length === 0) return ''
+  // Cap at ~30 snippets to avoid blowing up the prompt
+  const capped = snippets.slice(0, 30)
+  const result = capped.join('\n\n')
+  if (snippets.length > 30) {
+    return result + `\n\n... and ${snippets.length - 30} more keys with similar UI patterns.`
+  }
+  return result
+}
 
 // ── helpers ──
 
@@ -79,16 +189,31 @@ function resolveEnValue(enData, key, rawValue) {
 
 // ── Bedrock translation via AWS CLI ──
 
-function translateBatch(kvPairs, targetLang) {
+function translateBatch(kvPairs, targetLang, namespace) {
   const langName = LANG_NAMES[targetLang]
   const input = Object.fromEntries(kvPairs)
+  const nsContext = NS_CONTEXT[namespace] || ''
+  const sourceContext = buildSourceContext(kvPairs.map(([k]) => k), namespace)
 
-  const prompt = `Translate the following JSON values from English to ${langName}.
+  const prompt = `You are translating UI strings for a SaaS customer feedback analytics platform called "VoC Analytics" (Voice of the Customer). The application helps businesses collect, analyze, and act on customer feedback from multiple sources.
+
+CONTEXT: These strings belong to the "${namespace}" namespace.
+${nsContext ? `PAGE/COMPONENT: ${nsContext}` : ''}
+${sourceContext ? `\nSOURCE CODE CONTEXT (shows how each key is used in the React UI):\n${sourceContext}\n` : ''}
+
+Translate the following JSON values from English to ${langName}.
+
 RULES:
 - Return ONLY a valid JSON object with the exact same keys
-- Keep all {{variables}} exactly as-is (e.g. {{count}}, {{summary}}, {{name}}, {{error}})
-- Keep HTML tags, URLs, and technical terms (JSON, PDF, CSV, URL, API, S3, etc.) as-is
-- Be concise and natural in ${langName}
+- Keep all {{variables}} exactly as-is (e.g. {{count}}, {{summary}}, {{name}}, {{error}}, {{percent}})
+- Keep HTML tags (<code>, <strong>, <at>, <atAll>, <hash>, etc.) exactly as-is
+- Keep URLs, email addresses, and technical identifiers as-is
+- Keep product names as-is: "VoC Analytics", "Kiro", "Claude", "Amazon", "Bedrock", "Cognito", "MCP"
+- Keep technical terms as-is: JSON, PDF, CSV, URL, API, S3, PRD, PR-FAQ, DynamoDB, CloudWatch, SSE, Markdown
+- Keep file extensions and code references as-is: .json, mcp.json, Authorization
+- For plural forms (_one, _many, _other): ensure {{count}} template variable is included in the translation
+- Use natural, professional ${langName} appropriate for a B2B SaaS dashboard — avoid overly formal or literal translations
+- For UI actions (buttons, labels), prefer concise wording that fits in compact UI elements
 - Do NOT add markdown fences or any text outside the JSON
 
 Input:
@@ -142,15 +267,26 @@ for (const lang of LANGUAGES) {
     const targetData = loadJSON(lang, ns)
     const enEntries = flattenEntries(enData)
 
-    // Collect keys that are missing or empty in target
+    // Collect keys that are missing, empty, or untranslated (still in English) in target
     const toFix = []
     for (const [key, enValue] of enEntries) {
       const targetValue = getNested(targetData, key)
       const resolved = resolveEnValue(enData, key, enValue)
-      if (targetValue === undefined || (typeof targetValue === 'string' && targetValue.trim() === '')) {
-        if (typeof resolved === 'string' && resolved.trim() !== '') {
-          toFix.push([key, resolved])
-        }
+      if (typeof resolved !== 'string' || resolved.trim() === '') continue
+
+      const isMissing = targetValue === undefined
+      const isEmpty = typeof targetValue === 'string' && targetValue.trim() === ''
+      const isUntranslated = typeof targetValue === 'string'
+        && targetValue === resolved
+        && targetValue.length > 3
+        && !targetValue.startsWith('http')
+        && !targetValue.startsWith('@')
+        && !targetValue.startsWith('#')
+        // eslint-disable-next-line sonarjs/slow-regex -- bounded input from JSON translation values, not user-controlled
+        && targetValue.replace(/\{\{[^}]+\}\}/g, '').trim().length > 0
+
+      if (isMissing || isEmpty || isUntranslated) {
+        toFix.push([key, resolved])
       }
     }
 
@@ -207,7 +343,7 @@ for (const lang of LANGUAGES) {
       const batch = toFix.slice(i, i + BATCH_SIZE)
       console.log(`    Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} strings...`)
 
-      const translations = translateBatch(batch, lang)
+      const translations = translateBatch(batch, lang, ns)
       if (!translations) {
         console.log(`    ⚠ Falling back to English for this batch`)
         for (const [key, enVal] of batch) setNested(targetData, key, enVal)

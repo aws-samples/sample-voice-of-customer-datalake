@@ -59,13 +59,13 @@
     "issue": "问题：{{summary}}",
     "rootCause": "根本原因：{{cause}}",
     "urgent": "紧急",
-    "webScraper": "Web Scraper"
+    "webScraper": "网页爬虫"
   },
   "feedbackCarousel": {
     "issue": "问题：{{summary}}",
     "urgent": "紧急",
     "viewDetails": "查看详情",
-    "webScraper": "Web Scraper"
+    "webScraper": "网页爬虫"
   },
   "personaExport": {
     "copied": "已复制！",

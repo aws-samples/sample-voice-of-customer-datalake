@@ -42,7 +42,7 @@
     "maxPages": "Máx. páginas",
     "newTitle": "Nuevo scraper",
     "pageParam": "Parámetro de página",
-    "pageParamPlaceholder": "page",
+    "pageParamPlaceholder": "página",
     "paginationHint": "Scrapea automáticamente múltiples páginas agregando ?page=2, ?page=3, etc. a la URL base.",
     "rating": "Calificación",
     "reviewContainer": "Contenedor de reseña *",

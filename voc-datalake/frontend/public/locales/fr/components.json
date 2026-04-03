@@ -116,7 +116,7 @@
     "active": "Actif",
     "addNewUser": "Ajouter un nouvel utilisateur",
     "addUser": "Ajouter un utilisateur",
-    "adminRole": "Admin",
+    "adminRole": "Administrateur",
     "cancel": "Annuler",
     "confirmDelete": "Êtes-vous sûr de vouloir supprimer {{email}} ? Cette action ne peut pas être annulée.",
     "confirmDisable": "Désactiver {{email}} ? Il ne pourra plus se connecter.",

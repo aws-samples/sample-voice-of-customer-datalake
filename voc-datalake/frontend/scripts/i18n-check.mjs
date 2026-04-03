@@ -145,6 +145,7 @@ function extractKeysFromSource(files) {
 let totalMissing = 0
 let totalExtra = 0
 let totalEmpty = 0
+let totalUntranslated = 0
 const report = []
 
 // Build a map of all English keys per namespace (for check 4/5)
@@ -165,7 +166,7 @@ for (const ns of NAMESPACES) {
 
     if (!targetData) {
       if (lang !== SOURCE_LANG) {
-        report.push({ lang, ns, missing: [...sourceKeys], extra: [], empty: [], fileExists: false })
+        report.push({ lang, ns, missing: [...sourceKeys], extra: [], empty: [], untranslated: [], fileExists: false })
         totalMissing += sourceKeys.size
       }
       continue
@@ -182,7 +183,7 @@ for (const ns of NAMESPACES) {
     if (lang === SOURCE_LANG) {
       // For English, only report empty values
       if (empty.length > 0) {
-        report.push({ lang, ns, missing: [], extra: [], empty, fileExists: true })
+        report.push({ lang, ns, missing: [], extra: [], empty, untranslated: [], fileExists: true })
         totalEmpty += empty.length
       }
       continue
@@ -191,11 +192,31 @@ for (const ns of NAMESPACES) {
     const missing = [...sourceKeys].filter((k) => !targetKeys.has(k))
     const extra = [...targetKeys].filter((k) => !sourceKeys.has(k) && !isValidPluralVariant(k, sourceKeys))
 
-    if (missing.length > 0 || extra.length > 0 || empty.length > 0) {
-      report.push({ lang, ns, missing, extra, empty, fileExists: true })
+    // Check for untranslated values — target value identical to English source
+    const sourceMap = new Map(sourceEntries)
+    const untranslated = targetEntries
+      .filter(([k, v]) => {
+        if (typeof v !== 'string' || v.trim() === '') return false
+        const sourceVal = sourceMap.get(k)
+        if (typeof sourceVal !== 'string') return false
+        // Skip short values (1-3 chars) that are likely the same across languages
+        // (e.g. "PDF", "URL", "OK", abbreviations, numbers like "24h")
+        if (v.length <= 3) return false
+        // Skip values that are URLs, placeholders, or technical strings
+        if (v.startsWith('http') || v.startsWith('@') || v.startsWith('#')) return false
+        // Skip values containing only template variables like "{{count}} / {{max}}"
+        // eslint-disable-next-line sonarjs/slow-regex -- bounded input from JSON translation values, not user-controlled
+        if (v.replace(/\{\{[^}]+\}\}/g, '').trim().length === 0) return false
+        return v === sourceVal
+      })
+      .map(([k]) => k)
+
+    if (missing.length > 0 || extra.length > 0 || empty.length > 0 || untranslated.length > 0) {
+      report.push({ lang, ns, missing, extra, empty, untranslated, fileExists: true })
       totalMissing += missing.length
       totalExtra += extra.length
       totalEmpty += empty.length
+      totalUntranslated += untranslated.length
     }
   }
 }
@@ -262,8 +283,9 @@ if (report.length > 0) {
     const langMissing = entries.reduce((sum, e) => sum + e.missing.length, 0)
     const langExtra = entries.reduce((sum, e) => sum + e.extra.length, 0)
     const langEmpty = entries.reduce((sum, e) => sum + e.empty.length, 0)
+    const langUntranslated = entries.reduce((sum, e) => sum + (e.untranslated?.length || 0), 0)
 
-    console.log(`\n┌─ ${lang.toUpperCase()} ─ missing: ${langMissing}, extra: ${langExtra}, empty: ${langEmpty}`)
+    console.log(`\n┌─ ${lang.toUpperCase()} ─ missing: ${langMissing}, extra: ${langExtra}, empty: ${langEmpty}, untranslated: ${langUntranslated}`)
 
     for (const entry of entries) {
       if (!entry.fileExists) {
@@ -282,11 +304,16 @@ if (report.length > 0) {
         console.log(`│  📂 ${entry.ns}.json — ${entry.empty.length} empty value(s):`)
         for (const key of entry.empty) console.log(`│     🔲 ${key}`)
       }
+      if (entry.untranslated?.length > 0) {
+        console.log(`│  📂 ${entry.ns}.json — ${entry.untranslated.length} untranslated (same as English):`)
+        for (const key of entry.untranslated.slice(0, 10)) console.log(`│     🔤 ${key}`)
+        if (entry.untranslated.length > 10) console.log(`│     ... and ${entry.untranslated.length - 10} more`)
+      }
     }
     console.log('└' + '─'.repeat(59))
   }
 
-  console.log(`\nTotal missing: ${totalMissing}  |  Total extra: ${totalExtra}  |  Total empty: ${totalEmpty}`)
+  console.log(`\nTotal missing: ${totalMissing}  |  Total extra: ${totalExtra}  |  Total empty: ${totalEmpty}  |  Total untranslated: ${totalUntranslated}`)
 }
 
 if (missingInEnglish.length > 0) {

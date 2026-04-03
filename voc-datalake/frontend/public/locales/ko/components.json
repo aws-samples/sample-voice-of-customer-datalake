@@ -59,13 +59,13 @@
     "issue": "문제: {{summary}}",
     "rootCause": "근본 원인: {{cause}}",
     "urgent": "긴급",
-    "webScraper": "Web Scraper"
+    "webScraper": "웹 스크래퍼"
   },
   "feedbackCarousel": {
     "issue": "문제: {{summary}}",
     "urgent": "긴급",
     "viewDetails": "세부정보 보기",
-    "webScraper": "Web Scraper"
+    "webScraper": "웹 스크래퍼"
   },
   "personaExport": {
     "copied": "복사됨!",

@@ -41,7 +41,7 @@
     "maxPages": "最大ページ数",
     "newTitle": "新しいスクレイパー",
     "pageParam": "ページパラメータ",
-    "pageParamPlaceholder": "page",
+    "pageParamPlaceholder": "ページ",
     "paginationHint": "ベースURLに?page=2、?page=3などを追加して自動的に複数ページをスクレイプします。",
     "rating": "評価",
     "reviewContainer": "レビューコンテナ *",

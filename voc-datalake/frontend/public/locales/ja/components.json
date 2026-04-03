@@ -59,13 +59,13 @@
     "issue": "問題: {{summary}}",
     "rootCause": "根本原因: {{cause}}",
     "urgent": "緊急",
-    "webScraper": "Web Scraper"
+    "webScraper": "ウェブスクレイパー"
   },
   "feedbackCarousel": {
     "issue": "問題: {{summary}}",
     "urgent": "緊急",
     "viewDetails": "詳細を表示",
-    "webScraper": "Web Scraper"
+    "webScraper": "ウェブスクレイパー"
   },
   "personaExport": {
     "copied": "コピーしました！",
