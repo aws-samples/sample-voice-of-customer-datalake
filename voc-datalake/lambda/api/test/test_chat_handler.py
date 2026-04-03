@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 # Bedrock model ID used in production
-BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-6'
 
 
 class TestChatEndpoint:

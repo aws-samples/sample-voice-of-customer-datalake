@@ -139,7 +139,6 @@ export const bedrockModelSuppressions: NagPackSuppression[] = [
     id: 'AwsSolutions-IAM5',
     reason: 'Bedrock foundation model ARNs require region wildcard as models are cross-region resources',
     appliesTo: [
-      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
       'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
       { regex: '/Resource::arn:aws:bedrock:\\*:.*:inference-profile/global\\.anthropic\\.claude-sonnet-4-6/' },

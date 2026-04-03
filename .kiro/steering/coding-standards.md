@@ -106,7 +106,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
 ### Bedrock Invocation with Retry
 
 ```python
-BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-6'
 
 @tracer.capture_method
 def invoke_bedrock_llm(prompt: str) -> dict:

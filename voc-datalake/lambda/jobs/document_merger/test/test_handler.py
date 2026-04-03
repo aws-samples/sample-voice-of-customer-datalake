@@ -107,3 +107,18 @@ class TestDocumentMergerHandler:
         call_kwargs = mock_converse.call_args.kwargs
         prompt = call_kwargs.get('prompt', '')
         assert 'Test User' in prompt or 'PERSONA' in prompt
+
+    def test_prd_merge_uses_sufficient_max_tokens_for_cjk_languages(
+        self, mock_dynamodb, mock_jobs_table, mock_converse,
+        merge_documents_event, mock_project_documents, lambda_context
+    ):
+        """Regression: PRD merge max_tokens must be >= 12000 to avoid truncation in CJK languages."""
+        mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
+        merge_documents_event['merge_config']['output_type'] = 'prd'
+
+        from jobs.document_merger.handler import lambda_handler
+
+        lambda_handler(merge_documents_event, lambda_context)
+
+        call_kwargs = mock_converse.call_args.kwargs
+        assert call_kwargs.get('max_tokens', 0) >= 12000

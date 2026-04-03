@@ -92,7 +92,7 @@ describe('FeedbackItemSchema', () => {
       gsi3sk: '2025-03-20T10:01:00Z',
       ttl: 1742515260,
       date: '2025-03-20',
-      llm_metadata: { model: 'claude-sonnet-4-5' },
+      llm_metadata: { model: 'claude-sonnet-4-6' },
       ingested_at: '2025-03-20T10:00:30Z',
     }
     const result = FeedbackItemSchema.parse(dynamoDbItem)

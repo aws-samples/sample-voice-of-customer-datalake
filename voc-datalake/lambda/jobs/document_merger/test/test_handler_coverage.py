@@ -139,4 +139,4 @@ class TestDocumentMergerFeedbackPath:
         assert result['success'] is True
         call_kwargs = mock_converse.call_args.kwargs
         assert 'PR-FAQ' in call_kwargs.get('system_prompt', '')
-        assert call_kwargs.get('max_tokens') == 8000
+        assert call_kwargs.get('max_tokens') == 16000

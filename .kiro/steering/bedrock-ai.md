@@ -6,13 +6,14 @@ description: Bedrock AI model standards, Claude Sonnet usage patterns, LLM infer
 
 # Bedrock AI Model Standards
 
-## Default Model
+## Models
 
-Always use **Claude Sonnet 4.5** via the global cross-region inference profile for all AI/LLM operations:
+| Use Case | Model | Global Inference Profile ID |
+|----------|-------|-----------------------------|
+| Chat, API, Research (quality) | Claude Sonnet 4.6 | `global.anthropic.claude-sonnet-4-6` |
+| Processor (cost-efficient, high volume) | Claude Haiku 4.5 | `global.anthropic.claude-haiku-4-5-20251001-v1:0` |
 
-```
-global.anthropic.claude-sonnet-4-5-20250929-v1:0
-```
+Use Sonnet 4.6 for all AI/LLM operations unless processing high-volume items where Haiku 4.5 is preferred for cost efficiency.
 
 ## Usage Pattern
 
@@ -23,7 +24,7 @@ import json
 bedrock = boto3.client('bedrock-runtime')
 
 response = bedrock.invoke_model(
-    modelId='global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    modelId='global.anthropic.claude-sonnet-4-6',
     contentType='application/json',
     accept='application/json',
     body=json.dumps({
@@ -42,13 +43,24 @@ text = result['content'][0]['text']
 
 ## IAM Permissions
 
-Lambdas using Bedrock need this IAM permission:
+Lambdas using Bedrock need IAM permissions for the models they invoke:
 
 ```typescript
+// Sonnet 4.6 (chat, API, research)
 lambda.addToRolePolicy(new iam.PolicyStatement({
   actions: ['bedrock:InvokeModel'],
   resources: [
-    `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+    `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+    'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
+  ],
+}));
+
+// Haiku 4.5 (processor - high volume)
+lambda.addToRolePolicy(new iam.PolicyStatement({
+  actions: ['bedrock:InvokeModel'],
+  resources: [
+    `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
+    'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
   ],
 }));
 ```

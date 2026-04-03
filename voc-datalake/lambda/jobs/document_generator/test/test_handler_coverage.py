@@ -1,16 +1,17 @@
 """
 Additional coverage tests for document_generator/handler.py.
-Covers: feedback gathering with filtering (lines 71-96), personas gathering (lines 100-110),
-documents/research gathering (lines 91, 93-96).
+Covers: feedback gathering with filtering, personas gathering with selection,
+documents/research gathering, and no-context fallback.
 """
 from unittest.mock import MagicMock
 
 
 class TestDocumentGeneratorFeedbackGathering:
-    """Cover feedback gathering with source/category filtering (lines 71-96)."""
+    """Cover feedback gathering with source/category filtering."""
 
     def test_filters_feedback_by_source(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, prd_generation_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
+        prd_generation_event, lambda_context
     ):
         """Cover feedback_sources filtering branch."""
         mock_projects_table = MagicMock()
@@ -41,12 +42,13 @@ class TestDocumentGeneratorFeedbackGathering:
         result = lambda_handler(prd_generation_event, lambda_context)
 
         assert result['success'] is True
-        call_kwargs = mock_converse.call_args.kwargs
-        prompt = call_kwargs.get('prompt', '')
-        assert 'App review' in prompt
+        # Feedback context is passed to the step builder
+        call_kwargs = mock_prompt_steps['prd'].call_args.kwargs
+        assert 'App review' in call_kwargs['feedback_context']
 
     def test_filters_feedback_by_category(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, prd_generation_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
+        prd_generation_event, lambda_context
     ):
         """Cover feedback_categories filtering branch."""
         mock_projects_table = MagicMock()
@@ -58,8 +60,7 @@ class TestDocumentGeneratorFeedbackGathering:
 
         mock_feedback_table.query.return_value = {
             'Items': [
-                {'original_text': 'Billing issue', 'source_platform': 'ws', 'sentiment_label': 'negative', 'category': 'billing', 'date': '2026-03-28'},
-                {'original_text': 'Good delivery', 'source_platform': 'ws', 'sentiment_label': 'positive', 'category': 'delivery', 'date': '2026-03-28'},
+                {'original_text': 'Billing issue', 'source_platform': 'ws', 'sentiment_label': 'negative', 'date': '2026-04-01'},
             ]
         }
 
@@ -76,16 +77,17 @@ class TestDocumentGeneratorFeedbackGathering:
         result = lambda_handler(prd_generation_event, lambda_context)
 
         assert result['success'] is True
-        call_kwargs = mock_converse.call_args.kwargs
-        prompt = call_kwargs.get('prompt', '')
-        assert 'Billing issue' in prompt
+        assert mock_feedback_table.query.called
+        call_kwargs = mock_prompt_steps['prd'].call_args.kwargs
+        assert 'Billing issue' in call_kwargs['feedback_context']
 
 
 class TestDocumentGeneratorPersonasGathering:
-    """Cover personas gathering with selected_persona_ids (lines 100-110)."""
+    """Cover personas gathering with selected_persona_ids."""
 
     def test_gathers_selected_personas(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, prd_generation_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
+        prd_generation_event, lambda_context
     ):
         """Cover the personas gathering branch with selected IDs."""
         mock_projects_table = MagicMock()
@@ -115,18 +117,20 @@ class TestDocumentGeneratorPersonasGathering:
         result = lambda_handler(prd_generation_event, lambda_context)
 
         assert result['success'] is True
-        call_kwargs = mock_converse.call_args.kwargs
-        prompt = call_kwargs.get('prompt', '')
-        assert 'Power User' in prompt
+        call_kwargs = mock_prompt_steps['prd'].call_args.kwargs
+        assert 'Power User' in call_kwargs['personas_context']
+        # p2 should be filtered out
+        assert 'Casual User' not in call_kwargs['personas_context']
 
 
 class TestDocumentGeneratorDocumentsGathering:
-    """Cover documents/research gathering (lines 91, 93-96, 100-110)."""
+    """Cover documents/research gathering."""
 
     def test_gathers_reference_documents(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, prd_generation_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
+        prd_generation_event, lambda_context
     ):
-        """Cover the documents gathering branch."""
+        """Cover the documents gathering branch — appended to feedback_context."""
         mock_projects_table = MagicMock()
         mock_feedback_table = MagicMock()
 
@@ -156,12 +160,12 @@ class TestDocumentGeneratorDocumentsGathering:
         result = lambda_handler(prd_generation_event, lambda_context)
 
         assert result['success'] is True
-        call_kwargs = mock_converse.call_args.kwargs
-        prompt = call_kwargs.get('prompt', '')
-        assert 'Research Report' in prompt
+        call_kwargs = mock_prompt_steps['prd'].call_args.kwargs
+        assert 'Research Report' in call_kwargs['feedback_context']
 
     def test_gathers_research_documents(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, prd_generation_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
+        prd_generation_event, lambda_context
     ):
         """Cover the research data_source branch."""
         mock_projects_table = MagicMock()
@@ -189,14 +193,14 @@ class TestDocumentGeneratorDocumentsGathering:
         result = lambda_handler(prd_generation_event, lambda_context)
 
         assert result['success'] is True
-        call_kwargs = mock_converse.call_args.kwargs
-        prompt = call_kwargs.get('prompt', '')
-        assert 'Analysis' in prompt
+        call_kwargs = mock_prompt_steps['prd'].call_args.kwargs
+        assert 'Analysis' in call_kwargs['feedback_context']
 
     def test_no_context_when_all_sources_disabled(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, prd_generation_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
+        prd_generation_event, lambda_context
     ):
-        """Cover the 'No additional context provided' fallback."""
+        """When all data sources are disabled, empty strings are passed to step builders."""
         mock_dynamodb['table'].query.return_value = {'Items': []}
 
         prd_generation_event['doc_config']['data_sources'] = {}
@@ -205,6 +209,6 @@ class TestDocumentGeneratorDocumentsGathering:
         result = lambda_handler(prd_generation_event, lambda_context)
 
         assert result['success'] is True
-        call_kwargs = mock_converse.call_args.kwargs
-        prompt = call_kwargs.get('prompt', '')
-        assert 'No additional context provided' in prompt
+        call_kwargs = mock_prompt_steps['prd'].call_args.kwargs
+        assert call_kwargs['feedback_context'] == ''
+        assert call_kwargs['personas_context'] == ''

@@ -19,7 +19,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | EventBridge | Scheduled ingestion (1-30 min intervals) | Rate expressions |
 | Secrets Manager | API credentials for 12+ data sources | Auto-rotation capable |
 | KMS | Customer-managed encryption key | Key rotation enabled |
-| Bedrock | Claude Sonnet 4.5 (global inference profile) | Model ARN scoping |
+| Bedrock | Claude Sonnet 4.6 / Haiku 4.5 (global inference profiles) | Model ARN scoping |
 | Comprehend | Sentiment, language detection, key phrases | - |
 | Translate | Multi-language support | Auto language pair detection |
 | Step Functions | Research workflows, persona generation | Execution role scoping |
@@ -265,7 +265,7 @@ def lambda_handler(event, context):  # HIGH: Add @logger.inject_lambda_context
 ```python
 # Wrong Bedrock model ID
 modelId='anthropic.claude-3-sonnet-20240229-v1:0'  # HIGH: Use global inference profile
-# Should be: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+# Should be: 'global.anthropic.claude-sonnet-4-6'
 ```
 
 ### Medium Issues

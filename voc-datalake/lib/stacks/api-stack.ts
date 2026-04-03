@@ -525,7 +525,7 @@ export class VocApiStack extends cdk.Stack {
       handler: 'handler.lambda_handler',
       code: createJobLambdaCode('document_generator'),
       role: documentGeneratorRole,
-      timeout: cdk.Duration.minutes(10),
+      timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,

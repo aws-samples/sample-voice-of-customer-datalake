@@ -21,7 +21,7 @@
 | **EventBridge** | Scheduled ingestion | Rate expressions (1-30 min) |
 | **Secrets Manager** | API credentials | Auto-rotation capable |
 | **KMS** | Encryption | Customer-managed key, key rotation |
-| **Bedrock** | LLM inference | Claude Sonnet 4.5 (global inference profile) |
+| **Bedrock** | LLM inference | Claude Sonnet 4.6 (chat/API), Haiku 4.5 (processor) |
 | **Comprehend** | NLP | Sentiment, language detection, key phrases |
 | **Translate** | Multi-language | Auto language pair detection |
 | **Step Functions** | Long-running jobs | Research workflows, persona generation |
@@ -207,4 +207,4 @@ npm run generate:menu       # Generate menu config only
 - **DynamoDB**: On-demand billing, TTL for old data
 - **S3**: Raw data archival, partitioned for cost-effective querying
 - **Lambda**: ARM64 (Graviton), right-size memory, reserved concurrency
-- **Bedrock**: Use Claude Sonnet 4.5, batch when possible
+- **Bedrock**: Use Claude Sonnet 4.6 for quality, Haiku 4.5 for high-volume processing

@@ -81,13 +81,62 @@ def mock_converse():
     ]
     # Also patch at handler module level for already-imported modules
     for module_path in [
-        'jobs.document_generator.handler.converse',
         'jobs.document_merger.handler.converse',
     ]:
         patchers.append(patch(module_path, mock, create=True))
     for p in patchers:
         p.start()
     yield mock
+    for p in patchers:
+        p.stop()
+
+
+@pytest.fixture
+def mock_converse_chain():
+    """Mock converse_chain function for multi-step document generation.
+    
+    Returns 3 results by default (problem_analysis, solution_design, prd_document).
+    Tests can override return_value for different step counts.
+    """
+    mock = MagicMock(return_value=[
+        "Problem analysis result",
+        "Solution design result",
+        "Generated document content from LLM",
+    ])
+    patchers = [
+        patch('shared.converse.converse_chain', mock),
+        patch('jobs.document_generator.handler.converse_chain', mock, create=True),
+    ]
+    for p in patchers:
+        p.start()
+    yield mock
+    for p in patchers:
+        p.stop()
+
+
+@pytest.fixture
+def mock_prompt_steps():
+    """Mock prompt step builders for document generation."""
+    prd_steps = [
+        {'system': 'problem', 'user': 'analyze', 'max_tokens': 3000, 'step_name': 'problem_analysis'},
+        {'system': 'solution', 'user': 'design', 'max_tokens': 3000, 'step_name': 'solution_design'},
+        {'system': 'prd', 'user': 'create', 'max_tokens': 12000, 'step_name': 'prd_document'},
+    ]
+    prfaq_steps = [
+        {'system': 'thinking', 'user': 'think', 'max_tokens': 2000, 'step_name': 'customer_thinking'},
+        {'system': 'press', 'user': 'write', 'max_tokens': 2500, 'step_name': 'press_release'},
+        {'system': 'cfaq', 'user': 'generate', 'max_tokens': 2000, 'step_name': 'customer_faq'},
+        {'system': 'ifaq', 'user': 'generate', 'max_tokens': 2000, 'step_name': 'internal_faq'},
+    ]
+    mock_prd = MagicMock(return_value=prd_steps)
+    mock_prfaq = MagicMock(return_value=prfaq_steps)
+    patchers = [
+        patch('jobs.document_generator.handler.get_prd_generation_steps', mock_prd, create=True),
+        patch('jobs.document_generator.handler.get_prfaq_generation_steps', mock_prfaq, create=True),
+    ]
+    for p in patchers:
+        p.start()
+    yield {'prd': mock_prd, 'prfaq': mock_prfaq}
     for p in patchers:
         p.stop()
 

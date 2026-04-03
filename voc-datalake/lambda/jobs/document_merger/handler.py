@@ -110,7 +110,9 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     user_prompt = f"## MERGE INSTRUCTIONS\n{instructions}\n\n## OUTPUT DOCUMENT TITLE\n{title}\n\n{context}\n\nCreate a new {output_type.upper() if output_type != 'custom' else 'document'} incorporating all relevant feedback."
     
     ctx.update_progress(60, 'calling_ai')
-    max_tokens = 8000 if output_type == 'prfaq' else 6000
+    # Higher token limits to support CJK languages (Korean, Japanese, Chinese)
+    # which use 2-3x more tokens than English for equivalent content.
+    max_tokens = 16000 if output_type == 'prfaq' else 12000
     content = converse(prompt=user_prompt, system_prompt=system_prompt, max_tokens=max_tokens)
     
     ctx.update_progress(90, 'saving_document')
