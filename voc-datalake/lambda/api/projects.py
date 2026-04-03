@@ -3,7 +3,6 @@ Projects API endpoints for VoC Analytics.
 Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 """
 import json
-import os
 import re
 from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
@@ -12,7 +11,7 @@ from boto3.dynamodb.conditions import Key
 from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
 from shared.api import validate_days
-from shared.converse import converse, converse_chain
+from shared.converse import converse_chain
 from shared.exceptions import (
     ConfigurationError,
     NotFoundError,
@@ -34,6 +33,8 @@ from shared.avatar import (
     generate_persona_avatar as _generate_persona_avatar,
     get_avatar_cdn_url,
 )
+
+from shared.tables import get_projects_table, get_feedback_table
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -58,11 +59,8 @@ def get_feedback_context(filters: dict, limit: int = 50) -> list[dict]:
     return _get_feedback_context(feedback_table, filters, limit)
 
 
-PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
-FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
-
-projects_table = dynamodb.Table(PROJECTS_TABLE) if PROJECTS_TABLE else None
-feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
+projects_table = get_projects_table()
+feedback_table = get_feedback_table()
 
 
 def fix_persona_name(name: str) -> str:
@@ -339,7 +337,8 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 persona_count=persona_count,
                 feedback_stats=feedback_stats,
                 feedback_context=feedback_context,
-                custom_instructions=custom_instructions
+                custom_instructions=custom_instructions,
+                response_language=filters.get('response_language'),
             )
             logger.info(f"[PERSONA] Built {len(chain_steps)} chain steps")
         except Exception as e:
@@ -511,7 +510,8 @@ def generate_prd(project_id: str, body: dict) -> dict:
     chain_steps = get_prd_generation_steps(
         feature_idea=feature_idea,
         personas_context=personas_context,
-        feedback_context=feedback_context
+        feedback_context=feedback_context,
+        response_language=body.get('response_language'),
     )
 
     try:
@@ -583,7 +583,8 @@ Quote: "{p.get('quote', '')}"
     chain_steps = get_prfaq_generation_steps(
         feature_idea=feature_idea,
         personas_context=personas_context,
-        feedback_context=feedback_context
+        feedback_context=feedback_context,
+        response_language=body.get('response_language'),
     )
 
     try:
@@ -645,47 +646,6 @@ Quote: "{p.get('quote', '')}"
     except Exception as e:
         logger.exception(f"PR/FAQ generation failed: {e}")
         raise ServiceError('Failed to generate PR/FAQ. Please try again.')
-
-
-
-@tracer.capture_method
-def project_chat(project_id: str, body: dict) -> dict:
-    """AI chat within project context, with persona mentions and document references support.
-    
-    Uses shared.project_chat.build_chat_context for context building.
-    """
-    # Import here to avoid circular imports at module level
-    from shared.project_chat import build_chat_context
-    
-    if not projects_table:
-        raise ConfigurationError('Projects table not configured')
-    
-    message = body.get('message', '')
-    if not message:
-        raise ValidationError('Message is required')
-    
-    # Build chat context using shared helper - exceptions will propagate
-    system_prompt, user_message, metadata = build_chat_context(
-        projects_table,
-        feedback_table,
-        project_id,
-        message,
-        selected_persona_ids=body.get('selected_personas', []),
-        selected_document_ids=body.get('selected_documents', []),
-    )
-    
-    try:
-        response = converse(prompt=user_message, system_prompt=system_prompt, max_tokens=3000)
-        
-        return {
-            'success': True,
-            'response': response,
-            **metadata
-        }
-        
-    except Exception as e:
-        logger.exception(f"Project chat failed: {e}")
-        raise ServiceError('Failed to process chat request. Please try again.')
 
 
 @tracer.capture_method
@@ -1142,7 +1102,8 @@ def run_research(project_id: str, body: dict) -> dict:
         research_question=research_question,
         feedback_stats=feedback_stats,
         feedback_context=feedback_context,
-        feedback_count=len(feedback_items)
+        feedback_count=len(feedback_items),
+        response_language=body.get('response_language'),
     )
 
     try:
@@ -1213,3 +1174,216 @@ def run_research(project_id: str, body: dict) -> dict:
     except Exception as e:
         logger.exception(f"Research failed: {e}")
         raise ServiceError('Failed to run research. Please try again.')
+
+
+def _slugify(text: str) -> str:
+    """Convert text to a URL/filename-safe slug."""
+    slug = text.lower().strip()
+    slug = re.sub(r'[^\w\s-]', '', slug)
+    slug = re.sub(r'[\s_]+', '-', slug)
+    slug = re.sub(r'-+', '-', slug)
+    return slug.strip('-')[:80]
+
+
+def _persona_to_markdown(persona: dict) -> str:
+    """Format a persona dict as a standalone markdown document."""
+    name = persona.get('name', 'Unknown')
+    tagline = persona.get('tagline', '')
+    lines = [f'# {name}', '']
+    if tagline:
+        lines.append(f'**{tagline}**')
+        lines.append('')
+
+    # Representative quotes
+    quotes = persona.get('quotes', [])
+    if quotes:
+        for q in quotes[:3]:
+            text = q.get('text', q) if isinstance(q, dict) else q
+            lines.append(f'> "{text}"')
+        lines.append('')
+
+    # Identity & Demographics
+    identity = persona.get('identity', {})
+    if identity:
+        lines.append('## Demographics')
+        for key in ('age_range', 'location', 'occupation', 'income_bracket', 'education', 'family_status'):
+            val = identity.get(key)
+            if val:
+                label = key.replace('_', ' ').title()
+                lines.append(f'- **{label}:** {val}')
+        bio = identity.get('bio')
+        if bio:
+            lines.extend(['', bio])
+        lines.append('')
+
+    # Goals & Motivations
+    goals = persona.get('goals_motivations', {})
+    if goals:
+        lines.append('## Goals & Motivations')
+        primary = goals.get('primary_goal')
+        if primary:
+            lines.append(f'- **Primary Goal:** {primary}')
+        for g in goals.get('secondary_goals', []):
+            lines.append(f'- {g}')
+        success = goals.get('success_definition')
+        if success:
+            lines.append(f'- **Success:** {success}')
+        lines.append('')
+
+    # Pain Points
+    pains = persona.get('pain_points', {})
+    if pains:
+        lines.append('## Pain Points & Frustrations')
+        for p in pains.get('current_challenges', []):
+            lines.append(f'- {p}')
+        emotional = pains.get('emotional_impact')
+        if emotional:
+            lines.append(f'- **Emotional Impact:** {emotional}')
+        lines.append('')
+
+    # Behaviors
+    behaviors = persona.get('behaviors', {})
+    if behaviors:
+        lines.append('## Behaviors & Habits')
+        for key in ('activity_frequency', 'tech_savviness', 'decision_style'):
+            val = behaviors.get(key)
+            if val:
+                label = key.replace('_', ' ').title()
+                lines.append(f'- **{label}:** {val}')
+        for tool in behaviors.get('tools_used', []):
+            lines.append(f'- Uses: {tool}')
+        lines.append('')
+
+    # Scenario
+    scenario = persona.get('scenario', {})
+    if scenario:
+        title = scenario.get('title')
+        narrative = scenario.get('narrative')
+        if title or narrative:
+            lines.append('## Scenario')
+            if title:
+                lines.append(f'**{title}**')
+                lines.append('')
+            if narrative:
+                lines.append(narrative)
+            lines.append('')
+
+    return '\n'.join(lines)
+
+
+def _document_to_markdown(doc: dict) -> str:
+    """Format a project document as markdown (content is already markdown)."""
+    title = doc.get('title', 'Untitled')
+    content = doc.get('content', '')
+    # If content already starts with a heading, use it as-is
+    if content.strip().startswith('#'):
+        return content
+    return f'# {title}\n\n{content}'
+
+
+def _build_steering_file(project: dict, personas: list, documents: list) -> str:
+    """Generate a Kiro steering file from project data."""
+    name = project.get('name', 'Project')
+    description = project.get('description', '')
+    kiro_prompt = project.get('kiro_export_prompt', '')
+
+    lines = [f'# {name} — Implementation Context', '']
+    if description:
+        lines.extend([description, ''])
+
+    # Personas section
+    if personas:
+        lines.append('## Personas')
+        lines.append('')
+        lines.append(f'This project has {len(personas)} personas in `.kiro/personas/`. When building features:')
+        lines.append('- Consider which persona the feature serves')
+        lines.append('- Reference their goals, frustrations, and needs')
+        lines.append('- Use their quotes to validate UX decisions')
+        lines.append('')
+        lines.append('Available personas:')
+        for p in personas:
+            pname = p.get('name', 'Unknown')
+            tagline = p.get('tagline', '')
+            lines.append(f'- **{pname}** — {tagline}')
+        lines.append('')
+
+    # Documents section
+    if documents:
+        lines.append('## Documents')
+        lines.append('')
+        lines.append('Project documents are in `.kiro/docs/`:')
+        for d in documents:
+            dtitle = d.get('title', 'Untitled')
+            dtype = d.get('document_type', 'custom')
+            lines.append(f'- {dtitle} ({dtype})')
+        lines.append('')
+        lines.append('Use PRDs for acceptance criteria and scope. Use PR/FAQs for customer-facing messaging.')
+        lines.append('')
+
+    # Custom instructions
+    if kiro_prompt:
+        lines.append('## Custom Instructions')
+        lines.append('')
+        lines.append(kiro_prompt)
+        lines.append('')
+
+    return '\n'.join(lines)
+
+
+@tracer.capture_method
+def autoseed_project(project_id: str, persona_ids: list[str] | None = None, document_ids: list[str] | None = None) -> dict:
+    """Generate a Kiro autoseed payload with selected project context as files.
+    
+    Args:
+        project_id: The project to export.
+        persona_ids: Optional list of persona IDs to include. None means all.
+        document_ids: Optional list of document IDs to include. None means all.
+    """
+    project_data = get_project(project_id)
+    project = project_data['project']
+    all_personas = project_data['personas']
+    all_documents = project_data['documents']
+
+    # Filter to selected items (None = include all)
+    personas = all_personas if persona_ids is None else [
+        p for p in all_personas if p.get('persona_id') in persona_ids
+    ]
+    documents = all_documents if document_ids is None else [
+        d for d in all_documents if d.get('document_id') in document_ids
+    ]
+
+    project_name = project.get('name', 'project')
+    project_slug = _slugify(project_name)
+
+    files = []
+
+    # Persona files
+    for persona in personas:
+        persona_slug = _slugify(persona.get('name', 'unknown'))
+        files.append({
+            'path': f'.kiro/personas/{persona_slug}.md',
+            'content': _persona_to_markdown(persona),
+        })
+
+    # Document files
+    for doc in documents:
+        doc_slug = _slugify(doc.get('title', 'untitled'))
+        files.append({
+            'path': f'.kiro/docs/{doc_slug}.md',
+            'content': _document_to_markdown(doc),
+        })
+
+    # Steering file (generated last so it can reference the above)
+    steering_content = _build_steering_file(project, personas, documents)
+    files.insert(0, {
+        'path': f'.kiro/steering/project-{project_slug}.md',
+        'content': steering_content,
+    })
+
+    return {
+        'project': {
+            'name': project_name,
+            'description': project.get('description', ''),
+        },
+        'files': files,
+    }

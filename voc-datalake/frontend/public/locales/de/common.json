@@ -1,0 +1,99 @@
+{
+  "appDescription": "Einheitliche Plattform für Kundenfeedback-Intelligenz",
+  "appName": "VoC Analytics",
+  "appTagline": "Voice of the Customer Analytics",
+  "breadcrumbs": {
+    "categories": "Kategorien",
+    "chat": "KI-Chat",
+    "dashboard": "Dashboard",
+    "dataExplorer": "Daten-Explorer",
+    "feedback": "Feedback",
+    "feedbackForms": "Feedback-Formulare",
+    "home": "Startseite",
+    "prioritization": "Priorisierung",
+    "problems": "Problemanalyse",
+    "projects": "Projekte",
+    "scrapers": "Web-Scraper",
+    "settings": "Einstellungen"
+  },
+  "configureBrand": "Marke konfigurieren",
+  "filters": {
+    "allCategories": "Alle Kategorien",
+    "allSentiments": "Alle Stimmungen",
+    "allSources": "Alle Quellen",
+    "clearFilters": "Filter zurücksetzen",
+    "mostRecent": "Neueste",
+    "searchFeedback": "Feedback suchen...",
+    "urgentOnly": "Nur dringende"
+  },
+  "forQuery": "für \"{{query}}\"",
+  "goToSettings": "Zu den Einstellungen",
+  "loading": "Wird geladen...",
+  "logs": {
+    "daysAgo_one": "vor {{count}} Tag",
+    "daysAgo_other": "vor {{count}} Tagen",
+    "hoursAgo_one": "vor {{count}} Stunde",
+    "hoursAgo_other": "vor {{count}} Stunden",
+    "justNow": "Gerade eben",
+    "minutesAgo_one": "vor {{count}} Minute",
+    "minutesAgo_other": "vor {{count}} Minuten"
+  },
+  "metrics": {
+    "avgSentiment": "Durchschnittliche Stimmung",
+    "sourcesActive": "Aktive Quellen",
+    "totalFeedback": "Gesamtes Feedback",
+    "urgentIssues": "Dringende Probleme"
+  },
+  "nav": {
+    "aiChat": "KI-Chat",
+    "categories": "Kategorien",
+    "dashboard": "Dashboard",
+    "dataExplorer": "Daten-Explorer",
+    "feedback": "Feedback",
+    "feedbackForms": "Feedback-Formulare",
+    "prioritization": "Priorisierung",
+    "problemAnalysis": "Problemanalyse",
+    "projects": "Projekte",
+    "scrapers": "Scraper",
+    "settings": "Einstellungen"
+  },
+  "priority": {
+    "high": "Hoch",
+    "low": "Niedrig",
+    "medium": "Mittel",
+    "none": "Keine"
+  },
+  "send": "Senden",
+  "sentiment": {
+    "mixed": "Gemischt",
+    "negative": "Negativ",
+    "neutral": "Neutral",
+    "positive": "Positiv"
+  },
+  "showingOf_one": "{{count}} von {{total}} Ergebnis angezeigt",
+  "showingOf_other": "{{count}} von {{total}} Ergebnissen angezeigt",
+  "sidebar": {
+    "closeMenu": "Menü schließen",
+    "collapseSidebar": "Seitenleiste ausblenden",
+    "expandSidebar": "Seitenleiste einblenden",
+    "openMenu": "Menü öffnen",
+    "signOut": "Abmelden"
+  },
+  "timeRange": {
+    "24h": "24h",
+    "24hFull": "24 Stunden",
+    "30d": "30T",
+    "30dFull": "30 Tage",
+    "48h": "48h",
+    "48hFull": "48 Stunden",
+    "7d": "7T",
+    "7dFull": "7 Tage",
+    "apply": "Anwenden",
+    "cancel": "Abbrechen",
+    "clear": "Löschen",
+    "custom": "Benutzerdefiniert",
+    "endDate": "Enddatum",
+    "selectDateRange": "Zeitraum auswählen",
+    "startDate": "Startdatum"
+  }
+}

@@ -3,8 +3,7 @@ Tests for users_handler.py - /users/* endpoints.
 Cognito user management for admins.
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 
@@ -244,6 +243,208 @@ class TestCreateUser:
         assert response['statusCode'] == 409
         assert 'error' in body
         assert 'already exists' in body['error']
+
+
+class TestUpdateUser:
+    """Tests for PUT /users/<username> endpoint."""
+
+    @patch('users_handler.cognito')
+    def test_updates_user_attributes_successfully(
+        self, mock_cognito, api_gateway_event, lambda_context
+    ):
+        """Updates given_name and family_name in Cognito."""
+        mock_cognito.admin_get_user.return_value = {
+            'UserAttributes': [
+                {'Name': 'given_name', 'Value': 'Old'},
+                {'Name': 'family_name', 'Value': 'Name'},
+            ]
+        }
+        mock_cognito.admin_update_user_attributes.return_value = {}
+
+        from users_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/users/testuser',
+            path_params={'username': 'testuser'},
+            body={'given_name': 'New', 'family_name': 'Name'}
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['success'] is True
+        assert body['given_name'] == 'New'
+        assert body['family_name'] == 'Name'
+        assert body['name'] == 'New Name'
+        mock_cognito.admin_update_user_attributes.assert_called_once()
+
+    @patch('users_handler.cognito')
+    def test_partial_update_given_name_only(
+        self, mock_cognito, api_gateway_event, lambda_context
+    ):
+        """Updates only given_name, merges with existing family_name."""
+        mock_cognito.admin_get_user.return_value = {
+            'UserAttributes': [
+                {'Name': 'given_name', 'Value': 'Old'},
+                {'Name': 'family_name', 'Value': 'Smith'},
+            ]
+        }
+        mock_cognito.admin_update_user_attributes.return_value = {}
+
+        from users_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/users/testuser',
+            path_params={'username': 'testuser'},
+            body={'given_name': 'New'}
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['given_name'] == 'New'
+        assert body['family_name'] == 'Smith'
+        assert body['name'] == 'New Smith'
+
+    @patch('users_handler.cognito')
+    def test_partial_update_family_name_only(
+        self, mock_cognito, api_gateway_event, lambda_context
+    ):
+        """Updates only family_name, merges with existing given_name."""
+        mock_cognito.admin_get_user.return_value = {
+            'UserAttributes': [
+                {'Name': 'given_name', 'Value': 'Jane'},
+                {'Name': 'family_name', 'Value': 'Old'},
+            ]
+        }
+        mock_cognito.admin_update_user_attributes.return_value = {}
+
+        from users_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/users/testuser',
+            path_params={'username': 'testuser'},
+            body={'family_name': 'Doe'}
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['given_name'] == 'Jane'
+        assert body['family_name'] == 'Doe'
+        assert body['name'] == 'Jane Doe'
+
+    @patch('users_handler.cognito')
+    def test_rejects_non_string_given_name(
+        self, mock_cognito, api_gateway_event, lambda_context
+    ):
+        """Returns 400 when given_name is not a string."""
+        from users_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/users/testuser',
+            path_params={'username': 'testuser'},
+            body={'given_name': 123}
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
+
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+
+    @patch('users_handler.cognito')
+    def test_returns_error_when_both_names_missing(
+        self, mock_cognito, api_gateway_event, lambda_context
+    ):
+        """Returns 400 when neither given_name nor family_name in body."""
+        from users_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/users/testuser',
+            path_params={'username': 'testuser'},
+            body={'some_other_field': 'value'}
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
+
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+
+    @patch('users_handler.cognito')
+    def test_rejects_whitespace_only_names(
+        self, mock_cognito, api_gateway_event, lambda_context
+    ):
+        """Returns 400 when names are whitespace-only and no existing names."""
+        mock_cognito.exceptions.UserNotFoundException = type(
+            'UserNotFoundException', (Exception,), {}
+        )
+        mock_cognito.admin_get_user.return_value = {
+            'UserAttributes': []
+        }
+
+        from users_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/users/testuser',
+            path_params={'username': 'testuser'},
+            body={'given_name': '   ', 'family_name': '  '}
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
+
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+
+    @patch('users_handler.cognito')
+    def test_returns_not_found_for_nonexistent_user(
+        self, mock_cognito, api_gateway_event, lambda_context
+    ):
+        """Returns 404 when user does not exist."""
+        mock_cognito.exceptions.UserNotFoundException = type(
+            'UserNotFoundException', (Exception,), {}
+        )
+        mock_cognito.admin_get_user.side_effect = (
+            mock_cognito.exceptions.UserNotFoundException()
+        )
+
+        from users_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/users/ghost',
+            path_params={'username': 'ghost'},
+            body={'given_name': 'Ghost'}
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 404
+        assert 'not found' in body['error'].lower()
+
+    @patch('users_handler.cognito')
+    def test_returns_unauthorized_for_non_admins(
+        self, mock_cognito, api_gateway_event, lambda_context
+    ):
+        """Returns 403 for non-admin callers."""
+        from users_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/users/testuser',
+            path_params={'username': 'testuser'},
+            body={'given_name': 'New'}
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'viewers'
+
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 403
 
 
 class TestUpdateUserGroup:

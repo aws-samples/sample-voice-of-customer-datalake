@@ -94,4 +94,32 @@ describe('SentimentGauge', () => {
     render(<SentimentGauge {...defaultProps} avgSentiment={0} />)
     expect(screen.getByText('0')).toHaveClass('text-gray-600')
   })
+
+  it('renders without crashing when sentimentData is empty', () => {
+    render(
+      <SentimentGauge
+        {...defaultProps}
+        sentimentData={[]}
+        percentages={{}}
+        avgSentiment={0}
+      />,
+    )
+    expect(screen.getByText('0')).toBeInTheDocument()
+  })
+
+  it('renders without crashing when percentages has missing keys', () => {
+    const partialData: SentimentData[] = [
+      { name: 'positive', value: 60, color: '#22c55e', percentage: 60 },
+      { name: 'unknown_sentiment', value: 5, color: '#999', percentage: 5 },
+    ]
+    // percentages map is missing 'unknown_sentiment' key
+    render(
+      <SentimentGauge
+        {...defaultProps}
+        sentimentData={partialData}
+        percentages={{ positive: 60 }}
+      />,
+    )
+    expect(screen.getByRole('button', { name: /positive/i })).toBeInTheDocument()
+  })
 })

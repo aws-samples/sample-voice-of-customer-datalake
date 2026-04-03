@@ -139,8 +139,10 @@ export const bedrockModelSuppressions: NagPackSuppression[] = [
     id: 'AwsSolutions-IAM5',
     reason: 'Bedrock foundation model ARNs require region wildcard as models are cross-region resources',
     appliesTo: [
-      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
+      { regex: '/Resource::arn:aws:bedrock:\\*:.*:inference-profile/global\\.anthropic\\.claude-sonnet-4-6/' },
+      { regex: '/Resource::arn:aws:bedrock:\\*:.*:inference-profile/global\\.anthropic\\.claude-haiku-4-5-20251001-v1:0/' },
     ],
   },
 ];
@@ -152,6 +154,7 @@ export const pluginSystemSuppressions: NagPackSuppression[] = [
     reason: 'Plugin system requires wildcards for dynamic Lambda function names and EventBridge rules created at runtime',
     appliesTo: [
       { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-ingestor-webscraper-\*/' },
+      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-ingestor-\*/' },
       { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-manual-import-processor-\*/' },
       { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-projects-api-\*/' },
       { regex: '/Resource::arn:aws:events:.*:.*:rule.voc-ingest-.*-schedule/' },
@@ -159,10 +162,14 @@ export const pluginSystemSuppressions: NagPackSuppression[] = [
   },
   {
     id: 'AwsSolutions-IAM5',
-    reason: 'Lambda version/alias wildcard required for Step Functions state machine invocations',
+    reason: 'Lambda version/alias wildcard required for Step Functions state machine invocations and async job Lambda invocations',
     appliesTo: [
       { regex: '/Resource::<.*ResearchStepLambda.*\.Arn>:\*/' },
       { regex: '/Resource::<.*ModelAgreementLambda.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*PersonaGeneratorJob.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*DocumentGeneratorJob.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*DocumentMergerJob.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*PersonaImporterJob.*\.Arn>:\*/' },
     ],
   },
 ];

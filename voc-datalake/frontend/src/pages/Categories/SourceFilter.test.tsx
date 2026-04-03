@@ -16,6 +16,11 @@ describe('SourceFilter', () => {
     expect(screen.getByRole('combobox')).toBeInTheDocument()
     expect(screen.getByText('All Sources')).toBeInTheDocument()
     expect(screen.getByText('webscraper')).toBeInTheDocument()
+  })
+
+  it('renders remaining sources in dropdown', () => {
+    render(<SourceFilter {...defaultProps} />)
+
     expect(screen.getByText('manual_import')).toBeInTheDocument()
     expect(screen.getByText('s3_import')).toBeInTheDocument()
   })

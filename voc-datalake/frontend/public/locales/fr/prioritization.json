@@ -1,0 +1,74 @@
+{
+  "actions": {
+    "reset": "Réinitialiser",
+    "save": "Enregistrer les scores",
+    "saveMobile": "Enregistrer",
+    "saving": "Enregistrement...",
+    "savingMobile": "..."
+  },
+  "configureApiEndpoint": "Configurez le point de terminaison API dans les paramètres pour afficher la priorisation.",
+  "empty": {
+    "description": "Créez des PR/FAQ dans vos projets pour commencer à prioriser.",
+    "title": "Aucun PR/FAQ trouvé"
+  },
+  "framework": {
+    "description": "Évaluez chaque PR/FAQ sur : <strong>Impact</strong>, <strong>Délai de mise sur le marché</strong>, <strong>Adéquation stratégique</strong> et <strong>Confiance</strong>.",
+    "title": "Cadre de priorisation"
+  },
+  "loading": "Chargement des PR/FAQ...",
+  "notes": {
+    "label": "Notes",
+    "placeholder": "Ajouter des notes sur cette décision de priorisation..."
+  },
+  "preview": {
+    "title": "Aperçu PR/FAQ",
+    "viewFull": "Voir le document complet",
+    "viewMobile": "Voir"
+  },
+  "priority": {
+    "high": "Haute priorité",
+    "low": "Basse priorité",
+    "medium": "Priorité moyenne",
+    "none": "Non évalué"
+  },
+  "scores": {
+    "confidence": "Confiance",
+    "confidenceDescription": "Certitude dans les estimations d'impact et de DmM",
+    "fast": "Rapide",
+    "high": "Élevé",
+    "impact": "Impact",
+    "impactDescription": "Valeur commerciale et bénéfice client",
+    "low": "Faible",
+    "score": "Score",
+    "slow": "Lent",
+    "strategicFit": "Adéquation stratégique",
+    "strategicFitDescription": "Alignement avec les objectifs de l'entreprise",
+    "timeToMarket": "Délai de mise sur le marché",
+    "timeToMarketDescription": "À quelle vitesse cela peut-il être livré ?",
+    "title": "Scores de priorisation"
+  },
+  "sort": {
+    "date": "Date",
+    "dateFull": "Date de création",
+    "impact": "Impact",
+    "label": "Trier par :",
+    "priority": "Priorité",
+    "priorityFull": "Score de priorité",
+    "ttm": "DmM",
+    "ttmFull": "Délai de mise sur le marché"
+  },
+  "stats": {
+    "highPriority": "Haute priorité",
+    "mediumPriority": "Priorité moyenne",
+    "notScored": "Non évalué",
+    "totalPrfaqs": "Total PR/FAQ"
+  },
+  "subtitle": "Évaluer et prioriser les PR/FAQ de tous les projets",
+  "title": "Priorisation des PR/FAQ",
+  "unsavedChanges": {
+    "cancel": "Rester sur la page",
+    "confirm": "Abandonner les modifications",
+    "message": "Vous avez des scores de priorisation non enregistrés. Voulez-vous abandonner vos modifications et quitter cette page ?",
+    "title": "Modifications non enregistrées"
+  }
+}

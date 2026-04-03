@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import PersonaAvatar from './PersonaAvatar'
-import type { ProjectPersona } from '../../api/client'
+import type { ProjectPersona } from '../../api/types'
 
 const mockPersona: ProjectPersona = {
   persona_id: '1',

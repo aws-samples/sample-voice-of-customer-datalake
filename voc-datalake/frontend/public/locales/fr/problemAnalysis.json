@@ -1,0 +1,47 @@
+{
+  "configureApi": "Veuillez configurer votre endpoint API dans les Paramètres",
+  "filters": {
+    "allCategories": "Toutes les catégories",
+    "allSources": "Toutes les sources",
+    "allSubcategories": "Toutes les sous-catégories",
+    "clear": "Effacer",
+    "collapse": "Réduire",
+    "collapseAll": "Tout réduire",
+    "expand": "Développer",
+    "expandAll": "Tout développer",
+    "pdf": "PDF",
+    "showResolved": "Afficher les résolus",
+    "similarity": "Similarité :",
+    "similarityHigh": "Élevé",
+    "similarityLow": "Faible",
+    "similarityMed": "Moyen",
+    "similarityOff": "Désactivé",
+    "urgentOnly": "Urgents uniquement"
+  },
+  "noDataHint": "Essayez d'élargir la plage de temps ou d'ajuster les filtres",
+  "noDataTitle": "Aucune donnée d'analyse de problèmes trouvée pour la période sélectionnée",
+  "stats": {
+    "categories": "Catégories",
+    "feedback": "Retours",
+    "problems": "Problèmes",
+    "subcategories": "Sous-catégories",
+    "urgent": "Urgent"
+  },
+  "tree": {
+    "markResolved": "Marquer comme résolu",
+    "markUnresolved": "Marquer comme non résolu",
+    "original": "Original : {{text}}",
+    "problems_one": "{{count}} problème",
+    "problems_many": "{{count}} problèmes",
+    "problems_other": "{{count}} problèmes",
+    "resolved": "Résolu",
+    "reviews_one": "{{count}} avis",
+    "reviews_many": "{{count}} avis",
+    "reviews_other": "{{count}} avis",
+    "similar": "Similaires :",
+    "sub_one": "{{count}} sous",
+    "sub_many": "{{count}} sous",
+    "sub_other": "{{count}} sous",
+    "unknown": "Inconnu"
+  }
+}

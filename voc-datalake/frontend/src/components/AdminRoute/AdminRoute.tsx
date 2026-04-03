@@ -1,21 +1,25 @@
 /**
  * @fileoverview Route protection component for admin-only access.
- * 
+ *
  * Security behavior:
  * - Requires user to be authenticated AND in the 'admins' group
  * - Redirects non-admin users to the dashboard with an access denied message
  * - In development without Cognito, allows access for easier testing
- * 
+ *
  * @module components/AdminRoute
  */
 
-import { Navigate, useLocation } from 'react-router-dom'
-import { useAuthStore, useIsAdmin } from '../../store/authStore'
+import {
+  Navigate, useLocation,
+} from 'react-router-dom'
 import { authService } from '../../services/auth'
+import {
+  useAuthStore, useIsAdmin,
+} from '../../store/authStore'
 
 interface AdminRouteProps {
   /** Child components to render if user is admin */
-  readonly children: React.ReactNode
+  readonly children: React.ReactElement
   /** Optional redirect path for non-admins (defaults to '/') */
   readonly redirectTo?: string
 }
@@ -23,7 +27,7 @@ interface AdminRouteProps {
 /**
  * Wraps routes that require admin privileges.
  * Redirects non-admin users to the specified path (default: dashboard).
- * 
+ *
  * @example
  * ```tsx
  * <Route path="/settings" element={
@@ -33,7 +37,9 @@ interface AdminRouteProps {
  * } />
  * ```
  */
-export default function AdminRoute({ children, redirectTo = '/' }: AdminRouteProps) {
+export default function AdminRoute({
+  children, redirectTo = '/',
+}: AdminRouteProps) {
   const location = useLocation()
   const { isAuthenticated } = useAuthStore()
   const isAdmin = useIsAdmin()
@@ -41,7 +47,7 @@ export default function AdminRoute({ children, redirectTo = '/' }: AdminRoutePro
   // If Cognito is not configured, allow access in development mode
   if (!authService.isConfigured()) {
     if (import.meta.env.DEV) {
-      return <>{children}</>
+      return children
     }
     // In production, fail closed - require auth configuration
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
@@ -57,5 +63,5 @@ export default function AdminRoute({ children, redirectTo = '/' }: AdminRoutePro
     return <Navigate to={redirectTo} state={{ accessDenied: true }} replace />
   }
 
-  return <>{children}</>
+  return children
 }

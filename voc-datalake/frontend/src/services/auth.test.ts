@@ -31,26 +31,24 @@ vi.mock('amazon-cognito-identity-js', () => ({
 }))
 
 // Mock config
-vi.mock('../config', () => ({
-  config: {
-    cognito: {
-      userPoolId: 'us-east-1_test123',
-      clientId: 'testclientid123',
-    },
-  },
-  getConfig: () => ({
+vi.mock('../runtimeConfig', () => ({
+  getRuntimeConfig: () => ({
     apiEndpoint: 'https://api.example.com',
     cognito: {
       userPoolId: 'us-east-1_test123',
       clientId: 'testclientid123',
       region: 'us-east-1',
+      identityPoolId: 'us-east-1:test-pool-id',
     },
   }),
+  isConfigLoaded: () => true,
+  loadRuntimeConfig: vi.fn(),
 }))
 
 // Mock authStore
 const mockSetUser = vi.fn()
 const mockSetTokens = vi.fn()
+const mockSetSessionReady = vi.fn()
 const mockLogout = vi.fn()
 
 vi.mock('../store/authStore', () => ({
@@ -58,6 +56,7 @@ vi.mock('../store/authStore', () => ({
     getState: () => ({
       setUser: mockSetUser,
       setTokens: mockSetTokens,
+      setSessionReady: mockSetSessionReady,
       logout: mockLogout,
       refreshToken: 'mock-refresh-token',
     }),
@@ -97,6 +96,7 @@ describe('authService', () => {
 
       const result = await authService.signIn('testuser', 'password123')
 
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockAuthenticateUser).toHaveBeenCalled()
       expect(result).toBe(mockSession)
     })
@@ -114,7 +114,7 @@ describe('authService', () => {
   describe('signOut', () => {
     it('calls logout on authStore', () => {
       authService.signOut()
-      expect(mockLogout).toHaveBeenCalled()
+      expect(mockLogout).toHaveBeenCalledWith()
     })
   })
 
@@ -125,6 +125,7 @@ describe('authService', () => {
       })
 
       await expect(authService.forgotPassword('testuser')).resolves.not.toThrow()
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockForgotPassword).toHaveBeenCalled()
     })
   })
@@ -136,6 +137,7 @@ describe('authService', () => {
       })
 
       await expect(authService.confirmPassword('testuser', '123456', 'newpassword')).resolves.not.toThrow()
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockConfirmPassword).toHaveBeenCalled()
     })
   })

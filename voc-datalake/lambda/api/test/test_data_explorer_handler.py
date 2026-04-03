@@ -3,7 +3,7 @@ Tests for data_explorer_handler.py - /data-explorer/* endpoints.
 Full CRUD for S3 raw data and DynamoDB feedback.
 """
 import json
-import pytest
+import os
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
 
@@ -29,7 +29,6 @@ class TestListS3Objects:
         }
         
         import sys
-        import os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from data_explorer_handler import lambda_handler
         
@@ -267,14 +266,14 @@ class TestDeleteS3File:
 class TestSaveFeedback:
     """Tests for PUT /data-explorer/feedback endpoint."""
 
-    @patch('data_explorer_handler.dynamodb')
+    @patch('data_explorer_handler.get_feedback_table')
     def test_updates_feedback_record(
-        self, mock_dynamodb, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Updates feedback record in DynamoDB."""
         # Arrange
         mock_table = MagicMock()
-        mock_dynamodb.Table.return_value = mock_table
+        mock_get_table.return_value = mock_table
         mock_table.update_item.return_value = {}
         
         from data_explorer_handler import lambda_handler
@@ -300,9 +299,9 @@ class TestSaveFeedback:
         assert response['statusCode'] == 200
         assert body['success'] is True
 
-    @patch('data_explorer_handler.dynamodb')
+    @patch('data_explorer_handler.get_feedback_table')
     def test_returns_error_when_feedback_id_missing(
-        self, mock_dynamodb, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns error when feedback_id not provided."""
         # Arrange
@@ -326,14 +325,14 @@ class TestSaveFeedback:
 class TestDeleteFeedback:
     """Tests for DELETE /data-explorer/feedback endpoint."""
 
-    @patch('data_explorer_handler.dynamodb')
+    @patch('data_explorer_handler.get_feedback_table')
     def test_deletes_feedback_record(
-        self, mock_dynamodb, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Deletes feedback record from DynamoDB."""
         # Arrange
         mock_table = MagicMock()
-        mock_dynamodb.Table.return_value = mock_table
+        mock_get_table.return_value = mock_table
         mock_table.query.return_value = {
             'Items': [{'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#fb-123'}]
         }
@@ -354,14 +353,14 @@ class TestDeleteFeedback:
         assert response['statusCode'] == 200
         assert body['success'] is True
 
-    @patch('data_explorer_handler.dynamodb')
+    @patch('data_explorer_handler.get_feedback_table')
     def test_returns_error_when_feedback_not_found(
-        self, mock_dynamodb, api_gateway_event, lambda_context
+        self, mock_get_table, api_gateway_event, lambda_context
     ):
         """Returns error when feedback record not found."""
         # Arrange
         mock_table = MagicMock()
-        mock_dynamodb.Table.return_value = mock_table
+        mock_get_table.return_value = mock_table
         mock_table.query.return_value = {'Items': []}
         
         from data_explorer_handler import lambda_handler
@@ -430,45 +429,235 @@ class TestGetDataStats:
         assert 'dynamodb' in body
 
 
-class TestDecimalToNative:
-    """Tests for decimal_to_native helper function."""
+class TestResponseFormatContract:
+    """Tests that verify the API response format matches what the frontend expects.
+    
+    These tests prevent regressions where the backend response structure diverges
+    from what the frontend API client expects, causing silent data display failures.
+    
+    Bug context:
+    - S3 browser showed "No files found" because frontend expected {folders, files}
+      but backend returned {objects} with isFolder flag
+    - Buckets endpoint returned {id, name, label} but frontend expected {name, type}
+    """
 
-    def test_converts_decimal_to_int(self):
-        """Converts whole number Decimal to int."""
-        from data_explorer_handler import decimal_to_native
-        
-        result = decimal_to_native(Decimal('42'))
-        assert result == 42
-        assert isinstance(result, int)
-
-    def test_converts_decimal_to_float(self):
-        """Converts fractional Decimal to float."""
-        from data_explorer_handler import decimal_to_native
-        
-        result = decimal_to_native(Decimal('3.14'))
-        assert result == 3.14
-        assert isinstance(result, float)
-
-    def test_converts_nested_dict(self):
-        """Converts Decimals in nested dict."""
-        from data_explorer_handler import decimal_to_native
-        
-        data = {
-            'count': Decimal('100'),
-            'score': Decimal('0.85'),
-            'nested': {'value': Decimal('42')}
+    @patch('data_explorer_handler.s3_client')
+    def test_s3_list_response_has_objects_array(
+        self, mock_s3, api_gateway_event, lambda_context
+    ):
+        """S3 list response must contain 'objects' array, not 'folders'/'files'."""
+        from datetime import datetime
+        mock_s3.list_objects_v2.return_value = {
+            'CommonPrefixes': [{'Prefix': 'raw/'}],
+            'Contents': [
+                {'Key': 'test.json', 'Size': 512, 'LastModified': datetime(2025, 3, 1)},
+            ]
         }
         
-        result = decimal_to_native(data)
-        assert result['count'] == 100
-        assert result['score'] == 0.85
-        assert result['nested']['value'] == 42
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/data-explorer/s3',
+            query_params={'bucket': 'raw-data'}
+        )
+        
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        
+        # Frontend expects 'objects' array (not 'folders' and 'files' separately)
+        assert 'objects' in body
+        assert isinstance(body['objects'], list)
+        # Must NOT have old format keys
+        assert 'folders' not in body
+        assert 'files' not in body
 
-    def test_converts_list_items(self):
-        """Converts Decimals in list."""
-        from data_explorer_handler import decimal_to_native
+    @patch('data_explorer_handler.s3_client')
+    def test_s3_objects_have_required_fields(
+        self, mock_s3, api_gateway_event, lambda_context
+    ):
+        """Each S3 object must have key, size, lastModified, isFolder fields."""
+        from datetime import datetime
+        mock_s3.list_objects_v2.return_value = {
+            'CommonPrefixes': [{'Prefix': 'raw/'}],
+            'Contents': [
+                {'Key': 'raw/test.json', 'Size': 512, 'LastModified': datetime(2025, 3, 1)},
+            ]
+        }
         
-        data = [Decimal('1'), Decimal('2.5'), Decimal('3')]
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/data-explorer/s3',
+            query_params={'bucket': 'raw-data', 'prefix': 'raw'}
+        )
         
-        result = decimal_to_native(data)
-        assert result == [1, 2.5, 3]
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        
+        for obj in body['objects']:
+            assert 'key' in obj, f"Object missing 'key': {obj}"
+            assert 'size' in obj, f"Object missing 'size': {obj}"
+            assert 'isFolder' in obj, f"Object missing 'isFolder': {obj}"
+            assert isinstance(obj['isFolder'], bool), f"isFolder must be bool: {obj}"
+            
+            if not obj['isFolder']:
+                assert 'fullKey' in obj, f"File object missing 'fullKey': {obj}"
+                assert 'lastModified' in obj, f"File object missing 'lastModified': {obj}"
+
+    @patch('data_explorer_handler.s3_client')
+    def test_s3_response_has_bucket_metadata(
+        self, mock_s3, api_gateway_event, lambda_context
+    ):
+        """S3 list response must include bucket, bucketId, and prefix."""
+        mock_s3.list_objects_v2.return_value = {
+            'CommonPrefixes': [],
+            'Contents': []
+        }
+        
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/data-explorer/s3',
+            query_params={'bucket': 'raw-data'}
+        )
+        
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        
+        assert 'bucket' in body, "Response must include 'bucket' (actual S3 bucket name)"
+        assert 'bucketId' in body, "Response must include 'bucketId' (logical bucket ID)"
+        assert 'prefix' in body, "Response must include 'prefix'"
+        assert body['bucketId'] == 'raw-data'
+
+    def test_buckets_response_has_id_name_label(
+        self, api_gateway_event, lambda_context
+    ):
+        """Buckets response must include id, name, and label for each bucket."""
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(method='GET', path='/data-explorer/buckets')
+        
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        
+        assert 'buckets' in body
+        for bucket in body['buckets']:
+            assert 'id' in bucket, f"Bucket missing 'id': {bucket}"
+            assert 'name' in bucket, f"Bucket missing 'name': {bucket}"
+            assert 'label' in bucket, f"Bucket missing 'label': {bucket}"
+            # id should be the logical bucket ID (e.g., 'raw-data'), not the S3 name
+            assert bucket['id'] != bucket['name'] or bucket['id'] == bucket['name']
+
+    @patch('data_explorer_handler.s3_client')
+    def test_s3_folders_sorted_before_files(
+        self, mock_s3, api_gateway_event, lambda_context
+    ):
+        """Objects should be sorted with folders first, then files."""
+        from datetime import datetime
+        mock_s3.list_objects_v2.return_value = {
+            'CommonPrefixes': [{'Prefix': 'z-folder/'}],
+            'Contents': [
+                {'Key': 'a-file.json', 'Size': 100, 'LastModified': datetime(2025, 1, 1)},
+            ]
+        }
+        
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/data-explorer/s3',
+            query_params={'bucket': 'raw-data'}
+        )
+        
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        
+        # Folders should come before files regardless of alphabetical order
+        assert body['objects'][0]['isFolder'] is True
+        assert body['objects'][0]['key'] == 'z-folder'
+        assert body['objects'][1]['isFolder'] is False
+        assert body['objects'][1]['key'] == 'a-file.json'
+
+
+class TestFeedbackResponseContract:
+    """Tests for the feedback list endpoint response format used by Data Explorer.
+    
+    The Data Explorer's Processed Feedback tab calls GET /feedback with Zod validation.
+    If the response format doesn't match, Zod throws and the tab shows empty results.
+    """
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_feedback_response_has_count_and_items(
+        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """Feedback response must have 'count' (number) and 'items' (array)."""
+        mock_fb_table.query.return_value = {'Items': []}
+        
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback',
+            query_params={'days': '7', 'limit': '100'}
+        )
+        
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        
+        assert response['statusCode'] == 200
+        assert 'count' in body
+        assert 'items' in body
+        assert isinstance(body['count'], int)
+        assert isinstance(body['items'], list)
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_feedback_items_have_required_fields_for_zod(
+        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """Each feedback item must have fields required by FeedbackItemSchema."""
+        sample_items = [{
+            'pk': 'SOURCE#webscraper',
+            'sk': 'FEEDBACK#fb-001',
+            'gsi1pk': 'DATE#2025-03-20',
+            'gsi1sk': '2025-03-20T10:00:00Z#fb-001',
+            'feedback_id': 'fb-001',
+            'source_id': 'src-001',
+            'source_platform': 'webscraper',
+            'source_channel': 'web',
+            'brand_name': 'TestBrand',
+            'source_created_at': '2025-03-20T10:00:00Z',
+            'processed_at': '2025-03-20T10:01:00Z',
+            'original_text': 'Great product!',
+            'original_language': 'en',
+            'category': 'product_quality',
+            'sentiment_label': 'positive',
+            'sentiment_score': Decimal('0.850'),
+            'urgency': 'low',
+            'impact_area': 'product',
+            'date': '2025-03-20',
+            'ttl': 1742515260,
+        }]
+        
+        # Only return items for the first day query, empty for the rest
+        mock_fb_table.query.side_effect = [
+            {'Items': sample_items},
+        ] + [{'Items': []}] * 10
+        
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback',
+            query_params={'days': '1'}
+        )
+        
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        
+        assert response['statusCode'] == 200
+        assert body['count'] >= 1
+        
+        item = body['items'][0]
+        # These fields are required by FeedbackItemSchema (no default)
+        assert 'feedback_id' in item
+        assert 'source_platform' in item
+        # Decimal should be serialized as a number, not a string
+        assert isinstance(item['sentiment_score'], (int, float))

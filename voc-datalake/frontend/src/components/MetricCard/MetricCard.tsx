@@ -10,9 +10,11 @@
  * @module components/MetricCard
  */
 
-import type { ReactNode } from 'react'
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import clsx from 'clsx'
+import {
+  TrendingUp, TrendingDown, Minus,
+} from 'lucide-react'
+import type { ReactNode } from 'react'
 
 type TrendDirection = 'up' | 'down' | 'neutral'
 type ColorTheme = 'blue' | 'green' | 'red' | 'orange' | 'gray'
@@ -65,12 +67,17 @@ function TrendIcon({ trend }: Readonly<{ trend?: TrendDirection }>) {
 }
 
 // Trend indicator sub-component - defined outside render to avoid recreation
-function TrendIndicator({ trend, change }: Readonly<{ trend?: TrendDirection; change: number }>) {
+function TrendIndicator({
+  trend, change,
+}: Readonly<{
+  trend?: TrendDirection;
+  change: number
+}>) {
   return (
-    <div 
+    <div
       className={clsx(
         'inline-flex items-center gap-1 mt-1 sm:mt-2 text-xs sm:text-sm',
-        getTrendClasses(trend)
+        getTrendClasses(trend),
       )}
       aria-label={getTrendLabel(trend, change)}
     >
@@ -80,7 +87,9 @@ function TrendIndicator({ trend, change }: Readonly<{ trend?: TrendDirection; ch
   )
 }
 
-export default function MetricCard({ title, value, change, icon, trend, color = 'blue' }: Readonly<MetricCardProps>) {
+export default function MetricCard({
+  title, value, change, icon, trend, color = 'blue',
+}: Readonly<MetricCardProps>) {
   return (
     <div className="card !p-3 sm:!p-4 md:!p-6">
       <div className="flex items-start justify-between gap-2 sm:gap-3">
@@ -91,17 +100,15 @@ export default function MetricCard({ title, value, change, icon, trend, color = 
             <TrendIndicator trend={trend} change={change} />
           )}
         </div>
-        {icon && (
-          <div 
-            className={clsx(
-              'p-2 sm:p-2.5 md:p-3 rounded-lg flex-shrink-0',
-              COLOR_CLASSES[color]
-            )}
-            aria-hidden="true"
-          >
-            {icon}
-          </div>
-        )}
+        {Boolean(icon) ? <div
+          className={clsx(
+            'p-2 sm:p-2.5 md:p-3 rounded-lg flex-shrink-0',
+            COLOR_CLASSES[color],
+          )}
+          aria-hidden="true"
+        >
+          {icon}
+        </div> : null}
       </div>
     </div>
   )

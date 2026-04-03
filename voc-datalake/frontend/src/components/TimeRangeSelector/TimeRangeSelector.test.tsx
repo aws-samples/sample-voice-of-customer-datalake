@@ -2,7 +2,7 @@
  * @fileoverview Tests for TimeRangeSelector component.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TimeRangeSelector from './TimeRangeSelector'
 import { useConfigStore } from '../../store/configStore'
@@ -27,16 +27,18 @@ describe('TimeRangeSelector', () => {
   })
 
   describe('preset ranges', () => {
-    it('renders all preset range buttons on desktop', () => {
+    it('renders time preset range buttons on desktop', () => {
       render(<TimeRangeSelector />)
       
-      // Desktop buttons are in a hidden sm:flex container
-      // They use short labels: 24h, 48h, 7d, 30d, Custom
-      // There may be multiple buttons (mobile dropdown + desktop buttons)
       expect(screen.getAllByRole('button', { name: '24h' }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: '48h' }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: '7d' }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: '30d' }).length).toBeGreaterThan(0)
+    })
+
+    it('renders custom range button on desktop', () => {
+      render(<TimeRangeSelector />)
+      
       expect(screen.getAllByRole('button', { name: 'Custom' }).length).toBeGreaterThan(0)
     })
 
@@ -133,21 +135,6 @@ describe('TimeRangeSelector', () => {
       expect(screen.getAllByText(/Jan 1 - Jan 15/).length).toBeGreaterThan(0)
     })
 
-    it.skip('shows Clear button when custom range is active', async () => {
-      // This test requires the picker to open, which depends on internal state
-      // The component correctly shows Clear when picker is open and customDateRange exists
-      ;(useConfigStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-        timeRange: 'custom',
-        setTimeRange: mockSetTimeRange,
-        customDateRange: { start: '2025-01-01', end: '2025-01-15' },
-        setCustomDateRange: mockSetCustomDateRange,
-      })
-      
-      const user = userEvent.setup()
-      render(<TimeRangeSelector />)
-      
-      // Verify the custom date range is displayed
-      expect(screen.getAllByText(/Jan 1 - Jan 15/).length).toBeGreaterThan(0)
-    })
+    it.todo('shows Clear button when custom range is active')
   })
 })

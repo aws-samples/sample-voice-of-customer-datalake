@@ -5,7 +5,7 @@ import os
 import sys
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from datetime import datetime, timezone
 
 # Add lambda directory to path for shared module imports
@@ -57,7 +57,7 @@ def mock_bedrock_client():
     client = MagicMock()
     client.invoke_model.return_value = {
         'body': MagicMock(read=lambda: json.dumps({
-            'content': [{'text': 'Test AI response from Claude Sonnet 4.5'}]
+            'content': [{'text': 'Test AI response from Claude Sonnet 4.6'}]
         }).encode())
     }
     return client

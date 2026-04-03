@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { FeedbackItem } from '../api/client'
+import type { FeedbackItem } from '../api/types'
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   sources?: FeedbackItem[]
+  thinking?: string
   timestamp: Date
   filters?: ChatFilters
 }
@@ -29,7 +30,7 @@ export interface Conversation {
 interface ChatStore {
   conversations: Conversation[]
   activeConversationId: string | null
-  
+
   // Actions
   createConversation: () => string
   deleteConversation: (id: string) => void
@@ -81,18 +82,18 @@ export const useChatStore = create<ChatStore>()(
           id: `msg_${Date.now()}`,
           timestamp: new Date(),
         }
-        
+
         set((state) => ({
           conversations: state.conversations.map((conv) => {
             if (conv.id !== conversationId) return conv
-            
+
             const updatedMessages = [...conv.messages, newMessage]
             // Auto-generate title from first user message
             const shouldGenerateTitle = conv.title === 'New Conversation' && message.role === 'user'
             const truncatedContent = message.content.slice(0, 50)
             const suffix = message.content.length > 50 ? '...' : ''
             const title = shouldGenerateTitle ? truncatedContent + suffix : conv.title
-            
+
             return {
               ...conv,
               title,
@@ -106,7 +107,11 @@ export const useChatStore = create<ChatStore>()(
       updateConversationTitle: (id, title) => {
         set((state) => ({
           conversations: state.conversations.map((conv) =>
-            conv.id === id ? { ...conv, title, updatedAt: new Date() } : conv
+            conv.id === id ? {
+              ...conv,
+              title,
+              updatedAt: new Date(),
+            } : conv,
           ),
         }))
       },
@@ -114,18 +119,25 @@ export const useChatStore = create<ChatStore>()(
       updateConversationFilters: (id, filters) => {
         set((state) => ({
           conversations: state.conversations.map((conv) =>
-            conv.id === id ? { ...conv, filters, updatedAt: new Date() } : conv
+            conv.id === id ? {
+              ...conv,
+              filters,
+              updatedAt: new Date(),
+            } : conv,
           ),
         }))
       },
 
       getActiveConversation: () => {
         const state = get()
-        return state.conversations.find((c) => c.id === state.activeConversationId) || null
+        return state.conversations.find((c) => c.id === state.activeConversationId) ?? null
       },
 
       clearAllConversations: () => {
-        set({ conversations: [], activeConversationId: null })
+        set({
+          conversations: [],
+          activeConversationId: null,
+        })
       },
     }),
     {
@@ -134,6 +146,6 @@ export const useChatStore = create<ChatStore>()(
         conversations: state.conversations,
         activeConversationId: state.activeConversationId,
       }),
-    }
-  )
+    },
+  ),
 )

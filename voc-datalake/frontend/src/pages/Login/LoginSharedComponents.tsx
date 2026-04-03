@@ -3,13 +3,13 @@
  * @module pages/Login/LoginSharedComponents
  */
 
-import { Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import clsx from 'clsx'
+import {
+  Loader2, AlertCircle, Eye, EyeOff,
+} from 'lucide-react'
 
 // Error Alert Component
-interface ErrorAlertProps {
-  readonly message: string
-}
+interface ErrorAlertProps { readonly message: string }
 
 export function ErrorAlert({ message }: Readonly<ErrorAlertProps>) {
   return (
@@ -21,9 +21,7 @@ export function ErrorAlert({ message }: Readonly<ErrorAlertProps>) {
 }
 
 // Success Message Component
-interface SuccessMessageProps {
-  readonly message: string
-}
+interface SuccessMessageProps { readonly message: string }
 
 export function SuccessMessage({ message }: Readonly<SuccessMessageProps>) {
   return (
@@ -40,17 +38,19 @@ interface SubmitButtonProps {
   readonly text: string
 }
 
-export function SubmitButton({ isLoading, loadingText, text }: Readonly<SubmitButtonProps>) {
+export function SubmitButton({
+  isLoading, loadingText, text,
+}: Readonly<SubmitButtonProps>) {
   return (
     <button
       type="submit"
       disabled={isLoading}
       className={clsx(
         'w-full btn btn-primary py-3 flex items-center justify-center gap-2',
-        isLoading && 'opacity-75 cursor-not-allowed'
+        isLoading && 'opacity-75 cursor-not-allowed',
       )}
     >
-      {isLoading && <Loader2 size={18} className="animate-spin" />}
+      {isLoading ? <Loader2 size={18} className="animate-spin" /> : null}
       {isLoading ? loadingText : text}
     </button>
   )

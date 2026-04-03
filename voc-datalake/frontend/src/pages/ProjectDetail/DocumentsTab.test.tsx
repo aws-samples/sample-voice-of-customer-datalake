@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import DocumentsTab from './DocumentsTab'
-import type { ProjectDocument, Project } from '../../api/client'
+import type { ProjectDocument, Project } from '../../api/types'
 
 const mockProject: Project = {
   project_id: 'proj-1',

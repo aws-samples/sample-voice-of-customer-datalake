@@ -2,7 +2,7 @@
  * @fileoverview Tests for ChatFilters component.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import userEvent from '@testing-library/user-event'
 import ChatFilters from './ChatFilters'
@@ -42,14 +42,14 @@ describe('ChatFilters', () => {
     it('renders source filter dropdown', () => {
       render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
       const selects = screen.getAllByRole('combobox')
-      expect(selects.length).toBeGreaterThanOrEqual(1)
+      expect(selects).toHaveLength(3)
       expect(selects[0]).toBeInTheDocument()
     })
 
     it('renders all three filter dropdowns', () => {
       render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
       const selects = screen.getAllByRole('combobox')
-      expect(selects.length).toBe(3) // source, category, sentiment
+      expect(selects).toHaveLength(3) // source, category, sentiment
     })
   })
 
@@ -279,8 +279,10 @@ describe('ChatFilters', () => {
       
       render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
       
-      // API should be called
-      expect(api.getCategories).toHaveBeenCalledWith(30)
+      // API should be called (after getSources completes)
+      await waitFor(() => {
+        expect(api.getCategories).toHaveBeenCalledWith(30)
+      })
     })
 
     it('handles API errors gracefully for sources', async () => {
@@ -337,9 +339,9 @@ describe('ChatFilters', () => {
     it('renders chevron down icon for each dropdown', () => {
       render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
       
-      // Each select should have a chevron icon
-      const chevrons = document.querySelectorAll('.lucide-chevron-down')
-      expect(chevrons.length).toBe(3)
+      // Each filter type should have a corresponding dropdown
+      const selects = screen.getAllByRole('combobox')
+      expect(selects).toHaveLength(3)
     })
   })
 

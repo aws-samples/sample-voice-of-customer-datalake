@@ -6,7 +6,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DataSourcesStep, FeedbackFiltersStep, ItemSelectionStep } from './DataSourceSteps'
 import type { ContextConfig } from './types'
-import type { ProjectPersona, ProjectDocument } from '../../api/client'
+import type { ProjectPersona, ProjectDocument } from '../../api/types'
 
 const defaultColors = {
   bg: 'bg-purple-600',
@@ -246,7 +246,7 @@ describe('FeedbackFiltersStep', () => {
   describe('Sources', () => {
     it('displays all source buttons', () => {
       render(<FeedbackFiltersStep {...defaultProps} />)
-      expect(screen.getByText('Webscraper')).toBeInTheDocument()
+      expect(screen.getByText('Web Scraper')).toBeInTheDocument()
       expect(screen.getByText('Manual Import')).toBeInTheDocument()
       expect(screen.getByText('S3 Import')).toBeInTheDocument()
     })
@@ -254,7 +254,7 @@ describe('FeedbackFiltersStep', () => {
     it('formats source names correctly', () => {
       const props = { ...defaultProps, sources: ['webscraper', 'manual_import'] }
       render(<FeedbackFiltersStep {...props} />)
-      expect(screen.getByText('Webscraper')).toBeInTheDocument()
+      expect(screen.getByText('Web Scraper')).toBeInTheDocument()
       expect(screen.getByText('Manual Import')).toBeInTheDocument()
     })
 
@@ -263,7 +263,7 @@ describe('FeedbackFiltersStep', () => {
       const onContextChange = vi.fn()
       render(<FeedbackFiltersStep {...defaultProps} onContextChange={onContextChange} />)
       
-      await user.click(screen.getByText('Webscraper'))
+      await user.click(screen.getByText('Web Scraper'))
       
       expect(onContextChange).toHaveBeenCalledWith(
         expect.objectContaining({ sources: ['webscraper'] })
@@ -276,7 +276,7 @@ describe('FeedbackFiltersStep', () => {
       const config = { ...defaultContextConfig, sources: ['webscraper'] }
       render(<FeedbackFiltersStep {...defaultProps} contextConfig={config} onContextChange={onContextChange} />)
       
-      await user.click(screen.getByText('Webscraper'))
+      await user.click(screen.getByText('Web Scraper'))
       
       expect(onContextChange).toHaveBeenCalledWith(
         expect.objectContaining({ sources: [] })
@@ -371,12 +371,16 @@ describe('FeedbackFiltersStep', () => {
       )
     })
 
-    it('displays all time range options', () => {
+    it('displays short time range options', () => {
       render(<FeedbackFiltersStep {...defaultProps} />)
       expect(screen.getByText('Last 7 days')).toBeInTheDocument()
       expect(screen.getByText('Last 14 days')).toBeInTheDocument()
       expect(screen.getByText('Last 30 days')).toBeInTheDocument()
       expect(screen.getByText('Last 60 days')).toBeInTheDocument()
+    })
+
+    it('displays long time range options', () => {
+      render(<FeedbackFiltersStep {...defaultProps} />)
       expect(screen.getByText('Last 90 days')).toBeInTheDocument()
       expect(screen.getByText('Last year')).toBeInTheDocument()
       expect(screen.getByText('All time')).toBeInTheDocument()

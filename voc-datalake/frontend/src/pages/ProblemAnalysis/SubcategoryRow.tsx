@@ -1,6 +1,10 @@
-import { ChevronDown, ChevronRight, Layers } from 'lucide-react'
+import {
+  ChevronDown, ChevronRight, Layers,
+} from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { ProblemRow } from './ProblemRow'
-import type { FeedbackItem } from '../../api/client'
+import { generateProblemId } from './problemUtils'
+import type { FeedbackItem } from '../../api/types'
 
 interface ProblemGroup {
   problem: string
@@ -25,6 +29,10 @@ interface SubcategoryRowProps {
   readonly onToggle: () => void
   readonly expandedProblems: Set<string>
   readonly onToggleProblem: (key: string) => void
+  readonly resolvedProblemIds?: Set<string>
+  readonly resolvingProblemId?: string | null
+  readonly onResolveProblem?: (problemKey: string, category: string, subcategory: string, problemText: string) => void
+  readonly onUnresolveProblem?: (problemKey: string) => void
 }
 
 export function SubcategoryRow({
@@ -34,7 +42,12 @@ export function SubcategoryRow({
   onToggle,
   expandedProblems,
   onToggleProblem,
+  resolvedProblemIds,
+  resolvingProblemId,
+  onResolveProblem,
+  onUnresolveProblem,
 }: SubcategoryRowProps) {
+  const { t } = useTranslation('problemAnalysis')
   const subcategoryKey = `${categoryName}:${subcategoryGroup.subcategory}`
 
   return (
@@ -51,10 +64,10 @@ export function SubcategoryRow({
           )}
           <Layers size={12} className="text-blue-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
           <span className="font-medium text-gray-700 capitalize text-xs sm:text-sm truncate">
-            {subcategoryGroup.subcategory.replace(/_/g, ' ')}
+            {subcategoryGroup.subcategory.replaceAll('_', ' ')}
           </span>
           <span className="text-xs text-gray-500 hidden xs:inline whitespace-nowrap">
-            {subcategoryGroup.problems.length} problems • {subcategoryGroup.totalItems} reviews
+            {t('tree.problems', { count: subcategoryGroup.problems.length })} • {t('tree.reviews', { count: subcategoryGroup.totalItems })}
           </span>
           {subcategoryGroup.urgentCount > 0 && (
             <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full flex-shrink-0">
@@ -64,22 +77,25 @@ export function SubcategoryRow({
         </div>
       </button>
 
-      {isExpanded && (
-        <div className="divide-y divide-gray-50">
-          {subcategoryGroup.problems.map((problemGroup) => {
-            const problemKey = `${categoryName}:${subcategoryGroup.subcategory}:${problemGroup.problem}`
-            return (
-              <ProblemRow
-                key={problemKey}
-                problemGroup={problemGroup}
-                problemKey={problemKey}
-                isExpanded={expandedProblems.has(problemKey)}
-                onToggle={() => onToggleProblem(problemKey)}
-              />
-            )
-          })}
-        </div>
-      )}
+      {isExpanded ? <div className="divide-y divide-gray-50">
+        {subcategoryGroup.problems.map((problemGroup) => {
+          const problemKey = `${categoryName}:${subcategoryGroup.subcategory}:${problemGroup.problem}`
+          const problemId = generateProblemId(categoryName, subcategoryGroup.subcategory, problemGroup.problem)
+          return (
+            <ProblemRow
+              key={problemKey}
+              problemGroup={problemGroup}
+              problemKey={problemKey}
+              isExpanded={expandedProblems.has(problemKey)}
+              onToggle={() => onToggleProblem(problemKey)}
+              isResolved={resolvedProblemIds?.has(problemId)}
+              isResolving={resolvingProblemId === problemId}
+              onResolve={() => onResolveProblem?.(problemId, categoryName, subcategoryGroup.subcategory, problemGroup.problem)}
+              onUnresolve={() => onUnresolveProblem?.(problemId)}
+            />
+          )
+        })}
+      </div> : null}
     </div>
   )
 }

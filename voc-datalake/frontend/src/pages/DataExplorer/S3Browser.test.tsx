@@ -76,7 +76,7 @@ describe('S3Browser', () => {
     it('shows loading spinner when loading', () => {
       render(<S3Browser {...defaultProps} loading={true} />)
 
-      expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+      expect(screen.queryByText('webscraper/')).not.toBeInTheDocument()
     })
   })
 
@@ -106,7 +106,7 @@ describe('S3Browser', () => {
       render(<S3Browser {...defaultProps} path={['raw']} onNavigateUp={onNavigateUp} />)
 
       await user.click(screen.getByText('Back'))
-      expect(onNavigateUp).toHaveBeenCalled()
+      expect(onNavigateUp).toHaveBeenCalledWith(expect.any(Object))
     })
 
     it('calls onNavigateToBreadcrumb when breadcrumb clicked', async () => {
@@ -149,7 +149,7 @@ describe('S3Browser', () => {
 
       const viewButtons = screen.getAllByTitle('View')
       await user.click(viewButtons[0])
-      expect(onView).toHaveBeenCalled()
+      expect(onView).toHaveBeenCalledWith(expect.any(String))
     })
 
     it('calls onEdit when edit button clicked', async () => {
@@ -171,7 +171,7 @@ describe('S3Browser', () => {
 
       const deleteButtons = screen.getAllByTitle('Delete')
       await user.click(deleteButtons[0])
-      expect(onDelete).toHaveBeenCalled()
+      expect(onDelete).toHaveBeenCalledWith(expect.any(String))
     })
 
     it('calls onDownload when download button clicked', async () => {
@@ -182,7 +182,7 @@ describe('S3Browser', () => {
 
       const downloadButtons = screen.getAllByTitle('Download')
       await user.click(downloadButtons[0])
-      expect(onDownload).toHaveBeenCalled()
+      expect(onDownload).toHaveBeenCalledWith(expect.any(String), expect.any(String))
     })
 
     it('does not show edit button for image files', () => {

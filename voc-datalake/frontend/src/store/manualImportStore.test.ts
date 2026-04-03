@@ -57,7 +57,7 @@ describe('manualImportStore', () => {
       setParsedReviews(reviews)
 
       const state = useManualImportStore.getState()
-      expect(state.parsedReviews).toEqual(reviews)
+      expect(state.parsedReviews).toStrictEqual(reviews)
     })
   })
 
@@ -114,7 +114,7 @@ describe('manualImportStore', () => {
 
       const state = useManualImportStore.getState()
       expect(state.parsedReviews).toHaveLength(1)
-      expect(state.parsedReviews[0]).toEqual({
+      expect(state.parsedReviews[0]).toStrictEqual({
         text: '',
         rating: null,
         author: null,
@@ -186,8 +186,21 @@ describe('manualImportStore', () => {
       const newState = useManualImportStore.getState()
       expect(newState.sourceUrl).toBe('')
       expect(newState.rawText).toBe('')
-      expect(newState.parsedReviews).toEqual([])
+      expect(newState.parsedReviews).toStrictEqual([])
       expect(newState.jobId).toBeNull()
+    })
+
+    it('clears source origin and lastUpdated on clearDraft', () => {
+      const state = useManualImportStore.getState()
+      state.setSourceUrl('https://example.com')
+      state.setRawText('Some text')
+      state.setParsedReviews([{ text: 'Review', rating: 5, author: null, date: null, title: null }])
+      state.setJobId('job-123')
+      state.setSourceOrigin('webscraper')
+
+      state.clearDraft()
+
+      const newState = useManualImportStore.getState()
       expect(newState.sourceOrigin).toBeNull()
       expect(newState.lastUpdated).toBeNull()
     })

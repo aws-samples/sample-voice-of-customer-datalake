@@ -1,243 +1,113 @@
 # Deployment Guide
 
-This guide covers how to deploy the VoC (Voice of Customer) platform, including infrastructure (CDK stacks) and the frontend application.
-
 ## Prerequisites
 
-- **AWS CLI** configured with appropriate credentials
-- **Node.js** 18+ and npm
-- **Python** 3.12+ (for Lambda functions)
-- **AWS CDK** CLI installed (`npm install -g aws-cdk`)
+- AWS CLI configured with credentials
+- Node.js 18+ and npm
+- Python 3.12+ (for Lambda functions)
+- Docker (for building Lambda layers)
+- AWS CDK CLI (`npm install -g aws-cdk`)
 
-## Project Structure
+## How `deploy:all` Works
 
-```
-voice-of-customer-datalake/
-├── package.json              # Root scripts (shortcuts)
-├── voc-datalake/
-│   ├── package.json          # CDK infrastructure
-│   ├── bin/voc-datalake.ts   # CDK app entry point
-│   ├── lib/stacks/           # CDK stack definitions
-│   ├── plugins/              # Data source plugins
-│   └── frontend/
-│       ├── package.json      # React frontend
-│       └── scripts/deploy.sh # Frontend deployment script
-```
+`npm run deploy:all` is the standard deployment command. It runs three steps in sequence:
 
-## Quick Start
+1. `npm run check` — lint + typecheck (frontend, CDK, stream) + frontend tests + backend tests
+2. `npm run deploy:infra` — deploys all CDK stacks (auto-ordered by dependencies)
+3. `npm run deploy:frontend` — builds frontend, syncs to S3, invalidates CloudFront
 
-From the project root:
+Since `deploy:all` already includes quality checks, you do NOT need to run `npm run check` separately before it.
+
+## Deployment Steps
+
+### Full Deployment (the standard flow)
 
 ```bash
-# Install dependencies
-npm install
-cd voc-datalake && npm install
-cd frontend && npm install
+# 1. Install dependencies (first time or after changes)
+npm run install:all
 
-# Run quality checks
-npm run check        # Runs lint, typecheck, and tests
+# 2. Build Lambda layers (first time or after dependency changes)
+npm run build:layers
 
-# Deploy everything
-npm run deploy:all   # Deploys all CDK stacks + frontend
-```
+# 3. Validate i18n translations (REQUIRED before any frontend deploy)
+cd voc-datalake/frontend && npm run i18n:validate && cd ../..
 
-## Quality Checks
-
-Always run quality checks before deploying:
-
-```bash
-# From project root
-npm run lint         # ESLint code quality
-npm run typecheck    # TypeScript type checking
-npm run test         # Run test suite
-
-# Or run all at once
-npm run check        # lint + typecheck + test
-```
-
-### What Each Check Does
-
-| Command | Description |
-|---------|-------------|
-| `npm run lint` | Runs ESLint to catch code quality issues |
-| `npm run typecheck` | Runs TypeScript compiler to verify types |
-| `npm run test` | Runs Vitest test suite |
-| `npm run test:coverage` | Runs tests with coverage report |
-
-## CDK Stacks
-
-The platform consists of 5 CDK stacks (consolidated architecture):
-
-| Stack | Description | Dependencies |
-|-------|-------------|--------------|
-| `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
-| `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
-| `VocProcessingStackConsolidated` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
-| `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
-| `VocBedrockAccessStack` | Bedrock model access configuration | None |
-
-### Deploy All Stacks
-
-```bash
-npm run deploy:infra    # Deploy all CDK stacks
-```
-
-### Deploy Individual Stacks
-
-```bash
-cd voc-datalake
-
-# Deploy specific stack
-cdk deploy VocCoreStack
-cdk deploy VocIngestionStack
-cdk deploy VocApiStack
-
-# Deploy multiple stacks
-cdk deploy VocCoreStack VocIngestionStack
-
-# Deploy with auto-approve (no confirmation prompts)
-cdk deploy --all --require-approval never
-```
-
-### Stack Deployment Order
-
-Due to dependencies, stacks should be deployed in this order:
-
-1. `VocCoreStack` + `VocBedrockAccessStack` (parallel, no dependencies)
-2. `VocIngestionStack`
-3. `VocProcessingStackConsolidated`
-4. `VocApiStack`
-
-The `cdk deploy --all` command handles this automatically.
-
-## Frontend Deployment
-
-### Option 1: Direct Deployment (Recommended)
-
-For frontend changes, use the direct deployment script:
-
-```bash
-npm run deploy:frontend
-```
-
-This script:
-1. Fetches environment config from CloudFormation
-2. Builds the frontend (`npm run build`)
-3. Syncs to S3
-4. Invalidates CloudFront cache
-
-### Option 2: Via CDK
-
-Deploy all stacks including frontend infrastructure:
-
-```bash
-cd voc-datalake
-cdk deploy --all
-```
-
-### Frontend Build Process
-
-```bash
-cd voc-datalake/frontend
-
-# Generate plugin manifests and menu config
-npm run prebuild
-
-# Build for production
-npm run build
-
-# Output in dist/ folder
-```
-
-## Configuration
-
-### Plugin Status
-
-Enable/disable plugins in `voc-datalake/cdk.context.json`:
-
-```json
-{
-  "pluginStatus": {
-    "webscraper": true
-  }
-}
-```
-
-### Menu Configuration
-
-Enable/disable menu items in `voc-datalake/cdk.context.json`:
-
-```json
-{
-  "menuStatus": {
-    "dashboard": true,
-    "feedback": true,
-    "scrapers": false
-  }
-}
-```
-
-After changing configuration:
-
-```bash
-npm run generate:config   # Regenerate manifests and menu
-npm run deploy:frontend   # Deploy updated frontend
-```
-
-## Environment Variables
-
-The frontend fetches configuration from CloudFormation outputs:
-
-- `VITE_API_ENDPOINT` - API Gateway URL
-- `VITE_USER_POOL_ID` - Cognito User Pool ID
-- `VITE_USER_POOL_CLIENT_ID` - Cognito Client ID
-- `VITE_COGNITO_REGION` - AWS Region
-
-These are automatically set by `scripts/update-env.sh`.
-
-## Deployment Workflow
-
-### For Infrastructure Changes
-
-```bash
-# 1. Make changes to CDK stacks
-# 2. Run checks
-npm run check
-
-# 3. Preview changes
-cd voc-datalake
-cdk diff
-
-# 4. Deploy
-cdk deploy --all
-```
-
-### For Frontend Changes
-
-```bash
-# 1. Make changes to frontend code
-# 2. Run checks
-npm run check
-
-# 3. Deploy frontend only
-npm run deploy:frontend
-```
-
-### For Plugin Changes
-
-```bash
-# 1. Create/modify plugin in plugins/
-# 2. Update pluginStatus in cdk.context.json
-# 3. Regenerate manifests
-npm run generate:config
-
-# 4. Deploy infrastructure (for new Lambda) + frontend
+# 4. Deploy everything (runs check → infra → frontend)
 npm run deploy:all
 ```
 
-## CI/CD Integration
+The i18n validation step is not included in `deploy:all`, so it must be run manually before deploying. It extracts translation keys from source code and verifies all locales (en, de, es, fr) have complete translations. Fix any missing keys before proceeding.
 
-Example GitHub Actions workflow:
+### Infrastructure Only (no frontend changes)
+
+```bash
+npm run deploy:infra
+```
+
+No i18n validation needed. No quality checks are run automatically — run `npm run check` first if desired.
+
+### Frontend Only
+
+```bash
+cd voc-datalake/frontend && npm run i18n:validate && cd ../..
+npm run deploy:frontend
+```
+
+### Preview Changes Before Deploying
+
+```bash
+npm run cdk:diff
+```
+
+## First-Time Setup
+
+### CDK Bootstrap
+
+```bash
+npm run cdk:bootstrap
+```
+
+### Anthropic Model Access
+
+Add to `voc-datalake/cdk.context.json`:
+
+```json
+{
+  "anthropicUseCase": {
+    "companyName": "Your Company Name",
+    "companyWebsite": "https://your-company.com",
+    "intendedUsers": "Internal teams for customer feedback analysis",
+    "industryOption": "Technology",
+    "useCases": "Analyzing customer feedback to identify product improvement opportunities."
+  }
+}
+```
+
+Then run `npm run deploy:infra`.
+
+## CDK Stacks
+
+| Stack | Description | Dependencies |
+|-------|-------------|--------------|
+| `VocCoreStack` | DynamoDB, KMS, S3, Cognito, CloudFront | None |
+| `VocBedrockAccessStack` | Bedrock model access | None |
+| `VocIngestionStack` | Plugin Lambdas, EventBridge, SQS, Secrets | Core |
+| `VocProcessingStackConsolidated` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
+| `VocApiStack` | API Gateway, API Lambdas, WAF | Core, Ingestion, Processing |
+
+`cdk deploy --all` handles dependency ordering automatically.
+
+## Configuration Changes
+
+After changing `pluginStatus` or `menuStatus` in `cdk.context.json`:
+
+```bash
+npm run generate:config
+cd voc-datalake/frontend && npm run i18n:validate && cd ../..
+npm run deploy:all
+```
+
+## CI/CD Example
 
 ```yaml
 name: Deploy
@@ -250,74 +120,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
       - name: Install dependencies
-        run: |
-          npm install
-          cd voc-datalake && npm install
-          cd frontend && npm install
-          
-      - name: Quality checks
-        run: npm run check
-        
-      - name: Deploy infrastructure
-        run: npm run deploy:infra
+        run: npm run install:all
+      - name: Validate i18n translations
+        run: cd voc-datalake/frontend && npm run i18n:validate
+      - name: Deploy all (check + infra + frontend)
+        run: npm run deploy:all
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-1
-          
-      - name: Deploy frontend
-        run: npm run deploy:frontend
 ```
 
 ## Troubleshooting
 
-### CDK Bootstrap
+| Issue | Solution |
+|-------|----------|
+| First deploy to new account/region | `npm run cdk:bootstrap` |
+| Stack stuck in UPDATE_ROLLBACK | `aws cloudformation continue-update-rollback --stack-name STACK_NAME` |
+| Frontend changes not visible | `aws cloudfront create-invalidation --distribution-id ID --paths '/*'` |
+| View stack outputs | `aws cloudformation describe-stacks --stack-name VocApiStack --query 'Stacks[0].Outputs'` |
 
-If deploying to a new AWS account/region:
+## Quick Reference
 
-```bash
-cdk bootstrap aws://ACCOUNT_ID/REGION
-```
-
-### Stack Stuck in UPDATE_ROLLBACK
-
-```bash
-aws cloudformation continue-update-rollback --stack-name STACK_NAME
-```
-
-### CloudFront Cache
-
-If changes don't appear after deployment:
-
-```bash
-aws cloudfront create-invalidation \
-  --distribution-id DISTRIBUTION_ID \
-  --paths '/*'
-```
-
-### View Stack Outputs
-
-```bash
-aws cloudformation describe-stacks \
-  --stack-name VocApiStack \
-  --query 'Stacks[0].Outputs'
-```
-
-## Useful Commands
-
-| Command | Description |
+| Command | What it does |
 |---------|-------------|
-| `npm run check` | Run all quality checks |
-| `npm run deploy:all` | Deploy infrastructure + frontend |
+| `npm run deploy:all` | check → deploy infra → deploy frontend |
 | `npm run deploy:infra` | Deploy CDK stacks only |
-| `npm run deploy:frontend` | Deploy frontend only |
-| `npm run generate:config` | Regenerate plugin/menu config |
-| `npm run dev` | Start frontend dev server |
-| `cdk diff` | Preview infrastructure changes |
-| `cdk synth` | Generate CloudFormation templates |
+| `npm run deploy:frontend` | Build + S3 sync + CloudFront invalidation |
+| `npm run check` | lint + typecheck:all + test + test:backend |
+| `npm run i18n:validate` | Extract + validate translation keys (run from `voc-datalake/frontend`) |
+| `npm run generate:config` | Regenerate plugin manifests + menu config |
+| `npm run cdk:diff` | Preview infrastructure changes |
+| `npm run destroy` | Destroy all stacks |

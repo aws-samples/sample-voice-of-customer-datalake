@@ -2,7 +2,6 @@
 Tests for s3_import_handler.py - S3 import bucket file explorer.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 

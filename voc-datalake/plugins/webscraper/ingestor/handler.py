@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlparse
 import hashlib
 import json
 import re
+import time
 
 from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
 import requests
@@ -205,7 +206,10 @@ class WebScraperIngestor(BaseIngestor):
     def _scrape_page(self, config: dict, url: str) -> Generator[dict, None, None]:
         """Scrape a single page based on configuration."""
         try:
-            response = fetch_with_retry(url, headers=self.headers, timeout=30)
+            response = fetch_with_retry(url, headers=self.headers, timeout=15)
+            if response.status_code == 403:
+                logger.warning(f"Access denied (403) for {url} - site may be blocking automated requests")
+                return
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
         except requests.RequestException as e:
@@ -354,16 +358,24 @@ class WebScraperIngestor(BaseIngestor):
             
             for url in urls:
                 try:
+                    page_items = 0
                     for item in self._scrape_page(config, url):
                         items_found += 1
+                        page_items += 1
                         yield item
                     pages_scraped += 1
+                    
+                    if page_items == 0:
+                        logger.info(f"No items found on {url}")
                     
                     self._update_run_status(scraper_id, {
                         'pages_scraped': pages_scraped,
                         'items_found': items_found,
                         'current_url': url
                     })
+                    
+                    # Rate limit: wait between page requests to avoid being blocked
+                    time.sleep(1.5)
                 except Exception as e:
                     error_msg = f"Error scraping {url}: {str(e)}"
                     logger.warning(error_msg)

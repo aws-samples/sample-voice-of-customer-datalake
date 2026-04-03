@@ -27,9 +27,9 @@ mkdir -p "$PROCESSING_DEPS_DIR/python"
 docker run --rm --platform "$PLATFORM" \
   -v "$PROCESSING_DEPS_DIR:/var/task" \
   "$DOCKER_IMAGE" \
-  pip install -r /var/task/requirements.txt -t /var/task/python --upgrade --quiet
+  bash -c 'pip install --upgrade pip boto3 botocore --quiet --root-user-action=ignore && pip install -r /var/task/requirements.txt -t /var/task/python --upgrade --quiet --root-user-action=ignore'
 
-echo "✓ processing-deps layer built successfully"
+echo "processing-deps layer built successfully"
 echo "  Size: $(du -sh "$PROCESSING_DEPS_DIR/python" | cut -f1)"
 
 # Build ingestion-deps layer if it exists
@@ -37,16 +37,16 @@ INGESTION_DEPS_DIR="$LAYERS_DIR/ingestion-deps"
 if [ -f "$INGESTION_DEPS_DIR/requirements.txt" ]; then
   echo ""
   echo "=== Building ingestion-deps layer ==="
-  
+
   rm -rf "$INGESTION_DEPS_DIR/python"
   mkdir -p "$INGESTION_DEPS_DIR/python"
-  
+
   docker run --rm --platform "$PLATFORM" \
     -v "$INGESTION_DEPS_DIR:/var/task" \
     "$DOCKER_IMAGE" \
-    pip install -r /var/task/requirements.txt -t /var/task/python --upgrade --quiet
-  
-  echo "✓ ingestion-deps layer built successfully"
+    bash -c 'pip install --upgrade pip boto3 botocore --quiet --root-user-action=ignore && pip install -r /var/task/requirements.txt -t /var/task/python --upgrade --quiet --root-user-action=ignore'
+
+  echo "ingestion-deps layer built successfully"
   echo "  Size: $(du -sh "$INGESTION_DEPS_DIR/python" | cut -f1)"
 fi
 

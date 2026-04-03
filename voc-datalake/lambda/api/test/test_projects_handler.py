@@ -2,9 +2,7 @@
 Tests for projects_handler.py - /projects/* endpoints.
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
+from unittest.mock import patch
 
 
 class TestValidatePersonaCount:
@@ -141,7 +139,7 @@ class TestGetProjectEndpoint:
         )
         
         response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
+        json.loads(response['body'])
         
         mock_get_project.assert_called_once_with('proj-123')
 
@@ -367,3 +365,37 @@ class TestDocumentCRUDEndpoints:
 
 
 
+
+
+class TestListJobsExtractsJobId:
+    """Regression: job_id must be extracted from DynamoDB sk when not stored as attribute."""
+
+    @patch('projects_handler.get_jobs_table')
+    def test_extracts_job_id_from_sk_when_attribute_missing(self, mock_get_table):
+        """Jobs without a job_id attribute should get it from sk field."""
+        from projects_handler import api_list_jobs
+
+        mock_table = mock_get_table.return_value
+        mock_table.query.return_value = {
+            'Items': [
+                {'pk': 'PROJECT#p1', 'sk': 'JOB#job_abc123', 'status': 'failed', 'progress': 0},
+            ]
+        }
+
+        result = api_list_jobs('p1')
+        assert result['jobs'][0]['job_id'] == 'job_abc123'
+
+    @patch('projects_handler.get_jobs_table')
+    def test_prefers_explicit_job_id_attribute(self, mock_get_table):
+        """Jobs with an explicit job_id attribute should use it."""
+        from projects_handler import api_list_jobs
+
+        mock_table = mock_get_table.return_value
+        mock_table.query.return_value = {
+            'Items': [
+                {'pk': 'PROJECT#p1', 'sk': 'JOB#job_abc123', 'job_id': 'job_abc123', 'status': 'completed', 'progress': 100},
+            ]
+        }
+
+        result = api_list_jobs('p1')
+        assert result['jobs'][0]['job_id'] == 'job_abc123'

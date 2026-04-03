@@ -3,7 +3,11 @@
  * @module pages/Login/LoginForms
  */
 
-import { ErrorAlert, SuccessMessage, SubmitButton, PasswordInput } from './LoginSharedComponents'
+import { useTranslation } from 'react-i18next'
+import {
+  ErrorAlert, SuccessMessage, SubmitButton, PasswordInput,
+} from './LoginSharedComponents'
+import type { SyntheticEvent } from 'react'
 
 // Login Form Component
 interface LoginFormProps {
@@ -16,7 +20,7 @@ interface LoginFormProps {
   readonly onUsernameChange: (value: string) => void
   readonly onPasswordChange: (value: string) => void
   readonly onToggleShowPassword: () => void
-  readonly onSubmit: (e: React.SyntheticEvent) => void
+  readonly onSubmit: (e: SyntheticEvent) => void
   readonly onForgotPassword: () => void
 }
 
@@ -33,22 +37,22 @@ export function LoginForm({
   onSubmit,
   onForgotPassword,
 }: Readonly<LoginFormProps>) {
+  const { t } = useTranslation('login')
   return (
     <>
-      <h2 className="text-xl font-semibold text-gray-900 mb-6">Sign in</h2>
+      <h2 className="text-xl font-semibold text-gray-900 mb-6">{t('signIn')}</h2>
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Username or Email
+            {t('usernameOrEmail')}
           </label>
           <input
             type="text"
             value={username}
             onChange={(e) => onUsernameChange(e.target.value)}
             className="input"
-            placeholder="Enter your username"
+            placeholder={t('enterUsername')}
             required
-            autoFocus
           />
         </div>
         <PasswordInput
@@ -56,17 +60,17 @@ export function LoginForm({
           onChange={onPasswordChange}
           showPassword={showPassword}
           onToggleShow={onToggleShowPassword}
-          placeholder="Enter your password"
-          label="Password"
+          placeholder={t('enterPassword')}
+          label={t('password')}
         />
 
-        {error && <ErrorAlert message={error} />}
-        {message && <SuccessMessage message={message} />}
+        {error != null && error !== '' ? <ErrorAlert message={error} /> : null}
+        {message != null && message !== '' ? <SuccessMessage message={message} /> : null}
 
         <SubmitButton
           isLoading={isLoading}
-          loadingText="Signing in..."
-          text="Sign in"
+          loadingText={t('signingIn')}
+          text={t('signIn')}
         />
 
         <button
@@ -74,7 +78,7 @@ export function LoginForm({
           onClick={onForgotPassword}
           className="w-full text-sm text-blue-600 hover:text-blue-700"
         >
-          Forgot password?
+          {t('forgotPassword')}
         </button>
       </form>
     </>
@@ -91,7 +95,7 @@ interface NewPasswordFormProps {
   readonly onNewPasswordChange: (value: string) => void
   readonly onConfirmPasswordChange: (value: string) => void
   readonly onToggleShowPassword: (checked: boolean) => void
-  readonly onSubmit: (e: React.SyntheticEvent) => void
+  readonly onSubmit: (e: SyntheticEvent) => void
 }
 
 export function NewPasswordForm({
@@ -105,37 +109,38 @@ export function NewPasswordForm({
   onToggleShowPassword,
   onSubmit,
 }: Readonly<NewPasswordFormProps>) {
+  const { t } = useTranslation('login')
   return (
     <>
-      <h2 className="text-xl font-semibold text-gray-900 mb-2">Set New Password</h2>
+      <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('newPassword.title')}</h2>
       <p className="text-gray-500 text-sm mb-6">
-        You need to set a new password for your account.
+        {t('newPassword.description')}
       </p>
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            New Password
+            {t('newPassword.label')}
           </label>
           <input
             type={showPassword ? 'text' : 'password'}
             value={newPassword}
             onChange={(e) => onNewPasswordChange(e.target.value)}
             className="input"
-            placeholder="Enter new password"
+            placeholder={t('newPassword.placeholder')}
             required
             minLength={8}
           />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Confirm Password
+            {t('newPassword.confirmLabel')}
           </label>
           <input
             type={showPassword ? 'text' : 'password'}
             value={confirmNewPassword}
             onChange={(e) => onConfirmPasswordChange(e.target.value)}
             className="input"
-            placeholder="Confirm new password"
+            placeholder={t('newPassword.confirmPlaceholder')}
             required
           />
         </div>
@@ -147,15 +152,15 @@ export function NewPasswordForm({
             onChange={(e) => onToggleShowPassword(e.target.checked)}
             className="rounded"
           />
-          Show password
+          {t('newPassword.showPassword')}
         </label>
 
-        {error && <ErrorAlert message={error} />}
+        {error != null && error !== '' ? <ErrorAlert message={error} /> : null}
 
         <SubmitButton
           isLoading={isLoading}
-          loadingText="Setting password..."
-          text="Set Password"
+          loadingText={t('newPassword.settingPassword')}
+          text={t('newPassword.submit')}
         />
       </form>
     </>
@@ -168,7 +173,7 @@ interface ForgotPasswordFormProps {
   readonly isLoading: boolean
   readonly error: string | null
   readonly onUsernameChange: (value: string) => void
-  readonly onSubmit: (e: React.SyntheticEvent) => void
+  readonly onSubmit: (e: SyntheticEvent) => void
   readonly onBackToLogin: () => void
 }
 
@@ -180,33 +185,34 @@ export function ForgotPasswordForm({
   onSubmit,
   onBackToLogin,
 }: Readonly<ForgotPasswordFormProps>) {
+  const { t } = useTranslation('login')
   return (
     <>
-      <h2 className="text-xl font-semibold text-gray-900 mb-2">Reset Password</h2>
+      <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('resetPassword.title')}</h2>
       <p className="text-gray-500 text-sm mb-6">
-        Enter your username to receive a verification code.
+        {t('resetPassword.description')}
       </p>
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Username or Email
+            {t('usernameOrEmail')}
           </label>
           <input
             type="text"
             value={username}
             onChange={(e) => onUsernameChange(e.target.value)}
             className="input"
-            placeholder="Enter your username"
+            placeholder={t('enterUsername')}
             required
           />
         </div>
 
-        {error && <ErrorAlert message={error} />}
+        {error != null && error !== '' ? <ErrorAlert message={error} /> : null}
 
         <SubmitButton
           isLoading={isLoading}
-          loadingText="Sending code..."
-          text="Send Code"
+          loadingText={t('resetPassword.sendingCode')}
+          text={t('resetPassword.sendCode')}
         />
 
         <button
@@ -214,7 +220,7 @@ export function ForgotPasswordForm({
           onClick={onBackToLogin}
           className="w-full text-sm text-gray-600 hover:text-gray-700"
         >
-          Back to login
+          {t('resetPassword.backToLogin')}
         </button>
       </form>
     </>
@@ -232,7 +238,7 @@ interface ConfirmPasswordFormProps {
   readonly onVerificationCodeChange: (value: string) => void
   readonly onNewPasswordChange: (value: string) => void
   readonly onConfirmPasswordChange: (value: string) => void
-  readonly onSubmit: (e: React.SyntheticEvent) => void
+  readonly onSubmit: (e: SyntheticEvent) => void
   readonly onBackToLogin: () => void
 }
 
@@ -249,60 +255,61 @@ export function ConfirmPasswordForm({
   onSubmit,
   onBackToLogin,
 }: Readonly<ConfirmPasswordFormProps>) {
+  const { t } = useTranslation('login')
   return (
     <>
-      <h2 className="text-xl font-semibold text-gray-900 mb-2">Enter Verification Code</h2>
+      <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('verifyCode.title')}</h2>
       <p className="text-gray-500 text-sm mb-6">
-        Check your email for the verification code.
+        {t('verifyCode.description')}
       </p>
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Verification Code
+            {t('verifyCode.label')}
           </label>
           <input
             type="text"
             value={verificationCode}
             onChange={(e) => onVerificationCodeChange(e.target.value)}
             className="input"
-            placeholder="Enter code"
+            placeholder={t('verifyCode.placeholder')}
             required
           />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            New Password
+            {t('newPassword.label')}
           </label>
           <input
             type={showPassword ? 'text' : 'password'}
             value={newPassword}
             onChange={(e) => onNewPasswordChange(e.target.value)}
             className="input"
-            placeholder="Enter new password"
+            placeholder={t('newPassword.placeholder')}
             required
             minLength={8}
           />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Confirm Password
+            {t('newPassword.confirmLabel')}
           </label>
           <input
             type={showPassword ? 'text' : 'password'}
             value={confirmNewPassword}
             onChange={(e) => onConfirmPasswordChange(e.target.value)}
             className="input"
-            placeholder="Confirm new password"
+            placeholder={t('newPassword.confirmPlaceholder')}
             required
           />
         </div>
 
-        {error && <ErrorAlert message={error} />}
+        {error != null && error !== '' ? <ErrorAlert message={error} /> : null}
 
         <SubmitButton
           isLoading={isLoading}
-          loadingText="Resetting password..."
-          text="Reset Password"
+          loadingText={t('verifyCode.resettingPassword')}
+          text={t('verifyCode.submit')}
         />
 
         <button
@@ -310,7 +317,7 @@ export function ConfirmPasswordForm({
           onClick={onBackToLogin}
           className="w-full text-sm text-gray-600 hover:text-gray-700"
         >
-          Back to login
+          {t('resetPassword.backToLogin')}
         </button>
       </form>
     </>

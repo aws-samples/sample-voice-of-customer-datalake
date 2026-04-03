@@ -1,0 +1,47 @@
+{
+  "contactAdmin": "アクセスが必要な場合は管理者にお問い合わせください。",
+  "enterPassword": "パスワードを入力",
+  "enterUsername": "ユーザー名を入力",
+  "errors": {
+    "failedNewPassword": "新しいパスワードの設定に失敗しました",
+    "failedResetPassword": "パスワードのリセットに失敗しました",
+    "failedSendCode": "確認コードの送信に失敗しました",
+    "loginFailed": "ログインに失敗しました",
+    "passwordResetSuccess": "パスワードがリセットされました。ログインしてください。",
+    "passwordsDoNotMatch": "パスワードが一致しません",
+    "passwordTooShort": "パスワードは8文字以上である必要があります",
+    "sessionExpired": "セッションが期限切れです。再度ログインしてください。",
+    "verificationCodeSent": "確認コードがメールに送信されました"
+  },
+  "forgotPassword": "パスワードをお忘れですか？",
+  "newPassword": {
+    "confirmLabel": "パスワードの確認",
+    "confirmPlaceholder": "新しいパスワードを再入力",
+    "description": "アカウントの新しいパスワードを設定する必要があります。",
+    "label": "新しいパスワード",
+    "placeholder": "新しいパスワードを入力",
+    "settingPassword": "パスワードを設定中...",
+    "showPassword": "パスワードを表示",
+    "submit": "パスワードを設定",
+    "title": "新しいパスワードの設定"
+  },
+  "password": "パスワード",
+  "resetPassword": {
+    "backToLogin": "ログインに戻る",
+    "description": "確認コードを受け取るにはユーザー名を入力してください。",
+    "sendCode": "コードを送信",
+    "sendingCode": "コードを送信中...",
+    "title": "パスワードのリセット"
+  },
+  "signIn": "ログイン",
+  "signingIn": "ログイン中...",
+  "usernameOrEmail": "ユーザー名またはメール",
+  "verifyCode": {
+    "description": "メールで確認コードをご確認ください。",
+    "label": "確認コード",
+    "placeholder": "コードを入力",
+    "resettingPassword": "パスワードをリセット中...",
+    "submit": "パスワードをリセット",
+    "title": "確認コードの入力"
+  }
+}

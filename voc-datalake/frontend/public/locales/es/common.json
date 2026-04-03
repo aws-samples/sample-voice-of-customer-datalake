@@ -1,0 +1,102 @@
+{
+  "appDescription": "Plataforma unificada de inteligencia de feedback del cliente",
+  "appName": "VoC Analytics",
+  "appTagline": "Análisis de la Voz del Cliente",
+  "breadcrumbs": {
+    "categories": "Categorías",
+    "chat": "Chat IA",
+    "dashboard": "Panel",
+    "dataExplorer": "Explorador de datos",
+    "feedback": "Feedback",
+    "feedbackForms": "Formularios de feedback",
+    "home": "Inicio",
+    "prioritization": "Priorización",
+    "problems": "Análisis de problemas",
+    "projects": "Proyectos",
+    "scrapers": "Web Scrapers",
+    "settings": "Configuración"
+  },
+  "configureBrand": "Configurar marca",
+  "filters": {
+    "allCategories": "Todas las categorías",
+    "allSentiments": "Todos los sentimientos",
+    "allSources": "Todas las fuentes",
+    "clearFilters": "Limpiar filtros",
+    "mostRecent": "Más recientes",
+    "searchFeedback": "Buscar feedback...",
+    "urgentOnly": "Solo urgentes"
+  },
+  "forQuery": "para \"{{query}}\"",
+  "goToSettings": "Ir a Configuración",
+  "loading": "Cargando...",
+  "logs": {
+    "daysAgo_one": "hace {{count}} día",
+    "daysAgo_many": "hace {{count}} días",
+    "daysAgo_other": "hace {{count}} días",
+    "hoursAgo_one": "hace {{count}} hora",
+    "hoursAgo_many": "hace {{count}} horas",
+    "hoursAgo_other": "hace {{count}} horas",
+    "justNow": "Ahora mismo",
+    "minutesAgo_one": "hace {{count}} minuto",
+    "minutesAgo_many": "hace {{count}} minutos",
+    "minutesAgo_other": "hace {{count}} minutos"
+  },
+  "metrics": {
+    "avgSentiment": "Sentimiento promedio",
+    "sourcesActive": "Fuentes activas",
+    "totalFeedback": "Feedback total",
+    "urgentIssues": "Problemas urgentes"
+  },
+  "nav": {
+    "aiChat": "Chat IA",
+    "categories": "Categorías",
+    "dashboard": "Panel",
+    "dataExplorer": "Explorador de datos",
+    "feedback": "Feedback",
+    "feedbackForms": "Formularios de feedback",
+    "prioritization": "Priorización",
+    "problemAnalysis": "Análisis de problemas",
+    "projects": "Proyectos",
+    "scrapers": "Scrapers",
+    "settings": "Configuración"
+  },
+  "priority": {
+    "high": "Alta",
+    "low": "Baja",
+    "medium": "Media",
+    "none": "Ninguna"
+  },
+  "send": "Enviar",
+  "sentiment": {
+    "mixed": "Mixto",
+    "negative": "Negativo",
+    "neutral": "Neutral",
+    "positive": "Positivo"
+  },
+  "showingOf_one": "Mostrando {{count}} de {{total}} resultado",
+  "showingOf_other": "Mostrando {{count}} de {{total}} resultados",
+  "sidebar": {
+    "closeMenu": "Cerrar menú",
+    "collapseSidebar": "Contraer barra lateral",
+    "expandSidebar": "Expandir barra lateral",
+    "openMenu": "Abrir menú",
+    "signOut": "Cerrar sesión"
+  },
+  "timeRange": {
+    "24h": "24h",
+    "24hFull": "24 Horas",
+    "30d": "30d",
+    "30dFull": "30 Días",
+    "48h": "48h",
+    "48hFull": "48 Horas",
+    "7d": "7d",
+    "7dFull": "7 Días",
+    "apply": "Aplicar",
+    "cancel": "Cancelar",
+    "clear": "Limpiar",
+    "custom": "Personalizado",
+    "endDate": "Fecha fin",
+    "selectDateRange": "Seleccionar rango de fechas",
+    "startDate": "Fecha inicio"
+  }
+}

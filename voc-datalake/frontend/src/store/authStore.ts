@@ -1,11 +1,15 @@
 /**
  * @fileoverview Authentication state management using Zustand with localStorage persistence.
- * 
- * Features:
- * - Uses localStorage to persist auth across tabs and browser sessions
- * - Allows multiple tabs to share the same authenticated session
- * - Tokens persist until explicit logout or expiration
- * 
+ *
+ * Security model (mirrors Chrome extension pattern):
+ * - Short-lived tokens (access, ID) persisted in localStorage for cross-tab UX
+ * - Refresh token kept in memory only (never persisted) to limit XSS blast radius
+ * - Non-secret data (user info, auth state) persisted in localStorage
+ *
+ * When a new tab opens with expired short-lived tokens, the auth service
+ * falls back to Cognito's getSession() which uses Cognito's own cookies
+ * for silent re-authentication — no re-login needed.
+ *
  * @module store/authStore
  */
 
@@ -40,6 +44,8 @@ interface AuthState {
   refreshToken: string | null
   /** Whether the user is currently authenticated */
   isAuthenticated: boolean
+  /** Whether the session has been validated/refreshed after page load */
+  sessionReady: boolean
   /** Loading state for async auth operations */
   isLoading: boolean
   /** Error message from failed auth operations */
@@ -47,7 +53,13 @@ interface AuthState {
   /** Update the current user */
   setUser: (user: User | null) => void
   /** Store all authentication tokens */
-  setTokens: (tokens: { accessToken: string; idToken: string; refreshToken: string }) => void
+  setTokens: (tokens: {
+    accessToken: string;
+    idToken: string;
+    refreshToken: string
+  }) => void
+  /** Mark session as validated and ready for API calls */
+  setSessionReady: (ready: boolean) => void
   /** Set loading state */
   setLoading: (loading: boolean) => void
   /** Set error message */
@@ -64,15 +76,20 @@ export const useAuthStore = create<AuthState>()(
       idToken: null,
       refreshToken: null,
       isAuthenticated: false,
+      sessionReady: false,
       isLoading: false,
       error: null,
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
+      setUser: (user) => set({
+        user,
+        isAuthenticated: !!user,
+      }),
       setTokens: (tokens) => set({
         accessToken: tokens.accessToken,
         idToken: tokens.idToken,
         refreshToken: tokens.refreshToken,
         isAuthenticated: true,
       }),
+      setSessionReady: (sessionReady) => set({ sessionReady }),
       setLoading: (isLoading) => set({ isLoading }),
       setError: (error) => set({ error }),
       logout: () => set({
@@ -81,22 +98,24 @@ export const useAuthStore = create<AuthState>()(
         idToken: null,
         refreshToken: null,
         isAuthenticated: false,
+        sessionReady: false,
         error: null,
       }),
     }),
-    { 
+    {
       name: 'voc-auth',
-      // Use localStorage to persist auth across tabs and browser sessions
-      // This allows opening multiple tabs without re-authenticating
+      // Persist short-lived tokens + user info in localStorage for cross-tab UX.
+      // refreshToken is deliberately excluded — it stays in memory only.
+      // This limits XSS blast radius: stolen access/ID tokens expire in ~1hr,
+      // while the 30-day refresh token is never written to disk.
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,
         idToken: state.idToken,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
-    }
-  )
+    },
+  ),
 )
 
 /**
@@ -105,5 +124,5 @@ export const useAuthStore = create<AuthState>()(
  */
 export const useIsAdmin = (): boolean => {
   const user = useAuthStore((state) => state.user)
-  return user?.groups?.includes('admins') ?? false
+  return user?.groups.includes('admins') ?? false
 }

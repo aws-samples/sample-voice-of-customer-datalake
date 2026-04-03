@@ -35,11 +35,17 @@ describe('InsightsRow', () => {
   })
 
   it('handles empty category data', () => {
-    render(<InsightsRow categoryData={[]} totalIssues={0} />)
+    const emptyName: CategoryData[] = [{ name: '', value: 0, color: '#ccc' }]
+    render(<InsightsRow categoryData={emptyName} totalIssues={0} />)
 
-    // N/A appears twice (top and bottom)
-    expect(screen.getAllByText('N/A')).toHaveLength(2)
-    expect(screen.getByText('0 categories')).toBeInTheDocument()
+    // Top issue shows N/A for empty name
+    expect(screen.getByText('N/A')).toBeInTheDocument()
+    expect(screen.getByText('1 category')).toBeInTheDocument()
+  })
+
+  it('returns null when categoryData is empty array', () => {
+    const { container } = render(<InsightsRow categoryData={[]} totalIssues={0} />)
+    expect(container.innerHTML).toBe('')
   })
 
   it('handles single category', () => {
@@ -48,7 +54,7 @@ describe('InsightsRow', () => {
 
     // Both top and bottom should be the same category
     expect(screen.getAllByText('delivery')).toHaveLength(2)
-    expect(screen.getByText('1 categories')).toBeInTheDocument()
+    expect(screen.getByText('1 category')).toBeInTheDocument()
   })
 
   it('replaces underscores with spaces in category names', () => {
@@ -58,5 +64,14 @@ describe('InsightsRow', () => {
     render(<InsightsRow categoryData={categories} totalIssues={50} />)
 
     expect(screen.getAllByText('customer support')).toHaveLength(2)
+  })
+
+  it('shows 0% when totalIssues is zero', () => {
+    const categories: CategoryData[] = [
+      { name: 'delivery', value: 0, color: '#ef4444' },
+    ]
+    render(<InsightsRow categoryData={categories} totalIssues={0} />)
+
+    expect(screen.getByText('0 issues (0%)')).toBeInTheDocument()
   })
 })

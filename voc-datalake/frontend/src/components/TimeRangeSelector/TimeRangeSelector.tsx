@@ -10,30 +10,218 @@
  * @module components/TimeRangeSelector
  */
 
-import { useState, useRef, useEffect } from 'react'
-import { useConfigStore } from '../../store/configStore'
-import { Calendar, X, ChevronDown } from 'lucide-react'
-import { format } from 'date-fns'
 import clsx from 'clsx'
+import { format } from 'date-fns'
+import {
+  Calendar, X, ChevronDown,
+} from 'lucide-react'
+import {
+  useState, useRef, useEffect,
+} from 'react'
+import { useTranslation } from 'react-i18next'
+import { useConfigStore } from '../../store/configStore'
 
-const ranges = [
-  { value: '24h', label: '24h', fullLabel: '24 Hours' },
-  { value: '48h', label: '48h', fullLabel: '48 Hours' },
-  { value: '7d', label: '7d', fullLabel: '7 Days' },
-  { value: '30d', label: '30d', fullLabel: '30 Days' },
-  { value: 'custom', label: 'Custom', fullLabel: 'Custom' },
-] as const
+const rangeValues = ['24h', '48h', '7d', '30d', 'custom'] as const
+
+type RangeValue = typeof rangeValues[number]
+
+const rangeValueSet = new Set<string>(rangeValues)
+
+function isRangeValue(value: string): value is RangeValue {
+  return rangeValueSet.has(value)
+}
+
+function getDisplayLabel(
+  timeRange: string,
+  customDateRange: {
+    start: string;
+    end: string
+  } | null,
+  t: (key: string) => string,
+): string {
+  if (timeRange === 'custom' && customDateRange) {
+    return `${format(new Date(customDateRange.start), 'MMM d')} - ${format(new Date(customDateRange.end), 'MMM d')}`
+  }
+  return t(`timeRange.${timeRange}`)
+}
+
+function getFullLabel(
+  timeRange: string,
+  customDateRange: {
+    start: string;
+    end: string
+  } | null,
+  t: (key: string) => string,
+): string {
+  if (timeRange === 'custom' && customDateRange) {
+    return `${format(new Date(customDateRange.start), 'MMM d')} - ${format(new Date(customDateRange.end), 'MMM d')}`
+  }
+  return t(`timeRange.${timeRange}Full`)
+}
+
+// Mobile dropdown component
+function MobileDropdown({
+  timeRange,
+  customDateRange,
+  showDropdown,
+  onToggle,
+  onRangeClick,
+  dropdownRef,
+}: Readonly<{
+  timeRange: string
+  customDateRange: {
+    start: string;
+    end: string
+  } | null
+  showDropdown: boolean
+  onToggle: () => void
+  onRangeClick: (value: typeof rangeValues[number]) => void
+  dropdownRef: React.RefObject<HTMLDivElement | null>
+}>) {
+  const { t } = useTranslation()
+  return (
+    <div className="sm:hidden relative" ref={dropdownRef}>
+      <button
+        onClick={onToggle}
+        className="flex items-center gap-2 px-3 py-2.5 bg-gray-100 rounded-lg text-sm text-gray-700 active:bg-gray-200 touch-manipulation min-h-[44px]"
+        aria-expanded={showDropdown}
+        aria-haspopup="listbox"
+      >
+        <Calendar size={16} className="text-gray-400 flex-shrink-0" aria-hidden="true" />
+        <span className="truncate max-w-[100px]">{getDisplayLabel(timeRange, customDateRange, t)}</span>
+        <ChevronDown size={16} className={clsx('transition-transform flex-shrink-0', showDropdown && 'rotate-180')} aria-hidden="true" />
+      </button>
+
+      {showDropdown ? <select
+        className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[160px]"
+        size={rangeValues.length}
+        value={timeRange}
+        onChange={(e) => {
+          const val = e.target.value
+          if (isRangeValue(val)) {
+            onRangeClick(val)
+          }
+        }}
+      >
+        {rangeValues.map((value) => (
+          <option key={value} value={value}>
+            {value === 'custom' && customDateRange ? getFullLabel(timeRange, customDateRange, t) : t(`timeRange.${value}Full`)}
+          </option>
+        ))}
+      </select> : null}
+    </div>
+  )
+}
+
+// Custom date picker component
+function CustomDatePicker({
+  startDate,
+  endDate,
+  customDateRange,
+  onStartChange,
+  onEndChange,
+  onApply,
+  onClear,
+  onClose,
+  pickerRef,
+}: Readonly<{
+  startDate: string
+  endDate: string
+  customDateRange: {
+    start: string;
+    end: string
+  } | null
+  onStartChange: (v: string) => void
+  onEndChange: (v: string) => void
+  onApply: () => void
+  onClear: () => void
+  onClose: () => void
+  pickerRef: React.RefObject<HTMLDialogElement | null>
+}>) {
+  const { t } = useTranslation()
+  return (
+    <dialog
+      ref={pickerRef}
+      open
+      className="fixed sm:absolute inset-x-4 sm:inset-x-auto bottom-4 sm:bottom-auto sm:top-full sm:right-0 sm:mt-2 bg-white rounded-xl sm:rounded-lg shadow-xl border border-gray-200 p-4 z-50 sm:w-auto sm:min-w-[300px] sm:max-w-[320px]"
+      aria-label="Select custom date range"
+    >
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-medium text-gray-900">{t('timeRange.selectDateRange')}</h3>
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-gray-600 p-2 -m-2 touch-manipulation"
+          aria-label="Close date picker"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="start-date" className="block text-sm text-gray-600 mb-1.5">{t('timeRange.startDate')}</label>
+          <input
+            id="start-date"
+            type="date"
+            value={startDate}
+            onChange={(e) => onStartChange(e.target.value)}
+            max={endDate === '' ? undefined : endDate}
+            className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base sm:text-sm"
+          />
+        </div>
+        <div>
+          <label htmlFor="end-date" className="block text-sm text-gray-600 mb-1.5">{t('timeRange.endDate')}</label>
+          <input
+            id="end-date"
+            type="date"
+            value={endDate}
+            onChange={(e) => onEndChange(e.target.value)}
+            min={startDate === '' ? undefined : startDate}
+            max={format(new Date(), 'yyyy-MM-dd')}
+            className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base sm:text-sm"
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mt-4 pt-4 border-t gap-2">
+        {customDateRange ? <button
+          onClick={onClear}
+          className="text-sm text-red-600 hover:text-red-700 py-2 touch-manipulation"
+        >
+          {t('timeRange.clear')}
+        </button> : null}
+        <div className="flex gap-2 ml-auto">
+          <button
+            onClick={onClose}
+            className="px-4 py-2.5 sm:py-1.5 text-sm text-gray-600 hover:text-gray-900 touch-manipulation"
+          >
+            {t('timeRange.cancel')}
+          </button>
+          <button
+            onClick={onApply}
+            disabled={startDate === '' || endDate === ''}
+            className="px-5 py-2.5 sm:py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+          >
+            {t('timeRange.apply')}
+          </button>
+        </div>
+      </div>
+    </dialog>
+  )
+}
 
 export default function TimeRangeSelector() {
-  const { timeRange, setTimeRange, customDateRange, setCustomDateRange } = useConfigStore()
+  const {
+    timeRange, setTimeRange, customDateRange, setCustomDateRange,
+  } = useConfigStore()
+  const { t } = useTranslation()
   const [showPicker, setShowPicker] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
-  const [startDate, setStartDate] = useState(customDateRange?.start || '')
-  const [endDate, setEndDate] = useState(customDateRange?.end || '')
-  const pickerRef = useRef<HTMLDivElement>(null)
+  const [startDate, setStartDate] = useState(customDateRange?.start ?? '')
+  const [endDate, setEndDate] = useState(customDateRange?.end ?? '')
+  const pickerRef = useRef<HTMLDialogElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Close picker/dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target
@@ -50,7 +238,7 @@ export default function TimeRangeSelector() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleRangeClick = (value: typeof ranges[number]['value']) => {
+  const handleRangeClick = (value: typeof rangeValues[number]) => {
     if (value === 'custom') {
       setShowPicker(true)
       setShowDropdown(false)
@@ -63,8 +251,11 @@ export default function TimeRangeSelector() {
   }
 
   const handleApplyCustom = () => {
-    if (startDate && endDate) {
-      setCustomDateRange({ start: startDate, end: endDate })
+    if (startDate !== '' && endDate !== '') {
+      setCustomDateRange({
+        start: startDate,
+        end: endDate,
+      })
       setTimeRange('custom')
       setShowPicker(false)
     }
@@ -77,65 +268,22 @@ export default function TimeRangeSelector() {
     setTimeRange('7d')
   }
 
-  const getDisplayLabel = () => {
-    if (timeRange === 'custom' && customDateRange) {
-      return `${format(new Date(customDateRange.start), 'MMM d')} - ${format(new Date(customDateRange.end), 'MMM d')}`
-    }
-    return ranges.find(r => r.value === timeRange)?.label || '7d'
-  }
-
-  const getCurrentFullLabel = () => {
-    if (timeRange === 'custom' && customDateRange) {
-      return `${format(new Date(customDateRange.start), 'MMM d')} - ${format(new Date(customDateRange.end), 'MMM d')}`
-    }
-    return ranges.find(r => r.value === timeRange)?.fullLabel || '7 Days'
-  }
-
   return (
     <div className="relative flex items-center gap-2">
       <Calendar size={18} className="text-gray-400 hidden sm:block" />
-      
-      {/* Mobile: Dropdown selector */}
-      <div className="sm:hidden relative" ref={dropdownRef}>
-        <button
-          onClick={() => setShowDropdown(!showDropdown)}
-          className="flex items-center gap-2 px-3 py-2.5 bg-gray-100 rounded-lg text-sm text-gray-700 active:bg-gray-200 touch-manipulation min-h-[44px]"
-          aria-expanded={showDropdown}
-          aria-haspopup="listbox"
-        >
-          <Calendar size={16} className="text-gray-400 flex-shrink-0" aria-hidden="true" />
-          <span className="truncate max-w-[100px]">{getDisplayLabel()}</span>
-          <ChevronDown size={16} className={clsx('transition-transform flex-shrink-0', showDropdown && 'rotate-180')} aria-hidden="true" />
-        </button>
-        
-        {showDropdown && (
-          <div 
-            className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[160px]"
-            role="listbox"
-          >
-            {ranges.map(({ value, fullLabel }) => (
-              <button
-                key={value}
-                onClick={() => handleRangeClick(value)}
-                role="option"
-                aria-selected={timeRange === value}
-                className={clsx(
-                  'w-full px-4 py-3 text-sm text-left transition-colors touch-manipulation',
-                  timeRange === value
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-700 hover:bg-gray-50 active:bg-gray-100'
-                )}
-              >
-                {value === 'custom' && customDateRange ? getCurrentFullLabel() : fullLabel}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+
+      <MobileDropdown
+        timeRange={timeRange}
+        customDateRange={customDateRange}
+        showDropdown={showDropdown}
+        onToggle={() => setShowDropdown(!showDropdown)}
+        onRangeClick={handleRangeClick}
+        dropdownRef={dropdownRef}
+      />
 
       {/* Desktop: Button group */}
       <div className="hidden sm:flex bg-gray-100 rounded-lg p-1">
-        {ranges.map(({ value, label }) => (
+        {rangeValues.map((value) => (
           <button
             key={value}
             onClick={() => handleRangeClick(value)}
@@ -143,86 +291,25 @@ export default function TimeRangeSelector() {
               'px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap',
               timeRange === value
                 ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
+                : 'text-gray-600 hover:text-gray-900',
             )}
           >
-            {value === 'custom' && customDateRange ? getDisplayLabel() : label}
+            {value === 'custom' && customDateRange ? getDisplayLabel(timeRange, customDateRange, t) : t(`timeRange.${value}`)}
           </button>
         ))}
       </div>
 
-      {/* Custom Date Picker Dropdown */}
-      {showPicker && (
-        <div
-          ref={pickerRef}
-          className="fixed sm:absolute inset-x-4 sm:inset-x-auto bottom-4 sm:bottom-auto sm:top-full sm:right-0 sm:mt-2 bg-white rounded-xl sm:rounded-lg shadow-xl border border-gray-200 p-4 z-50 sm:w-auto sm:min-w-[300px] sm:max-w-[320px]"
-          role="dialog"
-          aria-label="Select custom date range"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium text-gray-900">Select Date Range</h3>
-            <button 
-              onClick={() => setShowPicker(false)} 
-              className="text-gray-400 hover:text-gray-600 p-2 -m-2 touch-manipulation"
-              aria-label="Close date picker"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="start-date" className="block text-sm text-gray-600 mb-1.5">Start Date</label>
-              <input
-                id="start-date"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                max={endDate || undefined}
-                className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base sm:text-sm"
-              />
-            </div>
-            <div>
-              <label htmlFor="end-date" className="block text-sm text-gray-600 mb-1.5">End Date</label>
-              <input
-                id="end-date"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                min={startDate || undefined}
-                max={format(new Date(), 'yyyy-MM-dd')}
-                className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base sm:text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between mt-4 pt-4 border-t gap-2">
-            {customDateRange && (
-              <button
-                onClick={handleClearCustom}
-                className="text-sm text-red-600 hover:text-red-700 py-2 touch-manipulation"
-              >
-                Clear
-              </button>
-            )}
-            <div className="flex gap-2 ml-auto">
-              <button
-                onClick={() => setShowPicker(false)}
-                className="px-4 py-2.5 sm:py-1.5 text-sm text-gray-600 hover:text-gray-900 touch-manipulation"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleApplyCustom}
-                disabled={!startDate || !endDate}
-                className="px-5 py-2.5 sm:py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
-              >
-                Apply
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showPicker ? <CustomDatePicker
+        startDate={startDate}
+        endDate={endDate}
+        customDateRange={customDateRange}
+        onStartChange={setStartDate}
+        onEndChange={setEndDate}
+        onApply={handleApplyCustom}
+        onClear={handleClearCustom}
+        onClose={() => setShowPicker(false)}
+        pickerRef={pickerRef}
+      /> : null}
     </div>
   )
 }

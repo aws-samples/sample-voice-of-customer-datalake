@@ -164,7 +164,7 @@ Use least-privilege with specific actions:
 // ✅ Good - specific actions with global inference profiles
 role.addToPolicy(new iam.PolicyStatement({
   actions: ['bedrock:InvokeModel'],
-  resources: [`arn:aws:bedrock:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`],
+  resources: [`arn:aws:bedrock:*:${cdk.Aws.ACCOUNT_ID}:inference-profile/global.anthropic.claude-sonnet-4-6`],
 }));
 
 // ❌ Bad - too permissive

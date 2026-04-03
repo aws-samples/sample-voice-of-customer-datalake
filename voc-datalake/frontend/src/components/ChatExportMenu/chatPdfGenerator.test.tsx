@@ -4,10 +4,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Conversation } from '../../store/chatStore'
 
-// Mock the printUtils module
+// Mock the printUtils module — createPdfGenerator delegates to openPrintWindow internally,
+// so we mock createPdfGenerator to capture calls while preserving the factory pattern.
 const mockOpenPrintWindow = vi.fn()
 vi.mock('../../utils/printUtils', () => ({
-  openPrintWindow: (options: unknown) => mockOpenPrintWindow(options),
+  createPdfGenerator: (title: string | ((p: unknown) => string), render: (p: unknown) => unknown) =>
+    (props: unknown) => {
+      const resolvedTitle = typeof title === 'function' ? title(props) : title
+      const result = mockOpenPrintWindow({ title: resolvedTitle, content: render(props) })
+      if (!result) {
+        throw new TypeError('Failed to open print window. Please allow popups for this site.')
+      }
+    },
 }))
 
 // Mock react-markdown

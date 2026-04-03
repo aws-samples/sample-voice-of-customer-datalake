@@ -177,6 +177,7 @@ describe('SubcategoryRow', () => {
       )
 
       await user.click(screen.getByText('shipping speed'))
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(onToggle).toHaveBeenCalled()
     })
 

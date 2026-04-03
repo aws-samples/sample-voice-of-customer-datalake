@@ -200,7 +200,7 @@ Set the `BEDROCK_MODEL_ID` environment variable:
 BEDROCK_MODEL_ID=global.anthropic.claude-haiku-4-5-20251001-v1:0
 
 # Higher quality (more expensive)
-BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0
+BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-4-6
 ```
 
 ## Error Handling

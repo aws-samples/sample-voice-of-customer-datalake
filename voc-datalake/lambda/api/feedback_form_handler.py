@@ -14,23 +14,21 @@ from aws_lambda_powertools.event_handler import Response
 from boto3.dynamodb.conditions import Key
 
 # Shared module imports
-from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_sqs_client
+from shared.logging import logger, tracer
+from shared.aws import get_sqs_client
 from shared.api import create_api_resolver, api_handler, validate_limit
 from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
+from shared.tables import get_aggregates_table, get_feedback_table
 
 # AWS Clients
-dynamodb = get_dynamodb_resource()
 sqs = get_sqs_client()
 
 # Configuration
-AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
-FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 PROCESSING_QUEUE_URL = os.environ.get('PROCESSING_QUEUE_URL', '')
 BRAND_NAME = os.environ.get('BRAND_NAME', '')
 
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
-feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
+aggregates_table = get_aggregates_table()
+feedback_table = get_feedback_table()
 
 
 # ============================================

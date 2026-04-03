@@ -6,18 +6,23 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 
 - **Multi-source feedback ingestion**: 
   - Custom web scrapers: Configurable scrapers for any website
+  - Chrome Extension: Browser extension for scraping reviews from any page
+  - Mobile App Reviews: Android (Google Play) and iOS (App Store) review ingestion
   - Manual Import: Direct data import via UI
+  - S3 Import: Upload CSV/JSON/JSONL files to S3 for ingestion
   - Feedback Forms: Embeddable forms for direct customer feedback
 - **Plugin architecture**: Modular data source connectors with manifest-based configuration and enable/disable via `cdk.context.json`
 - **Menu configuration**: Enable/disable dashboard menu items via `cdk.context.json`
 - **Webhook support**: Real-time ingestion via webhooks for plugins that support it
-- **LLM-powered analysis**: Amazon Bedrock (Claude Sonnet 4.5) for categorization, sentiment, persona inference, and root cause hypothesis
+- **LLM-powered analysis**: Amazon Bedrock (Claude Sonnet 4.6 for quality, Haiku 4.5 for high-volume processing) for categorization, sentiment, persona inference, and root cause hypothesis
 - **Multi-language support**: Auto-detection via Comprehend, translation via Amazon Translate
 - **Real-time aggregation**: DynamoDB Streams trigger instant metric updates
 - **REST API**: Query feedback and analytics via API Gateway + Lambda
 - **React dashboard**: Visualization, filtering, drill-down, AI chat, and live social feed
 - **Cognito authentication**: Secure user authentication with admin/viewer roles
 - **Embeddable feedback forms**: Collect feedback directly from customers via configurable forms
+- **MCP Server**: Model Context Protocol endpoint for tool-based access to feedback data
+- **Multi-language UI**: Internationalized dashboard with i18next (English, German, Spanish, French)
 
 ## Key Concepts
 
@@ -32,6 +37,8 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 | **Project** | Research project containing personas, PRDs, and PR/FAQs generated from feedback |
 | **Job** | Long-running async task (research, persona generation) tracked via Step Functions |
 | **Conversation** | AI chat conversation history with messages and context |
+| **Chrome Extension** | Browser extension for scraping and submitting reviews from any webpage |
+| **MCP Server** | Model Context Protocol endpoint exposing feedback tools for AI assistants |
 | **Feedback Form** | Embeddable form for collecting customer feedback directly |
 | **Plugin** | Modular data source connector with manifest and handler |
 | **Plugin Status** | Enable/disable plugins via `pluginStatus` in `cdk.context.json` |
@@ -45,6 +52,8 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 │  Webhooks       │     │  Lambdas    │     │  Data Lake  │     │ (with S3 ref)   │     │   Lambda    │
 │  Web Scrapers   │     │             │     │             │     │                 │     │             │
 │  Feedback Forms │     │             │     │             │     │                 │     │             │
+│  Chrome Ext.    │     │             │     │             │     │                 │     │             │
+│  App Reviews    │     │             │     │             │     │                 │     │             │
 └─────────────────┘     └─────────────┘     └─────────────┘     └─────────────────┘     └──────┬──────┘
                               │                                                                │
                               ▼                                                                ▼
@@ -104,3 +113,5 @@ Note: Each page is organized in its own folder under `frontend/src/pages/` with 
 4. **Web Scraping**: Monitor reviews and feedback from any website
 5. **Support Team Enablement**: Provide suggested responses for common issues
 6. **Direct Feedback Collection**: Embed forms in websites/apps to collect customer feedback
+7. **Mobile App Review Monitoring**: Track Android and iOS app store reviews
+8. **AI Assistant Integration**: Expose feedback data via MCP for AI-powered workflows

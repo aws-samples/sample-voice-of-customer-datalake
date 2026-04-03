@@ -2,10 +2,9 @@
 Tests for projects.py - Projects API core functions.
 """
 import json
+import os
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
-from decimal import Decimal
 
 
 class TestFixPersonaName:
@@ -202,7 +201,9 @@ class TestGetAvatarCdnUrl:
         """Returns None when CDN URL not configured."""
         from shared.avatar import get_avatar_cdn_url
         
-        result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='')
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('AVATARS_CDN_URL', None)
+            result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='')
         
         assert result is None
 

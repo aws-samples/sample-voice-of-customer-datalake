@@ -52,8 +52,8 @@ export type AnthropicUseCaseConfig = z.infer<typeof AnthropicUseCaseSchema>;
  * Models that require agreement acceptance for VoC platform.
  */
 const REQUIRED_MODELS = [
-  'anthropic.claude-sonnet-4-5-20250929-v1:0',  // Chat/API
-  'anthropic.claude-haiku-4-5-20251001-v1:0',   // Processor
+  'anthropic.claude-sonnet-4-6',              // Chat/API (global inference profile)
+  'anthropic.claude-haiku-4-5-20251001-v1:0', // Processor (global inference profile)
 ];
 
 export interface BedrockAccessStackProps extends cdk.StackProps {

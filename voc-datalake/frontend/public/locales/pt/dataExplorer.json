@@ -1,0 +1,68 @@
+{
+  "categories": {
+    "errorLoading": "Erro ao carregar categorias",
+    "noCategories": "Sem categorias",
+    "summary": "{{count}} categorias • {{total}} itens • Últimos {{days}} dias",
+    "summary_one": "{{count}} categorias • {{total}} itens • Últimos {{days}} dias",
+    "summary_many": "{{count}} categorias • {{total}} itens • Últimos {{days}} dias",
+    "summary_other": "{{count}} categorias • {{total}} itens • Últimos {{days}} dias"
+  },
+  "deleteConfirm": {
+    "deleteFeedback": "Deletar Feedback",
+    "deleteS3File": "Deletar Arquivo S3",
+    "message": "Tem certeza? Isso não pode ser desfeito."
+  },
+  "description": "Procure, edite e sincronize dados brutos do S3 e registros processados do DynamoDB",
+  "editModal": {
+    "cancel": "Cancelar",
+    "close": "Fechar",
+    "create": "Criar",
+    "createNewFile": "Criar Novo Arquivo",
+    "editFeedback": "Editar Feedback",
+    "editS3File": "Editar Arquivo S3",
+    "id": "ID",
+    "invalidJson": "JSON inválido: {{error}}",
+    "key": "Chave",
+    "save": "Salvar",
+    "syncToDynamo": "Também atualizar DynamoDB",
+    "syncToS3": "Também atualizar S3",
+    "type": "Tipo",
+    "viewFeedback": "Visualizar Feedback",
+    "viewS3File": "Visualizar Arquivo S3"
+  },
+  "feedback": {
+    "category": "Categoria: {{category}}",
+    "delete": "Deletar",
+    "edit": "Editar",
+    "errorLoading": "Erro ao carregar feedback",
+    "noFeedback": "Nenhum feedback encontrado",
+    "showingRecords": "Mostrando {{filtered}} de {{total}} registros",
+    "urgent": "Urgente",
+    "view": "Visualizar"
+  },
+  "filters": {
+    "allSources": "Todas as Fontes",
+    "searchPlaceholder": "Pesquisar..."
+  },
+  "newFile": "Novo Arquivo",
+  "notConfigured": "Configure o endpoint da API em Configurações para explorar dados",
+  "refresh": "Atualizar",
+  "s3Browser": {
+    "back": "Voltar",
+    "delete": "Deletar",
+    "download": "Baixar",
+    "edit": "Editar",
+    "errorLoading": "Erro ao carregar arquivos",
+    "noFiles": "Nenhum arquivo encontrado",
+    "view": "Visualizar"
+  },
+  "tabs": {
+    "categories": "Categorias",
+    "categoriesShort": "Categorias",
+    "feedbackShort": "Feedback",
+    "processedFeedback": "Feedback Processado",
+    "s3RawData": "Dados Brutos S3",
+    "s3Short": "S3"
+  },
+  "title": "Explorador de Dados"
+}

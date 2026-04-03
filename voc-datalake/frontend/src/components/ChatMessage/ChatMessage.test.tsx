@@ -8,7 +8,6 @@ import { MemoryRouter } from 'react-router-dom'
 import ChatMessage from './ChatMessage'
 import type { ChatMessage as ChatMessageType } from '../../store/chatStore'
 
-// Helper to render with router
 function renderWithRouter(ui: React.ReactElement) {
   return render(
     <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -24,7 +23,10 @@ const createUserMessage = (content: string): ChatMessageType => ({
   timestamp: new Date('2025-01-15T10:30:00Z'),
 })
 
-const createAssistantMessage = (content: string, sources?: ChatMessageType['sources']): ChatMessageType => ({
+const createAssistantMessage = (
+  content: string,
+  sources?: ChatMessageType['sources'],
+): ChatMessageType => ({
   id: 'msg-2',
   role: 'assistant',
   content,
@@ -33,97 +35,66 @@ const createAssistantMessage = (content: string, sources?: ChatMessageType['sour
 })
 
 describe('ChatMessage', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+  beforeEach(() => { vi.clearAllMocks() })
 
   describe('user messages', () => {
     it('renders user message content', () => {
-      const message = createUserMessage('Hello, how are you?')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createUserMessage('Hello, how are you?')} />)
       expect(screen.getByText('Hello, how are you?')).toBeInTheDocument()
     })
 
     it('displays user avatar', () => {
-      const message = createUserMessage('Test message')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      // User icon should be present (gray background)
-      const avatar = document.querySelector('.bg-gray-200')
-      expect(avatar).toBeInTheDocument()
+      renderWithRouter(<ChatMessage message={createUserMessage('Test')} />)
+      expect(screen.getByTestId('user-avatar')).toBeInTheDocument()
     })
 
     it('applies user message styling (blue background)', () => {
-      const message = createUserMessage('Test message')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      const messageContainer = screen.getByText('Test message').closest('.rounded-lg')
-      expect(messageContainer).toHaveClass('bg-blue-600', 'text-white')
+      renderWithRouter(<ChatMessage message={createUserMessage('Test')} />)
+      expect(screen.getByTestId('chat-message-bubble')).toHaveClass('bg-blue-600', 'text-white')
     })
 
     it('displays timestamp', () => {
-      const message = createUserMessage('Test message')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      // Should show time in HH:MM format
+      renderWithRouter(<ChatMessage message={createUserMessage('Test')} />)
       expect(screen.getByText(/\d{1,2}:\d{2}/)).toBeInTheDocument()
     })
   })
 
   describe('assistant messages', () => {
     it('renders assistant message content', () => {
-      const message = createAssistantMessage('I can help you with that!')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      expect(screen.getByText('I can help you with that!')).toBeInTheDocument()
+      renderWithRouter(<ChatMessage message={createAssistantMessage('I can help!')} />)
+      expect(screen.getByText('I can help!')).toBeInTheDocument()
     })
 
     it('displays bot avatar', () => {
-      const message = createAssistantMessage('Test response')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      // Bot icon should be present (blue background)
-      const avatar = document.querySelector('.bg-blue-100')
-      expect(avatar).toBeInTheDocument()
+      renderWithRouter(<ChatMessage message={createAssistantMessage('Test')} />)
+      expect(screen.getByTestId('assistant-avatar')).toBeInTheDocument()
     })
 
     it('applies assistant message styling (white background)', () => {
-      const message = createAssistantMessage('Test response')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      const messageContainer = screen.getByText('Test response').closest('.rounded-lg')
-      expect(messageContainer).toHaveClass('bg-white')
+      renderWithRouter(<ChatMessage message={createAssistantMessage('Test')} />)
+      expect(screen.getByTestId('chat-message-bubble')).toHaveClass('bg-white')
     })
 
     it('renders markdown content', () => {
-      const message = createAssistantMessage('**Bold text** and *italic text*')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('**Bold text** and *italic text*')} />)
       expect(screen.getByText('Bold text')).toBeInTheDocument()
       expect(screen.getByText('italic text')).toBeInTheDocument()
     })
 
     it('renders code blocks', () => {
-      const message = createAssistantMessage('Here is code: `const x = 1`')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('Here is code: `const x = 1`')} />)
       expect(screen.getByText('const x = 1')).toBeInTheDocument()
     })
 
     it('renders lists', () => {
-      const message = createAssistantMessage('- Item 1\n- Item 2\n- Item 3')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('- Item 1\n- Item 2\n- Item 3')} />)
       expect(screen.getByText('Item 1')).toBeInTheDocument()
       expect(screen.getByText('Item 2')).toBeInTheDocument()
       expect(screen.getByText('Item 3')).toBeInTheDocument()
     })
 
     it('renders headings', () => {
-      const message = createAssistantMessage('# Main Title\n## Subtitle')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('# Main Title\n## Subtitle')} />)
       expect(screen.getByText('Main Title')).toBeInTheDocument()
       expect(screen.getByText('Subtitle')).toBeInTheDocument()
     })
@@ -132,33 +103,22 @@ describe('ChatMessage', () => {
   describe('copy functionality', () => {
     it('copies message content when copy button is clicked', async () => {
       const user = userEvent.setup()
-      const message = createUserMessage('Copy this text')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      // The copy button exists but is hidden until hover - we can still click it
+      renderWithRouter(<ChatMessage message={createUserMessage('Copy this text')} />)
       const copyButton = screen.getByTitle('Copy message')
       await user.click(copyButton)
-      
-      // After clicking, the button should show the Check icon (indicating copy succeeded)
-      // The Check icon from lucide-react has a specific class
-      const checkIcon = copyButton.querySelector('.lucide-check')
-      expect(checkIcon).toBeInTheDocument()
+      // After clicking, the check icon should appear inside the button
+      expect(copyButton.innerHTML).toContain('lucide-check')
     })
 
     it('shows check icon after copying', async () => {
       const user = userEvent.setup()
-      const message = createUserMessage('Copy this text')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createUserMessage('Copy this text')} />)
       const copyButton = screen.getByTitle('Copy message')
-      
       // Before clicking, should show Copy icon
-      expect(copyButton.querySelector('.lucide-copy')).toBeInTheDocument()
-      
+      expect(copyButton.innerHTML).toContain('lucide-copy')
       await user.click(copyButton)
-      
       // After clicking, should show Check icon
-      expect(copyButton.querySelector('.lucide-check')).toBeInTheDocument()
+      expect(copyButton.innerHTML).toContain('lucide-check')
     })
   })
 
@@ -181,41 +141,30 @@ describe('ChatMessage', () => {
         urgency: 'low',
         impact_area: 'product',
       }]
-      
-      const message = createAssistantMessage('Based on feedback...', sources)
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('Based on feedback...', sources)} />)
       expect(screen.getByText('Related feedback:')).toBeInTheDocument()
       expect(screen.getByText('Great product!')).toBeInTheDocument()
     })
 
     it('does not render carousel when sources are empty', () => {
-      const message = createAssistantMessage('No sources here', [])
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('No sources here', [])} />)
       expect(screen.queryByText('Related feedback:')).not.toBeInTheDocument()
     })
 
     it('does not render carousel when sources are undefined', () => {
-      const message = createAssistantMessage('No sources here')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('No sources here')} />)
       expect(screen.queryByText('Related feedback:')).not.toBeInTheDocument()
     })
   })
 
   describe('markdown rendering - additional elements', () => {
     it('renders blockquotes', () => {
-      const message = createAssistantMessage('> This is a quote')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('> This is a quote')} />)
       expect(screen.getByText('This is a quote')).toBeInTheDocument()
     })
 
     it('renders links with target blank', () => {
-      const message = createAssistantMessage('[Click here](https://example.com)')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('[Click here](https://example.com)')} />)
       const link = screen.getByText('Click here')
       expect(link).toHaveAttribute('href', 'https://example.com')
       expect(link).toHaveAttribute('target', '_blank')
@@ -223,98 +172,69 @@ describe('ChatMessage', () => {
     })
 
     it('renders tables', () => {
-      const message = createAssistantMessage('| Header 1 | Header 2 |\n|----------|----------|\n| Cell 1 | Cell 2 |')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('| Header 1 | Header 2 |\n|----------|----------|\n| Cell 1 | Cell 2 |')} />)
       expect(screen.getByText('Header 1')).toBeInTheDocument()
       expect(screen.getByText('Cell 1')).toBeInTheDocument()
     })
 
     it('renders numbered lists', () => {
-      const message = createAssistantMessage('1. First\n2. Second\n3. Third')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('1. First\n2. Second\n3. Third')} />)
       expect(screen.getByText('First')).toBeInTheDocument()
       expect(screen.getByText('Second')).toBeInTheDocument()
       expect(screen.getByText('Third')).toBeInTheDocument()
     })
 
     it('renders code blocks with language class', () => {
-      const message = createAssistantMessage('```javascript\nconst x = 1;\n```')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('```javascript\nconst x = 1;\n```')} />)
       expect(screen.getByText('const x = 1;')).toBeInTheDocument()
     })
 
     it('renders h3 headings', () => {
-      const message = createAssistantMessage('### Small Heading')
-      renderWithRouter(<ChatMessage message={message} />)
-      
+      renderWithRouter(<ChatMessage message={createAssistantMessage('### Small Heading')} />)
       expect(screen.getByText('Small Heading')).toBeInTheDocument()
     })
   })
 
   describe('message alignment', () => {
     it('aligns user messages to the right', () => {
-      const message = createUserMessage('User message')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      const container = screen.getByText('User message').closest('.flex')
-      expect(container).toHaveClass('justify-end')
+      renderWithRouter(<ChatMessage message={createUserMessage('User message')} />)
+      expect(screen.getByTestId('chat-message-container')).toHaveClass('justify-end')
     })
 
     it('aligns assistant messages to the left', () => {
-      const message = createAssistantMessage('Assistant message')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      const container = screen.getByText('Assistant message').closest('.flex')
-      expect(container).not.toHaveClass('justify-end')
+      renderWithRouter(<ChatMessage message={createAssistantMessage('Assistant message')} />)
+      expect(screen.getByTestId('chat-message-container')).not.toHaveClass('justify-end')
     })
   })
 
   describe('whitespace handling', () => {
     it('preserves whitespace in user messages', () => {
-      const message = createUserMessage('Line 1\nLine 2\nLine 3')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      const messageElement = screen.getByText(/Line 1/)
-      expect(messageElement).toHaveClass('whitespace-pre-wrap')
+      renderWithRouter(<ChatMessage message={createUserMessage('Line 1\nLine 2\nLine 3')} />)
+      expect(screen.getByText(/Line 1/)).toHaveClass('whitespace-pre-wrap')
     })
   })
 
   describe('copy button visibility', () => {
     it('has copy button with correct title', () => {
-      const message = createUserMessage('Test message')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      const copyButton = screen.getByTitle('Copy message')
-      expect(copyButton).toBeInTheDocument()
+      renderWithRouter(<ChatMessage message={createUserMessage('Test')} />)
+      expect(screen.getByTitle('Copy message')).toBeInTheDocument()
     })
 
     it('copy button has opacity-0 class for hover reveal', () => {
-      const message = createUserMessage('Test message')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      const copyButton = screen.getByTitle('Copy message')
-      expect(copyButton).toHaveClass('opacity-0')
+      renderWithRouter(<ChatMessage message={createUserMessage('Test')} />)
+      expect(screen.getByTitle('Copy message')).toHaveClass('opacity-0')
     })
   })
 
   describe('avatar styling', () => {
     it('user avatar has correct size classes', () => {
-      const message = createUserMessage('Test')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      const avatar = document.querySelector('.bg-gray-200')
-      expect(avatar).toHaveClass('w-7', 'h-7')
+      renderWithRouter(<ChatMessage message={createUserMessage('Test')} />)
+      expect(screen.getByTestId('user-avatar')).toHaveClass('w-7', 'h-7')
     })
 
     it('assistant avatar has correct size classes', () => {
-      const message = createAssistantMessage('Test')
-      renderWithRouter(<ChatMessage message={message} />)
-      
-      const avatar = document.querySelector('.bg-blue-100')
-      expect(avatar).toHaveClass('w-7', 'h-7')
+      renderWithRouter(<ChatMessage message={createAssistantMessage('Test')} />)
+      expect(screen.getByTestId('assistant-avatar')).toHaveClass('w-7', 'h-7')
     })
   })
 })

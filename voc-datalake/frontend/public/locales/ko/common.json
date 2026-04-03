@@ -1,0 +1,99 @@
+{
+  "appDescription": "통합 고객 피드백 인텔리전스 플랫폼",
+  "appName": "VoC Analytics",
+  "appTagline": "고객의 목소리 분석",
+  "breadcrumbs": {
+    "categories": "카테고리",
+    "chat": "AI 채팅",
+    "dashboard": "대시보드",
+    "dataExplorer": "데이터 탐색기",
+    "feedback": "피드백",
+    "feedbackForms": "피드백 양식",
+    "home": "홈",
+    "prioritization": "우선순위",
+    "problems": "문제 분석",
+    "projects": "프로젝트",
+    "scrapers": "웹 스크레이퍼",
+    "settings": "설정"
+  },
+  "configureBrand": "브랜드 설정",
+  "filters": {
+    "allCategories": "모든 카테고리",
+    "allSentiments": "모든 감정",
+    "allSources": "모든 소스",
+    "clearFilters": "필터 초기화",
+    "mostRecent": "최신순",
+    "searchFeedback": "피드백 검색...",
+    "urgentOnly": "긴급만"
+  },
+  "forQuery": "\"{{query}}\" 검색 결과",
+  "goToSettings": "설정으로 이동",
+  "loading": "로딩 중...",
+  "logs": {
+    "daysAgo_one": "{{count}}일 전",
+    "daysAgo_other": "{{count}}일 전",
+    "hoursAgo_one": "{{count}}시간 전",
+    "hoursAgo_other": "{{count}}시간 전",
+    "justNow": "방금",
+    "minutesAgo_one": "{{count}}분 전",
+    "minutesAgo_other": "{{count}}분 전"
+  },
+  "metrics": {
+    "avgSentiment": "평균 감정",
+    "sourcesActive": "활성 소스",
+    "totalFeedback": "전체 피드백",
+    "urgentIssues": "긴급 문제"
+  },
+  "nav": {
+    "aiChat": "AI 채팅",
+    "categories": "카테고리",
+    "dashboard": "대시보드",
+    "dataExplorer": "데이터 탐색기",
+    "feedback": "피드백",
+    "feedbackForms": "피드백 양식",
+    "prioritization": "우선순위",
+    "problemAnalysis": "문제 분석",
+    "projects": "프로젝트",
+    "scrapers": "스크레이퍼",
+    "settings": "설정"
+  },
+  "priority": {
+    "high": "높음",
+    "low": "낮음",
+    "medium": "보통",
+    "none": "없음"
+  },
+  "send": "보내기",
+  "sentiment": {
+    "mixed": "혼합",
+    "negative": "부정적",
+    "neutral": "중립",
+    "positive": "긍정적"
+  },
+  "showingOf_one": "{{total}}개 중 {{count}}개 표시",
+  "showingOf_other": "{{total}}개 중 {{count}}개 표시",
+  "sidebar": {
+    "closeMenu": "메뉴 닫기",
+    "collapseSidebar": "사이드바 접기",
+    "expandSidebar": "사이드바 펼치기",
+    "openMenu": "메뉴 열기",
+    "signOut": "로그아웃"
+  },
+  "timeRange": {
+    "24h": "24시간",
+    "24hFull": "24시간",
+    "30d": "30일",
+    "30dFull": "30일",
+    "48h": "48시간",
+    "48hFull": "48시간",
+    "7d": "7일",
+    "7dFull": "7일",
+    "apply": "적용",
+    "cancel": "취소",
+    "clear": "지우기",
+    "custom": "사용자 지정",
+    "endDate": "종료일",
+    "selectDateRange": "기간 선택",
+    "startDate": "시작일"
+  }
+}

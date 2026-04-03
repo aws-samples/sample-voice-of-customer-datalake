@@ -1,10 +1,16 @@
 /**
  * WizardSection - Renders the active wizard based on wizard state
  */
-import type { ProjectPersona, ProjectDocument } from '../../api/client'
+import {
+  PersonaWizard, ResearchWizard, DocWizard, MergeWizard,
+} from './Wizards'
+import type {
+  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig,
+} from './types'
+import type {
+  ProjectPersona, ProjectDocument,
+} from '../../api/types'
 import type { ContextConfig } from '../../components/DataSourceWizard/exports'
-import type { PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig } from './types'
-import { PersonaWizard, ResearchWizard, DocWizard, MergeWizard } from './Wizards'
 
 type WizardType = 'persona' | 'research' | 'doc' | 'merge' | null
 

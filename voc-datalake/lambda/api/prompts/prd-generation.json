@@ -19,7 +19,7 @@
     "prd_document": {
       "name": "prd_document",
       "description": "Create the final PRD document",
-      "max_tokens": 5000,
+      "max_tokens": 12000,
       "system_prompt": "You are creating a professional Product Requirements Document.\nBe comprehensive but concise. Use clear formatting.",
       "user_prompt_template": "Create a complete PRD document.\n\nPrevious analysis and solution design:\n{previous}\n\nGenerate a PRD with these sections:\n1. **Executive Summary**\n2. **Problem Statement**\n3. **Goals & Success Metrics**\n4. **User Personas** (reference the personas)\n5. **Requirements**\n   - Functional Requirements (prioritized P0/P1/P2)\n   - Non-Functional Requirements\n6. **User Stories & Acceptance Criteria**\n7. **Out of Scope**\n8. **Dependencies & Risks**\n9. **Timeline Considerations**\n\nFormat as a professional document in Markdown."
     }

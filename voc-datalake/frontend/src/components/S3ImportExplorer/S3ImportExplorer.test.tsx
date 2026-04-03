@@ -13,8 +13,8 @@ const mockCreateS3ImportSource = vi.fn()
 const mockDeleteS3ImportFile = vi.fn()
 const mockGetS3UploadUrl = vi.fn()
 
-vi.mock('../../api/client', () => ({
-  api: {
+vi.mock('../../api/dataExplorerApi', () => ({
+  dataExplorerApi: {
     getS3ImportSources: () => mockGetS3ImportSources(),
     getS3ImportFiles: (params: unknown) => mockGetS3ImportFiles(params),
     createS3ImportSource: (name: string) => mockCreateS3ImportSource(name),
@@ -285,6 +285,7 @@ describe('S3ImportExplorer', () => {
       render(<S3ImportExplorer />, { wrapper: createWrapper() })
       
       await waitFor(() => {
+        // eslint-disable-next-line testing-library/no-node-access
         expect(document.querySelector('.animate-spin')).toBeInTheDocument()
       })
     })

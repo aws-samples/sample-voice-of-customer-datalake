@@ -4,32 +4,38 @@ Manages brand configuration and categories.
 """
 
 import json
-import os
 import re
-import sys
 from datetime import datetime, timezone
 from typing import Any
 
-# Add shared module to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from shared.logging import logger, tracer
 
-from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
 from shared.api import create_api_resolver, api_handler
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
+from shared.tables import get_aggregates_table
 
-dynamodb = get_dynamodb_resource()
-AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
-aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+aggregates_table = get_aggregates_table()
 
 SETTINGS_PK = "SETTINGS#brand"
 SETTINGS_SK = "config"
 CATEGORIES_PK = "SETTINGS#categories"
 CATEGORIES_SK = "config"
+REVIEW_PK = "SETTINGS#review"
+REVIEW_SK = "config"
+
+# AWS Translate supported languages (75 languages)
+SUPPORTED_LANGUAGES = {
+    'af', 'sq', 'am', 'ar', 'hy', 'az', 'bn', 'bs', 'bg', 'ca',
+    'zh', 'zh-TW', 'hr', 'cs', 'da', 'fa-AF', 'nl', 'en', 'et', 'fa',
+    'tl', 'fi', 'fr', 'fr-CA', 'ka', 'de', 'el', 'gu', 'ht', 'ha',
+    'he', 'hi', 'hu', 'is', 'id', 'ga', 'it', 'ja', 'kn', 'kk',
+    'ko', 'lv', 'lt', 'mk', 'ms', 'ml', 'mt', 'mr', 'mn', 'no',
+    'ps', 'pl', 'pt', 'pt-PT', 'pa', 'ro', 'ru', 'sr', 'si', 'sk',
+    'sl', 'so', 'es', 'es-MX', 'sw', 'sv', 'ta', 'te', 'th', 'tr',
+    'uk', 'ur', 'uz', 'vi', 'cy',
+}
 
 app = create_api_resolver()
-
-
 @app.get("/settings/brand")
 @tracer.capture_method
 def get_brand_settings():
@@ -48,8 +54,6 @@ def get_brand_settings():
     except Exception as e:
         logger.exception(f"Failed to get brand settings: {e}")
         raise ServiceError('Failed to retrieve brand settings')
-
-
 @app.put("/settings/brand")
 @tracer.capture_method
 def save_brand_settings():
@@ -66,8 +70,46 @@ def save_brand_settings():
     except Exception as e:
         logger.exception(f"Failed to save brand settings: {e}")
         raise ServiceError('Failed to save brand settings')
+@app.get("/settings/review")
+@tracer.capture_method
+def get_review_settings():
+    """Get review configuration (primary language, etc.) from DynamoDB."""
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    try:
+        response = aggregates_table.get_item(Key={'pk': REVIEW_PK, 'sk': REVIEW_SK})
+        item = response.get('Item')
+        if not item:
+            return {'primary_language': 'en'}
+        return {'primary_language': item.get('primary_language', 'en')}
+    except ConfigurationError:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get review settings: {e}")
+        raise ServiceError('Failed to retrieve review settings')
+@app.put("/settings/review")
+@tracer.capture_method
+def save_review_settings():
+    """Save review configuration to DynamoDB."""
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    body = app.current_event.json_body
+    primary_language = body.get('primary_language', 'en')
 
+    if primary_language not in SUPPORTED_LANGUAGES:
+        raise ValidationError(f'Unsupported language code: {primary_language}')
 
+    try:
+        item = {
+            'pk': REVIEW_PK, 'sk': REVIEW_SK,
+            'primary_language': primary_language,
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+        }
+        aggregates_table.put_item(Item=item)
+        return {'success': True, 'message': 'Review settings saved', 'settings': {'primary_language': primary_language}}
+    except Exception as e:
+        logger.exception(f"Failed to save review settings: {e}")
+        raise ServiceError('Failed to save review settings')
 @app.get("/settings/categories")
 @tracer.capture_method
 def get_categories_config():
@@ -83,8 +125,6 @@ def get_categories_config():
     except Exception as e:
         logger.exception(f"Failed to get categories config: {e}")
         return {'categories': [], 'error': 'Failed to retrieve categories'}
-
-
 @app.put("/settings/categories")
 @tracer.capture_method
 def save_categories_config():
@@ -100,8 +140,6 @@ def save_categories_config():
     except Exception as e:
         logger.exception(f"Failed to save categories config: {e}")
         raise ServiceError('Failed to save categories')
-
-
 @app.post("/settings/categories/generate")
 @tracer.capture_method
 def generate_categories():
@@ -146,8 +184,6 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
     except Exception as e:
         logger.exception(f"Failed to generate categories: {e}")
         raise ServiceError('Failed to generate categories')
-
-
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     return app.resolve(event, context)

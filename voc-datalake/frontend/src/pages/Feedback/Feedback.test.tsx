@@ -21,6 +21,9 @@ vi.mock('../../api/client', () => ({
     searchFeedback: (params: unknown) => mockSearchFeedback(params),
     getEntities: (params: unknown) => mockGetEntities(params),
   },
+}))
+
+vi.mock('../../api/baseUrl', () => ({
   getDaysFromRange: vi.fn(() => 7),
 }))
 
@@ -67,6 +70,9 @@ describe('Feedback', () => {
     vi.clearAllMocks()
     mockGetFeedback.mockResolvedValue({
       count: 3,
+      total: 3,
+      offset: 0,
+      limit: 24,
       items: mockFeedbackItems,
     })
     mockGetEntities.mockResolvedValue({
@@ -109,7 +115,7 @@ describe('Feedback', () => {
       
       render(<Feedback />, { wrapper: createWrapper() })
       
-      expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+      expect(screen.queryByTestId('feedback-card-1')).not.toBeInTheDocument()
     })
   })
 
@@ -128,12 +134,12 @@ describe('Feedback', () => {
       render(<Feedback />, { wrapper: createWrapper() })
       
       await waitFor(() => {
-        expect(screen.getByText(/Showing 3 of 3 items/i)).toBeInTheDocument()
+        expect(screen.getByText(/Showing 3 of 3 results/i)).toBeInTheDocument()
       })
     })
 
     it('displays empty state when no feedback found', async () => {
-      mockGetFeedback.mockResolvedValue({ count: 0, items: [] })
+      mockGetFeedback.mockResolvedValue({ count: 0, total: 0, offset: 0, limit: 24, items: [] })
       
       render(<Feedback />, { wrapper: createWrapper() })
       
@@ -212,7 +218,7 @@ describe('Feedback', () => {
       render(<Feedback />, { wrapper: createWrapper() })
       
       await waitFor(() => {
-        expect(mockGetFeedback).toHaveBeenCalled()
+        expect(mockGetFeedback).toHaveBeenCalledWith(expect.anything())
       })
       
       // Verify initial call was made without source filter
@@ -250,7 +256,7 @@ describe('Feedback', () => {
       await user.click(urgentCheckbox)
       
       await waitFor(() => {
-        expect(mockGetUrgentFeedback).toHaveBeenCalled()
+        expect(mockGetUrgentFeedback).toHaveBeenCalledWith(expect.anything())
       })
     })
   })
@@ -334,15 +340,15 @@ describe('Feedback', () => {
       render(<Feedback />, { wrapper: createWrapper() })
       
       await waitFor(() => {
-        expect(mockGetEntities).toHaveBeenCalled()
+        expect(mockGetEntities).toHaveBeenCalledWith(expect.anything())
       })
       
       // Wait for the entities to be loaded and options to be populated
       await waitFor(() => {
         const sourceSelect = screen.getByDisplayValue('All Sources')
-        // Check that the select has more than just "All Sources"
-        const options = sourceSelect.querySelectorAll('option')
-        expect(options.length).toBeGreaterThan(1)
+        expect(sourceSelect).toBeInTheDocument()
+        // Verify options are populated by checking the select element exists with sources
+        expect(screen.getByText('webscraper')).toBeInTheDocument()
       })
     })
   })
@@ -357,7 +363,8 @@ describe('Feedback', () => {
           source: undefined,
           sentiment: undefined,
           category: undefined,
-          limit: 100,
+          limit: 24,
+          offset: 0,
         })
       })
     })

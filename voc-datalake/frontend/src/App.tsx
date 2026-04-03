@@ -1,14 +1,22 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import Layout from './components/Layout'
-import ProtectedRoute from './components/ProtectedRoute'
+import {
+  QueryClient, QueryClientProvider,
+} from '@tanstack/react-query'
+import {
+  lazy, Suspense, useEffect, useState,
+} from 'react'
+import {
+  createBrowserRouter, RouterProvider,
+} from 'react-router-dom'
 import AdminRoute from './components/AdminRoute'
+import Layout from './components/Layout'
 import PageLoader from './components/PageLoader'
-import Login from './pages/Login'
-import { loadRuntimeConfig, isConfigLoaded } from './runtimeConfig'
-import { useConfigStore } from './store/configStore'
+import ProtectedRoute from './components/ProtectedRoute'
 import { configureAmplify } from './lib/amplify-config'
+import Login from './pages/Login'
+import {
+  loadRuntimeConfig, isConfigLoaded,
+} from './runtimeConfig'
+import { useConfigStore } from './store/configStore'
 
 // Lazy load pages for better code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -34,6 +42,12 @@ const queryClient = new QueryClient({
   },
 })
 
+/** Wrap a lazy-loaded component in Suspense with the standard PageLoader fallback. */
+function LazyRoute({ component }: Readonly<{ component: React.LazyExoticComponent<() => React.JSX.Element> }>) {
+  const Component = component
+  return <Suspense fallback={<PageLoader />}><Component /></Suspense>
+}
+
 const router = createBrowserRouter([
   {
     path: '/login',
@@ -47,19 +61,58 @@ const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <Suspense fallback={<PageLoader />}><Dashboard /></Suspense> },
-      { path: 'feedback', element: <Suspense fallback={<PageLoader />}><Feedback /></Suspense> },
-      { path: 'feedback/:id', element: <Suspense fallback={<PageLoader />}><FeedbackDetail /></Suspense> },
-      { path: 'categories', element: <Suspense fallback={<PageLoader />}><Categories /></Suspense> },
-      { path: 'problems', element: <Suspense fallback={<PageLoader />}><ProblemAnalysis /></Suspense> },
-      { path: 'chat', element: <Suspense fallback={<PageLoader />}><Chat /></Suspense> },
-      { path: 'projects', element: <Suspense fallback={<PageLoader />}><Projects /></Suspense> },
-      { path: 'projects/:id', element: <Suspense fallback={<PageLoader />}><ProjectDetail /></Suspense> },
-      { path: 'prioritization', element: <Suspense fallback={<PageLoader />}><Prioritization /></Suspense> },
-      { path: 'data-explorer', element: <Suspense fallback={<PageLoader />}><DataExplorer /></Suspense> },
-      { path: 'scrapers', element: <Suspense fallback={<PageLoader />}><Scrapers /></Suspense> },
-      { path: 'feedback-forms', element: <Suspense fallback={<PageLoader />}><FeedbackForms /></Suspense> },
-      { path: 'settings', element: <Suspense fallback={<PageLoader />}><AdminRoute><Settings /></AdminRoute></Suspense> },
+      {
+        index: true,
+        element: <LazyRoute component={Dashboard} />,
+      },
+      {
+        path: 'feedback',
+        element: <LazyRoute component={Feedback} />,
+      },
+      {
+        path: 'feedback/:id',
+        element: <LazyRoute component={FeedbackDetail} />,
+      },
+      {
+        path: 'categories',
+        element: <LazyRoute component={Categories} />,
+      },
+      {
+        path: 'problems',
+        element: <LazyRoute component={ProblemAnalysis} />,
+      },
+      {
+        path: 'chat',
+        element: <LazyRoute component={Chat} />,
+      },
+      {
+        path: 'projects',
+        element: <LazyRoute component={Projects} />,
+      },
+      {
+        path: 'projects/:id',
+        element: <LazyRoute component={ProjectDetail} />,
+      },
+      {
+        path: 'prioritization',
+        element: <LazyRoute component={Prioritization} />,
+      },
+      {
+        path: 'data-explorer',
+        element: <LazyRoute component={DataExplorer} />,
+      },
+      {
+        path: 'scrapers',
+        element: <LazyRoute component={Scrapers} />,
+      },
+      {
+        path: 'feedback-forms',
+        element: <LazyRoute component={FeedbackForms} />,
+      },
+      {
+        path: 'settings',
+        element: <Suspense fallback={<PageLoader />}><AdminRoute><Settings /></AdminRoute></Suspense>,
+      },
     ],
   },
 ])
@@ -79,11 +132,12 @@ export default function App() {
           // Sync the config store with runtime config to ensure
           // first-time users get the correct API endpoint
           syncWithRuntimeConfig()
-          
+
           // Configure Amplify after runtime config is loaded
           configureAmplify()
-          
+
           setConfigReady(true)
+          return true
         })
         .catch((err) => {
           console.error('Failed to load config:', err)
@@ -92,14 +146,14 @@ export default function App() {
     }
   }, [configReady, syncWithRuntimeConfig])
 
-  if (error) {
+  if (error != null && error !== '') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <h1 className="text-xl font-semibold text-red-600 mb-2">Configuration Error</h1>
           <p className="text-gray-600">{error}</p>
-          <button 
-            onClick={() => window.location.reload()} 
+          <button
+            onClick={() => window.location.reload()}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             Retry

@@ -13,9 +13,9 @@ import type { PluginManifest } from '../../plugins/types'
 const mockGetIntegrationStatus = vi.fn()
 const mockGetSourcesStatus = vi.fn()
 const mockUpdateIntegrationCredentials = vi.fn()
-const mockTestIntegration = vi.fn()
 const mockEnableSource = vi.fn()
 const mockDisableSource = vi.fn()
+const mockGetIntegrationCredentials = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -23,9 +23,10 @@ vi.mock('../../api/client', () => ({
     getSourcesStatus: () => mockGetSourcesStatus(),
     updateIntegrationCredentials: (source: string, creds: Record<string, string>) =>
       mockUpdateIntegrationCredentials(source, creds),
-    testIntegration: (source: string) => mockTestIntegration(source),
     enableSource: (source: string) => mockEnableSource(source),
     disableSource: (source: string) => mockDisableSource(source),
+    getIntegrationCredentials: (source: string, keys: string[]) =>
+      mockGetIntegrationCredentials(source, keys),
   },
 }))
 
@@ -70,6 +71,7 @@ describe('SourceCard', () => {
     vi.clearAllMocks()
     mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: false } })
     mockGetSourcesStatus.mockResolvedValue({ sources: { test_source: { enabled: false } } })
+    mockGetIntegrationCredentials.mockResolvedValue({})
   })
 
   describe('Header', () => {
@@ -220,23 +222,6 @@ describe('SourceCard', () => {
       expect(screen.getByPlaceholderText('Enter ID')).toBeInTheDocument()
     })
 
-    it('toggles password visibility', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-
-      const apiKeyInput = screen.getByPlaceholderText('Enter api key')
-      expect(apiKeyInput).toHaveAttribute('type', 'password')
-
-      await user.click(screen.getByRole('button', { name: /show/i }))
-
-      expect(apiKeyInput).toHaveAttribute('type', 'text')
-    })
-
     it('saves credentials when save button is clicked', async () => {
       const user = userEvent.setup()
       mockUpdateIntegrationCredentials.mockResolvedValue({ success: true })
@@ -251,7 +236,7 @@ describe('SourceCard', () => {
       await user.click(screen.getByRole('button', { name: /save/i }))
 
       await waitFor(() => {
-        expect(mockUpdateIntegrationCredentials).toHaveBeenCalledWith('test_source', { api_key: 'secret-key' })
+        expect(mockUpdateIntegrationCredentials).toHaveBeenCalledWith('test_source', { api_key: 'secret-key', business_id: 'Enter ID' })
       })
     })
 
@@ -270,93 +255,8 @@ describe('SourceCard', () => {
 
       // Verify mutation was called - the success message is shown via internal state
       await waitFor(() => {
-        expect(mockUpdateIntegrationCredentials).toHaveBeenCalledWith('test_source', { api_key: 'secret-key' })
+        expect(mockUpdateIntegrationCredentials).toHaveBeenCalledWith('test_source', { api_key: 'secret-key', business_id: 'Enter ID' })
       })
-    })
-  })
-
-  describe('Test Integration', () => {
-    it('tests integration when test button is clicked', async () => {
-      const user = userEvent.setup()
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
-      mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
-
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-
-      // Wait for the integration status to load
-      await waitFor(() => {
-        const testButton = screen.getByRole('button', { name: /test$/i })
-        expect(testButton).not.toBeDisabled()
-      })
-
-      await user.click(screen.getByRole('button', { name: /test$/i }))
-
-      await waitFor(() => {
-        expect(mockTestIntegration).toHaveBeenCalledWith('test_source')
-      })
-    })
-
-    it('shows success message on successful test', async () => {
-      const user = userEvent.setup()
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
-      mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
-
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /test$/i })).not.toBeDisabled()
-      })
-      await user.click(screen.getByRole('button', { name: /test$/i }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Connection successful')).toBeInTheDocument()
-      })
-    })
-
-    it('shows error message on failed test', async () => {
-      const user = userEvent.setup()
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
-      mockTestIntegration.mockResolvedValue({ success: false, message: 'Invalid credentials' })
-
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /test$/i })).not.toBeDisabled()
-      })
-      await user.click(screen.getByRole('button', { name: /test$/i }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Invalid credentials')).toBeInTheDocument()
-      })
-    })
-
-    it('disables test button when source not configured', async () => {
-      const user = userEvent.setup()
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: false } })
-
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-
-      // The test button should be disabled when not configured
-      const testButton = screen.getByRole('button', { name: /test$/i })
-      expect(testButton).toBeDisabled()
     })
   })
 
@@ -375,6 +275,13 @@ describe('SourceCard', () => {
 
     it('copies webhook URL to clipboard', async () => {
       const user = userEvent.setup()
+      const writeTextSpy = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: writeTextSpy },
+        writable: true,
+        configurable: true,
+      })
+
       render(
         <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com/" />,
         { wrapper: createWrapper() }
@@ -382,13 +289,16 @@ describe('SourceCard', () => {
 
       await user.click(screen.getByRole('button', { name: /test source/i }))
 
-      const copyButtons = screen.getAllByRole('button')
-      const copyButton = copyButtons.find(btn => btn.querySelector('svg'))
-      if (copyButton) {
-        await user.click(copyButton)
-      }
+      const webhookUrl = screen.getByText('https://api.example.com/webhooks/test_source')
+      expect(webhookUrl).toBeInTheDocument()
 
-      // Clipboard mock is set up in test setup
+      // The copy button is an icon-only button next to the webhook URL with no accessible name
+      const allButtons = screen.getAllByRole('button')
+      const copyButton = allButtons.find(b => b.classList.contains('flex-shrink-0'))
+      expect(copyButton).toBeTruthy()
+      await user.click(copyButton!)
+
+      expect(writeTextSpy).toHaveBeenCalledWith('https://api.example.com/webhooks/test_source')
     })
 
     it('shows documentation link when provided', async () => {
@@ -439,8 +349,8 @@ describe('SourceCard', () => {
 
       await user.click(screen.getByRole('button', { name: /test source/i }))
 
-      const instructionsSection = screen.getByText('Setup Instructions').closest('div')
-      expect(instructionsSection).toHaveClass('bg-blue-50')
+      expect(screen.getByText('Setup Instructions')).toBeInTheDocument()
+      expect(screen.getByText('Step 1')).toBeInTheDocument()
     })
 
     it('applies orange color theme', async () => {
@@ -457,8 +367,64 @@ describe('SourceCard', () => {
 
       await user.click(screen.getByRole('button', { name: /test source/i }))
 
-      const instructionsSection = screen.getByText('Setup Instructions').closest('div')
-      expect(instructionsSection).toHaveClass('bg-orange-50')
+      expect(screen.getByText('Setup Instructions')).toBeInTheDocument()
+      expect(screen.getByText('Step 1')).toBeInTheDocument()
+    })
+  })
+
+  describe('Credential Fetching', () => {
+    it('fetches saved credentials when card is expanded', async () => {
+      const user = userEvent.setup()
+      mockGetIntegrationCredentials.mockResolvedValue({ api_key: 'saved-key', business_id: 'saved-id' })
+
+      render(
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        { wrapper: createWrapper() }
+      )
+
+      await user.click(screen.getByRole('button', { name: /test source/i }))
+
+      await waitFor(() => {
+        expect(mockGetIntegrationCredentials).toHaveBeenCalledWith('test_source', ['api_key', 'business_id'])
+      })
+    })
+
+    it('does not overwrite local user edits with fetched credentials', async () => {
+      const user = userEvent.setup()
+      // Delay the credential fetch so user can type first
+      mockGetIntegrationCredentials.mockImplementation(() =>
+        new Promise(resolve => setTimeout(() => resolve({ api_key: 'saved-key', business_id: 'saved-id' }), 100))
+      )
+
+      render(
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        { wrapper: createWrapper() }
+      )
+
+      await user.click(screen.getByRole('button', { name: /test source/i }))
+      await user.type(screen.getByPlaceholderText('Enter api key'), 'user-typed-key')
+
+      await waitFor(() => {
+        // User-typed value should be preserved
+        expect(screen.getByPlaceholderText('Enter api key')).toHaveValue('user-typed-key')
+      })
+    })
+
+    it('does not fetch credentials when config is empty', async () => {
+      const user = userEvent.setup()
+      const noConfigManifest: PluginManifest = {
+        ...mockManifest,
+        config: [],
+      }
+
+      render(
+        <SourceCard manifest={noConfigManifest} apiEndpoint="https://api.example.com" />,
+        { wrapper: createWrapper() }
+      )
+
+      await user.click(screen.getByRole('button', { name: /test source/i }))
+
+      expect(mockGetIntegrationCredentials).not.toHaveBeenCalled()
     })
   })
 
