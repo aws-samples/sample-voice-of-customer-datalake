@@ -3,14 +3,15 @@
  */
 import { useState, useCallback } from 'react'
 import { defaultContextConfig, type ContextConfig } from '../../components/DataSourceWizard/exports'
-import type { PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig } from './types'
+import type { PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, ProcessAnalysisConfig } from './types'
 
-export type WizardType = 'persona' | 'research' | 'doc' | 'merge' | null
+export type WizardType = 'persona' | 'research' | 'doc' | 'merge' | 'process' | null
 
 const DEFAULT_PERSONA_CONFIG: PersonaToolConfig = { personaCount: 3, customInstructions: '' }
 const DEFAULT_RESEARCH_CONFIG: ResearchToolConfig = { question: '', title: '' }
 const DEFAULT_DOC_CONFIG: DocToolConfig = { docType: 'prfaq', title: '', featureIdea: '', customerQuestions: ['', '', '', '', ''] }
 const DEFAULT_MERGE_CONFIG: MergeToolConfig = { outputType: 'prfaq', title: '', instructions: '' }
+const DEFAULT_PROCESS_CONFIG: ProcessAnalysisConfig = { title: '', processDescription: '', improvementGoals: '' }
 
 export function useWizardState() {
   const [activeWizard, setActiveWizard] = useState<WizardType>(null)
@@ -19,6 +20,7 @@ export function useWizardState() {
   const [researchConfig, setResearchConfig] = useState<ResearchToolConfig>(DEFAULT_RESEARCH_CONFIG)
   const [docConfig, setDocConfig] = useState<DocToolConfig>(DEFAULT_DOC_CONFIG)
   const [mergeConfig, setMergeConfig] = useState<MergeToolConfig>(DEFAULT_MERGE_CONFIG)
+  const [processConfig, setProcessConfig] = useState<ProcessAnalysisConfig>(DEFAULT_PROCESS_CONFIG)
   const [generating, setGenerating] = useState<string | null>(null)
 
   const resetWizard = useCallback(() => {
@@ -28,6 +30,7 @@ export function useWizardState() {
     setResearchConfig(DEFAULT_RESEARCH_CONFIG)
     setDocConfig(DEFAULT_DOC_CONFIG)
     setMergeConfig(DEFAULT_MERGE_CONFIG)
+    setProcessConfig(DEFAULT_PROCESS_CONFIG)
     setGenerating(null)
   }, [])
 
@@ -50,6 +53,8 @@ export function useWizardState() {
     setDocConfig,
     mergeConfig,
     setMergeConfig,
+    processConfig,
+    setProcessConfig,
     generating,
     setGenerating,
     resetWizard,

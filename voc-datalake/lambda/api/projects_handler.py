@@ -457,7 +457,7 @@ def handle_generate_document_job(event: dict) -> dict:
             update_job_status(project_id, job_id, 'running', 40, 'fetching_documents')
             selected_ids = doc_config.get('selected_document_ids', [])
             resp = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
-            docs = [i for i in resp.get('Items', []) if i.get('sk', '').startswith(('RESEARCH#', 'PRD#', 'PRFAQ#', 'DOC#'))]
+            docs = [i for i in resp.get('Items', []) if i.get('sk', '').startswith(('RESEARCH#', 'PRD#', 'PRFAQ#', 'PROCESS_ANALYSIS#', 'DOC#'))]
             if selected_ids:
                 docs = [d for d in docs if d.get('document_id') in selected_ids]
             if docs:
@@ -474,20 +474,25 @@ def handle_generate_document_job(event: dict) -> dict:
             system_prompt = """You are a senior product manager creating a Product Requirements Document (PRD).
 Create a comprehensive PRD that includes: Problem Statement, Goals & Success Metrics, User Stories, Requirements (functional & non-functional), Out of Scope, Timeline, and Risks."""
             user_prompt = f"Create a PRD for: {title}\n\nFeature Description: {feature_idea}\n\n{context}\n\nGenerate a complete PRD in markdown format."
+        elif doc_type == 'process_analysis':
+            system_prompt = """You are a senior McKinsey/BCG-level business process consultant creating an As-Is / To-Be Process Analysis document.
+Apply proven consulting frameworks: McKinsey 7S, Porter's Value Chain, Business Process Reengineering, and Lean Six Sigma (8 Wastes).
+Generate a comprehensive, actionable report that identifies gaps, root causes, and provides a phased implementation roadmap."""
+            user_prompt = f"{feature_idea}\n\n{context}"
         else:
             q_labels = ["Who is the customer?", "What is the customer problem or opportunity?", "What is the most important customer benefit?", "How do you know what customers need or want?", "What does the customer experience look like?"]
             questions_context = "\n\n".join([f"**{q_labels[i]}**\n{q.strip()}" for i, q in enumerate(customer_questions[:5]) if q and q.strip()])
             system_prompt = """You are creating an Amazon-style Working Backwards PR-FAQ document. Write in "Oprah-speak" NOT "Geek-speak". Keep it simple. This is NOT a spec - it's a customer-focused announcement."""
             user_prompt = f"Create an Amazon Working Backwards PR-FAQ for: {title}\n\nFeature Description: {feature_idea}\n\n## Working Backwards Input:\n{questions_context or 'Use the customer feedback context below.'}\n\n{context}\n\nGenerate a COMPLETE PR-FAQ with PRESS RELEASE, CUSTOMER FAQ (10 questions), and INTERNAL FAQ (10 questions)."
-        
+
         update_job_status(project_id, job_id, 'running', 60, 'calling_ai')
-        max_tokens = 8000 if doc_type == 'prfaq' else 5000
+        max_tokens = 8000 if doc_type in ['prfaq', 'process_analysis'] else 5000
         content = converse(prompt=user_prompt, system_prompt=system_prompt, max_tokens=max_tokens)
-        
+
         update_job_status(project_id, job_id, 'running', 90, 'saving_document')
         now = datetime.now(timezone.utc).isoformat()
         doc_id = f"{doc_type}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
+
         projects_table.put_item(Item={
             'pk': f'PROJECT#{project_id}', 'sk': f'{doc_type.upper()}#{doc_id}',
             'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS', 'gsi1sk': now,
@@ -499,10 +504,10 @@ Create a comprehensive PRD that includes: Problem Statement, Goals & Success Met
             UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
             ExpressionAttributeValues={':one': 1, ':now': now}
         )
-        
+
         update_job_status(project_id, job_id, 'completed', 100, 'complete', result={'document_id': doc_id, 'title': title})
         return {'success': True, 'document_id': doc_id}
-        
+
     except Exception as e:
         logger.exception(f"Document generation failed: {e}")
         update_job_status(project_id, job_id, 'failed', 0, 'error', error='Document generation failed')
@@ -531,8 +536,8 @@ def handle_merge_documents_job(event: dict) -> dict:
         
         resp = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
         all_items = resp.get('Items', [])
-        
-        docs = [i for i in all_items if i.get('sk', '').startswith(('RESEARCH#', 'PRD#', 'PRFAQ#', 'DOC#'))]
+
+        docs = [i for i in all_items if i.get('sk', '').startswith(('RESEARCH#', 'PRD#', 'PRFAQ#', 'PROCESS_ANALYSIS#', 'DOC#'))]
         selected_docs = [d for d in docs if d.get('document_id') in selected_doc_ids]
         
         if len(selected_docs) < 2:
@@ -761,7 +766,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
         job_type = event.get('job_type')
         if job_type == 'generate_personas':
             return handle_generate_personas_job(event)
-        if job_type in ['generate_prd', 'generate_prfaq']:
+        if job_type in ['generate_prd', 'generate_prfaq', 'generate_process_analysis']:
             return handle_generate_document_job(event)
         if job_type == 'merge_documents':
             return handle_merge_documents_job(event)

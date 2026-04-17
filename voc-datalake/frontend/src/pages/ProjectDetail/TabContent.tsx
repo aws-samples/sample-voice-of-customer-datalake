@@ -26,6 +26,8 @@ interface TabContentProps {
   readonly onRemixDocuments: () => void
   readonly onDismissJob: (jobId: string) => void
   readonly onSaveKiroPrompt: (prompt: string) => void
+  readonly onProcessAnalysis?: () => void
+  readonly onFlowStepClick?: (step: string) => void
   readonly onSelectPersona: (p: ProjectPersona | null) => void
   readonly onEditPersona: () => void
   readonly onDeletePersona: () => void
@@ -57,6 +59,8 @@ export default function TabContent({
   onRemixDocuments,
   onDismissJob,
   onSaveKiroPrompt,
+  onProcessAnalysis,
+  onFlowStepClick,
   onSelectPersona,
   onEditPersona,
   onDeletePersona,
@@ -82,6 +86,8 @@ export default function TabContent({
         onRemixDocuments={onRemixDocuments}
         onDismissJob={onDismissJob}
         onSaveKiroPrompt={onSaveKiroPrompt}
+        onProcessAnalysis={onProcessAnalysis}
+        onFlowStepClick={onFlowStepClick}
       />
     )
   }

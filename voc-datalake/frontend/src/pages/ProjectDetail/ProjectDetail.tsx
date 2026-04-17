@@ -17,6 +17,7 @@ import ProjectHeader from './ProjectHeader'
 import ProjectTabs from './ProjectTabs'
 import WizardSection from './WizardSection'
 import TabContent from './TabContent'
+import GuidedChatModal from './GuidedChatModal'
 import { PersonaEditModalWrapper, ImportPersonaModalWrapper, DocumentModalWrapper, ConfirmModalWrapper } from './ProjectModals'
 
 export default function ProjectDetail() {
@@ -26,6 +27,7 @@ export default function ProjectDetail() {
   
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
+  const [showProcessAnalysis, setShowProcessAnalysis] = useState(false)
 
   // Custom hooks for state management
   const wizard = useWizardState()
@@ -45,6 +47,7 @@ export default function ProjectDetail() {
     researchConfig: wizard.researchConfig,
     docConfig: wizard.docConfig,
     mergeConfig: wizard.mergeConfig,
+    processConfig: wizard.processConfig,
     onSuccess: wizard.resetWizard,
     onError: () => wizard.setGenerating(null),
   })
@@ -183,6 +186,13 @@ export default function ProjectDetail() {
         onRemixDocuments={wizard.openMergeWizard}
         onDismissJob={(jobId) => dismissJobMut.mutate(jobId)}
         onSaveKiroPrompt={handleSaveKiroPrompt}
+        onProcessAnalysis={() => setShowProcessAnalysis(true)}
+        onFlowStepClick={(step) => {
+          if (step === 'personas') wizard.setActiveWizard('persona')
+          else if (step === 'process') setShowProcessAnalysis(true)
+          else if (step === 'research') wizard.setActiveWizard('research')
+          else if (step === 'prd') wizard.setActiveWizard('doc')
+        }}
         onSelectPersona={selection.setSelectedPersona}
         onEditPersona={() => selection.selectedPersona && selection.setEditingPersona(selection.selectedPersona)}
         onDeletePersona={() => selection.selectedPersona && confirm.openPersonaConfirm(selection.selectedPersona.persona_id)}
@@ -235,6 +245,16 @@ export default function ProjectDetail() {
         onConfirm={handleConfirmDelete}
         onCancel={confirm.closeConfirm}
       />
+
+      {showProcessAnalysis && (
+        <GuidedChatModal
+          isOpen={true}
+          mode="process_analysis"
+          projectId={id ?? ''}
+          onClose={() => setShowProcessAnalysis(false)}
+          onDocumentGenerated={() => queryClient.invalidateQueries({ queryKey: ['project', id] })}
+        />
+      )}
     </div>
   )
 }

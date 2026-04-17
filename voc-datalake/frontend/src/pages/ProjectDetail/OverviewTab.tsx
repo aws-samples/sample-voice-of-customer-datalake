@@ -1,11 +1,12 @@
 /**
  * OverviewTab - Project overview with action cards and jobs
  */
-import { Users, FileText, Search, Sparkles, Shuffle } from 'lucide-react'
+import { Users, FileText, Search, Sparkles, Shuffle, GitCompareArrows } from 'lucide-react'
 import type { ProjectPersona, ProjectDocument, Project } from '../../api/client'
 import type { ProjectJob } from '../../api/client'
 import JobsSection from './JobsSection'
 import KiroExportSettings from './KiroExportSettings'
+import ProcessFlowDiagram from './ProcessFlowDiagram'
 
 interface OverviewTabProps {
   readonly project: Project
@@ -18,10 +19,13 @@ interface OverviewTabProps {
   readonly onRemixDocuments: () => void
   readonly onDismissJob: (jobId: string) => void
   readonly onSaveKiroPrompt: (prompt: string) => void
+  readonly onProcessAnalysis?: () => void
+  readonly onFlowStepClick?: (step: string) => void
 }
 
 export default function OverviewTab({
   project,
+  personas,
   documents,
   jobs,
   onGeneratePersonas,
@@ -30,9 +34,20 @@ export default function OverviewTab({
   onRemixDocuments,
   onDismissJob,
   onSaveKiroPrompt,
+  onProcessAnalysis,
+  onFlowStepClick,
 }: OverviewTabProps) {
   return (
     <div className="space-y-6">
+      {/* Process Flow Diagram */}
+      {onFlowStepClick && (
+        <ProcessFlowDiagram
+          personas={personas}
+          documents={documents}
+          onStepClick={onFlowStepClick}
+        />
+      )}
+
       {/* Running Jobs Section */}
       <JobsSection jobs={jobs} onDismiss={onDismissJob} />
       
@@ -48,6 +63,18 @@ export default function OverviewTab({
           buttonLabel="Generate"
           onClick={onGeneratePersonas}
         />
+        {onProcessAnalysis && (
+          <ActionCard
+            icon={<GitCompareArrows size={20} className="text-teal-600" />}
+            iconBg="bg-teal-100"
+            title="As-Is / To-Be Analysis"
+            description="AI-guided process analysis with consulting frameworks"
+            buttonColor="bg-teal-600 hover:bg-teal-700"
+            buttonIcon={<GitCompareArrows size={16} />}
+            buttonLabel="Start Analysis"
+            onClick={onProcessAnalysis}
+          />
+        )}
         <ActionCard
           icon={<FileText size={20} className="text-blue-600" />}
           iconBg="bg-blue-100"
