@@ -27,10 +27,10 @@
   "showHistory": "Afficher l'historique",
   "sidebar": {
     "clearAll": "Effacer toutes les conversations",
-    "messagesCount": "{{count}} messages",
+    "messagesCount": "{{count}} échanges",
     "messagesCount_one": "{{count}} messages",
     "messagesCount_many": "{{count}} messages",
-    "messagesCount_other": "{{count}} messages",
+    "messagesCount_other": "{{count}} échanges",
     "newChat": "Nouveau chat",
     "noConversations": "Aucune conversation pour le moment"
   },

@@ -22,7 +22,7 @@
   "noDataTitle": "Nenhum dado de análise de problemas encontrado para o período selecionado",
   "stats": {
     "categories": "Categorias",
-    "feedback": "Feedback",
+    "feedback": "Comentários",
     "problems": "Problemas",
     "subcategories": "Subcategorias",
     "urgent": "Urgente"
@@ -30,7 +30,7 @@
   "tree": {
     "markResolved": "Marcar como resolvido",
     "markUnresolved": "Marcar como não resolvido",
-    "original": "Original: {{text}}",
+    "original": "Texto original: {{text}}",
     "problems_one": "{{count}} problema",
     "problems_many": "{{count}} problemas",
     "problems_other": "{{count}} problemas",

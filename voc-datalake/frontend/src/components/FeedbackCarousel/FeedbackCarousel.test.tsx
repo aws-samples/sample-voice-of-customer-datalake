@@ -10,7 +10,7 @@ import type { FeedbackItem } from '../../api/types'
 // Helper to render with router
 function renderWithRouter(ui: React.ReactElement) {
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       {ui}
     </MemoryRouter>
   )

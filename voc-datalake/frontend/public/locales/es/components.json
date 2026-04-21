@@ -27,10 +27,10 @@
     "loadingCategories": "Cargando categorías...",
     "next": "Siguiente",
     "noDataSourcesSelected": "No hay fuentes de datos seleccionadas",
-    "personasCount": "Personas ({{count}})",
-    "personasCount_one": "Personas ({{count}})",
+    "personasCount": "Arquetipos ({{count}})",
+    "personasCount_one": "Arquetipo ({{count}})",
     "personasCount_many": "Personas ({{count}})",
-    "personasCount_other": "Personas ({{count}})",
+    "personasCount_other": "Arquetipos ({{count}})",
     "personasDescription": "Incluir personas de usuario para contexto",
     "processing": "Procesando...",
     "researchDescription": "Incluir hallazgos de investigación",
@@ -63,13 +63,13 @@
     "issue": "Problema: {{summary}}",
     "rootCause": "Causa raíz: {{cause}}",
     "urgent": "Urgente",
-    "webScraper": "Web Scraper"
+    "webScraper": "Recolector web"
   },
   "feedbackCarousel": {
     "issue": "Problema: {{summary}}",
     "urgent": "Urgente",
     "viewDetails": "Ver detalles",
-    "webScraper": "Web Scraper"
+    "webScraper": "Recolector web"
   },
   "personaExport": {
     "copied": "¡Copiado!",
@@ -81,7 +81,7 @@
   },
   "s3Import": {
     "allSources": "Todas las fuentes",
-    "bucket": "Bucket:",
+    "bucket": "Depósito:",
     "cancel": "Cancelar",
     "create": "Crear",
     "deleteFile": "Eliminar archivo",

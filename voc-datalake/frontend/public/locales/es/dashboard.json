@@ -13,7 +13,7 @@
   "sentiment": {
     "mixed": "Mixto",
     "negative": "Negativo",
-    "neutral": "Neutral",
+    "neutral": "Neutro",
     "positive": "Positivo"
   },
   "sentimentDistribution": "Distribución de sentimiento",

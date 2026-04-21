@@ -10,7 +10,7 @@ vi.mock('../runtimeConfig', () => ({
   isConfigLoaded: vi.fn(() => false),
   getRuntimeConfig: vi.fn(() => ({
     apiEndpoint: 'https://runtime-api.example.com',
-    cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+    cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1', identityPoolId: 'us-east-1:test-pool-id' }
   }))
 }))
 
@@ -24,11 +24,6 @@ describe('configStore', () => {
         brandHandles: [],
         hashtags: [],
         urlsToTrack: [],
-        sources: {
-          webscraper: { enabled: false, schedule: 'rate(5 minutes)', credentials: {} },
-          manual_import: { enabled: false, schedule: 'rate(5 minutes)', credentials: {} },
-          s3_import: { enabled: false, schedule: 'rate(5 minutes)', credentials: {} },
-        },
       },
       timeRange: '7d',
       customDateRange: null,
@@ -124,7 +119,7 @@ describe('configStore', () => {
       vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
       vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
         apiEndpoint: 'https://runtime-api.example.com',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1', identityPoolId: 'us-east-1:test-pool-id' }
       })
 
       const { syncWithRuntimeConfig } = useConfigStore.getState()
@@ -149,7 +144,7 @@ describe('configStore', () => {
       vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
       vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
         apiEndpoint: 'https://same-api.example.com',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1', identityPoolId: 'us-east-1:test-pool-id' }
       })
 
       const { syncWithRuntimeConfig, setConfig } = useConfigStore.getState()

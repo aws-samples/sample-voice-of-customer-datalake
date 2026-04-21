@@ -8,7 +8,7 @@
     "never": "Nunca",
     "notConfigured": "No configurado",
     "runNow": "Ejecutar ahora",
-    "urls": "URLs"
+    "urls": "URL"
   },
   "configureApiFirst": "Configure primero el endpoint de la API",
   "deleteConfirmLabel": "Eliminar",
@@ -100,7 +100,7 @@
     "addReviewManually": "Agregar reseña manualmente",
     "backToEdit": "Volver a editar",
     "cancel": "Cancelar",
-    "charCount": "{{count}} / {{max}}",
+    "charCount": "{{count}} de {{max}}",
     "detected": "Detectado: {{source}}",
     "enterBothFields": "Por favor ingrese tanto la URL como el texto de reseñas",
     "exceedsMax": "El texto excede el máximo de {{max}} caracteres",

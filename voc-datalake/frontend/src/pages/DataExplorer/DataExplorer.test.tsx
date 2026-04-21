@@ -20,7 +20,7 @@ const defaultQueryReturn = {
     prefix: '',
   },
   s3Loading: false,
-  s3Error: null,
+  s3Error: null as Error | null,
   feedbackData: {
     count: 2,
     items: [
@@ -61,13 +61,13 @@ const defaultQueryReturn = {
     ],
   },
   feedbackLoading: false,
-  feedbackError: null,
+  feedbackError: null as Error | null,
   categoriesData: {
     period_days: 30,
-    categories: { product_quality: 150, delivery: 80, pricing: 45 },
+    categories: { product_quality: 150, delivery: 80, pricing: 45 } as Record<string, number>,
   },
   categoriesLoading: false,
-  categoriesError: null,
+  categoriesError: null as Error | null,
   bucketsData: {
     buckets: [{ id: 'raw-data', name: 'voc-raw-data-123456-us-east-1', label: 'VoC Raw Data', description: 'Raw data' }],
   },
@@ -171,7 +171,7 @@ describe('DataExplorer', () => {
 
     it('shows empty state when no S3 objects', () => {
       queryReturnOverride = {
-        s3Data: { objects: [], bucket: 'test', bucketId: 'raw-data', prefix: '' },
+        s3Data: { objects: [], bucket: 'test', bucketId: 'raw-data', bucketLabel: 'Test', prefix: '' },
       }
       render(<DataExplorer />, { wrapper: createWrapper() })
       expect(screen.getByText(/no files/i)).toBeInTheDocument()

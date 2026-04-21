@@ -8,7 +8,7 @@
     "never": "Nunca",
     "notConfigured": "Não configurado",
     "runNow": "Executar agora",
-    "urls": "URLs"
+    "urls": "Endereços"
   },
   "configureApiFirst": "Configure primeiro o endpoint da API",
   "deleteConfirmLabel": "Excluir",
@@ -100,7 +100,7 @@
     "addReviewManually": "Adicionar avaliação manualmente",
     "backToEdit": "Voltar para edição",
     "cancel": "Cancelar",
-    "charCount": "{{count}} / {{max}}",
+    "charCount": "{{count}} de {{max}}",
     "detected": "Detectado: {{source}}",
     "enterBothFields": "Por favor insira tanto a URL quanto o texto das avaliações",
     "exceedsMax": "O texto excede o máximo de {{max}} caracteres",

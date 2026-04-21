@@ -22,6 +22,7 @@ describe('S3Browser', () => {
     path: [] as string[],
     data: mockData,
     loading: false,
+    error: null as Error | null,
     onNavigateToFolder: vi.fn(),
     onNavigateUp: vi.fn(),
     onNavigateToBreadcrumb: vi.fn(),

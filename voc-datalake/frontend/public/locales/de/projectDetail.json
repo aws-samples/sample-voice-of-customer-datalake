@@ -5,17 +5,17 @@
     "deselectAll": "Alle abwählen",
     "docTypes": {
       "custom": "Benutzerdefiniert",
-      "prd": "PRDs",
-      "prfaq": "PR/FAQs",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
       "research": "Recherche"
     },
     "documents": "Dokumente ({{selected}}/{{total}})",
     "generatedPrompt": "Generierter Kiro-Prompt",
     "generateFirst": "Generieren Sie zuerst Personas oder Dokumente, um Autoseed zu verwenden.",
     "pasteHint": "Fügen Sie dies in den Kiro-Chat ein. Erfordert ein API-Token vom MCP-Zugang-Tab.",
-    "personas": "Personas ({{selected}}/{{total}})",
+    "personas": "Zielgruppen ({{selected}}/{{total}})",
     "selectAll": "Alle auswählen",
-    "title": "Kiro Autoseed"
+    "title": "Kiro-Autoseed"
   },
   "chat": {
     "askPlaceholder": "Fragen Sie zu Ihrem Projekt...",
@@ -68,7 +68,7 @@
     "clickToUpload": "Klicken zum Hochladen oder per Drag & Drop",
     "image": "Bild",
     "imageDesc": "Screenshot oder Karte",
-    "imageFormats": "PNG, JPG, GIF, WebP",
+    "imageFormats": "Formate: PNG, JPG, GIF, WebP",
     "importButton": "Persona importieren",
     "importFrom": "Importieren von",
     "importing": "Wird importiert...",
@@ -80,7 +80,7 @@
     "pdf": "PDF",
     "pdfDesc": "Dokument hochladen",
     "pdfOnly": "Nur PDF-Dateien",
-    "text": "Text",
+    "text": "Textinhalt",
     "textDesc": "Inhalt einfügen",
     "title": "Persona importieren",
     "uploadImage": "Bild hochladen",
@@ -192,7 +192,7 @@
     "goalsMotivations": "Ziele & Motivationen",
     "identityDemographics": "Identität & Demografie",
     "location": "Standort",
-    "name": "Name",
+    "name": "Bezeichnung",
     "narrative": "Erzählung",
     "narrativePlaceholder": "Eine Geschichte, die sie in Aktion zeigt...",
     "occupation": "Beruf",
@@ -261,7 +261,7 @@
     "documents": "Dokumente",
     "mcpAccess": "MCP-Zugang",
     "overview": "Übersicht",
-    "personas": "Personas"
+    "personas": "Zielgruppen"
   },
   "wizards": {
     "amazonQuestions": "Amazons 5 Kundenfragen",
@@ -281,7 +281,7 @@
     "personaCount": "Anzahl der Personas: {{count}}",
     "prd": "PRD",
     "prdDesc": "Produktanforderungsdokument",
-    "prfaq": "PR-FAQ",
+    "prfaq": "PR-FAQ-Dokument",
     "prfaqDesc": "Amazon-Stil Pressemitteilung & FAQ",
     "question1Desc": "Definieren Sie Ihr Zielkundensegment. Seien Sie spezifisch bei Demografie, Verhaltensweisen und Merkmalen.",
     "question1Placeholder": "z.B. Vielbeschäftigte Berufstätige im Alter von 25-45, die mindestens 3x pro Woche Essen bestellen...",
@@ -311,6 +311,6 @@
     "submitGeneratePersonas": "Personas generieren",
     "submitRemixDocuments": "Dokumente remixen",
     "submitRunResearch": "Recherche starten",
-    "workingBackwards": "Working Backwards"
+    "workingBackwards": "Rückwärts arbeiten"
   }
 }

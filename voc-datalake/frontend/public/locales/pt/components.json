@@ -27,10 +27,10 @@
     "loadingCategories": "Carregando categorias...",
     "next": "Próximo",
     "noDataSourcesSelected": "Nenhuma fonte de dados selecionada",
-    "personasCount": "Personas ({{count}})",
-    "personasCount_one": "Personas ({{count}})",
+    "personasCount": "Arquétipos ({{count}})",
+    "personasCount_one": "Persona ({{count}})",
     "personasCount_many": "Personas ({{count}})",
-    "personasCount_other": "Personas ({{count}})",
+    "personasCount_other": "Arquétipos ({{count}})",
     "personasDescription": "Incluir personas de usuário para contexto",
     "processing": "Processando...",
     "researchDescription": "Incluir descobertas de pesquisa",
@@ -63,13 +63,13 @@
     "issue": "Problema: {{summary}}",
     "rootCause": "Causa raiz: {{cause}}",
     "urgent": "Urgente",
-    "webScraper": "Web Scraper"
+    "webScraper": "Coletor web"
   },
   "feedbackCarousel": {
     "issue": "Problema: {{summary}}",
     "urgent": "Urgente",
     "viewDetails": "Ver Detalhes",
-    "webScraper": "Web Scraper"
+    "webScraper": "Coletor web"
   },
   "personaExport": {
     "copied": "Copiado!",
@@ -81,7 +81,7 @@
   },
   "s3Import": {
     "allSources": "Todas as Fontes",
-    "bucket": "Bucket:",
+    "bucket": "Compartimento:",
     "cancel": "Cancelar",
     "create": "Criar",
     "deleteFile": "Deletar arquivo",
@@ -152,7 +152,7 @@
     "sendResetEmail": "Enviar Email de Redefinição",
     "tableActions": "Ações",
     "tableRole": "Função",
-    "tableStatus": "Status",
+    "tableStatus": "Situação",
     "tableUser": "Usuário",
     "userDeleted": "Usuário excluído",
     "userDisabled": "Usuário desativado",
@@ -174,7 +174,7 @@
     "confirmPasswordPlaceholder": "Confirme a nova senha",
     "currentPassword": "Senha Atual",
     "currentPasswordPlaceholder": "Digite a senha atual",
-    "email": "Email",
+    "email": "E-mail",
     "failedToChange": "Falha ao alterar a senha",
     "groups": "Grupos",
     "incorrectPassword": "A senha atual está incorreta",

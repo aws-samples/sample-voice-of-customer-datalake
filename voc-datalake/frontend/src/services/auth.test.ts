@@ -90,7 +90,7 @@ describe('authService', () => {
         }),
       }
 
-      mockAuthenticateUser.mockImplementation((authDetails, callbacks) => {
+      mockAuthenticateUser.mockImplementation((_authDetails, callbacks) => {
         callbacks.onSuccess(mockSession)
       })
 
@@ -103,7 +103,7 @@ describe('authService', () => {
 
     it('rejects with error on authentication failure', async () => {
       const error = new Error('Incorrect username or password')
-      mockAuthenticateUser.mockImplementation((authDetails, callbacks) => {
+      mockAuthenticateUser.mockImplementation((_authDetails, callbacks) => {
         callbacks.onFailure(error)
       })
 
@@ -132,7 +132,7 @@ describe('authService', () => {
 
   describe('confirmPassword', () => {
     it('confirms new password with verification code', async () => {
-      mockConfirmPassword.mockImplementation((code, newPassword, callbacks) => {
+      mockConfirmPassword.mockImplementation((_code, _newPassword, callbacks) => {
         callbacks.onSuccess()
       })
 

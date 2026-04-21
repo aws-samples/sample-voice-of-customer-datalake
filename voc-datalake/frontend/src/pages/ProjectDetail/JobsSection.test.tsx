@@ -6,7 +6,6 @@ import type { ProjectJob } from '../../api/types'
 
 const createJob = (overrides: Partial<ProjectJob> = {}): ProjectJob => ({
   job_id: 'job-1',
-  project_id: 'proj-1',
   job_type: 'research',
   status: 'running',
   progress: 50,

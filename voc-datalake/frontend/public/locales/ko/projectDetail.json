@@ -15,7 +15,7 @@
     "pasteHint": "이를 Kiro 채팅에 붙여넣으세요. MCP Access 탭에서 API 토큰이 필요합니다.",
     "personas": "페르소나 ({{selected}}/{{total}})",
     "selectAll": "모두 선택",
-    "title": "Kiro Autoseed"
+    "title": "Kiro 오토시드"
   },
   "chat": {
     "askPlaceholder": "프로젝트에 대해 질문하세요...",
@@ -68,7 +68,7 @@
     "clickToUpload": "클릭하여 업로드 또는 드래그 앤 드롭",
     "image": "이미지",
     "imageDesc": "스크린샷 또는 카드",
-    "imageFormats": "PNG, JPG, GIF, WebP",
+    "imageFormats": "PNG, JPG, GIF, WebP 형식",
     "importButton": "페르소나 가져오기",
     "importFrom": "가져오기 출처",
     "importing": "가져오는 중...",
@@ -156,7 +156,7 @@
     "scope": "범위",
     "scopeRead": "읽기 전용 — 피드백 검색, 지표 보기",
     "scopeReadWrite": "읽기 및 쓰기 — 채팅 및 문서 생성 포함",
-    "title": "MCP Access",
+    "title": "MCP 접근",
     "tokenCreated": "토큰이 성공적으로 생성되었습니다",
     "tokenName": "토큰 이름",
     "tokenNamePlaceholder": "예: My Kiro token",
@@ -281,7 +281,7 @@
     "personaCount": "페르소나 수: {{count}}",
     "prd": "PRD",
     "prdDesc": "제품 요구사항 문서",
-    "prfaq": "PR-FAQ",
+    "prfaq": "PR-FAQ 문서",
     "prfaqDesc": "Amazon 스타일 보도자료 및 FAQ",
     "question1Desc": "목표 고객 세그먼트를 정의하세요. 인구통계, 행동, 특성에 대해 구체적으로 설명하세요.",
     "question1Placeholder": "예: 25-45세의 바쁜 직장인으로 주 3회 이상 음식 배달을 주문하는 고객...",
@@ -311,6 +311,6 @@
     "submitGeneratePersonas": "페르소나 생성",
     "submitRemixDocuments": "문서 리믹스",
     "submitRunResearch": "조사 실행",
-    "workingBackwards": "Working Backwards"
+    "workingBackwards": "역방향 작업"
   }
 }

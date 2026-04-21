@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DataSourceWizard from './DataSourceWizard'
 import { defaultContextConfig } from './exports'
+import type { ProjectDocument } from '../../api/types'
 import { Sparkles } from 'lucide-react'
 
 // Mock API before importing component
@@ -40,7 +41,7 @@ const mockPersonas = [
   { persona_id: 'p2', name: 'Casual User', tagline: 'Basic usage', created_at: '' },
 ]
 
-const mockDocuments = [
+const mockDocuments: ProjectDocument[] = [
   { document_id: 'd1', title: 'Product PRD', document_type: 'prd', content: '', created_at: '', updated_at: '' },
   { document_id: 'd2', title: 'Research Report', document_type: 'research', content: '', created_at: '', updated_at: '' },
 ]

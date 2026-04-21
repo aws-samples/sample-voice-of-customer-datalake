@@ -1,13 +1,13 @@
 {
   "appDescription": "Einheitliche Plattform für Kundenfeedback-Intelligenz",
-  "appName": "VoC Analytics",
-  "appTagline": "Voice of the Customer Analytics",
+  "appName": "VoC-Analyse",
+  "appTagline": "Voice-of-the-Customer-Analyse",
   "breadcrumbs": {
     "categories": "Kategorien",
     "chat": "KI-Chat",
-    "dashboard": "Dashboard",
+    "dashboard": "Übersicht",
     "dataExplorer": "Daten-Explorer",
-    "feedback": "Feedback",
+    "feedback": "Rückmeldungen",
     "feedbackForms": "Feedback-Formulare",
     "home": "Startseite",
     "prioritization": "Priorisierung",
@@ -47,9 +47,9 @@
   "nav": {
     "aiChat": "KI-Chat",
     "categories": "Kategorien",
-    "dashboard": "Dashboard",
+    "dashboard": "Übersicht",
     "dataExplorer": "Daten-Explorer",
-    "feedback": "Feedback",
+    "feedback": "Rückmeldungen",
     "feedbackForms": "Feedback-Formulare",
     "prioritization": "Priorisierung",
     "problemAnalysis": "Problemanalyse",
@@ -67,7 +67,7 @@
   "sentiment": {
     "mixed": "Gemischt",
     "negative": "Negativ",
-    "neutral": "Neutral",
+    "neutral": "Neutrale Stimmung",
     "positive": "Positiv"
   },
   "showingOf_one": "{{count}} von {{total}} Ergebnis angezeigt",

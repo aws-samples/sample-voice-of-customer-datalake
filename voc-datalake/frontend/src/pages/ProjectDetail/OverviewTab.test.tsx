@@ -14,8 +14,11 @@ const mockProject: Project = {
   project_id: 'proj-1',
   name: 'Test Project',
   description: 'A test project',
+  status: 'active',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
+  persona_count: 0,
+  document_count: 0,
 }
 
 const defaultProps = {
@@ -85,8 +88,8 @@ describe('OverviewTab', () => {
 
   it('enables Remix Documents when 2+ documents exist', () => {
     const docs: ProjectDocument[] = [
-      { document_id: '1', title: 'Doc 1', content: 'Content 1', doc_type: 'prd', created_at: '' },
-      { document_id: '2', title: 'Doc 2', content: 'Content 2', doc_type: 'prd', created_at: '' },
+      { document_id: '1', title: 'Doc 1', content: 'Content 1', document_type: 'prd', created_at: '' },
+      { document_id: '2', title: 'Doc 2', content: 'Content 2', document_type: 'prd', created_at: '' },
     ]
     render(<OverviewTab {...defaultProps} documents={docs} />)
     const remixButton = screen.getByRole('button', { name: /Remix/i })

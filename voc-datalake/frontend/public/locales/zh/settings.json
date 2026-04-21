@@ -9,9 +9,9 @@
   "brand": {
     "handlesHint": "要跟踪的社交媒体账号和变体",
     "handlesLabel": "品牌账号（逗号分隔）",
-    "handlesPlaceholder": "@yourbrand, yourbrand, YourBrand",
+    "handlesPlaceholder": "@您的品牌, 品牌名, BrandName",
     "hashtagsLabel": "要跟踪的标签（逗号分隔）",
-    "hashtagsPlaceholder": "#yourbrand, #yourproduct",
+    "hashtagsPlaceholder": "#您的品牌, #您的产品",
     "loadingSettings": "正在从服务器加载设置...",
     "nameLabel": "品牌名称",
     "namePlaceholder": "您的品牌名称",

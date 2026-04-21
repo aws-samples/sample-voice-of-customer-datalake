@@ -58,7 +58,7 @@
   "tabs": {
     "categories": "Kategorien",
     "categoriesShort": "Kategorien",
-    "feedbackShort": "Feedback",
+    "feedbackShort": "Rückmeldungen",
     "processedFeedback": "Verarbeitetes Feedback",
     "s3RawData": "S3-Rohdaten",
     "s3Short": "S3"

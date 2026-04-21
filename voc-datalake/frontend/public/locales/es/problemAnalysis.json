@@ -30,7 +30,7 @@
   "tree": {
     "markResolved": "Marcar como resuelto",
     "markUnresolved": "Marcar como no resuelto",
-    "original": "Original: {{text}}",
+    "original": "Texto original: {{text}}",
     "problems_one": "{{count}} problema",
     "problems_many": "{{count}} problemas",
     "problems_other": "{{count}} problemas",

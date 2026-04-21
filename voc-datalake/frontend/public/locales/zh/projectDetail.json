@@ -5,8 +5,8 @@
     "deselectAll": "取消全选",
     "docTypes": {
       "custom": "自定义",
-      "prd": "PRDs",
-      "prfaq": "PR/FAQs",
+      "prd": "PRD 文档",
+      "prfaq": "PR/FAQ 文档",
       "research": "研究"
     },
     "documents": "文档 ({{selected}}/{{total}})",
@@ -281,7 +281,7 @@
     "personaCount": "用户角色数量：{{count}}",
     "prd": "PRD",
     "prdDesc": "产品需求文档",
-    "prfaq": "PR-FAQ",
+    "prfaq": "PR-FAQ 文档",
     "prfaqDesc": "亚马逊风格新闻稿与常见问题",
     "question1Desc": "定义您的目标客户群体。具体说明人口统计、行为和特征。",
     "question1Placeholder": "例如，年龄25-45岁的忙碌专业人士，每周至少订餐3次...",

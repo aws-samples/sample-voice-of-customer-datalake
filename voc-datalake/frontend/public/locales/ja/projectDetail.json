@@ -15,7 +15,7 @@
     "pasteHint": "これをKiroチャットに貼り付けてください。MCPアクセスタブからAPIトークンが必要です。",
     "personas": "ペルソナ ({{selected}}/{{total}})",
     "selectAll": "すべて選択",
-    "title": "Kiro Autoseed"
+    "title": "Kiro 自動シード"
   },
   "chat": {
     "askPlaceholder": "プロジェクトについて質問...",
@@ -156,7 +156,7 @@
     "scope": "スコープ",
     "scopeRead": "読み取り専用 — フィードバック検索、メトリクス表示",
     "scopeReadWrite": "読み取り・書き込み — チャットとドキュメント生成を含む",
-    "title": "MCP Access",
+    "title": "MCP アクセス",
     "tokenCreated": "トークンが正常に作成されました",
     "tokenName": "トークン名",
     "tokenNamePlaceholder": "例：My Kiro token",
@@ -281,7 +281,7 @@
     "personaCount": "ペルソナ数: {{count}}",
     "prd": "PRD",
     "prdDesc": "製品要件ドキュメント",
-    "prfaq": "PR-FAQ",
+    "prfaq": "PR-FAQ 文書",
     "prfaqDesc": "Amazon形式のプレスリリースとFAQ",
     "question1Desc": "ターゲット顧客セグメントを定義してください。人口統計、行動、特性について具体的に説明してください。",
     "question1Placeholder": "例：週に3回以上フードデリバリーを利用する25～45歳の忙しいプロフェッショナル...",

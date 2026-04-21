@@ -72,11 +72,11 @@ describe('collectPRFAQs', () => {
   it('only includes prfaq document types', () => {
     const details = [{
       documents: [
-        { document_id: 'd1', document_type: 'prfaq', title: 'A', content: '', created_at: '2025-01-01' },
-        { document_id: 'd2', document_type: 'prd', title: 'B', content: '', created_at: '2025-01-01' },
+        { document_id: 'd1', document_type: 'prfaq' as const, title: 'A', content: '', created_at: '2025-01-01' },
+        { document_id: 'd2', document_type: 'prd' as const, title: 'B', content: '', created_at: '2025-01-01' },
       ],
     }]
-    const projects = [{ project_id: 'p1', name: 'P1', status: 'active', created_at: '', updated_at: '', persona_count: 0, document_count: 0 }]
+    const projects = [{ project_id: 'p1', name: 'P1', description: '', status: 'active' as const, created_at: '', updated_at: '', persona_count: 0, document_count: 0 }]
 
     const result = collectPRFAQs(details, projects)
 
@@ -87,8 +87,8 @@ describe('collectPRFAQs', () => {
 })
 
 describe('comparePRFAQs', () => {
-  const prfaqA = { document_id: 'a', project_id: 'p1', project_name: 'P1', document_type: 'prfaq', title: 'Alpha', content: '', created_at: '2025-01-01' }
-  const prfaqB = { document_id: 'b', project_id: 'p1', project_name: 'P1', document_type: 'prfaq', title: 'Beta', content: '', created_at: '2025-01-02' }
+  const prfaqA = { document_id: 'a', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Alpha', content: '', created_at: '2025-01-01' }
+  const prfaqB = { document_id: 'b', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Beta', content: '', created_at: '2025-01-02' }
 
   it('sorts by impact when field is impact', () => {
     const scores: Record<string, PrioritizationScore> = {

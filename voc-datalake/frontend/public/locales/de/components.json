@@ -25,9 +25,9 @@
     "loadingCategories": "Kategorien werden geladen...",
     "next": "Weiter",
     "noDataSourcesSelected": "Keine Datenquellen ausgewählt",
-    "personasCount": "Personas ({{count}})",
-    "personasCount_one": "Personas ({{count}})",
-    "personasCount_other": "Personas ({{count}})",
+    "personasCount": "Zielgruppen ({{count}})",
+    "personasCount_one": "Persona ({{count}})",
+    "personasCount_other": "Zielgruppen ({{count}})",
     "personasDescription": "Benutzer-Personas für Kontext einbeziehen",
     "processing": "Wird verarbeitet...",
     "researchDescription": "Forschungsergebnisse einbeziehen",
@@ -55,17 +55,17 @@
   },
   "feedbackCard": {
     "copyText": "Text kopieren",
-    "details": "Details",
+    "details": "Einzelheiten",
     "issue": "Problem: {{summary}}",
     "rootCause": "Grundursache: {{cause}}",
     "urgent": "Dringend",
-    "webScraper": "Web Scraper"
+    "webScraper": "Web-Scraper"
   },
   "feedbackCarousel": {
     "issue": "Problem: {{summary}}",
     "urgent": "Dringend",
     "viewDetails": "Details anzeigen",
-    "webScraper": "Web Scraper"
+    "webScraper": "Web-Scraper"
   },
   "personaExport": {
     "copied": "Kopiert!",
@@ -77,7 +77,7 @@
   },
   "s3Import": {
     "allSources": "Alle Quellen",
-    "bucket": "Bucket:",
+    "bucket": "Speicher:",
     "cancel": "Abbrechen",
     "create": "Erstellen",
     "deleteFile": "Datei löschen",
@@ -110,7 +110,7 @@
     "active": "Aktiv",
     "addNewUser": "Neuen Benutzer hinzufügen",
     "addUser": "Benutzer hinzufügen",
-    "adminRole": "Admin",
+    "adminRole": "Administrator",
     "cancel": "Abbrechen",
     "confirmDelete": "Möchten Sie {{email}} wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
     "confirmDisable": "{{email}} deaktivieren? Sie können sich nicht mehr anmelden.",
@@ -133,7 +133,7 @@
     "firstNameLabel": "Vorname",
     "lastNameLabel": "Nachname",
     "loadError": "Fehler beim Laden der Benutzer. Stellen Sie sicher, dass Sie Administratorzugriff haben.",
-    "nameLabel": "Name (optional)",
+    "nameLabel": "Benutzername (optional)",
     "noUsers": "Keine Benutzer gefunden. Fügen Sie oben Ihren ersten Benutzer hinzu.",
     "passwordResetSent": "E-Mail zum Zurücksetzen des Passworts gesendet",
     "pendingStatus": "Ausstehend",
@@ -146,7 +146,7 @@
     "sendResetEmail": "E-Mail zum Zurücksetzen senden",
     "tableActions": "Aktionen",
     "tableRole": "Rolle",
-    "tableStatus": "Status",
+    "tableStatus": "Zustand",
     "tableUser": "Benutzer",
     "userDeleted": "Benutzer gelöscht",
     "userDisabled": "Benutzer deaktiviert",
@@ -159,7 +159,7 @@
     "userUpdated": "Benutzer aktualisiert"
   },
   "userProfile": {
-    "administrator": "Administrator",
+    "administrator": "Verwalter",
     "allFieldsRequired": "Alle Felder sind erforderlich",
     "changePassword": "Passwort ändern",
     "changing": "Wird geändert...",
@@ -172,7 +172,7 @@
     "groups": "Gruppen",
     "incorrectPassword": "Aktuelles Passwort ist falsch",
     "myProfile": "Mein Profil",
-    "name": "Name",
+    "name": "Benutzername",
     "newPassword": "Neues Passwort",
     "newPasswordPlaceholder": "Neues Passwort eingeben",
     "passwordChanged": "Passwort erfolgreich geändert!",

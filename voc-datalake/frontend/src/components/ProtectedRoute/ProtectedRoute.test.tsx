@@ -28,13 +28,11 @@ vi.mock('../PageLoader', () => ({
 
 // Helper to render with router
 function renderWithRouter(
-  ui: React.ReactElement,
   { initialEntries = ['/protected'] } = {}
 ) {
   return render(
     <MemoryRouter
       initialEntries={initialEntries}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <Routes>
         <Route path="/login" element={<div>Login Page</div>} />
@@ -69,11 +67,7 @@ describe('ProtectedRoute', () => {
         setSessionReady: vi.fn(),
       })
 
-      renderWithRouter(
-        <ProtectedRoute>
-          <div>Protected Content</div>
-        </ProtectedRoute>
-      )
+      renderWithRouter()
 
       expect(screen.getByText('Protected Content')).toBeInTheDocument()
     })
@@ -88,11 +82,7 @@ describe('ProtectedRoute', () => {
         setSessionReady: vi.fn(),
       })
 
-      renderWithRouter(
-        <ProtectedRoute>
-          <div>Protected Content</div>
-        </ProtectedRoute>
-      )
+      renderWithRouter()
 
       expect(screen.getByText('Loading...')).toBeInTheDocument()
       expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
@@ -105,11 +95,7 @@ describe('ProtectedRoute', () => {
         setSessionReady: vi.fn(),
       })
 
-      renderWithRouter(
-        <ProtectedRoute>
-          <div>Protected Content</div>
-        </ProtectedRoute>
-      )
+      renderWithRouter()
 
       expect(screen.getByText('Login Page')).toBeInTheDocument()
       expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
@@ -127,11 +113,7 @@ describe('ProtectedRoute', () => {
     })
 
     it('redirects to login in production mode', () => {
-      renderWithRouter(
-        <ProtectedRoute>
-          <div>Protected Content</div>
-        </ProtectedRoute>
-      )
+      renderWithRouter()
 
       // In test environment, DEV is true so it allows access
       expect(screen.getByText('Protected Content')).toBeInTheDocument()
@@ -147,12 +129,7 @@ describe('ProtectedRoute', () => {
         setSessionReady: vi.fn(),
       })
 
-      renderWithRouter(
-        <ProtectedRoute>
-          <div>Protected Content</div>
-        </ProtectedRoute>,
-        { initialEntries: ['/protected'] }
-      )
+      renderWithRouter({ initialEntries: ['/protected'] })
 
       expect(screen.getByText('Login Page')).toBeInTheDocument()
     })

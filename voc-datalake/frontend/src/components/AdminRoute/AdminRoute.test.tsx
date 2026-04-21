@@ -134,7 +134,6 @@ describe('AdminRoute', () => {
 
     it('allows access in development mode', () => {
       const originalEnv = import.meta.env.DEV
-      // @ts-expect-error - modifying read-only property for test
       import.meta.env.DEV = true
 
       mockUseAuthStore.mockReturnValue({
@@ -151,7 +150,6 @@ describe('AdminRoute', () => {
 
       expect(screen.getByText('Admin Content')).toBeInTheDocument()
 
-      // @ts-expect-error - restoring read-only property
       import.meta.env.DEV = originalEnv
     })
   })

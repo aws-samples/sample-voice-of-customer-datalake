@@ -24,7 +24,7 @@ import { projectsApi } from './projectsApi'
 describe('projectsApi', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.spyOn(global, 'fetch').mockImplementation()
+    vi.spyOn(global, 'fetch').mockImplementation(vi.fn())
   })
 
   afterEach(() => {
@@ -195,11 +195,10 @@ describe('projectsApi', () => {
       const persona = {
         name: 'Power User',
         tagline: 'Uses all features',
-        description: 'A power user',
-        pain_points: ['Slow loading'],
-        goals: ['Efficiency'],
-        behaviors: ['Daily usage'],
-        demographics: { age: '25-34' },
+        pain_points: { current_challenges: ['Slow loading'] },
+        goals_motivations: { primary_goal: 'Efficiency' },
+        behaviors: { current_solutions: ['Daily usage'] },
+        identity: { age_range: '25-34' },
       }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,

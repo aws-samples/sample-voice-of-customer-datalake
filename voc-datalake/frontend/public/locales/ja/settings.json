@@ -9,9 +9,9 @@
   "brand": {
     "handlesHint": "追跡するソーシャルメディアハンドルとバリエーション",
     "handlesLabel": "ブランドハンドル（カンマ区切り）",
-    "handlesPlaceholder": "@yourbrand, yourbrand, YourBrand",
+    "handlesPlaceholder": "@あなたのブランド, ブランド名, BrandName",
     "hashtagsLabel": "追跡するハッシュタグ（カンマ区切り）",
-    "hashtagsPlaceholder": "#yourbrand, #yourproduct",
+    "hashtagsPlaceholder": "#あなたのブランド, #製品名",
     "loadingSettings": "サーバーから設定を読み込み中...",
     "nameLabel": "ブランド名",
     "namePlaceholder": "ブランド名を入力",

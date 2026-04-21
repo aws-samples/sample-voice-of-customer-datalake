@@ -9,9 +9,9 @@
   "brand": {
     "handlesHint": "추적할 소셜 미디어 핸들 및 변형",
     "handlesLabel": "브랜드 핸들 (쉼표로 구분)",
-    "handlesPlaceholder": "@yourbrand, yourbrand, YourBrand",
+    "handlesPlaceholder": "@브랜드명, 브랜드, BrandName",
     "hashtagsLabel": "추적할 해시태그 (쉼표로 구분)",
-    "hashtagsPlaceholder": "#yourbrand, #yourproduct",
+    "hashtagsPlaceholder": "#브랜드명, #제품명",
     "loadingSettings": "서버에서 설정 로딩 중...",
     "nameLabel": "브랜드 이름",
     "namePlaceholder": "브랜드 이름",

@@ -3,7 +3,7 @@
   "backToFeedback": "Retour aux commentaires",
   "backToList": "Retour à la liste des commentaires",
   "category": "Catégorie",
-  "classification": "Classification",
+  "classification": "Catégorisation",
   "copyToClipboard": "Copier dans le presse-papiers",
   "created": "Créé : {{date}}",
   "customerPersona": "Persona client",
@@ -15,7 +15,7 @@
   "loadingSimilar": "Chargement des commentaires similaires...",
   "notFound": "Commentaire non trouvé",
   "originalFeedback": "Commentaire original",
-  "persona": "Persona",
+  "persona": "Profil",
   "possibleRootCause": "Cause racine possible :",
   "problemAnalysis": "Analyse du problème",
   "rating": "Évaluation",
@@ -49,8 +49,8 @@
   "suggestedResponsesHint": "Copiez ces réponses pour les partager avec votre équipe ou les utiliser comme point de départ pour votre réponse.",
   "tagsAndFilters": "Étiquettes et filtres",
   "translatedFrom": "Traduit de {{language}}",
-  "type": "Type",
+  "type": "Catégorie",
   "unknown": "Inconnu",
-  "urgent": "Urgent",
+  "urgent": "Prioritaire",
   "viewOriginal": "Voir l'original"
 }

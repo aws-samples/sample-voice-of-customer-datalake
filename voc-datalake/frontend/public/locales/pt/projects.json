@@ -3,9 +3,9 @@
     "docs_one": "{{count}} doc.",
     "docs_many": "{{count}} docs.",
     "docs_other": "{{count}} docs.",
-    "personas_one": "{{count}} persona",
+    "personas_one": "{{count}} arquétipo",
     "personas_many": "{{count}} personas",
-    "personas_other": "{{count}} personas"
+    "personas_other": "{{count}} arquétipos"
   },
   "configureEndpoint": "Configure primeiro o endpoint da API nas Configurações",
   "createModal": {

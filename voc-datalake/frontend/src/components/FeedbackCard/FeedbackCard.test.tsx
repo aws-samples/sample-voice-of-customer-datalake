@@ -12,7 +12,6 @@ function renderWithRouter(ui: React.ReactElement, initialEntries: string[] = ['/
   return render(
     <MemoryRouter
       initialEntries={initialEntries}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       {ui}
     </MemoryRouter>

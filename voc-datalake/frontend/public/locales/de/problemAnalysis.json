@@ -22,7 +22,7 @@
   "noDataTitle": "Keine Problemanalysedaten für den ausgewählten Zeitraum gefunden",
   "stats": {
     "categories": "Kategorien",
-    "feedback": "Feedback",
+    "feedback": "Rückmeldungen",
     "problems": "Probleme",
     "subcategories": "Unterkategorien",
     "urgent": "Dringend"
@@ -30,7 +30,7 @@
   "tree": {
     "markResolved": "Als gelöst markieren",
     "markUnresolved": "Als ungelöst markieren",
-    "original": "Original: {{text}}",
+    "original": "Ursprungstext: {{text}}",
     "problems_one": "{{count}} Problem",
     "problems_other": "{{count}} Probleme",
     "resolved": "Gelöst",

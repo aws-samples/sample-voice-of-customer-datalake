@@ -15,7 +15,7 @@
   "loadingSimilar": "Cargando comentarios similares...",
   "notFound": "Comentario no encontrado",
   "originalFeedback": "Comentario Original",
-  "persona": "Persona",
+  "persona": "Arquetipo",
   "possibleRootCause": "Causa Raíz Posible:",
   "problemAnalysis": "Análisis del Problema",
   "rating": "Calificación",
@@ -42,7 +42,7 @@
     ]
   },
   "show": "Mostrar",
-  "similar": "Similar",
+  "similar": "Similares",
   "similarFeedback": "Comentarios Similares",
   "subcategory": "Subcategoría",
   "suggestedResponses": "Respuestas Sugeridas",

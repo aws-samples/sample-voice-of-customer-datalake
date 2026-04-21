@@ -91,7 +91,7 @@
     "hoursAgo_many": "há {{count}} h",
     "hoursAgo_other": "há {{count}} h",
     "items": "{{count}} itens",
-    "items_one": "{{count}} item",
+    "items_one": "{{count}} registro",
     "items_many": "{{count}} itens",
     "items_other": "{{count}} itens",
     "justNow": "agora mesmo",

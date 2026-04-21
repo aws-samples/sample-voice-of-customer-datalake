@@ -64,6 +64,7 @@ const mockManifest: PluginManifest = {
   hasIngestor: true,
   hasWebhook: true,
   hasS3Trigger: false,
+  enabled: true,
 }
 
 describe('SourceCard', () => {
@@ -326,6 +327,7 @@ describe('SourceCard', () => {
         hasIngestor: true,
         hasWebhook: false,
         hasS3Trigger: true,
+        enabled: true,
       }
 
       render(
@@ -439,6 +441,7 @@ describe('SourceCard', () => {
         hasIngestor: true,
         hasWebhook: false,
         hasS3Trigger: false,
+        enabled: true,
       }
 
       render(

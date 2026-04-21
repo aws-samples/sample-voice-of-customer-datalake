@@ -1,19 +1,19 @@
 {
   "appDescription": "Plataforma unificada de inteligencia de feedback del cliente",
-  "appName": "VoC Analytics",
+  "appName": "VoC Análisis",
   "appTagline": "Análisis de la Voz del Cliente",
   "breadcrumbs": {
     "categories": "Categorías",
     "chat": "Chat IA",
     "dashboard": "Panel",
     "dataExplorer": "Explorador de datos",
-    "feedback": "Feedback",
+    "feedback": "Comentarios",
     "feedbackForms": "Formularios de feedback",
     "home": "Inicio",
     "prioritization": "Priorización",
     "problems": "Análisis de problemas",
     "projects": "Proyectos",
-    "scrapers": "Web Scrapers",
+    "scrapers": "Recolectores web",
     "settings": "Configuración"
   },
   "configureBrand": "Configurar marca",
@@ -52,12 +52,12 @@
     "categories": "Categorías",
     "dashboard": "Panel",
     "dataExplorer": "Explorador de datos",
-    "feedback": "Feedback",
+    "feedback": "Comentarios",
     "feedbackForms": "Formularios de feedback",
     "prioritization": "Priorización",
     "problemAnalysis": "Análisis de problemas",
     "projects": "Proyectos",
-    "scrapers": "Scrapers",
+    "scrapers": "Recolectores",
     "settings": "Configuración"
   },
   "priority": {
@@ -70,7 +70,7 @@
   "sentiment": {
     "mixed": "Mixto",
     "negative": "Negativo",
-    "neutral": "Neutral",
+    "neutral": "Neutro",
     "positive": "Positivo"
   },
   "showingOf_one": "Mostrando {{count}} de {{total}} resultado",

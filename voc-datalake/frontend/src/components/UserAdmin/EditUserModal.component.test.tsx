@@ -27,6 +27,8 @@ const testUser: CognitoUser = {
   status: 'CONFIRMED',
   enabled: true,
   groups: ['users'],
+  created_at: null,
+  last_modified: null,
 }
 
 function createWrapper() {

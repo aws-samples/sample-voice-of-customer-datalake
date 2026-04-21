@@ -17,7 +17,7 @@
   },
   "loading": "Chargement des PR/FAQ...",
   "notes": {
-    "label": "Notes",
+    "label": "Remarques",
     "placeholder": "Ajouter des notes sur cette décision de priorisation..."
   },
   "preview": {
@@ -36,10 +36,10 @@
     "confidenceDescription": "Certitude dans les estimations d'impact et de DmM",
     "fast": "Rapide",
     "high": "Élevé",
-    "impact": "Impact",
+    "impact": "Portée",
     "impactDescription": "Valeur commerciale et bénéfice client",
     "low": "Faible",
-    "score": "Score",
+    "score": "Note",
     "slow": "Lent",
     "strategicFit": "Adéquation stratégique",
     "strategicFitDescription": "Alignement avec les objectifs de l'entreprise",
@@ -48,9 +48,9 @@
     "title": "Scores de priorisation"
   },
   "sort": {
-    "date": "Date",
+    "date": "Par date",
     "dateFull": "Date de création",
-    "impact": "Impact",
+    "impact": "Par portée",
     "label": "Trier par :",
     "priority": "Priorité",
     "priorityFull": "Score de priorité",

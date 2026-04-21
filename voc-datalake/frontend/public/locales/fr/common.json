@@ -1,6 +1,6 @@
 {
   "appDescription": "Plateforme unifiée d'intelligence feedback client",
-  "appName": "VoC Analytics",
+  "appName": "VoC Analytique",
   "appTagline": "Analyse de la Voix du Client",
   "breadcrumbs": {
     "categories": "Catégories",
@@ -13,7 +13,7 @@
     "prioritization": "Priorisation",
     "problems": "Analyse des problèmes",
     "projects": "Projets",
-    "scrapers": "Web Scrapers",
+    "scrapers": "Collecteurs web",
     "settings": "Paramètres"
   },
   "configureBrand": "Configurer la marque",
@@ -57,7 +57,7 @@
     "prioritization": "Priorisation",
     "problemAnalysis": "Analyse des problèmes",
     "projects": "Projets",
-    "scrapers": "Scrapers",
+    "scrapers": "Collecteurs",
     "settings": "Paramètres"
   },
   "priority": {

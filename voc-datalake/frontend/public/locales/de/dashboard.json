@@ -1,7 +1,7 @@
 {
   "feedbackBySource": "Feedback nach Quelle",
   "feedbackVolumeTrend": "Feedback-Volumen & Stimmungstrend",
-  "liveSocialFeed": "Live Social Feed",
+  "liveSocialFeed": "Live-Social-Feed",
   "loading": "wird geladen",
   "metrics": {
     "avgSentiment": "Durchschnittliche Stimmung",
@@ -13,7 +13,7 @@
   "sentiment": {
     "mixed": "Gemischt",
     "negative": "Negativ",
-    "neutral": "Neutral",
+    "neutral": "Neutrale Stimmung",
     "positive": "Positiv"
   },
   "sentimentDistribution": "Stimmungsverteilung",

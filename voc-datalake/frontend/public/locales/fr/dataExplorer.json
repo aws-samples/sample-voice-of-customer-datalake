@@ -26,7 +26,7 @@
     "save": "Enregistrer",
     "syncToDynamo": "Mettre à jour aussi DynamoDB",
     "syncToS3": "Mettre à jour aussi S3",
-    "type": "Type",
+    "type": "Catégorie",
     "viewFeedback": "Afficher le commentaire",
     "viewS3File": "Afficher le fichier S3"
   },
@@ -37,7 +37,7 @@
     "errorLoading": "Erreur de chargement des commentaires",
     "noFeedback": "Aucun commentaire trouvé",
     "showingRecords": "Affichage de {{filtered}} sur {{total}} enregistrements",
-    "urgent": "Urgent",
+    "urgent": "Prioritaire",
     "view": "Afficher"
   },
   "filters": {

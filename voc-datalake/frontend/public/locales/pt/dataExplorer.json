@@ -59,7 +59,7 @@
   "tabs": {
     "categories": "Categorias",
     "categoriesShort": "Categorias",
-    "feedbackShort": "Feedback",
+    "feedbackShort": "Comentários",
     "processedFeedback": "Feedback Processado",
     "s3RawData": "Dados Brutos S3",
     "s3Short": "S3"

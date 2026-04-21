@@ -7,8 +7,8 @@ import type { ProjectPersona } from '../../api/types'
 const mockPersona: ProjectPersona = {
   persona_id: '1',
   name: 'TestUser',
-  description: 'A test persona',
   tagline: 'Test tagline',
+  created_at: '',
 }
 
 const defaultProps = {

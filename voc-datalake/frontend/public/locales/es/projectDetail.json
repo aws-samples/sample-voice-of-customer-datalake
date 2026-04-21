@@ -5,17 +5,17 @@
     "deselectAll": "Deseleccionar todo",
     "docTypes": {
       "custom": "Personalizado",
-      "prd": "PRDs",
-      "prfaq": "PR/FAQs",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
       "research": "Investigación"
     },
     "documents": "Documentos ({{selected}}/{{total}})",
     "generatedPrompt": "Prompt de Kiro Generado",
     "generateFirst": "Genera personas o documentos primero para usar autoseed.",
     "pasteHint": "Pega esto en el chat de Kiro. Requiere un token de API de la pestaña MCP Access.",
-    "personas": "Personas ({{selected}}/{{total}})",
+    "personas": "Arquetipos ({{selected}}/{{total}})",
     "selectAll": "Seleccionar todo",
-    "title": "Kiro Autoseed"
+    "title": "Autosemilla de Kiro"
   },
   "chat": {
     "askPlaceholder": "Pregunta sobre tu proyecto...",
@@ -68,7 +68,7 @@
     "clickToUpload": "Haz clic para cargar o arrastra y suelta",
     "image": "Imagen",
     "imageDesc": "Captura de pantalla o tarjeta",
-    "imageFormats": "PNG, JPG, GIF, WebP",
+    "imageFormats": "Formatos: PNG, JPG, GIF, WebP",
     "importButton": "Importar Persona",
     "importFrom": "Importar Desde",
     "importing": "Importando...",
@@ -157,7 +157,7 @@
     "scope": "Alcance",
     "scopeRead": "Solo lectura — buscar feedback, ver métricas",
     "scopeReadWrite": "Lectura y escritura — incluye chat y generación de documentos",
-    "title": "MCP Access",
+    "title": "Acceso MCP",
     "tokenCreated": "Token creado exitosamente",
     "tokenName": "Nombre del token",
     "tokenNamePlaceholder": "p. ej. Mi token Kiro",
@@ -263,7 +263,7 @@
     "documents": "Documentos",
     "mcpAccess": "Acceso MCP",
     "overview": "Descripción General",
-    "personas": "Personas"
+    "personas": "Arquetipos"
   },
   "wizards": {
     "amazonQuestions": "5 Preguntas de Cliente de Amazon",
@@ -283,7 +283,7 @@
     "personaCount": "Número de Personas: {{count}}",
     "prd": "PRD",
     "prdDesc": "Documento de Requisitos del Producto",
-    "prfaq": "PR-FAQ",
+    "prfaq": "Documento PR-FAQ",
     "prfaqDesc": "Comunicado de Prensa y FAQ estilo Amazon",
     "question1Desc": "Define tu segmento de cliente objetivo. Sé específico sobre demografía, comportamientos y características.",
     "question1Placeholder": "p. ej., Profesionales ocupados de 25-45 años que piden comida a domicilio al menos 3 veces por semana...",

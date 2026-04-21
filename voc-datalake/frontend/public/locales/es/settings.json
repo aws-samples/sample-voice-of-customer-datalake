@@ -78,8 +78,8 @@
     "daysAgo_one": "hace {{count}} d",
     "daysAgo_many": "hace {{count}} d",
     "daysAgo_other": "hace {{count}} d",
-    "errorLabel": "Error:",
-    "errors_one": "{{count}} error",
+    "errorLabel": "Mensaje de error:",
+    "errors_one": "{{count}} error encontrado",
     "errors_many": "{{count}} errores",
     "errors_other": "{{count}} errores",
     "errorsLabel": "Errores:",
@@ -121,7 +121,7 @@
     "rawPreview": "Vista previa sin procesar:",
     "refresh": "Actualizar",
     "runErrors": "{{count}} errores",
-    "runErrors_one": "{{count}} error",
+    "runErrors_one": "{{count}} error registrado",
     "runErrors_many": "{{count}} errores",
     "runErrors_other": "{{count}} errores",
     "scraperRuns": "Ejecuciones de scraper",
@@ -134,7 +134,7 @@
   "subtitle": "Configure su plataforma VoC",
   "tabs": {
     "categories": "Categorías",
-    "general": "General",
+    "general": "Configuración general",
     "logs": "Registros",
     "plugins": "Fuentes de datos",
     "users": "Usuarios"

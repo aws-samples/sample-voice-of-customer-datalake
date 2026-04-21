@@ -5,17 +5,17 @@
     "deselectAll": "Desselecionar tudo",
     "docTypes": {
       "custom": "Personalizado",
-      "prd": "PRDs",
-      "prfaq": "PR/FAQs",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
       "research": "Pesquisa"
     },
     "documents": "Documentos ({{selected}}/{{total}})",
     "generatedPrompt": "Prompt Kiro Gerado",
     "generateFirst": "Gere personas ou documentos primeiro para usar autoseed.",
     "pasteHint": "Cole isso no chat Kiro. Requer um token de API da aba MCP Access.",
-    "personas": "Personas ({{selected}}/{{total}})",
+    "personas": "Arquétipos ({{selected}}/{{total}})",
     "selectAll": "Selecionar tudo",
-    "title": "Kiro Autoseed"
+    "title": "Autoseed do Kiro"
   },
   "chat": {
     "askPlaceholder": "Pergunte sobre seu projeto...",
@@ -68,7 +68,7 @@
     "clickToUpload": "Clique para fazer upload ou arraste e solte",
     "image": "Imagem",
     "imageDesc": "Screenshot ou card",
-    "imageFormats": "PNG, JPG, GIF, WebP",
+    "imageFormats": "Formatos: PNG, JPG, GIF, WebP",
     "importButton": "Importar Persona",
     "importFrom": "Importar De",
     "importing": "Importando...",
@@ -157,7 +157,7 @@
     "scope": "Escopo",
     "scopeRead": "Somente leitura — pesquisar feedback, visualizar métricas",
     "scopeReadWrite": "Leitura e escrita — inclui chat e geração de documentos",
-    "title": "MCP Access",
+    "title": "Acesso MCP",
     "tokenCreated": "Token criado com sucesso",
     "tokenName": "Nome do token",
     "tokenNamePlaceholder": "ex: Meu token Kiro",
@@ -263,7 +263,7 @@
     "documents": "Documentos",
     "mcpAccess": "Acesso MCP",
     "overview": "Visão Geral",
-    "personas": "Personas"
+    "personas": "Arquétipos"
   },
   "wizards": {
     "amazonQuestions": "5 Perguntas do Cliente da Amazon",
@@ -283,7 +283,7 @@
     "personaCount": "Número de Personas: {{count}}",
     "prd": "PRD",
     "prdDesc": "Documento de Requisitos do Produto",
-    "prfaq": "PR-FAQ",
+    "prfaq": "Documento PR-FAQ",
     "prfaqDesc": "Press Release & FAQ no estilo Amazon",
     "question1Desc": "Defina seu segmento de cliente alvo. Seja específico sobre dados demográficos, comportamentos e características.",
     "question1Placeholder": "ex: Profissionais ocupados com 25-45 anos que pedem comida por delivery pelo menos 3x por semana...",

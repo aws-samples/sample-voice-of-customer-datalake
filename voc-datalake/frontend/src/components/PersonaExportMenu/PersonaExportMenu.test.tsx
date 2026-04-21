@@ -14,10 +14,6 @@ describe('PersonaExportMenu', () => {
     tagline: 'Early adopter who loves new technology',
     confidence: 'high',
     feedback_count: 50,
-    goals: ['Stay updated with latest tech', 'Find best deals'],
-    frustrations: ['Slow shipping', 'Poor documentation'],
-    needs: ['Fast delivery', 'Good support'],
-    quote: 'I want the latest and greatest!',
     created_at: '2025-01-15T10:00:00Z',
   }
 
