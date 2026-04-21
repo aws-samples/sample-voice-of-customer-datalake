@@ -20,6 +20,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConfigStore } from '../../store/configStore'
+import { parseLocalDate } from '../../utils/dateUtils'
 
 const rangeValues = ['24h', '48h', '7d', '30d', 'custom'] as const
 
@@ -31,6 +32,16 @@ function isRangeValue(value: string): value is RangeValue {
   return rangeValueSet.has(value)
 }
 
+function formatCustomRange(customDateRange: {
+  start: string;
+  end: string;
+}): string {
+  const startDate = parseLocalDate(customDateRange.start)
+  const endDate = parseLocalDate(customDateRange.end)
+  if (startDate === null || endDate === null) return ''
+  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`
+}
+
 function getDisplayLabel(
   timeRange: string,
   customDateRange: {
@@ -40,7 +51,7 @@ function getDisplayLabel(
   t: (key: string) => string,
 ): string {
   if (timeRange === 'custom' && customDateRange) {
-    return `${format(new Date(customDateRange.start), 'MMM d')} - ${format(new Date(customDateRange.end), 'MMM d')}`
+    return formatCustomRange(customDateRange)
   }
   return t(`timeRange.${timeRange}`)
 }
@@ -54,7 +65,7 @@ function getFullLabel(
   t: (key: string) => string,
 ): string {
   if (timeRange === 'custom' && customDateRange) {
-    return `${format(new Date(customDateRange.start), 'MMM d')} - ${format(new Date(customDateRange.end), 'MMM d')}`
+    return formatCustomRange(customDateRange)
   }
   return t(`timeRange.${timeRange}Full`)
 }

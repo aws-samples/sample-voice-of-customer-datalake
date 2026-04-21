@@ -171,11 +171,10 @@ export default function ChatTab({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const storeMessages = useProjectChatStore((s) => s.messagesByProject[projectId])
+  const messages = useProjectChatStore((s) => s.messagesByProject[projectId] ?? EMPTY_MESSAGES)
   const addStoreMessage = useProjectChatStore((s) => s.addMessage)
   const clearStoreMessages = useProjectChatStore((s) => s.clearMessages)
 
-  const messages: ChatMessage[] = storeMessages
   const setMessages = useCallback(
     (updater: React.SetStateAction<ChatMessage[]>) => {
       const current = useProjectChatStore.getState().messagesByProject[projectId] ?? EMPTY_MESSAGES
