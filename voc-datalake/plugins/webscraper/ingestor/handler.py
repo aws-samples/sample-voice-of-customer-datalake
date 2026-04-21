@@ -9,6 +9,7 @@ from typing import Generator
 from urllib.parse import urljoin, urlparse
 import hashlib
 import json
+import random
 import re
 import time
 
@@ -25,9 +26,16 @@ class WebScraperIngestor(BaseIngestor):
         self.target_scraper_id = target_scraper_id
         self.scraper_configs = self._load_scraper_configs()
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Cache-Control': 'no-cache',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
         }
         self.aggregates_table_name = os.environ.get('AGGREGATES_TABLE', '')
         self.aggregates_table = None
@@ -206,7 +214,9 @@ class WebScraperIngestor(BaseIngestor):
     def _scrape_page(self, config: dict, url: str) -> Generator[dict, None, None]:
         """Scrape a single page based on configuration."""
         try:
-            response = fetch_with_retry(url, headers=self.headers, timeout=15)
+            # Set Referer to the site's root so it looks like in-site navigation
+            page_headers = {**self.headers, 'Referer': f"https://{urlparse(url).netloc}/"}
+            response = fetch_with_retry(url, headers=page_headers, timeout=15)
             if response.status_code == 403:
                 logger.warning(f"Access denied (403) for {url} - site may be blocking automated requests")
                 return
@@ -374,8 +384,8 @@ class WebScraperIngestor(BaseIngestor):
                         'current_url': url
                     })
                     
-                    # Rate limit: wait between page requests to avoid being blocked
-                    time.sleep(1.5)
+                    # Rate limit: randomized delay between pages to avoid bot detection
+                    time.sleep(random.uniform(2.0, 5.0))
                 except Exception as e:
                     error_msg = f"Error scraping {url}: {str(e)}"
                     logger.warning(error_msg)
