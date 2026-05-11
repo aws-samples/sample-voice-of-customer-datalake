@@ -291,11 +291,11 @@ interface UseChatMutationProps {
 export function useChatMutation({ id, onSuccess }: UseChatMutationProps) {
   const projectId = id ?? ''
 
-  return useMutation({ 
-    mutationFn: (params: { message: string; personas: string[]; documents: string[] }) => 
-      api.projectChatStream(projectId, params.message, params.personas, params.documents), 
-    onSuccess: (r) => { 
-      if (r.success) onSuccess(r.response) 
-    } 
+  return useMutation({
+    mutationFn: (params: { message: string; personas: string[]; documents: string[]; history?: { role: 'user' | 'assistant'; content: string }[] }) =>
+      api.projectChatStream(projectId, params.message, params.personas, params.documents, params.history),
+    onSuccess: (r) => {
+      if (r.success) onSuccess(r.response)
+    }
   })
 }

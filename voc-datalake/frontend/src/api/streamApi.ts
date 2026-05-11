@@ -102,20 +102,26 @@ export interface ProjectChatStreamResponse {
   context?: { feedback_count: number; persona_count: number; document_count: number }
 }
 
+export interface HistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export const streamApi = {
-  chatStream: (streamEndpoint: string, message: string, context?: string, days?: number) =>
-    fetchStream<ChatStreamResponse>(streamEndpoint, '/chat/stream', { message, context, days: days || 7 }),
-  
+  chatStream: (streamEndpoint: string, message: string, context?: string, days?: number, history?: HistoryMessage[]) =>
+    fetchStream<ChatStreamResponse>(streamEndpoint, '/chat/stream', { message, context, days: days || 7, history: history ?? [] }),
+
   projectChatStream: (
     streamEndpoint: string,
     projectId: string,
     message: string,
     selectedPersonas?: string[],
-    selectedDocuments?: string[]
+    selectedDocuments?: string[],
+    history?: HistoryMessage[]
   ) =>
     fetchStream<ProjectChatStreamResponse>(
       streamEndpoint,
       `/projects/${projectId}/chat/stream`,
-      { message, selected_personas: selectedPersonas, selected_documents: selectedDocuments }
+      { message, selected_personas: selectedPersonas, selected_documents: selectedDocuments, history: history ?? [] }
     ),
 }

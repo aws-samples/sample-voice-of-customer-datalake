@@ -13,6 +13,7 @@ from shared.aws import get_bedrock_client, BEDROCK_MODEL_ID
 
 # Retry configuration
 DEFAULT_MAX_RETRIES = 5
+MAX_HISTORY_TURNS = 20
 DEFAULT_BASE_DELAY = 1.0  # seconds
 DEFAULT_MAX_DELAY = 30.0  # seconds
 
@@ -29,6 +30,26 @@ class BedrockThrottlingError(Exception):
     pass
 
 
+def _build_messages_with_history(history: list[dict], current_message: str) -> list[dict]:
+    """Build Bedrock Converse API messages array from prior turns + current user message."""
+    messages = []
+    for turn in history:
+        role = turn.get('role', '')
+        content = turn.get('content', '')
+        if role in ('user', 'assistant') and isinstance(content, str) and content.strip():
+            messages.append({'role': role, 'content': [{'text': content}]})
+
+    if len(messages) > MAX_HISTORY_TURNS * 2:
+        messages = messages[-(MAX_HISTORY_TURNS * 2):]
+
+    # Bedrock requires the first message to be from 'user'
+    while messages and messages[0]['role'] != 'user':
+        messages.pop(0)
+
+    messages.append({'role': 'user', 'content': [{'text': current_message}]})
+    return messages
+
+
 def converse(
     prompt: str,
     system_prompt: str = "",
@@ -39,6 +60,7 @@ def converse(
     max_retries: int = DEFAULT_MAX_RETRIES,
     raise_on_throttle: bool = True,
     step_name: str = "unknown",
+    history: list[dict] | None = None,
 ) -> str:
     """
     Simple text completion using Bedrock Converse API with retry support.
@@ -73,9 +95,9 @@ def converse(
         logger.error(f"[BEDROCK] Failed to get Bedrock client: {e}")
         raise
     
-    messages = [{'role': 'user', 'content': [{'text': prompt}]}]
+    messages = _build_messages_with_history(history or [], prompt)
     system = [{'text': system_prompt}] if system_prompt else None
-    
+
     kwargs = {
         'modelId': used_model,
         'messages': messages,
@@ -315,6 +337,7 @@ def converse_with_tools(
     max_tokens: int = 2000,
     max_iterations: int = 4,
     model_id: str | None = None,
+    history: list[dict] | None = None,
 ) -> tuple[str, list]:
     """
     Converse with tool use support (agentic loop).
@@ -334,7 +357,7 @@ def converse_with_tools(
     """
     client = get_bedrock_client()
     
-    messages = [{'role': 'user', 'content': [{'text': prompt}]}]
+    messages = _build_messages_with_history(history or [], prompt)
     tool_config = {'tools': tools}
     collected_metadata = []
     

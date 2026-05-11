@@ -220,11 +220,11 @@ export const api = {
   }),
 
   // Chat with streaming (uses Lambda Function URL to bypass API Gateway timeout)
-  chatStream: async (message: string, context?: string, days?: number): Promise<{ response: string; sources?: FeedbackItem[]; metadata?: { total_feedback: number; days_analyzed: number; urgent_count: number } }> => {
+  chatStream: async (message: string, context?: string, days?: number, history?: { role: 'user' | 'assistant'; content: string }[]): Promise<{ response: string; sources?: FeedbackItem[]; metadata?: { total_feedback: number; days_analyzed: number; urgent_count: number } }> => {
     const streamEndpoint = await getStreamUrl()
     if (!streamEndpoint) return api.chat(message, context)
     const { streamApi } = await import('./streamApi')
-    return streamApi.chatStream(streamEndpoint, message, context, days)
+    return streamApi.chatStream(streamEndpoint, message, context, days, history)
   },
 
   // Data Source Schedules
@@ -402,11 +402,11 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
   projectChat: (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) =>
     import('./projectsApi').then(m => m.projectsApi.projectChat(projectId, message, selectedPersonas, selectedDocuments)),
-  projectChatStream: async (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) => {
+  projectChatStream: async (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[], history?: { role: 'user' | 'assistant'; content: string }[]) => {
     const streamEndpoint = await getStreamUrl()
     if (!streamEndpoint) return api.projectChat(projectId, message, selectedPersonas, selectedDocuments)
     const { streamApi } = await import('./streamApi')
-    return streamApi.projectChatStream(streamEndpoint, projectId, message, selectedPersonas, selectedDocuments)
+    return streamApi.projectChatStream(streamEndpoint, projectId, message, selectedPersonas, selectedDocuments, history)
   },
   runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
     import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),

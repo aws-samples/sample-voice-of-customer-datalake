@@ -70,9 +70,10 @@ export default function ProjectDetail() {
 
   // Handlers
   const handleSendChat = useCallback((message: string, personaIds: string[], documentIds: string[]) => {
+    const history = chatMessages.map(m => ({ role: m.role, content: m.content }))
     setChatMessages(p => [...p, { role: 'user', content: message }])
-    chatMut.mutate({ message, personas: personaIds, documents: documentIds })
-  }, [chatMut])
+    chatMut.mutate({ message, personas: personaIds, documents: documentIds, history })
+  }, [chatMut, chatMessages])
 
   const handleImportPersona = useCallback(() => {
     importPersonaMut.mutate(

@@ -44,6 +44,7 @@ def chat():
     """AI chat endpoint for querying feedback data using Bedrock."""
     body = app.current_event.json_body
     message = body.get('message', '')
+    history = body.get('history', [])
     
     params = app.current_event.query_string_parameters or {}
     days = validate_days(params.get('days'), default=7)
@@ -145,6 +146,7 @@ Top Categories: {', '.join([f"{cat}: {count}" for cat, count in sorted(category_
             prompt=f"{data_context}\n\nQuestion: {message}",
             system_prompt=system_prompt,
             max_tokens=1500,
+            history=history,
         )
         
         return {

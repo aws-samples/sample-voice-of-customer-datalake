@@ -15,7 +15,7 @@ from shared.api import (
     validate_days, get_configured_categories, sum_daily_metric,
     api_handler, json_response, error_response
 )
-from shared.converse import get_search_feedback_tool
+from shared.converse import get_search_feedback_tool, _build_messages_with_history
 from shared.project_chat import build_chat_context
 
 # AWS Clients
@@ -58,6 +58,7 @@ def project_chat_handler(event, context):
             return error_response('Project ID required', 400)
         
         message = body.get('message', '')
+        history = body.get('history', [])
         system_prompt, user_message, metadata = build_chat_context(
             projects_table,
             feedback_table,
@@ -70,6 +71,19 @@ def project_chat_handler(event, context):
         if system_prompt is None:
             return error_response(metadata.get('error', 'Project not found'), 404)
         
+        # Build message list with conversation history (Anthropic Messages API format)
+        anthropic_messages = []
+        for turn in history:
+            role = turn.get('role', '')
+            content = turn.get('content', '')
+            if role in ('user', 'assistant') and isinstance(content, str) and content.strip():
+                anthropic_messages.append({'role': role, 'content': content})
+        if len(anthropic_messages) > 40:
+            anthropic_messages = anthropic_messages[-40:]
+        while anthropic_messages and anthropic_messages[0]['role'] != 'user':
+            anthropic_messages.pop(0)
+        anthropic_messages.append({'role': 'user', 'content': user_message})
+
         # Call Bedrock with streaming
         response = bedrock.invoke_model_with_response_stream(
             modelId=BEDROCK_MODEL_ID,
@@ -79,7 +93,7 @@ def project_chat_handler(event, context):
                 'anthropic_version': 'bedrock-2023-05-31',
                 'max_tokens': 3000,
                 'system': system_prompt,
-                'messages': [{'role': 'user', 'content': user_message}]
+                'messages': anthropic_messages
             })
         )
         
@@ -404,11 +418,12 @@ def voc_chat_handler(event, context):
         message = body.get('message', '')
         if not message:
             return error_response('Message is required', 400)
-        
+
+        history = body.get('history', [])
         system_prompt, user_message, metadata = get_voc_chat_context(body)
         filters = metadata.get('filters', {})
-        
-        messages = [{'role': 'user', 'content': [{'text': user_message}]}]
+
+        messages = _build_messages_with_history(history, user_message)
         sources = []
         tool_config = {'tools': [get_search_feedback_tool()]}
         

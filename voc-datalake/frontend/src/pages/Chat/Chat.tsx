@@ -158,15 +158,15 @@ export default function Chat() {
   }
 
   const chatMutation = useMutation({
-    mutationFn: async ({ message, conversationId }: { message: string; conversationId: string }) => {
+    mutationFn: async ({ message, conversationId, history }: { message: string; conversationId: string; history: { role: 'user' | 'assistant'; content: string }[] }) => {
       const contextParts = [`Time range: last ${days} days`]
       if (filters.source) contextParts.push(`Source: ${filters.source}`)
       if (filters.category) contextParts.push(`Category: ${filters.category}`)
       if (filters.sentiment) contextParts.push(`Sentiment: ${filters.sentiment}`)
-      
+
       const context = contextParts.join('. ')
       // Use streaming endpoint for better performance (bypasses API Gateway 29s timeout)
-      const response = await api.chatStream(message, context, days)
+      const response = await api.chatStream(message, context, days, history)
       return { response, conversationId }
     },
     onSuccess: ({ response, conversationId }) => {
@@ -190,9 +190,10 @@ export default function Chat() {
     if (!input.trim() || chatMutation.isPending) return
 
     const conversationId = activeConversationId ?? createConversation()
+    const history = (activeConversation?.messages ?? []).map(m => ({ role: m.role, content: m.content }))
 
     addMessage(conversationId, { role: 'user', content: input, filters })
-    chatMutation.mutate({ message: input, conversationId })
+    chatMutation.mutate({ message: input, conversationId, history })
     setInput('')
   }
 
