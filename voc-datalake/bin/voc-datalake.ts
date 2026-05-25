@@ -49,7 +49,11 @@ let bedrockAccessStack: BedrockAccessStack | undefined;
 if (anthropicUseCaseRaw) {
   // Validate the config using Zod schema
   const parseResult = AnthropicUseCaseSchema.safeParse(anthropicUseCaseRaw);
-  const skipUseCaseSubmission = app.node.tryGetContext('skipUseCaseSubmission') === true;
+  // Accept either boolean true (from cdk.context.json) or string "true"
+  // (from `--context skipUseCaseSubmission=true` on the CLI, which CDK always
+  // parses as a string).
+  const skipRaw = app.node.tryGetContext('skipUseCaseSubmission');
+  const skipUseCaseSubmission = skipRaw === true || skipRaw === 'true';
   
   if (parseResult.success) {
     bedrockAccessStack = new BedrockAccessStack(app, 'BedrockAccessStack', {
