@@ -353,6 +353,7 @@ export class VocCoreStack extends cdk.Stack {
       userPoolName: uniqueName('voc-user-pool'),
       selfSignUpEnabled: false,
       signInAliases: { email: true, username: true },
+      signInCaseSensitive: false,
       autoVerify: { email: true },
       standardAttributes: {
         email: { required: true, mutable: true },
@@ -374,20 +375,28 @@ export class VocCoreStack extends cdk.Stack {
       },
       userInvitation: {
         emailSubject: 'VoC Analytics - Welcome! Set up your account',
-        emailBody: `Welcome to VoC Analytics!
-
-You have been invited to join the platform.
-
-To get started:
-1. Go to ${signInUrl}
-2. Enter your email address
-3. Use this temporary password: {####}
-4. Set your new password when prompted
-
-(Your account ID for reference: {username})
-
-Best regards,
-The VoC Analytics Team`,
+        emailBody: `<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
+  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+    <h1 style="margin: 0;">Welcome to VoC Analytics</h1>
+  </div>
+  <div style="padding: 30px; background: #f9f9f9;">
+    <p>You have been invited to join the platform.</p>
+    <p><strong>To get started:</strong></p>
+    <ol>
+      <li>Go to <a href="${signInUrl}" style="color: #667eea;">${signInUrl}</a></li>
+      <li>Enter your email address</li>
+      <li>Use this temporary password:
+        <div style="font-family: monospace; font-size: 18px; font-weight: bold; color: #667eea; margin: 8px 0;">{####}</div>
+      </li>
+      <li>Set your new password when prompted</li>
+    </ol>
+    <p style="color: #666; font-size: 13px;">(Your account ID for reference: {username})</p>
+    <p style="margin-top: 24px;">Best regards,<br>The VoC Analytics Team</p>
+  </div>
+</body>
+</html>`,
       },
       lambdaTriggers: { customMessage: customMessageLambda },
     });
