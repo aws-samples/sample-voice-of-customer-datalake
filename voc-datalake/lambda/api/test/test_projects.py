@@ -282,3 +282,116 @@ class TestGenerateAvatarPromptWithLlm:
         result = generate_avatar_prompt_with_llm(persona_data, mock_bedrock)
         
         assert 'Professional headshot' in result
+
+
+class TestGeneratePersonasDeduplication:
+    """Tests for generate_personas passing existing personas to LLM to avoid duplicates."""
+
+    @patch('projects.generate_persona_avatar')
+    @patch('projects.converse_chain')
+    @patch('projects.get_persona_generation_steps')
+    @patch('projects.get_feedback_context')
+    @patch('projects.projects_table')
+    def test_includes_existing_personas_in_custom_instructions(
+        self, mock_table, mock_get_feedback, mock_get_steps, mock_converse_chain, mock_avatar
+    ):
+        """Passes existing persona details to LLM so it generates different ones."""
+        # Arrange
+        existing_persona = {
+            'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#persona_1',
+            'persona_id': 'persona_1',
+            'name': 'Sarah Chen',
+            'tagline': 'The Frustrated Power User',
+            'confidence': 'high',
+            'identity': {'age_range': '30-40', 'occupation': 'Engineer'},
+            'goals_motivations': {'primary_goal': 'Save time'},
+            'pain_points': {'current_challenges': ['Slow UI']},
+            'behaviors': {'tech_savviness': 'high'},
+            'context_environment': {'devices': ['MacBook']},
+            'quotes': [{'text': 'Too slow!', 'context': 'review'}],
+            'scenario': {'title': 'Daily workflow'},
+            'avatar_url': 's3://bucket/avatar.png',
+            'llm_metadata': {'model': 'test'},
+            'source_feedback_ids': ['fb1', 'fb2'],
+        }
+        mock_table.query.return_value = {'Items': [existing_persona]}
+        mock_get_feedback.return_value = [
+            {'feedback_id': 'fb1', 'original_text': 'Great product', 'source_platform': 'webscraper'}
+        ]
+        mock_get_steps.return_value = [
+            {'user_prompt': '', 'system_prompt': '', 'max_tokens': 4000},
+            {'user_prompt': '', 'system_prompt': '', 'max_tokens': 9000},
+            {'user_prompt': '', 'system_prompt': '', 'max_tokens': 3000},
+        ]
+        mock_converse_chain.return_value = [
+            'analysis text',
+            json.dumps([{
+                'name': 'Mike Johnson', 'tagline': 'The Casual Browser',
+                'confidence': 'medium', 'identity': {}, 'goals_motivations': {},
+                'pain_points': {}, 'behaviors': {}, 'context_environment': {},
+                'quotes': [], 'scenario': {},
+            }]),
+            'validation text'
+        ]
+        mock_table.put_item.return_value = {}
+        mock_table.update_item.return_value = {}
+        mock_avatar.return_value = {}
+
+        from projects import generate_personas
+
+        # Act
+        generate_personas('proj-1', {'persona_count': 1, 'days': 7})
+
+        # Assert - custom_instructions passed to get_persona_generation_steps contains existing persona
+        call_kwargs = mock_get_steps.call_args.kwargs
+        custom = call_kwargs['custom_instructions']
+        assert 'Sarah Chen' in custom
+        assert 'The Frustrated Power User' in custom
+        assert 'Save time' in custom
+        assert 'COMPLETELY DIFFERENT' in custom
+        # Internal fields should NOT be present
+        assert 'avatar_url' not in custom
+        assert 'source_feedback_ids' not in custom
+        assert 'llm_metadata' not in custom
+
+    @patch('projects.generate_persona_avatar')
+    @patch('projects.converse_chain')
+    @patch('projects.get_persona_generation_steps')
+    @patch('projects.get_feedback_context')
+    @patch('projects.projects_table')
+    def test_skips_deduplication_when_no_existing_personas(
+        self, mock_table, mock_get_feedback, mock_get_steps, mock_converse_chain, mock_avatar
+    ):
+        """Does not add deduplication instructions when project has no personas."""
+        # Arrange
+        mock_table.query.return_value = {'Items': []}
+        mock_get_feedback.return_value = [
+            {'feedback_id': 'fb1', 'original_text': 'Nice', 'source_platform': 'webscraper'}
+        ]
+        mock_get_steps.return_value = [
+            {'user_prompt': '', 'system_prompt': '', 'max_tokens': 4000},
+            {'user_prompt': '', 'system_prompt': '', 'max_tokens': 9000},
+            {'user_prompt': '', 'system_prompt': '', 'max_tokens': 3000},
+        ]
+        mock_converse_chain.return_value = [
+            'analysis',
+            json.dumps([{
+                'name': 'New Persona', 'tagline': 'Tag', 'confidence': 'medium',
+                'identity': {}, 'goals_motivations': {}, 'pain_points': {},
+                'behaviors': {}, 'context_environment': {}, 'quotes': [], 'scenario': {},
+            }]),
+            'validation'
+        ]
+        mock_table.put_item.return_value = {}
+        mock_table.update_item.return_value = {}
+        mock_avatar.return_value = {}
+
+        from projects import generate_personas
+
+        # Act
+        generate_personas('proj-1', {'persona_count': 1, 'days': 7})
+
+        # Assert
+        call_kwargs = mock_get_steps.call_args.kwargs
+        custom = call_kwargs['custom_instructions']
+        assert 'COMPLETELY DIFFERENT' not in custom

@@ -295,6 +295,22 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     generate_avatars = filters.get('generate_avatars', True)
     logger.info(f"[PERSONA] Config: persona_count={persona_count}, generate_avatars={generate_avatars}")
     
+    # Fetch existing personas to avoid generating duplicates
+    existing_personas = projects_table.query(
+        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#')
+    ).get('Items', [])
+    if existing_personas:
+        _keep = ('name', 'tagline', 'confidence', 'identity', 'goals_motivations',
+                 'pain_points', 'behaviors', 'context_environment', 'quotes', 'scenario')
+        existing_summary = json.dumps(
+            [{k: p[k] for k in _keep if k in p} for p in existing_personas], default=str
+        )
+        custom_instructions = (
+            f"{custom_instructions}\n\n"
+            f"IMPORTANT: The following personas already exist for this project. "
+            f"Generate COMPLETELY DIFFERENT personas that do NOT overlap with these:\n{existing_summary}"
+        ).strip()
+    
     logger.info("[PERSONA] Step 1/6: Fetching feedback data...")
     update_progress(5, 'fetching_feedback')
     
