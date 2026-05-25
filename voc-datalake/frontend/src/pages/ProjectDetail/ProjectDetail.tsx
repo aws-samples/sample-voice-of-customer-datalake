@@ -17,6 +17,7 @@ import ProjectHeader from './ProjectHeader'
 import ProjectTabs from './ProjectTabs'
 import WizardSection from './WizardSection'
 import TabContent from './TabContent'
+import JobsSection from './JobsSection'
 import { PersonaEditModalWrapper, ImportPersonaModalWrapper, DocumentModalWrapper, ConfirmModalWrapper } from './ProjectModals'
 
 export default function ProjectDetail() {
@@ -166,12 +167,14 @@ export default function ProjectDetail() {
         onSubmitMerge={() => { wizard.setGenerating('merge'); mergeMut.mutate() }}
       />
 
+      {/* Background jobs are visible regardless of which tab is active */}
+      <JobsSection jobs={jobs} onDismiss={(jobId) => dismissJobMut.mutate(jobId)} />
+
       <TabContent
         activeTab={activeTab}
         project={project}
         personas={personas}
         documents={documents}
-        jobs={jobs}
         selectedPersona={selection.selectedPersona}
         selectedDoc={selection.selectedDoc}
         chatMessages={chatMessages}
@@ -182,7 +185,6 @@ export default function ProjectDetail() {
         onGenerateDoc={() => wizard.setActiveWizard('doc')}
         onRunResearch={() => wizard.setActiveWizard('research')}
         onRemixDocuments={wizard.openMergeWizard}
-        onDismissJob={(jobId) => dismissJobMut.mutate(jobId)}
         onSaveKiroPrompt={handleSaveKiroPrompt}
         onSelectPersona={selection.setSelectedPersona}
         onEditPersona={() => selection.selectedPersona && selection.setEditingPersona(selection.selectedPersona)}

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import OverviewTab from './OverviewTab'
-import type { Project, ProjectPersona, ProjectDocument, ProjectJob } from '../../api/client'
+import type { Project, ProjectPersona, ProjectDocument } from '../../api/client'
 
 const mockProject: Project = {
   project_id: 'proj-1',
@@ -16,12 +16,10 @@ const defaultProps = {
   project: mockProject,
   personas: [] as ProjectPersona[],
   documents: [] as ProjectDocument[],
-  jobs: [] as ProjectJob[],
   onGeneratePersonas: vi.fn(),
   onGenerateDoc: vi.fn(),
   onRunResearch: vi.fn(),
   onRemixDocuments: vi.fn(),
-  onDismissJob: vi.fn(),
   onSaveKiroPrompt: vi.fn(),
 }
 
