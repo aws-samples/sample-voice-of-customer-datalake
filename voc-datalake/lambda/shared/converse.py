@@ -30,23 +30,34 @@ class BedrockThrottlingError(Exception):
     pass
 
 
-def _build_messages_with_history(history: list[dict], current_message: str) -> list[dict]:
-    """Build Bedrock Converse API messages array from prior turns + current user message."""
+def _build_messages_with_history(
+    history: list[dict],
+    current_message: str,
+    format: str = 'converse',
+) -> list[dict]:
+    """Build messages array from prior turns + current user message.
+
+    format='converse' returns Bedrock Converse API shape (content as text blocks).
+    format='anthropic' returns Anthropic Messages API shape (content as plain string).
+    """
+    def wrap(text: str):
+        return [{'text': text}] if format == 'converse' else text
+
     messages = []
     for turn in history:
         role = turn.get('role', '')
         content = turn.get('content', '')
         if role in ('user', 'assistant') and isinstance(content, str) and content.strip():
-            messages.append({'role': role, 'content': [{'text': content}]})
+            messages.append({'role': role, 'content': wrap(content)})
 
-    if len(messages) > MAX_HISTORY_TURNS * 2:
-        messages = messages[-(MAX_HISTORY_TURNS * 2):]
+    if len(messages) > MAX_HISTORY_TURNS:
+        messages = messages[-MAX_HISTORY_TURNS:]
 
     # Bedrock requires the first message to be from 'user'
     while messages and messages[0]['role'] != 'user':
         messages.pop(0)
 
-    messages.append({'role': 'user', 'content': [{'text': current_message}]})
+    messages.append({'role': 'user', 'content': wrap(current_message)})
     return messages
 
 
@@ -334,7 +345,7 @@ def converse_with_tools(
     system_prompt: str,
     tools: list[dict],
     tool_executor: Callable[[str, dict], str],
-    max_tokens: int = 2000,
+    max_tokens: int = 4096,
     max_iterations: int = 4,
     model_id: str | None = None,
     history: list[dict] | None = None,

@@ -232,16 +232,73 @@ class TestProjectChatHandler:
     def test_returns_error_when_project_id_missing(self):
         """Returns 400 when project_id not in path."""
         from chat_stream_handler import project_chat_handler
-        
+
         event = {
             'body': json.dumps({'message': 'Hello'}),
             'rawPath': '/invalid/path'
         }
         context = MagicMock()
-        
+
         response = project_chat_handler(event, context)
-        
+
         assert response['statusCode'] == 400
+
+    @patch('chat_stream_handler.bedrock')
+    @patch('chat_stream_handler.build_chat_context')
+    def test_forwards_history_in_anthropic_format(self, mock_context, mock_bedrock):
+        """Threads history to Bedrock as Anthropic Messages (string content)."""
+        mock_context.return_value = ('SYS', 'current question', {})
+        mock_bedrock.invoke_model_with_response_stream.return_value = {'body': []}
+
+        from chat_stream_handler import project_chat_handler
+
+        event = {
+            'body': json.dumps({
+                'message': 'current question',
+                'history': [
+                    {'role': 'user', 'content': 'first'},
+                    {'role': 'assistant', 'content': 'reply 1'},
+                ],
+            }),
+            'rawPath': '/projects/proj-123/chat/stream',
+        }
+        context = MagicMock()
+
+        project_chat_handler(event, context)
+
+        body = json.loads(
+            mock_bedrock.invoke_model_with_response_stream.call_args.kwargs['body']
+        )
+        assert body['messages'] == [
+            {'role': 'user', 'content': 'first'},
+            {'role': 'assistant', 'content': 'reply 1'},
+            {'role': 'user', 'content': 'current question'},
+        ]
+        assert body['max_tokens'] == 4096
+
+    @patch('chat_stream_handler.bedrock')
+    @patch('chat_stream_handler.build_chat_context')
+    def test_handles_missing_history(self, mock_context, mock_bedrock):
+        """Works with no history field; sends only the current message."""
+        mock_context.return_value = ('SYS', 'just a question', {})
+        mock_bedrock.invoke_model_with_response_stream.return_value = {'body': []}
+
+        from chat_stream_handler import project_chat_handler
+
+        event = {
+            'body': json.dumps({'message': 'just a question'}),
+            'rawPath': '/projects/proj-123/chat/stream',
+        }
+        context = MagicMock()
+
+        project_chat_handler(event, context)
+
+        body = json.loads(
+            mock_bedrock.invoke_model_with_response_stream.call_args.kwargs['body']
+        )
+        assert body['messages'] == [
+            {'role': 'user', 'content': 'just a question'},
+        ]
 
 
 class TestVocChatHandler:
@@ -294,3 +351,38 @@ class TestVocChatHandler:
         body = json.loads(response['body'])
         assert body['response'] == 'Hello! How can I help you?'
         assert body['metadata']['tool_used'] is False
+
+    @patch('chat_stream_handler.bedrock')
+    @patch('chat_stream_handler.get_aggregated_metrics')
+    def test_forwards_history_to_bedrock(self, mock_metrics, mock_bedrock):
+        """History turns are threaded into the Bedrock Converse request."""
+        mock_metrics.return_value = {
+            'total': 0,
+            'sentiment': {'positive': 0, 'negative': 0, 'neutral': 0, 'mixed': 0},
+            'categories': {},
+            'urgent': 0,
+        }
+        mock_bedrock.converse.return_value = {
+            'stopReason': 'end_turn',
+            'output': {'message': {'content': [{'text': 'response'}]}},
+        }
+
+        from chat_stream_handler import voc_chat_handler
+
+        event = {
+            'body': json.dumps({
+                'message': 'follow-up',
+                'history': [
+                    {'role': 'user', 'content': 'first'},
+                    {'role': 'assistant', 'content': 'reply 1'},
+                ],
+            })
+        }
+        voc_chat_handler(event, MagicMock())
+
+        sent_messages = mock_bedrock.converse.call_args.kwargs['messages']
+        assert sent_messages[0] == {'role': 'user', 'content': [{'text': 'first'}]}
+        assert sent_messages[1] == {'role': 'assistant', 'content': [{'text': 'reply 1'}]}
+        assert sent_messages[-1]['role'] == 'user'
+        # Last message wraps the user_message built from the current question
+        assert 'follow-up' in sent_messages[-1]['content'][0]['text']

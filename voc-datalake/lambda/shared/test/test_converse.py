@@ -736,6 +736,232 @@ class TestProcessToolUses:
         ]
         
         results, metadata = _process_tool_uses(content, lambda n, i: ('result', None))
-        
+
         assert len(results) == 1
         assert metadata == []
+
+
+class TestBuildMessagesWithHistory:
+    """Tests for _build_messages_with_history helper function."""
+
+    def test_empty_history_returns_only_current_message(self):
+        """Returns single user message when history is empty."""
+        from shared.converse import _build_messages_with_history
+
+        result = _build_messages_with_history([], 'Hello')
+
+        assert result == [{'role': 'user', 'content': [{'text': 'Hello'}]}]
+
+    def test_includes_valid_history_turns(self):
+        """Preserves valid user/assistant turns and appends current message."""
+        from shared.converse import _build_messages_with_history
+
+        history = [
+            {'role': 'user', 'content': 'Hi'},
+            {'role': 'assistant', 'content': 'Hello!'},
+        ]
+        result = _build_messages_with_history(history, 'How are you?')
+
+        assert result == [
+            {'role': 'user', 'content': [{'text': 'Hi'}]},
+            {'role': 'assistant', 'content': [{'text': 'Hello!'}]},
+            {'role': 'user', 'content': [{'text': 'How are you?'}]},
+        ]
+
+    def test_skips_invalid_roles(self):
+        """Skips turns with roles other than user/assistant."""
+        from shared.converse import _build_messages_with_history
+
+        history = [
+            {'role': 'user', 'content': 'Hi'},
+            {'role': 'system', 'content': 'system note'},
+            {'role': 'tool', 'content': 'tool output'},
+            {'role': 'assistant', 'content': 'Hello!'},
+        ]
+        result = _build_messages_with_history(history, 'Q')
+
+        roles = [m['role'] for m in result]
+        assert roles == ['user', 'assistant', 'user']
+
+    def test_skips_non_string_content(self):
+        """Skips turns whose content is not a string."""
+        from shared.converse import _build_messages_with_history
+
+        history = [
+            {'role': 'user', 'content': 'Hi'},
+            {'role': 'assistant', 'content': None},
+            {'role': 'user', 'content': 123},
+            {'role': 'assistant', 'content': ['a', 'b']},
+        ]
+        result = _build_messages_with_history(history, 'Q')
+
+        assert len(result) == 2  # one valid history + current
+        assert result[0]['content'] == [{'text': 'Hi'}]
+
+    def test_skips_empty_or_whitespace_content(self):
+        """Skips turns with empty or whitespace-only content."""
+        from shared.converse import _build_messages_with_history
+
+        history = [
+            {'role': 'user', 'content': ''},
+            {'role': 'assistant', 'content': '   '},
+            {'role': 'user', 'content': 'real message'},
+        ]
+        result = _build_messages_with_history(history, 'Q')
+
+        assert len(result) == 2
+        assert result[0]['content'] == [{'text': 'real message'}]
+
+    def test_caps_history_at_max_history_turns(self):
+        """Trims history to MAX_HISTORY_TURNS messages, keeping the most recent."""
+        from shared.converse import _build_messages_with_history, MAX_HISTORY_TURNS
+
+        history = []
+        for i in range(MAX_HISTORY_TURNS + 10):
+            role = 'user' if i % 2 == 0 else 'assistant'
+            history.append({'role': role, 'content': f'msg{i}'})
+
+        result = _build_messages_with_history(history, 'current')
+
+        # MAX_HISTORY_TURNS history messages + 1 current
+        assert len(result) == MAX_HISTORY_TURNS + 1
+        # Most recent history messages should be preserved
+        assert result[-2]['content'] == [{'text': f'msg{MAX_HISTORY_TURNS + 9}'}]
+
+    def test_first_message_must_be_user(self):
+        """Drops leading assistant messages so first is from user."""
+        from shared.converse import _build_messages_with_history
+
+        history = [
+            {'role': 'assistant', 'content': 'Sure thing'},
+            {'role': 'user', 'content': 'Then what?'},
+            {'role': 'assistant', 'content': 'Then this.'},
+        ]
+        result = _build_messages_with_history(history, 'Got it')
+
+        assert result[0]['role'] == 'user'
+        assert result[0]['content'] == [{'text': 'Then what?'}]
+
+    def test_appends_current_message_last(self):
+        """Current message is always the last entry and from user."""
+        from shared.converse import _build_messages_with_history
+
+        history = [
+            {'role': 'user', 'content': 'Hi'},
+            {'role': 'assistant', 'content': 'Hi back'},
+        ]
+        result = _build_messages_with_history(history, 'final question')
+
+        assert result[-1] == {'role': 'user', 'content': [{'text': 'final question'}]}
+
+    def test_anthropic_format_uses_string_content(self):
+        """format='anthropic' returns content as plain strings."""
+        from shared.converse import _build_messages_with_history
+
+        history = [
+            {'role': 'user', 'content': 'Hi'},
+            {'role': 'assistant', 'content': 'Hello!'},
+        ]
+        result = _build_messages_with_history(history, 'How are you?', format='anthropic')
+
+        assert result == [
+            {'role': 'user', 'content': 'Hi'},
+            {'role': 'assistant', 'content': 'Hello!'},
+            {'role': 'user', 'content': 'How are you?'},
+        ]
+
+    def test_converse_format_is_default(self):
+        """Default format wraps content in [{'text': ...}] blocks."""
+        from shared.converse import _build_messages_with_history
+
+        result = _build_messages_with_history([], 'Hello')
+
+        assert result == [{'role': 'user', 'content': [{'text': 'Hello'}]}]
+
+    def test_anthropic_format_drops_leading_assistant(self):
+        """First-must-be-user rule still applies in anthropic format."""
+        from shared.converse import _build_messages_with_history
+
+        history = [
+            {'role': 'assistant', 'content': 'Greetings'},
+            {'role': 'user', 'content': 'Hi'},
+        ]
+        result = _build_messages_with_history(history, 'Q', format='anthropic')
+
+        assert result[0] == {'role': 'user', 'content': 'Hi'}
+
+
+class TestConverseHistory:
+    """Tests for converse() honoring conversation history."""
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_passes_history_to_bedrock(self, mock_get_client):
+        """History turns are forwarded to Bedrock messages."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'reply'}]}}
+        }
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        history = [
+            {'role': 'user', 'content': 'first'},
+            {'role': 'assistant', 'content': 'reply 1'},
+        ]
+        converse('second', history=history)
+
+        sent_messages = mock_client.converse.call_args.kwargs['messages']
+        assert sent_messages == [
+            {'role': 'user', 'content': [{'text': 'first'}]},
+            {'role': 'assistant', 'content': [{'text': 'reply 1'}]},
+            {'role': 'user', 'content': [{'text': 'second'}]},
+        ]
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_works_without_history(self, mock_get_client):
+        """No history defaults to single current message."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'reply'}]}}
+        }
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        converse('hello')
+
+        sent_messages = mock_client.converse.call_args.kwargs['messages']
+        assert sent_messages == [{'role': 'user', 'content': [{'text': 'hello'}]}]
+
+
+class TestConverseWithToolsHistory:
+    """Tests for converse_with_tools() honoring conversation history."""
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_seeds_messages_with_history(self, mock_get_client):
+        """History turns seed the messages list passed to Bedrock."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'answer'}]}},
+            'stopReason': 'end_turn',
+        }
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse_with_tools
+        history = [
+            {'role': 'user', 'content': 'previous'},
+            {'role': 'assistant', 'content': 'prior reply'},
+        ]
+        converse_with_tools(
+            prompt='now',
+            system_prompt='sys',
+            tools=[],
+            tool_executor=lambda n, i: ('r', None),
+            history=history,
+        )
+
+        sent_messages = mock_client.converse.call_args.kwargs['messages']
+        assert sent_messages == [
+            {'role': 'user', 'content': [{'text': 'previous'}]},
+            {'role': 'assistant', 'content': [{'text': 'prior reply'}]},
+            {'role': 'user', 'content': [{'text': 'now'}]},
+        ]

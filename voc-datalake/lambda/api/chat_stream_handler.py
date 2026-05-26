@@ -72,17 +72,7 @@ def project_chat_handler(event, context):
             return error_response(metadata.get('error', 'Project not found'), 404)
         
         # Build message list with conversation history (Anthropic Messages API format)
-        anthropic_messages = []
-        for turn in history:
-            role = turn.get('role', '')
-            content = turn.get('content', '')
-            if role in ('user', 'assistant') and isinstance(content, str) and content.strip():
-                anthropic_messages.append({'role': role, 'content': content})
-        if len(anthropic_messages) > 40:
-            anthropic_messages = anthropic_messages[-40:]
-        while anthropic_messages and anthropic_messages[0]['role'] != 'user':
-            anthropic_messages.pop(0)
-        anthropic_messages.append({'role': 'user', 'content': user_message})
+        anthropic_messages = _build_messages_with_history(history, user_message, format='anthropic')
 
         # Call Bedrock with streaming
         response = bedrock.invoke_model_with_response_stream(
@@ -91,7 +81,7 @@ def project_chat_handler(event, context):
             accept='application/json',
             body=json.dumps({
                 'anthropic_version': 'bedrock-2023-05-31',
-                'max_tokens': 3000,
+                'max_tokens': 4096,
                 'system': system_prompt,
                 'messages': anthropic_messages
             })
@@ -439,7 +429,7 @@ def voc_chat_handler(event, context):
                 system=[{'text': system_prompt}],
                 messages=messages,
                 toolConfig=tool_config,
-                inferenceConfig={'maxTokens': 2000}
+                inferenceConfig={'maxTokens': 4096}
             )
             
             output = response.get('output', {})
