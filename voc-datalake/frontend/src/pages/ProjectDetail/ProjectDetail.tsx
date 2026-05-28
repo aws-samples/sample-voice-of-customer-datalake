@@ -12,6 +12,7 @@ import {
 } from 'react-router-dom'
 import { projectsApi } from '../../api/projectsApi'
 import { useConfigStore } from '../../store/configStore'
+import JobsSection from './JobsSection'
 import ProjectHeader from './ProjectHeader'
 import {
   PersonaEditModalWrapper, ImportPersonaModalWrapper, DocumentModalWrapper, ConfirmModalWrapper,
@@ -215,7 +216,7 @@ export default function ProjectDetail() {
       />
 
       {/* Background jobs are visible regardless of which tab is active */}
-      <JobsSection jobs={jobs} onDismiss={(jobId) => dismissJobMut.mutate(jobId)} />
+      <JobsSection jobs={jobs} onDismiss={(jobId: string) => dismissJobMut.mutate(jobId)} />
 
       <TabContent
         activeTab={activeTab}

@@ -10,7 +10,7 @@ import type {
   Tab, NoteItem,
 } from './types'
 import type {
-  Project, ProjectPersona, ProjectDocument, ProjectJob,
+  Project, ProjectPersona, ProjectDocument,
 } from '../../api/types'
 
 interface TabContentProps {

@@ -5,10 +5,9 @@ import {
   Users, FileText, Search, Sparkles, Shuffle,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import JobsSection from './JobsSection'
 import KiroExportSettings from './KiroExportSettings'
 import type {
-  ProjectPersona, ProjectDocument, Project, ProjectJob,
+  ProjectPersona, ProjectDocument, Project,
 } from '../../api/types'
 
 interface OverviewTabProps {
@@ -35,10 +34,6 @@ export default function OverviewTab({
 
   return (
     <div className="space-y-6">
-      {/* Running Jobs Section */}
-      <JobsSection jobs={jobs} onDismiss={onDismissJob} />
-
-
       {/* Action Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
         <ActionCard

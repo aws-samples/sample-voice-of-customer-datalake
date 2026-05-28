@@ -4,6 +4,7 @@ Handles individual steps of the research workflow orchestrated by Step Functions
 Each step can run up to 15 minutes, allowing for deep analysis.
 """
 
+import json
 import os
 from datetime import datetime, timezone
 from typing import Any
