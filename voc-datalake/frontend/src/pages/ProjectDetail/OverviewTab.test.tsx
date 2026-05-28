@@ -25,12 +25,10 @@ const defaultProps = {
   project: mockProject,
   personas: [] as ProjectPersona[],
   documents: [] as ProjectDocument[],
-  jobs: [] as ProjectJob[],
   onGeneratePersonas: vi.fn(),
   onGenerateDoc: vi.fn(),
   onRunResearch: vi.fn(),
   onRemixDocuments: vi.fn(),
-  onDismissJob: vi.fn(),
   onSaveKiroPrompt: vi.fn(),
 }
 

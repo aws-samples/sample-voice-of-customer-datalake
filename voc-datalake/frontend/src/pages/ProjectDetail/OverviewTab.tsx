@@ -15,24 +15,20 @@ interface OverviewTabProps {
   readonly project: Project
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
-  readonly jobs: ProjectJob[]
   readonly onGeneratePersonas: () => void
   readonly onGenerateDoc: () => void
   readonly onRunResearch: () => void
   readonly onRemixDocuments: () => void
-  readonly onDismissJob: (jobId: string) => void
   readonly onSaveKiroPrompt: (prompt: string) => void
 }
 
 export default function OverviewTab({
   project,
   documents,
-  jobs,
   onGeneratePersonas,
   onGenerateDoc,
   onRunResearch,
   onRemixDocuments,
-  onDismissJob,
   onSaveKiroPrompt,
 }: OverviewTabProps) {
   const { t } = useTranslation('projectDetail')
@@ -41,6 +37,7 @@ export default function OverviewTab({
     <div className="space-y-6">
       {/* Running Jobs Section */}
       <JobsSection jobs={jobs} onDismiss={onDismissJob} />
+
 
       {/* Action Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
