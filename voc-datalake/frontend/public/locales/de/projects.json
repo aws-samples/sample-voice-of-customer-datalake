@@ -1,0 +1,33 @@
+{
+  "card": {
+    "docs_one": "{{count}} Dok.",
+    "docs_other": "{{count}} Dok.",
+    "personas_one": "{{count}} Persona",
+    "personas_other": "{{count}} Personas"
+  },
+  "configureEndpoint": "Bitte konfigurieren Sie zuerst den API-Endpunkt in den Einstellungen",
+  "createModal": {
+    "cancel": "Abbrechen",
+    "create": "Projekt erstellen",
+    "creating": "Wird erstellt...",
+    "descriptionLabel": "Beschreibung",
+    "descriptionPlaceholder": "Worum geht es in diesem Projekt?",
+    "nameLabel": "Projektname",
+    "namePlaceholder": "z.B. Q1 Produktverbesserungen",
+    "title": "Neues Projekt erstellen"
+  },
+  "deleteModal": {
+    "confirm": "Löschen",
+    "message": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Alle Personas und Dokumente werden dauerhaft gelöscht.",
+    "title": "Projekt löschen"
+  },
+  "description": "Erstellen Sie Projekte, um Personas, PRDs und PR/FAQs aus Feedback zu erstellen",
+  "emptyState": {
+    "createButton": "Projekt erstellen",
+    "description": "Erstellen Sie Ihr erstes Projekt, um mit dem Aufbau von Personas und Dokumenten zu beginnen",
+    "title": "Noch keine Projekte"
+  },
+  "newProject": "Neues Projekt",
+  "openProject": "Projekt öffnen",
+  "title": "Projekte"
+}

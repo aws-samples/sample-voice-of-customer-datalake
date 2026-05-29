@@ -1,0 +1,25 @@
+{
+  "feedbackBySource": "按来源分类的反馈",
+  "feedbackVolumeTrend": "反馈量与情感趋势",
+  "liveSocialFeed": "实时社交动态",
+  "loading": "加载中",
+  "metrics": {
+    "avgSentiment": "平均情感",
+    "sourcesActive": "活跃来源",
+    "totalFeedback": "反馈总数",
+    "urgentIssues": "紧急问题"
+  },
+  "noUrgentIssues": "没有紧急问题，做得好！🎉",
+  "sentiment": {
+    "mixed": "混合",
+    "negative": "消极",
+    "neutral": "中性",
+    "positive": "积极"
+  },
+  "sentimentDistribution": "情感分布",
+  "topIssueCategories": "主要问题类别",
+  "urgentIssues_one": "{{count}}个紧急问题",
+  "urgentIssues_other": "{{count}}个紧急问题",
+  "welcome": "欢迎使用VoC Analytics",
+  "welcomeDescription": "配置API端点和品牌设置，开始分析客户反馈。"
+}

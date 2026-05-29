@@ -1,0 +1,47 @@
+{
+  "contactAdmin": "Contacte a su administrador si necesita acceso.",
+  "enterPassword": "Ingrese su contraseña",
+  "enterUsername": "Ingrese su usuario",
+  "errors": {
+    "failedNewPassword": "Error al establecer nueva contraseña",
+    "failedResetPassword": "Error al restablecer contraseña",
+    "failedSendCode": "Error al enviar código de verificación",
+    "loginFailed": "Error al iniciar sesión",
+    "passwordResetSuccess": "Contraseña restablecida exitosamente. Inicie sesión.",
+    "passwordsDoNotMatch": "Las contraseñas no coinciden",
+    "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
+    "sessionExpired": "Sesión expirada. Inicie sesión nuevamente.",
+    "verificationCodeSent": "Código de verificación enviado a su correo"
+  },
+  "forgotPassword": "¿Olvidó su contraseña?",
+  "newPassword": {
+    "confirmLabel": "Confirmar Contraseña",
+    "confirmPlaceholder": "Confirme nueva contraseña",
+    "description": "Necesita establecer una nueva contraseña para su cuenta.",
+    "label": "Nueva Contraseña",
+    "placeholder": "Ingrese nueva contraseña",
+    "settingPassword": "Estableciendo contraseña...",
+    "showPassword": "Mostrar contraseña",
+    "submit": "Establecer Contraseña",
+    "title": "Establecer Nueva Contraseña"
+  },
+  "password": "Contraseña",
+  "resetPassword": {
+    "backToLogin": "Volver al inicio de sesión",
+    "description": "Ingrese su usuario para recibir un código de verificación.",
+    "sendCode": "Enviar Código",
+    "sendingCode": "Enviando código...",
+    "title": "Restablecer Contraseña"
+  },
+  "signIn": "Iniciar sesión",
+  "signingIn": "Iniciando sesión...",
+  "usernameOrEmail": "Usuario o Correo Electrónico",
+  "verifyCode": {
+    "description": "Revise su correo electrónico para el código de verificación.",
+    "label": "Código de Verificación",
+    "placeholder": "Ingrese código",
+    "resettingPassword": "Restableciendo contraseña...",
+    "submit": "Restablecer Contraseña",
+    "title": "Ingrese Código de Verificación"
+  }
+}

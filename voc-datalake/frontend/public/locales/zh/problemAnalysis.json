@@ -1,0 +1,44 @@
+{
+  "configureApi": "请在设置中配置您的 API 端点",
+  "filters": {
+    "allCategories": "所有分类",
+    "allSources": "所有来源",
+    "allSubcategories": "所有子分类",
+    "clear": "清除",
+    "collapse": "折叠",
+    "collapseAll": "全部折叠",
+    "expand": "展开",
+    "expandAll": "全部展开",
+    "pdf": "PDF",
+    "showResolved": "显示已解决",
+    "similarity": "相似度：",
+    "similarityHigh": "高",
+    "similarityLow": "低",
+    "similarityMed": "中",
+    "similarityOff": "关闭",
+    "urgentOnly": "仅紧急"
+  },
+  "noDataHint": "尝试扩展时间范围或调整筛选条件",
+  "noDataTitle": "未找到所选时期的问题分析数据",
+  "stats": {
+    "categories": "分类",
+    "feedback": "反馈",
+    "problems": "问题",
+    "subcategories": "子分类",
+    "urgent": "紧急"
+  },
+  "tree": {
+    "markResolved": "标记为已解决",
+    "markUnresolved": "标记为未解决",
+    "original": "原始：{{text}}",
+    "problems_one": "{{count}} 个问题",
+    "problems_other": "{{count}} 个问题",
+    "resolved": "已解决",
+    "reviews_one": "{{count}} 条评论",
+    "reviews_other": "{{count}} 条评论",
+    "similar": "相似：",
+    "sub_one": "{{count}} 个子项",
+    "sub_other": "{{count}} 个子项",
+    "unknown": "未知"
+  }
+}

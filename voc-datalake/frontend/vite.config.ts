@@ -1,12 +1,10 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  define: {
-    global: 'globalThis',
-  },
+  define: { global: 'globalThis' },
   build: {
     rollupOptions: {
       output: {
@@ -15,6 +13,7 @@ export default defineConfig({
           'vendor-recharts': ['recharts'],
           'vendor-icons': ['lucide-react'],
           'vendor-query': ['@tanstack/react-query'],
+          'vendor-i18n': ['i18next', 'react-i18next', 'i18next-browser-languagedetector', 'i18next-http-backend'],
           'vendor-markdown': ['react-markdown', 'remark-gfm'],
         },
       },
@@ -25,8 +24,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
-      }
-    }
-  }
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
 })

@@ -1,0 +1,44 @@
+{
+  "assistantDescription": "カスタマーフィードバックデータについて質問してください",
+  "assistantName": "VoC AIアシスタント",
+  "configureEndpoint": "AIチャットを使用するには、設定でAPIエンドポイントを構成してください",
+  "copyMessage": "メッセージをコピー",
+  "emptyState": "カスタマーフィードバックについての会話を始めましょう",
+  "export": {
+    "copied": "コピーしました！",
+    "copyConversation": "会話をコピー",
+    "downloadJson": "JSON としてダウンロード",
+    "downloadMarkdown": "Markdown としてダウンロード",
+    "downloadPdf": "PDF としてダウンロード",
+    "exportOptions": "エクスポートオプション",
+    "share": "共有"
+  },
+  "filters": {
+    "clear": "クリア",
+    "focusingOn": "フォーカス中: {{summary}}",
+    "title": "フィルターコンテキスト（最大30件のレビュー）"
+  },
+  "hideHistory": "履歴を非表示",
+  "inputPlaceholder": "フィードバックについて質問...",
+  "message": {
+    "reasoning": "推論",
+    "relatedFeedback": "関連フィードバック:"
+  },
+  "showHistory": "履歴を表示",
+  "sidebar": {
+    "clearAll": "すべての会話をクリア",
+    "messagesCount": "{{count}} 件のメッセージ",
+    "messagesCount_one": "{{count}} 件のメッセージ",
+    "messagesCount_other": "{{count}} 件のメッセージ",
+    "newChat": "新しいチャット",
+    "noConversations": "まだ会話がありません"
+  },
+  "suggestedQuestions": {
+    "mainProblems": "顧客が報告している主な問題は何ですか？",
+    "negativeSource": "最もネガティブなフィードバックが多いソースはどれですか？",
+    "pricing": "価格について顧客は何と言っていますか？",
+    "sentimentTrend": "先月の感情はどのように変化しましたか？",
+    "topComplaints": "今週の顧客の主な苦情は何ですか？",
+    "urgentIssues": "最も緊急な問題を表示してください"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "categories": {
+    "errorLoading": "Error loading categories",
+    "noCategories": "No categories",
+    "summary": "{{count}} categories • {{total}} items • Last {{days}} days",
+    "summary_one": "{{count}} category • {{total}} items • Last {{days}} days",
+    "summary_other": "{{count}} categories • {{total}} items • Last {{days}} days"
+  },
+  "deleteConfirm": {
+    "deleteFeedback": "Delete Feedback",
+    "deleteS3File": "Delete S3 File",
+    "message": "Are you sure? This cannot be undone."
+  },
+  "description": "Browse, edit, and sync raw S3 data and processed DynamoDB records",
+  "editModal": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "create": "Create",
+    "createNewFile": "Create New File",
+    "editFeedback": "Edit Feedback",
+    "editS3File": "Edit S3 File",
+    "id": "ID",
+    "invalidJson": "Invalid JSON: {{error}}",
+    "key": "Key",
+    "save": "Save",
+    "syncToDynamo": "Also update DynamoDB",
+    "syncToS3": "Also update S3",
+    "type": "Type",
+    "viewFeedback": "View Feedback",
+    "viewS3File": "View S3 File"
+  },
+  "feedback": {
+    "category": "Category: {{category}}",
+    "delete": "Delete",
+    "edit": "Edit",
+    "errorLoading": "Error loading feedback",
+    "noFeedback": "No feedback found",
+    "showingRecords": "Showing {{filtered}} of {{total}} records",
+    "urgent": "Urgent",
+    "view": "View"
+  },
+  "filters": {
+    "allSources": "All Sources",
+    "searchPlaceholder": "Search..."
+  },
+  "newFile": "New File",
+  "notConfigured": "Configure API endpoint in Settings to explore data",
+  "refresh": "Refresh",
+  "s3Browser": {
+    "back": "Back",
+    "delete": "Delete",
+    "download": "Download",
+    "edit": "Edit",
+    "errorLoading": "Error loading files",
+    "noFiles": "No files found",
+    "view": "View"
+  },
+  "tabs": {
+    "categories": "Categories",
+    "categoriesShort": "Categories",
+    "feedbackShort": "Feedback",
+    "processedFeedback": "Processed Feedback",
+    "s3RawData": "S3 Raw Data",
+    "s3Short": "S3"
+  },
+  "title": "Data Explorer"
+}

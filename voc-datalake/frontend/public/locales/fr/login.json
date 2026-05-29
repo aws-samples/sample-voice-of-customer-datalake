@@ -1,0 +1,47 @@
+{
+  "contactAdmin": "Contactez votre administrateur si vous avez besoin d'un accès.",
+  "enterPassword": "Entrez votre mot de passe",
+  "enterUsername": "Entrez votre nom d'utilisateur",
+  "errors": {
+    "failedNewPassword": "Échec de la définition du nouveau mot de passe",
+    "failedResetPassword": "Échec de la réinitialisation du mot de passe",
+    "failedSendCode": "Échec de l'envoi du code de vérification",
+    "loginFailed": "Échec de la connexion",
+    "passwordResetSuccess": "Mot de passe réinitialisé avec succès. Veuillez vous connecter.",
+    "passwordsDoNotMatch": "Les mots de passe ne correspondent pas",
+    "passwordTooShort": "Le mot de passe doit contenir au moins 8 caractères",
+    "sessionExpired": "Session expirée. Veuillez vous reconnecter.",
+    "verificationCodeSent": "Code de vérification envoyé à votre e-mail"
+  },
+  "forgotPassword": "Mot de passe oublié ?",
+  "newPassword": {
+    "confirmLabel": "Confirmer le mot de passe",
+    "confirmPlaceholder": "Confirmez le nouveau mot de passe",
+    "description": "Vous devez définir un nouveau mot de passe pour votre compte.",
+    "label": "Nouveau mot de passe",
+    "placeholder": "Entrez le nouveau mot de passe",
+    "settingPassword": "Définition du mot de passe...",
+    "showPassword": "Afficher le mot de passe",
+    "submit": "Définir le mot de passe",
+    "title": "Définir un nouveau mot de passe"
+  },
+  "password": "Mot de passe",
+  "resetPassword": {
+    "backToLogin": "Retour à la connexion",
+    "description": "Entrez votre nom d'utilisateur pour recevoir un code de vérification.",
+    "sendCode": "Envoyer le code",
+    "sendingCode": "Envoi du code...",
+    "title": "Réinitialiser le mot de passe"
+  },
+  "signIn": "Se connecter",
+  "signingIn": "Connexion en cours...",
+  "usernameOrEmail": "Nom d'utilisateur ou e-mail",
+  "verifyCode": {
+    "description": "Vérifiez votre e-mail pour le code de vérification.",
+    "label": "Code de vérification",
+    "placeholder": "Entrez le code",
+    "resettingPassword": "Réinitialisation du mot de passe...",
+    "submit": "Réinitialiser le mot de passe",
+    "title": "Entrer le code de vérification"
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "actions": {
+    "reset": "Zurücksetzen",
+    "save": "Bewertungen speichern",
+    "saveMobile": "Speichern",
+    "saving": "Speichern...",
+    "savingMobile": "..."
+  },
+  "configureApiEndpoint": "Konfigurieren Sie den API-Endpunkt in den Einstellungen, um die Priorisierung anzuzeigen.",
+  "empty": {
+    "description": "Erstellen Sie PR/FAQs in Ihren Projekten, um mit der Priorisierung zu beginnen.",
+    "title": "Keine PR/FAQs gefunden"
+  },
+  "framework": {
+    "description": "Bewerten Sie jedes PR/FAQ nach: <strong>Auswirkung</strong>, <strong>Markteinführungszeit</strong>, <strong>Strategische Passung</strong> und <strong>Konfidenz</strong>.",
+    "title": "Priorisierungsrahmen"
+  },
+  "loading": "PR/FAQs werden geladen...",
+  "notes": {
+    "label": "Notizen",
+    "placeholder": "Notizen zu dieser Priorisierungsentscheidung hinzufügen..."
+  },
+  "preview": {
+    "title": "PR/FAQ-Vorschau",
+    "viewFull": "Vollständiges Dokument anzeigen",
+    "viewMobile": "Anzeigen"
+  },
+  "priority": {
+    "high": "Hohe Priorität",
+    "low": "Niedrige Priorität",
+    "medium": "Mittlere Priorität",
+    "none": "Nicht bewertet"
+  },
+  "scores": {
+    "confidence": "Konfidenz",
+    "confidenceDescription": "Sicherheit bei Auswirkungs- und MeZ-Schätzungen",
+    "fast": "Schnell",
+    "high": "Hoch",
+    "impact": "Auswirkung",
+    "impactDescription": "Geschäftswert und Kundennutzen",
+    "low": "Niedrig",
+    "score": "Wert",
+    "slow": "Langsam",
+    "strategicFit": "Strategische Passung",
+    "strategicFitDescription": "Übereinstimmung mit Unternehmenszielen",
+    "timeToMarket": "Markteinführungszeit",
+    "timeToMarketDescription": "Wie schnell kann dies geliefert werden?",
+    "title": "Priorisierungsbewertungen"
+  },
+  "sort": {
+    "date": "Datum",
+    "dateFull": "Erstellungsdatum",
+    "impact": "Auswirkung",
+    "label": "Sortieren nach:",
+    "priority": "Priorität",
+    "priorityFull": "Prioritätswert",
+    "ttm": "MeZ",
+    "ttmFull": "Markteinführungszeit"
+  },
+  "stats": {
+    "highPriority": "Hohe Priorität",
+    "mediumPriority": "Mittlere Priorität",
+    "notScored": "Nicht bewertet",
+    "totalPrfaqs": "Gesamt PR/FAQs"
+  },
+  "subtitle": "PR/FAQs über alle Projekte hinweg bewerten und priorisieren",
+  "title": "PR/FAQ-Priorisierung",
+  "unsavedChanges": {
+    "cancel": "Auf Seite bleiben",
+    "confirm": "Änderungen verwerfen",
+    "message": "Sie haben ungespeicherte Priorisierungsbewertungen. Möchten Sie Ihre Änderungen verwerfen und diese Seite verlassen?",
+    "title": "Ungespeicherte Änderungen"
+  }
+}

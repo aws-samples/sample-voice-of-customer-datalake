@@ -1,0 +1,74 @@
+{
+  "actions": {
+    "reset": "リセット",
+    "save": "スコアを保存",
+    "saveMobile": "保存",
+    "saving": "保存中...",
+    "savingMobile": "..."
+  },
+  "configureApiEndpoint": "優先順位付けを表示するには、設定でAPIエンドポイントを構成してください。",
+  "empty": {
+    "description": "プロジェクトでPR/FAQを作成して優先順位付けを開始してください。",
+    "title": "PR/FAQが見つかりません"
+  },
+  "framework": {
+    "description": "各PR/FAQを次の基準で評価: <strong>インパクト</strong>、<strong>市場投入時間</strong>、<strong>戦略的適合性</strong>、<strong>確信度</strong>。",
+    "title": "優先順位付けフレームワーク"
+  },
+  "loading": "PR/FAQを読み込み中...",
+  "notes": {
+    "label": "メモ",
+    "placeholder": "この優先順位付けの決定に関するメモを追加..."
+  },
+  "preview": {
+    "title": "PR/FAQプレビュー",
+    "viewFull": "完全なドキュメントを表示",
+    "viewMobile": "表示"
+  },
+  "priority": {
+    "high": "高優先度",
+    "low": "低優先度",
+    "medium": "中優先度",
+    "none": "未評価"
+  },
+  "scores": {
+    "confidence": "確信度",
+    "confidenceDescription": "インパクトとTTM見積もりの確実性",
+    "fast": "速い",
+    "high": "高",
+    "impact": "インパクト",
+    "impactDescription": "ビジネス価値と顧客メリット",
+    "low": "低",
+    "score": "スコア",
+    "slow": "遅い",
+    "strategicFit": "戦略的適合性",
+    "strategicFitDescription": "会社の目標との整合性",
+    "timeToMarket": "市場投入時間",
+    "timeToMarketDescription": "どのくらい早く提供できますか？",
+    "title": "優先順位付けスコア"
+  },
+  "sort": {
+    "date": "日付",
+    "dateFull": "作成日",
+    "impact": "インパクト",
+    "label": "並べ替え:",
+    "priority": "優先度",
+    "priorityFull": "優先度スコア",
+    "ttm": "TTM",
+    "ttmFull": "市場投入時間"
+  },
+  "stats": {
+    "highPriority": "高優先度",
+    "mediumPriority": "中優先度",
+    "notScored": "未評価",
+    "totalPrfaqs": "PR/FAQ合計"
+  },
+  "subtitle": "すべてのプロジェクトのPR/FAQをスコアリングして優先順位付け",
+  "title": "PR/FAQ 優先順位付け",
+  "unsavedChanges": {
+    "cancel": "ページに留まる",
+    "confirm": "変更を破棄",
+    "message": "未保存の優先順位付けスコアがあります。変更を破棄してこのページを離れますか？",
+    "title": "未保存の変更"
+  }
+}
