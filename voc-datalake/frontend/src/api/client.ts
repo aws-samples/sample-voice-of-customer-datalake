@@ -595,7 +595,14 @@ export const api = {
   // User Administration (admin only)
   getUsers: () => fetchApi<{ success: boolean; users: CognitoUser[]; message?: string }>('/users'),
   
-  createUser: (data: { username: string; email: string; name?: string; group: 'admins' | 'users' }) =>
+  createUser: (data: {
+    username: string
+    email: string
+    name?: string
+    given_name?: string
+    family_name?: string
+    group: 'admins' | 'users'
+  }) =>
     fetchApi<{ success: boolean; message?: string; error?: string; user?: CognitoUser }>('/users', {
       method: 'POST',
       body: JSON.stringify(data)
@@ -605,6 +612,19 @@ export const api = {
     fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}/group`, {
       method: 'PUT',
       body: JSON.stringify({ group })
+    }),
+
+  // Update user attributes (first/last name). Used by EditUserModal.
+  updateUser: (username: string, data: { given_name: string; family_name: string }) =>
+    fetchApi<{
+      success: boolean
+      message: string
+      given_name: string
+      family_name: string
+      name: string
+    }>(`/users/${encodeURIComponent(username)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
   
   resetUserPassword: (username: string) =>

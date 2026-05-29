@@ -41,6 +41,7 @@ describe('UserProfileModal', () => {
       const { container } = render(
         <UserProfileModal isOpen={false} onClose={mockOnClose} />
       )
+      // eslint-disable-next-line testing-library/no-node-access
       expect(container.firstChild).toBeNull()
     })
 
@@ -52,6 +53,7 @@ describe('UserProfileModal', () => {
       const { container } = render(
         <UserProfileModal isOpen={true} onClose={mockOnClose} />
       )
+      // eslint-disable-next-line testing-library/no-node-access
       expect(container.firstChild).toBeNull()
     })
 
@@ -99,6 +101,7 @@ describe('UserProfileModal', () => {
     it('displays avatar with first letter of name', () => {
       render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
       // Avatar should show 'T' for 'Test User'
+      // eslint-disable-next-line testing-library/no-node-access
       const avatar = document.querySelector('.rounded-full')
       expect(avatar).toHaveTextContent('T')
     })
@@ -266,7 +269,7 @@ describe('UserProfileModal', () => {
       const closeButton = screen.getByRole('button', { name: '' })
       await user.click(closeButton)
       
-      expect(mockOnClose).toHaveBeenCalled()
+      expect(mockOnClose).toHaveBeenCalledWith()
     })
   })
 })
