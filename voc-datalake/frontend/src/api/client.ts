@@ -1,5 +1,5 @@
-import { useConfigStore } from '../store/configStore'
 import { authService } from '../services/auth'
+import { getBaseUrl, getAuthHeaders, getDaysFromRange } from './baseUrl'
 import type {
   FeedbackItem,
   MetricsSummary,
@@ -50,34 +50,12 @@ export type {
 } from './types'
 export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation } from './types'
 
-const getBaseUrl = () => {
-  const { config } = useConfigStore.getState()
-  return config.apiEndpoint || '/api'
-}
-
-const streamUrlCache: { value: string | null } = { value: null }
-
-function stripTrailingSlashes(url: string): string {
-  // Remove trailing slashes without regex backtracking
-  const trimmed = url.trimEnd()
-  const lastNonSlash = trimmed.length - [...trimmed].reverse().findIndex(c => c !== '/')
-  return trimmed.slice(0, lastNonSlash)
-}
+// Re-export shared time-range helper so existing consumers can keep importing from `./client`.
+export { getDaysFromRange }
 
 function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : {}),
-  }
-  
-  if (authService.isConfigured()) {
-    const idToken = authService.getIdToken()
-    if (idToken) {
-      headers['Authorization'] = idToken
-    }
-  }
-  
-  return headers
+  const extra = existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : undefined
+  return getAuthHeaders(extra)
 }
 
 import { z } from 'zod'
@@ -114,7 +92,7 @@ async function handleUnauthorized<T>(
 }
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const baseUrl = stripTrailingSlashes(getBaseUrl())
+  const baseUrl = getBaseUrl()
   const headers = buildHeaders(options?.headers)
   
   const response = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
@@ -134,19 +112,6 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
   }
   
   throw new Error(`API Error: ${response.status}`)
-}
-
-async function getStreamUrl(): Promise<string> {
-  if (streamUrlCache.value !== null) return streamUrlCache.value
-  
-  try {
-    const config = await fetchApi<{ chat_stream_url: string }>('/projects/config')
-    streamUrlCache.value = config.chat_stream_url || ''
-    return streamUrlCache.value
-  } catch {
-    streamUrlCache.value = ''
-    return ''
-  }
 }
 
 // Helper to build URLSearchParams from an object, filtering out undefined/null values
@@ -218,14 +183,6 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ message, context })
   }),
-
-  // Chat with streaming (uses Lambda Function URL to bypass API Gateway timeout)
-  chatStream: async (message: string, context?: string, days?: number): Promise<{ response: string; sources?: FeedbackItem[]; metadata?: { total_feedback: number; days_analyzed: number; urgent_count: number } }> => {
-    const streamEndpoint = await getStreamUrl()
-    if (!streamEndpoint) return api.chat(message, context)
-    const { streamApi } = await import('./streamApi')
-    return streamApi.chatStream(streamEndpoint, message, context, days)
-  },
 
   // Data Source Schedules
   getSourcesStatus: () => fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>('/sources/status'),
@@ -402,12 +359,6 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
   projectChat: (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) =>
     import('./projectsApi').then(m => m.projectsApi.projectChat(projectId, message, selectedPersonas, selectedDocuments)),
-  projectChatStream: async (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) => {
-    const streamEndpoint = await getStreamUrl()
-    if (!streamEndpoint) return api.projectChat(projectId, message, selectedPersonas, selectedDocuments)
-    const { streamApi } = await import('./streamApi')
-    return streamApi.projectChatStream(streamEndpoint, projectId, message, selectedPersonas, selectedDocuments)
-  },
   runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
     import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),
   generateDocument: (projectId: string, data: { doc_type: 'prd' | 'prfaq'; title: string; feature_idea: string; data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }; selected_persona_ids: string[]; selected_document_ids: string[]; feedback_sources: string[]; feedback_categories: string[]; days: number; customer_questions?: string[] }) =>
@@ -642,23 +593,6 @@ export const api = {
     fetchApi<{ success: boolean; deleted: number }>(`/logs/validation/${source}`, {
       method: 'DELETE'
     }),
-}
-
-export function getDaysFromRange(range: string, customRange?: { start: string; end: string } | null): number {
-  if (range === 'custom' && customRange) {
-    const start = new Date(customRange.start)
-    const end = new Date(customRange.end)
-    const diffTime = Math.abs(end.getTime() - start.getTime())
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
-  }
-  
-  switch (range) {
-    case '24h': return 1
-    case '48h': return 2
-    case '7d': return 7
-    case '30d': return 30
-    default: return 7
-  }
 }
 
 export function getDateRangeParams(range: string, customRange?: { start: string; end: string } | null): { days?: number; start_date?: string; end_date?: string } {
