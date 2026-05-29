@@ -178,7 +178,11 @@ export class VocApiStack extends cdk.Stack {
     }));
     integrationsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['events:EnableRule', 'events:DisableRule', 'events:DescribeRule'],
-      resources: [`arn:aws:events:${this.region}:${this.account}:rule/voc-ingest-*-schedule`],
+      resources: [`arn:aws:events:${this.region}:${this.account}:rule/voc-ingest-*-schedule*`],
+    }));
+    integrationsRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-ingestor-*`],
     }));
     NagSuppressions.addResourceSuppressions(integrationsRole, pluginSystemSuppressions, true);
 
@@ -191,10 +195,11 @@ export class VocApiStack extends cdk.Stack {
       role: integrationsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO' },
+      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, AGGREGATES_TABLE: aggregatesTable.tableName },
       layers: [apiLayer],
       logGroup: this.createLogGroup('IntegrationsApiLogs', uniqueName('voc-integrations-api')),
     });
+    aggregatesTable.grantReadWriteData(integrationsRole);
 
     // Scrapers API
     const scrapersRole = this.createLambdaRole('ScrapersLambdaRole');

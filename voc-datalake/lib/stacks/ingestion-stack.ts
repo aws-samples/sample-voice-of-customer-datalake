@@ -282,6 +282,8 @@ export class VocIngestionStack extends cdk.Stack {
       PRIMARY_LANGUAGE: config.primaryLanguage,
       POWERTOOLS_SERVICE_NAME: 'voc-ingestion',
       LOG_LEVEL: 'INFO',
+      DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID,
+      DEPLOY_REGION: cdk.Aws.REGION,
     };
   }
 
@@ -320,10 +322,8 @@ export class VocIngestionStack extends cdk.Stack {
       PLUGIN_ID: plugin.id,
     };
 
-    // Webscraper needs aggregates table for progress tracking
-    if (plugin.id === 'webscraper') {
-      lambdaEnv.AGGREGATES_TABLE = aggregatesTable.tableName;
-    }
+    // All plugins need aggregates table for run status tracking
+    lambdaEnv.AGGREGATES_TABLE = aggregatesTable.tableName;
 
     // Bundle plugin code from plugins/ directory
     const ingestorCode = this.bundlePluginCode(plugin.id);

@@ -12,8 +12,8 @@ const mockStartManualImportParse = vi.fn()
 const mockGetManualImportStatus = vi.fn()
 const mockConfirmManualImport = vi.fn()
 
-vi.mock('../../api/client', () => ({
-  api: {
+vi.mock('../../api/scrapersApi', () => ({
+  scrapersApi: {
     startManualImportParse: (...args: unknown[]) => mockStartManualImportParse(...args),
     getManualImportStatus: (...args: unknown[]) => mockGetManualImportStatus(...args),
     confirmManualImport: (...args: unknown[]) => mockConfirmManualImport(...args),
@@ -145,11 +145,9 @@ describe('ManualImportModal', () => {
       const user = userEvent.setup()
       render(<ManualImportModal />)
 
-      const closeButtons = screen.getAllByRole('button')
-      const xButton = closeButtons.find(btn => btn.querySelector('svg'))
-      if (xButton) {
-        await user.click(xButton)
-      }
+      // The close button should be accessible via aria-label or similar
+      const closeButton = screen.getAllByRole('button')[0]
+      await user.click(closeButton)
 
       expect(useManualImportStore.getState().isModalOpen).toBe(false)
     })

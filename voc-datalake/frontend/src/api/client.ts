@@ -91,7 +91,7 @@ async function handleUnauthorized<T>(
   return parseJsonResponse<T>(retryResponse)
 }
 
-async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const baseUrl = getBaseUrl()
   const headers = buildHeaders(options?.headers)
   
@@ -185,11 +185,50 @@ export const api = {
   }),
 
   // Data Source Schedules
-  getSourcesStatus: () => fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>('/sources/status'),
+  getSourcesStatus: (sources?: string[]) => {
+    const params = sources?.length == null ? '' : `?sources=${sources.join(',')}`
+    return fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>(`/sources/status${params}`)
+  },
   
   enableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/enable`, { method: 'PUT' }),
   
   disableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/disable`, { method: 'PUT' }),
+
+  runSource: (source: string, appId?: string) => fetchApi<{
+    success: boolean;
+    message: string;
+    source: string;
+    execution_id?: string
+  }>(`/sources/${source}/run`, {
+    method: 'POST',
+    ...(appId != null && appId !== '' ? { body: JSON.stringify({ app_id: appId }) } : {}),
+  }),
+
+  getSourceRunStatus: (source: string) => fetchApi<{
+    source: string;
+    status: string;
+    execution_id?: string;
+    started_at?: string;
+    completed_at?: string;
+    items_found?: number;
+    errors?: string[]
+  }>(`/sources/status?run_status=${source}`),
+
+  // App Config CRUD (multi-instance plugins like iOS/Android app reviews)
+  getAppConfigs: (source: string) =>
+    fetchApi<{ apps: Array<Record<string, string>> }>(`/integrations/${source}/apps`),
+
+  saveAppConfig: (source: string, app: Record<string, string>) =>
+    fetchApi<{
+      success: boolean;
+      app: Record<string, string>
+    }>(`/integrations/${source}/apps`, {
+      method: 'POST',
+      body: JSON.stringify({ app }),
+    }),
+
+  deleteAppConfig: (source: string, appId: string) =>
+    fetchApi<{ success: boolean }>(`/integrations/${source}/apps/${appId}`, { method: 'DELETE' }),
 
   // Brand Settings (persisted to DynamoDB)
   getBrandSettings: () => fetchApi<{
