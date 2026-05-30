@@ -3,7 +3,14 @@ Tests for logs_handler.py - /logs/* endpoints.
 Provides access to validation failures and processing errors.
 """
 import json
+from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
+
+
+def _today_iso() -> str:
+    """Today as ISO timestamp. Used for scraper_run started_at fixtures so they
+    fall within the default 7-day lookback regardless of when tests run."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 class TestGetValidationLogs:
@@ -234,14 +241,15 @@ class TestGetScraperLogs:
     ):
         """Returns run history for specific scraper."""
         # Arrange
+        recent = _today_iso()
         mock_table.query.return_value = {
             'Items': [
                 {
                     'pk': 'SCRAPER#scraper-123',
-                    'sk': 'RUN#2025-01-01T12:00:00Z',
+                    'sk': f'RUN#{recent}',
                     'status': 'completed',
-                    'started_at': '2025-01-01T12:00:00Z',
-                    'completed_at': '2025-01-01T12:05:00Z',
+                    'started_at': recent,
+                    'completed_at': recent,
                     'pages_scraped': 10,
                     'items_found': 50,
                     'errors': []

@@ -133,6 +133,10 @@ export class VocApiStack extends cdk.Stack {
     // ============================================
 
     // Metrics API
+    // NOTE: Aggregates table is granted read-write (not read-only as in older
+    // docs) because /feedback/problems/{problemId}/resolve PUT/DELETE routes
+    // live in this handler and update the resolution state on aggregate rows.
+    // See routes wired below near `problemResolveResource`.
     const metricsRole = this.createLambdaRole('MetricsLambdaRole');
     feedbackTable.grantReadData(metricsRole);
     aggregatesTable.grantReadWriteData(metricsRole);

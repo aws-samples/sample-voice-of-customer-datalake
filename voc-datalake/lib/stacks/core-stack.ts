@@ -486,7 +486,14 @@ export class VocCoreStack extends cdk.Stack {
     const required = [r('ABCDEFGHJKLMNPQRSTUVWXYZ'), r('abcdefghjkmnpqrstuvwxyz'), r('123456789'), r('!@#$%^&*')];
     const pool = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789!@#$%^&*';
     const rest = Array.from({ length: 12 }, () => r(pool));
-    const all = [...required, ...rest].sort(() => randomInt(0, 2) - 1);
+    // Fisher-Yates shuffle. The previous `sort(() => randomInt(0, 2) - 1)`
+    // comparator only returned {-1, 0}, never +1, which biased the sort and
+    // produced a non-uniform, partially predictable order.
+    const all = [...required, ...rest];
+    for (let i = all.length - 1; i > 0; i--) {
+      const j = randomInt(0, i + 1);
+      [all[i], all[j]] = [all[j], all[i]];
+    }
     const initialAdminPassword = all.join('');
 
     // Create the admin user
