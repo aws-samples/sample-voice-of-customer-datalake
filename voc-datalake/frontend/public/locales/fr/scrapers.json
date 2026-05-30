@@ -64,6 +64,16 @@
     "description": "Créez un scraper pour commencer à collecter les retours des sites web",
     "title": "Aucun scraper configuré"
   },
+  "generator": {
+    "completed": "{{count}} avis synthétiques générés. Ils apparaîtront peu après le traitement.",
+    "completed_one": "{{count}} avis synthétique généré. Il apparaîtra peu après le traitement.",
+    "completed_many": "{{count}} avis synthétiques générés. Ils apparaîtront peu après le traitement.",
+    "completed_other": "{{count}} avis synthétiques générés. Ils apparaîtront peu après le traitement.",
+    "generate": "Générer",
+    "generating": "Génération…",
+    "runningNote": "Génération d'avis avec l'IA. Cela peut prendre jusqu'à une minute.",
+    "startFailed": "Échec du démarrage de la génération."
+  },
   "jsonUpload": {
     "cancel": "Annuler",
     "done": "Terminé",
@@ -168,15 +178,7 @@
     "running": "En cours..."
   },
   "subtitle": "Configurez les web scrapers et les sources d'avis d'applications pour collecter les retours",
-  "generator": {
-    "completed": "{{count}} avis synthétiques générés. Ils apparaîtront peu après le traitement.",
-    "generate": "Générer",
-    "generating": "Génération…",
-    "runningNote": "Génération d'avis avec l'IA. Cela peut prendre jusqu'à une minute.",
-    "startFailed": "Échec du démarrage de la génération."
-  },
   "templateSelector": {
-    "syntheticData": "Données synthétiques",
     "appReviewSources": "Sources d'avis d'applications",
     "autoDiscovered": "Auto-découvert",
     "cancel": "Annuler",
@@ -185,6 +187,7 @@
     "manualImport": "Import manuel",
     "manualImportDescription": "Collez des avis de n'importe quel site web et importez-les avec l'analyse IA.",
     "manualInput": "Saisie manuelle",
+    "syntheticData": "Données synthétiques",
     "title": "Ajouter une source de données",
     "webScraperTemplates": "Modèles de web scraper"
   },

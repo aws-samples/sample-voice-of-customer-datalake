@@ -64,6 +64,16 @@
     "description": "Cree un scraper para comenzar a recopilar feedback de sitios web",
     "title": "No hay scrapers configurados"
   },
+  "generator": {
+    "completed": "Se generaron {{count}} reseñas sintéticas. Aparecerán poco después del procesamiento.",
+    "completed_one": "Se generó {{count}} reseña sintética. Aparecerá poco después del procesamiento.",
+    "completed_many": "Se generaron {{count}} reseñas sintéticas. Aparecerán poco después del procesamiento.",
+    "completed_other": "Se generaron {{count}} reseñas sintéticas. Aparecerán poco después del procesamiento.",
+    "generate": "Generar",
+    "generating": "Generando…",
+    "runningNote": "Generando reseñas con IA. Esto puede tardar hasta un minuto.",
+    "startFailed": "No se pudo iniciar la generación."
+  },
   "jsonUpload": {
     "cancel": "Cancelar",
     "done": "Listo",
@@ -168,15 +178,7 @@
     "running": "Ejecutando..."
   },
   "subtitle": "Configure web scrapers y fuentes de reseñas de apps para recopilar feedback",
-  "generator": {
-    "completed": "Se generaron {{count}} reseñas sintéticas. Aparecerán poco después del procesamiento.",
-    "generate": "Generar",
-    "generating": "Generando…",
-    "runningNote": "Generando reseñas con IA. Esto puede tardar hasta un minuto.",
-    "startFailed": "No se pudo iniciar la generación."
-  },
   "templateSelector": {
-    "syntheticData": "Datos sintéticos",
     "appReviewSources": "Fuentes de reseñas de apps",
     "autoDiscovered": "Auto-descubierto",
     "cancel": "Cancelar",
@@ -185,6 +187,7 @@
     "manualImport": "Importación manual",
     "manualImportDescription": "Pegue reseñas de cualquier sitio web e impórtelas con análisis de IA.",
     "manualInput": "Entrada manual",
+    "syntheticData": "Datos sintéticos",
     "title": "Agregar fuente de datos",
     "webScraperTemplates": "Plantillas de web scraper"
   },

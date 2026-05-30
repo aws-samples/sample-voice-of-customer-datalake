@@ -390,7 +390,11 @@ export class VocCoreStack extends cdk.Stack {
       userPoolName: uniqueName('voc-user-pool'),
       selfSignUpEnabled: false,
       signInAliases: { email: true, username: true },
-      signInCaseSensitive: false,
+      // NOTE: `signInCaseSensitive: false` is intentionally omitted because
+      // Cognito treats it as immutable — existing pools cannot toggle it.
+      // Fresh deployments default to case-sensitive sign-in. To enable
+      // case-insensitive sign-in, a new pool must be provisioned with this
+      // property set, then users migrated. See PR #108 / VocCoreStack rollout.
       autoVerify: { email: true },
       standardAttributes: {
         email: { required: true, mutable: true },

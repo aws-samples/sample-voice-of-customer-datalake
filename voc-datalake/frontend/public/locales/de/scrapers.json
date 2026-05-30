@@ -63,6 +63,15 @@
     "description": "Erstellen Sie einen Scraper, um Feedback von Websites zu sammeln",
     "title": "Keine Scraper konfiguriert"
   },
+  "generator": {
+    "completed": "{{count}} synthetische Bewertungen generiert. Sie erscheinen kurz nach der Verarbeitung.",
+    "completed_one": "{{count}} synthetische Bewertung generiert. Sie erscheint kurz nach der Verarbeitung.",
+    "completed_other": "{{count}} synthetische Bewertungen generiert. Sie erscheinen kurz nach der Verarbeitung.",
+    "generate": "Generieren",
+    "generating": "Wird generiert…",
+    "runningNote": "Bewertungen werden mit KI generiert. Das kann bis zu einer Minute dauern.",
+    "startFailed": "Generierung konnte nicht gestartet werden."
+  },
   "jsonUpload": {
     "cancel": "Abbrechen",
     "done": "Fertig",
@@ -159,15 +168,7 @@
     "running": "Läuft..."
   },
   "subtitle": "Konfigurieren Sie Web-Scraper und App-Review-Quellen zur Feedback-Erfassung",
-  "generator": {
-    "completed": "{{count}} synthetische Bewertungen generiert. Sie erscheinen kurz nach der Verarbeitung.",
-    "generate": "Generieren",
-    "generating": "Wird generiert…",
-    "runningNote": "Bewertungen werden mit KI generiert. Das kann bis zu einer Minute dauern.",
-    "startFailed": "Generierung konnte nicht gestartet werden."
-  },
   "templateSelector": {
-    "syntheticData": "Synthetische Daten",
     "appReviewSources": "App-Bewertungsquellen",
     "autoDiscovered": "Automatisch erkannt",
     "cancel": "Abbrechen",
@@ -176,6 +177,7 @@
     "manualImport": "Manueller Import",
     "manualImportDescription": "Fügen Sie Bewertungen von einer Website ein und importieren Sie sie mit KI-Parsing.",
     "manualInput": "Manuelle Eingabe",
+    "syntheticData": "Synthetische Daten",
     "title": "Datenquelle hinzufügen",
     "webScraperTemplates": "Web-Scraper-Vorlagen"
   },
