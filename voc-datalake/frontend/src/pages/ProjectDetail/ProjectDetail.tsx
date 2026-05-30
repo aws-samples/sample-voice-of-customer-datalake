@@ -12,6 +12,7 @@ import {
 } from 'react-router-dom'
 import { projectsApi } from '../../api/projectsApi'
 import { useConfigStore } from '../../store/configStore'
+import JobsSection from './JobsSection'
 import ProjectHeader from './ProjectHeader'
 import {
   PersonaEditModalWrapper, ImportPersonaModalWrapper, DocumentModalWrapper, ConfirmModalWrapper,
@@ -214,12 +215,14 @@ export default function ProjectDetail() {
         }}
       />
 
+      {/* Background jobs are visible regardless of which tab is active */}
+      <JobsSection jobs={jobs} onDismiss={(jobId) => dismissJobMut.mutate(jobId)} />
+
       <TabContent
         activeTab={activeTab}
         project={project}
         personas={personas}
         documents={documents}
-        jobs={jobs}
         selectedPersona={selection.selectedPersona}
         selectedDoc={selection.selectedDoc}
         isDeleting={deletePersonaMut.isPending || deleteDocMut.isPending}
@@ -228,7 +231,6 @@ export default function ProjectDetail() {
         onGenerateDoc={() => wizard.setActiveWizard('doc')}
         onRunResearch={() => wizard.setActiveWizard('research')}
         onRemixDocuments={wizard.openMergeWizard}
-        onDismissJob={(jobId) => dismissJobMut.mutate(jobId)}
         onSaveKiroPrompt={handleSaveKiroPrompt}
         onSelectPersona={selection.setSelectedPersona}
         onEditPersona={() => selection.selectedPersona && selection.setEditingPersona(selection.selectedPersona)}

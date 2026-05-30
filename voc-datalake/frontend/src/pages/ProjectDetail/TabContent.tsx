@@ -10,7 +10,7 @@ import type {
   Tab, NoteItem,
 } from './types'
 import type {
-  Project, ProjectPersona, ProjectDocument, ProjectJob,
+  Project, ProjectPersona, ProjectDocument,
 } from '../../api/types'
 
 interface TabContentProps {
@@ -18,7 +18,6 @@ interface TabContentProps {
   readonly project: Project
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
-  readonly jobs: ProjectJob[]
   readonly selectedPersona: ProjectPersona | null
   readonly selectedDoc: ProjectDocument | null
   readonly isDeleting: boolean
@@ -27,7 +26,6 @@ interface TabContentProps {
   readonly onGenerateDoc: () => void
   readonly onRunResearch: () => void
   readonly onRemixDocuments: () => void
-  readonly onDismissJob: (jobId: string) => void
   readonly onSaveKiroPrompt: (prompt: string) => void
   readonly onSelectPersona: (p: ProjectPersona | null) => void
   readonly onEditPersona: () => void
@@ -47,7 +45,6 @@ export default function TabContent({
   project,
   personas,
   documents,
-  jobs,
   selectedPersona,
   selectedDoc,
   isDeleting,
@@ -56,7 +53,6 @@ export default function TabContent({
   onGenerateDoc,
   onRunResearch,
   onRemixDocuments,
-  onDismissJob,
   onSaveKiroPrompt,
   onSelectPersona,
   onEditPersona,
@@ -76,12 +72,10 @@ export default function TabContent({
         project={project}
         personas={personas}
         documents={documents}
-        jobs={jobs}
         onGeneratePersonas={onGeneratePersonas}
         onGenerateDoc={onGenerateDoc}
         onRunResearch={onRunResearch}
         onRemixDocuments={onRemixDocuments}
-        onDismissJob={onDismissJob}
         onSaveKiroPrompt={onSaveKiroPrompt}
       />
     )
