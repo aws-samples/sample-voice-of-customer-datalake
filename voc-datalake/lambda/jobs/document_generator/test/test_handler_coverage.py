@@ -3,7 +3,14 @@ Additional coverage tests for document_generator/handler.py.
 Covers: feedback gathering with filtering, personas gathering with selection,
 documents/research gathering, and no-context fallback.
 """
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
+
+
+def _today_str() -> str:
+    """Today's date in ISO format. Used for test feedback items so they fall
+    within the configured lookback window regardless of when tests run."""
+    return datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
 
 class TestDocumentGeneratorFeedbackGathering:
@@ -60,7 +67,7 @@ class TestDocumentGeneratorFeedbackGathering:
 
         mock_feedback_table.query.return_value = {
             'Items': [
-                {'original_text': 'Billing issue', 'source_platform': 'ws', 'sentiment_label': 'negative', 'date': '2026-04-01'},
+                {'original_text': 'Billing issue', 'source_platform': 'ws', 'sentiment_label': 'negative', 'date': _today_str()},
             ]
         }
 

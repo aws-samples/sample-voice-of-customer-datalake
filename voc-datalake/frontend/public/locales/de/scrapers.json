@@ -159,7 +159,15 @@
     "running": "Läuft..."
   },
   "subtitle": "Konfigurieren Sie Web-Scraper und App-Review-Quellen zur Feedback-Erfassung",
+  "generator": {
+    "completed": "{{count}} synthetische Bewertungen generiert. Sie erscheinen kurz nach der Verarbeitung.",
+    "generate": "Generieren",
+    "generating": "Wird generiert…",
+    "runningNote": "Bewertungen werden mit KI generiert. Das kann bis zu einer Minute dauern.",
+    "startFailed": "Generierung konnte nicht gestartet werden."
+  },
   "templateSelector": {
+    "syntheticData": "Synthetische Daten",
     "appReviewSources": "App-Bewertungsquellen",
     "autoDiscovered": "Automatisch erkannt",
     "cancel": "Abbrechen",

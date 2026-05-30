@@ -159,7 +159,15 @@
     "running": "Running..."
   },
   "subtitle": "Configure web scrapers and app review sources to collect feedback",
+  "generator": {
+    "completed": "Generated {{count}} synthetic reviews. They'll appear shortly after processing.",
+    "generate": "Generate",
+    "generating": "Generating…",
+    "runningNote": "Generating reviews with AI. This can take up to a minute.",
+    "startFailed": "Failed to start generation."
+  },
   "templateSelector": {
+    "syntheticData": "Synthetic Data",
     "appReviewSources": "App Review Sources",
     "autoDiscovered": "Auto-discovered",
     "cancel": "Cancel",

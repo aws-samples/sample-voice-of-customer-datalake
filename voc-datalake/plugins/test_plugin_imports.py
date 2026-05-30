@@ -35,3 +35,9 @@ class TestSharedModuleImports:
         """Webscraper plugin must import without errors (no Lambda layer deps)."""
         mod = importlib.import_module('webscraper.ingestor.handler')
         assert hasattr(mod, 'WebScraperIngestor')
+
+    def test_synthetic_reviews_handler_imports_successfully(self):
+        """Synthetic reviews plugin must import without errors (uses shared.converse)."""
+        mod = importlib.import_module('synthetic_reviews.ingestor.handler')
+        assert hasattr(mod, 'SyntheticReviewsIngestor')
+        assert callable(mod.lambda_handler)

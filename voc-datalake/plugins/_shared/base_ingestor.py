@@ -89,6 +89,7 @@ class BaseIngestor(ABC):
         return [
             "webscraper", "s3_import", "manual_import",
             "app_reviews_ios", "app_reviews_android",
+            "synthetic_reviews",
         ]
 
     def get_watermark(self, key: str, default: str = None) -> str:

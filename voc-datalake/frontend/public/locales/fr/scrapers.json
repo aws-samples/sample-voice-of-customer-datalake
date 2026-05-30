@@ -168,7 +168,15 @@
     "running": "En cours..."
   },
   "subtitle": "Configurez les web scrapers et les sources d'avis d'applications pour collecter les retours",
+  "generator": {
+    "completed": "{{count}} avis synthétiques générés. Ils apparaîtront peu après le traitement.",
+    "generate": "Générer",
+    "generating": "Génération…",
+    "runningNote": "Génération d'avis avec l'IA. Cela peut prendre jusqu'à une minute.",
+    "startFailed": "Échec du démarrage de la génération."
+  },
   "templateSelector": {
+    "syntheticData": "Données synthétiques",
     "appReviewSources": "Sources d'avis d'applications",
     "autoDiscovered": "Auto-découvert",
     "cancel": "Annuler",

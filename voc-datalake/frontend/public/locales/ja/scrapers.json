@@ -159,7 +159,15 @@
     "running": "実行中..."
   },
   "subtitle": "Webスクレイパーとアプリレビューソースを設定してフィードバックを収集",
+  "generator": {
+    "completed": "{{count}} 件の合成レビューを生成しました。処理後まもなく表示されます。",
+    "generate": "生成",
+    "generating": "生成中…",
+    "runningNote": "AIでレビューを生成しています。最大1分ほどかかる場合があります。",
+    "startFailed": "生成を開始できませんでした。"
+  },
   "templateSelector": {
+    "syntheticData": "合成データ",
     "appReviewSources": "アプリレビューソース",
     "autoDiscovered": "自動検出",
     "cancel": "キャンセル",

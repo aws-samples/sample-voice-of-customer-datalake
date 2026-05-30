@@ -159,7 +159,15 @@
     "running": "运行中..."
   },
   "subtitle": "配置网页抓取器和应用评论源以收集反馈",
+  "generator": {
+    "completed": "已生成 {{count}} 条合成评论。处理后将很快显示。",
+    "generate": "生成",
+    "generating": "生成中…",
+    "runningNote": "正在使用 AI 生成评论。这可能需要长达一分钟。",
+    "startFailed": "无法开始生成。"
+  },
   "templateSelector": {
+    "syntheticData": "合成数据",
     "appReviewSources": "应用评论源",
     "autoDiscovered": "自动发现",
     "cancel": "取消",

@@ -159,7 +159,15 @@
     "running": "실행 중..."
   },
   "subtitle": "웹 스크레이퍼와 앱 리뷰 소스를 구성하여 피드백 수집",
+  "generator": {
+    "completed": "{{count}}개의 합성 리뷰를 생성했습니다. 처리 후 곧 표시됩니다.",
+    "generate": "생성",
+    "generating": "생성 중…",
+    "runningNote": "AI로 리뷰를 생성하고 있습니다. 최대 1분 정도 걸릴 수 있습니다.",
+    "startFailed": "생성을 시작하지 못했습니다."
+  },
   "templateSelector": {
+    "syntheticData": "합성 데이터",
     "appReviewSources": "앱 리뷰 소스",
     "autoDiscovered": "자동 발견",
     "cancel": "취소",

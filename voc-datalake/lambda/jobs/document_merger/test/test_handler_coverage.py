@@ -2,7 +2,14 @@
 Additional coverage tests for document_merger/handler.py.
 Covers: use_feedback=True path (lines 80-107), feedback filtering (line 115).
 """
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
+
+
+def _today_str() -> str:
+    """Today's date in ISO format. Used for test feedback items so they fall
+    within the configured lookback window regardless of when tests run."""
+    return datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
 
 class TestDocumentMergerFeedbackPath:
@@ -69,8 +76,8 @@ class TestDocumentMergerFeedbackPath:
 
         mock_feedback_table.query.return_value = {
             'Items': [
-                {'original_text': 'Billing issue', 'source_platform': 'ws', 'sentiment_label': 'negative', 'category': 'billing', 'date': '2026-03-28'},
-                {'original_text': 'Good delivery', 'source_platform': 'ws', 'sentiment_label': 'positive', 'category': 'delivery', 'date': '2026-03-28'},
+                {'original_text': 'Billing issue', 'source_platform': 'ws', 'sentiment_label': 'negative', 'category': 'billing', 'date': _today_str()},
+                {'original_text': 'Good delivery', 'source_platform': 'ws', 'sentiment_label': 'positive', 'category': 'delivery', 'date': _today_str()},
             ]
         }
 

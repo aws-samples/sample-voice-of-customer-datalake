@@ -168,7 +168,15 @@
     "running": "Ejecutando..."
   },
   "subtitle": "Configure web scrapers y fuentes de reseñas de apps para recopilar feedback",
+  "generator": {
+    "completed": "Se generaron {{count}} reseñas sintéticas. Aparecerán poco después del procesamiento.",
+    "generate": "Generar",
+    "generating": "Generando…",
+    "runningNote": "Generando reseñas con IA. Esto puede tardar hasta un minuto.",
+    "startFailed": "No se pudo iniciar la generación."
+  },
   "templateSelector": {
+    "syntheticData": "Datos sintéticos",
     "appReviewSources": "Fuentes de reseñas de apps",
     "autoDiscovered": "Auto-descubierto",
     "cancel": "Cancelar",
