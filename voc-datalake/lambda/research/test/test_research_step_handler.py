@@ -155,3 +155,55 @@ class TestStepError:
         call_args = mock_update.call_args
         assert call_args[0][2] == 'failed'
         assert 'Lambda timeout' in call_args[1]['error']
+
+    @patch('research_step_handler.update_job_status')
+    def test_extracts_error_message_from_json_cause(self, mock_update):
+        """Parses Cause as JSON and extracts errorMessage when present."""
+        from research_step_handler import step_error
+
+        event = {
+            'project_id': 'proj_123',
+            'job_id': 'job_456',
+            'error': {
+                'Cause': '{"errorMessage": "Bedrock invocation failed", "errorType": "ClientError"}',
+                'Error': 'Lambda.Unknown',
+            },
+        }
+
+        result = step_error(event)
+
+        assert result['success'] is False
+        assert result['error'] == 'Bedrock invocation failed'
+        assert mock_update.call_args[1]['error'] == 'Bedrock invocation failed'
+
+    @patch('research_step_handler.update_job_status')
+    def test_falls_back_to_raw_cause_when_json_lacks_error_message(self, mock_update):
+        """Uses raw Cause string when parsed JSON has no errorMessage field."""
+        from research_step_handler import step_error
+
+        event = {
+            'project_id': 'proj_123',
+            'job_id': 'job_456',
+            'error': {'Cause': '{"someOtherField": "value"}', 'Error': 'States.TaskFailed'},
+        }
+
+        result = step_error(event)
+
+        assert result['success'] is False
+        assert result['error'] == '{"someOtherField": "value"}'
+
+    @patch('research_step_handler.update_job_status')
+    def test_falls_back_to_error_field_when_cause_is_empty(self, mock_update):
+        """Uses Error field when Cause is the default empty JSON object."""
+        from research_step_handler import step_error
+
+        event = {
+            'project_id': 'proj_123',
+            'job_id': 'job_456',
+            'error': {'Error': 'States.Timeout'},
+        }
+
+        result = step_error(event)
+
+        assert result['success'] is False
+        assert result['error'] == 'States.Timeout'
