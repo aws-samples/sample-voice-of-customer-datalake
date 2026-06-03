@@ -1,0 +1,44 @@
+{
+  "configureApi": "설정에서 API 엔드포인트를 구성하세요",
+  "filters": {
+    "allCategories": "모든 카테고리",
+    "allSources": "모든 소스",
+    "allSubcategories": "모든 하위 카테고리",
+    "clear": "초기화",
+    "collapse": "축소",
+    "collapseAll": "모두 축소",
+    "expand": "확장",
+    "expandAll": "모두 확장",
+    "pdf": "PDF",
+    "showResolved": "해결됨 표시",
+    "similarity": "유사도:",
+    "similarityHigh": "높음",
+    "similarityLow": "낮음",
+    "similarityMed": "중간",
+    "similarityOff": "끔",
+    "urgentOnly": "긴급만"
+  },
+  "noDataHint": "시간 범위를 확장하거나 필터를 조정해보세요",
+  "noDataTitle": "선택한 기간에 대한 문제 분석 데이터를 찾을 수 없습니다",
+  "stats": {
+    "categories": "카테고리",
+    "feedback": "피드백",
+    "problems": "문제",
+    "subcategories": "하위 카테고리",
+    "urgent": "긴급"
+  },
+  "tree": {
+    "markResolved": "해결됨으로 표시",
+    "markUnresolved": "미해결로 표시",
+    "original": "원본: {{text}}",
+    "problems_one": "{{count}}개 문제",
+    "problems_other": "{{count}}개 문제",
+    "resolved": "해결됨",
+    "reviews_one": "{{count}}개 리뷰",
+    "reviews_other": "{{count}}개 리뷰",
+    "similar": "유사:",
+    "sub_one": "{{count}}개 하위",
+    "sub_other": "{{count}}개 하위",
+    "unknown": "알 수 없음"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "contactAdmin": "접근 권한이 필요하시면 관리자에게 문의하세요.",
+  "enterPassword": "비밀번호를 입력하세요",
+  "enterUsername": "사용자 이름을 입력하세요",
+  "errors": {
+    "failedNewPassword": "새 비밀번호 설정에 실패했습니다",
+    "failedResetPassword": "비밀번호 재설정에 실패했습니다",
+    "failedSendCode": "인증 코드 전송에 실패했습니다",
+    "loginFailed": "로그인 실패",
+    "passwordResetSuccess": "비밀번호가 재설정되었습니다. 다시 로그인해 주세요.",
+    "passwordsDoNotMatch": "비밀번호가 일치하지 않습니다",
+    "passwordTooShort": "비밀번호는 8자 이상이어야 합니다",
+    "sessionExpired": "세션이 만료되었습니다. 다시 로그인해 주세요.",
+    "verificationCodeSent": "이메일로 인증 코드가 전송되었습니다"
+  },
+  "forgotPassword": "비밀번호를 잊으셨나요?",
+  "newPassword": {
+    "confirmLabel": "비밀번호 확인",
+    "confirmPlaceholder": "비밀번호를 다시 입력하세요",
+    "description": "계정의 새 비밀번호를 설정해야 합니다.",
+    "label": "새 비밀번호",
+    "placeholder": "새 비밀번호를 입력하세요",
+    "settingPassword": "비밀번호 설정 중...",
+    "showPassword": "비밀번호 표시",
+    "submit": "비밀번호 설정",
+    "title": "새 비밀번호 설정"
+  },
+  "password": "비밀번호",
+  "resetPassword": {
+    "backToLogin": "로그인으로 돌아가기",
+    "description": "인증 코드를 받으려면 사용자 이름을 입력하세요.",
+    "sendCode": "코드 전송",
+    "sendingCode": "코드 전송 중...",
+    "title": "비밀번호 재설정"
+  },
+  "signIn": "로그인",
+  "signingIn": "로그인 중...",
+  "usernameOrEmail": "사용자 이름 또는 이메일",
+  "verifyCode": {
+    "description": "이메일로 전송된 인증 코드를 확인하세요.",
+    "label": "인증 코드",
+    "placeholder": "코드를 입력하세요",
+    "resettingPassword": "비밀번호 재설정 중...",
+    "submit": "비밀번호 재설정",
+    "title": "인증 코드 입력"
+  }
+}

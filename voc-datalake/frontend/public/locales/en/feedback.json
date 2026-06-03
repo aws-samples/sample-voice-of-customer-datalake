@@ -1,0 +1,16 @@
+{
+  "configureEndpoint": "Please configure your API endpoint in Settings",
+  "filters": {
+    "allCategories": "All Categories",
+    "allSentiments": "All Sentiments",
+    "allSources": "All Sources",
+    "clearFilters": "Clear Filters",
+    "mostRecent": "Most Recent",
+    "searchFeedback": "Search feedback...",
+    "urgentOnly": "Urgent Only"
+  },
+  "forQuery": "for \"{{query}}\"",
+  "noFeedbackFound": "No feedback found matching your filters",
+  "showingOf_one": "Showing {{count}} of {{total}} result",
+  "showingOf_other": "Showing {{count}} of {{total}} results"
+}

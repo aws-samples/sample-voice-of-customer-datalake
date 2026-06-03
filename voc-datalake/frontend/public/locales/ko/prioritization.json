@@ -1,0 +1,74 @@
+{
+  "actions": {
+    "reset": "초기화",
+    "save": "점수 저장",
+    "saveMobile": "저장",
+    "saving": "저장 중...",
+    "savingMobile": "..."
+  },
+  "configureApiEndpoint": "우선순위 지정을 보려면 설정에서 API 엔드포인트를 구성하세요.",
+  "empty": {
+    "description": "프로젝트에서 PR/FAQ를 생성하여 우선순위 지정을 시작하세요.",
+    "title": "PR/FAQ를 찾을 수 없음"
+  },
+  "framework": {
+    "description": "각 PR/FAQ를 다음 항목으로 평가하세요: <strong>영향도</strong>, <strong>출시 시간</strong>, <strong>전략적 부합도</strong>, <strong>신뢰도</strong>.",
+    "title": "우선순위 지정 프레임워크"
+  },
+  "loading": "PR/FAQ 로드 중...",
+  "notes": {
+    "label": "메모",
+    "placeholder": "이 우선순위 지정 결정에 대한 메모를 추가하세요..."
+  },
+  "preview": {
+    "title": "PR/FAQ 미리보기",
+    "viewFull": "전체 문서 보기",
+    "viewMobile": "보기"
+  },
+  "priority": {
+    "high": "높은 우선순위",
+    "low": "낮은 우선순위",
+    "medium": "중간 우선순위",
+    "none": "평가되지 않음"
+  },
+  "scores": {
+    "confidence": "신뢰도",
+    "confidenceDescription": "영향도 및 출시 시간 추정의 확실성",
+    "fast": "빠름",
+    "high": "높음",
+    "impact": "영향도",
+    "impactDescription": "비즈니스 가치 및 고객 이점",
+    "low": "낮음",
+    "score": "점수",
+    "slow": "느림",
+    "strategicFit": "전략적 부합도",
+    "strategicFitDescription": "회사 목표와의 부합도",
+    "timeToMarket": "출시 시간",
+    "timeToMarketDescription": "얼마나 빨리 출시할 수 있나요?",
+    "title": "우선순위 지정 점수"
+  },
+  "sort": {
+    "date": "날짜",
+    "dateFull": "생성 날짜",
+    "impact": "영향도",
+    "label": "정렬 기준:",
+    "priority": "우선순위",
+    "priorityFull": "우선순위 점수",
+    "ttm": "출시 시간",
+    "ttmFull": "출시 시간"
+  },
+  "stats": {
+    "highPriority": "높은 우선순위",
+    "mediumPriority": "중간 우선순위",
+    "notScored": "평가되지 않음",
+    "totalPrfaqs": "전체 PR/FAQ"
+  },
+  "subtitle": "모든 프로젝트에서 PR/FAQ를 평가하고 우선순위를 지정하세요",
+  "title": "PR/FAQ 우선순위 지정",
+  "unsavedChanges": {
+    "cancel": "페이지에 머물기",
+    "confirm": "변경 사항 삭제",
+    "message": "저장되지 않은 우선순위 지정 점수가 있습니다. 변경 사항을 삭제하고 이 페이지를 떠나시겠습니까?",
+    "title": "저장되지 않은 변경 사항"
+  }
+}

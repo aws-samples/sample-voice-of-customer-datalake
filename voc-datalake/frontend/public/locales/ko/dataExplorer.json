@@ -1,0 +1,67 @@
+{
+  "categories": {
+    "errorLoading": "카테고리 로딩 오류",
+    "noCategories": "카테고리 없음",
+    "summary": "{{count}}개 카테고리 • {{total}}개 항목 • 최근 {{days}}일",
+    "summary_one": "{{count}}개 카테고리 • {{total}}개 항목 • 최근 {{days}}일",
+    "summary_other": "{{count}}개 카테고리 • {{total}}개 항목 • 최근 {{days}}일"
+  },
+  "deleteConfirm": {
+    "deleteFeedback": "피드백 삭제",
+    "deleteS3File": "S3 파일 삭제",
+    "message": "확실합니까? 이 작업은 취소할 수 없습니다."
+  },
+  "description": "S3 원본 데이터 및 DynamoDB 처리된 레코드 탐색, 편집 및 동기화",
+  "editModal": {
+    "cancel": "취소",
+    "close": "닫기",
+    "create": "생성",
+    "createNewFile": "새 파일 생성",
+    "editFeedback": "피드백 편집",
+    "editS3File": "S3 파일 편집",
+    "id": "ID",
+    "invalidJson": "잘못된 JSON: {{error}}",
+    "key": "키",
+    "save": "저장",
+    "syncToDynamo": "DynamoDB도 업데이트",
+    "syncToS3": "S3도 업데이트",
+    "type": "유형",
+    "viewFeedback": "피드백 보기",
+    "viewS3File": "S3 파일 보기"
+  },
+  "feedback": {
+    "category": "카테고리: {{category}}",
+    "delete": "삭제",
+    "edit": "편집",
+    "errorLoading": "피드백 로딩 오류",
+    "noFeedback": "피드백을 찾을 수 없음",
+    "showingRecords": "{{total}}개 중 {{filtered}}개 레코드 표시",
+    "urgent": "긴급",
+    "view": "보기"
+  },
+  "filters": {
+    "allSources": "모든 소스",
+    "searchPlaceholder": "검색..."
+  },
+  "newFile": "새 파일",
+  "notConfigured": "데이터를 탐색하려면 설정에서 API 엔드포인트를 구성하세요",
+  "refresh": "새로고침",
+  "s3Browser": {
+    "back": "뒤로",
+    "delete": "삭제",
+    "download": "다운로드",
+    "edit": "편집",
+    "errorLoading": "파일 로딩 오류",
+    "noFiles": "파일을 찾을 수 없음",
+    "view": "보기"
+  },
+  "tabs": {
+    "categories": "카테고리",
+    "categoriesShort": "카테고리",
+    "feedbackShort": "피드백",
+    "processedFeedback": "처리된 피드백",
+    "s3RawData": "S3 원본 데이터",
+    "s3Short": "S3"
+  },
+  "title": "데이터 탐색기"
+}
