@@ -468,7 +468,7 @@ export class VocApiStack extends cdk.Stack {
     chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
         'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       ],
     }));
