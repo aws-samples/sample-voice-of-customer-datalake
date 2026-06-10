@@ -695,18 +695,20 @@ export class VocApiStack extends cdk.Stack {
     );
 
     // /integrations/*
+    // {source} uses a greedy proxy so all sub-paths (credentials, apps, apps/{id})
+    // route to the integrations Lambda, which owns the routing.
     const integrationsResource = this.api.root.addResource('integrations');
     integrationsResource.addResource('status').addMethod('GET', integrationsIntegration, authMethodOptions);
     const intSourceResource = integrationsResource.addResource('{source}');
-    intSourceResource.addResource('credentials').addMethod('PUT', integrationsIntegration, authMethodOptions);
-    intSourceResource.addResource('test').addMethod('POST', integrationsIntegration, authMethodOptions);
+    intSourceResource.addProxy({ defaultIntegration: integrationsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /sources/*
+    // {source} uses a greedy proxy so all sub-paths (enable, disable, run)
+    // route to the integrations Lambda.
     const sourcesResource = this.api.root.addResource('sources');
     sourcesResource.addResource('status').addMethod('GET', integrationsIntegration, authMethodOptions);
     const srcSourceResource = sourcesResource.addResource('{source}');
-    srcSourceResource.addResource('enable').addMethod('PUT', integrationsIntegration, authMethodOptions);
-    srcSourceResource.addResource('disable').addMethod('PUT', integrationsIntegration, authMethodOptions);
+    srcSourceResource.addProxy({ defaultIntegration: integrationsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /scrapers/*
     const scrapersResource = this.api.root.addResource('scrapers');
