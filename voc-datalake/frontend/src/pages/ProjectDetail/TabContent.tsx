@@ -1,7 +1,7 @@
 /**
  * TabContent - Renders the active tab content
  */
-import type { Project, ProjectPersona, ProjectDocument, ProjectJob } from '../../api/client'
+import type { Project, ProjectPersona, ProjectDocument } from '../../api/client'
 import type { Tab, NoteItem } from './types'
 import OverviewTab from './OverviewTab'
 import PersonasTab from './PersonasTab'
@@ -13,7 +13,6 @@ interface TabContentProps {
   readonly project: Project
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
-  readonly jobs: ProjectJob[]
   readonly selectedPersona: ProjectPersona | null
   readonly selectedDoc: ProjectDocument | null
   readonly chatMessages: Array<{ role: 'user' | 'assistant'; content: string }>
@@ -24,7 +23,6 @@ interface TabContentProps {
   readonly onGenerateDoc: () => void
   readonly onRunResearch: () => void
   readonly onRemixDocuments: () => void
-  readonly onDismissJob: (jobId: string) => void
   readonly onSaveKiroPrompt: (prompt: string) => void
   readonly onSelectPersona: (p: ProjectPersona | null) => void
   readonly onEditPersona: () => void
@@ -44,7 +42,6 @@ export default function TabContent({
   project,
   personas,
   documents,
-  jobs,
   selectedPersona,
   selectedDoc,
   chatMessages,
@@ -55,7 +52,6 @@ export default function TabContent({
   onGenerateDoc,
   onRunResearch,
   onRemixDocuments,
-  onDismissJob,
   onSaveKiroPrompt,
   onSelectPersona,
   onEditPersona,
@@ -75,12 +71,10 @@ export default function TabContent({
         project={project}
         personas={personas}
         documents={documents}
-        jobs={jobs}
         onGeneratePersonas={onGeneratePersonas}
         onGenerateDoc={onGenerateDoc}
         onRunResearch={onRunResearch}
         onRemixDocuments={onRemixDocuments}
-        onDismissJob={onDismissJob}
         onSaveKiroPrompt={onSaveKiroPrompt}
       />
     )
