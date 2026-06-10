@@ -16,6 +16,7 @@ import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
 import { uniqueName } from '../utils/naming';
+import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 
 export interface VocApiStackProps extends cdk.StackProps {
@@ -73,6 +74,16 @@ export class VocApiStack extends cdk.Stack {
       frontendDomainName, userPool, userPoolClient, identityPool, processingQueueUrl, processingQueueArn,
       secretsArn, s3ImportBucket, researchStateMachine, brandName
     } = props;
+
+    // Guard: fail fast (before any asset bundling) if frontend/dist is missing
+    // or stale, so an out-of-date UI can never be shipped. CDK packages
+    // frontend/dist as-is via s3deploy.Source.asset and never rebuilds it.
+    // Bypass with: cdk deploy -c skipFrontendBuildCheck=true (or SKIP_FRONTEND_BUILD_CHECK=1).
+    assertFrontendBuildFresh({
+      frontendRoot: path.join(__dirname, '../../frontend'),
+      skip: this.node.tryGetContext('skipFrontendBuildCheck') === true
+        || this.node.tryGetContext('skipFrontendBuildCheck') === 'true',
+    });
 
 
 

@@ -234,6 +234,38 @@ npm run build
 # Output in dist/ folder
 ```
 
+### Frontend Build Freshness Guard
+
+`VocApiStack` deploys the frontend by packaging `voc-datalake/frontend/dist`
+as-is (`s3deploy.Source.asset('frontend/dist')`). **CDK does not rebuild the
+frontend** — whatever is in `dist` at synth time is what ships.
+
+To prevent shipping a stale UI (a common mistake after switching branches or
+editing `src/` without rebuilding), a synth-time guard runs at the top of the
+`VocApiStack` constructor. It fails `cdk synth`/`diff`/`deploy` if:
+
+- `frontend/dist/index.html` is missing (frontend never built), or
+- any source input (`src/`, `public/`, `index.html`, `vite.config.ts`,
+  `tsconfig*.json`, `package.json`) is newer than the built `dist/index.html`.
+
+The error names the offending file and tells you to rebuild:
+
+```bash
+cd voc-datalake/frontend && npm run build
+```
+
+Always run `npm run deploy:frontend` (which builds, syncs, and invalidates) or
+rebuild `dist` before `cdk deploy`. The guard is a safety net, not a substitute
+for building.
+
+**Bypass** (rare, intentional cases only):
+
+```bash
+cdk deploy VocApiStack -c skipFrontendBuildCheck=true
+# or
+SKIP_FRONTEND_BUILD_CHECK=1 cdk deploy VocApiStack
+```
+
 ## Configuration
 
 ### Plugin Status
