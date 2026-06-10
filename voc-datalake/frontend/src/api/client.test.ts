@@ -24,7 +24,7 @@ vi.mock('../services/auth', () => ({
   },
 }))
 
-import { api, getDaysFromRange, getDateRangeParams } from './client'
+import { api, getDaysFromRange, getDateRangeParams, ALL_TIME_DAYS } from './client'
 import { authService } from '../services/auth'
 
 describe('API Client', () => {
@@ -191,7 +191,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockSummary),
       })
 
-      const result = await api.getSummary(30)
+      const result = await api.getSummary({ days: 30 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/summary?days=30',
@@ -206,10 +206,24 @@ describe('API Client', () => {
         json: () => Promise.resolve({}),
       })
 
-      await api.getSummary(7, 'webscraper')
+      await api.getSummary({ days: 7 }, 'webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/summary?days=7&source=webscraper',
+        expect.any(Object)
+      )
+    })
+
+    it('sends a rolling day count for a custom window', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({}),
+      })
+
+      await api.getSummary({ days: 21 })
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/metrics/summary?days=21',
         expect.any(Object)
       )
     })
@@ -223,7 +237,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockSentiment),
       })
 
-      const result = await api.getSentiment(7)
+      const result = await api.getSentiment({ days: 7 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/sentiment?days=7',
@@ -241,7 +255,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockCategories),
       })
 
-      const result = await api.getCategories(14)
+      const result = await api.getCategories({ days: 14 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/categories?days=14',
@@ -259,7 +273,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockSources),
       })
 
-      const result = await api.getSources(7)
+      const result = await api.getSources({ days: 7 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/sources?days=7',
@@ -668,7 +682,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockResponse),
       })
 
-      const result = await api.getPersonas(7)
+      const result = await api.getPersonas({ days: 7 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/personas?days=7',
@@ -683,7 +697,7 @@ describe('API Client', () => {
         json: () => Promise.resolve({ period_days: 7, personas: {} }),
       })
 
-      await api.getPersonas(7, 'webscraper')
+      await api.getPersonas({ days: 7 }, 'webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/personas?days=7&source=webscraper',
@@ -1532,13 +1546,16 @@ describe('getDaysFromRange', () => {
     expect(getDaysFromRange('unknown')).toBe(7)
   })
 
-  it('calculates days from custom date range', () => {
-    const customRange = { start: '2025-01-01', end: '2025-01-10' }
-    expect(getDaysFromRange('custom', customRange)).toBe(10)
+  it('returns the custom lookback in days', () => {
+    expect(getDaysFromRange('custom', 10)).toBe(10)
   })
 
-  it('returns default when custom range is null', () => {
+  it('returns default when custom days is null', () => {
     expect(getDaysFromRange('custom', null)).toBe(7)
+  })
+
+  it('returns default when custom days is invalid', () => {
+    expect(getDaysFromRange('custom', 0)).toBe(7)
   })
 })
 
@@ -1548,15 +1565,25 @@ describe('getDateRangeParams', () => {
     expect(getDateRangeParams('30d')).toEqual({ days: 30 })
   })
 
-  it('returns start_date and end_date for custom range', () => {
-    const customRange = { start: '2025-01-01', end: '2025-01-31' }
-    expect(getDateRangeParams('custom', customRange)).toEqual({
-      start_date: '2025-01-01',
-      end_date: '2025-01-31',
-    })
+  it('returns the custom lookback as days', () => {
+    expect(getDateRangeParams('custom', 21)).toEqual({ days: 21 })
   })
 
-  it('returns days when custom range is null', () => {
+  it('returns default days when custom days is null', () => {
     expect(getDateRangeParams('custom', null)).toEqual({ days: 7 })
+  })
+
+  it('caps the "all" range at ALL_TIME_DAYS', () => {
+    expect(getDateRangeParams('all')).toEqual({ days: ALL_TIME_DAYS })
+    // The cap must not exceed the backend validate_days max (365) to avoid
+    // silent clamping server-side.
+    expect(ALL_TIME_DAYS).toBeLessThanOrEqual(365)
+  })
+
+  it('only ever carries a days param (no calendar window)', () => {
+    const params = getDateRangeParams('custom', 30)
+    expect(params).toEqual({ days: 30 })
+    expect(params).not.toHaveProperty('start_date')
+    expect(params).not.toHaveProperty('end_date')
   })
 })

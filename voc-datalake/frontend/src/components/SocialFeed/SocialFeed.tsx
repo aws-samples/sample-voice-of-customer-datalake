@@ -13,7 +13,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Star, ExternalLink } from 'lucide-react'
-import { api, getDaysFromRange } from '../../api/client'
+import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import clsx from 'clsx'
 import type { FeedbackItem } from '../../api/client'
@@ -96,20 +96,20 @@ interface SocialFeedProps {
 }
 
 export default function SocialFeed({ limit = 10, showFilters = true }: SocialFeedProps) {
-  const { timeRange, customDateRange, config } = useConfigStore()
-  const days = getDaysFromRange(timeRange, customDateRange)
+  const { timeRange, customDays, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays)
   const [activeSource, setActiveSource] = useState<string | null>(null)
 
   // Fetch available sources dynamically
   const { data: sourcesData } = useQuery({
-    queryKey: ['sources', days],
-    queryFn: () => api.getSources(days),
+    queryKey: ['sources', dateParams],
+    queryFn: () => api.getSources(dateParams),
     enabled: !!config.apiEndpoint,
   })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['feedback', days, activeSource, customDateRange],
-    queryFn: () => api.getFeedback({ days, source: activeSource || undefined, limit }),
+    queryKey: ['feedback', dateParams, activeSource],
+    queryFn: () => api.getFeedback({ ...dateParams, source: activeSource || undefined, limit }),
     enabled: !!config.apiEndpoint,
   })
 

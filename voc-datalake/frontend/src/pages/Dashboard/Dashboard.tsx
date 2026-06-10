@@ -13,7 +13,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, BarChart, Bar } from 'recharts'
 import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap } from 'lucide-react'
-import { api, getDaysFromRange } from '../../api/client'
+import { api, getDateRangeParams } from '../../api/client'
 import type { MetricsSummary, SentimentBreakdown, CategoryBreakdown, SourceBreakdown, FeedbackItem } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import MetricCard from '../../components/MetricCard'
@@ -244,37 +244,37 @@ function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
 }
 
 export default function Dashboard() {
-  const { timeRange, customDateRange, config } = useConfigStore()
-  const days = getDaysFromRange(timeRange, customDateRange)
+  const { timeRange, customDays, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays)
   const isConfigured = !!config.apiEndpoint
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['summary', days],
-    queryFn: () => api.getSummary(days),
+    queryKey: ['summary', dateParams],
+    queryFn: () => api.getSummary(dateParams),
     enabled: isConfigured,
   })
 
   const { data: sentiment } = useQuery({
-    queryKey: ['sentiment', days],
-    queryFn: () => api.getSentiment(days),
+    queryKey: ['sentiment', dateParams],
+    queryFn: () => api.getSentiment(dateParams),
     enabled: isConfigured,
   })
 
   const { data: categories } = useQuery({
-    queryKey: ['categories', days],
-    queryFn: () => api.getCategories(days),
+    queryKey: ['categories', dateParams],
+    queryFn: () => api.getCategories(dateParams),
     enabled: isConfigured,
   })
 
   const { data: sources } = useQuery({
-    queryKey: ['sources', days],
-    queryFn: () => api.getSources(days),
+    queryKey: ['sources', dateParams],
+    queryFn: () => api.getSources(dateParams),
     enabled: isConfigured,
   })
 
   const { data: urgentFeedback } = useQuery({
-    queryKey: ['urgent', days],
-    queryFn: () => api.getUrgentFeedback({ days, limit: 5 }),
+    queryKey: ['urgent', dateParams],
+    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: 5 }),
     enabled: isConfigured,
   })
 

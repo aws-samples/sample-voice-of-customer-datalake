@@ -268,7 +268,7 @@ describe('ChatFilters', () => {
       render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
       
       // API should be called
-      expect(api.getSources).toHaveBeenCalledWith(30)
+      expect(api.getSources).toHaveBeenCalledWith({ days: 30 })
     })
 
     it('loads categories from API when endpoint is configured', async () => {
@@ -280,7 +280,7 @@ describe('ChatFilters', () => {
       render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
       
       // API should be called
-      expect(api.getCategories).toHaveBeenCalledWith(30)
+      expect(api.getCategories).toHaveBeenCalledWith({ days: 30 })
     })
 
     it('handles API errors gracefully for sources', async () => {

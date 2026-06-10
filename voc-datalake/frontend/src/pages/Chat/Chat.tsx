@@ -194,9 +194,9 @@ export default function Chat() {
     t, i18n,
   } = useTranslation('chat')
   const {
-    config, timeRange,
+    config, timeRange, customDays,
   } = useConfigStore()
-  const days = getDaysFromRange(timeRange)
+  const days = getDaysFromRange(timeRange, customDays)
   const [input, setInput] = useState('')
   const [showSidebar, setShowSidebar] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)

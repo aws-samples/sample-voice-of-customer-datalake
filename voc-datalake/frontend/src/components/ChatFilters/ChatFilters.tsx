@@ -123,13 +123,13 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
   useEffect(() => {
     if (!config.apiEndpoint) return
 
-    api.getSources(30).then(data => {
+    api.getSources({ days: 30 }).then(data => {
       if (data.sources && Object.keys(data.sources).length > 0) {
         setSources(buildSourceOptions(data))
       }
     }).catch(() => { /* ignore */ })
 
-    api.getCategories(30).then(data => {
+    api.getCategories({ days: 30 }).then(data => {
       if (data.categories && Object.keys(data.categories).length > 0) {
         setCategories(buildCategoryOptions(data))
       }

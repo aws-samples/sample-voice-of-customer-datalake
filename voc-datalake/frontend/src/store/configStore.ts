@@ -21,11 +21,12 @@ export interface Config {
 
 interface ConfigStore {
   config: Config
-  timeRange: '24h' | '48h' | '7d' | '30d' | 'custom'
-  customDateRange: { start: string; end: string } | null
+  timeRange: '24h' | '48h' | '7d' | '30d' | 'custom' | 'all'
+  /** Rolling lookback (in days) used when timeRange is 'custom'. */
+  customDays: number | null
   setConfig: (config: Partial<Config>) => void
-  setTimeRange: (range: '24h' | '48h' | '7d' | '30d' | 'custom') => void
-  setCustomDateRange: (range: { start: string; end: string } | null) => void
+  setTimeRange: (range: '24h' | '48h' | '7d' | '30d' | 'custom' | 'all') => void
+  setCustomDays: (days: number | null) => void
   syncWithRuntimeConfig: () => void
 }
 
@@ -63,12 +64,12 @@ export const useConfigStore = create<ConfigStore>()(
         }
       },
       timeRange: '7d',
-      customDateRange: null,
+      customDays: null,
       setConfig: (newConfig) => set((state) => ({ 
         config: { ...state.config, ...newConfig } 
       })),
       setTimeRange: (range) => set({ timeRange: range }),
-      setCustomDateRange: (range) => set({ customDateRange: range }),
+      setCustomDays: (days) => set({ customDays: days }),
       /**
        * Syncs the store's apiEndpoint with the runtime config.
        * This ensures first-time users get the correct API endpoint

@@ -16,6 +16,7 @@ vi.mock('../../api/client', () => ({
     getUrgentFeedback: (params: unknown) => mockGetUrgentFeedback(params),
   },
   getDaysFromRange: vi.fn(() => 7),
+  getDateRangeParams: () => ({ days: 7 }),
 }))
 
 // Mock stores

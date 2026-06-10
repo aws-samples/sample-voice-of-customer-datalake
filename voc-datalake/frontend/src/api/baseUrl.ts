@@ -25,17 +25,27 @@ export function getBaseUrl(): string {
 }
 
 /**
- * Convert a time range string to a number of days.
+ * Bounded lookback (in days) used for the widest ("90d") time range.
+ *
+ * The metrics backend iterates day-by-day (`for i in range(days)`) and some
+ * endpoints (categories, sentiment) fan out into `categories × days` sequential
+ * DynamoDB get_item calls. At 365 days that exceeds API Gateway's 29s timeout,
+ * so those endpoints time out. We therefore cap the widest range at 90 days,
+ * which also matches the aggregates table's 90-day TTL (data older than that
+ * isn't retained anyway) and keeps every metrics endpoint within the timeout.
+ * Must stay <= the backend's `validate_days` max (365) to avoid silent clamping.
  */
-export function getDaysFromRange(range: string, customRange?: {
-  start: string;
-  end: string
-} | null): number {
-  if (range === 'custom' && customRange) {
-    const start = new Date(customRange.start)
-    const end = new Date(customRange.end)
-    const diffTime = Math.abs(end.getTime() - start.getTime())
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
+export const ALL_TIME_DAYS = 90
+
+/**
+ * Convert a time range string to a number of days.
+ *
+ * For the 'custom' range the caller supplies a rolling lookback in days
+ * (`customDays`); when absent or invalid we fall back to the 7-day default.
+ */
+export function getDaysFromRange(range: string, customDays?: number | null): number {
+  if (range === 'custom') {
+    return customDays && customDays > 0 ? customDays : 7
   }
 
   switch (range) {
@@ -43,6 +53,7 @@ export function getDaysFromRange(range: string, customRange?: {
     case '48h': return 2
     case '7d': return 7
     case '30d': return 30
+    case 'all': return ALL_TIME_DAYS
     default: return 7
   }
 }

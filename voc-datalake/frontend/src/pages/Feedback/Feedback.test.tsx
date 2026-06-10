@@ -22,6 +22,7 @@ vi.mock('../../api/client', () => ({
     getEntities: (params: unknown) => mockGetEntities(params),
   },
   getDaysFromRange: vi.fn(() => 7),
+  getDateRangeParams: () => ({ days: 7 }),
 }))
 
 // Mock config store
