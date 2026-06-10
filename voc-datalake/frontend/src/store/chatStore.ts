@@ -7,6 +7,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   sources?: FeedbackItem[]
+  thinking?: string
   timestamp: Date
   filters?: ChatFilters
 }

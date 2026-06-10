@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -15,6 +16,7 @@ import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
 import { uniqueName } from '../utils/naming';
+import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 
 export interface VocApiStackProps extends cdk.StackProps {
@@ -72,6 +74,16 @@ export class VocApiStack extends cdk.Stack {
       frontendDomainName, userPool, userPoolClient, identityPool, processingQueueUrl, processingQueueArn,
       secretsArn, s3ImportBucket, researchStateMachine, brandName
     } = props;
+
+    // Guard: fail fast (before any asset bundling) if frontend/dist is missing
+    // or stale, so an out-of-date UI can never be shipped. CDK packages
+    // frontend/dist as-is via s3deploy.Source.asset and never rebuilds it.
+    // Bypass with: cdk deploy -c skipFrontendBuildCheck=true (or SKIP_FRONTEND_BUILD_CHECK=1).
+    assertFrontendBuildFresh({
+      frontendRoot: path.join(__dirname, '../../frontend'),
+      skip: this.node.tryGetContext('skipFrontendBuildCheck') === true
+        || this.node.tryGetContext('skipFrontendBuildCheck') === 'true',
+    });
 
 
 
@@ -435,52 +447,67 @@ export class VocApiStack extends cdk.Stack {
       logGroup: this.createLogGroup('ProjectsApiLogs', uniqueName('voc-projects-api')),
     });
 
-    // Chat Stream (Function URL)
-    const chatStreamRole = this.createLambdaRole('ChatStreamLambdaRole');
-    feedbackTable.grantReadData(chatStreamRole);
-    aggregatesTable.grantReadData(chatStreamRole);
-    projectsTable.grantReadData(chatStreamRole);
-    kmsKey.grantDecrypt(chatStreamRole);
-    chatStreamRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
-    }));
-
-    const chatStreamLambda = new lambda.Function(this, 'ChatStreamApi', {
+    // Chat Stream (Node.js — API Gateway response streaming, replaces Python Function URL)
+    const chatStreamLambda = new NodejsFunction(this, 'ChatStreamApi', {
       functionName: uniqueName('voc-chat-stream'),
-      runtime: lambda.Runtime.PYTHON_3_14,
+      entry: path.join(__dirname, '../../lambda/stream/src/handler.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
       architecture: lambda.Architecture.ARM_64,
-      handler: 'chat_stream_handler.lambda_handler',
-      code: createApiLambdaCode('chat_stream_handler.py'),
-      role: chatStreamRole,
-      timeout: cdk.Duration.minutes(5),
       memorySize: 1024,
+      timeout: cdk.Duration.minutes(5),
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
-        USER_POOL_ID: userPool.userPoolId,
+        BEDROCK_MODEL_ID: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+        AVATARS_CDN_URL: avatarsCdnUrl,
         ALLOWED_ORIGIN: allowedOrigin,
-        POWERTOOLS_SERVICE_NAME: 'voc-chat-stream',
-        LOG_LEVEL: 'INFO',
       },
-      layers: [apiLayer],
+      bundling: {
+        format: OutputFormat.ESM,
+        mainFields: ['module', 'main'],
+        externalModules: [
+          '@aws-sdk/*',
+          '@smithy/*',
+        ],
+      },
       logGroup: this.createLogGroup('ChatStreamLogs', uniqueName('voc-chat-stream')),
     });
 
-    const chatStreamUrl = chatStreamLambda.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.AWS_IAM,
-      cors: { 
-        allowedOrigins: [allowedOrigin],
-        allowedMethods: [lambda.HttpMethod.ALL],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Amz-Date', 'X-Amz-Security-Token', 'X-Amz-Content-Sha256'],
-        maxAge: cdk.Duration.seconds(0),
-      },
-    });
+    // Bedrock permissions — InvokeModelWithResponseStream
+    chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+      resources: [
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+      ],
+    }));
+    // AWS Marketplace permissions required for Bedrock model access
+    chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['aws-marketplace:ViewSubscriptions', 'aws-marketplace:Subscribe'],
+      resources: ['*'],
+    }));
+    NagSuppressions.addResourceSuppressions(chatStreamLambda, marketplaceSuppressions, true);
 
-    // Permission to invoke is granted in CoreStack to avoid circular dependency
+    // DynamoDB permissions
+    feedbackTable.grantReadData(chatStreamLambda);
+    aggregatesTable.grantReadData(chatStreamLambda);
+    // Scoped projects table access: Query (context), UpdateItem (doc edits), PutItem (doc creation) — no DeleteItem
+    chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'dynamodb:GetItem',
+        'dynamodb:Query',
+        'dynamodb:PutItem',
+        'dynamodb:UpdateItem',
+      ],
+      resources: [projectsTable.tableArn, `${projectsTable.tableArn}/index/*`],
+    }));
+    kmsKey.grantDecrypt(chatStreamLambda);
 
-    projectsLambda.addEnvironment('CHAT_STREAM_URL', chatStreamUrl.url);
+    NagSuppressions.addResourceSuppressions(chatStreamLambda, [
+      { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the streaming Lambda — latest stable LTS' },
+    ], true);
 
     // S3 Import API
     const s3ImportRole = this.createLambdaRole('S3ImportLambdaRole');
@@ -612,6 +639,7 @@ export class VocApiStack extends cdk.Stack {
     const usersIntegration = new apigateway.LambdaIntegration(usersLambda, { proxy: true });
     const feedbackFormIntegration = new apigateway.LambdaIntegration(feedbackFormLambda, { proxy: true });
     const chatIntegration = new apigateway.LambdaIntegration(chatLambda, { proxy: true });
+    const chatStreamIntegration = new apigateway.LambdaIntegration(chatStreamLambda, { proxy: true });
     const projectsIntegration = new apigateway.LambdaIntegration(projectsLambda, { proxy: true });
     const manualImportIntegration = new apigateway.LambdaIntegration(manualImportLambda, { proxy: true });
     const logsIntegration = new apigateway.LambdaIntegration(logsLambda, { proxy: true });
@@ -642,7 +670,24 @@ export class VocApiStack extends cdk.Stack {
     // /chat/*
     const chatResource = this.api.root.addResource('chat');
     chatResource.addMethod('POST', chatIntegration, authMethodOptions);
+    const chatStreamResource = chatResource.addResource('stream');
+    const chatStreamMethod = chatStreamResource.addMethod('POST', chatStreamIntegration, authMethodOptions);
     chatResource.addResource('conversations').addProxy({ defaultIntegration: chatIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+
+    // Apply API Gateway response-streaming overrides to /chat/stream.
+    // Cast through `unknown` to the L1 CfnMethod type — `defaultChild` is typed as
+    // `IConstruct | undefined` so a direct cast is rejected by the type checker.
+    const chatStreamMethodChild = chatStreamMethod.node.defaultChild
+    if (!(chatStreamMethodChild instanceof apigateway.CfnMethod)) {
+      throw new TypeError('Expected chatStreamMethod.node.defaultChild to be an apigateway.CfnMethod');
+    }
+    const chatStreamCfnMethod = chatStreamMethodChild;
+    chatStreamCfnMethod.addPropertyOverride('Integration.ResponseTransferMode', 'STREAM');
+    chatStreamCfnMethod.addPropertyOverride('Integration.TimeoutInMillis', 300000);
+    chatStreamCfnMethod.addPropertyOverride(
+      'Integration.Uri',
+      `arn:aws:apigateway:${this.region}:lambda:path/2021-11-15/functions/${chatStreamLambda.functionArn}/response-streaming-invocations`
+    );
 
     // /integrations/*
     const integrationsResource = this.api.root.addResource('integrations');
@@ -794,7 +839,6 @@ export class VocApiStack extends cdk.Stack {
     // ============================================
     new cdk.CfnOutput(this, 'ApiEndpoint', { value: this.api.url });
     new cdk.CfnOutput(this, 'ApiId', { value: this.api.restApiId });
-    new cdk.CfnOutput(this, 'ChatStreamUrl', { value: chatStreamUrl.url });
     new cdk.CfnOutput(this, 'WebhookPlugins', { value: webhookPlugins.map(p => p.id).join(',') });
     new cdk.CfnOutput(this, 'CognitoUserPoolId', { value: userPool.userPoolId, description: 'Cognito User Pool ID' });
     new cdk.CfnOutput(this, 'CognitoClientId', { value: userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID' });

@@ -293,7 +293,7 @@ export function useChatMutation({ id, onSuccess }: UseChatMutationProps) {
 
   return useMutation({ 
     mutationFn: (params: { message: string; personas: string[]; documents: string[] }) => 
-      api.projectChatStream(projectId, params.message, params.personas, params.documents), 
+      api.projectChat(projectId, params.message, params.personas, params.documents), 
     onSuccess: (r) => { 
       if (r.success) onSuccess(r.response) 
     } 
