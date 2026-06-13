@@ -16,19 +16,22 @@ Scrapers provide a way to:
 ### Via the Dashboard
 
 1. Navigate to **Scrapers** in the sidebar
-2. Click **Create Scraper**
-3. Choose a template or start from scratch
-4. Configure the extraction rules
-5. Test and save
+2. Click **New Source**
+3. Choose a web scraper template — **Review JSON-LD** or **Custom (CSS Selectors)** — or an app-review source
+4. Configure the extraction rules (use **Auto-detect** to let AI suggest CSS selectors)
+5. Save, then **Run now** to test
 
 ### Scraper Configuration
+
+Web scraper configurations are stored as an array under the `webscraper_configs` key in Secrets Manager. Each entry has this shape:
 
 ```json
 {
   "id": "unique_scraper_id",
   "name": "My Scraper",
-  "url": "https://example.com/reviews",
-  "enabled": true,
+  "base_url": "https://example.com/reviews",
+  "urls": [],
+  "frequency_minutes": 1440,
   "extraction_method": "css",
   "container_selector": ".review-item",
   "text_selector": ".review-text",
@@ -43,6 +46,9 @@ Scrapers provide a way to:
   }
 }
 ```
+
+- `base_url` is the main page to scrape; `urls` is an optional list of additional pages scraped alongside it (one per line in the editor).
+- `frequency_minutes` sets the schedule; `0` means **manual only** (run on demand from the dashboard).
 
 ## Extraction Methods
 
@@ -108,7 +114,9 @@ This appends `?page=1`, `?page=2`, etc. to the URL.
 
 ### Manual Run
 
-Click **Run Now** on any scraper to trigger immediate execution.
+Click **Run Now** on any scraper to trigger immediate execution. The card shows live run status — **Running…** with the running count of pages scraped and reviews found, then **Completed** when done.
+
+> **Note:** immediately after saving a brand-new scraper, the first **Run Now** can occasionally report "No scraper configuration found" if a warm ingestor Lambda is holding a cached secret. Wait ~30s and run again.
 
 ### Scheduled Runs
 

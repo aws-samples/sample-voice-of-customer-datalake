@@ -46,9 +46,9 @@ Both plugins follow the same conventions as the existing `webscraper` plugin:
 - Each handler subclasses `_shared/base_ingestor.py`
 - Lambda bundling copies plugin code + `_shared/` + `lambda/shared/` (see `ingestion-stack.ts`)
 
-## Settings Page UI
+## Scrapers Page UI
 
-Both plugins appear as cards in **Settings → Data Sources & Integrations**, rendered dynamically from their manifests. Each card configures a single app.
+Both plugins appear as cards on the **Scrapers** page (**Data Sources**), reached from **Scrapers** in the sidebar — rendered dynamically from their manifests. Open a card (or **New Source** → the plugin) to manage its apps. **Each plugin supports multiple apps**: add, edit, and delete several apps per plugin from the **Configured Apps** list (stored as a JSON array in Secrets Manager via the `/integrations/{source}/apps` CRUD endpoints).
 
 ### iOS Plugin Settings
 
@@ -279,7 +279,7 @@ US, GB, DE, FR, JP, AU, CA, IT, ES, NL, BR, MX, IN, KR, SE, RU, TR, SA, ZA, SG
 
 ### Overriding Countries
 
-Set `max_countries_per_run` in the Settings UI to limit iteration. Countries are shuffled each run for fair coverage over time.
+Set `max_countries_per_run` in the plugin card on the Scrapers page to limit iteration. Countries are shuffled each run for fair coverage over time.
 
 ## Error Handling
 
@@ -339,13 +339,13 @@ npm run generate:config
 cdk deploy --all
 ```
 
-3. In the Settings page, expand each plugin card and enter the app details (App Name, Package Name / App Store ID)
+3. On the **Scrapers** page, open each plugin card and add one or more apps (App Name, Package Name / App Store ID)
 
-4. Enable the schedule via the toggle in the Settings UI
+4. Enable the schedule via the toggle in the plugin card
 
 ## Assumptions & Limitations
 
-- **Single app per plugin**: Currently each plugin supports one app configuration. Multi-app support (multiple package names / app IDs per plugin) is planned.
+- **Multiple apps per plugin**: each plugin supports several app configurations, managed from the **Configured Apps** list on the Scrapers page and persisted as a JSON array via the `/integrations/{source}/apps` CRUD endpoints.
 - **Implementation prerequisite**: The `KNOWN_SOURCES` set in `_shared/schemas.py` and the `_get_known_prefixes()` list in `_shared/base_ingestor.py` must include `app_reviews_ios` and `app_reviews_android` for proper secret filtering and message validation.
 - **Unofficial APIs**: Both plugins use unofficial/public endpoints. These can change without notice. The circuit breaker will auto-disable the plugin if endpoints break.
 - **Rate limiting**: Apple and Google may rate-limit aggressive scraping. `app-store-web-scraper` has built-in delays with jitter. For Google, the country shuffle and configurable `max_countries_per_run` help manage request volume.
