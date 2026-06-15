@@ -13,11 +13,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Filter, SortDesc, X } from 'lucide-react'
+import { Search, Filter, SortDesc, X, FileDown } from 'lucide-react'
 import { api, getDateRangeParams } from '../../api/client'
 import type { FeedbackItem, DateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import FeedbackCard from '../../components/FeedbackCard'
+import { generateFeedbackPDF } from './feedbackPdfGenerator'
 
 const sentiments = ['all', 'positive', 'neutral', 'negative', 'mixed']
 const defaultCategories = ['all', 'delivery', 'customer_support', 'product_quality', 'pricing', 'website', 'app', 'billing', 'returns', 'communication', 'other']
@@ -182,6 +183,48 @@ function ResultsHeader({
           Most recent
         </button>
       </div>
+    </div>
+  )
+}
+
+// PDF export button - exports the current (filtered) feedback list
+function PDFExportButton({
+  items,
+  timeRange,
+  filterState,
+}: Readonly<{
+  items: readonly FeedbackItem[]
+  timeRange: string
+  filterState: FilterState
+}>) {
+  if (items.length === 0) return null
+  const exportPDF = () => {
+    try {
+      generateFeedbackPDF({
+        items,
+        timeRange,
+        filters: {
+          source: filterState.sourceFilter,
+          sentiment: filterState.sentimentFilter,
+          category: filterState.categoryFilter,
+          search: filterState.search,
+          urgentOnly: filterState.showUrgentOnly,
+        },
+      })
+    } catch {
+      // PDF generation is best-effort (e.g. popup blocked)
+    }
+  }
+  return (
+    <div className="flex justify-end">
+      <button
+        onClick={exportPDF}
+        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+        title="Export as PDF"
+      >
+        <FileDown size={14} />
+        Export PDF
+      </button>
     </div>
   )
 }
@@ -362,6 +405,8 @@ export default function Feedback() {
         hasActiveFilters={hasActiveFilters}
         onClearFilters={clearFilters}
       />
+
+      <PDFExportButton items={filteredItems} timeRange={timeRange} filterState={filterState} />
 
       <FeedbackListContent isLoading={activeLoading} items={filteredItems} />
     </div>

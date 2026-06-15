@@ -5,6 +5,7 @@
 
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { FileDown } from 'lucide-react'
 import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { categoryColors, getSentimentColor } from './types'
@@ -15,6 +16,7 @@ import { SentimentGauge } from './SentimentGaugeCard'
 import { WordCloudCard } from './WordCloudCard'
 import { CategorySelector } from './CategorySelector'
 import { FeedbackResults } from './FeedbackResults'
+import { generateCategoriesPDF } from './categoriesPdfGenerator'
 
 // Stop words for word cloud filtering
 const STOP_WORDS = new Set([
@@ -243,8 +245,34 @@ export default function Categories() {
 
   const avgSentiment = sentiment ? (sentiment.percentages.positive || 0) - (sentiment.percentages.negative || 0) : 0
 
+  const exportPDF = () => {
+    try {
+      generateCategoriesPDF({
+        categoryData,
+        sentimentData,
+        wordCloudData,
+        totalIssues,
+        avgSentiment,
+        timeRange,
+        selectedSource,
+      })
+    } catch {
+      // PDF generation is best-effort (e.g. popup blocked)
+    }
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
+      <div className="flex justify-end">
+        <button
+          onClick={exportPDF}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+          title="Export as PDF"
+        >
+          <FileDown size={14} />
+          Export PDF
+        </button>
+      </div>
       <SourceFilter selectedSource={selectedSource} onSourceChange={setSelectedSource} allSources={allSources} />
       <InsightsRow categoryData={categoryData} totalIssues={totalIssues} />
 

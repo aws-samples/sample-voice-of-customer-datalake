@@ -12,13 +12,14 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, BarChart, Bar } from 'recharts'
-import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap } from 'lucide-react'
+import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap, FileDown } from 'lucide-react'
 import { api, getDateRangeParams } from '../../api/client'
 import type { MetricsSummary, SentimentBreakdown, CategoryBreakdown, SourceBreakdown, FeedbackItem } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import MetricCard from '../../components/MetricCard'
 import FeedbackCard from '../../components/FeedbackCard'
 import SocialFeed from '../../components/SocialFeed'
+import { generateDashboardPDF } from './dashboardPdfGenerator'
 
 const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
 
@@ -243,6 +244,46 @@ function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
   )
 }
 
+interface PDFExportInput {
+  summary: MetricsSummary | undefined
+  sentiment: SentimentBreakdown | undefined
+  categories: CategoryBreakdown | undefined
+  sources: SourceBreakdown | undefined
+  urgentFeedback: { items?: FeedbackItem[]; count?: number } | undefined
+  timeRange: string
+  sourcesCount: number
+}
+
+function buildSentimentEntries(sentiment: SentimentBreakdown | undefined) {
+  if (!sentiment) return []
+  return Object.entries(sentiment.breakdown)
+    .filter(([, v]) => v > 0)
+    .map(([name, value]) => ({ name, value }))
+}
+
+function buildCategoryEntries(categories: CategoryBreakdown | undefined) {
+  if (!categories) return []
+  return Object.entries(categories.categories)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 10)
+    .map(([name, value]) => ({ name, value }))
+}
+
+function buildPDFExportData(input: PDFExportInput) {
+  return {
+    timeRange: input.timeRange,
+    totalFeedback: input.summary?.total_feedback ?? 0,
+    avgSentiment: input.summary ? Number(input.summary.avg_sentiment) : 0,
+    urgentCount: input.summary?.urgent_count ?? 0,
+    sourcesCount: input.sourcesCount,
+    dailyTotals: input.summary?.daily_totals ?? [],
+    sentimentBreakdown: buildSentimentEntries(input.sentiment),
+    categoryBreakdown: buildCategoryEntries(input.categories),
+    sourceBreakdown: prepareSourceData(input.sources),
+    urgentItems: input.urgentFeedback?.items ?? [],
+  }
+}
+
 export default function Dashboard() {
   const { timeRange, customDays, config } = useConfigStore()
   const dateParams = getDateRangeParams(timeRange, customDays)
@@ -288,8 +329,35 @@ export default function Dashboard() {
 
   const sourcesCount = Object.keys(sources?.sources || {}).length
 
+  const exportPDF = () => {
+    try {
+      generateDashboardPDF(buildPDFExportData({
+        summary,
+        sentiment,
+        categories,
+        sources,
+        urgentFeedback,
+        timeRange,
+        sourcesCount,
+      }))
+    } catch {
+      // PDF generation is best-effort (e.g. popup blocked)
+    }
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
+      <div className="flex justify-end">
+        <button
+          onClick={exportPDF}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+          title="Export as PDF"
+        >
+          <FileDown size={14} />
+          Export PDF
+        </button>
+      </div>
+
       <MetricsGrid summary={summary} sourcesCount={sourcesCount} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">

@@ -15,12 +15,13 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { 
   ChevronDown, ChevronRight, AlertTriangle, 
-  MessageSquare, TrendingUp, Filter, X, Layers
+  MessageSquare, TrendingUp, Filter, X, Layers, FileDown
 } from 'lucide-react'
 import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
+import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
 
 interface ProblemGroup {
   problem: string
@@ -202,6 +203,29 @@ function buildCategoryGroups(categoryMap: Map<string, Map<string, Map<string, Pr
   return result
 }
 
+// Map the in-memory grouping tree to the PDF export shape
+// (the problem level uses itemCount instead of the full items array).
+function toPDFCategories(groups: CategoryGroup[]) {
+  return groups.map((c) => ({
+    category: c.category,
+    totalItems: c.totalItems,
+    urgentCount: c.urgentCount,
+    subcategories: c.subcategories.map((s) => ({
+      subcategory: s.subcategory,
+      totalItems: s.totalItems,
+      urgentCount: s.urgentCount,
+      problems: s.problems.map((p) => ({
+        problem: p.problem,
+        similarProblems: p.similarProblems,
+        rootCause: p.rootCause,
+        itemCount: p.items.length,
+        avgSentiment: p.avgSentiment,
+        urgentCount: p.urgentCount,
+      })),
+    })),
+  }))
+}
+
 export default function ProblemAnalysis() {
   const { timeRange, customDays, config } = useConfigStore()
   const dateParams = getDateRangeParams(timeRange, customDays)
@@ -334,6 +358,24 @@ export default function ProblemAnalysis() {
     sum + g.subcategories.reduce((s, sub) => s + sub.problems.length, 0), 0)
   const totalFeedback = groupedData.reduce((sum, g) => sum + g.totalItems, 0)
   const totalUrgent = groupedData.reduce((sum, g) => sum + g.urgentCount, 0)
+
+  const exportPDF = () => {
+    if (groupedData.length === 0) return
+    try {
+      generateProblemAnalysisPDF({
+        categories: toPDFCategories(groupedData),
+        timeRange,
+        filters: {
+          source: selectedSource,
+          category: selectedCategory,
+          subcategory: selectedSubcategory,
+          urgentOnly: showUrgentOnly,
+        },
+      })
+    } catch {
+      // PDF generation is best-effort (e.g. popup blocked)
+    }
+  }
 
   if (!config.apiEndpoint) {
     return (
@@ -475,6 +517,15 @@ export default function ProblemAnalysis() {
                 <button onClick={collapseAll} className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95">
                   <span className="hidden xs:inline">Collapse All</span>
                   <span className="xs:hidden">Collapse</span>
+                </button>
+                <button
+                  onClick={exportPDF}
+                  disabled={groupedData.length === 0}
+                  className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Export as PDF"
+                >
+                  <FileDown size={14} />
+                  PDF
                 </button>
               </div>
             </div>
