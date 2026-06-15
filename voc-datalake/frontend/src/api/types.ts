@@ -27,6 +27,60 @@ export interface FeedbackItem {
   persona_type?: string
 }
 
+/**
+ * Filter shape shared by feedback list endpoints.
+ *
+ * Used by `/feedback`, `/feedback/urgent`, and `/feedback/search`. Each filter
+ * narrows the result set independently; combine them via AND on the server.
+ */
+export interface FeedbackFilters {
+  days?: number
+  source?: string
+  category?: string
+  sentiment?: string
+}
+
+/**
+ * Query parameters for the paginated `/feedback` list endpoint.
+ *
+ * Pagination is offset-based within a candidate window (see backend
+ * `list_feedback` for window semantics). `offset` of 0 is the first page.
+ */
+export interface FeedbackListParams extends FeedbackFilters {
+  limit?: number
+  offset?: number
+}
+
+/**
+ * Response envelope for the paginated `/feedback` list endpoint.
+ *
+ * - `count` is the size of the returned page (0..limit).
+ * - `total` is the size of the filtered candidate window — `hasMore` should be
+ *   computed as `loaded < total`, not `count < limit`.
+ * - `offset` and `limit` echo the applied request parameters.
+ * - `is_partial_window` is true when the candidate window was truncated by the
+ *   backend's MAX_FEEDBACK_OFFSET cap, meaning more matching records may exist
+ *   beyond what was counted. UI should treat `total` as a lower bound in that
+ *   case.
+ */
+export interface FeedbackListResponse {
+  count: number
+  total: number
+  offset: number
+  limit: number
+  is_partial_window: boolean
+  items: FeedbackItem[]
+}
+
+/**
+ * Response envelope for `/feedback/urgent`. Not paginated — returns up to
+ * `limit` items in one shot.
+ */
+export interface UrgentFeedbackResponse {
+  count: number
+  items: FeedbackItem[]
+}
+
 export interface MetricsSummary {
   period_days: number
   total_feedback: number
