@@ -1,5 +1,5 @@
 import { authService } from '../services/auth'
-import { getBaseUrl, getAuthHeaders, getDaysFromRange } from './baseUrl'
+import { getBaseUrl, getAuthHeaders, getDaysFromRange, ALL_TIME_DAYS } from './baseUrl'
 import type {
   FeedbackItem,
   MetricsSummary,
@@ -51,7 +51,17 @@ export type {
 export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation } from './types'
 
 // Re-export shared time-range helper so existing consumers can keep importing from `./client`.
-export { getDaysFromRange }
+export { getDaysFromRange, ALL_TIME_DAYS }
+
+/**
+ * Date-range query parameters sent to time-filtered analytics endpoints.
+ *
+ * All time ranges resolve to a single rolling lookback in `days` (presets,
+ * "All", and the "last N days" custom range). See {@link getDateRangeParams}.
+ */
+export interface DateRangeParams {
+  days?: number
+}
 
 function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
   const extra = existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : undefined
@@ -91,7 +101,7 @@ async function handleUnauthorized<T>(
   return parseJsonResponse<T>(retryResponse)
 }
 
-async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const baseUrl = getBaseUrl()
   const headers = buildHeaders(options?.headers)
   
@@ -156,26 +166,25 @@ export const api = {
   },
   
   // Metrics
-  getSummary: (days: number, source?: string) => {
-    const params = new URLSearchParams({ days: String(days) })
-    if (source) params.set('source', source)
-    return fetchApi<MetricsSummary>(`/metrics/summary?${params}`)
+  getSummary: (range: DateRangeParams, source?: string) => {
+    const searchParams = buildSearchParams({ ...range, source })
+    return fetchApi<MetricsSummary>(`/metrics/summary?${searchParams}`)
   },
-  getSentiment: (days: number, source?: string) => {
-    const params = new URLSearchParams({ days: String(days) })
-    if (source) params.set('source', source)
-    return fetchApi<SentimentBreakdown>(`/metrics/sentiment?${params}`)
+  getSentiment: (range: DateRangeParams, source?: string) => {
+    const searchParams = buildSearchParams({ ...range, source })
+    return fetchApi<SentimentBreakdown>(`/metrics/sentiment?${searchParams}`)
   },
-  getCategories: (days: number, source?: string) => {
-    const params = new URLSearchParams({ days: String(days) })
-    if (source) params.set('source', source)
-    return fetchApi<CategoryBreakdown>(`/metrics/categories?${params}`)
+  getCategories: (range: DateRangeParams, source?: string) => {
+    const searchParams = buildSearchParams({ ...range, source })
+    return fetchApi<CategoryBreakdown>(`/metrics/categories?${searchParams}`)
   },
-  getSources: (days: number) => fetchApi<SourceBreakdown>(`/metrics/sources?days=${days}`),
-  getPersonas: (days: number, source?: string) => {
-    const params = new URLSearchParams({ days: String(days) })
-    if (source) params.set('source', source)
-    return fetchApi<{ period_days: number; personas: Record<string, number> }>(`/metrics/personas?${params}`)
+  getSources: (range: DateRangeParams) => {
+    const searchParams = buildSearchParams({ ...range })
+    return fetchApi<SourceBreakdown>(`/metrics/sources?${searchParams}`)
+  },
+  getPersonas: (range: DateRangeParams, source?: string) => {
+    const searchParams = buildSearchParams({ ...range, source })
+    return fetchApi<{ period_days: number; personas: Record<string, number> }>(`/metrics/personas?${searchParams}`)
   },
   
   // Chat
@@ -185,11 +194,50 @@ export const api = {
   }),
 
   // Data Source Schedules
-  getSourcesStatus: () => fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>('/sources/status'),
+  getSourcesStatus: (sources?: string[]) => {
+    const params = sources?.length == null ? '' : `?sources=${sources.join(',')}`
+    return fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>(`/sources/status${params}`)
+  },
   
   enableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/enable`, { method: 'PUT' }),
   
   disableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/disable`, { method: 'PUT' }),
+
+  runSource: (source: string, appId?: string) => fetchApi<{
+    success: boolean;
+    message: string;
+    source: string;
+    execution_id?: string
+  }>(`/sources/${source}/run`, {
+    method: 'POST',
+    ...(appId != null && appId !== '' ? { body: JSON.stringify({ app_id: appId }) } : {}),
+  }),
+
+  getSourceRunStatus: (source: string) => fetchApi<{
+    source: string;
+    status: string;
+    execution_id?: string;
+    started_at?: string;
+    completed_at?: string;
+    items_found?: number;
+    errors?: string[]
+  }>(`/sources/status?run_status=${source}`),
+
+  // App Config CRUD (multi-instance plugins like iOS/Android app reviews)
+  getAppConfigs: (source: string) =>
+    fetchApi<{ apps: Array<Record<string, string>> }>(`/integrations/${source}/apps`),
+
+  saveAppConfig: (source: string, app: Record<string, string>) =>
+    fetchApi<{
+      success: boolean;
+      app: Record<string, string>
+    }>(`/integrations/${source}/apps`, {
+      method: 'POST',
+      body: JSON.stringify({ app }),
+    }),
+
+  deleteAppConfig: (source: string, appId: string) =>
+    fetchApi<{ success: boolean }>(`/integrations/${source}/apps/${appId}`, { method: 'DELETE' }),
 
   // Brand Settings (persisted to DynamoDB)
   getBrandSettings: () => fetchApi<{
@@ -595,12 +643,13 @@ export const api = {
     }),
 }
 
-export function getDateRangeParams(range: string, customRange?: { start: string; end: string } | null): { days?: number; start_date?: string; end_date?: string } {
-  if (range === 'custom' && customRange) {
-    return {
-      start_date: customRange.start,
-      end_date: customRange.end,
-    }
-  }
-  return { days: getDaysFromRange(range) }
+/**
+ * Resolve a time range selection into the rolling `days` query parameter.
+ *
+ * Every range (presets, "All", and the "last N days" custom range) maps to a
+ * single bounded day count so the metrics backend never fans out into an
+ * unbounded scan. For 'custom', `customDays` carries the chosen lookback.
+ */
+export function getDateRangeParams(range: string, customDays?: number | null): DateRangeParams {
+  return { days: getDaysFromRange(range, customDays) }
 }

@@ -35,7 +35,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { api, getDaysFromRange } from '../../api/client'
+import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { useAuthStore, useIsAdmin } from '../../store/authStore'
 import { authService } from '../../services/auth'
@@ -291,10 +291,10 @@ function useMobileMenu(pathname: string) {
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { timeRange, config } = useConfigStore()
+  const { timeRange, customDays, config } = useConfigStore()
   const { user, isAuthenticated } = useAuthStore()
   const isAdmin = useIsAdmin()
-  const days = getDaysFromRange(timeRange)
+  const dateParams = getDateRangeParams(timeRange, customDays)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)
@@ -309,8 +309,8 @@ export default function Layout() {
   })
 
   const { data: urgentData } = useQuery({
-    queryKey: ['urgent', days],
-    queryFn: () => api.getUrgentFeedback({ days, limit: 10 }),
+    queryKey: ['urgent', dateParams],
+    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: 10 }),
     enabled: !!config.apiEndpoint,
   })
 

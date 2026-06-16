@@ -10,9 +10,18 @@ const mockSaveScraper = vi.fn()
 const mockDeleteScraper = vi.fn()
 const mockRunScraper = vi.fn()
 const mockGetScraperStatus = vi.fn()
+const mockGetAppConfigs = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
+    getAppConfigs: (source: string) => mockGetAppConfigs(source),
+    deleteAppConfig: vi.fn().mockResolvedValue({ success: true }),
+    runSource: vi.fn().mockResolvedValue({ success: true }),
+  },
+}))
+
+vi.mock('../../api/scrapersApi', () => ({
+  scrapersApi: {
     getScrapers: () => mockGetScrapers(),
     saveScraper: (s: unknown) => mockSaveScraper(s),
     deleteScraper: (id: string) => mockDeleteScraper(id),
@@ -32,6 +41,15 @@ vi.mock('../../store/manualImportStore', () => ({
     setIsModalOpen: vi.fn(),
     isModalOpen: false,
   }),
+}))
+
+const mockPluginManifests = [
+  { id: 'app_reviews_ios', name: 'iOS App Reviews', icon: '🍎', config: [], hasIngestor: true, hasWebhook: false, hasS3Trigger: false, enabled: true },
+  { id: 'app_reviews_android', name: 'Android App Reviews', icon: '🤖', config: [], hasIngestor: true, hasWebhook: false, hasS3Trigger: false, enabled: true },
+]
+
+vi.mock('../../plugins', () => ({
+  getPluginManifests: () => mockPluginManifests,
 }))
 
 // Mock subcomponents
@@ -99,22 +117,22 @@ describe('Scrapers', () => {
     mockSaveScraper.mockResolvedValue({ success: true })
     mockDeleteScraper.mockResolvedValue({ success: true })
     mockRunScraper.mockResolvedValue({ success: true })
+    mockGetAppConfigs.mockResolvedValue({ apps: [] })
   })
 
   describe('rendering', () => {
     it('renders page header', async () => {
       render(<Scrapers />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('Web Scrapers')).toBeInTheDocument()
-      expect(screen.getByText(/configure custom scrapers/i)).toBeInTheDocument()
+      expect(screen.getByText('Data Sources')).toBeInTheDocument()
+      expect(screen.getByText(/configure web scrapers and app review sources/i)).toBeInTheDocument()
     })
 
     it('renders action buttons', async () => {
       render(<Scrapers />, { wrapper: createWrapper() })
 
       expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /manual import/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /new scraper/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /new source/i })).toBeInTheDocument()
     })
 
     it('renders scraper cards after loading', async () => {
@@ -169,11 +187,11 @@ describe('Scrapers', () => {
   })
 
   describe('template selector', () => {
-    it('opens template selector when New Scraper clicked', async () => {
+    it('opens template selector when New Source clicked', async () => {
       const user = userEvent.setup()
       render(<Scrapers />, { wrapper: createWrapper() })
 
-      await user.click(screen.getByRole('button', { name: /new scraper/i }))
+      await user.click(screen.getByRole('button', { name: /new source/i }))
 
       expect(screen.getByTestId('template-selector')).toBeInTheDocument()
     })
@@ -182,7 +200,7 @@ describe('Scrapers', () => {
       const user = userEvent.setup()
       render(<Scrapers />, { wrapper: createWrapper() })
 
-      await user.click(screen.getByRole('button', { name: /new scraper/i }))
+      await user.click(screen.getByRole('button', { name: /new source/i }))
       await user.click(screen.getByText('Close Templates'))
 
       expect(screen.queryByTestId('template-selector')).not.toBeInTheDocument()
@@ -192,7 +210,7 @@ describe('Scrapers', () => {
       const user = userEvent.setup()
       render(<Scrapers />, { wrapper: createWrapper() })
 
-      await user.click(screen.getByRole('button', { name: /new scraper/i }))
+      await user.click(screen.getByRole('button', { name: /new source/i }))
       await user.click(screen.getByText('Select Template'))
 
       expect(screen.getByTestId('scraper-editor')).toBeInTheDocument()
@@ -240,12 +258,9 @@ describe('Scrapers', () => {
       const deleteButtons = screen.getAllByTitle('Delete')
       await user.click(deleteButtons[0])
 
-      // Find the confirm button in the modal
-      const confirmButtons = screen.getAllByRole('button', { name: /delete/i })
-      const confirmButton = confirmButtons.find(btn => btn.className.includes('danger') || btn.textContent === 'Delete')
-      if (confirmButton) {
-        await user.click(confirmButton)
-      }
+      // Find the confirm button in the modal (last Delete button is the modal's)
+      const deleteButtons2 = screen.getAllByRole('button', { name: /^Delete$/i })
+      await user.click(deleteButtons2[deleteButtons2.length - 1])
 
       await waitFor(() => {
         expect(mockDeleteScraper).toHaveBeenCalledWith('scraper-1')
@@ -273,25 +288,46 @@ describe('Scrapers', () => {
     it('shows loading spinner while fetching', () => {
       mockGetScrapers.mockReturnValue(new Promise(() => {}))
 
-      render(<Scrapers />, { wrapper: createWrapper() })
+      const { container } = render(<Scrapers />, { wrapper: createWrapper() })
 
-      expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+      // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+      expect(container.querySelector('.animate-spin')).toBeInTheDocument()
     })
   })
-})
 
-describe('Scrapers - not configured', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+  describe('app config loading', () => {
+    it('shows loading placeholder while app configs are fetching', async () => {
+      mockGetAppConfigs.mockReturnValue(new Promise(() => {}))
 
-  it('shows configuration message when API not configured', () => {
-    vi.doMock('../../store/configStore', () => ({
-      useConfigStore: () => ({
-        config: { apiEndpoint: '' },
-      }),
-    }))
+      render(<Scrapers />, { wrapper: createWrapper() })
 
-    // Would need fresh import to test
+      await waitFor(() => {
+        expect(screen.getByText(/loading app configurations/i)).toBeInTheDocument()
+      })
+    })
+
+    it('renders app config cards after loading', async () => {
+      mockGetAppConfigs.mockImplementation((source: string) => {
+        if (source === 'app_reviews_ios') return Promise.resolve({ apps: [{ id: 'app-1', app_name: 'My iOS App', app_id: '123456' }] })
+        return Promise.resolve({ apps: [] })
+      })
+
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('My iOS App')).toBeInTheDocument()
+      })
+    })
+
+    it('fetches all plugins in parallel', async () => {
+      mockGetAppConfigs.mockResolvedValue({ apps: [] })
+
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(mockGetAppConfigs).toHaveBeenCalledWith('app_reviews_ios')
+      })
+      expect(mockGetAppConfigs).toHaveBeenCalledWith('app_reviews_android')
+    })
   })
 })

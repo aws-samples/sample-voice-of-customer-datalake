@@ -4,7 +4,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { api, getDaysFromRange } from '../../api/client'
+import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 
 type ViewMode = 's3-raw' | 'dynamodb-processed' | 'dynamodb-categories'
@@ -15,8 +15,8 @@ export function useDataExplorerQueries(
   s3Path: string[],
   sourceFilter: string
 ) {
-  const { timeRange, customDateRange, config } = useConfigStore()
-  const days = getDaysFromRange(timeRange, customDateRange)
+  const { timeRange, customDays, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays)
   const isConfigured = !!config.apiEndpoint
 
   const bucketsQuery = useQuery({
@@ -32,20 +32,20 @@ export function useDataExplorerQueries(
   })
 
   const feedbackQuery = useQuery({
-    queryKey: ['data-explorer-feedback', days, sourceFilter],
-    queryFn: () => api.getFeedback({ days, source: sourceFilter || undefined, limit: 100 }),
+    queryKey: ['data-explorer-feedback', dateParams, sourceFilter],
+    queryFn: () => api.getFeedback({ ...dateParams, source: sourceFilter || undefined, limit: 100 }),
     enabled: isConfigured && viewMode === 'dynamodb-processed',
   })
 
   const categoriesQuery = useQuery({
-    queryKey: ['data-explorer-categories', days, sourceFilter],
-    queryFn: () => api.getCategories(days, sourceFilter || undefined),
+    queryKey: ['data-explorer-categories', dateParams, sourceFilter],
+    queryFn: () => api.getCategories(dateParams, sourceFilter || undefined),
     enabled: isConfigured && viewMode === 'dynamodb-categories',
   })
 
   const sourcesQuery = useQuery({
-    queryKey: ['sources', days],
-    queryFn: () => api.getSources(days),
+    queryKey: ['sources', dateParams],
+    queryFn: () => api.getSources(dateParams),
     enabled: isConfigured,
   })
 

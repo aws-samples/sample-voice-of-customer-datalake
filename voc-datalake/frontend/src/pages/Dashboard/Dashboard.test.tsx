@@ -23,13 +23,14 @@ vi.mock('../../api/client', () => ({
     getUrgentFeedback: (params: unknown) => mockGetUrgentFeedback(params),
   },
   getDaysFromRange: vi.fn(() => 7),
+  getDateRangeParams: () => ({ days: 7 }),
 }))
 
 // Mock config store
 vi.mock('../../store/configStore', () => ({
   useConfigStore: vi.fn(() => ({
     timeRange: '7d',
-    customDateRange: null,
+    customDays: null,
     config: { apiEndpoint: 'https://api.example.com', brandName: 'Test Brand' },
   })),
 }))
@@ -275,7 +276,7 @@ describe('Dashboard not configured', () => {
     vi.doMock('../../store/configStore', () => ({
       useConfigStore: vi.fn(() => ({
         timeRange: '7d',
-        customDateRange: null,
+        customDays: null,
         config: { apiEndpoint: '', brandName: '' },
       })),
     }))
@@ -286,7 +287,7 @@ describe('Dashboard not configured', () => {
     vi.doMock('../../store/configStore', () => ({
       useConfigStore: () => ({
         timeRange: '7d',
-        customDateRange: null,
+        customDays: null,
         config: { apiEndpoint: '', brandName: '' },
       }),
     }))

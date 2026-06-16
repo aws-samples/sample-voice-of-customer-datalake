@@ -14,8 +14,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Search, Filter, SortDesc, X } from 'lucide-react'
-import { api, getDaysFromRange } from '../../api/client'
-import type { FeedbackItem } from '../../api/client'
+import { api, getDateRangeParams } from '../../api/client'
+import type { FeedbackItem, DateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import FeedbackCard from '../../components/FeedbackCard'
 
@@ -198,13 +198,13 @@ function buildUrlParams(search: string, sourceFilter: string, sentimentFilter: s
 
 // Helper to build feedback query params
 function buildFeedbackQueryParams(
-  days: number,
+  dateParams: DateRangeParams,
   sourceFilter: string,
   sentimentFilter: string,
   categoryFilter: string
-): { days: number; source?: string; sentiment?: string; category?: string; limit: number } {
+): DateRangeParams & { source?: string; sentiment?: string; category?: string; limit: number } {
   return {
-    days,
+    ...dateParams,
     source: sourceFilter !== 'all' ? sourceFilter : undefined,
     sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
     category: categoryFilter !== 'all' ? categoryFilter : undefined,
@@ -215,12 +215,12 @@ function buildFeedbackQueryParams(
 // Helper to get feedback query function
 function getFeedbackQueryFn(
   showUrgentOnly: boolean,
-  days: number,
+  dateParams: DateRangeParams,
   feedbackQueryParams: ReturnType<typeof buildFeedbackQueryParams>
 ) {
   if (showUrgentOnly) {
     return () => api.getUrgentFeedback({
-      days,
+      ...dateParams,
       limit: 100,
       source: feedbackQueryParams.source,
       sentiment: feedbackQueryParams.sentiment,
@@ -239,7 +239,7 @@ interface FeedbackDataResult {
 // Custom hook for feedback data fetching
 function useFeedbackData(
   hasApiEndpoint: boolean,
-  days: number,
+  dateParams: DateRangeParams,
   search: string,
   sourceFilter: string,
   sentimentFilter: string,
@@ -247,15 +247,15 @@ function useFeedbackData(
   showUrgentOnly: boolean
 ): FeedbackDataResult {
   const isSearching = search.length >= 2
-  const feedbackQueryParams = buildFeedbackQueryParams(days, sourceFilter, sentimentFilter, categoryFilter)
-  const feedbackQueryFn = getFeedbackQueryFn(showUrgentOnly, days, feedbackQueryParams)
+  const feedbackQueryParams = buildFeedbackQueryParams(dateParams, sourceFilter, sentimentFilter, categoryFilter)
+  const feedbackQueryFn = getFeedbackQueryFn(showUrgentOnly, dateParams, feedbackQueryParams)
 
   // Server-side search when search term is provided (includes filters)
   const searchQuery = useQuery({
-    queryKey: ['feedback-search', search, days, sourceFilter, sentimentFilter, categoryFilter],
+    queryKey: ['feedback-search', search, dateParams, sourceFilter, sentimentFilter, categoryFilter],
     queryFn: () => api.searchFeedback({ 
       q: search, 
-      days, 
+      ...dateParams, 
       limit: 100,
       source: sourceFilter !== 'all' ? sourceFilter : undefined,
       sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
@@ -266,7 +266,7 @@ function useFeedbackData(
 
   // Regular feedback query
   const feedbackQuery = useQuery({
-    queryKey: ['feedback', days, sourceFilter, sentimentFilter, categoryFilter, showUrgentOnly],
+    queryKey: ['feedback', dateParams, sourceFilter, sentimentFilter, categoryFilter, showUrgentOnly],
     queryFn: feedbackQueryFn,
     enabled: hasApiEndpoint && !isSearching,
   })
@@ -278,8 +278,8 @@ function useFeedbackData(
 }
 
 export default function Feedback() {
-  const { timeRange, config } = useConfigStore()
-  const days = getDaysFromRange(timeRange)
+  const { timeRange, customDays, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays)
   const [searchParams, setSearchParams] = useSearchParams()
   const hasApiEndpoint = !!config.apiEndpoint
   
@@ -292,8 +292,8 @@ export default function Feedback() {
 
   // Fetch dynamic sources and categories from entities API
   const { data: entitiesData } = useQuery({
-    queryKey: ['entities', days],
-    queryFn: () => api.getEntities({ days, limit: 100 }),
+    queryKey: ['entities', dateParams],
+    queryFn: () => api.getEntities({ ...dateParams, limit: 100 }),
     enabled: hasApiEndpoint,
   })
 
@@ -312,7 +312,7 @@ export default function Feedback() {
   // Fetch feedback data
   const { data: activeData, isLoading: activeLoading } = useFeedbackData(
     hasApiEndpoint,
-    days,
+    dateParams,
     search,
     sourceFilter,
     sentimentFilter,

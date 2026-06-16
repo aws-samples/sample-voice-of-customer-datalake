@@ -11,13 +11,13 @@ export function useCategoriesData(days: number, selectedSource: string | null, a
 
   const { data: categories, isLoading: categoriesLoading } = useQuery({
     queryKey: ['categories', days, selectedSource],
-    queryFn: () => api.getCategories(days, selectedSource || undefined),
+    queryFn: () => api.getCategories({ days }, selectedSource || undefined),
     enabled,
   })
 
   const { data: sentiment, isLoading: sentimentLoading } = useQuery({
     queryKey: ['sentiment', days, selectedSource],
-    queryFn: () => api.getSentiment(days, selectedSource || undefined),
+    queryFn: () => api.getSentiment({ days }, selectedSource || undefined),
     enabled,
   })
 

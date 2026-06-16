@@ -2,7 +2,7 @@
  * @fileoverview Tests for TimeRangeSelector component.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TimeRangeSelector from './TimeRangeSelector'
 import { useConfigStore } from '../../store/configStore'
@@ -14,24 +14,23 @@ vi.mock('../../store/configStore', () => ({
 
 describe('TimeRangeSelector', () => {
   const mockSetTimeRange = vi.fn()
-  const mockSetCustomDateRange = vi.fn()
+  const mockSetCustomDays = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
     ;(useConfigStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       timeRange: '7d',
       setTimeRange: mockSetTimeRange,
-      customDateRange: null,
-      setCustomDateRange: mockSetCustomDateRange,
+      customDays: null,
+      setCustomDays: mockSetCustomDays,
     })
   })
 
   describe('preset ranges', () => {
     it('renders all preset range buttons on desktop', () => {
       render(<TimeRangeSelector />)
-      
-      // Desktop buttons are in a hidden sm:flex container
-      // They use short labels: 24h, 48h, 7d, 30d, Custom
+
+      // Desktop buttons use short labels: 24h, 48h, 7d, 30d, 90d, Custom
       // There may be multiple buttons (mobile dropdown + desktop buttons)
       expect(screen.getAllByRole('button', { name: '24h' }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('button', { name: '48h' }).length).toBeGreaterThan(0)
@@ -42,7 +41,7 @@ describe('TimeRangeSelector', () => {
 
     it('highlights the currently selected range', () => {
       render(<TimeRangeSelector />)
-      
+
       // Find all buttons with name '7d' and check the desktop one
       const buttons = screen.getAllByRole('button', { name: '7d' })
       const desktopButton = buttons.find(btn => btn.classList.contains('bg-white'))
@@ -52,102 +51,152 @@ describe('TimeRangeSelector', () => {
     it('calls setTimeRange when a preset is clicked', async () => {
       const user = userEvent.setup()
       render(<TimeRangeSelector />)
-      
+
       await user.click(screen.getByRole('button', { name: '30d' }))
-      
+
       expect(mockSetTimeRange).toHaveBeenCalledWith('30d')
     })
 
-    it('clears custom date range when preset is selected', async () => {
+    it('clears custom days when preset is selected', async () => {
       const user = userEvent.setup()
       render(<TimeRangeSelector />)
-      
+
       await user.click(screen.getByRole('button', { name: '24h' }))
-      
-      expect(mockSetCustomDateRange).toHaveBeenCalledWith(null)
+
+      expect(mockSetCustomDays).toHaveBeenCalledWith(null)
     })
   })
 
-  describe('custom date picker', () => {
-    it('opens date picker when Custom is clicked', async () => {
+  describe('custom "last N days" picker', () => {
+    it('opens the picker when Custom is clicked', async () => {
       const user = userEvent.setup()
       render(<TimeRangeSelector />)
-      
+
       await user.click(screen.getByRole('button', { name: 'Custom' }))
-      
-      expect(screen.getByRole('dialog', { name: /select custom date range/i })).toBeInTheDocument()
+
+      expect(screen.getByRole('dialog', { name: /select custom range/i })).toBeInTheDocument()
     })
 
-    it('displays start and end date inputs', async () => {
+    it('displays a number-of-days input', async () => {
       const user = userEvent.setup()
       render(<TimeRangeSelector />)
-      
+
       await user.click(screen.getByRole('button', { name: 'Custom' }))
-      
-      expect(screen.getByLabelText('Start Date')).toBeInTheDocument()
-      expect(screen.getByLabelText('End Date')).toBeInTheDocument()
+
+      expect(screen.getByLabelText('Last N days')).toBeInTheDocument()
     })
 
-    it('disables Apply button when dates are not selected', async () => {
+    it('disables Apply button when no days are entered', async () => {
       const user = userEvent.setup()
       render(<TimeRangeSelector />)
-      
+
       await user.click(screen.getByRole('button', { name: 'Custom' }))
-      
+
       expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
     })
 
-    it('closes picker when Cancel is clicked', async () => {
+    it('applies a valid number of days and selects the custom range', async () => {
       const user = userEvent.setup()
       render(<TimeRangeSelector />)
-      
+
+      await user.click(screen.getByRole('button', { name: 'Custom' }))
+      await user.type(screen.getByLabelText('Last N days'), '14')
+      await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+      expect(mockSetCustomDays).toHaveBeenCalledWith(14)
+      expect(mockSetTimeRange).toHaveBeenCalledWith('custom')
+    })
+
+    it('keeps Apply disabled for a non-positive number', async () => {
+      const user = userEvent.setup()
+      render(<TimeRangeSelector />)
+
+      await user.click(screen.getByRole('button', { name: 'Custom' }))
+      await user.type(screen.getByLabelText('Last N days'), '0')
+
+      expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    })
+
+    it('keeps Apply disabled for a value above the 90-day cap', async () => {
+      const user = userEvent.setup()
+      render(<TimeRangeSelector />)
+
+      await user.click(screen.getByRole('button', { name: 'Custom' }))
+      await user.type(screen.getByLabelText('Last N days'), '91')
+
+      expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    })
+
+    it('closes the picker when Cancel is clicked', async () => {
+      const user = userEvent.setup()
+      render(<TimeRangeSelector />)
+
       await user.click(screen.getByRole('button', { name: 'Custom' }))
       await user.click(screen.getByRole('button', { name: 'Cancel' }))
-      
+
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
-    it('closes picker when X button is clicked', async () => {
+    it('closes the picker when the X button is clicked', async () => {
       const user = userEvent.setup()
       render(<TimeRangeSelector />)
-      
+
       await user.click(screen.getByRole('button', { name: 'Custom' }))
-      await user.click(screen.getByRole('button', { name: /close date picker/i }))
-      
+      await user.click(screen.getByRole('button', { name: /close custom range/i }))
+
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
   })
 
-  describe('custom date range display', () => {
-    it('displays formatted date range when custom range is set', () => {
+  describe('custom range display', () => {
+    it('displays a "Last N days" label when a custom lookback is set', () => {
       ;(useConfigStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         timeRange: 'custom',
         setTimeRange: mockSetTimeRange,
-        customDateRange: { start: '2025-01-01', end: '2025-01-15' },
-        setCustomDateRange: mockSetCustomDateRange,
+        customDays: 15,
+        setCustomDays: mockSetCustomDays,
       })
-      
+
       render(<TimeRangeSelector />)
-      
-      // Should show formatted date range - there may be multiple buttons (mobile + desktop)
-      expect(screen.getAllByText(/Jan 1 - Jan 15/).length).toBeGreaterThan(0)
+
+      // There may be multiple buttons (mobile + desktop)
+      expect(screen.getAllByText(/Last 15 days/).length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('all option', () => {
+    it('renders the All preset button', () => {
+      render(<TimeRangeSelector />)
+
+      expect(screen.getAllByRole('button', { name: '90d' }).length).toBeGreaterThan(0)
     })
 
-    it.skip('shows Clear button when custom range is active', async () => {
-      // This test requires the picker to open, which depends on internal state
-      // The component correctly shows Clear when picker is open and customDateRange exists
-      ;(useConfigStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-        timeRange: 'custom',
-        setTimeRange: mockSetTimeRange,
-        customDateRange: { start: '2025-01-01', end: '2025-01-15' },
-        setCustomDateRange: mockSetCustomDateRange,
-      })
-      
+    it('selects the all-time range without a custom window', async () => {
       const user = userEvent.setup()
       render(<TimeRangeSelector />)
-      
-      // Verify the custom date range is displayed
-      expect(screen.getAllByText(/Jan 1 - Jan 15/).length).toBeGreaterThan(0)
+
+      await user.click(screen.getByRole('button', { name: '90d' }))
+
+      expect(mockSetTimeRange).toHaveBeenCalledWith('all')
+      expect(mockSetCustomDays).toHaveBeenCalledWith(null)
+    })
+  })
+
+  describe('data freshness label', () => {
+    it('renders the "Data freshness" caption', () => {
+      render(<TimeRangeSelector />)
+
+      expect(screen.getByText('Data freshness')).toBeInTheDocument()
+    })
+
+    it('explains the window filters by ingestion date via a tooltip', () => {
+      render(<TimeRangeSelector />)
+
+      const caption = screen.getByText('Data freshness')
+      // The tooltip lives on the wrapping element with a title attribute.
+      const tooltipHost = caption.closest('[title]')
+      expect(tooltipHost).not.toBeNull()
+      expect(tooltipHost?.getAttribute('title')).toMatch(/when data was collected/i)
     })
   })
 })

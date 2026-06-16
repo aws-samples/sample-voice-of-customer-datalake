@@ -38,6 +38,13 @@ void i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
+    // Pin the UI to English until a real language switcher ships. This wins
+    // over any value the detector would resolve (including a stale
+    // 'voc-language' that earlier builds cached from the browser language),
+    // and — combined with caches:['localStorage'] below — rewrites that cache
+    // to 'en', so returning browsers self-heal. Remove this `lng` line in the
+    // PR that adds the switcher so localStorage('voc-language') drives it.
+    lng: 'en',
     fallbackLng: 'en',
     defaultNS,
     ns: [...namespaces],
@@ -45,7 +52,10 @@ void i18n
     backend: { loadPath: '/locales/{{lng}}/{{ns}}.json' },
 
     detection: {
-      order: ['localStorage', 'navigator'],
+      // 'navigator' is intentionally omitted so a non-English browser doesn't
+      // render the partially-migrated UI in a mix of languages. Kept for the
+      // future switcher, which will set localStorage('voc-language').
+      order: ['localStorage'],
       lookupLocalStorage: 'voc-language',
       caches: ['localStorage'],
     },

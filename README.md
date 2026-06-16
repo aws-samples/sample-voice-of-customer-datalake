@@ -109,6 +109,7 @@ After changes: `npm run generate:config && npm run deploy:frontend`
 | Category | Plugins |
 |----------|---------|
 | Scraping | Web Scraper (CSS selectors, JSON-LD extraction) |
+| App Reviews | iOS App Reviews (Apple App Store), Android App Reviews (Google Play) |
 | Direct Input | Feedback Forms (embeddable forms) |
 
 ## 🛠️ Create Your Own Plugin
@@ -139,6 +140,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Getting Started with Plugins](docs/getting-started-plugins.md) | Creating new data source plugins |
 | [Feedback Forms](docs/feedback-forms.md) | Embeddable feedback forms |
 | [Scrapers](docs/scrapers.md) | Web scraper configuration |
+| [Mobile App Reviews](docs/mobile-app-reviews.md) | iOS & Android app store review plugins |
 | [Data Lake Structure](docs/data-lake-structure.md) | S3 and DynamoDB organization |
 | [Processing Pipeline](docs/processing-pipeline.md) | How feedback is processed |
 

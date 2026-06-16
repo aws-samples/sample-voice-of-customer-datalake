@@ -5,7 +5,7 @@
 
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { api, getDaysFromRange } from '../../api/client'
+import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { categoryColors, getSentimentColor } from './types'
 import type { SentimentFilter, ViewMode, CategoryData, SentimentData, WordCloudItem } from './types'
@@ -74,8 +74,8 @@ function checkHasActiveFilters(filters: FilterState): boolean {
 }
 
 export default function Categories() {
-  const { timeRange, config } = useConfigStore()
-  const days = getDaysFromRange(timeRange)
+  const { timeRange, customDays, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays)
 
   // State
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
@@ -88,35 +88,35 @@ export default function Categories() {
 
   // Queries
   const { data: categories, isLoading: categoriesLoading } = useQuery({
-    queryKey: ['categories', days, selectedSource],
-    queryFn: () => api.getCategories(days, selectedSource || undefined),
+    queryKey: ['categories', dateParams, selectedSource],
+    queryFn: () => api.getCategories(dateParams, selectedSource || undefined),
     enabled: !!config.apiEndpoint,
   })
 
   const { data: sentiment, isLoading: sentimentLoading } = useQuery({
-    queryKey: ['sentiment', days, selectedSource],
-    queryFn: () => api.getSentiment(days, selectedSource || undefined),
+    queryKey: ['sentiment', dateParams, selectedSource],
+    queryFn: () => api.getSentiment(dateParams, selectedSource || undefined),
     enabled: !!config.apiEndpoint,
   })
 
   const { data: entities } = useQuery({
-    queryKey: ['entities', days, selectedSource],
-    queryFn: () => api.getEntities({ days, limit: 50, source: selectedSource || undefined }),
+    queryKey: ['entities', dateParams, selectedSource],
+    queryFn: () => api.getEntities({ ...dateParams, limit: 50, source: selectedSource || undefined }),
     enabled: !!config.apiEndpoint,
   })
 
   const { data: allEntities } = useQuery({
-    queryKey: ['entities-all-sources', days],
-    queryFn: () => api.getEntities({ days, limit: 50 }),
+    queryKey: ['entities-all-sources', dateParams],
+    queryFn: () => api.getEntities({ ...dateParams, limit: 50 }),
     enabled: !!config.apiEndpoint,
   })
 
   const shouldFetchFeedback = selectedCategories.length > 0 || selectedKeywords.length > 0
 
   const { data: feedbackData, isLoading: feedbackLoading } = useQuery({
-    queryKey: ['feedback', days, selectedCategories, sentimentFilter, selectedKeywords, selectedSource],
+    queryKey: ['feedback', dateParams, selectedCategories, sentimentFilter, selectedKeywords, selectedSource],
     queryFn: () => api.getFeedback({
-      days,
+      ...dateParams,
       source: selectedSource || undefined,
       category: selectedCategories.length === 1 ? selectedCategories[0] : undefined,
       sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,

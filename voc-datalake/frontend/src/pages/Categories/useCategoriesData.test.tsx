@@ -184,8 +184,8 @@ describe('useCategoriesData', () => {
     })
 
     await waitFor(() => {
-      expect(mockGetCategories).toHaveBeenCalledWith(7, 'webscraper')
-      expect(mockGetSentiment).toHaveBeenCalledWith(7, 'webscraper')
+      expect(mockGetCategories).toHaveBeenCalledWith({ days: 7 }, 'webscraper')
+      expect(mockGetSentiment).toHaveBeenCalledWith({ days: 7 }, 'webscraper')
     })
   })
 

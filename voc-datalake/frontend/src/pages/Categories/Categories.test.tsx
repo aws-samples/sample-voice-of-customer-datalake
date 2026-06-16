@@ -18,6 +18,7 @@ vi.mock('../../api/client', () => ({
     getFeedback: (...args: unknown[]) => mockGetFeedback(...args),
   },
   getDaysFromRange: () => 7,
+  getDateRangeParams: () => ({ days: 7 }),
 }))
 
 vi.mock('../../store/configStore', () => ({
@@ -262,7 +263,7 @@ describe('Categories', () => {
       await user.selectOptions(screen.getByRole('combobox'), 'webscraper')
 
       await waitFor(() => {
-        expect(mockGetCategories).toHaveBeenCalledWith(7, 'webscraper')
+        expect(mockGetCategories).toHaveBeenCalledWith({ days: 7 }, 'webscraper')
       })
     })
   })

@@ -17,7 +17,7 @@ import {
   ChevronDown, ChevronRight, AlertTriangle, 
   MessageSquare, TrendingUp, Filter, X, Layers
 } from 'lucide-react'
-import { api, getDaysFromRange } from '../../api/client'
+import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
@@ -203,8 +203,8 @@ function buildCategoryGroups(categoryMap: Map<string, Map<string, Map<string, Pr
 }
 
 export default function ProblemAnalysis() {
-  const { timeRange, config } = useConfigStore()
-  const days = getDaysFromRange(timeRange)
+  const { timeRange, customDays, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays)
   
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedSubcategories, setExpandedSubcategories] = useState<Set<string>>(new Set())
@@ -217,14 +217,14 @@ export default function ProblemAnalysis() {
 
   // Fetch entities for dynamic sources and categories
   const { data: entitiesData } = useQuery({
-    queryKey: ['entities', days],
-    queryFn: () => api.getEntities({ days, limit: 100 }),
+    queryKey: ['entities', dateParams],
+    queryFn: () => api.getEntities({ ...dateParams, limit: 100 }),
     enabled: !!config.apiEndpoint,
   })
 
   const { data: feedbackData, isLoading } = useQuery({
-    queryKey: ['feedback-problems', days],
-    queryFn: () => api.getFeedback({ days, limit: 500 }),
+    queryKey: ['feedback-problems', dateParams],
+    queryFn: () => api.getFeedback({ ...dateParams, limit: 500 }),
     enabled: !!config.apiEndpoint,
   })
 
