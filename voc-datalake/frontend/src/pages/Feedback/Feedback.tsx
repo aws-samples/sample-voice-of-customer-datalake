@@ -155,21 +155,29 @@ function FiltersCard({
 function ResultsHeader({
   itemCount,
   totalCount,
+  isPartialWindow,
   search,
   hasActiveFilters,
   onClearFilters,
 }: Readonly<{
   itemCount: number
   totalCount: number
+  isPartialWindow: boolean
   search: string
   hasActiveFilters: boolean
   onClearFilters: () => void
 }>) {
+  // When the candidate window was truncated by the backend cap, `totalCount`
+  // is a lower bound — show "N+" and a hint to narrow filters.
+  const totalLabel = isPartialWindow ? `${totalCount}+` : `${totalCount}`
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
       <p className="text-sm text-gray-500">
-        Showing {itemCount} of {totalCount} items
+        Showing {itemCount} of {totalLabel} items
         {search && <span className="ml-1">for "{search}"</span>}
+        {isPartialWindow && (
+          <span className="ml-1 text-amber-600">(narrow filters to see all)</span>
+        )}
       </p>
       <div className="flex items-center gap-3">
         {hasActiveFilters && (
@@ -274,9 +282,19 @@ function getFeedbackQueryFn(
 }
 
 interface FeedbackDataResult {
-  data: { items?: FeedbackItem[]; count?: number } | undefined
+  data: { items?: FeedbackItem[]; count?: number; total?: number; is_partial_window?: boolean } | undefined
   isLoading: boolean
   isSearching: boolean
+}
+
+// Derive the results-header totals from a feedback response. `total` (candidate
+// window size) is preferred; `count` (page size) is the fallback for endpoints
+// that don't paginate (search/urgent).
+function getResultsTotals(data: FeedbackDataResult['data']): { totalCount: number; isPartialWindow: boolean } {
+  return {
+    totalCount: data?.total ?? data?.count ?? 0,
+    isPartialWindow: data?.is_partial_window ?? false,
+  }
 }
 
 // Custom hook for feedback data fetching
@@ -364,7 +382,7 @@ export default function Feedback() {
   )
 
   const filteredItems = activeData?.items ?? []
-
+  const { totalCount, isPartialWindow } = getResultsTotals(activeData)
   const clearFilters = () => {
     setSearch('')
     setSourceFilter('all')
@@ -400,7 +418,8 @@ export default function Feedback() {
 
       <ResultsHeader
         itemCount={filteredItems.length}
-        totalCount={activeData?.count ?? 0}
+        totalCount={totalCount}
+        isPartialWindow={isPartialWindow}
         search={search}
         hasActiveFilters={hasActiveFilters}
         onClearFilters={clearFilters}
