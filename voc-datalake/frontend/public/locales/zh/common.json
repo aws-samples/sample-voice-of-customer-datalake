@@ -17,6 +17,9 @@
     "settings": "设置"
   },
   "configureBrand": "配置品牌",
+  "exportPdf": "导出 PDF",
+  "exportPdfShort": "PDF",
+  "exportPdfTooltip": "导出为 PDF",
   "filters": {
     "allCategories": "所有分类",
     "allSentiments": "所有情感",
@@ -57,6 +60,7 @@
     "scrapers": "抓取器",
     "settings": "设置"
   },
+  "partialWindowHint": "缩小筛选范围以查看全部",
   "priority": {
     "high": "高",
     "low": "低",

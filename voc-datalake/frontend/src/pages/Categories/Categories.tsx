@@ -17,6 +17,7 @@ import { WordCloudCard } from './WordCloudCard'
 import { CategorySelector } from './CategorySelector'
 import { FeedbackResults } from './FeedbackResults'
 import { generateCategoriesPDF } from './categoriesPdfGenerator'
+import { useTranslation } from 'react-i18next'
 
 // Stop words for word cloud filtering
 const STOP_WORDS = new Set([
@@ -76,6 +77,7 @@ function checkHasActiveFilters(filters: FilterState): boolean {
 }
 
 export default function Categories() {
+  const { t } = useTranslation('common')
   const { timeRange, customDays, config } = useConfigStore()
   const dateParams = getDateRangeParams(timeRange, customDays)
 
@@ -267,10 +269,10 @@ export default function Categories() {
         <button
           onClick={exportPDF}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
-          title="Export as PDF"
+          title={t('exportPdfTooltip')}
         >
           <FileDown size={14} />
-          Export PDF
+          {t('exportPdf')}
         </button>
       </div>
       <SourceFilter selectedSource={selectedSource} onSourceChange={setSelectedSource} allSources={allSources} />

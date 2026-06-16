@@ -17,6 +17,9 @@
     "settings": "설정"
   },
   "configureBrand": "브랜드 설정",
+  "exportPdf": "PDF 내보내기",
+  "exportPdfShort": "PDF",
+  "exportPdfTooltip": "PDF로 내보내기",
   "filters": {
     "allCategories": "모든 카테고리",
     "allSentiments": "모든 감정",
@@ -57,6 +60,7 @@
     "scrapers": "스크레이퍼",
     "settings": "설정"
   },
+  "partialWindowHint": "모두 보려면 필터를 좁히세요",
   "priority": {
     "high": "높음",
     "low": "낮음",

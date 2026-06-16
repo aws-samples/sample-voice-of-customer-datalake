@@ -20,6 +20,7 @@ import MetricCard from '../../components/MetricCard'
 import FeedbackCard from '../../components/FeedbackCard'
 import SocialFeed from '../../components/SocialFeed'
 import { generateDashboardPDF } from './dashboardPdfGenerator'
+import { useTranslation } from 'react-i18next'
 
 const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
 
@@ -285,6 +286,7 @@ function buildPDFExportData(input: PDFExportInput) {
 }
 
 export default function Dashboard() {
+  const { t } = useTranslation('common')
   const { timeRange, customDays, config } = useConfigStore()
   const dateParams = getDateRangeParams(timeRange, customDays)
   const isConfigured = !!config.apiEndpoint
@@ -351,10 +353,10 @@ export default function Dashboard() {
         <button
           onClick={exportPDF}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
-          title="Export as PDF"
+          title={t('exportPdfTooltip')}
         >
           <FileDown size={14} />
-          Export PDF
+          {t('exportPdf')}
         </button>
       </div>
 

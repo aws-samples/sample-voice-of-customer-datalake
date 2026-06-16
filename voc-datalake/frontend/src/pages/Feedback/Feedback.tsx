@@ -19,6 +19,7 @@ import type { FeedbackItem, DateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import FeedbackCard from '../../components/FeedbackCard'
 import { generateFeedbackPDF } from './feedbackPdfGenerator'
+import { useTranslation } from 'react-i18next'
 
 const sentiments = ['all', 'positive', 'neutral', 'negative', 'mixed']
 const defaultCategories = ['all', 'delivery', 'customer_support', 'product_quality', 'pricing', 'website', 'app', 'billing', 'returns', 'communication', 'other']
@@ -169,14 +170,15 @@ function ResultsHeader({
 }>) {
   // When the candidate window was truncated by the backend cap, `totalCount`
   // is a lower bound — show "N+" and a hint to narrow filters.
+  const { t } = useTranslation('common')
   const totalLabel = isPartialWindow ? `${totalCount}+` : `${totalCount}`
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
       <p className="text-sm text-gray-500">
-        Showing {itemCount} of {totalLabel} items
+        {t('showingOf', { count: itemCount, total: totalLabel })}
         {search && <span className="ml-1">for "{search}"</span>}
         {isPartialWindow && (
-          <span className="ml-1 text-amber-600">(narrow filters to see all)</span>
+          <span className="ml-1 text-amber-600">({t('partialWindowHint')})</span>
         )}
       </p>
       <div className="flex items-center gap-3">
@@ -205,6 +207,7 @@ function PDFExportButton({
   timeRange: string
   filterState: FilterState
 }>) {
+  const { t } = useTranslation('common')
   if (items.length === 0) return null
   const exportPDF = () => {
     try {
@@ -228,10 +231,10 @@ function PDFExportButton({
       <button
         onClick={exportPDF}
         className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
-        title="Export as PDF"
+        title={t('exportPdfTooltip')}
       >
         <FileDown size={14} />
-        Export PDF
+        {t('exportPdf')}
       </button>
     </div>
   )

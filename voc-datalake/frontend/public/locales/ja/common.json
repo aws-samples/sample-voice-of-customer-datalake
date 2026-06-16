@@ -17,6 +17,9 @@
     "settings": "設定"
   },
   "configureBrand": "ブランドを設定",
+  "exportPdf": "PDFをエクスポート",
+  "exportPdfShort": "PDF",
+  "exportPdfTooltip": "PDFとしてエクスポート",
   "filters": {
     "allCategories": "すべてのカテゴリ",
     "allSentiments": "すべての感情",
@@ -57,6 +60,7 @@
     "scrapers": "スクレイパー",
     "settings": "設定"
   },
+  "partialWindowHint": "すべて表示するにはフィルターを絞り込んでください",
   "priority": {
     "high": "高",
     "low": "低",

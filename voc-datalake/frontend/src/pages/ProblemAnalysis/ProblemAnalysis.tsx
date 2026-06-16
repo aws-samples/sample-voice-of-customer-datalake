@@ -22,6 +22,7 @@ import { useConfigStore } from '../../store/configStore'
 import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
 import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
+import { useTranslation } from 'react-i18next'
 
 interface ProblemGroup {
   problem: string
@@ -227,6 +228,7 @@ function toPDFCategories(groups: CategoryGroup[]) {
 }
 
 export default function ProblemAnalysis() {
+  const { t } = useTranslation('common')
   const { timeRange, customDays, config } = useConfigStore()
   const dateParams = getDateRangeParams(timeRange, customDays)
   
@@ -522,10 +524,10 @@ export default function ProblemAnalysis() {
                   onClick={exportPDF}
                   disabled={groupedData.length === 0}
                   className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Export as PDF"
+                  title={t('exportPdfTooltip')}
                 >
                   <FileDown size={14} />
-                  PDF
+                  {t('exportPdfShort')}
                 </button>
               </div>
             </div>

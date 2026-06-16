@@ -17,6 +17,9 @@
     "settings": "Configuración"
   },
   "configureBrand": "Configurar marca",
+  "exportPdf": "Exportar PDF",
+  "exportPdfShort": "PDF",
+  "exportPdfTooltip": "Exportar como PDF",
   "filters": {
     "allCategories": "Todas las categorías",
     "allSentiments": "Todos los sentimientos",
@@ -60,6 +63,7 @@
     "scrapers": "Recolectores",
     "settings": "Configuración"
   },
+  "partialWindowHint": "acota los filtros para verlos todos",
   "priority": {
     "high": "Alta",
     "low": "Baja",
@@ -74,6 +78,7 @@
     "positive": "Positivo"
   },
   "showingOf_one": "Mostrando {{count}} de {{total}} resultado",
+  "showingOf_many": "",
   "showingOf_other": "Mostrando {{count}} de {{total}} resultados",
   "sidebar": {
     "closeMenu": "Cerrar menú",
