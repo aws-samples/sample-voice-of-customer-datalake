@@ -54,6 +54,19 @@ function truncateText(text: string, maxLength: number): string {
   return text.slice(0, maxLength) + '…'
 }
 
+/**
+ * Coerce a value to a finite number, falling back to `fallback` (default 0).
+ *
+ * The `/feedback` API can return numeric fields such as `sentiment_score` as
+ * JSON strings (records persisted as DynamoDB String attributes), so calling
+ * `.toFixed()` on the raw value throws and aborts the whole PDF render. This
+ * mirrors the defensive coercion already used by `SentimentBadge`.
+ */
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
 function isActiveFilter(value: string | undefined, defaultValue = 'all'): boolean {
   return value != null && value !== defaultValue
 }
@@ -72,7 +85,7 @@ function buildActiveFilters(filters: FeedbackPDFProps['filters']): string[] {
 function computeHeaderStats(items: readonly FeedbackItem[]) {
   const urgentCount = items.filter((i) => i.urgency === 'high').length
   const avgSentiment = items.length > 0
-    ? items.reduce((sum, i) => sum + i.sentiment_score, 0) / items.length
+    ? items.reduce((sum, i) => sum + toFiniteNumber(i.sentiment_score), 0) / items.length
     : 0
   return {
     urgentCount,
@@ -262,7 +275,7 @@ function FeedbackTable({ items }: { readonly items: readonly FeedbackItem[] }) {
                     fontWeight: '500',
                     whiteSpace: 'nowrap',
                   }}>
-                    {item.sentiment_label} ({item.sentiment_score.toFixed(2)})
+                    {item.sentiment_label} ({toFiniteNumber(item.sentiment_score).toFixed(2)})
                   </span>
                 </td>
                 <td style={{

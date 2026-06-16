@@ -175,6 +175,52 @@ class TestListFeedbackPagination:
 
     @patch('metrics_handler.feedback_table')
     @patch('metrics_handler.aggregates_table')
+    def test_source_filter_does_not_over_flag_partial_window(
+        self, _mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        # Regression for "N of N+": each day returns a full page where only one
+        # item matches the source filter. The pre-filter window would hit the
+        # small overshoot cap, but because a filter is applied we scan the full
+        # day range, so the filtered total is exact and the window is not flagged
+        # partial.
+        page = _items(99, source='webscraper') + _items(1, source='manual_import')
+        mock_fb.query.return_value = {'Items': page}
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET', path='/feedback',
+            query_params={'days': '3', 'source': 'manual_import'},
+        )
+
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        # 1 matching item per day across 3 scanned days.
+        assert body['total'] == 3
+        assert body['count'] == 3
+        assert body['is_partial_window'] is False
+        assert all(i['source_platform'] == 'manual_import' for i in body['items'])
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_filtered_query_still_flags_partial_window_at_hard_cap(
+        self, _mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        # When even a filtered scan hits the MAX_FEEDBACK_OFFSET hard cap before
+        # exhausting the day range, the window is genuinely partial and must be
+        # flagged so the UI treats `total` as a lower bound.
+        mock_fb.query.return_value = {'Items': _items(3000, source='manual_import')}
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET', path='/feedback',
+            query_params={'days': '3', 'source': 'manual_import'},
+        )
+
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        # Day 0 (3000) + day 1 (3000) >= 5000 cap, with day 2 still unscanned.
+        assert body['is_partial_window'] is True
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
     def test_category_only_filter_uses_category_gsi(
         self, _mock_agg, mock_fb, api_gateway_event, lambda_context
     ):

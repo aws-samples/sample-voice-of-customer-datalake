@@ -80,9 +80,21 @@ def list_feedback():
         max_val=MAX_FEEDBACK_OFFSET,
     )
 
-    # Fetch enough candidates to satisfy offset+limit pagination, with a
-    # generous overshoot to absorb post-query filtering by source/sentiment.
-    candidate_cap = max((offset + limit) * 2, MIN_CANDIDATE_CAP)
+    # Sizing the candidate window:
+    #
+    # - Without post-query filters, a small overshoot beyond offset+limit is
+    #   enough to paginate, and `total` is an intentionally windowed lower bound.
+    # - With post-query filters (source/sentiment/category), stopping at that
+    #   small overshoot would undercount the filtered `total` and spuriously set
+    #   `is_partial_window` (e.g. "2 of 2+"): the candidates that survive the
+    #   filter are a small subset of the scanned window. In that case we scan the
+    #   full window (up to MAX_FEEDBACK_OFFSET) so the filtered count is exact and
+    #   `is_partial_window` only trips on genuine cap truncation.
+    has_post_filter = bool(source) or bool(sentiment) or bool(category)
+    candidate_cap = (
+        MAX_FEEDBACK_OFFSET if has_post_filter
+        else max((offset + limit) * 2, MIN_CANDIDATE_CAP)
+    )
 
     candidates: list[dict[str, Any]] = []
     current_date = datetime.now(timezone.utc)

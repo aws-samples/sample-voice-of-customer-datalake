@@ -20,6 +20,7 @@ import MetricCard from '../../components/MetricCard'
 import FeedbackCard from '../../components/FeedbackCard'
 import SocialFeed from '../../components/SocialFeed'
 import { generateDashboardPDF } from './dashboardPdfGenerator'
+import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
 
 const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
@@ -339,7 +340,7 @@ export default function Dashboard() {
         categories,
         sources,
         urgentFeedback,
-        timeRange,
+        timeRange: getTimeRangeLabel(timeRange, customDays),
         sourcesCount,
       }))
     } catch {

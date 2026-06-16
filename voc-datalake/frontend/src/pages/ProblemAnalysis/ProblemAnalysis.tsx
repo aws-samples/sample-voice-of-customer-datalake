@@ -22,6 +22,7 @@ import { useConfigStore } from '../../store/configStore'
 import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
 import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
+import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
 
 interface ProblemGroup {
@@ -366,7 +367,7 @@ export default function ProblemAnalysis() {
     try {
       generateProblemAnalysisPDF({
         categories: toPDFCategories(groupedData),
-        timeRange,
+        timeRange: getTimeRangeLabel(timeRange, customDays),
         filters: {
           source: selectedSource,
           category: selectedCategory,

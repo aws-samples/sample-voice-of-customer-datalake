@@ -16,6 +16,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Search, Filter, SortDesc, X, FileDown } from 'lucide-react'
 import { api, getDateRangeParams } from '../../api/client'
 import type { FeedbackItem, DateRangeParams } from '../../api/client'
+import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useConfigStore } from '../../store/configStore'
 import FeedbackCard from '../../components/FeedbackCard'
 import { generateFeedbackPDF } from './feedbackPdfGenerator'
@@ -169,15 +170,19 @@ function ResultsHeader({
   onClearFilters: () => void
 }>) {
   // When the candidate window was truncated by the backend cap, `totalCount`
-  // is a lower bound — show "N+" and a hint to narrow filters.
+  // is a lower bound — show "N+" and a hint to narrow filters. Only do so when
+  // there are genuinely more matches than are displayed (`totalCount >
+  // itemCount`); otherwise the user already sees everything counted and "N+"
+  // would be misleading (e.g. "2 of 2+").
   const { t } = useTranslation('common')
-  const totalLabel = isPartialWindow ? `${totalCount}+` : `${totalCount}`
+  const showPartial = isPartialWindow && totalCount > itemCount
+  const totalLabel = showPartial ? `${totalCount}+` : `${totalCount}`
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
       <p className="text-sm text-gray-500">
         {t('showingOf', { count: itemCount, total: totalLabel })}
         {search && <span className="ml-1">for "{search}"</span>}
-        {isPartialWindow && (
+        {showPartial && (
           <span className="ml-1 text-amber-600">({t('partialWindowHint')})</span>
         )}
       </p>
@@ -222,8 +227,10 @@ function PDFExportButton({
           urgentOnly: filterState.showUrgentOnly,
         },
       })
-    } catch {
-      // PDF generation is best-effort (e.g. popup blocked)
+    } catch (err) {
+      // PDF generation is best-effort (e.g. popup blocked). Surface the cause
+      // instead of failing silently with an empty window.
+      console.error('Feedback PDF export failed:', err)
     }
   }
   return (
@@ -428,7 +435,7 @@ export default function Feedback() {
         onClearFilters={clearFilters}
       />
 
-      <PDFExportButton items={filteredItems} timeRange={timeRange} filterState={filterState} />
+      <PDFExportButton items={filteredItems} timeRange={getTimeRangeLabel(timeRange, customDays)} filterState={filterState} />
 
       <FeedbackListContent isLoading={activeLoading} items={filteredItems} />
     </div>

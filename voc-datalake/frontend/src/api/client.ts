@@ -73,6 +73,7 @@ function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
 }
 
 import { z } from 'zod'
+import { normalizeFeedbackItem, normalizeFeedbackItems } from './feedbackSchema'
 
 // API response parser using Zod for runtime validation
 // This satisfies the no-type-assertions rule
@@ -143,27 +144,31 @@ function buildSearchParams(params: object): URLSearchParams {
 
 export const api = {
   // Feedback
-  getFeedback: (params: FeedbackListParams) => {
+  getFeedback: async (params: FeedbackListParams) => {
     const searchParams = buildSearchParams(params)
-    return fetchApi<FeedbackListResponse>(`/feedback?${searchParams}`)
+    const res = await fetchApi<FeedbackListResponse>(`/feedback?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  getFeedbackById: (id: string) => fetchApi<FeedbackItem>(`/feedback/${id}`),
+  getFeedbackById: async (id: string) => normalizeFeedbackItem(await fetchApi<FeedbackItem>(`/feedback/${id}`)),
   
-  getUrgentFeedback: (params: { days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
+  getUrgentFeedback: async (params: { days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
-    return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback/urgent?${searchParams}`)
+    const res = await fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback/urgent?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  searchFeedback: (params: { q: string; days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
+  searchFeedback: async (params: { q: string; days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
-    return fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
+    const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  getSimilarFeedback: (id: string, limit?: number) => {
+  getSimilarFeedback: async (id: string, limit?: number) => {
     const searchParams = new URLSearchParams()
     if (limit) searchParams.set('limit', String(limit))
-    return fetchApi<{ source_feedback_id: string; count: number; items: FeedbackItem[] }>(`/feedback/${id}/similar?${searchParams}`)
+    const res = await fetchApi<{ source_feedback_id: string; count: number; items: FeedbackItem[] }>(`/feedback/${id}/similar?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
   getEntities: (params: { days?: number; limit?: number; source?: string }) => {

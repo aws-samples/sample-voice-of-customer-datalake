@@ -58,4 +58,32 @@ describe('FeedbackPDFContent', () => {
     expect(screen.getByText('First complaint')).toBeInTheDocument()
     expect(screen.getByText('Second complaint')).toBeInTheDocument()
   })
+
+  it('renders when sentiment_score arrives as a string (API string-typed Decimal)', () => {
+    // Regression: the /feedback API can return sentiment_score as a JSON string
+    // for records persisted as DynamoDB String attributes. Calling .toFixed()
+    // on a string previously threw and produced a blank PDF window.
+    const stringScoreItem = makeItem({
+      original_text: 'Manual import review',
+      // Cast through unknown: the runtime value violates the declared number type.
+      sentiment_score: '0.9' as unknown as number,
+    })
+    expect(() =>
+      render(<FeedbackPDFContent items={[stringScoreItem]} timeRange="Last 7 days" />)
+    ).not.toThrow()
+    expect(screen.getByText('Manual import review')).toBeInTheDocument()
+    // Coerced and formatted to 2 decimals rather than crashing.
+    expect(screen.getByText(/negative \(0\.90\)/)).toBeInTheDocument()
+  })
+
+  it('falls back to 0.00 when sentiment_score is not numeric', () => {
+    const badScoreItem = makeItem({
+      original_text: 'Garbage score review',
+      sentiment_score: 'not-a-number' as unknown as number,
+    })
+    expect(() =>
+      render(<FeedbackPDFContent items={[badScoreItem]} timeRange="Last 7 days" />)
+    ).not.toThrow()
+    expect(screen.getByText(/negative \(0\.00\)/)).toBeInTheDocument()
+  })
 })
