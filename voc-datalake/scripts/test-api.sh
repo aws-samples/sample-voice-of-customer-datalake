@@ -137,9 +137,16 @@ echo -e "\n${BLUE}S3 Import API${NC}"
 tget "/s3-import/files"
 tget "/s3-import/sources"
 
-echo -e "\n${BLUE}Feedback Form (Public)${NC}"
-tpub "/feedback-form/config"
-tpub "/feedback-form/iframe"
+echo -e "\n${BLUE}Feedback Forms${NC}"
+tget "/feedback-forms"
+# Public per-form endpoints require a form id; exercise them only if a form exists
+FORM_ID=$(curl -s -H "Authorization: $AUTH" "$API/feedback-forms" | python3 -c "import sys,json; f=json.load(sys.stdin).get('forms',[]); print(f[0].get('form_id', f[0].get('id','')) if f else '')" 2>/dev/null)
+if [ -n "$FORM_ID" ]; then
+  tpub "/feedback-forms/$FORM_ID/config"
+  tpub "/feedback-forms/$FORM_ID/iframe"
+else
+  echo "  ⚠️  No feedback forms configured, skipping public per-form endpoints"
+fi
 
 echo -e "\n${BLUE}Chat Stream API (Lambda Function URL)${NC}"
 tstream() {
