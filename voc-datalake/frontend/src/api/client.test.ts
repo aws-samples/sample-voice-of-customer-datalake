@@ -56,7 +56,9 @@ describe('API Client', () => {
           }),
         })
       )
-      expect(result).toEqual(mockResponse)
+      // Items are normalized to the FeedbackItem contract at the client boundary.
+      expect(result.count).toBe(2)
+      expect(result.items.map((i) => i.feedback_id)).toEqual(['1', '2'])
     })
 
     it('throws error on non-ok response', async () => {
@@ -162,7 +164,8 @@ describe('API Client', () => {
         'https://api.example.com/feedback/abc123',
         expect.any(Object)
       )
-      expect(result).toEqual(mockFeedback)
+      // Response is normalized to the FeedbackItem contract at the client boundary.
+      expect(result.feedback_id).toBe('abc123')
     })
   })
 

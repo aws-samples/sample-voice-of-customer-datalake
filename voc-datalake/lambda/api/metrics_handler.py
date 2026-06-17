@@ -8,15 +8,30 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
+from aws_lambda_powertools.event_handler.exceptions import NotFoundError
+from boto3.dynamodb.conditions import Key
+
 from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource
 from shared.api import (
-    create_api_resolver, validate_days, validate_limit,
+    create_api_resolver, validate_days, validate_limit, validate_int,
     get_configured_categories, api_handler, DEFAULT_CATEGORIES
 )
 
-from aws_lambda_powertools.event_handler.exceptions import NotFoundError
-from boto3.dynamodb.conditions import Key
+# Pagination bounds for /feedback. The candidate window is a function of
+# offset+limit, capped to prevent unbounded DynamoDB scans. The cap also defines
+# the maximum paginable depth.
+MAX_FEEDBACK_OFFSET = 5000
+MIN_CANDIDATE_CAP = 100
+
+# Per-day GSI query page size for date-windowed scans. Used by /feedback,
+# /feedback/entities, /feedback/search, and the source-filtered branches of
+# /metrics/sentiment and /metrics/categories.
+DATE_QUERY_LIMIT = 500
+
+# Soft cap on accumulated candidates when iterating across days for endpoints
+# that aggregate or sample feedback (entities, search, source-filtered metrics).
+CANDIDATES_SOFT_CAP = 1000
 
 # AWS Clients
 dynamodb = get_dynamodb_resource()
@@ -39,47 +54,95 @@ app = create_api_resolver()
 @app.get("/feedback")
 @tracer.capture_method
 def list_feedback():
-    """List feedback with optional filters."""
+    """
+    List feedback with optional filters and offset/limit pagination.
+
+    Pagination semantics: results are paginated within a date-window candidate
+    set (or category-window when only ``category`` is supplied). The returned
+    ``total`` reflects the size of the filtered candidate window, not the full
+    dataset, and the candidate window is bounded by ``MAX_FEEDBACK_OFFSET``.
+
+    The ``is_partial_window`` flag is true when the candidate window was
+    truncated by the cap; in that case more matching records may exist beyond
+    the window and ``total`` is a lower bound on the true count.
+    """
     params = app.current_event.query_string_parameters or {}
-    
+
     days = validate_days(params.get('days'), default=7)
     source = params.get('source')
     category = params.get('category')
     sentiment = params.get('sentiment')
     limit = validate_limit(params.get('limit'), default=50, max_val=100)
-    
-    items = []
+    offset = validate_int(
+        params.get('offset'),
+        default=0,
+        min_val=0,
+        max_val=MAX_FEEDBACK_OFFSET,
+    )
+
+    # Sizing the candidate window:
+    #
+    # - Without post-query filters, a small overshoot beyond offset+limit is
+    #   enough to paginate, and `total` is an intentionally windowed lower bound.
+    # - With post-query filters (source/sentiment/category), stopping at that
+    #   small overshoot would undercount the filtered `total` and spuriously set
+    #   `is_partial_window` (e.g. "2 of 2+"): the candidates that survive the
+    #   filter are a small subset of the scanned window. In that case we scan the
+    #   full window (up to MAX_FEEDBACK_OFFSET) so the filtered count is exact and
+    #   `is_partial_window` only trips on genuine cap truncation.
+    has_post_filter = bool(source) or bool(sentiment) or bool(category)
+    candidate_cap = (
+        MAX_FEEDBACK_OFFSET if has_post_filter
+        else max((offset + limit) * 2, MIN_CANDIDATE_CAP)
+    )
+
+    candidates: list[dict[str, Any]] = []
     current_date = datetime.now(timezone.utc)
-    
+    window_truncated = False
+
     if category and not source:
         response = feedback_table.query(
             IndexName='gsi2-by-category',
             KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{category}'),
-            Limit=limit * 2,
+            Limit=candidate_cap,
             ScanIndexForward=False
         )
-        items = response.get('Items', [])
+        candidates = response.get('Items', [])
+        # The category GSI returned a full page at the cap — there may be more.
+        window_truncated = len(candidates) >= candidate_cap and 'LastEvaluatedKey' in response
     else:
         for i in range(days):
             date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
             response = feedback_table.query(
                 IndexName='gsi1-by-date',
                 KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=500,
+                Limit=DATE_QUERY_LIMIT,
                 ScanIndexForward=False
             )
-            items.extend(response.get('Items', []))
-            if len(items) >= limit * 5:
+            candidates.extend(response.get('Items', []))
+            if len(candidates) >= candidate_cap:
+                # We hit the cap before exhausting the date range.
+                window_truncated = i < days - 1
                 break
-    
+
     if source:
-        items = [i for i in items if i.get('source_platform') == source]
+        candidates = [i for i in candidates if i.get('source_platform') == source]
     if category and source:
-        items = [i for i in items if i.get('category') == category]
+        candidates = [i for i in candidates if i.get('category') == category]
     if sentiment:
-        items = [i for i in items if i.get('sentiment_label') == sentiment]
-    
-    return {'count': len(items), 'items': items[:limit]}
+        candidates = [i for i in candidates if i.get('sentiment_label') == sentiment]
+
+    total = len(candidates)
+    page = candidates[offset:offset + limit]
+
+    return {
+        'count': len(page),
+        'total': total,
+        'offset': offset,
+        'limit': limit,
+        'is_partial_window': window_truncated,
+        'items': page,
+    }
 
 
 @app.get("/feedback/urgent")
@@ -150,11 +213,11 @@ def get_entities():
             response = feedback_table.query(
                 IndexName='gsi1-by-date',
                 KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=500,
+                Limit=DATE_QUERY_LIMIT,
                 ScanIndexForward=False
             )
             items.extend(response.get('Items', []))
-            if len(items) >= 1000:
+            if len(items) >= CANDIDATES_SOFT_CAP:
                 break
         
         items = [i for i in items if i.get('source_platform') == source]
@@ -290,7 +353,7 @@ def search_feedback():
             ScanIndexForward=False
         )
         candidates.extend(response.get('Items', []))
-        if len(candidates) >= 1000:
+        if len(candidates) >= CANDIDATES_SOFT_CAP:
             break
     
     items = []
@@ -455,11 +518,11 @@ def get_sentiment_metrics():
             response = feedback_table.query(
                 IndexName='gsi1-by-date',
                 KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=500,
+                Limit=DATE_QUERY_LIMIT,
                 ScanIndexForward=False
             )
             items.extend(response.get('Items', []))
-            if len(items) >= 1000:
+            if len(items) >= CANDIDATES_SOFT_CAP:
                 break
         
         for item in items:
@@ -509,11 +572,11 @@ def get_category_metrics():
             response = feedback_table.query(
                 IndexName='gsi1-by-date',
                 KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=500,
+                Limit=DATE_QUERY_LIMIT,
                 ScanIndexForward=False
             )
             items.extend(response.get('Items', []))
-            if len(items) >= 1000:
+            if len(items) >= CANDIDATES_SOFT_CAP:
                 break
         
         for item in items:

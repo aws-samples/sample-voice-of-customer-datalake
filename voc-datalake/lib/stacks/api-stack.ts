@@ -719,6 +719,7 @@ export class VocApiStack extends cdk.Stack {
     manualParseResource.addMethod('POST', manualImportIntegration, authMethodOptions);
     manualParseResource.addResource('{jobId}').addMethod('GET', manualImportIntegration, authMethodOptions);
     manualResource.addResource('confirm').addMethod('POST', manualImportIntegration, authMethodOptions);
+    manualResource.addResource('json-upload').addMethod('POST', manualImportIntegration, authMethodOptions);
     scrapersResource.addProxy({ defaultIntegration: scrapersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /s3-import/*

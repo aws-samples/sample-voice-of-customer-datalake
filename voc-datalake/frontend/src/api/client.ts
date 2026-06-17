@@ -2,6 +2,8 @@ import { authService } from '../services/auth'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange, ALL_TIME_DAYS } from './baseUrl'
 import type {
   FeedbackItem,
+  FeedbackListParams,
+  FeedbackListResponse,
   MetricsSummary,
   SentimentBreakdown,
   CategoryBreakdown,
@@ -27,6 +29,8 @@ import type {
 // Re-export all types for backward compatibility
 export type {
   FeedbackItem,
+  FeedbackListParams,
+  FeedbackListResponse,
   MetricsSummary,
   SentimentBreakdown,
   CategoryBreakdown,
@@ -69,6 +73,7 @@ function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
 }
 
 import { z } from 'zod'
+import { normalizeFeedbackItem, normalizeFeedbackItems } from './feedbackSchema'
 
 // API response parser using Zod for runtime validation
 // This satisfies the no-type-assertions rule
@@ -124,8 +129,10 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
   throw new Error(`API Error: ${response.status}`)
 }
 
-// Helper to build URLSearchParams from an object, filtering out undefined/null values
-function buildSearchParams(params: Record<string, string | number | boolean | undefined | null>): URLSearchParams {
+// Helper to build URLSearchParams from an object, filtering out undefined/null values.
+// Accepts any object so domain interfaces (e.g. FeedbackListParams) can be passed
+// without requiring an index signature on the type.
+function buildSearchParams(params: object): URLSearchParams {
   const searchParams = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value != null) {
@@ -137,27 +144,31 @@ function buildSearchParams(params: Record<string, string | number | boolean | un
 
 export const api = {
   // Feedback
-  getFeedback: (params: { days?: number; source?: string; category?: string; sentiment?: string; limit?: number }) => {
+  getFeedback: async (params: FeedbackListParams) => {
     const searchParams = buildSearchParams(params)
-    return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback?${searchParams}`)
+    const res = await fetchApi<FeedbackListResponse>(`/feedback?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  getFeedbackById: (id: string) => fetchApi<FeedbackItem>(`/feedback/${id}`),
+  getFeedbackById: async (id: string) => normalizeFeedbackItem(await fetchApi<FeedbackItem>(`/feedback/${id}`)),
   
-  getUrgentFeedback: (params: { days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
+  getUrgentFeedback: async (params: { days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
-    return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback/urgent?${searchParams}`)
+    const res = await fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback/urgent?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  searchFeedback: (params: { q: string; days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
+  searchFeedback: async (params: { q: string; days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
-    return fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
+    const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  getSimilarFeedback: (id: string, limit?: number) => {
+  getSimilarFeedback: async (id: string, limit?: number) => {
     const searchParams = new URLSearchParams()
     if (limit) searchParams.set('limit', String(limit))
-    return fetchApi<{ source_feedback_id: string; count: number; items: FeedbackItem[] }>(`/feedback/${id}/similar?${searchParams}`)
+    const res = await fetchApi<{ source_feedback_id: string; count: number; items: FeedbackItem[] }>(`/feedback/${id}/similar?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
   getEntities: (params: { days?: number; limit?: number; source?: string }) => {

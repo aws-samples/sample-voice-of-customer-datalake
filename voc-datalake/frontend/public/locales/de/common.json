@@ -17,6 +17,9 @@
     "settings": "Einstellungen"
   },
   "configureBrand": "Marke konfigurieren",
+  "exportPdf": "PDF exportieren",
+  "exportPdfShort": "PDF",
+  "exportPdfTooltip": "Als PDF exportieren",
   "filters": {
     "allCategories": "Alle Kategorien",
     "allSentiments": "Alle Stimmungen",
@@ -57,6 +60,7 @@
     "scrapers": "Scraper",
     "settings": "Einstellungen"
   },
+  "partialWindowHint": "Filter eingrenzen, um alle zu sehen",
   "priority": {
     "high": "Hoch",
     "low": "Niedrig",

@@ -125,11 +125,53 @@ describe('Feedback', () => {
       })
     })
 
+    it('shows the real total from the paginated response', async () => {
+      mockGetFeedback.mockResolvedValue({
+        count: 3, total: 250, offset: 0, limit: 100,
+        is_partial_window: false, items: mockFeedbackItems,
+      })
+      render(<Feedback />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText(/Showing 3 of 250 results/)).toBeInTheDocument()
+      })
+    })
+
+    it('flags a truncated candidate window with a "+" and a narrow-filters hint', async () => {
+      mockGetFeedback.mockResolvedValue({
+        count: 3, total: 1000, offset: 0, limit: 100,
+        is_partial_window: true, items: mockFeedbackItems,
+      })
+      render(<Feedback />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText(/Showing 3 of 1000\+ results/)).toBeInTheDocument()
+      })
+      expect(screen.getByText(/narrow filters to see all/)).toBeInTheDocument()
+    })
+
+    it('does not show "+" or the hint when all counted items are displayed (regression: "N of N+")', async () => {
+      // A narrow filter can yield is_partial_window=true from the backend while
+      // count === total. Claiming "more exist" would be misleading, so the UI
+      // must render a plain "N of N" with no "+" and no narrow-filters hint.
+      mockGetFeedback.mockResolvedValue({
+        count: 2, total: 2, offset: 0, limit: 100,
+        is_partial_window: true, items: mockFeedbackItems.slice(0, 2),
+      })
+      render(<Feedback />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText(/Showing 2 of 2 results/)).toBeInTheDocument()
+      })
+      expect(screen.queryByText(/Showing 2 of 2\+ results/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/narrow filters to see all/)).not.toBeInTheDocument()
+    })
+
     it('displays item count', async () => {
       render(<Feedback />, { wrapper: createWrapper() })
       
       await waitFor(() => {
-        expect(screen.getByText(/Showing 3 of 3 items/i)).toBeInTheDocument()
+        expect(screen.getByText(/Showing 3 of 3 results/i)).toBeInTheDocument()
       })
     })
 

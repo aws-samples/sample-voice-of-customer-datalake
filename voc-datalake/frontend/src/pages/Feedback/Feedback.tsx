@@ -13,11 +13,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Filter, SortDesc, X } from 'lucide-react'
+import { Search, Filter, SortDesc, X, FileDown } from 'lucide-react'
 import { api, getDateRangeParams } from '../../api/client'
 import type { FeedbackItem, DateRangeParams } from '../../api/client'
+import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useConfigStore } from '../../store/configStore'
 import FeedbackCard from '../../components/FeedbackCard'
+import { generateFeedbackPDF } from './feedbackPdfGenerator'
+import { useTranslation } from 'react-i18next'
 
 const sentiments = ['all', 'positive', 'neutral', 'negative', 'mixed']
 const defaultCategories = ['all', 'delivery', 'customer_support', 'product_quality', 'pricing', 'website', 'app', 'billing', 'returns', 'communication', 'other']
@@ -154,21 +157,34 @@ function FiltersCard({
 function ResultsHeader({
   itemCount,
   totalCount,
+  isPartialWindow,
   search,
   hasActiveFilters,
   onClearFilters,
 }: Readonly<{
   itemCount: number
   totalCount: number
+  isPartialWindow: boolean
   search: string
   hasActiveFilters: boolean
   onClearFilters: () => void
 }>) {
+  // When the candidate window was truncated by the backend cap, `totalCount`
+  // is a lower bound — show "N+" and a hint to narrow filters. Only do so when
+  // there are genuinely more matches than are displayed (`totalCount >
+  // itemCount`); otherwise the user already sees everything counted and "N+"
+  // would be misleading (e.g. "2 of 2+").
+  const { t } = useTranslation('common')
+  const showPartial = isPartialWindow && totalCount > itemCount
+  const totalLabel = showPartial ? `${totalCount}+` : `${totalCount}`
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
       <p className="text-sm text-gray-500">
-        Showing {itemCount} of {totalCount} items
+        {t('showingOf', { count: itemCount, total: totalLabel })}
         {search && <span className="ml-1">for "{search}"</span>}
+        {showPartial && (
+          <span className="ml-1 text-amber-600">({t('partialWindowHint')})</span>
+        )}
       </p>
       <div className="flex items-center gap-3">
         {hasActiveFilters && (
@@ -182,6 +198,51 @@ function ResultsHeader({
           Most recent
         </button>
       </div>
+    </div>
+  )
+}
+
+// PDF export button - exports the current (filtered) feedback list
+function PDFExportButton({
+  items,
+  timeRange,
+  filterState,
+}: Readonly<{
+  items: readonly FeedbackItem[]
+  timeRange: string
+  filterState: FilterState
+}>) {
+  const { t } = useTranslation('common')
+  if (items.length === 0) return null
+  const exportPDF = () => {
+    try {
+      generateFeedbackPDF({
+        items,
+        timeRange,
+        filters: {
+          source: filterState.sourceFilter,
+          sentiment: filterState.sentimentFilter,
+          category: filterState.categoryFilter,
+          search: filterState.search,
+          urgentOnly: filterState.showUrgentOnly,
+        },
+      })
+    } catch (err) {
+      // PDF generation is best-effort (e.g. popup blocked). Surface the cause
+      // instead of failing silently with an empty window.
+      console.error('Feedback PDF export failed:', err)
+    }
+  }
+  return (
+    <div className="flex justify-end">
+      <button
+        onClick={exportPDF}
+        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+        title={t('exportPdfTooltip')}
+      >
+        <FileDown size={14} />
+        {t('exportPdf')}
+      </button>
     </div>
   )
 }
@@ -231,9 +292,19 @@ function getFeedbackQueryFn(
 }
 
 interface FeedbackDataResult {
-  data: { items?: FeedbackItem[]; count?: number } | undefined
+  data: { items?: FeedbackItem[]; count?: number; total?: number; is_partial_window?: boolean } | undefined
   isLoading: boolean
   isSearching: boolean
+}
+
+// Derive the results-header totals from a feedback response. `total` (candidate
+// window size) is preferred; `count` (page size) is the fallback for endpoints
+// that don't paginate (search/urgent).
+function getResultsTotals(data: FeedbackDataResult['data']): { totalCount: number; isPartialWindow: boolean } {
+  return {
+    totalCount: data?.total ?? data?.count ?? 0,
+    isPartialWindow: data?.is_partial_window ?? false,
+  }
 }
 
 // Custom hook for feedback data fetching
@@ -321,7 +392,7 @@ export default function Feedback() {
   )
 
   const filteredItems = activeData?.items ?? []
-
+  const { totalCount, isPartialWindow } = getResultsTotals(activeData)
   const clearFilters = () => {
     setSearch('')
     setSourceFilter('all')
@@ -357,11 +428,14 @@ export default function Feedback() {
 
       <ResultsHeader
         itemCount={filteredItems.length}
-        totalCount={activeData?.count ?? 0}
+        totalCount={totalCount}
+        isPartialWindow={isPartialWindow}
         search={search}
         hasActiveFilters={hasActiveFilters}
         onClearFilters={clearFilters}
       />
+
+      <PDFExportButton items={filteredItems} timeRange={getTimeRangeLabel(timeRange, customDays)} filterState={filterState} />
 
       <FeedbackListContent isLoading={activeLoading} items={filteredItems} />
     </div>

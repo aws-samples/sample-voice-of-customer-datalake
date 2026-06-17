@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { safeFormatDate } from './dateUtils'
+import { safeFormatDate, getTimeRangeLabel } from './dateUtils'
 
 describe('safeFormatDate', () => {
   const formatStr = 'MMM d, yyyy HH:mm'
@@ -52,5 +52,31 @@ describe('safeFormatDate', () => {
   it('handles ISO date strings with timezone', () => {
     const result = safeFormatDate('2025-12-25T00:00:00+05:00', 'yyyy-MM-dd')
     expect(result).toMatch(/2025-12-2[45]/)
+  })
+})
+
+describe('getTimeRangeLabel', () => {
+  it('maps preset tokens to human-readable labels', () => {
+    expect(getTimeRangeLabel('24h')).toBe('24 Hours')
+    expect(getTimeRangeLabel('48h')).toBe('48 Hours')
+    expect(getTimeRangeLabel('7d')).toBe('7 Days')
+    expect(getTimeRangeLabel('30d')).toBe('30 Days')
+  })
+
+  it('presents the "all" token as the 90 Days preset (never the raw token)', () => {
+    expect(getTimeRangeLabel('all')).toBe('90 Days')
+  })
+
+  it('formats custom ranges as "Last N days" when customDays is set', () => {
+    expect(getTimeRangeLabel('custom', 14)).toBe('Last 14 days')
+  })
+
+  it('falls back to "Custom" when custom is selected without a day count', () => {
+    expect(getTimeRangeLabel('custom')).toBe('Custom')
+    expect(getTimeRangeLabel('custom', null)).toBe('Custom')
+  })
+
+  it('falls back to the raw token for unknown values', () => {
+    expect(getTimeRangeLabel('90d')).toBe('90d')
   })
 })
