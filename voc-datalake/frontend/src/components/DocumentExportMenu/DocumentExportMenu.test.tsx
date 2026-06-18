@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import DocumentExportMenu from './DocumentExportMenu'
-import type { ProjectDocument, Project } from '../../api/client'
+import type { ProjectDocument, Project } from '../../api/types'
 
 // Mock printUtils
 const mockOpenPrintWindow = vi.fn()
@@ -57,6 +57,7 @@ describe('DocumentExportMenu', () => {
 
     it('returns null when document is null', () => {
       const { container } = render(<DocumentExportMenu document={null} />)
+      // eslint-disable-next-line testing-library/no-node-access
       expect(container.firstChild).toBeNull()
     })
 
@@ -209,6 +210,7 @@ describe('DocumentExportMenu', () => {
       await user.click(screen.getByRole('button', { name: /download options/i }))
       await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
 
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(writeTextSpy).toHaveBeenCalled()
     })
   })

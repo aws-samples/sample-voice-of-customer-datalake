@@ -28,6 +28,7 @@ describe('PersonaSection', () => {
         <p>Content</p>
       </PersonaSection>
     )
+    // eslint-disable-next-line testing-library/no-node-access -- checking root element classes
     const wrapper = container.firstChild as HTMLElement
     expect(wrapper).toHaveClass('border-purple-200', 'bg-purple-50/50')
   })
@@ -38,6 +39,7 @@ describe('PersonaSection', () => {
         <p>Content</p>
       </PersonaSection>
     )
+    // eslint-disable-next-line testing-library/no-node-access -- checking root element classes
     const wrapper = container.firstChild as HTMLElement
     expect(wrapper).toHaveClass('border-green-200', 'bg-green-50/50')
   })

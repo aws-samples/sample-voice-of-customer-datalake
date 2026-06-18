@@ -1,8 +1,12 @@
 /**
  * Custom hook for managing modal state in ProjectDetail
  */
-import { useState, useCallback } from 'react'
-import type { ProjectPersona, ProjectDocument } from '../../api/client'
+import {
+  useState, useCallback,
+} from 'react'
+import type {
+  ProjectPersona, ProjectDocument,
+} from '../../api/types'
 
 export function useSelectionState() {
   const [selectedPersona, setSelectedPersona] = useState<ProjectPersona | null>(null)
@@ -119,18 +123,33 @@ export function useImportModalState() {
 }
 
 export function useConfirmModalState() {
-  const [confirmModal, setConfirmModal] = useState<{ type: 'persona' | 'document' | null; id: string | null }>({ type: null, id: null })
+  const [confirmModal, setConfirmModal] = useState<{
+    type: 'persona' | 'document' | null;
+    id: string | null
+  }>({
+    type: null,
+    id: null,
+  })
 
   const openPersonaConfirm = useCallback((id: string) => {
-    setConfirmModal({ type: 'persona', id })
+    setConfirmModal({
+      type: 'persona',
+      id,
+    })
   }, [])
 
   const openDocumentConfirm = useCallback((id: string) => {
-    setConfirmModal({ type: 'document', id })
+    setConfirmModal({
+      type: 'document',
+      id,
+    })
   }, [])
 
   const closeConfirm = useCallback(() => {
-    setConfirmModal({ type: null, id: null })
+    setConfirmModal({
+      type: null,
+      id: null,
+    })
   }, [])
 
   return {

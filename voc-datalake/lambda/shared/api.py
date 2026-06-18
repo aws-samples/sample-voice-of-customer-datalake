@@ -26,24 +26,13 @@ from shared.exceptions import (
 class DecimalEncoder(json.JSONEncoder):
     """JSON encoder that handles Decimal types from DynamoDB."""
     def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super().default(obj)
+        return decimal_default(obj)
 
 
 def decimal_default(obj):
     """JSON serializer for Decimal types.
     
     Use with json.dumps: json.dumps(data, default=decimal_default)
-    
-    Args:
-        obj: Object to serialize
-        
-    Returns:
-        float if obj is Decimal
-        
-    Raises:
-        TypeError: If obj is not a Decimal
     """
     if isinstance(obj, Decimal):
         return float(obj)
@@ -56,12 +45,8 @@ def validate_days(
     min_val: int = 1,
     max_val: int = 365
 ) -> int:
-    """Validate and bound days parameter."""
-    try:
-        days = int(value) if value is not None else default
-        return max(min_val, min(days, max_val))
-    except (ValueError, TypeError):
-        return default
+    """Validate and bound days parameter. Convenience wrapper around validate_int."""
+    return validate_int(value, default=default, min_val=min_val, max_val=max_val)
 
 
 def validate_limit(
@@ -70,12 +55,8 @@ def validate_limit(
     min_val: int = 1,
     max_val: int = 100
 ) -> int:
-    """Validate and bound limit parameter."""
-    try:
-        limit = int(value) if value is not None else default
-        return max(min_val, min(limit, max_val))
-    except (ValueError, TypeError):
-        return default
+    """Validate and bound limit parameter. Convenience wrapper around validate_int."""
+    return validate_int(value, default=default, min_val=min_val, max_val=max_val)
 
 
 def validate_int(
@@ -237,43 +218,6 @@ def api_handler(func):
     return wrapper
 
 
-def json_response(data: dict, status_code: int = 200) -> dict:
-    """
-    Create a JSON response with proper headers.
-    
-    Args:
-        data: Response data dict
-        status_code: HTTP status code (default 200)
-    
-    Returns:
-        Lambda response dict
-    """
-    return {
-        'statusCode': status_code,
-        'headers': {'Content-Type': 'application/json'},
-        'body': json.dumps(data, cls=DecimalEncoder)
-    }
-
-
-def error_response(message: str, status_code: int = 400) -> dict:
-    """
-    Create an error response.
-    
-    Args:
-        message: Error message
-        status_code: HTTP status code (default 400)
-    
-    Returns:
-        Lambda response dict
-    
-    Note:
-        Prefer raising exceptions (ValidationError, NotFoundError, etc.)
-        over using this function directly. The exception handlers will
-        create consistent error responses automatically.
-    """
-    return json_response({'success': False, 'error': message}, status_code)
-
-
 # Re-export exceptions for convenience
 __all__ = [
     'DecimalEncoder',
@@ -283,11 +227,7 @@ __all__ = [
     'create_cors_config',
     'create_api_resolver',
     'api_handler',
-    'json_response',
-    'error_response',
     'get_configured_categories',
-    'clear_categories_cache',
-    'sum_daily_metric',
     'DEFAULT_CATEGORIES',
     # Exceptions
     'ApiError',
@@ -312,43 +252,49 @@ _categories_cache_time: float | None = None
 CATEGORIES_CACHE_TTL = 300  # 5 minutes
 
 
-def get_configured_categories(aggregates_table) -> list:
+def get_raw_categories_config(aggregates_table) -> list[dict]:
     """
-    Fetch configured categories from DynamoDB settings with caching.
+    Fetch raw categories config objects from DynamoDB settings with caching.
     
-    Args:
-        aggregates_table: DynamoDB Table resource for aggregates
-    
-    Returns:
-        List of category names
+    Returns list of category dicts (with name, description, subcategories).
+    Returns empty list if not configured.
     """
     global _categories_cache, _categories_cache_time
-    
+
     if not aggregates_table:
-        logger.warning("Aggregates table not provided, using default categories")
-        return DEFAULT_CATEGORIES
-    
+        return []
+
     now = datetime.now(timezone.utc).timestamp()
-    
-    # Return cached if still valid
+
     if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
         return _categories_cache
-    
+
     try:
         response = aggregates_table.get_item(Key={'pk': 'SETTINGS#categories', 'sk': 'config'})
         item = response.get('Item')
         if item and item.get('categories'):
-            _categories_cache = [cat.get('name') for cat in item.get('categories', []) if cat.get('name')]
+            _categories_cache = item.get('categories', [])
             _categories_cache_time = now
             logger.info(f"Loaded {len(_categories_cache)} categories from settings")
             return _categories_cache
     except Exception as e:
         logger.warning(f"Could not fetch categories from settings: {e}")
-    
-    # Fallback to defaults
-    _categories_cache = DEFAULT_CATEGORIES
+
+    _categories_cache = []
     _categories_cache_time = now
     return _categories_cache
+
+
+def get_configured_categories(aggregates_table) -> list:
+    """
+    Fetch configured category names from DynamoDB settings with caching.
+    
+    Returns list of category name strings, falling back to DEFAULT_CATEGORIES.
+    """
+    raw = get_raw_categories_config(aggregates_table)
+    if raw:
+        return [cat.get('name') for cat in raw if cat.get('name')]
+    return DEFAULT_CATEGORIES
 
 
 def clear_categories_cache():
@@ -356,43 +302,3 @@ def clear_categories_cache():
     global _categories_cache, _categories_cache_time
     _categories_cache = None
     _categories_cache_time = None
-
-
-def sum_daily_metric(
-    aggregates_table,
-    metric_prefix: str,
-    days: int,
-    current_date=None
-) -> int:
-    """
-    Sum a daily metric over a date range from the aggregates table.
-    
-    Args:
-        aggregates_table: DynamoDB Table resource for aggregates
-        metric_prefix: The pk prefix (e.g., 'METRIC#daily_total', 'METRIC#daily_sentiment#positive')
-        days: Number of days to sum
-        current_date: Optional datetime, defaults to now (UTC)
-    
-    Returns:
-        Total count across the date range
-    """
-    from datetime import datetime, timezone, timedelta
-    
-    if not aggregates_table:
-        return 0
-    
-    if current_date is None:
-        current_date = datetime.now(timezone.utc)
-    
-    total = 0
-    for i in range(days):
-        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        try:
-            response = aggregates_table.get_item(Key={'pk': metric_prefix, 'sk': date})
-            item = response.get('Item')
-            if item:
-                total += int(item.get('count', 0))
-        except Exception as e:
-            logger.warning(f"Failed to fetch metric {metric_prefix} for {date}: {e}")
-    
-    return total

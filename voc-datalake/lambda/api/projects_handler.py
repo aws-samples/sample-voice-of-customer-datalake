@@ -5,39 +5,40 @@ Separate Lambda to handle projects endpoints and avoid policy size limits.
 
 import json
 import os
-import base64
-from datetime import datetime, timezone, timedelta
+import secrets
+from datetime import datetime, timezone
 from typing import Any
 
 from shared.logging import logger, tracer
-from shared.aws import (
-    get_dynamodb_resource, get_bedrock_client, invoke_self_async, BEDROCK_MODEL_ID
-)
+from shared.aws import invoke_lambda_async
 from shared.api import create_api_resolver, validate_days, validate_int, api_handler, DecimalEncoder
-from shared.converse import converse
-from shared.tables import get_jobs_table, get_aggregates_table
-from shared.jobs import create_job, update_job_status
-from shared.exceptions import NotFoundError, ServiceError
+from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
+from shared.jobs import create_job
+from shared.exceptions import NotFoundError, ServiceError, ValidationError
+from shared.tokens import hash_token
 
 from boto3.dynamodb.conditions import Key
 import boto3
 
 from projects import (
     list_projects, create_project, get_project, update_project, delete_project,
-    generate_personas, project_chat, run_research,
+    run_research,
     create_document, update_document, delete_document,
     create_persona, update_persona, delete_persona,
     add_persona_note, update_persona_note, delete_persona_note,
-    regenerate_persona_avatar, generate_persona_avatar, get_avatar_cdn_url,
+    regenerate_persona_avatar,
+    autoseed_project,
 )
 
 # API resolver with standard CORS
 app = create_api_resolver()
 
-# Environment
-PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
-FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
-RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
+# Environment - Job Lambda function names
+PERSONA_GENERATOR_FUNCTION = os.environ.get('PERSONA_GENERATOR_FUNCTION', '')
+DOCUMENT_GENERATOR_FUNCTION = os.environ.get('DOCUMENT_GENERATOR_FUNCTION', '')
+DOCUMENT_MERGER_FUNCTION = os.environ.get('DOCUMENT_MERGER_FUNCTION', '')
+PERSONA_IMPORTER_FUNCTION = os.environ.get('PERSONA_IMPORTER_FUNCTION', '')
+
 
 def validate_persona_count(value, default=3):
     """Validate persona count parameter."""
@@ -84,6 +85,15 @@ def api_delete_project(project_id: str):
     return delete_project(project_id)
 
 
+@app.get("/projects/<project_id>/autoseed")
+@tracer.capture_method
+def api_autoseed_project(project_id: str):
+    params = app.current_event.query_string_parameters or {}
+    persona_ids = params.get('persona_ids', '').split(',') if params.get('persona_ids') else None
+    document_ids = params.get('document_ids', '').split(',') if params.get('document_ids') else None
+    return autoseed_project(project_id, persona_ids=persona_ids, document_ids=document_ids)
+
+
 # ============================================
 # Persona Routes
 # ============================================
@@ -105,7 +115,11 @@ def api_import_persona(project_id: str):
         'media_type': body.get('media_type', '')
     }
     job_id, _ = create_job(project_id, 'import_persona', 'import_config', config)
-    invoke_self_async({'job_type': 'import_persona', 'project_id': project_id, 'job_id': job_id, 'import_config': config})
+    invoke_lambda_async(PERSONA_IMPORTER_FUNCTION, {
+        'project_id': project_id,
+        'job_id': job_id,
+        'import_config': config
+    })
     return {'success': True, 'job_id': job_id, 'status': 'running', 'message': 'Persona import started.'}
 
 
@@ -159,19 +173,17 @@ def api_generate_personas(project_id: str):
         'custom_instructions': body.get('custom_instructions', ''),
     }
     job_id, _ = create_job(project_id, 'generate_personas', 'filters', filters, ttl_minutes=30*24*60)
-    invoke_self_async({'job_type': 'generate_personas', 'project_id': project_id, 'job_id': job_id, 'filters': filters})
+    invoke_lambda_async(PERSONA_GENERATOR_FUNCTION, {
+        'project_id': project_id,
+        'job_id': job_id,
+        'filters': filters
+    })
     return {'success': True, 'job_id': job_id, 'status': 'running', 'message': 'Persona generation started.'}
 
 
 # ============================================
 # Document Routes
 # ============================================
-
-@app.post("/projects/<project_id>/chat")
-@tracer.capture_method
-def api_project_chat(project_id: str):
-    return project_chat(project_id, app.current_event.json_body)
-
 
 @app.post("/projects/<project_id>/research")
 @tracer.capture_method
@@ -187,6 +199,7 @@ def api_run_research(project_id: str):
         'days': validate_days(body.get('days'), default=30),
         'selected_persona_ids': body.get('selected_persona_ids', []),
         'selected_document_ids': body.get('selected_document_ids', []),
+        'response_language': body.get('response_language'),
         'filters': body
     }
     job_id, _ = create_job(project_id, 'research', 'research_config', research_config, status='pending')
@@ -211,7 +224,11 @@ def api_generate_document(project_id: str):
     body = app.current_event.json_body or {}
     doc_type = body.get('doc_type', 'prd')
     job_id, _ = create_job(project_id, f'generate_{doc_type}', 'doc_config', body, status='pending')
-    invoke_self_async({'job_type': f'generate_{doc_type}', 'project_id': project_id, 'job_id': job_id, 'doc_config': body})
+    invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
+        'project_id': project_id,
+        'job_id': job_id,
+        'doc_config': body
+    })
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': f'{doc_type.upper()} generation started.'}
 
 
@@ -227,7 +244,11 @@ def api_merge_documents(project_id: str):
     """Merge multiple documents."""
     body = app.current_event.json_body or {}
     job_id, _ = create_job(project_id, 'merge_documents', 'merge_config', body, status='pending')
-    invoke_self_async({'job_type': 'merge_documents', 'project_id': project_id, 'job_id': job_id, 'merge_config': body})
+    invoke_lambda_async(DOCUMENT_MERGER_FUNCTION, {
+        'project_id': project_id,
+        'job_id': job_id,
+        'merge_config': body
+    })
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Document merge started.'}
 
 
@@ -271,7 +292,8 @@ def api_list_jobs(project_id: str):
         ScanIndexForward=False, Limit=50
     )
     jobs = [{
-        'job_id': i.get('job_id'), 'job_type': i.get('job_type'), 'status': i.get('status'),
+        'job_id': i.get('job_id') or i.get('sk', '').removeprefix('JOB#') or None,
+        'job_type': i.get('job_type'), 'status': i.get('status'),
         'progress': i.get('progress', 0), 'current_step': i.get('current_step'),
         'created_at': i.get('created_at'), 'updated_at': i.get('updated_at'),
         'completed_at': i.get('completed_at'), 'error': i.get('error'), 'result': i.get('result')
@@ -341,410 +363,105 @@ def api_patch_prioritization_scores():
 
 
 # ============================================
-# Async Job Handlers
+# API Token Routes (MCP Access)
 # ============================================
 
-def handle_generate_personas_job(event: dict) -> dict:
-    """Handle async persona generation job."""
-    import time
-    
-    logger.info(f"[JOB] ========== ASYNC PERSONA JOB STARTED ==========")
-    logger.info(f"[JOB] Event: {event}")
-    job_start = time.time()
-    
-    project_id = event['project_id']
-    job_id = event['job_id']
-    filters = event['filters']
-    
-    logger.info(f"[JOB] Project: {project_id}, Job: {job_id}")
-    logger.info(f"[JOB] Filters: {filters}")
-    
-    def progress_callback(progress: int, step: str):
-        logger.info(f"[JOB] Progress callback: {progress}% - {step}")
-        try:
-            update_job_status(project_id, job_id, 'running', progress, step)
-            logger.info(f"[JOB] Job status updated successfully")
-        except Exception as e:
-            logger.error(f"[JOB] Failed to update job status: {e}")
-    
-    try:
-        logger.info(f"[JOB] Calling generate_personas...")
-        result = generate_personas(project_id, filters, progress_callback=progress_callback)
-        
-        job_elapsed = time.time() - job_start
-        logger.info(f"[JOB] generate_personas returned after {job_elapsed:.2f}s")
-        logger.info(f"[JOB] Result success: {result.get('success', False)}")
-        
-        update_job_status(project_id, job_id, 'completed', 100, 'complete', result=result)
-        logger.info(f"[JOB] ========== ASYNC PERSONA JOB COMPLETED ==========")
-        return {'success': True}
-    except Exception as e:
-        job_elapsed = time.time() - job_start
-        logger.exception(f"[JOB] Persona generation FAILED after {job_elapsed:.2f}s: {type(e).__name__}: {e}")
-        update_job_status(project_id, job_id, 'failed', 0, 'error', error=f'Job execution failed: {str(e)[:200]}')
-        logger.info(f"[JOB] ========== ASYNC PERSONA JOB FAILED ==========")
-        raise ServiceError('Job execution failed')
+TOKEN_PREFIX = 'voc_'
+TOKEN_BYTE_LENGTH = 32
 
 
-def handle_generate_document_job(event: dict) -> dict:
-    """Handle async document generation job (PRD/PRFAQ)."""
-    project_id = event['project_id']
-    job_id = event['job_id']
-    doc_config = event['doc_config']
-    
-    dynamodb = get_dynamodb_resource()
-    projects_table = dynamodb.Table(PROJECTS_TABLE)
-    feedback_table = dynamodb.Table(FEEDBACK_TABLE)
-    
-    try:
-        update_job_status(project_id, job_id, 'running', 10, 'gathering_context')
-        
-        doc_type = doc_config.get('doc_type', 'prd')
-        title = doc_config.get('title', 'Untitled')
-        feature_idea = doc_config.get('feature_idea', '')
-        data_sources = doc_config.get('data_sources', {})
-        customer_questions = doc_config.get('customer_questions', [])
-        
-        context_parts = []
-        
-        # Gather feedback
-        if data_sources.get('feedback'):
-            update_job_status(project_id, job_id, 'running', 20, 'fetching_feedback')
-            feedback_sources = doc_config.get('feedback_sources', [])
-            feedback_categories = doc_config.get('feedback_categories', [])
-            days = doc_config.get('days', 30)
-            
-            feedback_items = []
-            current_date = datetime.now(timezone.utc)
-            for i in range(min(days, 14)):
-                date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-                resp = feedback_table.query(
-                    IndexName='gsi1-by-date',
-                    KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                    Limit=100, ScanIndexForward=False
-                )
-                feedback_items.extend(resp.get('Items', []))
-                if len(feedback_items) >= 100:
-                    break
-            
-            if feedback_sources:
-                feedback_items = [f for f in feedback_items if f.get('source_platform') in feedback_sources]
-            if feedback_categories:
-                feedback_items = [f for f in feedback_items if f.get('category') in feedback_categories]
-            
-            if feedback_items:
-                feedback_text = "## Customer Feedback\n\n"
-                for i, item in enumerate(feedback_items[:30], 1):
-                    feedback_text += f"**Review {i}** ({item.get('source_platform', 'unknown')}, {item.get('sentiment_label', 'unknown')}): {item.get('original_text', '')[:300]}\n\n"
-                context_parts.append(feedback_text)
-        
-        # Gather personas
-        if data_sources.get('personas'):
-            update_job_status(project_id, job_id, 'running', 30, 'fetching_personas')
-            selected_ids = doc_config.get('selected_persona_ids', [])
-            resp = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
-            personas = [i for i in resp.get('Items', []) if i.get('sk', '').startswith('PERSONA#')]
-            if selected_ids:
-                personas = [p for p in personas if p.get('persona_id') in selected_ids]
-            if personas:
-                persona_text = "## User Personas\n\n"
-                for p in personas:
-                    persona_text += f"**{p.get('name')}**: {p.get('tagline', '')}\n- Goals: {', '.join(p.get('goals', [])[:3])}\n- Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n\n"
-                context_parts.append(persona_text)
-        
-        # Gather documents
-        if data_sources.get('documents') or data_sources.get('research'):
-            update_job_status(project_id, job_id, 'running', 40, 'fetching_documents')
-            selected_ids = doc_config.get('selected_document_ids', [])
-            resp = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
-            docs = [i for i in resp.get('Items', []) if i.get('sk', '').startswith(('RESEARCH#', 'PRD#', 'PRFAQ#', 'DOC#'))]
-            if selected_ids:
-                docs = [d for d in docs if d.get('document_id') in selected_ids]
-            if docs:
-                doc_text = "## Reference Documents\n\n"
-                for d in docs[:3]:
-                    doc_text += f"### {d.get('title', 'Untitled')}\n{d.get('content', '')[:3000]}\n\n"
-                context_parts.append(doc_text)
-        
-        update_job_status(project_id, job_id, 'running', 50, 'generating_document')
-        context = '\n\n'.join(context_parts) if context_parts else 'No additional context provided.'
-        
-        # Build prompts based on doc type
-        if doc_type == 'prd':
-            system_prompt = """You are a senior product manager creating a Product Requirements Document (PRD).
-Create a comprehensive PRD that includes: Problem Statement, Goals & Success Metrics, User Stories, Requirements (functional & non-functional), Out of Scope, Timeline, and Risks."""
-            user_prompt = f"Create a PRD for: {title}\n\nFeature Description: {feature_idea}\n\n{context}\n\nGenerate a complete PRD in markdown format."
-        else:
-            q_labels = ["Who is the customer?", "What is the customer problem or opportunity?", "What is the most important customer benefit?", "How do you know what customers need or want?", "What does the customer experience look like?"]
-            questions_context = "\n\n".join([f"**{q_labels[i]}**\n{q.strip()}" for i, q in enumerate(customer_questions[:5]) if q and q.strip()])
-            system_prompt = """You are creating an Amazon-style Working Backwards PR-FAQ document. Write in "Oprah-speak" NOT "Geek-speak". Keep it simple. This is NOT a spec - it's a customer-focused announcement."""
-            user_prompt = f"Create an Amazon Working Backwards PR-FAQ for: {title}\n\nFeature Description: {feature_idea}\n\n## Working Backwards Input:\n{questions_context or 'Use the customer feedback context below.'}\n\n{context}\n\nGenerate a COMPLETE PR-FAQ with PRESS RELEASE, CUSTOMER FAQ (10 questions), and INTERNAL FAQ (10 questions)."
-        
-        update_job_status(project_id, job_id, 'running', 60, 'calling_ai')
-        max_tokens = 8000 if doc_type == 'prfaq' else 5000
-        content = converse(prompt=user_prompt, system_prompt=system_prompt, max_tokens=max_tokens)
-        
-        update_job_status(project_id, job_id, 'running', 90, 'saving_document')
-        now = datetime.now(timezone.utc).isoformat()
-        doc_id = f"{doc_type}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
-        projects_table.put_item(Item={
-            'pk': f'PROJECT#{project_id}', 'sk': f'{doc_type.upper()}#{doc_id}',
-            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS', 'gsi1sk': now,
-            'document_id': doc_id, 'document_type': doc_type, 'title': title,
-            'content': content, 'job_id': job_id, 'created_at': now,
+@app.get("/projects/<project_id>/api-tokens")
+@tracer.capture_method
+def api_list_tokens(project_id: str):
+    """List all API tokens for a project."""
+    table = get_projects_table()
+    if not table:
+        raise ServiceError('Projects table not configured')
+
+    response = table.query(
+        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('TOKEN#')
+    )
+
+    tokens = []
+    for item in response.get('Items', []):
+        tokens.append({
+            'token_id': item['token_id'],
+            'name': item['name'],
+            'scope': item.get('scope', 'read'),
+            'created_at': item['created_at'],
+            'last_used_at': item.get('last_used_at'),
+            'project_id': project_id,
         })
-        projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-            UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
-            ExpressionAttributeValues={':one': 1, ':now': now}
-        )
-        
-        update_job_status(project_id, job_id, 'completed', 100, 'complete', result={'document_id': doc_id, 'title': title})
-        return {'success': True, 'document_id': doc_id}
-        
-    except Exception as e:
-        logger.exception(f"Document generation failed: {e}")
-        update_job_status(project_id, job_id, 'failed', 0, 'error', error='Document generation failed')
-        raise ServiceError('Document generation failed')
+
+    return {'success': True, 'tokens': tokens}
 
 
-def handle_merge_documents_job(event: dict) -> dict:
-    """Handle async document merge job."""
-    project_id = event['project_id']
-    job_id = event['job_id']
-    merge_config = event['merge_config']
-    
-    dynamodb = get_dynamodb_resource()
-    projects_table = dynamodb.Table(PROJECTS_TABLE)
-    feedback_table = dynamodb.Table(FEEDBACK_TABLE)
-    
-    try:
-        update_job_status(project_id, job_id, 'running', 10, 'gathering_documents')
-        
-        output_type = merge_config.get('output_type', 'custom')
-        title = merge_config.get('title', 'Merged Document')
-        instructions = merge_config.get('instructions', '')
-        selected_doc_ids = merge_config.get('selected_document_ids', [])
-        selected_persona_ids = merge_config.get('selected_persona_ids', [])
-        use_feedback = merge_config.get('use_feedback', False)
-        
-        resp = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
-        all_items = resp.get('Items', [])
-        
-        docs = [i for i in all_items if i.get('sk', '').startswith(('RESEARCH#', 'PRD#', 'PRFAQ#', 'DOC#'))]
-        selected_docs = [d for d in docs if d.get('document_id') in selected_doc_ids]
-        
-        if len(selected_docs) < 2:
-            raise ValueError("At least 2 documents are required for merging")
-        
-        update_job_status(project_id, job_id, 'running', 20, 'preparing_context')
-        
-        doc_context = "## SOURCE DOCUMENTS TO MERGE\n\n"
-        for i, doc in enumerate(selected_docs, 1):
-            doc_context += f"### Document {i}: {doc.get('title', 'Untitled')} ({doc.get('document_type', 'unknown').upper()})\n\n{doc.get('content', '')[:8000]}\n\n---\n\n"
-        
-        context_parts = [doc_context]
-        
-        if selected_persona_ids:
-            update_job_status(project_id, job_id, 'running', 30, 'fetching_personas')
-            personas = [i for i in all_items if i.get('sk', '').startswith('PERSONA#')]
-            selected_personas = [p for p in personas if p.get('persona_id') in selected_persona_ids]
-            if selected_personas:
-                persona_text = "## USER PERSONAS FOR CONTEXT\n\n"
-                for p in selected_personas:
-                    persona_text += f"**{p.get('name')}**: {p.get('tagline', '')}\n- Goals: {', '.join(p.get('goals', [])[:3])}\n- Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n\n"
-                context_parts.append(persona_text)
-        
-        if use_feedback:
-            update_job_status(project_id, job_id, 'running', 40, 'fetching_feedback')
-            feedback_sources = merge_config.get('feedback_sources', [])
-            feedback_categories = merge_config.get('feedback_categories', [])
-            days = merge_config.get('days', 30)
-            
-            feedback_items = []
-            current_date = datetime.now(timezone.utc)
-            for i in range(min(days, 14)):
-                date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-                resp = feedback_table.query(
-                    IndexName='gsi1-by-date',
-                    KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                    Limit=100, ScanIndexForward=False
-                )
-                feedback_items.extend(resp.get('Items', []))
-                if len(feedback_items) >= 100:
-                    break
-            
-            if feedback_sources:
-                feedback_items = [f for f in feedback_items if f.get('source_platform') in feedback_sources]
-            if feedback_categories:
-                feedback_items = [f for f in feedback_items if f.get('category') in feedback_categories]
-            
-            if feedback_items:
-                feedback_text = "## ADDITIONAL CUSTOMER FEEDBACK\n\n"
-                for i, item in enumerate(feedback_items[:20], 1):
-                    feedback_text += f"**Review {i}** ({item.get('source_platform', 'unknown')}, {item.get('sentiment_label', 'unknown')}): {item.get('original_text', '')[:250]}\n\n"
-                context_parts.append(feedback_text)
-        
-        update_job_status(project_id, job_id, 'running', 50, 'generating_merged_document')
-        context = '\n\n'.join(context_parts)
-        
-        if output_type == 'prd':
-            system_prompt = "You are a senior product manager creating a revised PRD. Merge and revise the provided source documents according to the user's instructions."
-        elif output_type == 'prfaq':
-            system_prompt = "You are creating a revised Amazon-style PR-FAQ. Merge and revise the provided source documents. Include PRESS RELEASE, CUSTOMER FAQ (10 questions), and INTERNAL FAQ (10 questions)."
-        else:
-            system_prompt = "You are a skilled document editor. Merge and revise the provided source documents according to the user's instructions."
-        
-        user_prompt = f"## MERGE INSTRUCTIONS\n{instructions}\n\n## OUTPUT DOCUMENT TITLE\n{title}\n\n{context}\n\nCreate a new {output_type.upper() if output_type != 'custom' else 'document'} incorporating all relevant feedback."
-        
-        update_job_status(project_id, job_id, 'running', 60, 'calling_ai')
-        max_tokens = 8000 if output_type == 'prfaq' else 6000
-        content = converse(prompt=user_prompt, system_prompt=system_prompt, max_tokens=max_tokens)
-        
-        update_job_status(project_id, job_id, 'running', 90, 'saving_document')
-        now = datetime.now(timezone.utc).isoformat()
-        doc_type_prefix = output_type if output_type in ['prd', 'prfaq'] else 'doc'
-        doc_id = f"{doc_type_prefix}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
-        projects_table.put_item(Item={
-            'pk': f'PROJECT#{project_id}', 'sk': f'{doc_type_prefix.upper()}#{doc_id}',
-            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS', 'gsi1sk': now,
-            'document_id': doc_id, 'document_type': output_type if output_type in ['prd', 'prfaq'] else 'custom',
-            'title': title, 'content': content, 'job_id': job_id,
-            'source_documents': selected_doc_ids, 'merge_instructions': instructions, 'created_at': now,
-        })
-        projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-            UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
-            ExpressionAttributeValues={':one': 1, ':now': now}
-        )
-        
-        update_job_status(project_id, job_id, 'completed', 100, 'complete', result={'document_id': doc_id, 'title': title})
-        return {'success': True, 'document_id': doc_id}
-        
-    except Exception as e:
-        logger.exception(f"Document merge failed: {e}")
-        update_job_status(project_id, job_id, 'failed', 0, 'error', error='Document merge failed')
-        raise ServiceError('Document merge failed')
+@app.post("/projects/<project_id>/api-tokens")
+@tracer.capture_method
+def api_create_token(project_id: str):
+    """Create a new API token for a project."""
+    body = app.current_event.json_body or {}
+    name = body.get('name', '').strip()
+    scope = body.get('scope', 'read')
+
+    if not name:
+        raise ValidationError('Token name is required')
+    if scope not in ('read', 'read-write'):
+        raise ValidationError('Scope must be "read" or "read-write"')
+
+    table = get_projects_table()
+    if not table:
+        raise ServiceError('Projects table not configured')
+
+    # Verify project exists
+    project_resp = table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'})
+    if 'Item' not in project_resp:
+        raise NotFoundError(f'Project {project_id} not found')
+
+    # Generate secure token
+    raw_token = TOKEN_PREFIX + secrets.token_hex(TOKEN_BYTE_LENGTH)
+    token_id = f'tok_{secrets.token_hex(8)}'
+    now = datetime.now(timezone.utc).isoformat()
+
+    table.put_item(Item={
+        'pk': f'PROJECT#{project_id}',
+        'sk': f'TOKEN#{token_id}',
+        'token_id': token_id,
+        'name': name,
+        'scope': scope,
+        'token_hash': hash_token(raw_token),
+        'created_at': now,
+        'project_id': project_id,
+    })
+
+    logger.info(f"Created API token {token_id} for project {project_id}")
+
+    return {
+        'success': True,
+        'token': raw_token,
+        'token_id': token_id,
+        'name': name,
+    }
 
 
-def handle_import_persona_job(event: dict) -> dict:
-    """Handle async persona import job."""
-    project_id = event['project_id']
-    job_id = event['job_id']
-    import_config = event['import_config']
-    
-    dynamodb = get_dynamodb_resource()
-    projects_table = dynamodb.Table(PROJECTS_TABLE)
-    
-    try:
-        update_job_status(project_id, job_id, 'running', 10, 'extracting_persona')
-        
-        input_type = import_config.get('input_type', 'text')
-        content = import_config.get('content', '')
-        media_type = import_config.get('media_type', '')
-        
-        logger.info(f"[IMPORT_PERSONA_JOB] Starting import from {input_type} for project {project_id}")
-        
-        system_prompt = """You are a UX researcher expert at extracting persona information from documents and images.
-Extract persona data from the provided input and output a structured JSON object.
-CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
+@app.delete("/projects/<project_id>/api-tokens/<token_id>")
+@tracer.capture_method
+def api_delete_token(project_id: str, token_id: str):
+    """Revoke an API token."""
+    table = get_projects_table()
+    if not table:
+        raise ServiceError('Projects table not configured')
 
-        json_schema = '{"name": "Full Name", "tagline": "One sentence", "confidence": "high", "identity": {...}, "goals_motivations": {...}, "pain_points": {...}, "behaviors": {...}, "context_environment": {...}, "quotes": [...], "scenario": {...}}'
-        
-        # Build converse content
-        converse_content = []
-        if input_type == 'image':
-            converse_content.append({
-                'image': {
-                    'format': (media_type or 'image/png').split('/')[-1],
-                    'source': {'bytes': base64.b64decode(content)}
-                }
-            })
-            converse_content.append({'text': f"Extract the persona information from this image.\n\nOutput a JSON object with this structure:\n{json_schema}\n\nOutput ONLY the JSON object."})
-        else:
-            text_content = content if input_type == 'text' else f"[PDF content - extract persona from this document]"
-            converse_content.append({'text': f"Extract the persona information from this text:\n\n---\n{text_content}\n---\n\nOutput a JSON object with this structure:\n{json_schema}\n\nOutput ONLY the JSON object."})
-        
-        update_job_status(project_id, job_id, 'running', 30, 'calling_ai')
-        
-        bedrock = get_bedrock_client()
-        response = bedrock.converse(
-            modelId=BEDROCK_MODEL_ID,
-            system=[{'text': system_prompt}],
-            messages=[{'role': 'user', 'content': converse_content}],
-            inferenceConfig={'maxTokens': 4096}
-        )
-        
-        response_text = response.get('output', {}).get('message', {}).get('content', [{}])[0].get('text', '')
-        
-        # Parse JSON
-        json_text = response_text
-        if '```json' in json_text:
-            json_text = json_text.split('```json')[1].split('```')[0]
-        elif '```' in json_text:
-            json_text = json_text.split('```')[1].split('```')[0]
-        
-        persona_data = json.loads(json_text.strip())
-        logger.info(f"[IMPORT_PERSONA_JOB] Extracted persona: {persona_data.get('name', 'Unknown')}")
-        
-        update_job_status(project_id, job_id, 'running', 60, 'generating_avatar')
-        
-        now = datetime.now(timezone.utc).isoformat()
-        persona_id = f"persona_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
-        item = {
-            'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}',
-            'gsi1pk': f'PROJECT#{project_id}#PERSONAS', 'gsi1sk': now,
-            'persona_id': persona_id,
-            'name': persona_data.get('name', 'Imported Persona'),
-            'tagline': persona_data.get('tagline', ''),
-            'confidence': persona_data.get('confidence', 'medium'),
-            'identity': persona_data.get('identity', {}),
-            'goals_motivations': persona_data.get('goals_motivations', {}),
-            'pain_points': persona_data.get('pain_points', {}),
-            'behaviors': persona_data.get('behaviors', {}),
-            'context_environment': persona_data.get('context_environment', {}),
-            'quotes': persona_data.get('quotes', []),
-            'scenario': persona_data.get('scenario', {}),
-            'research_notes': [],
-            'imported_from': input_type,
-            'created_at': now, 'updated_at': now,
-        }
-        
-        # Generate avatar
-        avatar_data = {'persona_id': persona_id, **item}
-        avatar_result = generate_persona_avatar(avatar_data, RAW_DATA_BUCKET)
-        if avatar_result.get('avatar_url'):
-            item['avatar_url'] = avatar_result['avatar_url']
-            item['avatar_prompt'] = avatar_result.get('avatar_prompt', '')
-        
-        update_job_status(project_id, job_id, 'running', 90, 'saving_persona')
-        
-        projects_table.put_item(Item=item)
-        projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-            UpdateExpression='SET persona_count = persona_count + :one, updated_at = :now',
-            ExpressionAttributeValues={':one': 1, ':now': now}
-        )
-        
-        persona_name = item.get('name', 'Imported Persona')
-        if item.get('avatar_url') and item['avatar_url'].startswith('s3://'):
-            item['avatar_url'] = get_avatar_cdn_url(item['avatar_url'])
-        
-        update_job_status(project_id, job_id, 'completed', 100, 'complete', result={'persona_id': persona_id, 'title': f'Imported: {persona_name}'})
-        logger.info(f"[IMPORT_PERSONA_JOB] Successfully imported persona: {persona_name}")
-        return {'success': True, 'persona_id': persona_id}
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"[IMPORT_PERSONA_JOB] Failed to parse JSON: {e}")
-        update_job_status(project_id, job_id, 'failed', 0, 'error', error='Failed to parse persona data')
-        raise ServiceError('Failed to parse persona data')
-    except Exception as e:
-        logger.exception(f"[IMPORT_PERSONA_JOB] Import failed: {e}")
-        update_job_status(project_id, job_id, 'failed', 0, 'error', error='Persona import failed')
-        raise ServiceError('Persona import failed')
+    # Verify token exists
+    resp = table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'TOKEN#{token_id}'})
+    if 'Item' not in resp:
+        raise NotFoundError(f'Token {token_id} not found')
+
+    table.delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'TOKEN#{token_id}'})
+
+    logger.info(f"Deleted API token {token_id} from project {project_id}")
+
+    return {'success': True, 'message': f'Token {token_id} revoked'}
 
 
 # ============================================
@@ -756,17 +473,6 @@ def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler for projects API."""
     try:
         logger.info(f"Received event: {json.dumps(event)}")
-        
-        # Route async job invocations
-        job_type = event.get('job_type')
-        if job_type == 'generate_personas':
-            return handle_generate_personas_job(event)
-        if job_type in ['generate_prd', 'generate_prfaq']:
-            return handle_generate_document_job(event)
-        if job_type == 'merge_documents':
-            return handle_merge_documents_job(event)
-        if job_type == 'import_persona':
-            return handle_import_persona_job(event)
         
         # Normal API Gateway request
         result = app.resolve(event, context)

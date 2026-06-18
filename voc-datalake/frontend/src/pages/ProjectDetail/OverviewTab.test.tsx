@@ -2,14 +2,23 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import OverviewTab from './OverviewTab'
-import type { Project, ProjectPersona, ProjectDocument } from '../../api/client'
+import type { Project, ProjectPersona, ProjectDocument } from '../../api/types'
+
+vi.mock('../../store/configStore', () => ({
+  useConfigStore: () => ({
+    config: { apiEndpoint: 'https://api.example.com/v1' },
+  }),
+}))
 
 const mockProject: Project = {
   project_id: 'proj-1',
   name: 'Test Project',
   description: 'A test project',
+  status: 'active',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
+  persona_count: 0,
+  document_count: 0,
 }
 
 const defaultProps = {
@@ -77,11 +86,21 @@ describe('OverviewTab', () => {
 
   it('enables Remix Documents when 2+ documents exist', () => {
     const docs: ProjectDocument[] = [
-      { document_id: '1', title: 'Doc 1', content: 'Content 1', doc_type: 'prd', created_at: '' },
-      { document_id: '2', title: 'Doc 2', content: 'Content 2', doc_type: 'prd', created_at: '' },
+      { document_id: '1', title: 'Doc 1', content: 'Content 1', document_type: 'prd', created_at: '' },
+      { document_id: '2', title: 'Doc 2', content: 'Content 2', document_type: 'prd', created_at: '' },
     ]
     render(<OverviewTab {...defaultProps} documents={docs} />)
     const remixButton = screen.getByRole('button', { name: /Remix/i })
     expect(remixButton).not.toBeDisabled()
+  })
+
+  it('renders Kiro Export Settings card', () => {
+    render(<OverviewTab {...defaultProps} />)
+    expect(screen.getByText('Kiro Export Settings')).toBeInTheDocument()
+  })
+
+  it('shows empty state when no export prompt configured', () => {
+    render(<OverviewTab {...defaultProps} />)
+    expect(screen.getByText(/No Kiro export prompt configured/)).toBeInTheDocument()
   })
 })

@@ -24,7 +24,7 @@ import { projectsApi } from './projectsApi'
 describe('projectsApi', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    global.fetch = vi.fn()
+    vi.spyOn(global, 'fetch').mockImplementation(vi.fn())
   })
 
   afterEach(() => {
@@ -50,7 +50,7 @@ describe('projectsApi', () => {
           }),
         })
       )
-      expect(result).toEqual(mockProjects)
+      expect(result).toStrictEqual(mockProjects)
     })
   })
 
@@ -105,7 +105,7 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1',
         expect.any(Object)
       )
-      expect(result).toEqual(mockProject)
+      expect(result).toStrictEqual(mockProject)
     })
   })
 
@@ -162,7 +162,7 @@ describe('projectsApi', () => {
           body: JSON.stringify({}),
         })
       )
-      expect(result).toEqual(mockResponse)
+      expect(result).toStrictEqual(mockResponse)
     })
 
     it('includes filters when provided', async () => {
@@ -195,11 +195,10 @@ describe('projectsApi', () => {
       const persona = {
         name: 'Power User',
         tagline: 'Uses all features',
-        description: 'A power user',
-        pain_points: ['Slow loading'],
-        goals: ['Efficiency'],
-        behaviors: ['Daily usage'],
-        demographics: { age: '25-34' },
+        pain_points: { current_challenges: ['Slow loading'] },
+        goals_motivations: { primary_goal: 'Efficiency' },
+        behaviors: { current_solutions: ['Daily usage'] },
+        identity: { age_range: '25-34' },
       }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
@@ -286,41 +285,6 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1/personas/import',
         expect.objectContaining({
           body: JSON.stringify(data),
-        })
-      )
-    })
-  })
-
-  describe('projectChat', () => {
-    it('sends POST request with message', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, response: 'AI response' }),
-      })
-
-      await projectsApi.projectChat('p1', 'What do users want?')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/p1/chat',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ message: 'What do users want?', selected_personas: undefined, selected_documents: undefined }),
-        })
-      )
-    })
-
-    it('includes selected personas and documents', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, response: 'AI response' }),
-      })
-
-      await projectsApi.projectChat('p1', 'Question', ['per1', 'per2'], ['doc1'])
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/p1/chat',
-        expect.objectContaining({
-          body: JSON.stringify({ message: 'Question', selected_personas: ['per1', 'per2'], selected_documents: ['doc1'] }),
         })
       )
     })
@@ -446,7 +410,7 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1/jobs/job1',
         expect.any(Object)
       )
-      expect(result).toEqual(mockJob)
+      expect(result).toStrictEqual(mockJob)
     })
   })
 
@@ -464,7 +428,7 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1/jobs',
         expect.any(Object)
       )
-      expect(result).toEqual(mockJobs)
+      expect(result).toStrictEqual(mockJobs)
     })
   })
 

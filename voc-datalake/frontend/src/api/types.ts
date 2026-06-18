@@ -471,3 +471,26 @@ export interface LogsSummary {
   total_validation_failures: number
   total_processing_errors: number
 }
+
+/**
+ * Metadata for an API token used by external integrations to ingest feedback.
+ * The raw token value is only returned once at creation time
+ * (see CreateApiTokenResponse).
+ */
+export interface ApiToken {
+  token_id: string
+  name: string
+  scope: 'read' | 'read-write'
+  created_at: string
+  last_used_at?: string
+  project_id: string
+}
+
+/** Response when creating an API token; `token` is the only time the raw value is returned. */
+export interface CreateApiTokenResponse {
+  success: boolean
+  token: string
+  token_id: string
+  name: string
+  message?: string
+}
