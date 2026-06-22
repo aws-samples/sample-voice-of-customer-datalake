@@ -78,7 +78,7 @@
     "positive": "Positivo"
   },
   "showingOf_one": "Mostrando {{count}} de {{total}} resultado",
-  "showingOf_many": "",
+  "showingOf_many": "Mostrando {{count}} de {{total}} resultados",
   "showingOf_other": "Mostrando {{count}} de {{total}} resultados",
   "sidebar": {
     "closeMenu": "Cerrar menú",
