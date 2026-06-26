@@ -200,6 +200,24 @@ function applyThinkingEvent(prev: StreamChatState, event: StreamEvent): StreamCh
   }
 }
 
+function applyPersonaErrorEvent(prev: StreamChatState, event: StreamEvent): StreamChatState {
+  // A single persona's turn failed (roundtable). Surface it as its own turn so the
+  // user knows that persona didn't respond, then continue with the remaining personas.
+  const persona = isPersonaTurn(event.persona) ? event.persona : prev.currentPersona
+  const reason = event.error ?? event.content ?? 'Unknown error'
+  if (!persona) return { ...prev, currentPersona: null, streamingText: '', thinkingText: '' }
+  return {
+    ...prev,
+    completedTurns: [
+      ...prev.completedTurns,
+      { persona, content: `⚠️ ${persona.name} couldn't respond: ${reason}` },
+    ],
+    currentPersona: null,
+    streamingText: '',
+    thinkingText: '',
+  }
+}
+
 function applyErrorEvent(prev: StreamChatState, event: StreamEvent): StreamChatState {
   return {
     ...prev,
@@ -218,6 +236,7 @@ function applyEvent(prev: StreamChatState, event: StreamEvent): StreamChatState 
     case 'error': return applyErrorEvent(prev, event)
     case 'metadata': return applyMetadataEvent(prev, event)
     case 'persona_turn': return applyPersonaTurnEvent(prev, event)
+    case 'persona_error': return applyPersonaErrorEvent(prev, event)
     case 'done': return applyDoneEvent(prev, event)
     default: return prev
   }

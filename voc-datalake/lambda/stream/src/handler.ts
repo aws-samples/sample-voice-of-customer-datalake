@@ -38,6 +38,11 @@ const PROJECTS_TABLE = process.env.PROJECTS_TABLE ?? '';
 
 const MAX_TOOL_LOOPS = 5;
 
+// Roundtable tuning: one turn per persona, generous budget for a full perspective.
+const ROUNDTABLE_MAX_TOKENS = 4000;
+const ROUNDTABLE_THINKING_BUDGET = 2000;
+
+
 // ── Types ──
 
 interface LambdaEvent {
@@ -247,9 +252,6 @@ async function handleRoundtableChat(
     : [];
   const historyMessages = historyToBedrockMessages(body.history);
 
-  const ROUNDTABLE_MAX_TOKENS = 4000;
-  const ROUNDTABLE_THINKING_BUDGET = 2000;
-
   const responses: string[] = [];
 
   for (const persona of ctx.personas) {
@@ -291,6 +293,9 @@ Share your own perspective on the user's message in your own voice. Be direct an
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(
+        `Roundtable turn failed for persona ${persona.persona_id} (${persona.name}): ${errorMessage}`,
+      );
       sendSSE(stream, {
         type: 'persona_error',
         persona: { persona_id: persona.persona_id, name: persona.name },
