@@ -12,6 +12,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { stripTrailingSlashes } from '../../api/baseUrl'
 import { useConfigStore } from '../../store/configStore'
+import { generateKiroPrompt } from './generateKiroPrompt'
 import {
   PickerSection, CheckboxItem,
 } from './PickerComponents'
@@ -115,24 +116,7 @@ export default function AutoseedContent({
     return qs === '' ? base : `${base}?${qs}`
   }, [apiBase, projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length])
 
-  const kiroPrompt = useMemo(() => `Seed my workspace with project context from VoC Data Lake.
-
-Fetch the project data by running this curl command:
-
-\`\`\`bash
-curl -s "${curlUrl}" -H "Authorization: Bearer <YOUR_API_TOKEN>" -o /tmp/voc-autoseed.json
-\`\`\`
-
-Then read the JSON response. It contains a \`files\` array where each entry has a \`path\` and \`content\`. Write each file to my workspace at the specified path.
-
-The files include:
-- \`.kiro/steering/project-*.md\` — A steering file with project context, persona references, and implementation guidance
-- \`.kiro/personas/*.md\` — One markdown file per user persona
-- \`.kiro/docs/*.md\` — PRDs, PR/FAQs, and research documents
-
-The steering file already contains \`#[[file:...]]\` references to the persona and document files, so Kiro will automatically include them as context.
-
-Replace \`<YOUR_API_TOKEN>\` with your API token from the MCP Access tab.`, [curlUrl])
+  const kiroPrompt = useMemo(() => generateKiroPrompt(curlUrl), [curlUrl])
 
   const handleCopy = useCallback(async () => {
     await navigator.clipboard.writeText(kiroPrompt)
