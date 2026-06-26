@@ -10,6 +10,7 @@ from the Authorization header against SHA-256 hashes in the projects table.
 """
 
 import json
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -554,13 +555,25 @@ MCP_AUTH_METHODS = {
 
 @tracer.capture_method
 def _handle_autoseed(event: dict) -> dict:
-    """Handle GET /projects/{id}/autoseed with Bearer token auth."""
+    """Handle GET /mcp/autoseed/{project_id} with Bearer token auth.
+    
+    The project_id is extracted from the URL path (injected into pathParameters
+    by the router). We also inject it as the X-Project-Id header so _authenticate
+    can find it without requiring the caller to pass the header explicitly.
+    """
+    path_params = event.get('pathParameters', {}) or {}
+    project_id = path_params.get('project_id', '')
+
+    # Inject project_id into headers so _authenticate can find it
+    if project_id:
+        headers = event.get('headers', {}) or {}
+        if not headers.get('x-project-id') and not headers.get('X-Project-Id'):
+            headers['x-project-id'] = project_id
+            event['headers'] = headers
+
     token_info = _authenticate(event)
     if not token_info:
         return _cors_response({'message': 'Unauthorized'}, status_code=401)
-
-    path_params = event.get('pathParameters', {}) or {}
-    project_id = path_params.get('project_id', '')
 
     # Ensure the token's project matches the requested project
     if project_id != token_info.get('project_id'):
@@ -594,8 +607,15 @@ def lambda_handler(event: dict, context: Any) -> dict:
         return _cors_response({})
 
     # Handle GET /mcp/autoseed/{project_id} (public, token auth)
-    resource_path = event.get('resource', '')
-    if http_method == 'GET' and resource_path == '/mcp/autoseed/{project_id}':
+    path = event.get('path', '')
+    # Path from API Gateway includes stage: /v1/mcp/autoseed/{project_id}
+    # Strip leading /v1 or any stage prefix, then match
+    autoseed_match = re.match(r'(?:/[^/]+)?/mcp/autoseed/([^/]+)$', path)
+    if http_method == 'GET' and autoseed_match:
+        # Inject project_id into pathParameters for _handle_autoseed
+        if 'pathParameters' not in event or event['pathParameters'] is None:
+            event['pathParameters'] = {}
+        event['pathParameters']['project_id'] = autoseed_match.group(1)
         return _handle_autoseed(event)
 
     if http_method != 'POST':
