@@ -96,7 +96,7 @@ describe('AutoseedCard', () => {
   it('generates URL without query params when all selected', () => {
     render(<AutoseedCard {...defaultProps} />)
     // All selected = no query params (server returns all by default)
-    expect(screen.getByText(/\/projects\/proj-1\/autoseed/)).toBeInTheDocument()
+    expect(screen.getByText(/\/mcp\/autoseed\/proj-1/)).toBeInTheDocument()
   })
 
   it('generates URL with persona_ids when some deselected', async () => {

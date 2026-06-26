@@ -111,7 +111,7 @@ export default function AutoseedContent({
       params.set('document_ids', [...selectedDocumentIds].join(','))
     }
     const qs = params.toString()
-    const base = `${apiBase}/projects/${projectId}/autoseed`
+    const base = `${apiBase}/mcp/autoseed/${projectId}`
     return qs === '' ? base : `${base}?${qs}`
   }, [apiBase, projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length])
 
