@@ -1,0 +1,1 @@
+"""Persona importer job Lambda."""

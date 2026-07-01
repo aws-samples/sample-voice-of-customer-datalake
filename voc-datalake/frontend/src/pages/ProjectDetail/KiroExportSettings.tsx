@@ -1,8 +1,13 @@
 /**
  * KiroExportSettings - Configure context for "Copy to Kiro" exports
  */
-import { useState, useMemo } from 'react'
-import { Sparkles, Settings, Check } from 'lucide-react'
+import {
+  Sparkles, Settings, Check,
+} from 'lucide-react'
+import {
+  useState, useMemo,
+} from 'react'
+import { useTranslation } from 'react-i18next'
 import type { KiroExportSettingsProps } from './types'
 
 const DEFAULT_PROMPT = `# Kiro Implementation Context
@@ -28,11 +33,12 @@ Implement the following PRD for [Your Project Name].
 
 // Empty state component
 function EmptyState() {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="text-center py-6 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
       <Sparkles size={24} className="mx-auto text-gray-400 mb-2" />
-      <p className="text-gray-500 text-sm">No Kiro export prompt configured</p>
-      <p className="text-gray-400 text-xs mt-1">Click "Configure" to add implementation context for PRD exports</p>
+      <p className="text-gray-500 text-sm">{t('kiroExport.noPrompt')}</p>
+      <p className="text-gray-400 text-xs mt-1">{t('kiroExport.noPromptHint')}</p>
     </div>
   )
 }
@@ -49,7 +55,9 @@ function PromptPreview({ prompt }: Readonly<{ prompt: string }>) {
 }
 
 // Editor component
-function PromptEditor({ prompt, saved, onPromptChange, onSave, onCancel, onUseDefault }: Readonly<{
+function PromptEditor({
+  prompt, saved, onPromptChange, onSave, onCancel, onUseDefault,
+}: Readonly<{
   prompt: string
   saved: boolean
   onPromptChange: (value: string) => void
@@ -57,15 +65,15 @@ function PromptEditor({ prompt, saved, onPromptChange, onSave, onCancel, onUseDe
   onCancel: () => void
   onUseDefault: () => void
 }>) {
+  const { t } = useTranslation('projectDetail')
   return (
     <div className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Export Prompt Template
+          {t('kiroExport.templateLabel')}
         </label>
         <p className="text-xs text-gray-500 mb-2">
-          This context will be prepended to PRD/PR-FAQ documents when using "Copy to Kiro". 
-          Include your tech stack, coding standards, and implementation guidance.
+          {t('kiroExport.templateHint')}
         </p>
         <textarea
           value={prompt}
@@ -77,18 +85,18 @@ function PromptEditor({ prompt, saved, onPromptChange, onSave, onCancel, onUseDe
       </div>
       <div className="flex items-center justify-between">
         <button onClick={onUseDefault} className="text-sm text-gray-500 hover:text-gray-700">
-          Use default template
+          {t('kiroExport.useDefault')}
         </button>
         <div className="flex gap-2">
           <button onClick={onCancel} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
-            Cancel
+            {t('kiroExport.cancel')}
           </button>
           <button
             onClick={onSave}
             className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
           >
             {saved ? <Check size={16} /> : <Sparkles size={16} />}
-            {saved ? 'Saved!' : 'Save'}
+            {saved ? t('kiroExport.saved') : t('kiroExport.save')}
           </button>
         </div>
       </div>
@@ -96,9 +104,12 @@ function PromptEditor({ prompt, saved, onPromptChange, onSave, onCancel, onUseDe
   )
 }
 
-export default function KiroExportSettings({ project, onSave }: Readonly<KiroExportSettingsProps>) {
+export default function KiroExportSettings({
+  project, onSave,
+}: Readonly<KiroExportSettingsProps>) {
   const initialPrompt = useMemo(() => project.kiro_export_prompt ?? '', [project.kiro_export_prompt])
-  
+  const { t } = useTranslation('projectDetail')
+
   const [prompt, setPrompt] = useState(initialPrompt)
   const [isEditing, setIsEditing] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -128,7 +139,7 @@ export default function KiroExportSettings({ project, onSave }: Readonly<KiroExp
         />
       )
     }
-    if (prompt) {
+    if (prompt !== '') {
       return <PromptPreview prompt={prompt} />
     }
     return <EmptyState />
@@ -142,8 +153,8 @@ export default function KiroExportSettings({ project, onSave }: Readonly<KiroExp
             <Sparkles size={20} className="text-purple-600" />
           </div>
           <div>
-            <h3 className="font-semibold">Kiro Export Settings</h3>
-            <p className="text-sm text-gray-500">Configure context for "Copy to Kiro" exports</p>
+            <h3 className="font-semibold">{t('kiroExport.title')}</h3>
+            <p className="text-sm text-gray-500">{t('kiroExport.description')}</p>
           </div>
         </div>
         {!isEditing && (
@@ -152,7 +163,7 @@ export default function KiroExportSettings({ project, onSave }: Readonly<KiroExp
             className="flex items-center gap-2 px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 rounded-lg"
           >
             <Settings size={16} />
-            {prompt ? 'Edit' : 'Configure'}
+            {prompt === '' ? t('kiroExport.configure') : t('kiroExport.edit')}
           </button>
         )}
       </div>

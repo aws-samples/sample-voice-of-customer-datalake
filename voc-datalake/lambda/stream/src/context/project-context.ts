@@ -27,7 +27,25 @@ interface ProjectChatContext {
   metadata: Record<string, unknown>;
 }
 
-const projectItemSchema = z.object({
+/**
+ * DynamoDB stores empty optional attributes as `null`, but the schema below
+ * declares fields as `.optional()` (i.e. `string | undefined`), which Zod does
+ * NOT treat as nullable. A persona/document persisted with, for example,
+ * `avatar_url: null` would therefore fail validation and take down the entire
+ * project chat with an opaque "Unknown error". Normalize top-level `null`
+ * values to `undefined` before parsing so missing/empty attributes validate
+ * cleanly. All downstream reads already default with `?? ...`.
+ */
+function nullsToUndefined(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    out[key] = value === null ? undefined : value;
+  }
+  return out;
+}
+
+const projectItemSchema = z.preprocess(nullsToUndefined, z.object({
   sk: z.string().default(''),
   project_id: z.string().optional(),
   name: z.string().optional(),
@@ -70,7 +88,7 @@ const projectItemSchema = z.object({
   feature_idea: z.string().optional(),
   question: z.string().optional(),
   created_at: z.string().optional(),
-}).passthrough();
+}).passthrough());
 
 type ProjectItem = z.infer<typeof projectItemSchema>;
 

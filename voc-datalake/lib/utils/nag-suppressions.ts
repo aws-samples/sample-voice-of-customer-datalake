@@ -164,6 +164,10 @@ export const pluginSystemSuppressions: NagPackSuppression[] = [
     appliesTo: [
       { regex: '/Resource::<.*ResearchStepLambda.*\.Arn>:\*/' },
       { regex: '/Resource::<.*ModelAgreementLambda.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*PersonaGeneratorJob.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*DocumentGeneratorJob.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*DocumentMergerJob.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*PersonaImporterJob.*\.Arn>:\*/' },
     ],
   },
 ];

@@ -222,4 +222,35 @@ describe('buildProjectChatContext', () => {
       document_count: 1,
     });
   });
+
+  it('does not throw when a persona has a null avatar_url (regression)', async () => {
+    // DynamoDB stores empty optional attributes as null. A persona without a
+    // generated avatar has avatar_url: null, which previously failed Zod
+    // validation (expected string, received null) and took down project chat
+    // with an opaque "Unknown error".
+    const personaWithNulls = {
+      pk: 'PROJECT#proj-1',
+      sk: 'PERSONA#p3',
+      persona_id: 'p3',
+      name: 'No Avatar Persona',
+      tagline: 'Generated without an avatar',
+      quote: 'I should still render',
+      avatar_url: null,
+      goals: null,
+      frustrations: null,
+      needs: null,
+    } as unknown as Record<string, unknown>;
+
+    const docClient = createMockDocClient([
+      [projectMeta, personaWithNulls],
+    ]);
+
+    const ctx = await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1',
+      'hello', ['p3'],
+    );
+
+    expect(ctx.systemPrompt).toContain('No Avatar Persona');
+    expect(ctx.metadata.selected_personas).toEqual(['No Avatar Persona']);
+  });
 });

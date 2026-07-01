@@ -38,6 +38,11 @@ const PROJECTS_TABLE = process.env.PROJECTS_TABLE ?? '';
 
 const MAX_TOOL_LOOPS = 5;
 
+// Roundtable tuning: one turn per persona, generous budget for a full perspective.
+const ROUNDTABLE_MAX_TOKENS = 4000;
+const ROUNDTABLE_THINKING_BUDGET = 2000;
+
+
 // ── Types ──
 
 interface LambdaEvent {
@@ -233,61 +238,50 @@ async function handleRoundtableChat(
 
   sendSSE(stream, { type: 'metadata', metadata: ctx.metadata });
 
-  const previousResponses: Array<{ name: string; response: string }> = [];
-  const personaCount = ctx.personas.length;
+  // Roundtable = exactly ONE turn per selected persona. Each persona answers the
+  // user's message in its own voice, from its own prompt only. We deliberately do
+  // NOT feed personas each other's responses: the previous multi-round design
+  // injected the running transcript ("## Conversation so far") into every later
+  // turn and asked personas to "respond to what others said", which made the model
+  // re-quote everyone — producing ~8 noisy bubbles that each repeated
+  // "Stefan: … Margarete: … Thomas: …". One persona → one clean, distinct bubble.
 
-  // Calculate rounds: aim for 6-8 total messages
-  // With 2 personas → 3-4 rounds, 3 personas → 2-3 rounds, 4+ → 2 rounds
-  const targetMessages = 8;
-  const totalRounds = Math.max(2, Math.min(4, Math.ceil(targetMessages / Math.max(personaCount, 1))));
+  // Hoist loop-invariant work: attachments and history are the same for every persona.
+  const attachmentBlocks = (body.attachments?.length)
+    ? attachmentsToContentBlocks(body.attachments)
+    : [];
+  const historyMessages = historyToBedrockMessages(body.history);
 
-  for (let round = 0; round < totalRounds; round++) {
-    for (const persona of ctx.personas) {
-      // Stop if we've hit the target message count
-      if (previousResponses.length >= targetMessages) break;
+  const responses: string[] = [];
 
-      sendSSE(stream, {
-        type: 'persona_turn',
-        persona: {
-          persona_id: persona.persona_id,
-          name: persona.name,
-          avatar_url: persona.avatar_url,
-        },
-      });
+  for (const persona of ctx.personas) {
+    sendSSE(stream, {
+      type: 'persona_turn',
+      persona: {
+        persona_id: persona.persona_id,
+        name: persona.name,
+        avatar_url: persona.avatar_url,
+      },
+    });
 
-      // Build user content blocks
-      const userContent: ContentBlock[] = [{ text: ctx.userMessage }];
-      if (round === 0 && body.attachments && body.attachments.length > 0) {
-        const attachmentBlocks = attachmentsToContentBlocks(body.attachments);
-        userContent.push(...attachmentBlocks);
-      }
+    try {
+      const userContent: ContentBlock[] = [{ text: ctx.userMessage }, ...attachmentBlocks];
 
       const messages: Message[] = [
-        ...historyToBedrockMessages(body.history),
+        ...historyMessages,
         { role: 'user', content: userContent },
       ];
 
-      // Build round-aware system prompt
-      let systemPrompt = persona.systemPrompt;
-      if (previousResponses.length > 0) {
-        const conversationSoFar = previousResponses
-          .map((r) => `**${r.name}:** ${r.response}`)
-          .join('\n\n');
-        systemPrompt += `\n\n## Conversation so far\n\n${conversationSoFar}`;
-      }
+      const systemPrompt = `${persona.systemPrompt}
 
-      if (round === 0) {
-        systemPrompt += '\n\nShare your initial reaction and perspective. Be direct and specific.';
-      } else {
-        systemPrompt += '\n\nThis is a follow-up round in the discussion. Respond to what others have said — agree, disagree, build on their points, or raise new concerns. Keep it conversational and concise (1-2 paragraphs). Do NOT repeat your earlier points.';
-      }
+Share your own perspective on the user's message in your own voice. Be direct and specific. Speak only as yourself — do not narrate, summarize, or quote what the other personas might say.`;
 
       const state = createStreamState();
       const events = converseStream({
         messages,
         systemPrompt,
-        maxTokens: round === 0 ? 4000 : 3000,
-        thinkingBudget: round === 0 ? 2000 : 1024,
+        maxTokens: ROUNDTABLE_MAX_TOKENS,
+        thinkingBudget: ROUNDTABLE_THINKING_BUDGET,
       });
 
       for await (const event of events) {
@@ -295,18 +289,26 @@ async function handleRoundtableChat(
       }
 
       if (state.textContent) {
-        previousResponses.push({ name: persona.name, response: state.textContent });
+        responses.push(state.textContent);
       }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(
+        `Roundtable turn failed for persona ${persona.persona_id} (${persona.name}): ${errorMessage}`,
+      );
+      sendSSE(stream, {
+        type: 'persona_error',
+        persona: { persona_id: persona.persona_id, name: persona.name },
+        error: errorMessage,
+      });
     }
-
-    if (previousResponses.length >= targetMessages) break;
   }
 
   sendSSE(stream, {
     type: 'done',
     metadata: {
       ...ctx.metadata,
-      roundtable_responses: previousResponses.length,
+      roundtable_responses: responses.length,
     },
   });
   stream.end();

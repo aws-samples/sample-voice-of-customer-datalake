@@ -17,7 +17,7 @@ import hashlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
-from shared.http import fetch_with_retry
+from shared.http_utils import fetch_with_retry
 from shared.aws import (
     get_dynamodb_resource,
     get_s3_client,

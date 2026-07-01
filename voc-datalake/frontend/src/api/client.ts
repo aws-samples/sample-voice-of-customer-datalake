@@ -24,6 +24,8 @@ import type {
   ProcessingLogEntry,
   ScraperLogEntry,
   LogsSummary,
+  ApiToken,
+  CreateApiTokenResponse,
 } from './types'
 
 // Re-export all types for backward compatibility
@@ -51,6 +53,8 @@ export type {
   ProcessingLogEntry,
   ScraperLogEntry,
   LogsSummary,
+  ApiToken,
+  CreateApiTokenResponse,
 } from './types'
 export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation } from './types'
 
@@ -416,8 +420,6 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.deletePersona(projectId, personaId)),
   importPersona: (projectId: string, data: { input_type: 'pdf' | 'image' | 'text'; content: string; media_type?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
-  projectChat: (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) =>
-    import('./projectsApi').then(m => m.projectsApi.projectChat(projectId, message, selectedPersonas, selectedDocuments)),
   runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
     import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),
   generateDocument: (projectId: string, data: { doc_type: 'prd' | 'prfaq'; title: string; feature_idea: string; data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }; selected_persona_ids: string[]; selected_document_ids: string[]; feedback_sources: string[]; feedback_categories: string[]; days: number; customer_questions?: string[] }) =>
@@ -645,6 +647,21 @@ export const api = {
   deleteUser: (username: string) =>
     fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}`, {
       method: 'DELETE'
+    }),
+
+  // Project API tokens (used by the McpAccessTab to gate MCP server access)
+  createApiToken: (projectId: string, data: { name: string; scope: 'read' | 'read-write' }) =>
+    fetchApi<CreateApiTokenResponse>(`/projects/${projectId}/api-tokens`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  listApiTokens: (projectId: string) =>
+    fetchApi<{ success: boolean; tokens: ApiToken[] }>(`/projects/${projectId}/api-tokens`),
+
+  deleteApiToken: (projectId: string, tokenId: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/projects/${projectId}/api-tokens/${tokenId}`, {
+      method: 'DELETE',
     }),
 
   // Logs API

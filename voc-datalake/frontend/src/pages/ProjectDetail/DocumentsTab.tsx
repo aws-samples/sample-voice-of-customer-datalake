@@ -1,13 +1,18 @@
 /**
  * DocumentsTab - Documents list and detail view
  */
-import { FileText, Pencil, Trash2, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
 import { format } from 'date-fns'
+import {
+  FileText, Pencil, Trash2, Loader2,
+} from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { ProjectDocument, Project } from '../../api/client'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
+import type {
+  ProjectDocument, Project,
+} from '../../api/types'
 
 interface DocumentsTabProps {
   readonly project: Project
@@ -30,15 +35,16 @@ export default function DocumentsTab({
   onCreateDoc,
   isDeleting,
 }: DocumentsTabProps) {
+  const { t } = useTranslation('projectDetail')
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button 
-          onClick={onCreateDoc} 
+        <button
+          onClick={onCreateDoc}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
         >
-          <FileText size={16} />New Document
+          <FileText size={16} />{t('documents.newDocument')}
         </button>
       </div>
       <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 lg:gap-6">
@@ -47,18 +53,18 @@ export default function DocumentsTab({
           {documents.length === 0 ? (
             <div className="text-center py-8 bg-white rounded-xl border flex-shrink-0 w-full">
               <FileText size={32} className="mx-auto text-gray-300 mb-2" />
-              <p className="text-gray-500">No documents</p>
+              <p className="text-gray-500">{t('documents.noDocuments')}</p>
             </div>
           ) : (
             documents.map((d) => (
-              <button 
-                key={d.document_id} 
-                onClick={() => onSelectDoc(d)} 
+              <button
+                key={d.document_id}
+                onClick={() => onSelectDoc(d)}
                 className={clsx(
-                  'flex-shrink-0 w-56 lg:w-full text-left p-3 lg:p-4 rounded-lg border', 
-                  selectedDoc?.document_id === d.document_id 
-                    ? 'bg-blue-50 border-blue-300' 
-                    : 'bg-white hover:border-blue-200'
+                  'flex-shrink-0 w-56 lg:w-full text-left p-3 lg:p-4 rounded-lg border',
+                  selectedDoc?.document_id === d.document_id
+                    ? 'bg-blue-50 border-blue-300'
+                    : 'bg-white hover:border-blue-200',
                 )}
               >
                 <div className="flex items-center gap-2 mb-1">
@@ -70,7 +76,7 @@ export default function DocumentsTab({
             ))
           )}
         </div>
-        
+
         {/* Document Detail */}
         <div className="lg:col-span-2 bg-white rounded-xl border p-4 sm:p-6 min-h-[400px] lg:min-h-[500px] overflow-hidden">
           {selectedDoc ? (
@@ -79,29 +85,32 @@ export default function DocumentsTab({
                 <h2 className="text-xl font-bold">{selectedDoc.title}</h2>
                 <div className="flex items-center gap-2">
                   <DocumentExportMenu document={selectedDoc} project={project} />
-                  <button 
+                  <button
                     onClick={onEditDoc}
                     className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"
-                    title="Edit document"
+                    title={t('documents.editDocument')}
                   >
                     <Pencil size={18} />
                   </button>
-                  <button 
+                  <button
                     onClick={onDeleteDoc}
                     disabled={isDeleting}
                     className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
-                    title="Delete document"
+                    title={t('documents.deleteDocument')}
                   >
                     {isDeleting ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
                   </button>
                 </div>
               </div>
-              <div className="prose prose-sm max-w-none overflow-y-auto flex-1" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+              <div className="prose prose-sm max-w-none overflow-y-auto flex-1" style={{
+                overflowWrap: 'break-word',
+                wordBreak: 'break-word',
+              }}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedDoc.content}</ReactMarkdown>
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-400">Select a document</div>
+            <div className="flex items-center justify-center h-full text-gray-400">{t('documents.selectDocument')}</div>
           )}
         </div>
       </div>
@@ -116,7 +125,7 @@ function DocumentTypeBadge({ type }: { readonly type: string }) {
     custom: 'bg-purple-100 text-purple-700',
   }
   const style = styles[type] ?? 'bg-amber-100 text-amber-700'
-  
+
   return (
     <span className={clsx('text-xs font-medium px-2 py-0.5 rounded', style)}>
       {type.toUpperCase()}

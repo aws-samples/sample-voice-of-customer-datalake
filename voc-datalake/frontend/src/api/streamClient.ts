@@ -25,8 +25,9 @@ class StreamResponseError extends Error {
 }
 
 export interface StreamEvent {
-  type: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'done' | 'error' | 'metadata' | 'document_changed' | 'persona_turn'
+  type: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'done' | 'error' | 'metadata' | 'document_changed' | 'persona_turn' | 'persona_error'
   content?: string
+  error?: string
   toolName?: string
   toolInput?: Record<string, unknown>
   metadata?: Record<string, unknown>
@@ -47,7 +48,7 @@ function getStreamHeaders(): Record<string, string> {
   return getAuthHeaders({ Accept: 'text/event-stream' })
 }
 
-const VALID_EVENT_TYPES = new Set(['text', 'thinking', 'tool_use', 'tool_result', 'done', 'error', 'metadata', 'document_changed', 'persona_turn'])
+const VALID_EVENT_TYPES = new Set(['text', 'thinking', 'tool_use', 'tool_result', 'done', 'error', 'metadata', 'document_changed', 'persona_turn', 'persona_error'])
 
 function isStreamEvent(value: unknown): value is StreamEvent {
   if (typeof value !== 'object' || value === null || !('type' in value)) return false

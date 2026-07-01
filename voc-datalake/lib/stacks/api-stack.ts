@@ -452,6 +452,170 @@ export class VocApiStack extends cdk.Stack {
       logGroup: this.createLogGroup('ProjectsApiLogs', uniqueName('voc-projects-api')),
     });
 
+    // ── Async job Lambdas (persona/document generation) invoked by the Projects API ──
+    const createJobLambdaCode = (jobFolder: string): lambda.Code => {
+      return lambda.Code.fromAsset('lambda', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_14.bundlingImage,
+          command: [
+            'bash', '-c',
+            `mkdir -p /asset-output/api && ` +
+            `cp /asset-input/jobs/${jobFolder}/handler.py /asset-output/ && ` +
+            `cp -r /asset-input/shared /asset-output/ && ` +
+            `cp /asset-input/api/projects.py /asset-output/api/ && ` +
+            `cp -r /asset-input/api/prompts /asset-output/prompts`
+          ],
+          platform: 'linux/arm64',
+        },
+      });
+    };
+
+    const claudeModelResources = [
+      `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+      'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+    ];
+    const novaCanvasResource = 'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0';
+
+    // Persona Generator Job Lambda
+    const personaGeneratorRole = this.createLambdaRole('PersonaGeneratorRole');
+    feedbackTable.grantReadData(personaGeneratorRole);
+    projectsTable.grantReadWriteData(personaGeneratorRole);
+    jobsTable.grantReadWriteData(personaGeneratorRole);
+    aggregatesTable.grantReadData(personaGeneratorRole);
+    kmsKey.grantEncryptDecrypt(personaGeneratorRole);
+    personaGeneratorRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+      resources: [...claudeModelResources, novaCanvasResource],
+    }));
+    rawDataBucket.grantReadWrite(personaGeneratorRole, 'avatars/*');
+
+    const personaGeneratorLambda = new lambda.Function(this, 'PersonaGeneratorJob', {
+      functionName: uniqueName('voc-job-persona-generator'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code: createJobLambdaCode('persona_generator'),
+      role: personaGeneratorRole,
+      timeout: cdk.Duration.minutes(15),
+      memorySize: 1024,
+      environment: {
+        PROJECTS_TABLE: projectsTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        JOBS_TABLE: jobsTable.tableName,
+        RAW_DATA_BUCKET: rawDataBucket.bucketName,
+        AVATARS_CDN_URL: avatarsCdnUrl,
+        POWERTOOLS_SERVICE_NAME: 'voc-job-persona-generator',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('PersonaGeneratorJobLogs', uniqueName('voc-job-persona-generator')),
+    });
+
+    // Document Generator Job Lambda (PRD/PRFAQ)
+    const documentGeneratorRole = this.createLambdaRole('DocumentGeneratorRole');
+    feedbackTable.grantReadData(documentGeneratorRole);
+    projectsTable.grantReadWriteData(documentGeneratorRole);
+    jobsTable.grantReadWriteData(documentGeneratorRole);
+    kmsKey.grantEncryptDecrypt(documentGeneratorRole);
+    documentGeneratorRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: claudeModelResources,
+    }));
+
+    const documentGeneratorLambda = new lambda.Function(this, 'DocumentGeneratorJob', {
+      functionName: uniqueName('voc-job-document-generator'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code: createJobLambdaCode('document_generator'),
+      role: documentGeneratorRole,
+      timeout: cdk.Duration.minutes(15),
+      memorySize: 1024,
+      environment: {
+        PROJECTS_TABLE: projectsTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        JOBS_TABLE: jobsTable.tableName,
+        POWERTOOLS_SERVICE_NAME: 'voc-job-document-generator',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('DocumentGeneratorJobLogs', uniqueName('voc-job-document-generator')),
+    });
+
+    // Document Merger Job Lambda
+    const documentMergerRole = this.createLambdaRole('DocumentMergerRole');
+    feedbackTable.grantReadData(documentMergerRole);
+    projectsTable.grantReadWriteData(documentMergerRole);
+    jobsTable.grantReadWriteData(documentMergerRole);
+    kmsKey.grantEncryptDecrypt(documentMergerRole);
+    documentMergerRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: claudeModelResources,
+    }));
+
+    const documentMergerLambda = new lambda.Function(this, 'DocumentMergerJob', {
+      functionName: uniqueName('voc-job-document-merger'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code: createJobLambdaCode('document_merger'),
+      role: documentMergerRole,
+      timeout: cdk.Duration.minutes(10),
+      memorySize: 1024,
+      environment: {
+        PROJECTS_TABLE: projectsTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        JOBS_TABLE: jobsTable.tableName,
+        POWERTOOLS_SERVICE_NAME: 'voc-job-document-merger',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('DocumentMergerJobLogs', uniqueName('voc-job-document-merger')),
+    });
+
+    // Persona Importer Job Lambda
+    const personaImporterRole = this.createLambdaRole('PersonaImporterRole');
+    projectsTable.grantReadWriteData(personaImporterRole);
+    jobsTable.grantReadWriteData(personaImporterRole);
+    kmsKey.grantEncryptDecrypt(personaImporterRole);
+    personaImporterRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [...claudeModelResources, novaCanvasResource],
+    }));
+    rawDataBucket.grantReadWrite(personaImporterRole, 'avatars/*');
+
+    const personaImporterLambda = new lambda.Function(this, 'PersonaImporterJob', {
+      functionName: uniqueName('voc-job-persona-importer'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code: createJobLambdaCode('persona_importer'),
+      role: personaImporterRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        PROJECTS_TABLE: projectsTable.tableName,
+        JOBS_TABLE: jobsTable.tableName,
+        RAW_DATA_BUCKET: rawDataBucket.bucketName,
+        AVATARS_CDN_URL: avatarsCdnUrl,
+        POWERTOOLS_SERVICE_NAME: 'voc-job-persona-importer',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('PersonaImporterJobLogs', uniqueName('voc-job-persona-importer')),
+    });
+
+    // Wire job Lambda function names into the Projects API + grant invoke
+    projectsLambda.addEnvironment('PERSONA_GENERATOR_FUNCTION', personaGeneratorLambda.functionName);
+    projectsLambda.addEnvironment('DOCUMENT_GENERATOR_FUNCTION', documentGeneratorLambda.functionName);
+    projectsLambda.addEnvironment('DOCUMENT_MERGER_FUNCTION', documentMergerLambda.functionName);
+    projectsLambda.addEnvironment('PERSONA_IMPORTER_FUNCTION', personaImporterLambda.functionName);
+    personaGeneratorLambda.grantInvoke(projectsRole);
+    documentGeneratorLambda.grantInvoke(projectsRole);
+    documentMergerLambda.grantInvoke(projectsRole);
+    personaImporterLambda.grantInvoke(projectsRole);
+
     // Chat Stream (Node.js — API Gateway response streaming, replaces Python Function URL)
     const chatStreamLambda = new NodejsFunction(this, 'ChatStreamApi', {
       functionName: uniqueName('voc-chat-stream'),
@@ -807,6 +971,113 @@ export class VocApiStack extends cdk.Stack {
         pluginResource.addMethod(method, webhookIntegration);
       }
     }
+
+    // ============================================
+    // MCP SERVER API (public — auth via Bearer token authorizer)
+    // ============================================
+    const mcpRole = this.createLambdaRole('McpLambdaRole');
+    feedbackTable.grantReadData(mcpRole);
+    aggregatesTable.grantReadData(mcpRole);
+    projectsTable.grantReadWriteData(mcpRole);  // read tokens + update last_used_at
+    kmsKey.grantDecrypt(mcpRole);
+
+    const mcpLambda = new lambda.Function(this, 'McpApi', {
+      functionName: uniqueName('voc-mcp-api'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'mcp_handler.lambda_handler',
+      code: createApiLambdaCode('mcp_handler.py'),
+      role: mcpRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        PROJECTS_TABLE: projectsTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        POWERTOOLS_SERVICE_NAME: 'voc-mcp-api',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('McpApiLogs', uniqueName('voc-mcp-api')),
+    });
+
+    const mcpIntegration = new apigateway.LambdaIntegration(mcpLambda, { proxy: true });
+
+    // Inline Node.js token-format authorizer (validates Bearer voc_* shape; mcp_handler does the real check)
+    const mcpAuthorizerLogGroup = this.createLogGroup('McpAuthorizerLogs', uniqueName('voc-mcp-authorizer'));
+    const mcpAuthorizerFn = new lambda.Function(this, 'McpTokenAuthorizer', {
+      functionName: uniqueName('voc-mcp-token-authorizer'),
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'index.handler',
+      code: lambda.Code.fromInline(`
+exports.handler = async (event) => {
+  const token = event.authorizationToken || '';
+  const methodArn = event.methodArn;
+  if (!token.startsWith('Bearer voc_') || token.length < 20) {
+    throw new Error('Unauthorized');
+  }
+  const arnParts = methodArn.split(':');
+  const region = arnParts[3];
+  const accountId = arnParts[4];
+  const apiGatewayArnParts = arnParts[5].split('/');
+  const restApiId = apiGatewayArnParts[0];
+  const stage = apiGatewayArnParts[1];
+  const resourceArn = 'arn:aws:execute-api:' + region + ':' + accountId + ':' + restApiId + '/' + stage + '/*/mcp*';
+  return {
+    principalId: 'mcp-client',
+    policyDocument: {
+      Version: '2012-10-17',
+      Statement: [{
+        Action: 'execute-api:Invoke',
+        Effect: 'Allow',
+        Resource: resourceArn,
+      }],
+    },
+  };
+};
+`),
+      timeout: cdk.Duration.seconds(3),
+      memorySize: 128,
+      logGroup: mcpAuthorizerLogGroup,
+    });
+    NagSuppressions.addResourceSuppressions(mcpAuthorizerFn, [
+      { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the latest LTS runtime available in CDK for inline Lambda authorizers' },
+    ], true);
+
+    const mcpTokenAuthorizer = new apigateway.TokenAuthorizer(this, 'McpApiTokenAuthorizer', {
+      handler: mcpAuthorizerFn,
+      identitySource: 'method.request.header.Authorization',
+      resultsCacheTtl: cdk.Duration.seconds(300),
+      authorizerName: 'voc-mcp-token-authorizer',
+    });
+
+    const mcpMethodOptions: apigateway.MethodOptions = {
+      authorizer: mcpTokenAuthorizer,
+      authorizationType: apigateway.AuthorizationType.CUSTOM,
+    };
+
+    const mcpResource = this.api.root.addResource('mcp');
+    const mcpMethod = mcpResource.addMethod('POST', mcpIntegration, mcpMethodOptions);
+    const mcpProxy = mcpResource.addProxy({ defaultIntegration: mcpIntegration, anyMethod: true, defaultMethodOptions: mcpMethodOptions });
+
+    // Per-method throttling (10 req/s, burst 20) to limit brute-force token attempts
+    const mcpUsagePlan = this.api.addUsagePlan('McpUsagePlan', {
+      name: uniqueName('voc-mcp-throttle'),
+      description: 'Throttle MCP endpoints to limit brute-force token attempts',
+      throttle: { rateLimit: 10, burstLimit: 20 },
+    });
+    mcpUsagePlan.addApiStage({
+      stage: this.api.deploymentStage,
+      throttle: [{ method: mcpMethod, throttle: { rateLimit: 10, burstLimit: 20 } }],
+    });
+
+    NagSuppressions.addResourceSuppressions(mcpProxy, [
+      { id: 'AwsSolutions-COG4', reason: 'MCP uses a custom Lambda token authorizer instead of Cognito — MCP clients cannot use the Cognito auth flow' },
+    ], true);
+    NagSuppressions.addResourceSuppressions(mcpMethod, [
+      { id: 'AwsSolutions-COG4', reason: 'MCP endpoint uses a custom Lambda token authorizer instead of Cognito — MCP clients cannot use the Cognito auth flow' },
+    ]);
 
 
     // ============================================

@@ -3,20 +3,23 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import DocumentsTab from './DocumentsTab'
-import type { ProjectDocument, Project } from '../../api/client'
+import type { ProjectDocument, Project } from '../../api/types'
 
 const mockProject: Project = {
   project_id: 'proj-1',
   name: 'Test Project',
+  description: '',
+  status: 'active',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
+  persona_count: 0,
+  document_count: 0,
 }
 
 const mockDoc: ProjectDocument = {
   document_id: 'doc-1',
   title: 'Test Document',
   content: '# Test Content',
-  doc_type: 'prd',
   document_type: 'prd',
   created_at: new Date().toISOString(),
 }
