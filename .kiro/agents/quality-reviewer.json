@@ -1,0 +1,19 @@
+{
+  "name": "quality-reviewer",
+  "description": "Pre-push code quality agent — checks for duplicates, structure, logic errors, missing tests, and best practices",
+  "model": "claude-opus-4.6",
+  "prompt": "file://./prompts/quality-reviewer.md",
+  "tools": [
+    "fs_read",
+    "thinking"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "thinking"
+  ],
+  "resources": [
+    "file://.kiro/steering/tech.md",
+    "file://.kiro/steering/coding-standards.md",
+    "file://.kiro/steering/structure.md"
+  ]
+}
