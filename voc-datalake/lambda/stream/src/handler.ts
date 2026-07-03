@@ -19,8 +19,9 @@ import { z } from 'zod';
 import { converseStream } from './bedrock/converse-stream.js';
 import { processStreamEvent, createStreamState, type ToolUseBlock } from './bedrock/stream-processor.js';
 import { executeTool } from './tools/executor.js';
-import { getSearchFeedbackTool, getUpdateDocumentTool, getCreateDocumentTool } from './tools/index.js';
+import { getSearchFeedbackTool, getUpdateDocumentTool, getCreateDocumentTool, getCreateProjectTool } from './tools/index.js';
 import type { DocumentChange } from './tools/update-document.js';
+import type { ProjectChange } from './tools/create-project.js';
 import { buildVocChatContext } from './context/voc-context.js';
 import { buildProjectChatContext, buildRoundtableContext } from './context/project-context.js';
 import { attachmentsToContentBlocks } from './attachments.js';
@@ -102,6 +103,7 @@ async function executeToolsAndBuildResults(
   contextFilters: ContextFilters,
   collectedSources: Record<string, unknown>[],
   collectedDocumentChanges: DocumentChange[],
+  collectedProjectChanges: ProjectChange[],
   stream: NodeJS.WritableStream,
   projectsTable?: string,
   projectId?: string,
@@ -121,6 +123,9 @@ async function executeToolsAndBuildResults(
     if (result.documentChange) {
       collectedDocumentChanges.push(result.documentChange);
     }
+    if (result.projectChange) {
+      collectedProjectChanges.push(result.projectChange);
+    }
     // Notify the frontend that the tool has completed
     sendSSE(stream, { type: 'tool_result', toolName: tb.name });
     const resultContent: ToolResultContentBlock[] = [{ text: result.content }];
@@ -139,6 +144,7 @@ async function runConversationLoop(
   contextFilters: ContextFilters,
   collectedSources: Record<string, unknown>[],
   collectedDocumentChanges: DocumentChange[],
+  collectedProjectChanges: ProjectChange[],
   loopCount: number,
   projectsTable?: string,
   projectId?: string,
@@ -170,14 +176,14 @@ async function runConversationLoop(
   messages.push({ role: 'assistant', content: buildAssistantContent(state) });
 
   const toolResults = await executeToolsAndBuildResults(
-    state.toolUseBlocks, contextFilters, collectedSources, collectedDocumentChanges, stream,
-    projectsTable, projectId,
+    state.toolUseBlocks, contextFilters, collectedSources, collectedDocumentChanges,
+    collectedProjectChanges, stream, projectsTable, projectId,
   );
   messages.push({ role: 'user', content: toolResults });
 
   await runConversationLoop(
     messages, tools, stream, systemPrompt, contextFilters,
-    collectedSources, collectedDocumentChanges, loopCount + 1,
+    collectedSources, collectedDocumentChanges, collectedProjectChanges, loopCount + 1,
     projectsTable, projectId,
   );
 }
@@ -208,13 +214,25 @@ async function handleVocChat(body: ChatRequest, stream: NodeJS.WritableStream): 
     ...historyToBedrockMessages(body.history),
     { role: 'user', content: [{ text: ctx.userMessage }] },
   ];
-  const tools: Tool[] = [getSearchFeedbackTool()];
+  // search_feedback for analysis + create_project so the user can turn the
+  // insights into a pre-filled project ("make a project out of this"). No
+  // projectId here (VoC chat is project-agnostic), but create_project only
+  // needs the table, so PROJECTS_TABLE is passed as the projectsTable arg.
+  const tools: Tool[] = [getSearchFeedbackTool(), getCreateProjectTool()];
   const sources: Record<string, unknown>[] = [];
   const documentChanges: DocumentChange[] = [];
+  const projectChanges: ProjectChange[] = [];
 
-  await runConversationLoop(messages, tools, stream, ctx.systemPrompt, ctx.metadata.filters, sources, documentChanges, 0);
+  await runConversationLoop(
+    messages, tools, stream, ctx.systemPrompt, ctx.metadata.filters,
+    sources, documentChanges, projectChanges, 0,
+    PROJECTS_TABLE,
+  );
 
-  sendSSE(stream, { type: 'done', metadata: { sources: deduplicateSources(sources) } });
+  sendSSE(stream, {
+    type: 'done',
+    metadata: { sources: deduplicateSources(sources), project_changes: projectChanges },
+  });
   stream.end();
 }
 
@@ -353,9 +371,10 @@ async function handleProjectChat(
   console.log('Project ID:', projectId, 'PROJECTS_TABLE:', PROJECTS_TABLE);
 
   const documentChanges: DocumentChange[] = [];
+  const projectChanges: ProjectChange[] = [];
 
   await runConversationLoop(
-    messages, tools, stream, ctx.systemPrompt, {}, [], documentChanges, 0,
+    messages, tools, stream, ctx.systemPrompt, {}, [], documentChanges, projectChanges, 0,
     PROJECTS_TABLE, projectId,
   );
 

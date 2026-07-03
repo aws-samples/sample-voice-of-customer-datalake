@@ -2,7 +2,26 @@
  * Tests for tool definitions.
  */
 import { describe, it, expect } from 'vitest';
-import { getSearchFeedbackTool, getUpdateDocumentTool, getCreateDocumentTool } from './index.js';
+import { getSearchFeedbackTool, getUpdateDocumentTool, getCreateDocumentTool, getCreateProjectTool } from './index.js';
+
+describe('getCreateProjectTool', () => {
+  it('returns a tool with name create_project', () => {
+    expect(getCreateProjectTool().toolSpec?.name).toBe('create_project');
+  });
+
+  it('requires only name', () => {
+    const schema = getCreateProjectTool().toolSpec?.inputSchema?.json as Record<string, unknown>;
+    expect(schema.required).toEqual(['name']);
+  });
+
+  it('exposes product-context seed fields', () => {
+    const schema = getCreateProjectTool().toolSpec?.inputSchema?.json as Record<string, unknown>;
+    const props = schema.properties as Record<string, unknown>;
+    for (const f of ['name', 'description', 'product_name', 'one_liner', 'target_users', 'problem_solved', 'key_features']) {
+      expect(props[f]).toBeDefined();
+    }
+  });
+});
 
 describe('getSearchFeedbackTool', () => {
   it('returns a tool with name search_feedback', () => {

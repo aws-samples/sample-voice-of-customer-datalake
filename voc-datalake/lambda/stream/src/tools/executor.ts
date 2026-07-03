@@ -6,6 +6,8 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { executeSearchFeedback } from './search-feedback.js';
 import { executeUpdateDocument, executeCreateDocument } from './update-document.js';
 import type { DocumentChange } from './update-document.js';
+import { executeCreateProject } from './create-project.js';
+import type { ProjectChange } from './create-project.js';
 import { sendSSE } from '../lib/streaming.js';
 import { ServiceError } from '../lib/errors.js';
 import type { ToolUseBlock } from '../bedrock/stream-processor.js';
@@ -22,6 +24,7 @@ interface ToolResult {
   content: string;
   sources: Record<string, unknown>[];
   documentChange?: DocumentChange;
+  projectChange?: ProjectChange;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -59,12 +62,25 @@ export async function executeTool(
 ): Promise<ToolResult> {
   sendSSE(stream, { type: 'tool_use', toolName: tool.name, toolInput: tool.input });
 
-  let result: { content: string; sources: Record<string, unknown>[]; documentChange?: DocumentChange };
+  let result: {
+    content: string;
+    sources: Record<string, unknown>[];
+    documentChange?: DocumentChange;
+    projectChange?: ProjectChange;
+  };
 
   switch (tool.name) {
     case 'search_feedback': {
       const searchResult = await handleSearchFeedback(tool.input, docClient, feedbackTable, contextFilters);
       result = searchResult;
+      break;
+    }
+    case 'create_project': {
+      if (!projectsTable) throw new ServiceError('Projects table not configured for create_project');
+      console.log('create_project called:', JSON.stringify(tool.input));
+      const projectResult = await executeCreateProject(docClient, projectsTable, tool.input);
+      console.log('create_project result:', projectResult.content);
+      result = { content: projectResult.content, sources: [], projectChange: projectResult.projectChange };
       break;
     }
     case 'update_document': {
@@ -88,9 +104,14 @@ export async function executeTool(
   }
 
   // Send tool_result SSE event
-  const resultSummary = result.documentChange
-    ? `${result.documentChange.action}: ${result.documentChange.title}`
-    : `Found ${result.sources.length} items`;
+  let resultSummary: string;
+  if (result.projectChange) {
+    resultSummary = `${result.projectChange.action}: ${result.projectChange.name}`;
+  } else if (result.documentChange) {
+    resultSummary = `${result.documentChange.action}: ${result.documentChange.title}`;
+  } else {
+    resultSummary = `Found ${result.sources.length} items`;
+  }
   sendSSE(stream, { type: 'tool_result', toolName: tool.name, content: resultSummary });
 
   // Send document_changed SSE event if a document was modified
@@ -101,10 +122,19 @@ export async function executeTool(
     });
   }
 
+  // Send project_changed SSE event so the frontend can surface/link the new project
+  if (result.projectChange) {
+    sendSSE(stream, {
+      type: 'project_changed',
+      projectChange: result.projectChange,
+    });
+  }
+
   return {
     toolUseId: tool.toolUseId,
     content: result.content,
     sources: result.sources,
     documentChange: result.documentChange,
+    projectChange: result.projectChange,
   };
 }
