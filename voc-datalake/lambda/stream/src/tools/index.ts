@@ -118,3 +118,40 @@ export function getSearchFeedbackTool(): Tool {
     },
   };
 }
+
+export function getCreateProjectTool(): Tool {
+  return {
+    toolSpec: {
+      name: 'create_project',
+      description:
+        'Create a new project from the insights discovered in this conversation. ' +
+        'Use this when the user asks to turn feedback findings into a project (e.g. ' +
+        '"make a project out of this", "create a project for this issue", "프로젝트 만들어줘"). ' +
+        'Draft the optional product-context fields (product_name, one_liner, target_users, ' +
+        'problem_solved, key_features) from the feedback you analyzed so the new project starts ' +
+        'pre-filled instead of blank — but only include a field if you can ground it in the ' +
+        'actual feedback; leave it out rather than inventing.',
+      inputSchema: {
+        json: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Short project name (e.g. "Booking reliability fixes").',
+            },
+            description: {
+              type: 'string',
+              description: 'One-paragraph project description summarizing the goal/scope derived from the feedback.',
+            },
+            product_name: { type: 'string', description: 'Product/service name, if identifiable from feedback.' },
+            one_liner: { type: 'string', description: 'One-line product summary.' },
+            target_users: { type: 'string', description: 'Who the users are, per the feedback.' },
+            problem_solved: { type: 'string', description: 'The core problem(s) the feedback surfaced.' },
+            key_features: { type: 'string', description: 'Key features or fixes implied by the feedback.' },
+          },
+          required: ['name'],
+        },
+      },
+    },
+  };
+}

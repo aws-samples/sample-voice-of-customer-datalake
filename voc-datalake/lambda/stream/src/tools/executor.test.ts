@@ -13,6 +13,7 @@ import type { ToolUseBlock } from '../bedrock/stream-processor.js';
 const mockExecuteSearchFeedback = vi.fn();
 const mockExecuteUpdateDocument = vi.fn();
 const mockExecuteCreateDocument = vi.fn();
+const mockExecuteCreateProject = vi.fn();
 const mockSendSSE = vi.fn();
 
 vi.mock('./search-feedback.js', () => ({
@@ -22,6 +23,10 @@ vi.mock('./search-feedback.js', () => ({
 vi.mock('./update-document.js', () => ({
   executeUpdateDocument: (...args: unknown[]) => mockExecuteUpdateDocument(...args),
   executeCreateDocument: (...args: unknown[]) => mockExecuteCreateDocument(...args),
+}));
+
+vi.mock('./create-project.js', () => ({
+  executeCreateProject: (...args: unknown[]) => mockExecuteCreateProject(...args),
 }));
 
 vi.mock('../lib/streaming.js', () => ({
@@ -110,6 +115,35 @@ describe('executeTool', () => {
       expect(mockExecuteCreateDocument).toHaveBeenCalledWith(docClient, 'projects-table', 'proj-1', expect.any(Object));
       expect(result.documentChange?.action).toBe('created');
       expect(result.documentChange?.title).toBe('Launch Plan');
+    });
+
+    it('routes create_project to executeCreateProject (needs only projectsTable, no projectId)', async () => {
+      mockExecuteCreateProject.mockResolvedValueOnce({
+        content: 'Successfully created project "Booking fixes"',
+        projectChange: { project_id: 'proj_20260101000000', name: 'Booking fixes', action: 'created', summary: 'Created project' },
+      });
+
+      const result = await executeTool(
+        makeToolBlock({ name: 'create_project', input: { name: 'Booking fixes' } }),
+        // VoC chat passes projectsTable but NO projectId — create_project must still run.
+        docClient, feedbackTable, {}, stream, 'projects-table', undefined,
+      );
+
+      expect(mockExecuteCreateProject).toHaveBeenCalledWith(docClient, 'projects-table', expect.any(Object));
+      expect(result.projectChange?.action).toBe('created');
+      expect(result.projectChange?.name).toBe('Booking fixes');
+      expect(result.sources).toEqual([]);
+      expect(result.documentChange).toBeUndefined();
+    });
+
+    it('throws ServiceError when create_project called without projectsTable', async () => {
+      await expect(
+        executeTool(
+          makeToolBlock({ name: 'create_project', input: { name: 'X' } }),
+          docClient, feedbackTable, {}, stream, undefined, undefined,
+        ),
+      ).rejects.toThrow('Projects table not configured for create_project');
+      expect(mockExecuteCreateProject).not.toHaveBeenCalled();
     });
 
     it('throws ServiceError for unknown tool name', async () => {
@@ -236,6 +270,30 @@ describe('executeTool', () => {
       );
       expect(docChangedCall).toBeUndefined();
     });
+
+    it('sends tool_result with "created: <name>" summary and a project_changed event for create_project', async () => {
+      const projectChange = { project_id: 'proj_20260101000000', name: 'Pricing transparency', action: 'created' as const, summary: 'Created project' };
+      mockExecuteCreateProject.mockResolvedValueOnce({
+        content: 'Successfully created project "Pricing transparency"',
+        projectChange,
+      });
+
+      await executeTool(
+        makeToolBlock({ name: 'create_project', input: { name: 'Pricing transparency' } }),
+        docClient, feedbackTable, {}, stream, 'projects-table', undefined,
+      );
+
+      const toolResultCall = mockSendSSE.mock.calls.find(
+        (call: unknown[]) => (call[1] as Record<string, unknown>).type === 'tool_result',
+      );
+      expect((toolResultCall?.[1] as Record<string, unknown>).content).toBe('created: Pricing transparency');
+
+      const projectChangedCall = mockSendSSE.mock.calls.find(
+        (call: unknown[]) => (call[1] as Record<string, unknown>).type === 'project_changed',
+      );
+      expect(projectChangedCall).toBeDefined();
+      expect((projectChangedCall?.[1] as Record<string, unknown>).projectChange).toEqual(projectChange);
+    });
   });
 
   describe('search_feedback input handling', () => {
@@ -301,6 +359,21 @@ describe('executeTool', () => {
       );
 
       expect(result.documentChange).toEqual(docChange);
+    });
+
+    it('returns projectChange for create_project', async () => {
+      const projectChange = { project_id: 'proj_20260101000000', name: 'Retention', action: 'created' as const, summary: 'Created project and seeded 2 product-context field(s)' };
+      mockExecuteCreateProject.mockResolvedValueOnce({
+        content: 'Successfully created project "Retention"',
+        projectChange,
+      });
+
+      const result = await executeTool(
+        makeToolBlock({ name: 'create_project', input: { name: 'Retention' } }),
+        docClient, feedbackTable, {}, stream, 'projects-table', undefined,
+      );
+
+      expect(result.projectChange).toEqual(projectChange);
     });
   });
 });

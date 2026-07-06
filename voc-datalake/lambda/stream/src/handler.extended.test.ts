@@ -53,6 +53,7 @@ vi.mock('./tools/index.js', () => ({
   getSearchFeedbackTool: vi.fn().mockReturnValue({ toolSpec: { name: 'search_feedback' } }),
   getUpdateDocumentTool: vi.fn().mockReturnValue({ toolSpec: { name: 'update_document' } }),
   getCreateDocumentTool: vi.fn().mockReturnValue({ toolSpec: { name: 'create_document' } }),
+  getCreateProjectTool: vi.fn().mockReturnValue({ toolSpec: { name: 'create_project' } }),
 }));
 
 vi.mock('./tools/executor.js', () => ({
