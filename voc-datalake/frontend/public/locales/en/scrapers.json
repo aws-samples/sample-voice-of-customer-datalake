@@ -63,6 +63,15 @@
     "description": "Create a scraper to start collecting feedback from websites",
     "title": "No scrapers configured"
   },
+  "generator": {
+    "completed": "Generated {{count}} synthetic reviews. They'll appear shortly after processing.",
+    "completed_one": "Generated {{count}} synthetic review. It'll appear shortly after processing.",
+    "completed_other": "Generated {{count}} synthetic reviews. They'll appear shortly after processing.",
+    "generate": "Generate",
+    "generating": "Generating…",
+    "runningNote": "Generating reviews with AI. This can take up to a minute.",
+    "startFailed": "Failed to start generation."
+  },
   "jsonUpload": {
     "cancel": "Cancel",
     "done": "Done",
@@ -168,6 +177,7 @@
     "manualImport": "Manual Import",
     "manualImportDescription": "Paste reviews from any website and import them with AI parsing.",
     "manualInput": "Manual Input",
+    "syntheticData": "Synthetic Data",
     "title": "Add Data Source",
     "webScraperTemplates": "Web Scraper Templates"
   },

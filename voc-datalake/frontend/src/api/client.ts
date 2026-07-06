@@ -318,6 +318,8 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(credentials)
     }),
+  getIntegrationCredentials: (source: string, keys: string[]) =>
+    fetchApi<Record<string, string>>(`/integrations/${source}/credentials?keys=${keys.join(',')}`),
   
   testIntegration: (source: string) => 
     fetchApi<{ success: boolean; message?: string; error?: string; details?: Record<string, unknown> }>(`/integrations/${source}/test`, {

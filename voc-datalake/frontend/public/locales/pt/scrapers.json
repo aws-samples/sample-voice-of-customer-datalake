@@ -64,6 +64,16 @@
     "description": "Crie um scraper para começar a coletar feedback de sites",
     "title": "Nenhum scraper configurado"
   },
+  "generator": {
+    "completed": "{{count}} avaliações sintéticas geradas. Elas aparecerão logo após o processamento.",
+    "completed_one": "{{count}} avaliação sintética gerada. Ela aparecerá logo após o processamento.",
+    "completed_many": "{{count}} avaliações sintéticas geradas. Elas aparecerão logo após o processamento.",
+    "completed_other": "{{count}} avaliações sintéticas geradas. Elas aparecerão logo após o processamento.",
+    "generate": "Gerar",
+    "generating": "Gerando…",
+    "runningNote": "Gerando avaliações com IA. Isso pode levar até um minuto.",
+    "startFailed": "Falha ao iniciar a geração."
+  },
   "jsonUpload": {
     "cancel": "Cancelar",
     "done": "Concluído",
@@ -177,6 +187,7 @@
     "manualImport": "Importação manual",
     "manualImportDescription": "Cole avaliações de qualquer site e importe-as com análise de IA.",
     "manualInput": "Entrada manual",
+    "syntheticData": "Dados sintéticos",
     "title": "Adicionar fonte de dados",
     "webScraperTemplates": "Modelos de web scraper"
   },
