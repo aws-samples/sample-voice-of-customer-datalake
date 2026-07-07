@@ -73,9 +73,40 @@ class TestConverse:
         
         from shared.converse import converse
         converse('Simple question', thinking_budget=0)
-        
+
         call_args = mock_client.converse.call_args
         assert 'additionalModelRequestFields' not in call_args.kwargs
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_includes_temperature_by_default(self, mock_get_client):
+        """Temperature is sent in inferenceConfig when a float is given."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'R'}]}}
+        }
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        converse('Hi', temperature=0.4)
+
+        cfg = mock_client.converse.call_args.kwargs['inferenceConfig']
+        assert cfg['temperature'] == 0.4
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_omits_temperature_when_none(self, mock_get_client):
+        """temperature=None omits the param entirely (e.g. for Opus 4.8)."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'R'}]}}
+        }
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        converse('Hi', temperature=None)
+
+        cfg = mock_client.converse.call_args.kwargs['inferenceConfig']
+        assert 'temperature' not in cfg
+        assert cfg['maxTokens']  # other config still present
 
 
 class TestConverseRetry:
@@ -477,14 +508,99 @@ class TestConverseChainEdgeCases:
     def test_passes_max_retries_to_converse(self, mock_converse):
         """Passes max_retries parameter to converse calls."""
         mock_converse.return_value = 'Result'
-        
+
         from shared.converse import converse_chain
         steps = [{'system': 'S1', 'user': 'U1'}]
-        
+
         converse_chain(steps, max_retries=10)
-        
+
         call_args = mock_converse.call_args
         assert call_args.kwargs['max_retries'] == 10
+
+
+class TestConverseAutoContinuation:
+    """Tests for auto-continuation when the model hits the maxTokens ceiling."""
+
+    @staticmethod
+    def _resp(text, stop_reason='end_turn'):
+        return {
+            'output': {'message': {'content': [{'text': text}]}},
+            'stopReason': stop_reason,
+        }
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_resumes_when_truncated_then_concatenates(self, mock_get_client):
+        """A max_tokens stop triggers a continuation; chunks are concatenated."""
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = [
+            self._resp('Part one ', stop_reason='max_tokens'),
+            self._resp('and part two.', stop_reason='end_turn'),
+        ]
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Write a long doc', step_name='prd_document')
+
+        assert result == 'Part one and part two.'
+        assert mock_client.converse.call_count == 2
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_continuation_replays_prior_text(self, mock_get_client):
+        """The continuation turn includes the prior assistant text and a resume nudge."""
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = [
+            self._resp('First chunk', stop_reason='max_tokens'),
+            self._resp(' done', stop_reason='end_turn'),
+        ]
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        converse('prompt text', step_name='prd_document')
+
+        second_call_messages = mock_client.converse.call_args_list[1].kwargs['messages']
+        roles = [m['role'] for m in second_call_messages]
+        assert roles == ['user', 'assistant', 'user']
+        assert second_call_messages[1]['content'][0]['text'] == 'First chunk'
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_stops_at_max_continuations(self, mock_get_client):
+        """Never loops forever: stops after max_continuations even if still truncated."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = self._resp('x', stop_reason='max_tokens')
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Write a long doc', step_name='prd_document', max_continuations=2)
+
+        # 1 initial call + 2 continuations
+        assert mock_client.converse.call_count == 3
+        assert result == 'xxx'
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_no_continuation_on_normal_stop(self, mock_get_client):
+        """A normal end_turn does not trigger any continuation."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = self._resp('Complete answer', stop_reason='end_turn')
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Hello', step_name='test')
+
+        assert result == 'Complete answer'
+        mock_client.converse.assert_called_once()
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_continuation_disabled_with_thinking_budget(self, mock_get_client):
+        """Continuation is skipped when extended thinking is enabled."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = self._resp('partial', stop_reason='max_tokens')
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Hello', step_name='test', thinking_budget=5000)
+
+        assert result == 'partial'
+        mock_client.converse.assert_called_once()
 
 
 

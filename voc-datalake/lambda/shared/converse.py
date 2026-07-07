@@ -16,6 +16,26 @@ DEFAULT_MAX_RETRIES = 5
 DEFAULT_BASE_DELAY = 1.0  # seconds
 DEFAULT_MAX_DELAY = 30.0  # seconds
 
+# Auto-continuation: when the model stops because it hit the maxTokens ceiling,
+# the output is truncated mid-document. We transparently resume the generation up
+# to this many times, concatenating the chunks, so callers never persist a
+# half-written PRD/PR-FAQ/report (the document-cutoff bug).
+#
+# Tuning note: keep per-call max_tokens MODEST (≈6-8K) rather than huge. A single
+# huge maxTokens (e.g. 24K) makes one Bedrock call run many minutes for slow CJK
+# output and can blow the Lambda timeout on its own; many small calls each finish
+# in ~1-2 min and resume cleanly. This ceiling must therefore be generous enough
+# to assemble a long document from those small chunks (8 × ~8K ≈ 64K tokens).
+DEFAULT_MAX_CONTINUATIONS = 8
+
+# Nudge sent as the user turn when resuming a truncated response. Kept terse and
+# explicit so the model picks up exactly where it stopped without re-emitting text.
+_CONTINUE_PROMPT = (
+    "Continue the document exactly where you left off. "
+    "Do not repeat any text you already wrote and do not add a preamble — "
+    "resume from the next character."
+)
+
 # Retryable error codes
 RETRYABLE_ERROR_CODES = frozenset({
     'ThrottlingException',
@@ -33,12 +53,13 @@ def converse(
     prompt: str,
     system_prompt: str = "",
     max_tokens: int = 2048,
-    temperature: float = 0.1,
+    temperature: float | None = 0.1,
     thinking_budget: int = 0,
     model_id: str | None = None,
     max_retries: int = DEFAULT_MAX_RETRIES,
     raise_on_throttle: bool = True,
     step_name: str = "unknown",
+    max_continuations: int = DEFAULT_MAX_CONTINUATIONS,
 ) -> str:
     """
     Simple text completion using Bedrock Converse API with retry support.
@@ -47,15 +68,22 @@ def converse(
         prompt: User message/prompt
         system_prompt: Optional system prompt
         max_tokens: Maximum tokens in response (default: 2048)
-        temperature: Model temperature (default: 0.1)
+        temperature: Model temperature (default: 0.1). Pass None to omit it
+            entirely — required for models like Opus 4.8 that reject/deprecate
+            the `temperature` inference parameter.
         thinking_budget: If > 0, enables extended thinking with this token budget
         model_id: Optional model ID override
         max_retries: Maximum retry attempts for throttling (default: 5)
         raise_on_throttle: If True, raise BedrockThrottlingError after max retries
         step_name: Name of the current step for logging
+        max_continuations: When the model stops at the maxTokens ceiling, resume
+            and concatenate up to this many times so long documents aren't
+            silently truncated. Set to 0 to disable. Ignored when extended
+            thinking is enabled (multi-turn replay of thinking blocks is
+            unsupported here).
 
     Returns:
-        Model response text
+        Model response text (concatenated across any continuations)
 
     Raises:
         BedrockThrottlingError: If throttled after max retries and raise_on_throttle=True
@@ -76,13 +104,15 @@ def converse(
     messages = [{'role': 'user', 'content': [{'text': prompt}]}]
     system = [{'text': system_prompt}] if system_prompt else None
     
+    inference_config = {'maxTokens': max_tokens}
+    # Some models (e.g. Opus 4.8) reject `temperature` as deprecated. Pass
+    # temperature=None to omit it; otherwise include it as before.
+    if temperature is not None:
+        inference_config['temperature'] = temperature
     kwargs = {
         'modelId': used_model,
         'messages': messages,
-        'inferenceConfig': {
-            'maxTokens': max_tokens,
-            'temperature': temperature,
-        }
+        'inferenceConfig': inference_config,
     }
     if system:
         kwargs['system'] = system
@@ -98,15 +128,56 @@ def converse(
     
     logger.info(f"[BEDROCK] Invoking Bedrock converse API for step '{step_name}'...")
     start_time = time.time()
-    
+
+    # Continuation is incompatible with extended thinking: resuming a truncated
+    # turn requires replaying the assistant message, and thinking blocks have
+    # signing/ordering rules we don't handle here. Disable it in that case.
+    allow_continuation = max_continuations > 0 and thinking_budget <= 0
+
     try:
-        result = _invoke_with_retry(
+        result, stop_reason = _invoke_with_retry(
             client=client,
             kwargs=kwargs,
             max_retries=max_retries,
             raise_on_throttle=raise_on_throttle,
             step_name=step_name,
         )
+
+        # Auto-continue while the model is hitting the maxTokens ceiling. Each
+        # turn appends the prior (truncated) assistant text plus a resume nudge,
+        # so the model picks up exactly where it stopped. Without this, a long
+        # PRD/PR-FAQ is saved half-written (the document-cutoff bug).
+        continuations = 0
+        while allow_continuation and stop_reason == 'max_tokens' and continuations < max_continuations:
+            continuations += 1
+            logger.warning(
+                f"[BEDROCK] Step '{step_name}' hit maxTokens — auto-continuing "
+                f"({continuations}/{max_continuations}), {len(result)} chars so far"
+            )
+            cont_messages = [
+                {'role': 'user', 'content': [{'text': prompt}]},
+                {'role': 'assistant', 'content': [{'text': result}]},
+                {'role': 'user', 'content': [{'text': _CONTINUE_PROMPT}]},
+            ]
+            cont_kwargs = {**kwargs, 'messages': cont_messages}
+            chunk, stop_reason = _invoke_with_retry(
+                client=client,
+                kwargs=cont_kwargs,
+                max_retries=max_retries,
+                raise_on_throttle=raise_on_throttle,
+                step_name=f"{step_name}_cont{continuations}",
+            )
+            if not chunk:
+                logger.warning(f"[BEDROCK] Step '{step_name}' continuation returned no text; stopping")
+                break
+            result += chunk
+
+        if stop_reason == 'max_tokens':
+            logger.warning(
+                f"[BEDROCK] Step '{step_name}' still truncated after {continuations} "
+                f"continuation(s); output may be incomplete ({len(result)} chars)"
+            )
+
         elapsed = time.time() - start_time
         logger.info(f"[BEDROCK] Step '{step_name}' completed in {elapsed:.2f}s, response length: {len(result)} chars")
         return result
@@ -224,9 +295,10 @@ def _invoke_with_retry(
     max_retries: int = DEFAULT_MAX_RETRIES,
     raise_on_throttle: bool = True,
     step_name: str = "unknown",
-) -> str:
+) -> tuple[str, str]:
     """
-    Invoke Bedrock converse with exponential backoff retry, returning extracted text.
+    Invoke Bedrock converse with exponential backoff retry, returning extracted
+    text and the stop reason.
 
     Args:
         client: Bedrock runtime client
@@ -236,7 +308,8 @@ def _invoke_with_retry(
         step_name: Name of the current step for logging
 
     Returns:
-        Model response text
+        (text, stop_reason). stop_reason is the raw Bedrock value
+        (e.g. 'end_turn', 'max_tokens') or '' when no response was returned.
 
     Raises:
         BedrockThrottlingError: If throttled after max retries and raise_on_throttle=True
@@ -250,11 +323,12 @@ def _invoke_with_retry(
         step_name=step_name,
     )
     if not response:
-        return ""
+        return "", ""
     content = response.get('output', {}).get('message', {}).get('content', [])
     result = _extract_text(content)
-    logger.info(f"[BEDROCK] Extracted {len(result)} chars from response for step '{step_name}'")
-    return result
+    stop_reason = response.get('stopReason', '')
+    logger.info(f"[BEDROCK] Extracted {len(result)} chars from response for step '{step_name}' (stop_reason={stop_reason})")
+    return result, stop_reason
 
 
 def _calculate_backoff(attempt: int) -> float:

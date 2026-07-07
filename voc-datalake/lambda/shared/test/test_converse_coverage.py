@@ -34,7 +34,7 @@ class TestRetryExhaustion:
             'Converse'
         )
 
-        result = _invoke_with_retry(
+        result, stop_reason = _invoke_with_retry(
             client=mock_client,
             kwargs={'modelId': 'test', 'messages': []},
             max_retries=2,
@@ -43,6 +43,7 @@ class TestRetryExhaustion:
         )
 
         assert result == ""
+        assert stop_reason == ""
         assert mock_client.converse.call_count == 2
 
     @patch('shared.converse.time.sleep')
