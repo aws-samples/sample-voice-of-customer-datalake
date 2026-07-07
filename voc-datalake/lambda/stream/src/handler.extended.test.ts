@@ -213,8 +213,8 @@ describe('handler - extended', () => {
 
       await (handler as Function)(event, stream);
 
-      // Should stop at MAX_TOOL_LOOPS (5) and send a warning
-      expect(mockConverseStream).toHaveBeenCalledTimes(5);
+      // Should stop at MAX_TOOL_LOOPS (15) and send a warning
+      expect(mockConverseStream).toHaveBeenCalledTimes(15);
       const maxLoopCall = mockSendSSE.mock.calls.find(
         (c: unknown[]) => {
           const payload = c[1] as Record<string, unknown>;

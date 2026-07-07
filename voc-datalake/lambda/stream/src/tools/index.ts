@@ -79,7 +79,13 @@ export function getSearchFeedbackTool(): Tool {
         'Search and retrieve customer feedback/reviews from the database. ' +
         'Use this tool ONLY when the user is asking about customer feedback, reviews, complaints, or opinions. ' +
         'Do NOT use for greetings, general questions, or non-feedback topics. ' +
-        'You can also look up a specific review by its ID (32-character hex string).',
+        'You can also look up a specific review by its ID (32-character hex string).\n\n' +
+        'IMPORTANT for broad questions: when the user asks to summarize, count, find trends, ' +
+        'or surface "the most urgent / top / biggest issues" across feedback, set mode="aggregate" — ' +
+        'it returns distribution stats over the ENTIRE match set in ONE call (no need to page). ' +
+        'To rank by urgency, also use filters/sorting rather than free-text: pass urgency="high" and/or ' +
+        'sort_by="urgency" instead of putting words like "urgent" in the query (query is a literal ' +
+        'substring match against review text and will NOT find items by urgency level).',
       inputSchema: {
         json: {
           type: 'object',
@@ -109,7 +115,17 @@ export function getSearchFeedbackTool(): Tool {
             },
             limit: {
               type: 'integer',
-              description: 'Maximum number of feedback items to return (default: 15, max: 30).',
+              description: 'Maximum number of feedback items to return (default: 15, max: 30). In aggregate mode this only caps the example items shown alongside the stats.',
+            },
+            mode: {
+              type: 'string',
+              enum: ['list', 'aggregate'],
+              description: 'list (default) returns individual feedback items. aggregate returns distribution stats (counts by urgency/sentiment/category/source + average rating) over ALL matches plus top examples — use for "summarize", "trends", "top/most urgent issues", or any whole-dataset question.',
+            },
+            sort_by: {
+              type: 'string',
+              enum: ['recent', 'urgency'],
+              description: 'recent (default) or urgency (high→medium→low, most negative first). Use urgency when the user wants the most urgent/critical items.',
             },
           },
           required: [],

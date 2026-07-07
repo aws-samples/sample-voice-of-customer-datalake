@@ -37,7 +37,13 @@ const FEEDBACK_TABLE = process.env.FEEDBACK_TABLE ?? '';
 const AGGREGATES_TABLE = process.env.AGGREGATES_TABLE ?? '';
 const PROJECTS_TABLE = process.env.PROJECTS_TABLE ?? '';
 
-const MAX_TOOL_LOOPS = 5;
+// Max agentic tool-call rounds before we stop and ask the user to narrow the
+// question. Each round = 1 Bedrock call + 1 tool execution (~6-15s observed),
+// so the real ceiling is the Lambda's 300s timeout, not this number. 15 rounds
+// (~225s worst case) leaves headroom while letting multi-step questions
+// converge. Broad questions ("summarize all" / "most urgent") are answered in a
+// single round via search_feedback mode="aggregate", so they shouldn't loop.
+const MAX_TOOL_LOOPS = 15;
 
 // Roundtable tuning: one turn per persona, generous budget for a full perspective.
 const ROUNDTABLE_MAX_TOKENS = 4000;
@@ -150,6 +156,9 @@ async function runConversationLoop(
   projectId?: string,
 ): Promise<void> {
   if (loopCount >= MAX_TOOL_LOOPS) {
+    // Log so CloudWatch shows WHY the loop exhausted (which tools kept getting
+    // called). The user-facing SSE message alone leaves no server-side trace.
+    console.warn(`Tool loop hit MAX_TOOL_LOOPS=${MAX_TOOL_LOOPS}; stopping.`);
     sendSSE(stream, {
       type: 'text',
       content: '\n\n_Reached maximum tool iterations. Please try a more specific question._',
@@ -172,6 +181,13 @@ async function runConversationLoop(
   }
 
   if (state.stopReason !== 'tool_use' || state.toolUseBlocks.length === 0) return;
+
+  // Trace which tools were requested this round — makes loop exhaustion (and
+  // repeated identical searches) diagnosable from CloudWatch.
+  console.log(
+    `Tool round ${loopCount + 1}/${MAX_TOOL_LOOPS}:`,
+    JSON.stringify(state.toolUseBlocks.map((tb) => ({ name: tb.name, input: tb.input }))),
+  );
 
   messages.push({ role: 'assistant', content: buildAssistantContent(state) });
 
