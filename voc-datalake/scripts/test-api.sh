@@ -130,6 +130,20 @@ tget "/scrapers/templates"
 echo -e "\n${BLUE}Projects API${NC}"
 tget "/projects"
 
+# PR #131: document-generation (Step Functions) + product-context workspace.
+# Project-scoped read endpoints, exercised only if a project exists. GET-only on
+# purpose — POST routes here (documents, prfaq-autofill, suggest-*, product-report)
+# trigger Bedrock generation and/or create documents, so they're left out of the
+# smoke test.
+echo -e "\n${BLUE}Document Gen & Product Context (PR #131)${NC}"
+PROJECT_ID=$(curl -s -H "Authorization: $AUTH" "$API/projects" | python3 -c "import sys,json; d=json.load(sys.stdin); items=d.get('items') or d.get('projects') or (d if isinstance(d,list) else []); print((items[0].get('project_id') or items[0].get('id','')) if items else '')" 2>/dev/null)
+if [ -n "$PROJECT_ID" ]; then
+  tget "/projects/$PROJECT_ID/product-context"
+  tget "/projects/$PROJECT_ID/product-docs"
+else
+  echo "  ⚠️  No projects found, skipping product-context/document endpoints"
+fi
+
 echo -e "\n${BLUE}Users API (Admin)${NC}"
 tget "/users"
 

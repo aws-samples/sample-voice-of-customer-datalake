@@ -749,32 +749,6 @@ export class VocApiStack extends cdk.Stack {
       logGroup: this.createLogGroup('DataExplorerApiLogs', uniqueName('voc-data-explorer-api')),
     });
 
-    // Chrome Extension API
-    const extensionRole = this.createLambdaRole('ExtensionLambdaRole');
-    rawDataBucket.grantReadWrite(extensionRole);
-    kmsKey.grantEncryptDecrypt(extensionRole);
-    extensionRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
-
-    const extensionLambda = new lambda.Function(this, 'ExtensionApi', {
-      functionName: uniqueName('voc-extension-api'),
-      runtime: lambda.Runtime.PYTHON_3_14,
-      architecture: lambda.Architecture.ARM_64,
-      handler: 'extension_handler.lambda_handler',
-      code: createApiLambdaCode('extension_handler.py'),
-      role: extensionRole,
-      timeout: cdk.Duration.seconds(30),
-      memorySize: 256,
-      environment: {
-        RAW_DATA_BUCKET: rawDataBucket.bucketName,
-        PROCESSING_QUEUE_URL: processingQueueUrl,
-        ALLOWED_ORIGIN: allowedOrigin,
-        POWERTOOLS_SERVICE_NAME: 'voc-extension-api',
-        LOG_LEVEL: 'INFO',
-      },
-      layers: [apiLayer],
-      logGroup: this.createLogGroup('ExtensionApiLogs', uniqueName('voc-extension-api')),
-    });
-
     // ============================================
     // WEBHOOKS
     // ============================================
@@ -864,7 +838,6 @@ export class VocApiStack extends cdk.Stack {
     const logsIntegration = new apigateway.LambdaIntegration(logsLambda, { proxy: true });
     const s3ImportIntegration = new apigateway.LambdaIntegration(s3ImportLambda, { proxy: true });
     const dataExplorerIntegration = new apigateway.LambdaIntegration(dataExplorerLambda, { proxy: true });
-    const extensionIntegration = new apigateway.LambdaIntegration(extensionLambda, { proxy: true });
 
     // ============================================
     // API ROUTES
@@ -980,9 +953,6 @@ export class VocApiStack extends cdk.Stack {
     projectsResource.addMethod('POST', projectsIntegration, authMethodOptions);
     projectsResource.addProxy({ defaultIntegration: projectsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /extension/* — proxy to extension Lambda
-    const extensionResource = this.api.root.addResource('extension');
-    extensionResource.addProxy({ defaultIntegration: extensionIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /webhooks/{pluginId}
     const webhooksResource = this.api.root.addResource('webhooks');

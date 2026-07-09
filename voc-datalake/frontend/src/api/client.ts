@@ -56,7 +56,7 @@ export type {
   ApiToken,
   CreateApiTokenResponse,
 } from './types'
-export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation } from './types'
+export type { ProjectJob, ProjectDocument, ProjectDetail } from './types'
 
 // Re-export shared time-range helper so existing consumers can keep importing from `./client`.
 export { getDaysFromRange, ALL_TIME_DAYS }
