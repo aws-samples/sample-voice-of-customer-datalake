@@ -190,7 +190,7 @@ describe('Plugin Loader', () => {
       expect(() => loadPlugins('/test/plugins')).toThrow();
     });
 
-    it('rejects timeout exceeding 300 seconds', async () => {
+    it('rejects timeout exceeding 900 seconds', async () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readdirSync.mockReturnValue(mockDirents('slow_plugin'));
 
@@ -201,7 +201,7 @@ describe('Plugin Loader', () => {
         infrastructure: {
           ingestor: {
             enabled: true,
-            timeout: 600,  // Exceeds 300
+            timeout: 901,  // Exceeds 900 (Lambda hard max)
           },
         },
       }));
