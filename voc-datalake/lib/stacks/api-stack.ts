@@ -11,6 +11,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
+import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
@@ -132,6 +133,7 @@ export class VocApiStack extends cdk.Stack {
             `cp /asset-input/api/${handlerFileName} /asset-output/ && ` +
             `cp -r /asset-input/shared /asset-output/ && ` +
             `if [ -f /asset-input/api/projects.py ]; then cp /asset-input/api/projects.py /asset-output/; fi && ` +
+            `if [ -f /asset-input/api/product_context.py ]; then cp /asset-input/api/product_context.py /asset-output/; fi && ` +
             `if [ -d /asset-input/api/prompts ]; then cp -r /asset-input/api/prompts /asset-output/; fi && ` +
             `if [ -d /asset-input/api/static ]; then cp -r /asset-input/api/static /asset-output/; fi`
           ],
@@ -147,8 +149,8 @@ export class VocApiStack extends cdk.Stack {
     // Metrics API
     const metricsRole = this.createLambdaRole('MetricsLambdaRole');
     feedbackTable.grantReadData(metricsRole);
-    aggregatesTable.grantReadData(metricsRole);
-    kmsKey.grantDecrypt(metricsRole);
+    aggregatesTable.grantReadWriteData(metricsRole);
+    kmsKey.grantEncryptDecrypt(metricsRole);
 
     const metricsLambda = new lambda.Function(this, 'MetricsApi', {
       functionName: uniqueName('voc-metrics-api'),
@@ -235,7 +237,10 @@ export class VocApiStack extends cdk.Stack {
       handler: 'scrapers_handler.lambda_handler',
       code: createApiLambdaCode('scrapers_handler.py'),
       role: scrapersRole,
-      timeout: cdk.Duration.seconds(60),
+      // 120s headroom for large CSV uploads (batched SQS sends). The API
+      // Gateway 29s integration limit is the real ceiling on sync uploads;
+      // this just keeps the Lambda from dying before that.
+      timeout: cdk.Duration.seconds(120),
       memorySize: 512,
       environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, WEBSCRAPER_FUNCTION_NAME: uniqueName('voc-ingestor-webscraper'), ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
@@ -423,9 +428,10 @@ export class VocApiStack extends cdk.Stack {
         'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
     }));
-    projectsRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-projects-api-*`] }));
-    NagSuppressions.addResourceSuppressions(projectsRole, pluginSystemSuppressions, true);
+
     rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
+    // Product context: projects API needs to issue presigned PUT URLs, read extracted text, delete docs.
+    rawDataBucket.grantReadWrite(projectsRole, 'projects/*/product_docs/*');
 
     const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
       functionName: uniqueName('voc-projects-api'),
@@ -434,8 +440,8 @@ export class VocApiStack extends cdk.Stack {
       handler: 'projects_handler.lambda_handler',
       code: createApiLambdaCode('projects_handler.py'),
       role: projectsRole,
-      timeout: cdk.Duration.minutes(15),
-      memorySize: 1024,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -520,8 +526,15 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(documentGeneratorRole);
     documentGeneratorRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: claudeModelResources,
+      resources: [
+        ...claudeModelResources,
+        // Opus 4.8 powers the HTML prototype builder (_generate_prototype).
+        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-opus-4-8`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-8',
+      ],
     }));
+    // Product context: read extracted product-doc text when generating PRD/PR-FAQ.
+    rawDataBucket.grantRead(documentGeneratorRole, 'projects/*/product_docs/extracted/*');
 
     const documentGeneratorLambda = new lambda.Function(this, 'DocumentGeneratorJob', {
       functionName: uniqueName('voc-job-document-generator'),
@@ -536,6 +549,7 @@ export class VocApiStack extends cdk.Stack {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
+        RAW_DATA_BUCKET: rawDataBucket.bucketName,
         POWERTOOLS_SERVICE_NAME: 'voc-job-document-generator',
         LOG_LEVEL: 'INFO',
       },
@@ -615,6 +629,16 @@ export class VocApiStack extends cdk.Stack {
     documentGeneratorLambda.grantInvoke(projectsRole);
     documentMergerLambda.grantInvoke(projectsRole);
     personaImporterLambda.grantInvoke(projectsRole);
+
+    // PRD/PR-FAQ generation runs as a Step Functions workflow: each LLM step is
+    // its own Lambda invocation, so a long CJK document (whose steps auto-continue
+    // past maxTokens and can run minutes each) never overruns the single 15-min
+    // Lambda budget. Intermediate step text is stashed in S3 (claim-check) under
+    // scratch/document_jobs/* — SF state stays well under its 256KB ceiling.
+    rawDataBucket.grantReadWrite(documentGeneratorRole, 'scratch/document_jobs/*');
+    const documentStateMachine = this.createDocumentStateMachine(documentGeneratorLambda);
+    documentStateMachine.grantStartExecution(projectsRole);
+    projectsLambda.addEnvironment('DOCUMENT_STATE_MACHINE_ARN', documentStateMachine.stateMachineArn);
 
     // Chat Stream (Node.js — API Gateway response streaming, replaces Python Function URL)
     const chatStreamLambda = new NodejsFunction(this, 'ChatStreamApi', {
@@ -725,6 +749,32 @@ export class VocApiStack extends cdk.Stack {
       logGroup: this.createLogGroup('DataExplorerApiLogs', uniqueName('voc-data-explorer-api')),
     });
 
+    // Chrome Extension API
+    const extensionRole = this.createLambdaRole('ExtensionLambdaRole');
+    rawDataBucket.grantReadWrite(extensionRole);
+    kmsKey.grantEncryptDecrypt(extensionRole);
+    extensionRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
+
+    const extensionLambda = new lambda.Function(this, 'ExtensionApi', {
+      functionName: uniqueName('voc-extension-api'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'extension_handler.lambda_handler',
+      code: createApiLambdaCode('extension_handler.py'),
+      role: extensionRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        RAW_DATA_BUCKET: rawDataBucket.bucketName,
+        PROCESSING_QUEUE_URL: processingQueueUrl,
+        ALLOWED_ORIGIN: allowedOrigin,
+        POWERTOOLS_SERVICE_NAME: 'voc-extension-api',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('ExtensionApiLogs', uniqueName('voc-extension-api')),
+    });
+
     // ============================================
     // WEBHOOKS
     // ============================================
@@ -759,7 +809,7 @@ export class VocApiStack extends cdk.Stack {
 
     this.api = new apigateway.RestApi(this, 'VocAnalyticsApi', {
       restApiName: uniqueName('voc-analytics-api'),
-      description: 'Voice of the Customer Analytics API',
+      description: 'Voice of the Customer Analytics API v2',
       deployOptions: {
         stageName: 'v1',
         throttlingRateLimit: 100,
@@ -814,6 +864,7 @@ export class VocApiStack extends cdk.Stack {
     const logsIntegration = new apigateway.LambdaIntegration(logsLambda, { proxy: true });
     const s3ImportIntegration = new apigateway.LambdaIntegration(s3ImportLambda, { proxy: true });
     const dataExplorerIntegration = new apigateway.LambdaIntegration(dataExplorerLambda, { proxy: true });
+    const extensionIntegration = new apigateway.LambdaIntegration(extensionLambda, { proxy: true });
 
     // ============================================
     // API ROUTES
@@ -827,14 +878,17 @@ export class VocApiStack extends cdk.Stack {
     feedbackIdResource.addResource('similar').addMethod('GET', metricsIntegration, authMethodOptions);
     feedbackResource.addResource('urgent').addMethod('GET', metricsIntegration, authMethodOptions);
     feedbackResource.addResource('entities').addMethod('GET', metricsIntegration, authMethodOptions);
+    feedbackResource.addResource('search').addMethod('GET', metricsIntegration, authMethodOptions);
+    const problemsResource = feedbackResource.addResource('problems');
+    problemsResource.addResource('resolved').addMethod('GET', metricsIntegration, authMethodOptions);
+    const problemIdResource = problemsResource.addResource('{problemId}');
+    const problemResolveResource = problemIdResource.addResource('resolve');
+    problemResolveResource.addMethod('PUT', metricsIntegration, authMethodOptions);
+    problemResolveResource.addMethod('DELETE', metricsIntegration, authMethodOptions);
 
-    // /metrics/*
+    // /metrics/* — proxy to metrics Lambda
     const metricsResource = this.api.root.addResource('metrics');
-    metricsResource.addResource('summary').addMethod('GET', metricsIntegration, authMethodOptions);
-    metricsResource.addResource('sentiment').addMethod('GET', metricsIntegration, authMethodOptions);
-    metricsResource.addResource('categories').addMethod('GET', metricsIntegration, authMethodOptions);
-    metricsResource.addResource('sources').addMethod('GET', metricsIntegration, authMethodOptions);
-    metricsResource.addResource('personas').addMethod('GET', metricsIntegration, authMethodOptions);
+    metricsResource.addProxy({ defaultIntegration: metricsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /chat/*
     const chatResource = this.api.root.addResource('chat');
@@ -886,46 +940,21 @@ export class VocApiStack extends cdk.Stack {
     manualResource.addResource('json-upload').addMethod('POST', manualImportIntegration, authMethodOptions);
     scrapersResource.addProxy({ defaultIntegration: scrapersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /s3-import/*
+    // /s3-import/* — proxy to s3 import Lambda
     const s3ImportResource = this.api.root.addResource('s3-import');
-    s3ImportResource.addResource('files').addMethod('GET', s3ImportIntegration, authMethodOptions);
-    const s3SourcesResource = s3ImportResource.addResource('sources');
-    s3SourcesResource.addMethod('GET', s3ImportIntegration, authMethodOptions);
-    s3SourcesResource.addMethod('POST', s3ImportIntegration, authMethodOptions);
-    s3ImportResource.addResource('upload-url').addMethod('POST', s3ImportIntegration, authMethodOptions);
-    s3ImportResource.addResource('file').addResource('{key}').addMethod('DELETE', s3ImportIntegration, authMethodOptions);
+    s3ImportResource.addProxy({ defaultIntegration: s3ImportIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /data-explorer/*
+    // /data-explorer/* — proxy to data explorer Lambda
     const dataExplorerResource = this.api.root.addResource('data-explorer');
-    const dataExplorerS3Resource = dataExplorerResource.addResource('s3');
-    dataExplorerS3Resource.addMethod('GET', dataExplorerIntegration, authMethodOptions);
-    dataExplorerS3Resource.addMethod('PUT', dataExplorerIntegration, authMethodOptions);
-    dataExplorerS3Resource.addMethod('DELETE', dataExplorerIntegration, authMethodOptions);
-    dataExplorerS3Resource.addResource('preview').addMethod('GET', dataExplorerIntegration, authMethodOptions);
-    const dataExplorerFeedbackResource = dataExplorerResource.addResource('feedback');
-    dataExplorerFeedbackResource.addMethod('PUT', dataExplorerIntegration, authMethodOptions);
-    dataExplorerFeedbackResource.addMethod('DELETE', dataExplorerIntegration, authMethodOptions);
-    dataExplorerResource.addResource('stats').addMethod('GET', dataExplorerIntegration, authMethodOptions);
-    dataExplorerResource.addResource('buckets').addMethod('GET', dataExplorerIntegration, authMethodOptions);
+    dataExplorerResource.addProxy({ defaultIntegration: dataExplorerIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /settings/*
+    // /settings/* — proxy to settings Lambda
     const settingsResource = this.api.root.addResource('settings');
-    const brandResource = settingsResource.addResource('brand');
-    brandResource.addMethod('GET', settingsIntegration, authMethodOptions);
-    brandResource.addMethod('PUT', settingsIntegration, authMethodOptions);
-    const settingsCategoriesResource = settingsResource.addResource('categories');
-    settingsCategoriesResource.addMethod('GET', settingsIntegration, authMethodOptions);
-    settingsCategoriesResource.addMethod('PUT', settingsIntegration, authMethodOptions);
-    settingsCategoriesResource.addResource('generate').addMethod('POST', settingsIntegration, authMethodOptions);
+    settingsResource.addProxy({ defaultIntegration: settingsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /logs/*
+    // /logs/* — proxy to logs Lambda
     const logsResource = this.api.root.addResource('logs');
-    const logsValidationResource = logsResource.addResource('validation');
-    logsValidationResource.addMethod('GET', logsIntegration, authMethodOptions);
-    logsValidationResource.addResource('{source}').addMethod('DELETE', logsIntegration, authMethodOptions);
-    logsResource.addResource('processing').addMethod('GET', logsIntegration, authMethodOptions);
-    logsResource.addResource('summary').addMethod('GET', logsIntegration, authMethodOptions);
-    logsResource.addResource('scraper').addResource('{scraper_id}').addMethod('GET', logsIntegration, authMethodOptions);
+    logsResource.addProxy({ defaultIntegration: logsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /users/*
     const usersResource = this.api.root.addResource('users');
@@ -933,19 +962,10 @@ export class VocApiStack extends cdk.Stack {
     usersResource.addMethod('POST', usersIntegration, authMethodOptions);
     usersResource.addProxy({ defaultIntegration: usersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /feedback-form/* (legacy single form - public endpoints)
+    // /feedback-form/* (legacy single form - public endpoints, proxy to feedback form Lambda)
     const feedbackFormResource = this.api.root.addResource('feedback-form');
-    const feedbackFormConfigResource = feedbackFormResource.addResource('config');
-    const feedbackFormConfigGet = feedbackFormConfigResource.addMethod('GET', feedbackFormIntegration);
-    feedbackFormConfigResource.addMethod('PUT', feedbackFormIntegration, authMethodOptions);
-    const feedbackFormSubmit = feedbackFormResource.addResource('submit').addMethod('POST', feedbackFormIntegration);
-    const feedbackFormEmbed = feedbackFormResource.addResource('embed').addMethod('GET', feedbackFormIntegration);
-    const feedbackFormIframe = feedbackFormResource.addResource('iframe').addMethod('GET', feedbackFormIntegration);
-
-    NagSuppressions.addResourceSuppressions(feedbackFormConfigGet, publicFeedbackEndpointSuppressions);
-    NagSuppressions.addResourceSuppressions(feedbackFormSubmit, publicFeedbackEndpointSuppressions);
-    NagSuppressions.addResourceSuppressions(feedbackFormEmbed, publicFeedbackEndpointSuppressions);
-    NagSuppressions.addResourceSuppressions(feedbackFormIframe, publicFeedbackEndpointSuppressions);
+    const feedbackFormProxy = feedbackFormResource.addProxy({ defaultIntegration: feedbackFormIntegration, anyMethod: true });
+    NagSuppressions.addResourceSuppressions(feedbackFormProxy, publicFeedbackEndpointSuppressions, true);
 
     // /feedback-forms/* (multiple forms)
     const feedbackFormsResource = this.api.root.addResource('feedback-forms');
@@ -959,6 +979,10 @@ export class VocApiStack extends cdk.Stack {
     projectsResource.addMethod('GET', projectsIntegration, authMethodOptions);
     projectsResource.addMethod('POST', projectsIntegration, authMethodOptions);
     projectsResource.addProxy({ defaultIntegration: projectsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+
+    // /extension/* — proxy to extension Lambda
+    const extensionResource = this.api.root.addResource('extension');
+    extensionResource.addProxy({ defaultIntegration: extensionIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /webhooks/{pluginId}
     const webhooksResource = this.api.root.addResource('webhooks');
@@ -1139,6 +1163,130 @@ exports.handler = async (event) => {
       logGroupName: `/aws/lambda/${name}`,
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+  }
+
+  /**
+   * PRD/PR-FAQ generation state machine. Splits the multi-step LLM chain across
+   * Lambda invocations so each step gets its own fresh 15-minute budget — long
+   * CJK documents (whose steps auto-continue past maxTokens over several Bedrock
+   * calls) no longer overrun a single Lambda. Mirrors the research workflow.
+   *
+   * Flow: gather → step0 → step1 → step2 → [step3 if PR-FAQ] → save
+   * PRD has 3 chain steps, PR-FAQ has 4 — a Choice on num_steps runs the 4th
+   * step only for PR-FAQ. Each step's index drives which chain step runs; the
+   * step handler reads/writes intermediate text in S3 (claim-check), so SF state
+   * carries only scalars. Every LLM step has its own retry on throttling.
+   */
+  private createDocumentStateMachine(documentStepLambda: lambda.Function): sfn.StateMachine {
+    const llmRetry = (t: tasks.LambdaInvoke) => {
+      t.addRetry({
+        errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'],
+        interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2,
+      });
+      return t;
+    };
+
+    // gather: build chain steps + context, stash to S3. Returns scalars
+    // (doc_type, title, feature_idea, num_steps) used by later states.
+    const gather = new tasks.LambdaInvoke(this, 'DocGather', {
+      lambdaFunction: documentStepLambda,
+      payload: sfn.TaskInput.fromObject({
+        step: 'gather',
+        'job_id.$': '$.job_id',
+        'project_id.$': '$.project_id',
+        'doc_config.$': '$.doc_config',
+      }),
+      resultPath: '$.gathered',
+      resultSelector: {
+        'doc_type.$': '$.Payload.doc_type',
+        'title.$': '$.Payload.title',
+        'feature_idea.$': '$.Payload.feature_idea',
+        'num_steps.$': '$.Payload.num_steps',
+      },
+    });
+
+    // One run_step state per fixed index. converse() auto-continues internally.
+    const runStep = (index: number) => {
+      const t = new tasks.LambdaInvoke(this, `DocStep${index}`, {
+        lambdaFunction: documentStepLambda,
+        payload: sfn.TaskInput.fromObject({
+          step: 'run_step',
+          index,
+          'job_id.$': '$.job_id',
+          'project_id.$': '$.project_id',
+        }),
+        resultPath: sfn.JsonPath.DISCARD, // output lives in S3; nothing to thread
+      });
+      return llmRetry(t);
+    };
+
+    const save = new tasks.LambdaInvoke(this, 'DocSave', {
+      lambdaFunction: documentStepLambda,
+      payload: sfn.TaskInput.fromObject({
+        step: 'save',
+        'job_id.$': '$.job_id',
+        'project_id.$': '$.project_id',
+        'doc_type.$': '$.gathered.doc_type',
+        'title.$': '$.gathered.title',
+        'feature_idea.$': '$.gathered.feature_idea',
+        'num_steps.$': '$.gathered.num_steps',
+      }),
+      resultPath: '$.save_result',
+    });
+    save.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'], interval: cdk.Duration.seconds(2), maxAttempts: 3, backoffRate: 2 });
+
+    const handleError = new tasks.LambdaInvoke(this, 'DocHandleError', {
+      lambdaFunction: documentStepLambda,
+      payload: sfn.TaskInput.fromObject({
+        step: 'error',
+        'job_id.$': '$.job_id',
+        'project_id.$': '$.project_id',
+        'error.$': '$.error',
+      }),
+    });
+
+    const success = new sfn.Succeed(this, 'DocComplete');
+    const fail = new sfn.Fail(this, 'DocFailed', { cause: 'Document job failed', error: 'DocumentError' });
+    handleError.next(fail);
+    // addCatch mutates the state's Catch list, so call it exactly once per state.
+    const addCatch = (s: tasks.LambdaInvoke) => s.addCatch(handleError, { resultPath: '$.error' });
+
+    // Attach the error catch to every state ONCE, up front.
+    addCatch(gather);
+    const s0 = addCatch(runStep(0));
+    const s1 = addCatch(runStep(1));
+    const s2 = addCatch(runStep(2));
+    const s3 = addCatch(runStep(3));
+    addCatch(save);
+    save.next(success);
+
+    // PR-FAQ has a 4th chain step; PRD stops at 3. Branch on num_steps.
+    // Both branches converge on the same (already-catch-wired) save state.
+    const maybeStep3 = new sfn.Choice(this, 'NeedsFourthStep')
+      .when(sfn.Condition.numberGreaterThan('$.gathered.num_steps', 3),
+            s3.next(save))
+      .otherwise(save);
+
+    const definition = gather
+      .next(s0)
+      .next(s1)
+      .next(s2)
+      .next(maybeStep3);
+
+    return new sfn.StateMachine(this, 'DocumentStateMachine', {
+      stateMachineName: uniqueName('voc-document-workflow'),
+      definitionBody: sfn.DefinitionBody.fromChainable(definition),
+      timeout: cdk.Duration.hours(2),
+      tracingEnabled: true,
+      logs: {
+        destination: new logs.LogGroup(this, 'DocumentStateMachineLogs', {
+          logGroupName: uniqueName('/aws/stepfunctions/voc-document-workflow'),
+          retention: logs.RetentionDays.TWO_WEEKS,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
+        level: sfn.LogLevel.ALL,
+      },
     });
   }
 

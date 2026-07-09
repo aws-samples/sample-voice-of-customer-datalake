@@ -58,7 +58,29 @@
     "editDocument": "Edit document",
     "newDocument": "New Document",
     "noDocuments": "No documents",
-    "selectDocument": "Select a document"
+    "selectDocument": "Select a document",
+    "prototype": {
+      "previewLabel": "Live preview",
+      "rawLabel": "Raw output (parse failed — please regenerate)",
+      "openNewTab": "Open in new tab",
+      "downloadHtml": "Download .html",
+      "downloadJson": "Download .json",
+      "button": "Build Prototype",
+      "building": "Building…",
+      "buttonTitle": "Generate a clickable HTML prototype from this project's PRD + PR-FAQ",
+      "buttonTitleOne": "Generate a clickable HTML prototype from the available document (PRD or PR-FAQ)",
+      "needsDocs": "Create a PRD or a PR-FAQ first to enable prototype build",
+      "confirmPrdOnly": "No PR-FAQ yet — the prototype will be built from the PRD only. Continue?",
+      "confirmPrfaqOnly": "No PRD yet — the prototype will be built from the PR-FAQ only. Continue?",
+      "timeout": "Prototype build took too long. Check the Documents tab in a moment.",
+      "feedbackButton": "Revise with feedback",
+      "feedbackTitle": "Give feedback to regenerate this prototype",
+      "feedbackHeading": "Revise prototype with feedback",
+      "feedbackHint": "Describe what to change. The PRD/PR-FAQ stays in effect; the prototype is re-centered on your feedback (e.g. “show the admin’s perspective”).",
+      "feedbackPlaceholder": "e.g. Change this to the admin dashboard view — show approvals, user management, and metrics instead of the end-user screens.",
+      "feedbackSubmit": "Regenerate",
+      "feedbackBuilding": "Revising…"
+    }
   },
   "importPersona": {
     "aiImportDesc": "Claude will extract persona information from your {{type}} and create a structured persona with an AI-generated avatar.",
@@ -105,6 +127,8 @@
       "generatePersonas": "Persona Generation",
       "generatePrd": "PRD Generation",
       "generatePrfaq": "PR-FAQ Generation",
+      "generateProductReport": "Product Report Generation",
+      "buildPrototype": "Prototype Build",
       "importPersona": "Persona Import",
       "mergeDocuments": "Document Merge",
       "research": "Research"
@@ -174,11 +198,81 @@
     "generatePrdPrfaq": "Generate PRD / PR-FAQ",
     "generatePrdPrfaqDesc": "Create product documents from feedback",
     "needAtLeast2Docs": "Need at least 2 documents",
+    "openProductTool": "Open",
+    "productDescription": "Product / Service Description",
+    "productDescriptionDesc": "Describe the current product. Feeds PRD and PR/FAQ generation.",
     "remixDocuments": "Remix Documents",
     "remixDocumentsDesc": "Combine and revise documents into new versions",
     "runResearch": "Run Research",
     "runResearchDesc": "Deep dive into feedback with filters",
     "selectAndRemix": "Select & Remix"
+  },
+  "product": {
+    "title": "Product / Service Description",
+    "subtitle": "The information here is automatically injected into PRD & PR/FAQ generation as the current product context.",
+    "modeBoth": "Both",
+    "modeChat": "Chat only",
+    "modeUpload": "Upload only",
+    "loading": "Loading product context…",
+    "fields": {
+      "productName": "Product name",
+      "oneLiner": "One-liner",
+      "currentState": "Current state",
+      "targetUsers": "Target users",
+      "problemSolved": "Problem solved",
+      "keyFeatures": "Key features",
+      "differentiators": "Differentiators",
+      "knownLimitations": "Known limitations",
+      "nonGoals": "Non-goals",
+      "successMetrics": "Success metrics",
+      "freeFormNotes": "Notes (anything else)",
+      "placeholderEmpty": "—"
+    },
+    "lifecycle": {
+      "select": "— select —",
+      "idea": "Idea",
+      "mvp": "MVP",
+      "beta": "Beta",
+      "ga": "Generally available",
+      "mature": "Mature"
+    },
+    "interview": {
+      "heading": "Interview",
+      "hint": "I'll fill the form on the left as you answer.",
+      "greeting": "Hi — I'll help you describe your product or service. Tell me what it is in a sentence or two, and we'll build out the rest from there.",
+      "placeholder": "Tell me about your product…",
+      "thinking": "Thinking…",
+      "captured": "Got it — captured. What else can you tell me about the product?",
+      "elaborate": "Could you tell me more about that?",
+      "send": "Send"
+    },
+    "upload": {
+      "heading": "Internal documents",
+      "hint": "PDF, DOCX, MD, TXT — up to 10 MB each, 20 max",
+      "dropZone": "Drop files here or click to upload",
+      "empty": "No documents yet.",
+      "loading": "Loading…",
+      "delete": "Delete document",
+      "statusReady": "Ready",
+      "statusFailed": "Failed",
+      "statusUploading": "Uploading…",
+      "statusExtracting": "Extracting…",
+      "extractedChars": "{{count}} chars extracted",
+      "errors": {
+        "unsupportedType": "Unsupported type: {{name}} ({{type}})",
+        "tooLarge": "Too large (>10 MB): {{name}}",
+        "uploadFailed": "{{name}}: {{message}}"
+      }
+    },
+    "report": {
+      "title": "Generate report",
+      "description": "Save a polished Product/Service Description document from the inputs above and uploaded files.",
+      "button": "Generate report",
+      "generating": "Generating…",
+      "successTitle": "Report saved",
+      "successMessage": "Open it in the Documents tab.",
+      "errorEmpty": "Add at least one product context field or upload an internal document before generating a report."
+    }
   },
   "personaEdit": {
     "ageRange": "Age Range",
@@ -261,14 +355,37 @@
     "documents": "Documents",
     "mcpAccess": "MCP Access",
     "overview": "Overview",
-    "personas": "Personas"
+    "personas": "Personas",
+    "product": "Product"
   },
   "wizards": {
     "amazonQuestions": "Amazon's 5 Customer Questions",
     "amazonQuestionsHint": "Answer these questions to create a customer-focused PR-FAQ. The more detail you provide, the better the output.",
+    "autofillButton": "AI draft answers",
+    "autofillLoading": "Drafting…",
+    "autofillTitle": "Pre-populate the 5 questions using personas, feedback, and product context",
+    "researchSuggest": "AI suggest",
+    "researchSuggesting": "Suggesting…",
+    "researchSuggestTitle": "Let AI suggest research questions from this project's feedback",
+    "researchSuggestPick": "Tap a suggestion to use it:",
+    "researchSuggestEmpty": "No suggestions — add or collect more feedback first.",
+    "generatePrd": "Generate PRD",
+    "generatePrdTitle": "Generate PRD",
+    "generatePrfaq": "Generate PR-FAQ",
+    "generatePrfaqTitle": "Generate PR-FAQ",
+    "prdLabel": "PRD",
+    "prfaqLabel": "PR-FAQ",
+    "workingBackwards": "Working Backwards",
     "customInstructions": "Custom Instructions (Optional)",
     "customInstructionsPlaceholder": "e.g., Focus on business travelers...",
     "documentType": "Document Type",
+    "documentTypeHint": "Select one or both — both are generated at once.",
+    "generateBoth": "Generate PRD + PR-FAQ",
+    "generateBothTitle": "Generate PRD + PR-FAQ",
+    "briefButton": "AI draft",
+    "briefLoading": "Drafting…",
+    "briefTitle": "Let AI draft the title and description from this project's feedback",
+    "briefEmpty": "No draft — add or collect more feedback first.",
     "featureDescription": "Feature Description",
     "featureDescriptionPlaceholder": "Describe the feature...",
     "featureTitle": "Feature/Product Title",
@@ -310,7 +427,6 @@
     "submitGenerateDoc": "Generate {{type}}",
     "submitGeneratePersonas": "Generate Personas",
     "submitRemixDocuments": "Remix Documents",
-    "submitRunResearch": "Run Research",
-    "workingBackwards": "Working Backwards"
+    "submitRunResearch": "Run Research"
   }
 }

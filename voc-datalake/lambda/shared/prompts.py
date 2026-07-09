@@ -186,12 +186,14 @@ def get_prd_generation_steps(
     personas_context: str,
     feedback_context: str,
     response_language: str | None = None,
+    product_context: str = "(No product context provided.)",
 ) -> list[dict]:
     """Build PRD generation chain steps."""
     context = {
         'feature_idea': feature_idea,
         'personas_context': personas_context,
         'feedback_context': feedback_context,
+        'product_context': product_context,
         'previous': '{previous}',
         'response_language': response_language,
     }
@@ -208,16 +210,26 @@ def get_prfaq_generation_steps(
     personas_context: str,
     feedback_context: str,
     response_language: str | None = None,
+    product_context: str = "(No product context provided.)",
 ) -> list[dict]:
     """Build PR/FAQ generation chain steps."""
+    # Pin the launch date roughly three months out from today. Without this,
+    # the model defaults to its training-cutoff date and produces dates in the
+    # past — confusing for "Working Backwards" docs, which are supposed to
+    # describe a near-future launch.
+    from datetime import datetime, timedelta, timezone
+    launch_date = (datetime.now(timezone.utc) + timedelta(days=90)).strftime('%Y-%m-%d')
+
     context = {
         'feature_idea': feature_idea,
         'personas_context': personas_context,
         'feedback_context': feedback_context,
+        'product_context': product_context,
+        'launch_date': launch_date,
         'previous': '{previous}',
         'response_language': response_language,
     }
-    
+
     return build_chain_steps(
         'prfaq-generation.json',
         ['customer_thinking', 'press_release', 'customer_faq', 'internal_faq'],

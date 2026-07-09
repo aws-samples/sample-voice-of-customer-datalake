@@ -2,7 +2,7 @@
  * OverviewTab - Project overview with action cards and jobs
  */
 import {
-  Users, FileText, Search, Sparkles, Shuffle,
+  Users, FileText, Search, Sparkles, Shuffle, Package,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import KiroExportSettings from './KiroExportSettings'
@@ -18,6 +18,7 @@ interface OverviewTabProps {
   readonly onGenerateDoc: () => void
   readonly onRunResearch: () => void
   readonly onRemixDocuments: () => void
+  readonly onOpenProductTool: () => void
   readonly onSaveKiroPrompt: (prompt: string) => void
 }
 
@@ -28,6 +29,7 @@ export default function OverviewTab({
   onGenerateDoc,
   onRunResearch,
   onRemixDocuments,
+  onOpenProductTool,
   onSaveKiroPrompt,
 }: OverviewTabProps) {
   const { t } = useTranslation('projectDetail')
@@ -36,6 +38,17 @@ export default function OverviewTab({
     <div className="space-y-6">
       {/* Action Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+        <ActionCard
+          icon={<Package size={20} className="text-indigo-600" />}
+          iconBg="bg-indigo-100"
+          title={t('overview.productDescription')}
+          description={t('overview.productDescriptionDesc')}
+          buttonColor="bg-indigo-600 hover:bg-indigo-700"
+          buttonIcon={<Package size={16} />}
+          buttonLabel={t('overview.openProductTool')}
+          configureLabel=""
+          onClick={onOpenProductTool}
+        />
         <ActionCard
           icon={<Users size={20} className="text-purple-600" />}
           iconBg="bg-purple-100"

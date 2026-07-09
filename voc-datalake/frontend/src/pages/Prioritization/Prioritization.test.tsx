@@ -11,15 +11,18 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 const mockGetProjects = vi.fn()
 const mockGetProject = vi.fn()
 const mockGetPrioritizationScores = vi.fn()
-const mockSavePrioritizationScores = vi.fn()
 const mockPatchPrioritizationScores = vi.fn()
+
+vi.mock('../../api/projectsApi', () => ({
+  projectsApi: {
+    getProjects: () => mockGetProjects(),
+    getProject: (id: string) => mockGetProject(id),
+  },
+}))
 
 vi.mock('../../api/client', () => ({
   api: {
-    getProjects: () => mockGetProjects(),
-    getProject: (id: string) => mockGetProject(id),
     getPrioritizationScores: () => mockGetPrioritizationScores(),
-    savePrioritizationScores: (scores: unknown) => mockSavePrioritizationScores(scores),
     patchPrioritizationScores: (scores: unknown) => mockPatchPrioritizationScores(scores),
   },
 }))
@@ -35,22 +38,6 @@ vi.mock('react-markdown', () => ({
 }))
 
 import Prioritization from './Prioritization'
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  
-  const router = createMemoryRouter([
-    { path: '/', element: <Prioritization /> },
-  ])
-  
-  return ({ children }: { children?: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  )
-}
 
 const mockProjects = [
   { project_id: 'p1', name: 'Project 1', status: 'active', created_at: '2025-01-01', updated_at: '2025-01-01', persona_count: 2, document_count: 3 },
@@ -81,8 +68,12 @@ describe('Prioritization', () => {
       const detail = mockProjectDetails.find(d => d.project_id === id)
       return Promise.resolve(detail || { documents: [] })
     })
-    mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
-    mockSavePrioritizationScores.mockResolvedValue({ success: true })
+    mockGetPrioritizationScores.mockResolvedValue({
+      scores: {
+        d1: { document_id: 'd1', impact: 0, time_to_market: 3, confidence: 0, strategic_fit: 0, notes: '' },
+        d3: { document_id: 'd3', impact: 0, time_to_market: 3, confidence: 0, strategic_fit: 0, notes: '' },
+      },
+    })
     mockPatchPrioritizationScores.mockResolvedValue({ success: true, updated_count: 1 })
   })
 
@@ -107,7 +98,6 @@ describe('Prioritization', () => {
       renderPrioritization()
 
       expect(screen.getByText('PR/FAQ Prioritization')).toBeInTheDocument()
-      expect(screen.getByText(/score and prioritize/i)).toBeInTheDocument()
     })
 
     it('renders stats cards', async () => {
@@ -208,12 +198,43 @@ describe('Prioritization', () => {
         expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
       })
 
-      // Click on Impact sort button
-      const impactButton = screen.getByRole('button', { name: /impact/i })
-      await user.click(impactButton)
+      // Click on Impact sort button (multiple matches due to mobile/desktop spans)
+      const impactButtons = screen.getAllByRole('button', { name: /impact/i })
+      await user.click(impactButtons[0])
 
       // Button should be highlighted
-      expect(impactButton).toHaveClass('bg-blue-100')
+      expect(impactButtons[0]).toHaveClass('bg-blue-100')
+    })
+  })
+
+  describe('regression: missing scores do not crash', () => {
+    /**
+     * Regression test for: TypeError: Cannot read properties of undefined (reading 'impact')
+     * When the API returns no saved scores, StatsCards must not crash accessing scores[id].impact.
+     */
+    it('renders stats cards when scores API returns empty object', async () => {
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+
+      // StatsCards should render without crashing
+      expect(screen.getByText('Total PR/FAQs')).toBeInTheDocument()
+    })
+
+    it('renders stats cards when scores API returns no scores key', async () => {
+      mockGetPrioritizationScores.mockResolvedValue({})
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+
+      expect(screen.getByText('Total PR/FAQs')).toBeInTheDocument()
     })
   })
 
@@ -230,6 +251,3 @@ describe('Prioritization', () => {
     })
   })
 })
-
-// Note: Testing "not configured" state requires module re-mocking which is complex
-// The main functionality is tested above

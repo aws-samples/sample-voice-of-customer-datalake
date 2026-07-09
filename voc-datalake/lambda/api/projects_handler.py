@@ -28,6 +28,18 @@ from projects import (
     add_persona_note, update_persona_note, delete_persona_note,
     regenerate_persona_avatar,
     autoseed_project,
+    autofill_prfaq_questions,
+    suggest_research_questions,
+    suggest_document_brief,
+)
+from product_context import (
+    get_context as pc_get_context,
+    update_context as pc_update_context,
+    interview_turn as pc_interview_turn,
+    list_docs as pc_list_docs,
+    create_upload_url as pc_create_upload_url,
+    delete_doc as pc_delete_doc,
+    generate_report as pc_generate_report,
 )
 
 # API resolver with standard CORS
@@ -171,6 +183,11 @@ def api_generate_personas(project_id: str):
         'days': validate_days(body.get('days'), default=30),
         'persona_count': validate_persona_count(body.get('persona_count')),
         'custom_instructions': body.get('custom_instructions', ''),
+        # Forward the user's selected language so the persona generator's Bedrock
+        # call emits Korean (or whatever locale) names + descriptions, matching
+        # the rest of the project. Without this, generated personas were always
+        # English even when Settings → Language was set to 한국어.
+        'response_language': body.get('response_language'),
     }
     job_id, _ = create_job(project_id, 'generate_personas', 'filters', filters, ttl_minutes=30*24*60)
     invoke_lambda_async(PERSONA_GENERATOR_FUNCTION, {
@@ -220,15 +237,35 @@ def api_run_research(project_id: str):
 @app.post("/projects/<project_id>/document")
 @tracer.capture_method
 def api_generate_document(project_id: str):
-    """Generate PRD or PR-FAQ document via async Lambda invocation."""
+    """Generate PRD or PR-FAQ document.
+
+    Runs as a Step Functions workflow when DOCUMENT_STATE_MACHINE_ARN is set:
+    each LLM step is its own Lambda invocation, so long CJK documents don't
+    overrun the 15-minute Lambda ceiling. Falls back to the legacy single-shot
+    async Lambda invoke when the state machine isn't configured.
+
+    `build_prototype` and `product_report` doc_types stay on the single-shot
+    Lambda path (they aren't multi-step LLM chains).
+    """
     body = app.current_event.json_body or {}
     doc_type = body.get('doc_type', 'prd')
     job_id, _ = create_job(project_id, f'generate_{doc_type}', 'doc_config', body, status='pending')
-    invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
-        'project_id': project_id,
-        'job_id': job_id,
-        'doc_config': body
-    })
+
+    state_machine_arn = os.environ.get('DOCUMENT_STATE_MACHINE_ARN', '')
+    is_chain = doc_type in ('prd', 'prfaq')
+
+    if state_machine_arn and is_chain:
+        boto3.client('stepfunctions').start_execution(
+            stateMachineArn=state_machine_arn,
+            name=job_id,
+            input=json.dumps({'job_id': job_id, 'project_id': project_id, 'doc_config': body})
+        )
+    else:
+        invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
+            'project_id': project_id,
+            'job_id': job_id,
+            'doc_config': body
+        })
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': f'{doc_type.upper()} generation started.'}
 
 
@@ -462,6 +499,122 @@ def api_delete_token(project_id: str, token_id: str):
     logger.info(f"Deleted API token {token_id} from project {project_id}")
 
     return {'success': True, 'message': f'Token {token_id} revoked'}
+
+
+# ============================================
+# Product Context Routes
+# ============================================
+
+@app.get("/projects/<project_id>/product-context")
+@tracer.capture_method
+def api_get_product_context(project_id: str):
+    return pc_get_context(project_id)
+
+
+@app.put("/projects/<project_id>/product-context")
+@tracer.capture_method
+def api_update_product_context(project_id: str):
+    return pc_update_context(project_id, app.current_event.json_body)
+
+
+@app.post("/projects/<project_id>/product-context/interview")
+@tracer.capture_method
+def api_product_context_interview(project_id: str):
+    return pc_interview_turn(project_id, app.current_event.json_body)
+
+
+@app.get("/projects/<project_id>/product-docs")
+@tracer.capture_method
+def api_list_product_docs(project_id: str):
+    return pc_list_docs(project_id)
+
+
+@app.post("/projects/<project_id>/product-docs/upload-url")
+@tracer.capture_method
+def api_create_product_doc_upload_url(project_id: str):
+    return pc_create_upload_url(project_id, app.current_event.json_body)
+
+
+@app.delete("/projects/<project_id>/product-docs/<doc_id>")
+@tracer.capture_method
+def api_delete_product_doc(project_id: str, doc_id: str):
+    return pc_delete_doc(project_id, doc_id)
+
+
+@app.post("/projects/<project_id>/prfaq-autofill")
+@tracer.capture_method
+def api_autofill_prfaq_questions(project_id: str):
+    """Synchronous: returns 5 drafted answers for the Amazon Working-Backwards questions."""
+    return autofill_prfaq_questions(project_id, app.current_event.json_body)
+
+
+@app.post("/projects/<project_id>/research/suggest-questions")
+@tracer.capture_method
+def api_suggest_research_questions(project_id: str):
+    """Synchronous: returns up to 3 AI-suggested research questions for this project."""
+    return suggest_research_questions(project_id, app.current_event.json_body or {})
+
+
+@app.post("/projects/<project_id>/documents/suggest-brief")
+@tracer.capture_method
+def api_suggest_document_brief(project_id: str):
+    """Synchronous: drafts a feature title + description for a PRD/PR-FAQ."""
+    return suggest_document_brief(project_id, app.current_event.json_body or {})
+
+
+@app.post("/projects/<project_id>/build-prototype")
+@tracer.capture_method
+def api_build_prototype(project_id: str):
+    """
+    Kick off a build-prototype job. The document-generator lambda reads the
+    latest PRD and/or PR-FAQ for this project and asks Bedrock to produce a
+    self-contained HTML React prototype, saved as a ProjectDocument of type
+    'prototype'. The frontend polls job status, then displays the HTML in an
+    iframe via srcdoc (sandboxed, no parent-page access).
+    """
+    body = app.current_event.json_body or {}
+    doc_config = {
+        'doc_type': 'build_prototype',
+        'title': body.get('title') or 'Prototype',
+        'response_language': body.get('response_language'),
+        # Optional brand targeting (e.g. "UNNI" / a domain). Blank → neutral defaults.
+        'brand': body.get('brand'),
+        # Optional feedback-driven regeneration: revise an existing prototype
+        # centered on this feedback while still honoring the PRD/PR-FAQ.
+        'feedback': body.get('feedback'),
+        'base_prototype_id': body.get('base_prototype_id'),
+    }
+    job_id, _ = create_job(project_id, 'build_prototype', 'doc_config', doc_config, status='pending')
+    invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
+        'project_id': project_id,
+        'job_id': job_id,
+        'doc_config': doc_config,
+    })
+    return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Prototype build started.'}
+
+
+@app.post("/projects/<project_id>/product-report")
+@tracer.capture_method
+def api_generate_product_report(project_id: str):
+    """
+    Start an async product-report generation job. The actual Bedrock call (which
+    can take 30+ seconds for Korean output) runs in the document-generator job
+    lambda; this endpoint returns immediately with a job_id so API Gateway's
+    29-second timeout can't trip the request.
+    """
+    body = app.current_event.json_body or {}
+    doc_config = {
+        'doc_type': 'product_report',
+        'title': body.get('title') or 'Product description report',
+        'response_language': body.get('response_language'),
+    }
+    job_id, _ = create_job(project_id, 'generate_product_report', 'doc_config', doc_config, status='pending')
+    invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
+        'project_id': project_id,
+        'job_id': job_id,
+        'doc_config': doc_config,
+    })
+    return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Product report generation started.'}
 
 
 # ============================================

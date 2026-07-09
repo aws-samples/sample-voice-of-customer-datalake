@@ -1,15 +1,20 @@
 /**
- * DocumentsTab - Documents list and detail view
+ * DocumentsTab - Documents list and detail view, plus the prototype builder.
  */
 import clsx from 'clsx'
 import { format } from 'date-fns'
 import {
-  FileText, Pencil, Trash2, Loader2,
+  FileText, Pencil, Trash2, Loader2, Wand2, AlertCircle,
 } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { projectsApi } from '../../api/projectsApi'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
+import PrototypeRenderer, {
+  parsePrototypeSpec, looksLikeHtmlDocument, HtmlPrototypeFrame,
+} from '../../components/PrototypeRenderer'
 import type {
   ProjectDocument, Project,
 } from '../../api/types'
@@ -22,6 +27,7 @@ interface DocumentsTabProps {
   readonly onEditDoc: () => void
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
+  readonly onDocumentChanged?: () => void
   readonly isDeleting: boolean
 }
 
@@ -33,6 +39,7 @@ export default function DocumentsTab({
   onEditDoc,
   onDeleteDoc,
   onCreateDoc,
+  onDocumentChanged,
   isDeleting,
 }: DocumentsTabProps) {
   const { t } = useTranslation('projectDetail')
@@ -81,9 +88,9 @@ export default function DocumentsTab({
         <div className="lg:col-span-2 bg-white rounded-xl border p-4 sm:p-6 min-h-[400px] lg:min-h-[500px] overflow-hidden">
           {selectedDoc ? (
             <div className="h-full flex flex-col">
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start justify-between mb-4 gap-2">
                 <h2 className="text-xl font-bold">{selectedDoc.title}</h2>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
                   <DocumentExportMenu document={selectedDoc} project={project} />
                   <button
                     onClick={onEditDoc}
@@ -102,12 +109,23 @@ export default function DocumentsTab({
                   </button>
                 </div>
               </div>
-              <div className="prose prose-sm max-w-none overflow-y-auto flex-1" style={{
-                overflowWrap: 'break-word',
-                wordBreak: 'break-word',
-              }}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedDoc.content}</ReactMarkdown>
-              </div>
+              {selectedDoc.document_type === 'prototype' ? (
+                <PrototypeView
+                  projectId={project.project_id}
+                  documentId={selectedDoc.document_id}
+                  html={selectedDoc.content}
+                  title={selectedDoc.title}
+                  prototypeFormat={selectedDoc.prototype_format}
+                  onDocumentChanged={onDocumentChanged}
+                />
+              ) : (
+                <div className="prose prose-sm max-w-none overflow-y-auto flex-1" style={{
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
+                }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedDoc.content}</ReactMarkdown>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex items-center justify-center h-full text-gray-400">{t('documents.selectDocument')}</div>
@@ -118,17 +136,239 @@ export default function DocumentsTab({
   )
 }
 
+// ── Prototype feedback → regenerate ──────────────────────────────────────────
+// The generated prototype is usually a user-facing view. This lets the reviewer
+// give feedback (e.g. "show the admin's perspective") and get a revised
+// prototype that still honors the PRD/PR-FAQ but is re-centered on the feedback.
+
+type TFunc = (key: string, opts?: Record<string, unknown>) => string
+
+function PrototypeFeedbackButton({
+  projectId, basePrototypeId, title, onRegenerated, t,
+}: {
+  readonly projectId: string
+  readonly basePrototypeId: string
+  readonly title: string
+  readonly onRegenerated?: () => void
+  readonly t: TFunc
+}) {
+  const { i18n } = useTranslation('projectDetail')
+  const [open, setOpen] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const onSubmit = useCallback(async () => {
+    const fb = feedback.trim()
+    if (fb === '') return
+    setBusy(true)
+    setError(null)
+    try {
+      const start = await projectsApi.buildPrototype(projectId, {
+        response_language: i18n.language,
+        title,
+        feedback: fb,
+        base_prototype_id: basePrototypeId,
+      })
+      const jobId = start.job_id
+      const deadline = Date.now() + 5 * 60_000
+      let consecutiveErrors = 0
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 3000))
+        let job
+        try {
+          job = await projectsApi.getJobStatus(projectId, jobId)
+          consecutiveErrors = 0
+        } catch (pollErr) {
+          consecutiveErrors += 1
+          if (consecutiveErrors >= 5) throw pollErr
+          continue
+        }
+        if (job.status === 'completed') {
+          setOpen(false)
+          setFeedback('')
+          onRegenerated?.()
+          return
+        }
+        if (job.status === 'failed') {
+          throw new Error(job.error || 'Prototype revision failed')
+        }
+      }
+      throw new Error(t('documents.prototype.timeout', { defaultValue: 'Prototype build took too long. Check the Documents tab in a moment.' }))
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Revision failed')
+    } finally {
+      setBusy(false)
+    }
+  }, [feedback, projectId, basePrototypeId, title, i18n.language, onRegenerated, t])
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1 text-orange-600 hover:underline"
+        title={t('documents.prototype.feedbackTitle', { defaultValue: 'Give feedback to regenerate this prototype' })}
+      >
+        <Wand2 size={12} /> {t('documents.prototype.feedbackButton', { defaultValue: 'Revise with feedback' })}
+      </button>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && setOpen(false)}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-base font-semibold mb-1">{t('documents.prototype.feedbackHeading', { defaultValue: 'Revise prototype with feedback' })}</h3>
+        <p className="text-xs text-gray-500 mb-3">{t('documents.prototype.feedbackHint', { defaultValue: 'Describe what to change. The PRD/PR-FAQ stays in effect; the prototype is re-centered on your feedback (e.g. “show the admin’s perspective”).' })}</p>
+        <textarea
+          value={feedback}
+          onChange={(e) => setFeedback(e.target.value)}
+          rows={5}
+          autoFocus
+          placeholder={t('documents.prototype.feedbackPlaceholder', { defaultValue: 'e.g. Change this to the admin dashboard view — show approvals, user management, and metrics instead of the end-user screens.' })}
+          className="w-full px-3 py-2 border rounded-lg text-sm"
+          disabled={busy}
+        />
+        {error ? <p className="text-xs text-red-600 mt-2 inline-flex items-center gap-1"><AlertCircle size={12} /> {error}</p> : null}
+        <div className="flex items-center justify-end gap-2 mt-4">
+          <button onClick={() => setOpen(false)} disabled={busy} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50">
+            {t('common.cancel', { defaultValue: 'Cancel', ns: 'common' })}
+          </button>
+          <button
+            onClick={onSubmit}
+            disabled={busy || feedback.trim() === ''}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+            {busy
+              ? t('documents.prototype.feedbackBuilding', { defaultValue: 'Revising…' })
+              : t('documents.prototype.feedbackSubmit', { defaultValue: 'Regenerate' })}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Prototype view: render the JSON spec natively (no iframe) ────────────────
+// PrototypeRenderer/parsePrototypeSpec moved to components/PrototypeRenderer
+// so the Prioritization page can reuse it.
+
+function PrototypeView({
+  projectId, documentId, html, title, prototypeFormat, onDocumentChanged,
+}: {
+  readonly projectId: string
+  readonly documentId: string
+  readonly html: string
+  readonly title: string
+  readonly prototypeFormat?: string
+  readonly onDocumentChanged?: () => void
+}) {
+  const { t } = useTranslation('projectDetail')
+
+  const isHtml = prototypeFormat === 'html' || (prototypeFormat === undefined && looksLikeHtmlDocument(html))
+  const spec = useMemo(() => (isHtml ? null : parsePrototypeSpec(html)), [isHtml, html])
+
+  const safeName = title.replace(/[^\w\-가-힣]+/g, '_')
+  const onDownloadHtml = useCallback(() => {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${safeName}.html`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [html, safeName])
+  const onOpenInNewTab = useCallback(() => {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener,noreferrer')
+    // Revoke after a tick so the new tab has time to load.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }, [html])
+  const onDownload = useCallback(() => {
+    const blob = new Blob([html], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${safeName}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [html, safeName])
+
+  // Newer format: a self-contained HTML document → render in a sandboxed iframe.
+  if (isHtml) {
+    return (
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between mb-2 text-xs text-gray-500">
+          <span>{t('documents.prototype.previewLabel', { defaultValue: 'Live preview' })}</span>
+          <div className="flex items-center gap-3">
+            <PrototypeFeedbackButton
+              projectId={projectId}
+              basePrototypeId={documentId}
+              title={title}
+              onRegenerated={onDocumentChanged}
+              t={t}
+            />
+            <button onClick={onOpenInNewTab} className="text-blue-600 hover:underline">
+              {t('documents.prototype.openNewTab', { defaultValue: 'Open in new tab' })}
+            </button>
+            <button onClick={onDownloadHtml} className="text-blue-600 hover:underline">
+              {t('documents.prototype.downloadHtml', { defaultValue: 'Download .html' })}
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden border rounded-lg bg-white">
+          <HtmlPrototypeFrame html={html} title={title} className="w-full h-full border-0 rounded-lg" />
+        </div>
+      </div>
+    )
+  }
+
+  if (!spec) {
+    // Legacy / malformed prototype — show as plain text so the user can still inspect.
+    return (
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between mb-2 text-xs text-gray-500">
+          <span>{t('documents.prototype.rawLabel', { defaultValue: 'Raw output (parse failed — please regenerate)' })}</span>
+          <button onClick={onDownload} className="text-blue-600 hover:underline">
+            {t('documents.prototype.downloadHtml', { defaultValue: 'Download' })}
+          </button>
+        </div>
+        <pre className="flex-1 overflow-auto bg-gray-50 text-xs p-3 rounded-lg border whitespace-pre-wrap break-all">{html}</pre>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 overflow-hidden flex flex-col">
+      <div className="flex items-center justify-between mb-2 text-xs text-gray-500">
+        <span>{t('documents.prototype.previewLabel', { defaultValue: 'Live preview' })}</span>
+        <button onClick={onDownload} className="text-blue-600 hover:underline">
+          {t('documents.prototype.downloadJson', { defaultValue: 'Download .json' })}
+        </button>
+      </div>
+      <div className="flex-1 overflow-auto border rounded-lg bg-white p-4">
+        <PrototypeRenderer spec={spec} />
+      </div>
+    </div>
+  )
+}
+
+// ── Badge ───────────────────────────────────────────────────────────────────
+
 function DocumentTypeBadge({ type }: { readonly type: string }) {
   const styles: Record<string, string> = {
     prd: 'bg-blue-100 text-blue-700',
     prfaq: 'bg-green-100 text-green-700',
     custom: 'bg-purple-100 text-purple-700',
+    product_report: 'bg-indigo-100 text-indigo-700',
+    prototype: 'bg-orange-100 text-orange-700',
   }
   const style = styles[type] ?? 'bg-amber-100 text-amber-700'
 
   return (
     <span className={clsx('text-xs font-medium px-2 py-0.5 rounded', style)}>
-      {type.toUpperCase()}
+      {type.toUpperCase().replace('_', ' ')}
     </span>
   )
 }

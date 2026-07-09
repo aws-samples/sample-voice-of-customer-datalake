@@ -271,3 +271,158 @@ class TestDocumentGeneratorHandler:
         steps = chain_call_args[0][0]  # First positional arg
         assert len(steps) == 3  # problem_analysis, solution_design, prd_document
         assert steps[0]['step_name'] == 'problem_analysis'
+
+
+class TestExtractHtml:
+    """Tests for the _extract_html helper (pulls an HTML doc from model output)."""
+
+    def test_extracts_plain_document(self):
+        from jobs.document_generator.handler import _extract_html
+        html = '<!DOCTYPE html><html><body>Hi</body></html>'
+        assert _extract_html(html) == html
+
+    def test_strips_code_fences(self):
+        from jobs.document_generator.handler import _extract_html
+        raw = '```html\n<!DOCTYPE html><html></html>\n```'
+        assert _extract_html(raw) == '<!DOCTYPE html><html></html>'
+
+    def test_strips_preamble_and_trailing_prose(self):
+        from jobs.document_generator.handler import _extract_html
+        raw = 'Sure! Here it is:\n<!DOCTYPE html><html></html>\nHope this helps.'
+        assert _extract_html(raw) == '<!DOCTYPE html><html></html>'
+
+    def test_matches_html_tag_without_doctype(self):
+        from jobs.document_generator.handler import _extract_html
+        raw = '<html lang="ko"><body></body></html>'
+        assert _extract_html(raw) == raw
+
+    def test_returns_empty_when_no_html(self):
+        from jobs.document_generator.handler import _extract_html
+        assert _extract_html('{"screens": []}') == ''
+        assert _extract_html('') == ''
+
+
+class TestBuildPrototype:
+    """Tests for the HTML prototype build path (Opus 4.8, iframe-rendered)."""
+
+    HTML = '<!DOCTYPE html><html><head><style>:root{--primary:#FF540F}</style></head><body><h1>Demo</h1></body></html>'
+
+    def _prototype_event(self, sample_job_event, **config):
+        return {
+            **sample_job_event,
+            'doc_config': {'doc_type': 'build_prototype', 'title': 'Test Prototype', **config},
+        }
+
+    def _wire_tables(self, mock_dynamodb):
+        """A PRD exists so the prototype build has source material; META returns a name."""
+        mock_dynamodb['table'].query.return_value = {
+            'Items': [{'document_id': 'prd_1', 'content': 'PRD body', 'created_at': '2026-01-01'}],
+        }
+        mock_dynamodb['table'].get_item.return_value = {'Item': {'name': 'My Project'}}
+
+    def test_build_prototype_saves_html_with_format_marker(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+    ):
+        self._wire_tables(mock_dynamodb)
+        mock_converse.return_value = self.HTML
+
+        from jobs.document_generator.handler import lambda_handler
+        result = lambda_handler(self._prototype_event(sample_job_event), lambda_context)
+
+        assert result['success'] is True
+        assert result['document_id'].startswith('prototype_')
+        put_item = mock_dynamodb['table'].put_item.call_args.kwargs['Item']
+        assert put_item['document_type'] == 'prototype'
+        assert put_item['prototype_format'] == 'html'
+        assert put_item['content'] == self.HTML
+
+    def test_build_prototype_uses_opus(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+    ):
+        self._wire_tables(mock_dynamodb)
+        mock_converse.return_value = self.HTML
+
+        from jobs.document_generator.handler import lambda_handler
+        lambda_handler(self._prototype_event(sample_job_event), lambda_context)
+
+        assert mock_converse.call_args.kwargs['model_id'] == 'global.anthropic.claude-opus-4-8'
+
+    def test_build_prototype_passes_brand_and_language(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+    ):
+        self._wire_tables(mock_dynamodb)
+        mock_converse.return_value = self.HTML
+
+        from jobs.document_generator.handler import lambda_handler
+        lambda_handler(
+            self._prototype_event(sample_job_event, brand='UNNI', response_language='ko'),
+            lambda_context,
+        )
+
+        prompt = mock_converse.call_args.kwargs['prompt']
+        assert 'UNNI' in prompt
+        assert 'Korean' in prompt  # ko → Korean UI-text hint
+
+    def test_build_prototype_feedback_revision(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+    ):
+        """Feedback + base_prototype_id → prompt includes feedback + prior HTML; item records lineage."""
+        mock_dynamodb['table'].query.return_value = {
+            'Items': [{'document_id': 'prd_1', 'content': 'PRD body', 'created_at': '2026-01-01'}],
+        }
+        prior = '<!DOCTYPE html><html><body>OLD user-facing screens</body></html>'
+
+        def get_item(Key=None, **kwargs):
+            sk = (Key or {}).get('sk', '')
+            if sk == 'META':
+                return {'Item': {'name': 'My Project'}}
+            if sk.startswith('PROTOTYPE#'):
+                return {'Item': {'content': prior}}
+            return {}
+        mock_dynamodb['table'].get_item.side_effect = get_item
+        mock_converse.return_value = self.HTML
+
+        from jobs.document_generator.handler import lambda_handler
+        lambda_handler(
+            self._prototype_event(
+                sample_job_event,
+                feedback='Switch to the admin perspective',
+                base_prototype_id='prototype_20260101000000',
+            ),
+            lambda_context,
+        )
+
+        prompt = mock_converse.call_args.kwargs['prompt']
+        assert 'Switch to the admin perspective' in prompt  # feedback is in the prompt
+        assert 'OLD user-facing screens' in prompt          # prior HTML included for revision
+        assert 'PRD body' in prompt                          # PRD still honored
+        put_item = mock_dynamodb['table'].put_item.call_args.kwargs['Item']
+        assert put_item['revised_from_id'] == 'prototype_20260101000000'
+        assert put_item['revision_feedback'] == 'Switch to the admin perspective'
+
+    def test_build_prototype_fails_without_source_documents(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+    ):
+        # No PRD/PRFAQ found → query returns empty.
+        mock_dynamodb['table'].query.return_value = {'Items': []}
+        mock_dynamodb['table'].get_item.return_value = {'Item': {'name': 'Empty'}}
+
+        from jobs.document_generator.handler import lambda_handler
+        from shared.exceptions import ServiceError
+
+        with pytest.raises(ServiceError, match="Document generation failed"):
+            lambda_handler(self._prototype_event(sample_job_event), lambda_context)
+
+        mock_converse.assert_not_called()
+
+    def test_build_prototype_fails_when_model_returns_no_html(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+    ):
+        self._wire_tables(mock_dynamodb)
+        mock_converse.return_value = 'I cannot build that.'  # no HTML doc
+
+        from jobs.document_generator.handler import lambda_handler
+        from shared.exceptions import ServiceError
+
+        with pytest.raises(ServiceError, match="Document generation failed"):
+            lambda_handler(self._prototype_event(sample_job_event), lambda_context)

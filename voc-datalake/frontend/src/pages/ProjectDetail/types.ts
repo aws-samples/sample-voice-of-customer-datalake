@@ -5,7 +5,7 @@ import type {
   ProjectPersona, Project,
 } from '../../api/types'
 
-export type Tab = 'overview' | 'personas' | 'documents' | 'chat' | 'mcp'
+export type Tab = 'overview' | 'personas' | 'product' | 'documents' | 'chat' | 'mcp'
 
 export type NoteItem = string | {
   note_id?: string;
@@ -23,8 +23,12 @@ export interface ResearchToolConfig {
   title: string
 }
 
+export type DocType = 'prd' | 'prfaq'
+
 export interface DocToolConfig {
-  docType: 'prd' | 'prfaq'
+  // Which documents to generate. Both can be selected to generate PRD + PR-FAQ
+  // in one go (each runs as its own async job).
+  docTypes: DocType[]
   title: string
   featureIdea: string
   customerQuestions: string[]

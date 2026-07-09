@@ -4,6 +4,9 @@
 import {
   useState, useCallback, useRef, useEffect,
 } from 'react'
+import {
+  buildFinalizedMessages, type CompletedTurn, type StreamSnapshot,
+} from './chatFinalize'
 import type {
   ChatMessage, ChatAttachment, DocumentChangeInfo, ActivePersonaInfo,
 } from './ChatBubbles'
@@ -198,79 +201,6 @@ export function resolveActivePersona(
 
 // ── Stream finalize hook ──
 
-interface CompletedTurn {
-  persona: {
-    persona_id: string;
-    name: string;
-    avatar_url?: string
-  }
-  content: string
-  thinking?: string
-}
-
-interface StreamSnapshot {
-  text: string
-  thinking: string
-  error: string | null
-  changes: DocumentChangeInfo[]
-  toolSteps: ToolStep[]
-  persona: ActivePersonaInfo | undefined
-  turns: CompletedTurn[]
-  curPersona: {
-    persona_id: string;
-    name: string;
-    avatar_url?: string
-  } | null
-}
-
-function buildRoundtableMessages(snapshot: StreamSnapshot): ChatMessage[] {
-  const {
-    text, turns, curPersona,
-  } = snapshot
-  const newMessages: ChatMessage[] = turns.map((turn) => ({
-    role: 'assistant' as const,
-    content: turn.content,
-    activePersona: {
-      name: turn.persona.name,
-      avatar_url: turn.persona.avatar_url,
-    },
-  }))
-  if (text !== '' && curPersona) {
-    newMessages.push({
-      role: 'assistant',
-      content: text,
-      activePersona: {
-        name: curPersona.name,
-        avatar_url: curPersona.avatar_url,
-      },
-    })
-  }
-  return newMessages
-}
-
-function buildFinalizedMessages(snapshot: StreamSnapshot): ChatMessage[] {
-  const {
-    text, error, changes, toolSteps, persona, turns, curPersona,
-  } = snapshot
-  const isRoundtable = turns.length > 0 || curPersona !== null
-
-  if (isRoundtable) return buildRoundtableMessages(snapshot)
-  if (text !== '') {
-    return [{
-      role: 'assistant',
-      content: text,
-      documentChanges: changes.length > 0 ? changes : undefined,
-      toolSteps: toolSteps.length > 0 ? toolSteps : undefined,
-      activePersona: persona,
-    }]
-  }
-  if (error != null && error !== '') return [{
-    role: 'assistant',
-    content: `Error: ${error}`,
-  }]
-  return []
-}
-
 interface UseStreamFinalizeOptions {
   isStreaming: boolean
   streamingText: string
@@ -304,6 +234,7 @@ export function useStreamFinalize(options: UseStreamFinalizeOptions) {
     activePersona,
     completedTurns,
     currentPersona,
+    onDocumentChanged,
   })
   useEffect(() => {
     latestRef.current = {
@@ -315,9 +246,13 @@ export function useStreamFinalize(options: UseStreamFinalizeOptions) {
       activePersona,
       completedTurns,
       currentPersona,
+      onDocumentChanged,
     }
   })
 
+  // onDocumentChanged lives in latestRef (not a finalize-effect dependency):
+  // the parent's inline callback changes identity every render and would
+  // otherwise re-run the effect mid-stream, dropping the reply ("응답 안 뜨고 멈춤").
   const prevStreamingRef = useRef(false)
   useEffect(() => {
     const ref = latestRef.current
@@ -334,10 +269,12 @@ export function useStreamFinalize(options: UseStreamFinalizeOptions) {
       }
       const newMessages = buildFinalizedMessages(snapshot)
       if (newMessages.length > 0) setMessages((prev) => [...prev, ...newMessages])
-      if (onDocumentChanged) onDocumentChanged()
+      // Refetch project data only when a document actually changed — avoids an
+      // invalidate→re-render storm on every plain chat reply.
+      if (ref.documentChanges.length > 0 && ref.onDocumentChanged) ref.onDocumentChanged()
     }
     prevStreamingRef.current = isStreaming
-  }, [isStreaming, setMessages, onDocumentChanged])
+  }, [isStreaming, setMessages])
 }
 
 // ── Attachments hook ──

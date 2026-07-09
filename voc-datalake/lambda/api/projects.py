@@ -100,7 +100,7 @@ def list_projects() -> dict:
             sk = proj_item.get('sk', '')
             if sk.startswith('PERSONA#'):
                 persona_count += 1
-            elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('DOC#'):
+            elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('DOC#') or sk.startswith('PRODUCT_REPORT#') or sk.startswith('PROTOTYPE#'):
                 document_count += 1
         
         projects.append({
@@ -176,7 +176,7 @@ def get_project(project_id: str) -> dict:
             if item.get('avatar_url') and item['avatar_url'].startswith('s3://'):
                 item['avatar_url'] = get_avatar_cdn_url(item['avatar_url'])
             personas.append(item)
-        elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('DOC#'):
+        elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('DOC#') or sk.startswith('PRODUCT_REPORT#') or sk.startswith('PROTOTYPE#'):
             documents.append(item)
     
     if not project:
@@ -383,7 +383,27 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         
         logger.info("[PERSONA] Step 6/6: Saving personas to database...")
         update_progress(80, 'saving_personas')
-        
+
+        # Replace semantics: delete any existing personas for this project first,
+        # so re-running generation doesn't accumulate duplicates (e.g. "김지수" x2).
+        # Without this, each generation appended a fresh set and @all roundtable
+        # chat would have the same persona answer multiple times.
+        existing_count = 0
+        try:
+            existing = projects_table.query(
+                KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}')
+                & Key('sk').begins_with('PERSONA#'),
+                ProjectionExpression='pk, sk',
+            ).get('Items', [])
+            if existing:
+                with projects_table.batch_writer() as batch:
+                    for it in existing:
+                        batch.delete_item(Key={'pk': it['pk'], 'sk': it['sk']})
+                existing_count = len(existing)
+                logger.info(f"[PERSONA] Cleared {existing_count} existing persona(s) before regeneration")
+        except Exception as e:
+            logger.warning(f"[PERSONA] Failed to clear existing personas (continuing): {e}")
+
         # Calculate source breakdown
         source_breakdown = {}
         for item in feedback_items:
@@ -447,10 +467,11 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
             saved_personas.append(item)
             logger.info(f"[PERSONA] Saved persona: {persona.get('name')}")
         
-        # Update persona count
+        # Set persona count to the new total (we cleared the old set above, so
+        # this is a replace, not an increment — keeps the count accurate).
         projects_table.update_item(
             Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-            UpdateExpression='SET persona_count = persona_count + :count, updated_at = :now',
+            UpdateExpression='SET persona_count = :count, updated_at = :now',
             ExpressionAttributeValues={':count': len(saved_personas), ':now': now}
         )
         
@@ -505,12 +526,21 @@ def generate_prd(project_id: str, body: dict) -> dict:
 """
     
     feature_idea = body.get('feature_idea', 'Improve customer experience based on feedback')
-    
+
+    # Inject the per-project product/service context (structured fields + uploaded internal docs).
+    try:
+        from product_context import build_product_context_block
+        product_context = build_product_context_block(project_id)
+    except Exception as e:
+        logger.warning(f"Failed to build product context: {e}")
+        product_context = "(No product context provided.)"
+
     # Build chain steps from external prompt files
     chain_steps = get_prd_generation_steps(
         feature_idea=feature_idea,
         personas_context=personas_context,
         feedback_context=feedback_context,
+        product_context=product_context,
         response_language=body.get('response_language'),
     )
 
@@ -554,6 +584,271 @@ def generate_prd(project_id: str, body: dict) -> dict:
 
 
 @tracer.capture_method
+def autofill_prfaq_questions(project_id: str, body: dict) -> dict:
+    """
+    Pre-populate the 5 Working-Backwards customer questions from existing project
+    context (personas, feedback, uploaded product context). Synchronous because
+    the user is interactively waiting in the wizard; runs in well under 30s.
+
+    Returns: {"answers": [str, str, str, str, str]} — empty strings for any
+    field the model can't reasonably draft.
+    """
+    if not projects_table:
+        raise ConfigurationError('Projects table not configured')
+
+    from shared.converse import converse
+
+    project_data = get_project(project_id)
+    personas = project_data.get('personas', [])
+    filters = project_data.get('project', {}).get('filters', {})
+
+    feedback_items = get_feedback_context(filters, limit=20)
+    feedback_context = format_feedback_for_llm(feedback_items)
+
+    personas_context = ""
+    for p in personas:
+        personas_context += (
+            f"\n**{p.get('name')}** — {p.get('tagline', '')}\n"
+            f"Quote: \"{p.get('quote', '')}\"\n"
+            f"Goals: {', '.join(p.get('goals', [])[:3])}\n"
+            f"Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n"
+        )
+
+    feature_idea = (body or {}).get('feature_idea', '').strip()
+    title = (body or {}).get('title', '').strip()
+    response_language = (body or {}).get('response_language')
+
+    try:
+        from product_context import build_product_context_block
+        product_context = build_product_context_block(project_id)
+    except Exception as e:
+        logger.warning(f"Failed to build product context: {e}")
+        product_context = "(No product context provided.)"
+
+    from shared.prompts import get_response_language_instruction
+    language_instruction = get_response_language_instruction(response_language)
+
+    system_prompt = (
+        "You are a senior product manager drafting answers to Amazon's 5 "
+        "Working-Backwards customer questions for a PR/FAQ. Use the provided "
+        "personas, customer feedback, and product context — DO NOT invent "
+        "details that aren't supported. If a question can't be answered from "
+        "the available context, return an empty string for that question.\n\n"
+        "Return STRICT JSON in this exact shape (no prose, no markdown fences):\n"
+        '{"answers": ["...", "...", "...", "...", "..."]}\n'
+        "Each answer should be 2-5 sentences, concrete, and grounded in the inputs.\n\n"
+        + (language_instruction or "")
+    ).strip()
+
+    user_prompt = (
+        f"FEATURE TITLE: {title or '(unspecified)'}\n"
+        f"FEATURE IDEA: {feature_idea or '(unspecified)'}\n\n"
+        f"PRODUCT CONTEXT:\n{product_context}\n\n"
+        f"PERSONAS:\n{personas_context or '(none)'}\n\n"
+        f"CUSTOMER FEEDBACK SAMPLE:\n{feedback_context or '(none)'}\n\n"
+        "Draft answers (in order) for these 5 questions:\n"
+        "1. Who is the customer?\n"
+        "2. What is the customer problem or opportunity?\n"
+        "3. What is the most important customer benefit?\n"
+        "4. How do you know what customers need or want? (cite the feedback/personas above)\n"
+        "5. What does the customer experience look like?"
+    )
+
+    raw = converse(
+        prompt=user_prompt,
+        system_prompt=system_prompt,
+        max_tokens=2500,
+        temperature=0.3,
+        step_name='prfaq_autofill',
+    )
+
+    # Parse JSON, tolerating fences if the model includes them.
+    text = (raw or '').strip()
+    if text.startswith('```'):
+        lines = [ln for ln in text.splitlines() if not ln.strip().startswith('```')]
+        text = '\n'.join(lines).strip()
+    try:
+        parsed = json.loads(text)
+        answers = parsed.get('answers', [])
+    except json.JSONDecodeError:
+        logger.warning(f"Autofill JSON parse failed; returning best-effort. raw={text[:200]}")
+        answers = []
+
+    if not isinstance(answers, list):
+        answers = []
+    cleaned = [(a if isinstance(a, str) else '').strip() for a in answers]
+    while len(cleaned) < 5:
+        cleaned.append('')
+    return {'answers': cleaned[:5]}
+
+
+@tracer.capture_method
+def suggest_document_brief(project_id: str, body: dict) -> dict:
+    """Draft a feature title + description for a PRD/PR-FAQ from project context.
+
+    A single fast LLM call (within API Gateway's 29s budget). Looks at the
+    project's product context and a sample of its customer feedback, then
+    proposes a concise feature/product title and a 2-4 sentence description so
+    the user doesn't have to write the PRD/PR-FAQ brief from scratch.
+    Returns {"title": str, "feature_idea": str}.
+    """
+    if not projects_table:
+        raise ConfigurationError('Projects table not configured')
+
+    from shared.converse import converse
+
+    project_data = get_project(project_id)
+    filters = (body or {}).get('filters') or project_data.get('project', {}).get('filters', {})
+
+    feedback_items = get_feedback_context(filters, limit=40)
+    feedback_context = format_feedback_for_llm(feedback_items)
+    feedback_stats = get_feedback_statistics(feedback_items) if feedback_items else "(no feedback yet)"
+
+    try:
+        from product_context import build_product_context_block
+        product_context = build_product_context_block(project_id)
+    except Exception as e:
+        logger.warning(f"Failed to build product context: {e}")
+        product_context = "(No product context provided.)"
+
+    doc_type = (body or {}).get('doc_type', 'prd')
+    doc_label = 'PR-FAQ' if doc_type == 'prfaq' else 'PRD'
+    response_language = (body or {}).get('response_language')
+    from shared.prompts import get_response_language_instruction
+    language_instruction = get_response_language_instruction(response_language)
+
+    system_prompt = (
+        f"You are a senior product manager about to write a {doc_label}. Based on "
+        "the product context and the most salient customer feedback, propose ONE "
+        "concrete feature or product improvement worth documenting. The title "
+        "should name the feature crisply; the description should explain what it "
+        "is and the customer problem it solves, grounded in the feedback. Do not "
+        "invent problems that aren't supported by the feedback.\n\n"
+        "Return STRICT JSON in this exact shape (no prose, no markdown fences):\n"
+        '{"title": "feature/product title", "feature_idea": "2-4 sentence description"}\n'
+        "Title <= 10 words. Description 2-4 sentences.\n\n"
+        + (language_instruction or "")
+    ).strip()
+
+    user_prompt = (
+        f"PRODUCT CONTEXT:\n{product_context}\n\n"
+        f"FEEDBACK STATISTICS:\n{feedback_stats}\n\n"
+        f"CUSTOMER FEEDBACK SAMPLE ({len(feedback_items)} reviews):\n{feedback_context or '(none)'}\n\n"
+        f"Propose one feature worth writing a {doc_label} for."
+    )
+
+    raw = converse(
+        prompt=user_prompt,
+        system_prompt=system_prompt,
+        max_tokens=1200,
+        temperature=0.4,
+        step_name='document_brief_suggest',
+    )
+
+    text = (raw or '').strip()
+    if text.startswith('```'):
+        lines = [ln for ln in text.splitlines() if not ln.strip().startswith('```')]
+        text = '\n'.join(lines).strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning(f"Document-brief JSON parse failed; raw={text[:200]}")
+        parsed = {}
+
+    title = (parsed.get('title') or '').strip() if isinstance(parsed, dict) else ''
+    feature_idea = (parsed.get('feature_idea') or '').strip() if isinstance(parsed, dict) else ''
+    return {'title': title, 'feature_idea': feature_idea}
+
+
+@tracer.capture_method
+def suggest_research_questions(project_id: str, body: dict) -> dict:
+    """Suggest research questions tailored to this project's feedback + context.
+
+    A single fast LLM call (well within API Gateway's 29s budget) that looks at
+    the project's product context and a sample of its actual customer feedback,
+    then proposes 3 concrete, decision-oriented research questions. Used by the
+    "AI suggest" button in the Research wizard so users don't start from a blank
+    box. Returns {"suggestions": [{"title": str, "question": str}, ...]}.
+    """
+    if not projects_table:
+        raise ConfigurationError('Projects table not configured')
+
+    from shared.converse import converse
+
+    project_data = get_project(project_id)
+    project = project_data.get('project', {})
+    filters = (body or {}).get('filters') or project.get('filters', {})
+
+    # Sample real feedback so suggestions are grounded in what was actually said.
+    feedback_items = get_feedback_context(filters, limit=40)
+    feedback_context = format_feedback_for_llm(feedback_items)
+    feedback_stats = get_feedback_statistics(feedback_items) if feedback_items else "(no feedback yet)"
+
+    try:
+        from product_context import build_product_context_block
+        product_context = build_product_context_block(project_id)
+    except Exception as e:
+        logger.warning(f"Failed to build product context: {e}")
+        product_context = "(No product context provided.)"
+
+    response_language = (body or {}).get('response_language')
+    from shared.prompts import get_response_language_instruction
+    language_instruction = get_response_language_instruction(response_language)
+
+    system_prompt = (
+        "You are a senior UX researcher helping a PM frame a research study on "
+        "their product's customer feedback. Propose research questions that are "
+        "specific, decision-oriented, and answerable from the customer feedback "
+        "provided — favor questions about root causes, priorities, frequency/"
+        "severity, and opportunities for new features. Avoid vague questions "
+        "like 'what do customers think?'. Ground every suggestion in the actual "
+        "feedback themes and product context provided; do not invent topics that "
+        "aren't supported by the data.\n\n"
+        "Return STRICT JSON in this exact shape (no prose, no markdown fences):\n"
+        '{"suggestions": [{"title": "short report title", "question": "the research question"}, ...]}\n'
+        "Provide exactly 3 suggestions. Titles <= 8 words. Questions 1-2 sentences.\n\n"
+        + (language_instruction or "")
+    ).strip()
+
+    user_prompt = (
+        f"PRODUCT CONTEXT:\n{product_context}\n\n"
+        f"FEEDBACK STATISTICS:\n{feedback_stats}\n\n"
+        f"CUSTOMER FEEDBACK SAMPLE ({len(feedback_items)} reviews):\n{feedback_context or '(none)'}\n\n"
+        "Based on the above, propose 3 research questions worth running on this feedback."
+    )
+
+    raw = converse(
+        prompt=user_prompt,
+        system_prompt=system_prompt,
+        max_tokens=1500,
+        temperature=0.4,
+        step_name='research_suggest',
+    )
+
+    text = (raw or '').strip()
+    if text.startswith('```'):
+        lines = [ln for ln in text.splitlines() if not ln.strip().startswith('```')]
+        text = '\n'.join(lines).strip()
+    try:
+        parsed = json.loads(text)
+        suggestions = parsed.get('suggestions', [])
+    except json.JSONDecodeError:
+        logger.warning(f"Research-suggest JSON parse failed; raw={text[:200]}")
+        suggestions = []
+
+    cleaned = []
+    if isinstance(suggestions, list):
+        for s in suggestions:
+            if not isinstance(s, dict):
+                continue
+            q = (s.get('question') or '').strip()
+            t = (s.get('title') or '').strip()
+            if q:
+                cleaned.append({'title': t, 'question': q})
+    return {'suggestions': cleaned[:3]}
+
+
+@tracer.capture_method
 def generate_prfaq(project_id: str, body: dict) -> dict:
     """Generate an Amazon-style PR/FAQ document using multi-step LLM chain."""
     if not projects_table:
@@ -578,12 +873,21 @@ Quote: "{p.get('quote', '')}"
 """
     
     feature_idea = body.get('feature_idea', 'New feature based on customer feedback')
-    
+
+    # Inject the per-project product/service context (structured fields + uploaded internal docs).
+    try:
+        from product_context import build_product_context_block
+        product_context = build_product_context_block(project_id)
+    except Exception as e:
+        logger.warning(f"Failed to build product context: {e}")
+        product_context = "(No product context provided.)"
+
     # Build chain steps from external prompt files
     chain_steps = get_prfaq_generation_steps(
         feature_idea=feature_idea,
         personas_context=personas_context,
         feedback_context=feedback_context,
+        product_context=product_context,
         response_language=body.get('response_language'),
     )
 

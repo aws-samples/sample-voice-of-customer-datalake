@@ -3,8 +3,11 @@
  */
 import clsx from 'clsx'
 import {
-  Users, FileText, Search, Shuffle, Sparkles,
+  Users, FileText, Search, Shuffle, Sparkles, Loader2, Wand2,
 } from 'lucide-react'
+import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import { projectsApi } from '../../api/projectsApi'
 import DataSourceWizard from '../../components/DataSourceWizard'
 import ContextSummary from '../../components/DataSourceWizard/ContextSummary'
 import type {
@@ -68,6 +71,7 @@ export function PersonaWizard({
 }
 
 interface ResearchWizardProps {
+  readonly projectId: string
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
   readonly contextConfig: ContextConfig
@@ -80,8 +84,38 @@ interface ResearchWizardProps {
 }
 
 export function ResearchWizard({
-  personas, documents, contextConfig, researchConfig, generating, onContextChange, onResearchConfigChange, onClose, onSubmit,
+  projectId, personas, documents, contextConfig, researchConfig, generating, onContextChange, onResearchConfigChange, onClose, onSubmit,
 }: ResearchWizardProps) {
+  const { t, i18n } = useTranslation('projectDetail')
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestError, setSuggestError] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<Array<{ title: string; question: string }>>([])
+
+  const onSuggest = useCallback(async () => {
+    setSuggesting(true)
+    setSuggestError(null)
+    try {
+      const r = await projectsApi.suggestResearchQuestions(projectId, { response_language: i18n.language })
+      const list = r.suggestions ?? []
+      setSuggestions(list)
+      if (list.length === 0) {
+        setSuggestError(t('wizards.researchSuggestEmpty', { defaultValue: 'No suggestions — add or collect more feedback first.' }))
+      }
+    } catch (e: unknown) {
+      setSuggestError(e instanceof Error ? e.message : 'Failed to suggest questions')
+    } finally {
+      setSuggesting(false)
+    }
+  }, [projectId, i18n.language, t])
+
+  const applySuggestion = useCallback((s: { title: string; question: string }) => {
+    onResearchConfigChange({
+      ...researchConfig,
+      question: s.question,
+      title: researchConfig.title.trim() === '' ? s.title : researchConfig.title,
+    })
+  }, [researchConfig, onResearchConfigChange])
+
   return (
     <DataSourceWizard
       title="Run Research"
@@ -94,18 +128,49 @@ export function ResearchWizard({
       renderFinalStep={() => (
         <div className="space-y-6">
           <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-medium">Research Question</h3>
+              <button
+                type="button"
+                onClick={onSuggest}
+                disabled={suggesting}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                title={t('wizards.researchSuggestTitle', { defaultValue: 'Let AI suggest research questions from this project’s feedback' })}
+              >
+                {suggesting ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                {suggesting
+                  ? t('wizards.researchSuggesting', { defaultValue: 'Suggesting…' })
+                  : t('wizards.researchSuggest', { defaultValue: 'AI suggest' })}
+              </button>
+            </div>
+            <textarea value={researchConfig.question} onChange={(e) => onResearchConfigChange({
+              ...researchConfig,
+              question: e.target.value,
+            })} placeholder="e.g., What are the main pain points..." rows={4} className="w-full px-3 py-2 border rounded-lg" />
+            {suggestError ? <p className="text-xs text-red-600 mt-1">{suggestError}</p> : null}
+            {suggestions.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-gray-500">{t('wizards.researchSuggestPick', { defaultValue: 'Tap a suggestion to use it:' })}</p>
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => applySuggestion(s)}
+                    className="block w-full text-left p-2.5 border rounded-lg hover:border-amber-400 hover:bg-amber-50 transition-colors"
+                  >
+                    <span className="block text-sm font-medium text-gray-800">{s.title || s.question}</span>
+                    {s.title ? <span className="block text-xs text-gray-500 mt-0.5">{s.question}</span> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div>
             <h3 className="font-medium mb-3">Research Title</h3>
             <input type="text" value={researchConfig.title} onChange={(e) => onResearchConfigChange({
               ...researchConfig,
               title: e.target.value,
             })} placeholder="e.g., Delivery Pain Points Analysis" className="w-full px-3 py-2 border rounded-lg" />
-          </div>
-          <div>
-            <h3 className="font-medium mb-3">Research Question</h3>
-            <textarea value={researchConfig.question} onChange={(e) => onResearchConfigChange({
-              ...researchConfig,
-              question: e.target.value,
-            })} placeholder="e.g., What are the main pain points..." rows={4} className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <ContextSummary config={contextConfig} personas={personas} documents={documents} />
         </div>
@@ -120,6 +185,7 @@ export function ResearchWizard({
 }
 
 interface DocWizardProps {
+  readonly projectId: string
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
   readonly contextConfig: ContextConfig
@@ -132,8 +198,25 @@ interface DocWizardProps {
 }
 
 export function DocWizard({
-  personas, documents, contextConfig, docConfig, generating, onContextChange, onDocConfigChange, onClose, onSubmit,
+  projectId, personas, documents, contextConfig, docConfig, generating, onContextChange, onDocConfigChange, onClose, onSubmit,
 }: DocWizardProps) {
+  const { t, i18n } = useTranslation('projectDetail')
+  const [autofilling, setAutofilling] = useState(false)
+  const [autofillError, setAutofillError] = useState<string | null>(null)
+  const [briefing, setBriefing] = useState(false)
+  const [briefError, setBriefError] = useState<string | null>(null)
+
+  const docTypes = docConfig.docTypes
+  const hasPrfaq = docTypes.includes('prfaq')
+  const hasPrd = docTypes.includes('prd')
+
+  const toggleDocType = (type: 'prd' | 'prfaq') => {
+    const next = docTypes.includes(type)
+      ? docTypes.filter((d) => d !== type)
+      : [...docTypes, type]
+    onDocConfigChange({ ...docConfig, docTypes: next })
+  }
+
   const updateQuestion = (index: number, value: string) => {
     const newQuestions = [...docConfig.customerQuestions]
     newQuestions[index] = value
@@ -143,38 +226,68 @@ export function DocWizard({
     })
   }
 
-  // Amazon's 5 Customer Questions for Working Backwards PR-FAQ
-  const amazonQuestions = [
-    {
-      title: 'Who is the customer?',
-      description: 'Define your target customer segment. Be specific about demographics, behaviors, and characteristics.',
-      placeholder: 'e.g., Busy professionals aged 25-45 who order food delivery at least 3x per week...',
-    },
-    {
-      title: 'What is the customer problem or opportunity?',
-      description: 'Describe the pain point or unmet need. What frustrates them today? What opportunity exists?',
-      placeholder: 'e.g., Customers waste 10+ minutes tracking multiple delivery apps and often miss deliveries...',
-    },
-    {
-      title: 'What is the most important customer benefit?',
-      description: 'State the single most compelling benefit. How will their life improve? Be specific and measurable.',
-      placeholder: 'e.g., Save 15 minutes per order with unified tracking and never miss a delivery again...',
-    },
-    {
-      title: 'How do you know what customers need or want?',
-      description: 'Provide evidence: customer research, feedback data, surveys, interviews, or market analysis.',
-      placeholder: 'e.g., 78% of surveyed users reported frustration with tracking across multiple apps...',
-    },
-    {
-      title: 'What does the customer experience look like?',
-      description: 'Walk through the end-to-end experience. How will customers discover, use, and benefit from this?',
-      placeholder: 'e.g., Customer opens the app, sees all deliveries in one view, gets smart notifications...',
-    },
-  ]
+  // AI-draft the feature title + description from project context so the user
+  // doesn't start from an empty box.
+  const onSuggestBrief = useCallback(async () => {
+    setBriefing(true)
+    setBriefError(null)
+    try {
+      const r = await projectsApi.suggestDocumentBrief(projectId, {
+        doc_type: docConfig.docTypes.includes('prd') ? 'prd' : 'prfaq',
+        response_language: i18n.language,
+      })
+      onDocConfigChange({
+        ...docConfig,
+        title: r.title || docConfig.title,
+        featureIdea: r.feature_idea || docConfig.featureIdea,
+      })
+      if (!r.title && !r.feature_idea) {
+        setBriefError(t('wizards.briefEmpty', { defaultValue: 'No draft — add or collect more feedback first.' }))
+      }
+    } catch (e: unknown) {
+      setBriefError(e instanceof Error ? e.message : 'Draft failed')
+    } finally {
+      setBriefing(false)
+    }
+  }, [projectId, docConfig, i18n.language, onDocConfigChange, t])
+
+  // Amazon's 5 Customer Questions for Working Backwards PR-FAQ. Pulled from
+  // i18n so the entire wizard matches the user's chosen language (the labels
+  // were hardcoded English even when the rest of the UI was Korean).
+  const amazonQuestions = [1, 2, 3, 4, 5].map((n) => ({
+    title: t(`wizards.question${n}Title`),
+    description: t(`wizards.question${n}Desc`),
+    placeholder: t(`wizards.question${n}Placeholder`),
+  }))
+
+  const onAutofill = useCallback(async () => {
+    setAutofilling(true)
+    setAutofillError(null)
+    try {
+      const r = await projectsApi.autofillPrfaqQuestions(projectId, {
+        feature_idea: docConfig.featureIdea,
+        title: docConfig.title,
+        response_language: i18n.language,
+      })
+      const answers = (r.answers || []).slice(0, 5)
+      const padded: string[] = [...answers, '', '', '', '', ''].slice(0, 5)
+      onDocConfigChange({ ...docConfig, customerQuestions: padded })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Autofill failed'
+      setAutofillError(msg)
+    } finally {
+      setAutofilling(false)
+    }
+  }, [projectId, docConfig, i18n.language, onDocConfigChange])
+
+  const docCount = docTypes.length
+  const bothSelected = hasPrd && hasPrfaq
 
   return (
     <DataSourceWizard
-      title={`Generate ${docConfig.docType === 'prd' ? 'PRD' : 'PR-FAQ'}`}
+      title={bothSelected
+        ? t('wizards.generateBothTitle', { defaultValue: 'Generate PRD + PR-FAQ' })
+        : t(hasPrd ? 'wizards.generatePrdTitle' : 'wizards.generatePrfaqTitle', { defaultValue: hasPrd ? 'Generate PRD' : 'Generate PR-FAQ' })}
       accentColor="blue"
       icon={<div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"><FileText size={20} className="text-blue-600" /></div>}
       personas={personas}
@@ -184,47 +297,73 @@ export function DocWizard({
       renderFinalStep={() => (
         <div className="space-y-6">
           <div>
-            <h3 className="font-medium mb-3">Document Type</h3>
+            <h3 className="font-medium mb-1">{t('wizards.documentType', { defaultValue: 'Document Type' })}</h3>
+            <p className="text-xs text-gray-500 mb-3">{t('wizards.documentTypeHint', { defaultValue: 'Select one or both — both are generated at once.' })}</p>
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => onDocConfigChange({
-                ...docConfig,
-                docType: 'prfaq',
-              })} className={clsx('p-4 rounded-lg border text-left', docConfig.docType === 'prfaq' ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200')}>
-                <div className="font-medium">PR-FAQ</div>
-                <div className="text-sm text-gray-500">Amazon-style Press Release & FAQ</div>
+              <button type="button" onClick={() => toggleDocType('prfaq')} className={clsx('p-4 rounded-lg border text-left relative', hasPrfaq ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200')}>
+                {hasPrfaq ? <span className="absolute top-2 right-2 text-green-600 text-xs">✓</span> : null}
+                <div className="font-medium">{t('wizards.prfaqLabel', { defaultValue: 'PR-FAQ' })}</div>
+                <div className="text-sm text-gray-500">{t('wizards.prfaqDesc', { defaultValue: 'Amazon-style Press Release & FAQ' })}</div>
               </button>
-              <button onClick={() => onDocConfigChange({
-                ...docConfig,
-                docType: 'prd',
-              })} className={clsx('p-4 rounded-lg border text-left', docConfig.docType === 'prd' ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200')}>
-                <div className="font-medium">PRD</div>
-                <div className="text-sm text-gray-500">Product Requirements Document</div>
+              <button type="button" onClick={() => toggleDocType('prd')} className={clsx('p-4 rounded-lg border text-left relative', hasPrd ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200')}>
+                {hasPrd ? <span className="absolute top-2 right-2 text-blue-600 text-xs">✓</span> : null}
+                <div className="font-medium">{t('wizards.prdLabel', { defaultValue: 'PRD' })}</div>
+                <div className="text-sm text-gray-500">{t('wizards.prdDesc', { defaultValue: 'Product Requirements Document' })}</div>
               </button>
             </div>
           </div>
           <div>
-            <h3 className="font-medium mb-3">Feature/Product Title</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-medium">{t('wizards.featureTitle', { defaultValue: 'Feature/Product Title' })}</h3>
+              <button
+                type="button"
+                onClick={onSuggestBrief}
+                disabled={briefing}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                title={t('wizards.briefTitle', { defaultValue: 'Let AI draft the title and description from this project’s feedback' })}
+              >
+                {briefing ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                {briefing
+                  ? t('wizards.briefLoading', { defaultValue: 'Drafting…' })
+                  : t('wizards.briefButton', { defaultValue: 'AI draft' })}
+              </button>
+            </div>
             <input type="text" value={docConfig.title} onChange={(e) => onDocConfigChange({
               ...docConfig,
               title: e.target.value,
-            })} placeholder="e.g., Real-time Delivery Tracking" className="w-full px-3 py-2 border rounded-lg" />
+            })} placeholder={t('wizards.featureTitlePlaceholder', { defaultValue: 'e.g., Real-time Delivery Tracking' })} className="w-full px-3 py-2 border rounded-lg" />
+            {briefError ? <p className="text-xs text-red-600 mt-1">{briefError}</p> : null}
           </div>
           <div>
-            <h3 className="font-medium mb-3">Feature Description</h3>
+            <h3 className="font-medium mb-3">{t('wizards.featureDescription', { defaultValue: 'Feature Description' })}</h3>
             <textarea value={docConfig.featureIdea} onChange={(e) => onDocConfigChange({
               ...docConfig,
               featureIdea: e.target.value,
-            })} placeholder="Describe the feature..." rows={3} className="w-full px-3 py-2 border rounded-lg" />
+            })} placeholder={t('wizards.featureDescriptionPlaceholder', { defaultValue: 'Describe the feature...' })} rows={3} className="w-full px-3 py-2 border rounded-lg" />
           </div>
-          {docConfig.docType === 'prfaq' && (
+          {hasPrfaq && (
             <div className="border-t pt-6">
-              <div className="flex items-center gap-2 mb-4">
-                <h3 className="font-medium">Amazon's 5 Customer Questions</h3>
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Working Backwards</span>
+              <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium">{t('wizards.amazonQuestions')}</h3>
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">{t('wizards.workingBackwards', { defaultValue: 'Working Backwards' })}</span>
+                </div>
+                <button
+                  onClick={onAutofill}
+                  disabled={autofilling}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-md text-xs disabled:opacity-50"
+                  title={t('wizards.autofillTitle', { defaultValue: 'Pre-populate the 5 questions using personas, feedback, and product context' })}
+                >
+                  {autofilling ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                  {autofilling
+                    ? t('wizards.autofillLoading', { defaultValue: 'Drafting…' })
+                    : t('wizards.autofillButton', { defaultValue: 'AI draft answers' })}
+                </button>
               </div>
-              <p className="text-sm text-gray-500 mb-4">
-                Answer these questions to create a customer-focused PR-FAQ. The more detail you provide, the better the output.
-              </p>
+              <p className="text-sm text-gray-500 mb-4">{t('wizards.amazonQuestionsHint')}</p>
+              {autofillError ? (
+                <p className="text-xs text-red-600 mb-3">⚠ {autofillError}</p>
+              ) : null}
               <div className="space-y-4">
                 {amazonQuestions.map((q, index) => (
                   <div key={q.title} className="bg-gray-50 rounded-lg p-4">
@@ -241,7 +380,7 @@ export function DocWizard({
                       value={docConfig.customerQuestions[index] ?? ''}
                       onChange={(e) => updateQuestion(index, e.target.value)}
                       placeholder={q.placeholder}
-                      rows={2}
+                      rows={3}
                       className="w-full px-3 py-2 border rounded-lg text-sm mt-2"
                     />
                   </div>
@@ -252,11 +391,13 @@ export function DocWizard({
           <ContextSummary config={contextConfig} personas={personas} documents={documents} />
         </div>
       )}
-      finalStepValid={docConfig.title.trim() !== '' && docConfig.featureIdea.trim() !== ''}
+      finalStepValid={docConfig.title.trim() !== '' && docConfig.featureIdea.trim() !== '' && docCount > 0}
       onClose={onClose}
       onSubmit={onSubmit}
       isSubmitting={generating === 'doc'}
-      submitLabel={<><FileText size={16} />Generate {docConfig.docType === 'prd' ? 'PRD' : 'PR-FAQ'}</>}
+      submitLabel={<><FileText size={16} />{bothSelected
+        ? t('wizards.generateBoth', { defaultValue: 'Generate PRD + PR-FAQ' })
+        : t(hasPrd ? 'wizards.generatePrd' : 'wizards.generatePrfaq', { defaultValue: hasPrd ? 'Generate PRD' : 'Generate PR-FAQ' })}</>}
     />
   )
 }

@@ -16,6 +16,7 @@ type WizardType = 'persona' | 'research' | 'doc' | 'merge' | null
 
 interface WizardSectionProps {
   readonly activeWizard: WizardType
+  readonly projectId: string
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
   readonly contextConfig: ContextConfig
@@ -38,6 +39,7 @@ interface WizardSectionProps {
 
 export default function WizardSection({
   activeWizard,
+  projectId,
   personas,
   documents,
   contextConfig,
@@ -76,6 +78,7 @@ export default function WizardSection({
   if (activeWizard === 'research') {
     return (
       <ResearchWizard
+        projectId={projectId}
         personas={personas}
         documents={documents}
         contextConfig={contextConfig}
@@ -92,6 +95,7 @@ export default function WizardSection({
   if (activeWizard === 'doc') {
     return (
       <DocWizard
+        projectId={projectId}
         personas={personas}
         documents={documents}
         contextConfig={contextConfig}
