@@ -211,6 +211,29 @@ describe('Plugin Loader', () => {
       expect(() => loadPlugins('/test/plugins')).toThrow();
     });
 
+    it('accepts timeout of exactly 900 seconds (Lambda hard max)', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(mockDirents('max_timeout_plugin'));
+
+      mockFs.readFileSync.mockReturnValue(JSON.stringify({
+        id: 'max_timeout_plugin',
+        name: 'Max Timeout Plugin',
+        icon: '⏱️',
+        infrastructure: {
+          ingestor: {
+            enabled: true,
+            timeout: 900,  // inclusive boundary — Lambda hard max
+          },
+        },
+      }));
+
+      const { loadPlugins } = await import('./plugin-loader');
+      const result = loadPlugins('/test/plugins');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].infrastructure.ingestor?.timeout).toBe(900);
+    });
+
     it('rejects memory exceeding 1024 MB', async () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readdirSync.mockReturnValue(mockDirents('big_plugin'));
