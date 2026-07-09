@@ -31,8 +31,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
 from shared.converse import converse
 
-# Generation limits (kept conservative to stay within the Lambda timeout/token budget)
-MAX_REVIEWS = 50
+# Generation limits. Generation is SEQUENTIAL — one Bedrock call per BATCH_SIZE inside a
+# single ingestor invocation — so the cap is bounded by the Lambda timeout (900s in the
+# manifest): ~15 batches of 10 fit with margin at the same per-batch budget as the old
+# 50/300s. Beyond this, Bedrock TPM/RPM quota (not Lambda time) becomes the real ceiling;
+# to scale further, fan out via SQS / Step Functions rather than raising this again.
+MAX_REVIEWS = 150
 DEFAULT_REVIEWS = 10
 BATCH_SIZE = 10
 MAX_FOCUS_AREAS = 12

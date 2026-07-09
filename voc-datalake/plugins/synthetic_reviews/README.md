@@ -31,7 +31,7 @@ You can filter synthetic data in/out anywhere the source is selectable.
 | Product Description | no | Improves relevance |
 | Target Customer / Persona | no | Shapes voice and concerns |
 | Focus Areas | no | Comma-separated topics (e.g. `delivery, pricing, support`) |
-| Number of Reviews | no | 1–50 per run (default 10) |
+| Number of Reviews | no | 1–150 per run (default 10) |
 | Sentiment Mix | no | balanced / mostly positive / mostly negative / polarized |
 | Review Language | no | en, de, es, fr |
 
