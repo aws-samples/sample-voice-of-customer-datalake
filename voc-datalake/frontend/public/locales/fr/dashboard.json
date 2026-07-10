@@ -23,6 +23,23 @@
   "urgentIssues_other": "{{count}} problèmes urgents",
   "welcome": "Bienvenue sur VoC Analytics",
   "welcomeDescription": "Configurez votre point de terminaison API et vos paramètres de marque pour commencer à analyser les retours clients.",
+  "home": {
+    "badge": "Prise en main",
+    "flowHint": "Quatre étapes, reflétées par les sections de la barre latérale.",
+    "howItWorks": "Comment ça marche",
+    "intro": "Transformez les retours clients dispersés en décisions produit. Collectez des retours depuis n'importe quelle source, laissez l'IA faire ressortir les thèmes, façonnez les enseignements en personas et spécifications, puis validez et priorisez ce qu'il faut construire ensuite.",
+    "phase1Desc": "Importez les retours clients via des scrapers web ou des formulaires intégrables, puis parcourez les enregistrements bruts et traités.",
+    "phase1Title": "Collecter et inspecter les données",
+    "phase2Desc": "Voyez ce que disent les clients : le sentiment, les catégories et les principaux problèmes remontent automatiquement.",
+    "phase2Title": "Lire les signaux",
+    "phase3Desc": "Posez des questions en langage naturel, puis transformez les enseignements en projets de recherche avec personas, PRD et PR/FAQ.",
+    "phase3Title": "Transformer les enseignements en idées",
+    "phase4Desc": "Confirmez la demande avec des formulaires de retour ciblés, puis classez ce qu'il faut construire selon la fréquence, la gravité et la portée.",
+    "phase4Title": "Valider et prioriser",
+    "quickStart": "Démarrage rapide",
+    "quickStartHint": "Pressé ? Accédez directement au chemin le plus rapide vers vos premiers enseignements.",
+    "title": "Bienvenue dans Voice of the Customer"
+  },
   "onboarding": {
     "heading": "Bienvenue — donnons vie à vos retours",
     "subheading": "Votre espace de travail est vide. Commencez par importer des retours clients, puis explorez-les et analysez-les.",

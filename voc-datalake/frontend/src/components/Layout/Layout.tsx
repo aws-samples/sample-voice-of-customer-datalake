@@ -16,6 +16,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
+  Home,
   LayoutDashboard,
   MessageSquare,
   FolderOpen,
@@ -41,20 +42,24 @@ import { isMenuItemEnabled } from '../../config/menuConfig'
 import { Sidebar, type NavItem } from './SidebarComponents'
 
 /**
- * Navigation items grouped by the AI-PDLC workshop phase they map to
- * (home → sources → signals → ideation → validation → settings), so the sidebar
+ * Navigation items. The two entry points — Home (the getting-started guide) and
+ * Dashboard (the analytics overview) — sit at the top with no section header.
+ * Everything below is grouped by the AI-PDLC workshop phase it maps to
+ * (sources → signals → ideation → validation → settings), so the sidebar
  * mirrors the product-development lifecycle the app is built around. The order
  * here drives the sidebar order; the `section` field groups items under a header
- * so the flow is visible instead of a flat 11-item list. Section headers are
- * rendered by <Sidebar> and auto-hide when a whole section is filtered out by
- * menu config or admin gating.
+ * so the flow is visible instead of a flat list. Section headers are rendered by
+ * <Sidebar> and auto-hide when a whole section is filtered out by menu config or
+ * admin gating. Items without a `section` (Home, Dashboard) render above the
+ * first header.
  *
- * Phase mapping: Home = landing overview · Sources = load + inspect data
- * (Phase 1) · Signals = analyze feedback/themes (Phase 1) · Ideation = research
- * → personas/PRD (Phase 2) · Validation = build survey + prioritize (Phase 3-4).
+ * Phase mapping: Sources = load + inspect data (Phase 1) · Signals = analyze
+ * feedback/themes (Phase 1) · Ideation = research → personas/PRD (Phase 2) ·
+ * Validation = build survey + prioritize (Phase 3-4).
  */
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', menuKey: 'dashboard', section: 'nav.section.home' },
+  { to: '/', icon: Home, labelKey: 'nav.home', menuKey: 'home' },
+  { to: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard', menuKey: 'dashboard' },
   { to: '/scrapers', icon: Globe, labelKey: 'nav.scrapers', menuKey: 'scrapers', section: 'nav.section.sources' },
   { to: '/data-explorer', icon: Database, labelKey: 'nav.dataExplorer', menuKey: 'data-explorer', section: 'nav.section.sources' },
   { to: '/feedback', icon: MessageSquare, labelKey: 'nav.feedback', menuKey: 'feedback', section: 'nav.section.signals' },

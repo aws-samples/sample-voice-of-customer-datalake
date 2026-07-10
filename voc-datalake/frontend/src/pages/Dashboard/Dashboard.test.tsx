@@ -311,7 +311,7 @@ describe('empty-state onboarding (P11)', () => {
     mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
   })
 
-  it('shows the onboarding steps when there is no feedback', async () => {
+  it('shows a compact empty state that points to Home when there is no feedback', async () => {
     mockGetSummary.mockResolvedValue({
       total_feedback: 0,
       avg_sentiment: 0,
@@ -324,8 +324,11 @@ describe('empty-state onboarding (P11)', () => {
     await waitFor(() => {
       expect(screen.getByText(/get your feedback flowing/i)).toBeInTheDocument()
     })
-    expect(screen.getByText('Collect reviews')).toBeInTheDocument()
-    expect(screen.getByText('Or share a form')).toBeInTheDocument()
+    // The compact empty state links to the Home guide (/) rather than
+    // duplicating the full onboarding cards, which now live on Home.
+    const homeLink = screen.getByRole('link', { name: /start here/i })
+    expect(homeLink).toHaveAttribute('href', '/')
+    expect(screen.queryByText('Collect reviews')).not.toBeInTheDocument()
     // The normal dashboard widgets are not rendered in the empty state.
     expect(screen.queryByText('Feedback Volume & Sentiment Trend')).not.toBeInTheDocument()
   })

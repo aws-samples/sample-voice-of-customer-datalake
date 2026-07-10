@@ -13,7 +13,8 @@ import { ChevronRight, Home } from 'lucide-react'
 import clsx from 'clsx'
 
 const routeLabels: Record<string, string> = {
-  '': 'Dashboard',
+  '': 'Home',
+  'dashboard': 'Dashboard',
   'feedback': 'Feedback',
   'categories': 'Categories',
   'chat': 'AI Chat',

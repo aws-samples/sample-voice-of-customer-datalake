@@ -22,6 +22,23 @@
   "urgentIssues_other": "{{count}} urgent issues",
   "welcome": "Welcome to VoC Analytics",
   "welcomeDescription": "Configure your API endpoint and brand settings to start analyzing customer feedback.",
+  "home": {
+    "badge": "Getting started",
+    "flowHint": "Four steps, mirrored by the sections in the sidebar.",
+    "howItWorks": "How it works",
+    "intro": "Turn scattered customer feedback into product decisions. Bring feedback in from any source, let AI surface the themes, shape the findings into personas and specs, then validate and prioritize what to build next.",
+    "phase1Desc": "Pull in customer feedback with web scrapers or embeddable forms, then browse the raw and processed records.",
+    "phase1Title": "Collect & inspect data",
+    "phase2Desc": "See what customers are telling you — sentiment, categories, and the biggest problems surfaced automatically.",
+    "phase2Title": "Read the signals",
+    "phase3Desc": "Ask questions in plain language, then spin findings into research projects with personas, PRDs, and PR/FAQs.",
+    "phase3Title": "Turn insight into ideas",
+    "phase4Desc": "Confirm demand with targeted feedback forms, then rank what to build by frequency, severity, and reach.",
+    "phase4Title": "Validate & prioritize",
+    "quickStart": "Quick start",
+    "quickStartHint": "In a hurry? Jump straight to the fastest path to your first insights.",
+    "title": "Welcome to Voice of the Customer"
+  },
   "onboarding": {
     "heading": "Welcome — let’s get your feedback flowing",
     "subheading": "Your workspace is empty. Start by bringing in customer feedback, then explore and analyze it.",

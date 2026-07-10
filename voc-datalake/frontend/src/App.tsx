@@ -11,6 +11,7 @@ import { useConfigStore } from './store/configStore'
 import { configureAmplify } from './lib/amplify-config'
 
 // Lazy load pages for better code splitting
+const Home = lazy(() => import('./pages/Home'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Feedback = lazy(() => import('./pages/Feedback'))
 const FeedbackDetail = lazy(() => import('./pages/FeedbackDetail'))
@@ -47,7 +48,8 @@ const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <Suspense fallback={<PageLoader />}><Dashboard /></Suspense> },
+      { index: true, element: <Suspense fallback={<PageLoader />}><Home /></Suspense> },
+      { path: 'dashboard', element: <Suspense fallback={<PageLoader />}><Dashboard /></Suspense> },
       { path: 'feedback', element: <Suspense fallback={<PageLoader />}><Feedback /></Suspense> },
       { path: 'feedback/:id', element: <Suspense fallback={<PageLoader />}><FeedbackDetail /></Suspense> },
       { path: 'categories', element: <Suspense fallback={<PageLoader />}><Categories /></Suspense> },

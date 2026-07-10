@@ -287,13 +287,28 @@ describe('workflow sections and gating (P11 — AI-PDLC phases)', () => {
     await waitFor(() => {
       expect(screen.getByText('Sources')).toBeInTheDocument()
     })
-    expect(screen.getByText('Home')).toBeInTheDocument()
     expect(screen.getByText('Signals')).toBeInTheDocument()
     expect(screen.getByText('Ideation')).toBeInTheDocument()
     expect(screen.getByText('Validation')).toBeInTheDocument()
   })
 
-  it('orders sections home → sources → signals → ideation → validation', async () => {
+  it('shows Home and Dashboard as top-level links above the first phase section', async () => {
+    render(<Layout />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Sources')).toBeInTheDocument()
+    })
+    // Home and Dashboard are entry-point links, not phase section headers.
+    expect(screen.getByRole('link', { name: /home/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument()
+    const nav = screen.getByRole('navigation')
+    const text = nav.textContent ?? ''
+    // Home sits above Dashboard, and both sit above the first phase header.
+    expect(text.indexOf('Home')).toBeLessThan(text.indexOf('Dashboard'))
+    expect(text.indexOf('Dashboard')).toBeLessThan(text.indexOf('Sources'))
+  })
+
+  it('orders phases sources → signals → ideation → validation', async () => {
     render(<Layout />, { wrapper: createWrapper() })
 
     await waitFor(() => {
@@ -301,7 +316,6 @@ describe('workflow sections and gating (P11 — AI-PDLC phases)', () => {
     })
     const nav = screen.getByRole('navigation')
     const text = nav.textContent ?? ''
-    expect(text.indexOf('Home')).toBeLessThan(text.indexOf('Sources'))
     expect(text.indexOf('Sources')).toBeLessThan(text.indexOf('Signals'))
     expect(text.indexOf('Signals')).toBeLessThan(text.indexOf('Ideation'))
     expect(text.indexOf('Ideation')).toBeLessThan(text.indexOf('Validation'))
