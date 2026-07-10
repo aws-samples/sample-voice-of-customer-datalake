@@ -469,6 +469,10 @@ export class VocApiStack extends cdk.Stack {
             `cp /asset-input/jobs/${jobFolder}/handler.py /asset-output/ && ` +
             `cp -r /asset-input/shared /asset-output/ && ` +
             `cp /asset-input/api/projects.py /asset-output/api/ && ` +
+            // document_generator's handle_job() does `from api.product_context import ...`
+            // for both the product_report doc_type and the PRD/PR-FAQ product-context
+            // injection — this file must ship in the bundle or both paths fail/degrade.
+            `cp /asset-input/api/product_context.py /asset-output/api/ && ` +
             `cp -r /asset-input/api/prompts /asset-output/prompts`
           ],
           platform: 'linux/arm64',
@@ -1151,7 +1155,15 @@ exports.handler = async (event) => {
   private createDocumentStateMachine(documentStepLambda: lambda.Function): sfn.StateMachine {
     const llmRetry = (t: tasks.LambdaInvoke) => {
       t.addRetry({
-        errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'],
+        // NOTE: a Lambda hitting ITS OWN configured timeout (as opposed to the
+        // Step Functions task's own `States.Timeout`, which is only enforced if
+        // a heartbeat/timeout is set on the state itself, which we don't do
+        // here) surfaces as `Sandbox.Timedout` — verified live: a 32K-max_tokens
+        // prd_document step exhausted the full 900s Lambda budget and the
+        // execution history recorded `"error": "Sandbox.Timedout"`, which this
+        // list did not previously include, so the retry never engaged and the
+        // whole job failed outright instead of getting a fresh 15-minute budget.
+        errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'Sandbox.Timedout', 'BedrockThrottlingException'],
         interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2,
       });
       return t;
@@ -1204,7 +1216,7 @@ exports.handler = async (event) => {
       }),
       resultPath: '$.save_result',
     });
-    save.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'], interval: cdk.Duration.seconds(2), maxAttempts: 3, backoffRate: 2 });
+    save.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'Sandbox.Timedout'], interval: cdk.Duration.seconds(2), maxAttempts: 3, backoffRate: 2 });
 
     const handleError = new tasks.LambdaInvoke(this, 'DocHandleError', {
       lambdaFunction: documentStepLambda,
