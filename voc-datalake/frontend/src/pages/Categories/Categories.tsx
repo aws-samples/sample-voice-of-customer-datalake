@@ -15,6 +15,7 @@ import { InsightsRow } from './InsightsRow'
 import { SentimentGauge } from './SentimentGaugeCard'
 import { WordCloudCard } from './WordCloudCard'
 import { CategorySelector } from './CategorySelector'
+import { CategoryDistribution } from './CategoryDistribution'
 import { FeedbackResults } from './FeedbackResults'
 import { generateCategoriesPDF } from './categoriesPdfGenerator'
 import { useTranslation } from 'react-i18next'
@@ -64,6 +65,10 @@ interface FilterState {
   selectedSource: string | null
   sentimentFilter: SentimentFilter
   minRating: number
+}
+
+function getPeriodDays(categories: { period_days: number } | undefined): number | undefined {
+  return categories?.period_days
 }
 
 function checkHasActiveFilters(filters: FilterState): boolean {
@@ -277,6 +282,8 @@ export default function Categories() {
       </div>
       <SourceFilter selectedSource={selectedSource} onSourceChange={setSelectedSource} allSources={allSources} />
       <InsightsRow categoryData={categoryData} totalIssues={totalIssues} />
+
+      <CategoryDistribution categoryData={categoryData} totalIssues={totalIssues} periodDays={getPeriodDays(categories)} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <SentimentGauge
