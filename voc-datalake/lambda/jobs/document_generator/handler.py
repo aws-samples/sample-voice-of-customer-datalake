@@ -29,7 +29,14 @@ FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 # Functions state has a 256KB ceiling; PRD/PR-FAQ step outputs (long CJK docs,
 # 30-90KB each, accumulated across 3-4 steps) blow past it. So intermediate
 # step text lives in S3 and only the small S3 keys travel through SF state.
+# This is also the bucket that hosts generated HTML prototypes (see
+# _prototype_s3_key/_prototype_url below) — same bucket, different prefixes
+# ("scratch/document_jobs/*" vs "prototypes/*").
 SCRATCH_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
+# Public-ish CloudFront URL for the /prototypes/* cache behavior (see
+# core-stack.ts) that serves prototype HTML with its own permissive CSP,
+# isolated from the main SPA's strict CSP. e.g. https://<domain>/prototypes
+PROTOTYPES_CDN_URL = os.environ.get('PROTOTYPES_CDN_URL', '').rstrip('/')
 
 
 def _gather_context(
@@ -316,6 +323,38 @@ def _extract_html(raw: str) -> str:
     return s[start:end + len('</html>')].strip()
 
 
+def _prototype_s3_key(project_id: str, doc_id: str) -> str:
+    return f"prototypes/{project_id}/{doc_id}.html"
+
+
+def _prototype_url(project_id: str, doc_id: str) -> str:
+    return f"{PROTOTYPES_CDN_URL}/{project_id}/{doc_id}.html"
+
+
+def _put_prototype_html(project_id: str, doc_id: str, html: str) -> None:
+    """Write generated prototype HTML to S3 under the /prototypes/* prefix that
+    the frontendDistribution's second cache behavior serves (core-stack.ts).
+    Prototypes are S3-only — no DynamoDB `content` field is written for new
+    prototypes (see FEATURE-isolated-prototype-hosting.md); only `prototype_url`
+    is persisted on the ProjectDocument item.
+    """
+    _s3().put_object(
+        Bucket=SCRATCH_BUCKET,
+        Key=_prototype_s3_key(project_id, doc_id),
+        Body=html.encode('utf-8'),
+        ContentType='text/html; charset=utf-8',
+    )
+
+
+def _get_prototype_html(project_id: str, doc_id: str) -> str:
+    """Read a previously generated prototype's HTML back from S3. Used by
+    feedback-driven regeneration, which needs the prior prototype's content to
+    revise rather than start from scratch.
+    """
+    obj = _s3().get_object(Bucket=SCRATCH_BUCKET, Key=_prototype_s3_key(project_id, doc_id))
+    return obj['Body'].read().decode('utf-8')
+
+
 def _latest_doc_by_prefix(projects_table, project_id: str, sk_prefix: str) -> dict | None:
     """
     Return the most recently created document of a given type for the project,
@@ -383,8 +422,19 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         if base_prototype_id:
             base = projects_table.get_item(
                 Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{base_prototype_id}'}
-            ).get('Item')
-            prior_html = (base or {}).get('content', '')
+            ).get('Item') or {}
+            # New (S3-only) prototypes have no `content` field — read the HTML
+            # back from S3 via prototype_url instead. Old (pre-migration)
+            # prototypes still have `content` inline in DynamoDB; fall back to
+            # that so revising a pre-fix prototype still works.
+            if base.get('prototype_url'):
+                try:
+                    prior_html = _get_prototype_html(project_id, base_prototype_id)
+                except Exception as e:
+                    logger.warning(f"Failed to read prior prototype HTML from S3: {e}")
+                    prior_html = base.get('content', '')
+            else:
+                prior_html = base.get('content', '')
         # Cap the prior HTML so the prompt stays within budget; the model gets
         # enough to understand structure/style and revise it toward the feedback.
         PRIOR_CAP = 24000
@@ -421,13 +471,22 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     if not html:
         raise RuntimeError('Prototype model did not return an HTML document.')
 
-    content = html
-
-    ctx.update_progress(90, 'saving_prototype')
+    ctx.update_progress(80, 'saving_prototype')
 
     now_dt = datetime.now(timezone.utc)
     now = now_dt.isoformat()
     doc_id = f"prototype_{now_dt.strftime('%Y%m%d%H%M%S')}"
+
+    # S3-only storage: the HTML is served directly from the /prototypes/* cache
+    # behavior (core-stack.ts), so DynamoDB only stores the URL, not the content
+    # itself. This also means the frontend's live preview, "Open in new tab",
+    # and "Download .html" never need the raw HTML in memory — they're all URL
+    # consumers now (no more Blob/createObjectURL indirection).
+    _put_prototype_html(project_id, doc_id, html)
+    prototype_url = _prototype_url(project_id, doc_id)
+
+    ctx.update_progress(90, 'saving_document')
+
     item = {
         'pk': f'PROJECT#{project_id}',
         'sk': f'PROTOTYPE#{doc_id}',
@@ -436,8 +495,8 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         'document_id': doc_id,
         'document_type': 'prototype',
         'title': title,
-        'content': content,
-        # 'html' → frontend renders content as a sandboxed <iframe srcdoc>.
+        'prototype_url': prototype_url,
+        # 'html' → frontend renders via <iframe src=prototype_url>.
         # Older prototypes have no prototype_format and are JSON specs (legacy).
         'prototype_format': 'html',
         'job_id': job_id,

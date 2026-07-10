@@ -283,12 +283,22 @@ export interface ProjectDocument {
   document_id: string
   document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'
   title: string
+  // New (S3-only) HTML prototypes have NO `content` — the HTML lives at
+  // `prototype_url` on CloudFront. Legacy prototypes (JSON specs, or
+  // pre-migration HTML) and all non-prototype document types still use
+  // `content` as before.
   content: string
   feature_idea?: string
   question?: string
-  // For prototypes: 'html' → content is a self-contained HTML document rendered
-  // in a sandboxed iframe. Absent → legacy JSON spec rendered via PrototypeRenderer.
+  // For prototypes: 'html' → this is a self-contained HTML document, served
+  // via `prototype_url` (new) or rendered from `content` via a sandboxed
+  // iframe srcDoc (legacy fallback). Absent → legacy JSON spec rendered via
+  // PrototypeRenderer.
   prototype_format?: 'html' | string
+  // CloudFront URL for the generated prototype HTML (new prototypes only —
+  // served from the /prototypes/* cache behavior with its own permissive CSP).
+  // Absent on legacy prototypes; callers fall back to `content`/srcDoc.
+  prototype_url?: string
   created_at: string
   updated_at?: string
 }

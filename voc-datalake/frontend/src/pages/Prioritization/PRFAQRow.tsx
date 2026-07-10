@@ -163,7 +163,13 @@ function PrototypePanel({
 }): ReactElement | null {
   const content = prototype?.content ?? ''
   const protoFormat = prototype?.prototype_format
-  const mode = useMemo(() => resolvePrototypeMode(content, protoFormat), [content, protoFormat])
+  const url = prototype?.prototype_url
+  // A new (S3-only) prototype has no `content` to run `resolvePrototypeMode`'s
+  // heuristics against — treat presence of `prototype_url` as HTML directly.
+  const mode = useMemo(
+    () => (url ? { kind: 'html' as const } : resolvePrototypeMode(content, protoFormat)),
+    [url, content, protoFormat],
+  )
   if (mode.kind === 'none') return null
   return (
     <div>
@@ -175,7 +181,7 @@ function PrototypePanel({
       </div>
       {mode.kind === 'html' ? (
         <div className="bg-white rounded-lg border overflow-hidden mt-2 h-96">
-          <HtmlPrototypeFrame html={content} title={prototype?.title} className="w-full h-full border-0" />
+          <HtmlPrototypeFrame url={url} html={content} title={prototype?.title} className="w-full h-full border-0" />
         </div>
       ) : (
         <div className="bg-white rounded-lg border p-3 sm:p-4 max-h-96 overflow-y-auto mt-2">

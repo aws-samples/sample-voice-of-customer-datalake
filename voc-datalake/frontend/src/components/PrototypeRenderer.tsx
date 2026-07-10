@@ -59,18 +59,39 @@ export function looksLikeHtmlDocument(content: string | null | undefined): boole
 }
 
 /**
- * Renders a self-contained HTML prototype inside a sandboxed iframe via srcdoc.
- * sandbox="allow-scripts" lets the prototype's inline navigation JS run while
- * keeping it isolated from the parent app (no same-origin, no top navigation).
- * The HTML is offline-first, so nothing external loads inside the frame.
+ * Renders a self-contained HTML prototype inside an iframe.
+ *
+ * `url` (new, preferred): loads the prototype from its own CloudFront path
+ * (`/prototypes/*`), which has a permissive CSP scoped ONLY to that path —
+ * this is what makes the prototype's inline navigation JS actually run.
+ * No `sandbox` attribute needed: cross-document `src=` loads are already
+ * isolated from the parent page by the browser's normal frame model (the
+ * `sandbox` on the old `srcDoc` approach was only compensating for the fact
+ * that a same-document `srcDoc` shares the parent's CSP/origin unless
+ * sandboxed).
+ *
+ * `html` (legacy fallback): pre-migration prototypes have no `prototype_url`
+ * and are rendered the old way, via `srcDoc` + `sandbox` — still broken
+ * (their inline `<script>` is CSP-blocked by the main app's strict policy),
+ * but non-breaking to display.
  */
 export function HtmlPrototypeFrame({
-  html, title, className,
+  url, html, title, className,
 }: {
-  readonly html: string
+  readonly url?: string
+  readonly html?: string
   readonly title?: string
   readonly className?: string
 }) {
+  if (url) {
+    return (
+      <iframe
+        title={title || 'Prototype'}
+        src={url}
+        className={className ?? 'w-full h-full border-0'}
+      />
+    )
+  }
   return (
     <iframe
       title={title || 'Prototype'}

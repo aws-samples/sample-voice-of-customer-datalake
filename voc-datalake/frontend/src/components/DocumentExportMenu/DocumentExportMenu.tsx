@@ -148,17 +148,21 @@ export default function DocumentExportMenu({
     return () => window.document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  if (!doc) return null
+  // New (S3-only) HTML prototypes have no `content` field — the HTML lives at
+  // `prototype_url` on CloudFront, not inline. Text-based export (copy/Kiro/
+  // markdown/txt/PDF) doesn't make sense for a rendered prototype, so hide
+  // this menu entirely for that case rather than exporting empty/garbage text.
+  if (!doc || (doc.document_type === 'prototype' && doc.prototype_url)) return null
 
   const copyContent = async () => {
-    await navigator.clipboard.writeText(doc.content)
+    await navigator.clipboard.writeText(doc.content ?? '')
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
   const copyToKiro = async () => {
     const kiroPrompt = project?.kiro_export_prompt != null && project.kiro_export_prompt !== '' ? project.kiro_export_prompt : ''
-    const prdSection = `# ${doc.title}\n\n${doc.content}`
+    const prdSection = `# ${doc.title}\n\n${doc.content ?? ''}`
     const fullContent = kiroPrompt === ''
       ? prdSection
       : `${kiroPrompt}\n\n---\n\n## PRD Document\n\n${prdSection}`
@@ -170,12 +174,12 @@ export default function DocumentExportMenu({
   }
 
   const downloadAsMarkdown = () => {
-    downloadFile(doc.content, `${sanitizeFilename(doc.title)}.md`, 'text/markdown')
+    downloadFile(doc.content ?? '', `${sanitizeFilename(doc.title)}.md`, 'text/markdown')
     setIsOpen(false)
   }
 
   const downloadAsTxt = () => {
-    const plainText = stripMarkdownLinks(doc.content)
+    const plainText = stripMarkdownLinks(doc.content ?? '')
       .replaceAll(/#{1,6}\s/g, '')
       .replaceAll(/\*\*(.+?)\*\*/g, '$1')
       .replaceAll(/\*(.+?)\*/g, '$1')

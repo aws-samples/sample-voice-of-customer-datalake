@@ -30,6 +30,7 @@ export interface VocApiStackProps extends cdk.StackProps {
   kmsKey: kms.Key;
   rawDataBucket: s3.Bucket;
   avatarsCdnUrl: string;
+  prototypesCdnUrl: string;
   websiteBucket: s3.Bucket;
   frontendDistribution: cloudfront.Distribution;
   frontendDomainName: string;
@@ -71,7 +72,7 @@ export class VocApiStack extends cdk.Stack {
 
     const {
       feedbackTable, aggregatesTable, projectsTable, jobsTable, conversationsTable,
-      kmsKey, rawDataBucket, avatarsCdnUrl, websiteBucket, frontendDistribution,
+      kmsKey, rawDataBucket, avatarsCdnUrl, prototypesCdnUrl, websiteBucket, frontendDistribution,
       frontendDomainName, userPool, userPoolClient, identityPool, processingQueueUrl, processingQueueArn,
       secretsArn, s3ImportBucket, researchStateMachine, brandName
     } = props;
@@ -539,6 +540,10 @@ export class VocApiStack extends cdk.Stack {
     }));
     // Product context: read extracted product-doc text when generating PRD/PR-FAQ.
     rawDataBucket.grantRead(documentGeneratorRole, 'projects/*/product_docs/extracted/*');
+    // Prototype HTML: write new prototypes + read prior ones (feedback-driven
+    // regeneration reads the prior prototype's HTML back out of S3). Scoped to
+    // this prefix only, not a bucket-wide grant.
+    rawDataBucket.grantReadWrite(documentGeneratorRole, 'prototypes/*');
 
     const documentGeneratorLambda = new lambda.Function(this, 'DocumentGeneratorJob', {
       functionName: uniqueName('voc-job-document-generator'),
@@ -554,6 +559,7 @@ export class VocApiStack extends cdk.Stack {
         FEEDBACK_TABLE: feedbackTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
+        PROTOTYPES_CDN_URL: prototypesCdnUrl,
         POWERTOOLS_SERVICE_NAME: 'voc-job-document-generator',
         LOG_LEVEL: 'INFO',
       },

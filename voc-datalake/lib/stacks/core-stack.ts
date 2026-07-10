@@ -44,6 +44,7 @@ export class VocCoreStack extends cdk.Stack {
   public readonly rawDataBucket: s3.Bucket;
   public readonly accessLogsBucket: s3.Bucket;
   public readonly avatarsCdnUrl: string;
+  public readonly prototypesCdnUrl: string;
 
   // Frontend infrastructure exports
   public readonly frontendDistribution: cloudfront.Distribution;
@@ -127,7 +128,15 @@ export class VocCoreStack extends cdk.Stack {
     const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeadersPolicy', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com https://*.lambda-url.${cdk.Stack.of(this).region}.on.aws; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
+          // frame-src 'self': required so the SPA can embed generated prototype HTML via
+          // <iframe src="https://<this-domain>/prototypes/*"> (PR #131 Finding 3 fix). This is
+          // a SEPARATE concern from frame-ancestors below: frame-ancestors governs who may embed
+          // THIS page, frame-src governs what THIS page may embed. Without it, frame-src falls
+          // back to default-src 'none' and blocks framing of anything, even same-origin content —
+          // the /prototypes/* behavior's own PrototypeHeadersPolicy (script-src 'unsafe-inline')
+          // still governs script execution inside that framed document; this only permits the
+          // cross-document load itself.
+          contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com https://*.lambda-url.${cdk.Stack.of(this).region}.on.aws; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
           override: true,
         },
         contentTypeOptions: { override: true },
@@ -178,6 +187,37 @@ export class VocCoreStack extends cdk.Stack {
     });
     cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
     this.avatarsCdnUrl = `https://${this.frontendDomainName}/avatars`;
+
+    // Prototypes served from the same distribution under /prototypes/* with their
+    // OWN response-headers policy that permits inline <script>/<style>. Bedrock
+    // (Opus 4.8) generates self-contained single-file HTML with inline JS for
+    // in-prototype navigation; the main SPA's securityHeadersPolicy above
+    // (script-src 'self') would block that JS entirely if reused here — hence a
+    // dedicated policy scoped ONLY to this path, applied via a second cache
+    // behavior (not a second distribution: cheaper, no extra propagation lag,
+    // mirrors the /avatars/* pattern). This is same-origin/same-domain as the
+    // main app, not a genuinely separate origin — the isolation that matters
+    // (the model's JS can't reach the parent app's DOM/storage/cookies) comes
+    // from the frontend loading this via a cross-document <iframe src=...>, not
+    // from the domain differing.
+    const prototypeHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'PrototypeHeadersPolicy', {
+      securityHeadersBehavior: {
+        contentSecurityPolicy: {
+          contentSecurityPolicy: "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-ancestors 'self'; object-src 'none'; base-uri 'none';",
+          override: true,
+        },
+        contentTypeOptions: { override: true },
+      },
+    });
+    this.frontendDistribution.addBehavior('/prototypes/*', origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket), {
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+      cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+      compress: true,
+      cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED, // prototypes are immutable per doc_id
+      responseHeadersPolicy: prototypeHeadersPolicy,
+    });
+    this.prototypesCdnUrl = `https://${this.frontendDomainName}/prototypes`;
 
     // ============================================
     // DYNAMODB TABLES
@@ -618,6 +658,7 @@ export class VocCoreStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'RawDataBucketArn', { value: this.rawDataBucket.bucketArn });
     new cdk.CfnOutput(this, 'AccessLogsBucketName', { value: this.accessLogsBucket.bucketName });
     new cdk.CfnOutput(this, 'AvatarsCdnUrl', { value: this.avatarsCdnUrl, description: 'CloudFront URL for persona avatar images' });
+    new cdk.CfnOutput(this, 'PrototypesCdnUrl', { value: this.prototypesCdnUrl, description: 'CloudFront URL for generated HTML prototypes' });
 
     // Frontend outputs
     new cdk.CfnOutput(this, 'WebsiteURL', { value: `https://${this.frontendDomainName}`, description: 'CloudFront Distribution URL' });

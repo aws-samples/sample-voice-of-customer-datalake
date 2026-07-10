@@ -136,6 +136,7 @@ const apiStack = new VocApiStack(app, 'VocApiStack', {
   kmsKey: coreStack.kmsKey,
   rawDataBucket: coreStack.rawDataBucket,
   avatarsCdnUrl: coreStack.avatarsCdnUrl,
+  prototypesCdnUrl: coreStack.prototypesCdnUrl,
   websiteBucket: coreStack.websiteBucket,
   frontendDistribution: coreStack.frontendDistribution,
   frontendDomainName: coreStack.frontendDomainName,

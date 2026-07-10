@@ -321,7 +321,7 @@ class TestBuildPrototype:
         mock_dynamodb['table'].get_item.return_value = {'Item': {'name': 'My Project'}}
 
     def test_build_prototype_saves_html_with_format_marker(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
         self._wire_tables(mock_dynamodb)
         mock_converse.return_value = self.HTML
@@ -334,10 +334,29 @@ class TestBuildPrototype:
         put_item = mock_dynamodb['table'].put_item.call_args.kwargs['Item']
         assert put_item['document_type'] == 'prototype'
         assert put_item['prototype_format'] == 'html'
-        assert put_item['content'] == self.HTML
+        # S3-only storage (2026-07-10 fix): no `content` field on new prototype
+        # items — the HTML lives in S3, only the CDN URL is in DynamoDB.
+        assert 'content' not in put_item
+        assert put_item['prototype_url'].endswith(f"/{result['document_id']}.html")
+
+    def test_build_prototype_writes_html_to_s3(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
+    ):
+        """The generated HTML is written to S3 under prototypes/{project_id}/{doc_id}.html."""
+        self._wire_tables(mock_dynamodb)
+        mock_converse.return_value = self.HTML
+
+        from jobs.document_generator.handler import lambda_handler
+        result = lambda_handler(self._prototype_event(sample_job_event), lambda_context)
+
+        mock_s3.put_object.assert_called_once()
+        put_kwargs = mock_s3.put_object.call_args.kwargs
+        assert put_kwargs['Key'] == f"prototypes/proj_20250101120000/{result['document_id']}.html"
+        assert put_kwargs['Body'] == self.HTML.encode('utf-8')
+        assert put_kwargs['ContentType'] == 'text/html; charset=utf-8'
 
     def test_build_prototype_uses_opus(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
         self._wire_tables(mock_dynamodb)
         mock_converse.return_value = self.HTML
@@ -348,7 +367,7 @@ class TestBuildPrototype:
         assert mock_converse.call_args.kwargs['model_id'] == 'global.anthropic.claude-opus-4-8'
 
     def test_build_prototype_passes_brand_and_language(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
         self._wire_tables(mock_dynamodb)
         mock_converse.return_value = self.HTML
@@ -363,10 +382,13 @@ class TestBuildPrototype:
         assert 'UNNI' in prompt
         assert 'Korean' in prompt  # ko → Korean UI-text hint
 
-    def test_build_prototype_feedback_revision(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+    def test_build_prototype_feedback_revision_reads_prior_html_from_s3(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
-        """Feedback + base_prototype_id → prompt includes feedback + prior HTML; item records lineage."""
+        """Feedback + base_prototype_id → prior HTML is read from S3 (new-style
+        prototype with `prototype_url`, not `content`), fed into the prompt,
+        and item records lineage.
+        """
         mock_dynamodb['table'].query.return_value = {
             'Items': [{'document_id': 'prd_1', 'content': 'PRD body', 'created_at': '2026-01-01'}],
         }
@@ -377,9 +399,14 @@ class TestBuildPrototype:
             if sk == 'META':
                 return {'Item': {'name': 'My Project'}}
             if sk.startswith('PROTOTYPE#'):
-                return {'Item': {'content': prior}}
+                # New-style item: prototype_url present, no inline `content`.
+                return {'Item': {'prototype_url': 'https://cdn.example.com/prototypes/proj_20250101120000/prototype_20260101000000.html'}}
             return {}
         mock_dynamodb['table'].get_item.side_effect = get_item
+
+        mock_body = MagicMock()
+        mock_body.read.return_value = prior.encode('utf-8')
+        mock_s3.get_object.return_value = {'Body': mock_body}
         mock_converse.return_value = self.HTML
 
         from jobs.document_generator.handler import lambda_handler
@@ -392,6 +419,8 @@ class TestBuildPrototype:
             lambda_context,
         )
 
+        mock_s3.get_object.assert_called_once()
+        assert mock_s3.get_object.call_args.kwargs['Key'] == 'prototypes/proj_20250101120000/prototype_20260101000000.html'
         prompt = mock_converse.call_args.kwargs['prompt']
         assert 'Switch to the admin perspective' in prompt  # feedback is in the prompt
         assert 'OLD user-facing screens' in prompt          # prior HTML included for revision
@@ -400,8 +429,44 @@ class TestBuildPrototype:
         assert put_item['revised_from_id'] == 'prototype_20260101000000'
         assert put_item['revision_feedback'] == 'Switch to the admin perspective'
 
+    def test_build_prototype_feedback_revision_falls_back_to_legacy_content(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
+    ):
+        """A pre-migration prototype (no `prototype_url`, has inline `content`)
+        still works as a revision base — the regen path falls back to reading
+        `content` directly instead of hitting S3.
+        """
+        mock_dynamodb['table'].query.return_value = {
+            'Items': [{'document_id': 'prd_1', 'content': 'PRD body', 'created_at': '2026-01-01'}],
+        }
+        prior = '<!DOCTYPE html><html><body>LEGACY prior prototype</body></html>'
+
+        def get_item(Key=None, **kwargs):
+            sk = (Key or {}).get('sk', '')
+            if sk == 'META':
+                return {'Item': {'name': 'My Project'}}
+            if sk.startswith('PROTOTYPE#'):
+                return {'Item': {'content': prior}}  # legacy shape, no prototype_url
+            return {}
+        mock_dynamodb['table'].get_item.side_effect = get_item
+        mock_converse.return_value = self.HTML
+
+        from jobs.document_generator.handler import lambda_handler
+        lambda_handler(
+            self._prototype_event(
+                sample_job_event,
+                feedback='Switch to the admin perspective',
+                base_prototype_id='prototype_legacy_1',
+            ),
+            lambda_context,
+        )
+
+        mock_s3.get_object.assert_not_called()
+        prompt = mock_converse.call_args.kwargs['prompt']
+        assert 'LEGACY prior prototype' in prompt
+
     def test_build_prototype_fails_without_source_documents(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
         # No PRD/PRFAQ found → query returns empty.
         mock_dynamodb['table'].query.return_value = {'Items': []}
@@ -416,7 +481,7 @@ class TestBuildPrototype:
         mock_converse.assert_not_called()
 
     def test_build_prototype_fails_when_model_returns_no_html(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
         self._wire_tables(mock_dynamodb)
         mock_converse.return_value = 'I cannot build that.'  # no HTML doc
@@ -426,3 +491,6 @@ class TestBuildPrototype:
 
         with pytest.raises(ServiceError, match="Document generation failed"):
             lambda_handler(self._prototype_event(sample_job_event), lambda_context)
+
+        # Should fail before ever attempting the S3 write.
+        mock_s3.put_object.assert_not_called()

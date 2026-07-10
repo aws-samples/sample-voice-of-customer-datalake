@@ -114,6 +114,7 @@ export default function DocumentsTab({
                   projectId={project.project_id}
                   documentId={selectedDoc.document_id}
                   html={selectedDoc.content}
+                  url={selectedDoc.prototype_url}
                   title={selectedDoc.title}
                   prototypeFormat={selectedDoc.prototype_format}
                   onDocumentChanged={onDocumentChanged}
@@ -249,53 +250,79 @@ function PrototypeFeedbackButton({
   )
 }
 
+// ── Legacy prototype actions: blob-based open/download for pre-migration docs ──
+// Only pre-migration prototypes (no `prototype_url`) hit this path; new
+// prototypes use plain <a href> links to their stable CDN URL instead.
+
+function LegacyHtmlActions({
+  html, safeName, t,
+}: {
+  readonly html: string
+  readonly safeName: string
+  readonly t: TFunc
+}) {
+  const onDownloadHtml = useCallback(() => {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = `${safeName}.html`
+    a.click()
+    URL.revokeObjectURL(blobUrl)
+  }, [html, safeName])
+  const onOpenInNewTab = useCallback(() => {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const blobUrl = URL.createObjectURL(blob)
+    window.open(blobUrl, '_blank', 'noopener,noreferrer')
+    // Revoke after a tick so the new tab has time to load.
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+  }, [html])
+
+  return (
+    <>
+      <button onClick={onOpenInNewTab} className="text-blue-600 hover:underline">
+        {t('documents.prototype.openNewTab', { defaultValue: 'Open in new tab' })}
+      </button>
+      <button onClick={onDownloadHtml} className="text-blue-600 hover:underline">
+        {t('documents.prototype.downloadHtml', { defaultValue: 'Download .html' })}
+      </button>
+    </>
+  )
+}
+
 // ── Prototype view: render the JSON spec natively (no iframe) ────────────────
 // PrototypeRenderer/parsePrototypeSpec moved to components/PrototypeRenderer
 // so the Prioritization page can reuse it.
 
 function PrototypeView({
-  projectId, documentId, html, title, prototypeFormat, onDocumentChanged,
+  projectId, documentId, html, url, title, prototypeFormat, onDocumentChanged,
 }: {
   readonly projectId: string
   readonly documentId: string
   readonly html: string
+  readonly url?: string
   readonly title: string
   readonly prototypeFormat?: string
   readonly onDocumentChanged?: () => void
 }) {
   const { t } = useTranslation('projectDetail')
 
-  const isHtml = prototypeFormat === 'html' || (prototypeFormat === undefined && looksLikeHtmlDocument(html))
+  const isHtml = prototypeFormat === 'html' || Boolean(url) || (prototypeFormat === undefined && looksLikeHtmlDocument(html))
   const spec = useMemo(() => (isHtml ? null : parsePrototypeSpec(html)), [isHtml, html])
 
   const safeName = title.replace(/[^\w\-가-힣]+/g, '_')
-  const onDownloadHtml = useCallback(() => {
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${safeName}.html`
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [html, safeName])
-  const onOpenInNewTab = useCallback(() => {
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    window.open(url, '_blank', 'noopener,noreferrer')
-    // Revoke after a tick so the new tab has time to load.
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  }, [html])
   const onDownload = useCallback(() => {
     const blob = new Blob([html], { type: 'application/json;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
+    const blobUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = blobUrl
     a.download = `${safeName}.json`
     a.click()
-    URL.revokeObjectURL(url)
+    URL.revokeObjectURL(blobUrl)
   }, [html, safeName])
 
-  // Newer format: a self-contained HTML document → render in a sandboxed iframe.
+  // Newer format: a self-contained HTML document, served either from a CDN
+  // URL (new, S3-only prototypes) or inline (legacy, pre-migration prototypes).
   if (isHtml) {
     return (
       <div className="flex-1 overflow-hidden flex flex-col">
@@ -309,16 +336,25 @@ function PrototypeView({
               onRegenerated={onDocumentChanged}
               t={t}
             />
-            <button onClick={onOpenInNewTab} className="text-blue-600 hover:underline">
-              {t('documents.prototype.openNewTab', { defaultValue: 'Open in new tab' })}
-            </button>
-            <button onClick={onDownloadHtml} className="text-blue-600 hover:underline">
-              {t('documents.prototype.downloadHtml', { defaultValue: 'Download .html' })}
-            </button>
+            {url ? (
+              // New prototypes are served from a stable, same-origin CDN URL —
+              // plain links, no Blob/createObjectURL indirection needed.
+              <>
+                <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  {t('documents.prototype.openNewTab', { defaultValue: 'Open in new tab' })}
+                </a>
+                <a href={url} download={`${safeName}.html`} className="text-blue-600 hover:underline">
+                  {t('documents.prototype.downloadHtml', { defaultValue: 'Download .html' })}
+                </a>
+              </>
+            ) : (
+              // Legacy prototypes only have inline `content` — fall back to blobbing it.
+              <LegacyHtmlActions html={html} safeName={safeName} t={t} />
+            )}
           </div>
         </div>
         <div className="flex-1 overflow-hidden border rounded-lg bg-white">
-          <HtmlPrototypeFrame html={html} title={title} className="w-full h-full border-0 rounded-lg" />
+          <HtmlPrototypeFrame url={url} html={html} title={title} className="w-full h-full border-0 rounded-lg" />
         </div>
       </div>
     )
