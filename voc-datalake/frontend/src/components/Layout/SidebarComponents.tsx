@@ -18,9 +18,9 @@ export interface NavItem {
   menuKey: string
   adminOnly?: boolean
   /**
-   * Workflow section this item belongs to. Items are grouped under a section
-   * header in the sidebar so the natural order (collect data → explore →
-   * analyze → act) is visible instead of a flat 11-item list.
+   * AI-PDLC workshop phase this item belongs to. Items are grouped under a
+   * section header in the sidebar so the lifecycle order (home → sources →
+   * signals → ideation → validation) is visible instead of a flat 11-item list.
    */
   section?: string
 }
@@ -67,7 +67,7 @@ export function SidebarHeader({
   )
 }
 
-// Section header shown above a group of nav items (e.g. "Data", "Analyze").
+// Section header shown above a group of nav items (e.g. "Sources", "Signals").
 function SectionHeader({ labelKey, first }: Readonly<{ labelKey: string; first: boolean }>) {
   const { t } = useTranslation()
   return (

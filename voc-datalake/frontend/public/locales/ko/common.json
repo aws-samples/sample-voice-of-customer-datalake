@@ -58,14 +58,15 @@
     "problemAnalysis": "문제 분석",
     "projects": "프로젝트",
     "scrapers": "스크레이퍼",
-    "settings": "설정",
     "section": {
-      "data": "데이터 수집",
-      "explore": "둘러보기",
-      "analyze": "분석",
-      "act": "실행",
-      "settings": "설정"
-    }
+      "home": "홈",
+      "ideation": "아이디어",
+      "settings": "설정",
+      "signals": "신호",
+      "sources": "데이터 소스",
+      "validation": "검증"
+    },
+    "settings": "설정"
   },
   "partialWindowHint": "모두 보려면 필터를 좁히세요",
   "priority": {

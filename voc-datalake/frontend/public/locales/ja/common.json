@@ -58,14 +58,15 @@
     "problemAnalysis": "問題分析",
     "projects": "プロジェクト",
     "scrapers": "スクレイパー",
-    "settings": "設定",
     "section": {
-      "data": "データ",
-      "explore": "探索",
-      "analyze": "分析",
-      "act": "アクション",
-      "settings": "設定"
-    }
+      "home": "ホーム",
+      "ideation": "アイデア創出",
+      "settings": "設定",
+      "signals": "シグナル",
+      "sources": "データソース",
+      "validation": "検証"
+    },
+    "settings": "設定"
   },
   "partialWindowHint": "すべて表示するにはフィルターを絞り込んでください",
   "priority": {

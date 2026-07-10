@@ -58,14 +58,15 @@
     "problemAnalysis": "Problem Analysis",
     "projects": "Projects",
     "scrapers": "Scrapers",
-    "settings": "Settings",
     "section": {
-      "data": "Data",
-      "explore": "Explore",
-      "analyze": "Analyze",
-      "act": "Act",
-      "settings": "Settings"
-    }
+      "home": "Home",
+      "ideation": "Ideation",
+      "settings": "Settings",
+      "signals": "Signals",
+      "sources": "Sources",
+      "validation": "Validation"
+    },
+    "settings": "Settings"
   },
   "partialWindowHint": "narrow filters to see all",
   "priority": {

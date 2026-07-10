@@ -61,14 +61,15 @@
     "problemAnalysis": "Analyse des problèmes",
     "projects": "Projets",
     "scrapers": "Collecteurs",
-    "settings": "Paramètres",
     "section": {
-      "data": "Données",
-      "explore": "Explorer",
-      "analyze": "Analyser",
-      "act": "Agir",
-      "settings": "Paramètres"
-    }
+      "home": "Accueil",
+      "ideation": "Idéation",
+      "settings": "Paramètres",
+      "signals": "Signaux",
+      "sources": "Sources de données",
+      "validation": "Validation des hypothèses"
+    },
+    "settings": "Paramètres"
   },
   "partialWindowHint": "affinez les filtres pour tout voir",
   "priority": {

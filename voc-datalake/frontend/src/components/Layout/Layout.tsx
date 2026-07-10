@@ -41,23 +41,29 @@ import { isMenuItemEnabled } from '../../config/menuConfig'
 import { Sidebar, type NavItem } from './SidebarComponents'
 
 /**
- * Navigation items grouped by workflow section (collect → explore → analyze →
- * act → settings). The order here drives the sidebar order; the `section` field
- * groups items under a header so the natural flow is visible instead of a flat
- * 11-item list. Section headers are rendered by <Sidebar> and auto-hide when a
- * whole section is filtered out by menu config or admin gating.
+ * Navigation items grouped by the AI-PDLC workshop phase they map to
+ * (home → sources → signals → ideation → validation → settings), so the sidebar
+ * mirrors the product-development lifecycle the app is built around. The order
+ * here drives the sidebar order; the `section` field groups items under a header
+ * so the flow is visible instead of a flat 11-item list. Section headers are
+ * rendered by <Sidebar> and auto-hide when a whole section is filtered out by
+ * menu config or admin gating.
+ *
+ * Phase mapping: Home = landing overview · Sources = load + inspect data
+ * (Phase 1) · Signals = analyze feedback/themes (Phase 1) · Ideation = research
+ * → personas/PRD (Phase 2) · Validation = build survey + prioritize (Phase 3-4).
  */
 const NAV_ITEMS: NavItem[] = [
-  { to: '/scrapers', icon: Globe, labelKey: 'nav.scrapers', menuKey: 'scrapers', section: 'nav.section.data' },
-  { to: '/feedback-forms', icon: FileText, labelKey: 'nav.feedbackForms', menuKey: 'feedback-forms', section: 'nav.section.data' },
-  { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', menuKey: 'dashboard', section: 'nav.section.explore' },
-  { to: '/feedback', icon: MessageSquare, labelKey: 'nav.feedback', menuKey: 'feedback', section: 'nav.section.explore' },
-  { to: '/data-explorer', icon: Database, labelKey: 'nav.dataExplorer', menuKey: 'data-explorer', section: 'nav.section.explore' },
-  { to: '/categories', icon: FolderOpen, labelKey: 'nav.categories', menuKey: 'categories', section: 'nav.section.analyze' },
-  { to: '/problems', icon: SearchX, labelKey: 'nav.problemAnalysis', menuKey: 'problems', section: 'nav.section.analyze' },
-  { to: '/chat', icon: Bot, labelKey: 'nav.aiChat', menuKey: 'chat', section: 'nav.section.analyze' },
-  { to: '/projects', icon: Briefcase, labelKey: 'nav.projects', menuKey: 'projects', section: 'nav.section.act' },
-  { to: '/prioritization', icon: ListOrdered, labelKey: 'nav.prioritization', menuKey: 'prioritization', section: 'nav.section.act' },
+  { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', menuKey: 'dashboard', section: 'nav.section.home' },
+  { to: '/scrapers', icon: Globe, labelKey: 'nav.scrapers', menuKey: 'scrapers', section: 'nav.section.sources' },
+  { to: '/data-explorer', icon: Database, labelKey: 'nav.dataExplorer', menuKey: 'data-explorer', section: 'nav.section.sources' },
+  { to: '/feedback', icon: MessageSquare, labelKey: 'nav.feedback', menuKey: 'feedback', section: 'nav.section.signals' },
+  { to: '/categories', icon: FolderOpen, labelKey: 'nav.categories', menuKey: 'categories', section: 'nav.section.signals' },
+  { to: '/problems', icon: SearchX, labelKey: 'nav.problemAnalysis', menuKey: 'problems', section: 'nav.section.signals' },
+  { to: '/chat', icon: Bot, labelKey: 'nav.aiChat', menuKey: 'chat', section: 'nav.section.ideation' },
+  { to: '/projects', icon: Briefcase, labelKey: 'nav.projects', menuKey: 'projects', section: 'nav.section.ideation' },
+  { to: '/feedback-forms', icon: FileText, labelKey: 'nav.feedbackForms', menuKey: 'feedback-forms', section: 'nav.section.validation' },
+  { to: '/prioritization', icon: ListOrdered, labelKey: 'nav.prioritization', menuKey: 'prioritization', section: 'nav.section.validation' },
   { to: '/settings', icon: Settings, labelKey: 'nav.settings', menuKey: 'settings', adminOnly: true, section: 'nav.section.settings' },
 ]
 

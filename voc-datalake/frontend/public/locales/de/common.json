@@ -58,14 +58,15 @@
     "problemAnalysis": "Problemanalyse",
     "projects": "Projekte",
     "scrapers": "Scraper",
-    "settings": "Einstellungen",
     "section": {
-      "data": "Daten",
-      "explore": "Erkunden",
-      "analyze": "Analysieren",
-      "act": "Handeln",
-      "settings": "Einstellungen"
-    }
+      "home": "Start",
+      "ideation": "Ideenfindung",
+      "settings": "Einstellungen",
+      "signals": "Signale",
+      "sources": "Quellen",
+      "validation": "Validierung"
+    },
+    "settings": "Einstellungen"
   },
   "partialWindowHint": "Filter eingrenzen, um alle zu sehen",
   "priority": {

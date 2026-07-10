@@ -273,7 +273,7 @@ describe('Layout with authenticated user', () => {
   })
 })
 
-describe('workflow sections and gating (P11)', () => {
+describe('workflow sections and gating (P11 — AI-PDLC phases)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
@@ -281,46 +281,48 @@ describe('workflow sections and gating (P11)', () => {
     vi.mocked(useIsAdmin).mockReturnValue(true)
   })
 
-  it('renders the workflow section headers', async () => {
+  it('renders the AI-PDLC phase section headers', async () => {
     render(<Layout />, { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(screen.getByText('Data')).toBeInTheDocument()
+      expect(screen.getByText('Sources')).toBeInTheDocument()
     })
-    expect(screen.getByText('Explore')).toBeInTheDocument()
-    expect(screen.getByText('Analyze')).toBeInTheDocument()
-    expect(screen.getByText('Act')).toBeInTheDocument()
+    expect(screen.getByText('Home')).toBeInTheDocument()
+    expect(screen.getByText('Signals')).toBeInTheDocument()
+    expect(screen.getByText('Ideation')).toBeInTheDocument()
+    expect(screen.getByText('Validation')).toBeInTheDocument()
   })
 
-  it('orders sections collect → explore → analyze → act', async () => {
+  it('orders sections home → sources → signals → ideation → validation', async () => {
     render(<Layout />, { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(screen.getByText('Data')).toBeInTheDocument()
+      expect(screen.getByText('Sources')).toBeInTheDocument()
     })
     const nav = screen.getByRole('navigation')
     const text = nav.textContent ?? ''
-    expect(text.indexOf('Data')).toBeLessThan(text.indexOf('Explore'))
-    expect(text.indexOf('Explore')).toBeLessThan(text.indexOf('Analyze'))
-    expect(text.indexOf('Analyze')).toBeLessThan(text.indexOf('Act'))
+    expect(text.indexOf('Home')).toBeLessThan(text.indexOf('Sources'))
+    expect(text.indexOf('Sources')).toBeLessThan(text.indexOf('Signals'))
+    expect(text.indexOf('Signals')).toBeLessThan(text.indexOf('Ideation'))
+    expect(text.indexOf('Ideation')).toBeLessThan(text.indexOf('Validation'))
   })
 
   it('hides a section header when all of its items are disabled by menu config', async () => {
-    // Disable both items in the "Act" section (projects + prioritization).
+    // Disable both items in the "Validation" section (feedback-forms + prioritization).
     mockIsMenuItemEnabled.mockImplementation(
-      (key: string) => key !== 'projects' && key !== 'prioritization',
+      (key: string) => key !== 'feedback-forms' && key !== 'prioritization',
     )
 
     render(<Layout />, { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(screen.getByText('Data')).toBeInTheDocument()
+      expect(screen.getByText('Sources')).toBeInTheDocument()
     })
-    // The "Act" header auto-hides because it has no visible items.
-    expect(screen.queryByText('Act')).not.toBeInTheDocument()
+    // The "Validation" header auto-hides because it has no visible items.
+    expect(screen.queryByText('Validation')).not.toBeInTheDocument()
     // Sibling sections are unaffected.
-    expect(screen.getByText('Explore')).toBeInTheDocument()
-    expect(screen.getByText('Analyze')).toBeInTheDocument()
+    expect(screen.getByText('Signals')).toBeInTheDocument()
+    expect(screen.getByText('Ideation')).toBeInTheDocument()
   })
 
   it('hides Settings (link and section) for non-admins', async () => {
@@ -329,7 +331,7 @@ describe('workflow sections and gating (P11)', () => {
     render(<Layout />, { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(screen.getByText('Data')).toBeInTheDocument()
+      expect(screen.getByText('Sources')).toBeInTheDocument()
     })
     // Settings is the only item in its section, so both the link and the
     // section header disappear for non-admins.
