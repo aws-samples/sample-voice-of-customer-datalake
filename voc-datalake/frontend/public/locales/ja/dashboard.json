@@ -21,5 +21,16 @@
   "urgentIssues_one": "{{count}}件の緊急の問題",
   "urgentIssues_other": "{{count}}件の緊急の問題",
   "welcome": "VoC Analyticsへようこそ",
-  "welcomeDescription": "APIエンドポイントとブランド設定を構成して、カスタマーフィードバックの分析を開始しましょう。"
+  "welcomeDescription": "APIエンドポイントとブランド設定を構成して、カスタマーフィードバックの分析を開始しましょう。",
+  "onboarding": {
+    "heading": "ようこそ — フィードバックを集め始めましょう",
+    "subheading": "ワークスペースは空です。まず顧客フィードバックを取り込み、その後で探索・分析しましょう。",
+    "cta": "ここから開始",
+    "step1Title": "レビューを収集",
+    "step1Desc": "アプリストア／Web スクレイパーを接続するか、CSV をインポートして顧客フィードバックを取り込みます。",
+    "step2Title": "またはフォームを共有",
+    "step2Desc": "フィードバックフォームを作成し、ユーザーから直接回答を集めます。",
+    "step3Title": "そして分析",
+    "step3Desc": "データが入ったら、AI チャットでトレンドを見つけてプロジェクトに変えます。"
+  }
 }

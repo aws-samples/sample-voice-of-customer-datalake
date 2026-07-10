@@ -22,5 +22,16 @@
   "urgentIssues_many": "{{count}} problèmes urgents",
   "urgentIssues_other": "{{count}} problèmes urgents",
   "welcome": "Bienvenue sur VoC Analytics",
-  "welcomeDescription": "Configurez votre point de terminaison API et vos paramètres de marque pour commencer à analyser les retours clients."
+  "welcomeDescription": "Configurez votre point de terminaison API et vos paramètres de marque pour commencer à analyser les retours clients.",
+  "onboarding": {
+    "heading": "Bienvenue — donnons vie à vos retours",
+    "subheading": "Votre espace de travail est vide. Commencez par importer des retours clients, puis explorez-les et analysez-les.",
+    "cta": "Commencer ici",
+    "step1Title": "Collecter les avis",
+    "step1Desc": "Connectez des scrapers d’app stores / web ou importez un CSV pour récupérer les retours clients.",
+    "step2Title": "Ou partager un formulaire",
+    "step2Desc": "Créez un formulaire de retour et recueillez les réponses directement auprès des utilisateurs.",
+    "step3Title": "Puis analyser",
+    "step3Desc": "Une fois les données présentes, utilisez le chat IA pour repérer les tendances et les transformer en projets."
+  }
 }

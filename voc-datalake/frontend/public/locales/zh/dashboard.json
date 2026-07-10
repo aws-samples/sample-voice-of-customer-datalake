@@ -21,5 +21,16 @@
   "urgentIssues_one": "{{count}}个紧急问题",
   "urgentIssues_other": "{{count}}个紧急问题",
   "welcome": "欢迎使用VoC Analytics",
-  "welcomeDescription": "配置API端点和品牌设置，开始分析客户反馈。"
+  "welcomeDescription": "配置API端点和品牌设置，开始分析客户反馈。",
+  "onboarding": {
+    "heading": "欢迎 — 让反馈流动起来",
+    "subheading": "您的工作区还是空的。请先导入客户反馈，然后再浏览和分析。",
+    "cta": "从这里开始",
+    "step1Title": "收集评价",
+    "step1Desc": "连接应用商店/网页抓取器，或导入 CSV 以引入客户反馈。",
+    "step2Title": "或分享表单",
+    "step2Desc": "创建反馈表单，直接从用户处收集回复。",
+    "step3Title": "然后分析",
+    "step3Desc": "有了数据后，使用 AI 聊天发现趋势并将其转化为项目。"
+  }
 }

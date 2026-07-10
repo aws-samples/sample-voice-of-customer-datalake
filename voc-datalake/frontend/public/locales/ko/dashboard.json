@@ -21,5 +21,16 @@
   "urgentIssues_one": "긴급 이슈 {{count}}건",
   "urgentIssues_other": "긴급 이슈 {{count}}건",
   "welcome": "VoC 분석에 오신 것을 환영합니다",
-  "welcomeDescription": "고객 피드백 분석을 시작하려면 API 엔드포인트와 브랜드 설정을 구성하세요."
+  "welcomeDescription": "고객 피드백 분석을 시작하려면 API 엔드포인트와 브랜드 설정을 구성하세요.",
+  "onboarding": {
+    "heading": "환영합니다 — 먼저 피드백을 채워볼까요",
+    "subheading": "워크스페이스가 비어 있습니다. 고객 피드백을 먼저 수집한 뒤 둘러보고 분석하세요.",
+    "cta": "여기서 시작",
+    "step1Title": "리뷰 수집",
+    "step1Desc": "앱스토어/웹 스크레이퍼를 연결하거나 CSV를 임포트해 고객 피드백을 가져옵니다.",
+    "step2Title": "또는 폼 공유",
+    "step2Desc": "피드백 양식을 만들어 사용자에게서 직접 응답을 받습니다.",
+    "step3Title": "그다음 분석",
+    "step3Desc": "데이터가 들어오면 AI 채팅으로 트렌드를 찾고 프로젝트로 만듭니다."
+  }
 }

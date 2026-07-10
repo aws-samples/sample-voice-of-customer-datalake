@@ -301,3 +301,48 @@ describe('Dashboard not configured', () => {
     expect(screen.getByRole('link', { name: /Go to Settings/i })).toBeInTheDocument()
   })
 })
+
+describe('empty-state onboarding (P11)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetSentiment.mockResolvedValue({ breakdown: {}, percentages: {} })
+    mockGetCategories.mockResolvedValue({ categories: {} })
+    mockGetSources.mockResolvedValue({ sources: {} })
+    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
+  })
+
+  it('shows the onboarding steps when there is no feedback', async () => {
+    mockGetSummary.mockResolvedValue({
+      total_feedback: 0,
+      avg_sentiment: 0,
+      urgent_count: 0,
+      daily_totals: [],
+    })
+
+    render(<Dashboard />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText(/get your feedback flowing/i)).toBeInTheDocument()
+    })
+    expect(screen.getByText('Collect reviews')).toBeInTheDocument()
+    expect(screen.getByText('Or share a form')).toBeInTheDocument()
+    // The normal dashboard widgets are not rendered in the empty state.
+    expect(screen.queryByText('Feedback Volume & Sentiment Trend')).not.toBeInTheDocument()
+  })
+
+  it('shows the normal dashboard when feedback exists', async () => {
+    mockGetSummary.mockResolvedValue({
+      total_feedback: 42,
+      avg_sentiment: 0.5,
+      urgent_count: 0,
+      daily_totals: [{ date: '2025-01-01', count: 42 }],
+    })
+
+    render(<Dashboard />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Feedback Volume & Sentiment Trend')).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/get your feedback flowing/i)).not.toBeInTheDocument()
+  })
+})

@@ -21,5 +21,16 @@
   "urgentIssues_one": "{{count}} dringendes Problem",
   "urgentIssues_other": "{{count}} dringende Probleme",
   "welcome": "Willkommen bei VoC Analytics",
-  "welcomeDescription": "Konfigurieren Sie Ihren API-Endpunkt und Ihre Markeneinstellungen, um mit der Analyse von Kundenfeedback zu beginnen."
+  "welcomeDescription": "Konfigurieren Sie Ihren API-Endpunkt und Ihre Markeneinstellungen, um mit der Analyse von Kundenfeedback zu beginnen.",
+  "onboarding": {
+    "heading": "Willkommen — bringen wir Ihr Feedback ins Rollen",
+    "subheading": "Ihr Arbeitsbereich ist leer. Sammeln Sie zunächst Kundenfeedback und erkunden und analysieren Sie es anschließend.",
+    "cta": "Hier starten",
+    "step1Title": "Bewertungen sammeln",
+    "step1Desc": "Verbinden Sie App-Store-/Web-Scraper oder importieren Sie eine CSV, um Kundenfeedback abzurufen.",
+    "step2Title": "Oder ein Formular teilen",
+    "step2Desc": "Erstellen Sie ein Feedback-Formular und sammeln Sie Antworten direkt von Nutzern.",
+    "step3Title": "Dann analysieren",
+    "step3Desc": "Sobald Daten vorliegen, finden Sie mit dem KI-Chat Trends und verwandeln sie in Projekte."
+  }
 }

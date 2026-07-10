@@ -22,5 +22,16 @@
   "urgentIssues_many": "{{count}} problemas urgentes",
   "urgentIssues_other": "{{count}} problemas urgentes",
   "welcome": "Bem-vindo ao VoC Analytics",
-  "welcomeDescription": "Configure o endpoint da API e as configurações de marca para começar a analisar o feedback dos clientes."
+  "welcomeDescription": "Configure o endpoint da API e as configurações de marca para começar a analisar o feedback dos clientes.",
+  "onboarding": {
+    "heading": "Bem-vindo — vamos dar vida aos seus feedbacks",
+    "subheading": "Seu espaço de trabalho está vazio. Comece trazendo feedback dos clientes e depois explore e analise.",
+    "cta": "Comece aqui",
+    "step1Title": "Coletar avaliações",
+    "step1Desc": "Conecte scrapers de app stores / web ou importe um CSV para trazer feedback dos clientes.",
+    "step2Title": "Ou compartilhe um formulário",
+    "step2Desc": "Crie um formulário de feedback e colete respostas diretamente dos usuários.",
+    "step3Title": "Depois analise",
+    "step3Desc": "Quando houver dados, use o chat de IA para encontrar tendências e transformá-las em projetos."
+  }
 }

@@ -21,5 +21,16 @@
   "urgentIssues_one": "{{count}} urgent issue",
   "urgentIssues_other": "{{count}} urgent issues",
   "welcome": "Welcome to VoC Analytics",
-  "welcomeDescription": "Configure your API endpoint and brand settings to start analyzing customer feedback."
+  "welcomeDescription": "Configure your API endpoint and brand settings to start analyzing customer feedback.",
+  "onboarding": {
+    "heading": "Welcome — let’s get your feedback flowing",
+    "subheading": "Your workspace is empty. Start by bringing in customer feedback, then explore and analyze it.",
+    "cta": "Start here",
+    "step1Title": "Collect reviews",
+    "step1Desc": "Connect app store / web scrapers or import a CSV to pull in customer feedback.",
+    "step2Title": "Or share a form",
+    "step2Desc": "Create a feedback form and collect responses directly from users.",
+    "step3Title": "Then analyze",
+    "step3Desc": "Once data is in, use AI Chat to find trends and turn them into projects."
+  }
 }

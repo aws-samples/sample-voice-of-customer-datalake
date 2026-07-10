@@ -58,7 +58,14 @@
     "problemAnalysis": "问题分析",
     "projects": "项目",
     "scrapers": "抓取器",
-    "settings": "设置"
+    "settings": "设置",
+    "section": {
+      "data": "数据",
+      "explore": "探索",
+      "analyze": "分析",
+      "act": "行动",
+      "settings": "设置"
+    }
   },
   "partialWindowHint": "缩小筛选范围以查看全部",
   "priority": {

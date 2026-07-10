@@ -2,7 +2,7 @@
  * @fileoverview Main application layout with sidebar navigation.
  *
  * Features:
- * - Collapsible sidebar with navigation links
+ * - Collapsible sidebar with workflow-grouped navigation links
  * - Mobile-responsive hamburger menu
  * - Time range selector in header
  * - Breadcrumb navigation
@@ -14,7 +14,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
   MessageSquare,
@@ -22,18 +22,13 @@ import {
   Settings,
   Bot,
   Globe,
-  PanelLeftClose,
-  PanelLeft,
   Briefcase,
   SearchX,
   ListOrdered,
   FileText,
-  LogOut,
   Database,
   Menu,
-  X,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -42,196 +37,36 @@ import { authService } from '../../services/auth'
 import TimeRangeSelector from '../TimeRangeSelector'
 import Breadcrumbs from '../Breadcrumbs'
 import UserProfileModal from '../UserProfileModal'
-import clsx from 'clsx'
 import { isMenuItemEnabled } from '../../config/menuConfig'
+import { Sidebar, type NavItem } from './SidebarComponents'
 
-interface NavItem {
-  to: string
-  icon: LucideIcon
-  label: string
-  menuKey: string
-  adminOnly?: boolean
-}
-
+/**
+ * Navigation items grouped by workflow section (collect → explore → analyze →
+ * act → settings). The order here drives the sidebar order; the `section` field
+ * groups items under a header so the natural flow is visible instead of a flat
+ * 11-item list. Section headers are rendered by <Sidebar> and auto-hide when a
+ * whole section is filtered out by menu config or admin gating.
+ */
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', menuKey: 'dashboard' },
-  { to: '/feedback', icon: MessageSquare, label: 'Feedback', menuKey: 'feedback' },
-  { to: '/categories', icon: FolderOpen, label: 'Categories', menuKey: 'categories' },
-  { to: '/problems', icon: SearchX, label: 'Problem Analysis', menuKey: 'problems' },
-  { to: '/chat', icon: Bot, label: 'AI Chat', menuKey: 'chat' },
-  { to: '/projects', icon: Briefcase, label: 'Projects', menuKey: 'projects' },
-  { to: '/prioritization', icon: ListOrdered, label: 'Prioritization', menuKey: 'prioritization' },
-  { to: '/data-explorer', icon: Database, label: 'Data Explorer', menuKey: 'data-explorer' },
-  { to: '/scrapers', icon: Globe, label: 'Scrapers', menuKey: 'scrapers' },
-  { to: '/feedback-forms', icon: FileText, label: 'Feedback Forms', menuKey: 'feedback-forms' },
-  { to: '/settings', icon: Settings, label: 'Settings', menuKey: 'settings', adminOnly: true },
+  { to: '/scrapers', icon: Globe, labelKey: 'nav.scrapers', menuKey: 'scrapers', section: 'nav.section.data' },
+  { to: '/feedback-forms', icon: FileText, labelKey: 'nav.feedbackForms', menuKey: 'feedback-forms', section: 'nav.section.data' },
+  { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', menuKey: 'dashboard', section: 'nav.section.explore' },
+  { to: '/feedback', icon: MessageSquare, labelKey: 'nav.feedback', menuKey: 'feedback', section: 'nav.section.explore' },
+  { to: '/data-explorer', icon: Database, labelKey: 'nav.dataExplorer', menuKey: 'data-explorer', section: 'nav.section.explore' },
+  { to: '/categories', icon: FolderOpen, labelKey: 'nav.categories', menuKey: 'categories', section: 'nav.section.analyze' },
+  { to: '/problems', icon: SearchX, labelKey: 'nav.problemAnalysis', menuKey: 'problems', section: 'nav.section.analyze' },
+  { to: '/chat', icon: Bot, labelKey: 'nav.aiChat', menuKey: 'chat', section: 'nav.section.analyze' },
+  { to: '/projects', icon: Briefcase, labelKey: 'nav.projects', menuKey: 'projects', section: 'nav.section.act' },
+  { to: '/prioritization', icon: ListOrdered, labelKey: 'nav.prioritization', menuKey: 'prioritization', section: 'nav.section.act' },
+  { to: '/settings', icon: Settings, labelKey: 'nav.settings', menuKey: 'settings', adminOnly: true, section: 'nav.section.settings' },
 ]
 
-// Sidebar header component
-function SidebarHeader({ 
-  sidebarCollapsed, 
-  mobileMenuOpen, 
-  brandName,
-  onClose,
-  onToggleCollapse 
-}: Readonly<{
-  sidebarCollapsed: boolean
-  mobileMenuOpen: boolean
-  brandName: string
-  onClose: () => void
-  onToggleCollapse: () => void
-}>) {
-  return (
-    <div className={clsx(
-      'p-4 flex items-center flex-shrink-0',
-      sidebarCollapsed ? 'lg:justify-center justify-between' : 'justify-between'
-    )}>
-      {(!sidebarCollapsed || mobileMenuOpen) && (
-        <div>
-          <h1 className="text-lg font-bold">VoC Analytics</h1>
-          <p className="text-gray-400 text-xs mt-0.5">{brandName || 'Configure brand'}</p>
-        </div>
-      )}
-      <button
-        onClick={onClose}
-        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors lg:hidden"
-        aria-label="Close menu"
-      >
-        <X size={20} />
-      </button>
-      <button
-        onClick={onToggleCollapse}
-        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors hidden lg:block"
-        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      >
-        {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
-      </button>
-    </div>
-  )
-}
-
-
-// Navigation item component
-function NavItemLink({ 
-  item, 
-  sidebarCollapsed, 
-  mobileMenuOpen, 
-  urgentCount 
-}: Readonly<{
-  item: NavItem
-  sidebarCollapsed: boolean
-  mobileMenuOpen: boolean
-  urgentCount: number
-}>) {
-  const Icon = item.icon
-  const showLabel = !sidebarCollapsed || mobileMenuOpen
-  
-  return (
-    <NavLink
-      to={item.to}
-      title={sidebarCollapsed && !mobileMenuOpen ? item.label : undefined}
-      className={({ isActive }) =>
-        clsx(
-          'flex items-center gap-3 py-2.5 rounded-lg mb-1 transition-colors',
-          sidebarCollapsed && !mobileMenuOpen ? 'lg:justify-center lg:px-2 px-4' : 'px-4',
-          isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800'
-        )
-      }
-    >
-      <Icon size={20} className="flex-shrink-0" />
-      {showLabel && (
-        <>
-          <span>{item.label}</span>
-          {item.to === '/feedback' && urgentCount > 0 && (
-            <span className="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
-              {urgentCount}
-            </span>
-          )}
-        </>
-      )}
-    </NavLink>
-  )
-}
-
-// User avatar component
-function UserAvatar({ initial, size }: Readonly<{ initial: string; size: 'sm' | 'md' }>) {
-  const sizeClasses = size === 'sm' ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'
-  return (
-    <div className={clsx(sizeClasses, 'rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold flex-shrink-0')}>
-      {initial}
-    </div>
-  )
-}
-
-// Expanded user profile button
-function ExpandedProfileButton({ user, userInitial, onShowProfile }: Readonly<{
-  user: { email?: string; username?: string }
-  userInitial: string
-  onShowProfile: () => void
-}>) {
-  return (
-    <button
-      onClick={onShowProfile}
-      className="flex items-center gap-2 mb-3 text-sm w-full text-left hover:bg-gray-800 rounded-lg px-2 py-1.5 -mx-2 transition-colors"
-      title="View profile"
-    >
-      <UserAvatar initial={userInitial} size="sm" />
-      <span className="text-gray-300 truncate">{user.email || user.username}</span>
-    </button>
-  )
-}
-
-// Collapsed user profile button
-function CollapsedProfileButton({ userInitial, onShowProfile }: Readonly<{
-  userInitial: string
-  onShowProfile: () => void
-}>) {
-  return (
-    <button
-      onClick={onShowProfile}
-      className="hidden lg:flex items-center justify-center w-full py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors mb-2"
-      title="View profile"
-    >
-      <UserAvatar initial={userInitial} size="md" />
-    </button>
-  )
-}
-
-// User section component
-function UserSection({ 
-  user, 
-  sidebarCollapsed, 
-  mobileMenuOpen, 
-  onShowProfile, 
-  onLogout 
-}: Readonly<{
-  user: { email?: string; username?: string }
-  sidebarCollapsed: boolean
-  mobileMenuOpen: boolean
-  onShowProfile: () => void
-  onLogout: () => void
-}>) {
-  const showExpanded = !sidebarCollapsed || mobileMenuOpen
-  const showCollapsed = sidebarCollapsed && !mobileMenuOpen
-  const userInitial = user.email?.charAt(0).toUpperCase() || 'U'
-  
-  return (
-    <div className={clsx('border-t border-gray-700 p-4 flex-shrink-0', showCollapsed && 'lg:px-2')}>
-      {showExpanded && <ExpandedProfileButton user={user} userInitial={userInitial} onShowProfile={onShowProfile} />}
-      {showCollapsed && <CollapsedProfileButton userInitial={userInitial} onShowProfile={onShowProfile} />}
-      <button
-        onClick={onLogout}
-        title="Sign out"
-        className={clsx(
-          'flex items-center gap-2 w-full py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors',
-          sidebarCollapsed && !mobileMenuOpen ? 'lg:justify-center lg:px-2 px-4' : 'px-4'
-        )}
-      >
-        <LogOut size={18} />
-        {showExpanded && <span>Sign out</span>}
-      </button>
-    </div>
-  )
+function isNavItemVisible(item: NavItem, isAdmin: boolean): boolean {
+  // Check if menu item is enabled in config
+  if (!isMenuItemEnabled(item.menuKey)) return false
+  // Check admin-only restriction
+  if (item.adminOnly === true && !isAdmin) return false
+  return true
 }
 
 // Main header component
@@ -263,11 +98,11 @@ function MainHeader({ onOpenMenu }: Readonly<{ onOpenMenu: () => void }>) {
 function useMobileMenu(pathname: string) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const prevPathRef = useRef(pathname)
-  
+
   // Close menu on route change - using callback to avoid setState in effect
   const closeMenu = useCallback(() => setMobileMenuOpen(false), [])
   const openMenu = useCallback(() => setMobileMenuOpen(true), [])
-  
+
   useEffect(() => {
     if (prevPathRef.current !== pathname) {
       prevPathRef.current = pathname
@@ -277,13 +112,13 @@ function useMobileMenu(pathname: string) {
       }
     }
   }, [pathname, mobileMenuOpen, closeMenu])
-  
+
   // Prevent body scroll when mobile menu is open
   useEffect(() => {
     document.body.style.overflow = mobileMenuOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [mobileMenuOpen])
-  
+
   return { mobileMenuOpen, openMenu, closeMenu }
 }
 
@@ -299,14 +134,8 @@ export default function Layout() {
   const [showProfileModal, setShowProfileModal] = useState(false)
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)
 
-  // Filter nav items based on user role and menu config
-  const visibleNavItems = NAV_ITEMS.filter(item => {
-    // Check if menu item is enabled in config
-    if (!isMenuItemEnabled(item.menuKey)) return false
-    // Check admin-only restriction
-    if (item.adminOnly && !isAdmin) return false
-    return true
-  })
+  // Filter nav items based on menu config and user role
+  const visibleNavItems = NAV_ITEMS.filter(item => isNavItemVisible(item, isAdmin))
 
   const { data: urgentData } = useQuery({
     queryKey: ['urgent', dateParams],
@@ -337,44 +166,19 @@ export default function Layout() {
       )}
 
       {/* Sidebar */}
-      <aside
-        className={clsx(
-          'bg-gray-900 text-white flex flex-col flex-shrink-0 h-screen transition-all duration-200 z-50',
-          'fixed lg:relative',
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
-          sidebarCollapsed ? 'lg:w-16' : 'w-64'
-        )}
-      >
-        <SidebarHeader
-          sidebarCollapsed={sidebarCollapsed}
-          mobileMenuOpen={mobileMenuOpen}
-          brandName={config.brandName}
-          onClose={closeMenu}
-          onToggleCollapse={toggleSidebar}
-        />
-
-        <nav className={clsx('flex-1 overflow-y-auto', sidebarCollapsed && !mobileMenuOpen ? 'lg:px-2 px-4' : 'px-4')}>
-          {visibleNavItems.map(item => (
-            <NavItemLink
-              key={item.to}
-              item={item}
-              sidebarCollapsed={sidebarCollapsed}
-              mobileMenuOpen={mobileMenuOpen}
-              urgentCount={urgentCount}
-            />
-          ))}
-        </nav>
-
-        {isAuthenticated && user && (
-          <UserSection
-            user={user}
-            sidebarCollapsed={sidebarCollapsed}
-            mobileMenuOpen={mobileMenuOpen}
-            onShowProfile={showProfile}
-            onLogout={handleLogout}
-          />
-        )}
-      </aside>
+      <Sidebar
+        sidebarCollapsed={sidebarCollapsed}
+        mobileMenuOpen={mobileMenuOpen}
+        brandName={config.brandName}
+        visibleNavItems={visibleNavItems}
+        urgentCount={urgentCount}
+        isAuthenticated={isAuthenticated}
+        user={user}
+        onClose={closeMenu}
+        onToggleCollapse={toggleSidebar}
+        onShowProfile={showProfile}
+        onLogout={handleLogout}
+      />
 
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">

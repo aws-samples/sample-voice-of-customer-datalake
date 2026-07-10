@@ -58,7 +58,14 @@
     "problemAnalysis": "Problemanalyse",
     "projects": "Projekte",
     "scrapers": "Scraper",
-    "settings": "Einstellungen"
+    "settings": "Einstellungen",
+    "section": {
+      "data": "Daten",
+      "explore": "Erkunden",
+      "analyze": "Analysieren",
+      "act": "Handeln",
+      "settings": "Einstellungen"
+    }
   },
   "partialWindowHint": "Filter eingrenzen, um alle zu sehen",
   "priority": {

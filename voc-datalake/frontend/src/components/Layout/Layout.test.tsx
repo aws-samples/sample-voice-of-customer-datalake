@@ -43,6 +43,13 @@ vi.mock('../../store/authStore', () => ({
   useIsAdmin: vi.fn(() => true),
 }))
 
+// Mock menu config so P11 gating tests can toggle individual items.
+// Defaults to all-enabled so existing tests see every nav link.
+const mockIsMenuItemEnabled = vi.fn((_key: string) => true)
+vi.mock('../../config/menuConfig', () => ({
+  isMenuItemEnabled: (key: string) => mockIsMenuItemEnabled(key),
+}))
+
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom')
@@ -67,6 +74,7 @@ vi.mock('../UserProfileModal', () => ({
 }))
 
 import Layout from './Layout'
+import { useIsAdmin } from '../../store/authStore'
 
 function createWrapper(initialEntries = ['/']) {
   const queryClient = new QueryClient({
@@ -262,5 +270,71 @@ describe('Layout with authenticated user', () => {
     await waitFor(() => {
       expect(screen.getByTitle('Sign out')).toBeInTheDocument()
     })
+  })
+})
+
+describe('workflow sections and gating (P11)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
+    mockIsMenuItemEnabled.mockImplementation(() => true)
+    vi.mocked(useIsAdmin).mockReturnValue(true)
+  })
+
+  it('renders the workflow section headers', async () => {
+    render(<Layout />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Data')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Explore')).toBeInTheDocument()
+    expect(screen.getByText('Analyze')).toBeInTheDocument()
+    expect(screen.getByText('Act')).toBeInTheDocument()
+  })
+
+  it('orders sections collect → explore → analyze → act', async () => {
+    render(<Layout />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Data')).toBeInTheDocument()
+    })
+    const nav = screen.getByRole('navigation')
+    const text = nav.textContent ?? ''
+    expect(text.indexOf('Data')).toBeLessThan(text.indexOf('Explore'))
+    expect(text.indexOf('Explore')).toBeLessThan(text.indexOf('Analyze'))
+    expect(text.indexOf('Analyze')).toBeLessThan(text.indexOf('Act'))
+  })
+
+  it('hides a section header when all of its items are disabled by menu config', async () => {
+    // Disable both items in the "Act" section (projects + prioritization).
+    mockIsMenuItemEnabled.mockImplementation(
+      (key: string) => key !== 'projects' && key !== 'prioritization',
+    )
+
+    render(<Layout />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Data')).toBeInTheDocument()
+    })
+    // The "Act" header auto-hides because it has no visible items.
+    expect(screen.queryByText('Act')).not.toBeInTheDocument()
+    // Sibling sections are unaffected.
+    expect(screen.getByText('Explore')).toBeInTheDocument()
+    expect(screen.getByText('Analyze')).toBeInTheDocument()
+  })
+
+  it('hides Settings (link and section) for non-admins', async () => {
+    vi.mocked(useIsAdmin).mockReturnValue(false)
+
+    render(<Layout />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Data')).toBeInTheDocument()
+    })
+    // Settings is the only item in its section, so both the link and the
+    // section header disappear for non-admins.
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument()
+    // Non-admin still sees the rest of the nav.
+    expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument()
   })
 })

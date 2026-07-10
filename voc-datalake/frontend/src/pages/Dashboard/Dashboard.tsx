@@ -22,6 +22,7 @@ import SocialFeed from '../../components/SocialFeed'
 import { generateDashboardPDF } from './dashboardPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
+import EmptyOnboardingState from './EmptyOnboardingState'
 
 const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
 
@@ -328,6 +329,12 @@ export default function Dashboard() {
 
   if (summaryLoading) {
     return <LoadingState />
+  }
+
+  // No feedback yet → guide the user through collecting data instead of
+  // rendering empty charts (prd-fix #10 onboarding/IA).
+  if ((summary?.total_feedback ?? 0) === 0) {
+    return <EmptyOnboardingState />
   }
 
   const sourcesCount = Object.keys(sources?.sources || {}).length
