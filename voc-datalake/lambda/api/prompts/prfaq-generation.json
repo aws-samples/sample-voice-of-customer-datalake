@@ -5,28 +5,28 @@
     "customer_thinking": {
       "name": "customer_thinking",
       "description": "Deep customer-centric thinking about needs and wants",
-      "max_tokens": 2000,
+      "max_tokens": 8000,
       "system_prompt": "You are thinking deeply about customers and their needs.\nChannel the voice of real customers based on the feedback data.",
-      "user_prompt_template": "Think deeply about what customers really want and need.\n\nFEATURE IDEA: {feature_idea}\n\nUSER PERSONAS:\n{personas_context}\n\nCUSTOMER FEEDBACK:\n{feedback_context}\n\nAnswer these questions from the customer's perspective:\n1. What problem does this solve for me?\n2. Why should I care about this?\n3. How will this make my life better?\n4. What would make me skeptical?\n5. What would delight me about this?"
+      "user_prompt_template": "Think deeply about what customers really want and need.\n\nFEATURE IDEA: {feature_idea}\n\nCURRENT PRODUCT CONTEXT (existing product/service the feature is being added to):\n{product_context}\n\nUSER PERSONAS:\n{personas_context}\n\nCUSTOMER FEEDBACK:\n{feedback_context}\n\nAnswer these questions from the customer's perspective, grounded in the current product context:\n1. What problem does this solve for me?\n2. Why should I care about this?\n3. How will this make my life better?\n4. What would make me skeptical?\n5. What would delight me about this?"
     },
     "press_release": {
       "name": "press_release",
       "description": "Write Amazon-style press release announcing the feature",
-      "max_tokens": 2500,
-      "system_prompt": "You are writing an Amazon-style press release announcing a new feature.\nWrite as if the feature is already launched and successful. Be specific and customer-focused.",
-      "user_prompt_template": "Write a press release for this feature.\n\nCustomer insights:\n{previous}\n\nThe press release should include:\n1. **Headline**: Attention-grabbing, customer-benefit focused\n2. **Subheadline**: Expand on the headline\n3. **City, Date**: [City, Date]\n4. **Opening Paragraph**: Who, what, when, where, why\n5. **Problem Paragraph**: The customer problem being solved\n6. **Solution Paragraph**: How the feature solves it\n7. **Quote from Leadership**: Vision and commitment\n8. **Customer Quote**: From one of the personas\n9. **How It Works**: Brief explanation\n10. **Call to Action**: How to get started\n\nWrite in professional press release style."
+      "max_tokens": 8000,
+      "system_prompt": "You are writing a substantial Amazon-style press release announcing a new feature. Write as if the feature has just launched and is already gaining real traction. Be specific, concrete, and customer-focused. Aim for ~700-1000 words across all sections — this is a real release, not a stub.",
+      "user_prompt_template": "Write a complete press release for this feature.\n\nCustomer insights:\n{previous}\n\nUSE THIS LAUNCH DATE in the dateline (do NOT use today's date and do NOT use any past date): {launch_date}\n\nThe press release MUST include ALL of the following sections, each fleshed out properly (not one-line stubs):\n\n1. **Headline** — Attention-grabbing, customer-benefit focused (one strong line).\n2. **Subheadline** — Expands on the headline with the most compelling specific.\n3. **Dateline** — Use the format \"CITY — {launch_date}\" (e.g. \"SEOUL — 2026-09-15\"). Pick a city appropriate to the brand and personas.\n4. **Opening paragraph** — 3-5 sentences covering who/what/when/where/why with concrete numbers.\n5. **Problem paragraph** — 4-6 sentences describing the pain point, grounded in real persona behavior or feedback. Include at least one specific scenario.\n6. **Solution paragraph** — 4-6 sentences explaining how the feature solves it. Be concrete about what happens step-by-step from the customer's perspective.\n7. **Leadership quote** — A 2-3 sentence quote attributed to a named executive role (e.g. 'Head of [relevant area]'). Vision + commitment, NOT marketing fluff.\n8. **Customer quote** — A 2-3 sentence quote from one of the personas, using their own voice and one concrete benefit they experienced.\n9. **How it works** — A short numbered or bulleted walk-through (4-6 steps) of the customer journey.\n10. **Availability** — Where, when, who is eligible, on which platforms. Use {launch_date} as the launch date.\n11. **Call to action** — Clear next step for customers (download, opt-in, contact).\n\nWrite in professional press release style. Match the source language. Avoid hype words. Use concrete numbers wherever possible. The full press release should read like a real, detailed announcement — NOT a one-paragraph teaser."
     },
     "customer_faq": {
       "name": "customer_faq",
       "description": "Generate customer-facing FAQ section",
-      "max_tokens": 2000,
+      "max_tokens": 4000,
       "system_prompt": "You are anticipating customer questions about a new feature.\nThink like a skeptical but interested customer.",
       "user_prompt_template": "Generate the Customer FAQ section.\n\nPress Release:\n{previous}\n\nCreate 5-7 customer FAQs covering:\n- How does this work?\n- How much does it cost?\n- When is it available?\n- What if I have problems?\n- How is this different from alternatives?\n- Questions specific to each persona\n\nFormat as Q&A pairs."
     },
     "internal_faq": {
       "name": "internal_faq",
       "description": "Generate internal stakeholder FAQ section",
-      "max_tokens": 2000,
+      "max_tokens": 8000,
       "system_prompt": "You are anticipating internal stakeholder questions.\nThink like executives, engineers, and business partners.",
       "user_prompt_template": "Generate the Internal FAQ section.\n\nPress Release and Customer FAQ:\n{previous}\n\nCreate 5-7 internal FAQs covering:\n- Why now? Why this?\n- What are the technical requirements?\n- What are the risks?\n- How do we measure success?\n- What resources are needed?\n- What's the timeline?\n\nFormat as Q&A pairs."
     }

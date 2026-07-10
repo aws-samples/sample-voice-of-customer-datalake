@@ -110,24 +110,29 @@ export function useProjectMutations({
   })
 
   const docMut = useMutation({
-    mutationFn: () => projectsApi.generateDocument(projectId, {
-      doc_type: docConfig.docType,
-      title: docConfig.title,
-      feature_idea: docConfig.featureIdea,
-      data_sources: {
-        feedback: contextConfig.useFeedback,
-        personas: contextConfig.usePersonas,
-        documents: contextConfig.useDocuments,
-        research: contextConfig.useResearch,
-      },
-      selected_persona_ids: contextConfig.selectedPersonaIds,
-      selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
-      feedback_sources: contextConfig.sources,
-      feedback_categories: contextConfig.categories,
-      days: contextConfig.days,
-      customer_questions: docConfig.customerQuestions.filter((q) => q.trim() !== ''),
-      response_language: i18n.language,
-    }),
+    // One or both of PRD / PR-FAQ may be selected. Each fires as its own async
+    // job (they run in parallel server-side), so the user can request both at once.
+    mutationFn: async () => {
+      const types = docConfig.docTypes.length > 0 ? docConfig.docTypes : ['prfaq' as const]
+      const base = {
+        title: docConfig.title,
+        feature_idea: docConfig.featureIdea,
+        data_sources: {
+          feedback: contextConfig.useFeedback,
+          personas: contextConfig.usePersonas,
+          documents: contextConfig.useDocuments,
+          research: contextConfig.useResearch,
+        },
+        selected_persona_ids: contextConfig.selectedPersonaIds,
+        selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
+        feedback_sources: contextConfig.sources,
+        feedback_categories: contextConfig.categories,
+        days: contextConfig.days,
+        customer_questions: docConfig.customerQuestions.filter((q) => q.trim() !== ''),
+        response_language: i18n.language,
+      }
+      return Promise.all(types.map((doc_type) => projectsApi.generateDocument(projectId, { doc_type, ...base })))
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
       onSuccess()

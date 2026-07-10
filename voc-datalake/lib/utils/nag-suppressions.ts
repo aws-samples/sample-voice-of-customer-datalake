@@ -141,6 +141,9 @@ export const bedrockModelSuppressions: NagPackSuppression[] = [
     appliesTo: [
       'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
       'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+      // Opus 4.8 powers the HTML prototype builder (document-generator Lambda).
+      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-8',
+      { regex: '/Resource::arn:aws:bedrock:\\*:.*:inference-profile/global\\.anthropic\\.claude-opus-4-8/' },
     ],
   },
 ];
@@ -160,7 +163,7 @@ export const pluginSystemSuppressions: NagPackSuppression[] = [
   },
   {
     id: 'AwsSolutions-IAM5',
-    reason: 'Lambda version/alias wildcard required for Step Functions state machine invocations',
+    reason: 'Lambda version/alias wildcard required for Step Functions state machine invocations and async job Lambda invocations',
     appliesTo: [
       { regex: '/Resource::<.*ResearchStepLambda.*\.Arn>:\*/' },
       { regex: '/Resource::<.*ModelAgreementLambda.*\.Arn>:\*/' },

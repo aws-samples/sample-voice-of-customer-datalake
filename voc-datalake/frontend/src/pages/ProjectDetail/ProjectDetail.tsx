@@ -12,6 +12,7 @@ import {
 } from 'react-router-dom'
 import { projectsApi } from '../../api/projectsApi'
 import { useConfigStore } from '../../store/configStore'
+import BuildPrototypeButton from './BuildPrototypeButton'
 import JobsSection from './JobsSection'
 import ProjectHeader from './ProjectHeader'
 import {
@@ -174,6 +175,11 @@ export default function ProjectDetail() {
   } = data
   const jobs = jobsData?.jobs ?? []
 
+  // Prototype builds reference the project's latest PRD and PR-FAQ: both if
+  // present, otherwise whichever one exists. Enabled once at least one exists.
+  const hasPrd = documents.some((d) => d.document_type === 'prd')
+  const hasPrfaq = documents.some((d) => d.document_type === 'prfaq')
+
   return (
     <div className="space-y-6">
       <ProjectHeader
@@ -183,10 +189,26 @@ export default function ProjectDetail() {
           void navigate('/projects')
         }}
       />
-      <ProjectTabs activeTab={activeTab} personasCount={personas.length} documentsCount={documents.length} onTabChange={setActiveTab} />
+      <ProjectTabs
+        activeTab={activeTab}
+        personasCount={personas.length}
+        documentsCount={documents.length}
+        onTabChange={setActiveTab}
+        rightSlot={(
+          <BuildPrototypeButton
+            projectId={project.project_id}
+            hasPrd={hasPrd}
+            hasPrfaq={hasPrfaq}
+            onDocumentChanged={() => {
+              void queryClient.invalidateQueries({ queryKey: ['project', id] })
+            }}
+          />
+        )}
+      />
 
       <WizardSection
         activeWizard={wizard.activeWizard}
+        projectId={project.project_id}
         personas={personas}
         documents={documents}
         contextConfig={wizard.contextConfig}
@@ -231,6 +253,7 @@ export default function ProjectDetail() {
         onGenerateDoc={() => wizard.setActiveWizard('doc')}
         onRunResearch={() => wizard.setActiveWizard('research')}
         onRemixDocuments={wizard.openMergeWizard}
+        onOpenProductTool={() => setActiveTab('product')}
         onSaveKiroPrompt={handleSaveKiroPrompt}
         onSelectPersona={selection.setSelectedPersona}
         onEditPersona={() => selection.selectedPersona && selection.setEditingPersona(selection.selectedPersona)}

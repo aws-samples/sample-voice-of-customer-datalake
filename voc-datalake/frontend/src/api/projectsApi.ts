@@ -3,6 +3,7 @@
 import { fetchApi } from './client'
 import type {
   Project, ProjectDetail, ProjectPersona, ProjectDocument, ProjectJob,
+  ProductContext, ProductDoc, ProductInterviewTurnResponse,
 } from './types'
 
 export const projectsApi = {
@@ -193,4 +194,103 @@ export const projectsApi = {
 
   deleteDocument: (projectId: string, documentId: string) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, { method: 'DELETE' }),
+
+  // ── Product/Service description input ──
+
+  getProductContext: (projectId: string) =>
+    fetchApi<{ context: ProductContext }>(`/projects/${projectId}/product-context`),
+
+  updateProductContext: (projectId: string, patch: Partial<ProductContext>) =>
+    fetchApi<{ context: ProductContext }>(`/projects/${projectId}/product-context`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+
+  productContextInterview: (projectId: string, body: {
+    message: string;
+    history?: { role: 'user' | 'assistant'; content: string }[]
+    response_language?: string
+  }) =>
+    fetchApi<ProductInterviewTurnResponse>(`/projects/${projectId}/product-context/interview`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  // Async: returns a job_id that the caller polls via getJobStatus.
+  autofillPrfaqQuestions: (projectId: string, body: {
+    feature_idea?: string;
+    title?: string;
+    response_language?: string
+  }) =>
+    fetchApi<{ answers: string[] }>(`/projects/${projectId}/prfaq-autofill`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  suggestResearchQuestions: (projectId: string, body: { response_language?: string } = {}) =>
+    fetchApi<{ suggestions: Array<{ title: string; question: string }> }>(
+      `/projects/${projectId}/research/suggest-questions`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+    ),
+
+  suggestDocumentBrief: (projectId: string, body: { doc_type?: 'prd' | 'prfaq'; response_language?: string } = {}) =>
+    fetchApi<{ title: string; feature_idea: string }>(
+      `/projects/${projectId}/documents/suggest-brief`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+    ),
+
+  buildPrototype: (projectId: string, body: {
+    response_language?: string;
+    title?: string;
+    // Feedback-driven regeneration: revise an existing prototype centered on
+    // this feedback while still honoring the PRD/PR-FAQ.
+    feedback?: string;
+    base_prototype_id?: string;
+  }) =>
+    fetchApi<{
+      success: boolean;
+      job_id: string;
+      status: string;
+      message: string
+    }>(`/projects/${projectId}/build-prototype`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  generateProductReport: (projectId: string, body: { response_language?: string; title?: string }) =>
+    fetchApi<{
+      success: boolean;
+      job_id: string;
+      status: string;
+      message: string
+    }>(`/projects/${projectId}/product-report`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  listProductDocs: (projectId: string) =>
+    fetchApi<{ docs: ProductDoc[] }>(`/projects/${projectId}/product-docs`),
+
+  createProductDocUploadUrl: (projectId: string, body: {
+    filename: string;
+    content_type: string;
+    size_bytes: number
+  }) =>
+    fetchApi<{
+      doc_id: string;
+      presigned_url: string;
+      headers: Record<string, string>
+    }>(`/projects/${projectId}/product-docs/upload-url`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  deleteProductDoc: (projectId: string, docId: string) =>
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/product-docs/${docId}`, { method: 'DELETE' }),
 }

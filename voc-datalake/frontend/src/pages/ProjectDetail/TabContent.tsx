@@ -6,6 +6,7 @@ import DocumentsTab from './DocumentsTab'
 import McpAccessTab from './McpAccessTab'
 import OverviewTab from './OverviewTab'
 import PersonasTab from './PersonasTab'
+import ProductTab from './ProductTab'
 import type {
   Tab, NoteItem,
 } from './types'
@@ -26,6 +27,7 @@ interface TabContentProps {
   readonly onGenerateDoc: () => void
   readonly onRunResearch: () => void
   readonly onRemixDocuments: () => void
+  readonly onOpenProductTool: () => void
   readonly onSaveKiroPrompt: (prompt: string) => void
   readonly onSelectPersona: (p: ProjectPersona | null) => void
   readonly onEditPersona: () => void
@@ -53,6 +55,7 @@ export default function TabContent({
   onGenerateDoc,
   onRunResearch,
   onRemixDocuments,
+  onOpenProductTool,
   onSaveKiroPrompt,
   onSelectPersona,
   onEditPersona,
@@ -76,6 +79,7 @@ export default function TabContent({
         onGenerateDoc={onGenerateDoc}
         onRunResearch={onRunResearch}
         onRemixDocuments={onRemixDocuments}
+        onOpenProductTool={onOpenProductTool}
         onSaveKiroPrompt={onSaveKiroPrompt}
       />
     )
@@ -98,6 +102,10 @@ export default function TabContent({
     )
   }
 
+  if (activeTab === 'product') {
+    return <ProductTab projectId={project.project_id} onDocumentChanged={onDocumentChanged} />
+  }
+
   if (activeTab === 'documents') {
     return (
       <DocumentsTab
@@ -108,6 +116,7 @@ export default function TabContent({
         onEditDoc={onEditDoc}
         onDeleteDoc={onDeleteDoc}
         onCreateDoc={onCreateDoc}
+        onDocumentChanged={onDocumentChanged}
         isDeleting={isDeleting}
       />
     )

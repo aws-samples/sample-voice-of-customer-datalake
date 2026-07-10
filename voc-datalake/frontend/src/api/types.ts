@@ -86,8 +86,15 @@ export interface MetricsSummary {
   total_feedback: number
   avg_sentiment: number
   urgent_count: number
-  daily_totals: { date: string; count: number }[]
-  daily_sentiment: { date: string; avg_sentiment: number; count: number }[]
+  daily_totals: {
+    date: string;
+    count: number
+  }[]
+  daily_sentiment: {
+    date: string;
+    avg_sentiment: number;
+    count: number
+  }[]
 }
 
 export interface SentimentBreakdown {
@@ -167,62 +174,6 @@ export interface ScraperTemplate {
   config: Partial<ScraperConfig>
 }
 
-export interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  sources?: FeedbackItem[]
-  timestamp: string
-  filters?: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-}
-
-export interface ChatConversation {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  filters: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  sources?: FeedbackItem[]
-  timestamp: string
-  filters?: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-}
-
-export interface ChatConversation {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  filters: {
-    source?: string
-    category?: string
-    sentiment?: string
-    tags?: string[]
-  }
-  createdAt: string
-  updatedAt: string
-}
-
 export interface EntitiesResponse {
   period_days: number
   feedback_count: number
@@ -238,7 +189,7 @@ export interface EntitiesResponse {
 export interface ProjectJob {
   success?: boolean
   job_id: string
-  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'merge_documents' | 'import_persona'
+  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'generate_product_report' | 'build_prototype' | 'merge_documents' | 'import_persona'
   status: 'pending' | 'running' | 'completed' | 'failed'
   progress: number
   current_step?: string
@@ -264,28 +215,28 @@ export interface ProjectPersona {
   avatar_url?: string
   avatar_prompt?: string
   // Section 1: Identity & Demographics
-  identity?: { 
+  identity?: {
     age_range?: string
     location?: string
     occupation?: string
     income_bracket?: string
     education?: string
     family_status?: string
-    bio?: string 
+    bio?: string
   }
   // Section 2: Goals & Motivations
-  goals_motivations?: { 
+  goals_motivations?: {
     primary_goal?: string
     secondary_goals?: string[]
     success_definition?: string
-    underlying_motivations?: string[] 
+    underlying_motivations?: string[]
   }
   // Section 3: Pain Points & Frustrations
-  pain_points?: { 
+  pain_points?: {
     current_challenges?: string[]
     blockers?: string[]
     workarounds?: string[]
-    emotional_impact?: string 
+    emotional_impact?: string
   }
   // Section 4: Behaviors & Habits
   behaviors?: {
@@ -296,7 +247,7 @@ export interface ProjectPersona {
     decision_style?: string
   }
   // Section 5: Context & Environment
-  context_environment?: { 
+  context_environment?: {
     usage_context?: string
     devices?: string[]
     time_constraints?: string
@@ -304,16 +255,25 @@ export interface ProjectPersona {
     influencers?: string[]
   }
   // Section 6: Representative Quotes
-  quotes?: Array<{ text: string; context?: string }>
+  quotes?: Array<{
+    text: string;
+    context?: string
+  }>
   // Section 7: Scenario/User Story
-  scenario?: { 
+  scenario?: {
     title?: string
     narrative?: string
     trigger?: string
-    outcome?: string 
+    outcome?: string
   }
   // Section 8: Research Notes
-  research_notes?: Array<string | { note_id?: string; text: string; author?: string; created_at?: string; tags?: string[] }>
+  research_notes?: Array<string | {
+    note_id?: string;
+    text: string;
+    author?: string;
+    created_at?: string;
+    tags?: string[]
+  }>
   // Metadata
   supporting_evidence?: string[]
   source_breakdown?: Record<string, number>
@@ -321,13 +281,68 @@ export interface ProjectPersona {
 
 export interface ProjectDocument {
   document_id: string
-  document_type: 'prd' | 'prfaq' | 'research' | 'custom'
+  document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'
   title: string
+  // New (S3-only) HTML prototypes have NO `content` — the HTML lives at
+  // `prototype_url` on CloudFront. Legacy prototypes (JSON specs, or
+  // pre-migration HTML) and all non-prototype document types still use
+  // `content` as before.
   content: string
   feature_idea?: string
   question?: string
+  // For prototypes: 'html' → this is a self-contained HTML document, served
+  // via `prototype_url` (new) or rendered from `content` via a sandboxed
+  // iframe srcDoc (legacy fallback). Absent → legacy JSON spec rendered via
+  // PrototypeRenderer.
+  prototype_format?: 'html' | string
+  // CloudFront URL for the generated prototype HTML (new prototypes only —
+  // served from the /prototypes/* cache behavior with its own permissive CSP).
+  // Absent on legacy prototypes; callers fall back to `content`/srcDoc.
+  prototype_url?: string
   created_at: string
   updated_at?: string
+}
+
+export type ProductLifecycleState = '' | 'idea' | 'mvp' | 'beta' | 'ga' | 'mature'
+
+export interface ProductContext {
+  product_name: string
+  one_liner: string
+  target_users: string
+  problem_solved: string
+  current_state: ProductLifecycleState
+  // The following are free-text comments — multi-line strings, not arrays.
+  key_features: string
+  differentiators: string
+  known_limitations: string
+  non_goals: string
+  success_metrics: string
+  free_form_notes: string
+  updated_at?: string
+}
+
+export type ProductDocStatus = 'pending' | 'extracting' | 'ready' | 'failed'
+
+export interface ProductDoc {
+  doc_id: string
+  filename: string
+  content_type: string
+  size_bytes: number
+  status: ProductDocStatus
+  error: string | null
+  extracted_chars: number
+  created_at: string
+}
+
+export interface ProductInterviewTurnResponse {
+  assistant_message: string
+  applied_patch: Partial<ProductContext>
+  context: ProductContext
+}
+
+export interface ProductReportResponse {
+  success: boolean
+  document: ProjectDocument
 }
 
 export interface Project {
@@ -372,8 +387,8 @@ export interface S3ImportFile {
   status: 'pending' | 'processed'
 }
 
-export interface FeedbackFormConfig {
-  enabled: boolean
+/** Shared form configuration fields used by both FeedbackFormConfig and FeedbackForm. */
+interface FeedbackFormFields {
   title: string
   description: string
   question: string
@@ -391,32 +406,23 @@ export interface FeedbackFormConfig {
   }
   collect_email: boolean
   collect_name: boolean
-  custom_fields: Array<{ id: string; label: string; type: string; required: boolean }>
+  custom_fields: Array<{
+    id: string;
+    label: string;
+    type: string;
+    required: boolean
+  }>
+}
+
+export interface FeedbackFormConfig extends FeedbackFormFields {
+  enabled: boolean
   brand_name: string
 }
 
-export interface FeedbackForm {
+export interface FeedbackForm extends FeedbackFormFields {
   form_id: string
   name: string
   enabled: boolean
-  title: string
-  description: string
-  question: string
-  placeholder: string
-  rating_enabled: boolean
-  rating_type: 'stars' | 'numeric' | 'emoji'
-  rating_max: number
-  submit_button_text: string
-  success_message: string
-  theme: {
-    primary_color: string
-    background_color: string
-    text_color: string
-    border_radius: string
-  }
-  collect_email: boolean
-  collect_name: boolean
-  custom_fields: Array<{ id: string; label: string; type: string; required: boolean }>
   category: string
   subcategory: string
   created_at: string

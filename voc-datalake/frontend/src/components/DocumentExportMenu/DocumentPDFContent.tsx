@@ -179,7 +179,7 @@ export default function DocumentPDFContent({ document: doc }: DocumentPDFContent
         color: '#1f2937',
       }}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-          {doc.content}
+          {doc.content ?? ''}
         </ReactMarkdown>
       </div>
     </div>

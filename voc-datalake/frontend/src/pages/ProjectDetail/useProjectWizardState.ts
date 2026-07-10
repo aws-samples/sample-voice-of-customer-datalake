@@ -22,7 +22,7 @@ const DEFAULT_RESEARCH_CONFIG: ResearchToolConfig = {
   title: '',
 }
 const DEFAULT_DOC_CONFIG: DocToolConfig = {
-  docType: 'prfaq',
+  docTypes: ['prfaq'],
   title: '',
   featureIdea: '',
   customerQuestions: ['', '', '', '', ''],

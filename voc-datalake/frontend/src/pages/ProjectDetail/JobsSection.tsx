@@ -112,9 +112,11 @@ function JobItemContent({
     generate_prd: 'jobs.types.generatePrd',
     generate_prfaq: 'jobs.types.generatePrfaq',
     generate_personas: 'jobs.types.generatePersonas',
+    generate_product_report: 'jobs.types.generateProductReport',
+    build_prototype: 'jobs.types.buildPrototype',
     import_persona: 'jobs.types.importPersona',
     merge_documents: 'jobs.types.mergeDocuments',
-  }[job.job_type]
+  }[job.job_type] ?? 'jobs.types.research'
 
   return (
     <div className="flex-1 min-w-0">

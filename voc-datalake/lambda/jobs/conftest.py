@@ -15,6 +15,7 @@ os.environ.setdefault('JOBS_TABLE', 'test-jobs-table')
 os.environ.setdefault('AGGREGATES_TABLE', 'test-aggregates-table')
 os.environ.setdefault('RAW_DATA_BUCKET', 'test-raw-data-bucket')
 os.environ.setdefault('AVATARS_CDN_URL', 'https://cdn.example.com/avatars')
+os.environ.setdefault('PROTOTYPES_CDN_URL', 'https://cdn.example.com/prototypes')
 
 
 @pytest.fixture
@@ -66,6 +67,18 @@ def mock_bedrock():
     yield mock_client
     for p in patchers:
         p.stop()
+
+
+@pytest.fixture
+def mock_s3():
+    """Mock the module-level `_s3()` client helper in document_generator's
+    handler (used for the claim-check pattern AND for S3-only prototype HTML
+    storage). Patched at the handler module level since `_s3()` is called
+    lazily inside other helper functions, not injected.
+    """
+    mock_client = MagicMock()
+    with patch('jobs.document_generator.handler._s3', return_value=mock_client, create=True):
+        yield mock_client
 
 
 @pytest.fixture
