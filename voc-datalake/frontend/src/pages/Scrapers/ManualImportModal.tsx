@@ -2,7 +2,7 @@ import {
   X, Loader2, AlertCircle, CheckCircle, Plus, ArrowLeft, Upload, ClipboardPaste,
 } from 'lucide-react'
 import {
-  useEffect, useRef, useCallback,
+  useEffect, useRef, useCallback, useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
@@ -221,7 +221,10 @@ export default function ManualImportModal() {
   } = useManualImportStore()
 
   const pollIntervalRef = useRef<number | null>(null)
-  const isConfirmingRef = useRef(false)
+  // State (not a ref): the value is read during render to drive the disabled +
+  // "Importing…" button UI, and mutating a ref never re-renders — with a ref
+  // the in-flight state silently never showed.
+  const [isConfirming, setIsConfirming] = useState(false)
 
   // Check for stale draft on mount
   useEffect(() => {
@@ -311,8 +314,8 @@ export default function ManualImportModal() {
   }
 
   const handleConfirm = async () => {
-    if (isConfirmingRef.current || (jobId == null || jobId === '')) return
-    isConfirmingRef.current = true
+    if (isConfirming || (jobId == null || jobId === '')) return
+    setIsConfirming(true)
 
     try {
       const validReviews = parsedReviews.filter((r) => r.text.trim().length > 0)
@@ -329,7 +332,7 @@ export default function ManualImportModal() {
     } catch {
       setProcessingError('Failed to import reviews')
     } finally {
-      isConfirmingRef.current = false
+      setIsConfirming(false)
     }
   }
 
@@ -356,7 +359,7 @@ export default function ManualImportModal() {
         <div className="flex-1 overflow-y-auto p-6">
           {step === 'input' && <InputStep />}
           {step === 'processing' && <ProcessingStep />}
-          {step === 'preview' && <PreviewStep onConfirm={() => void handleConfirm()} isConfirming={isConfirmingRef.current} />}
+          {step === 'preview' && <PreviewStep onConfirm={() => void handleConfirm()} isConfirming={isConfirming} />}
         </div>
 
         {step === 'input' && (
