@@ -16,6 +16,7 @@
     "scrapers": "Webスクレイパー",
     "settings": "設定"
   },
+  "cancel": "キャンセル",
   "configureBrand": "ブランドを設定",
   "exportPdf": "PDFをエクスポート",
   "exportPdfShort": "PDF",

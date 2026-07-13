@@ -166,6 +166,7 @@
     "deleteReview": "Excluir avaliação",
     "noRating": "Sem avaliação",
     "star_one": "{{count}} estrela",
+    "star_many": "{{count}} estrelas",
     "star_other": "{{count}} estrelas",
     "textPlaceholder": "Texto da avaliação",
     "titlePlaceholder": "Título da avaliação (opcional)"

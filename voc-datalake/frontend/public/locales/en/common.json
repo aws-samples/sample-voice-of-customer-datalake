@@ -16,6 +16,7 @@
     "scrapers": "Web Scrapers",
     "settings": "Settings"
   },
+  "cancel": "Cancel",
   "configureBrand": "Configure brand",
   "exportPdf": "Export PDF",
   "exportPdfShort": "PDF",

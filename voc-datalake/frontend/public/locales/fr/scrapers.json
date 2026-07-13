@@ -166,6 +166,7 @@
     "deleteReview": "Supprimer l'avis",
     "noRating": "Pas de note",
     "star_one": "{{count}} étoile",
+    "star_many": "{{count}} étoiles",
     "star_other": "{{count}} étoiles",
     "textPlaceholder": "Texte de l'avis",
     "titlePlaceholder": "Titre de l'avis (optionnel)"

@@ -16,6 +16,7 @@
     "scrapers": "网页抓取器",
     "settings": "设置"
   },
+  "cancel": "取消",
   "configureBrand": "配置品牌",
   "exportPdf": "导出 PDF",
   "exportPdfShort": "PDF",

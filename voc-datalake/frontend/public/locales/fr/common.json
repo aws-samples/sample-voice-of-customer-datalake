@@ -16,6 +16,7 @@
     "scrapers": "Collecteurs web",
     "settings": "Paramètres"
   },
+  "cancel": "Annuler",
   "configureBrand": "Configurer la marque",
   "exportPdf": "Exporter en PDF",
   "exportPdfShort": "PDF",

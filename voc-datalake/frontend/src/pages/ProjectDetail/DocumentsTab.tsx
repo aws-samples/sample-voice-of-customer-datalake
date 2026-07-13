@@ -218,7 +218,7 @@ function PrototypeFeedbackButton({
         {error ? <p className="text-xs text-red-600 mt-2 inline-flex items-center gap-1"><AlertCircle size={12} /> {error}</p> : null}
         <div className="flex items-center justify-end gap-2 mt-4">
           <button onClick={() => setOpen(false)} disabled={busy} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50">
-            {t('common.cancel', { defaultValue: 'Cancel', ns: 'common' })}
+            {t('cancel', { defaultValue: 'Cancel', ns: 'common' })}
           </button>
           <button
             onClick={onSubmit}

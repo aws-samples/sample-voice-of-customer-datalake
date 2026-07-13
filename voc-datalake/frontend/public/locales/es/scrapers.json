@@ -166,6 +166,7 @@
     "deleteReview": "Eliminar reseña",
     "noRating": "Sin calificación",
     "star_one": "{{count}} estrella",
+    "star_many": "{{count}} estrellas",
     "star_other": "{{count}} estrellas",
     "textPlaceholder": "Texto de la reseña",
     "titlePlaceholder": "Título de la reseña (opcional)"
