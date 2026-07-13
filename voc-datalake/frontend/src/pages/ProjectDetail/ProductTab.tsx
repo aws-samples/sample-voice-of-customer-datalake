@@ -172,7 +172,7 @@ export default function ProductTab({ projectId, onDocumentChanged }: ProductTabP
             />
           )}
           {(mode === 'upload' || mode === 'both') && (
-            <DocsUpload projectId={projectId} t={t} />
+            <DocsUpload projectId={projectId} />
           )}
           <ReportCard
             projectId={projectId}

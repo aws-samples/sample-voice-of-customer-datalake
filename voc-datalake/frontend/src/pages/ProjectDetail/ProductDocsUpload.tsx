@@ -12,10 +12,9 @@ import {
 import {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react'
+import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
 import type { ProductDoc } from '../../api/types'
-
-type TFunc = (key: string, opts?: Record<string, unknown>) => string
 
 const ALLOWED_MIME = {
   'application/pdf': '.pdf',
@@ -26,7 +25,10 @@ const ALLOWED_MIME = {
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
-export function DocsUpload({ projectId, t }: { readonly projectId: string; readonly t: TFunc }) {
+export function DocsUpload({ projectId }: { readonly projectId: string }) {
+  // Owns its namespace so i18next-parser attributes product.upload.* keys to
+  // projectDetail.json (a passed-in `t` prop gets attributed to `common`).
+  const { t } = useTranslation('projectDetail')
   const [docs, setDocs] = useState<ProductDoc[]>([])
   const [loading, setLoading] = useState(true)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -171,7 +173,7 @@ export function DocsUpload({ projectId, t }: { readonly projectId: string; reado
               <div className="flex items-center gap-2">
                 <FileText size={14} className="text-gray-400 flex-shrink-0" />
                 <span className="truncate">{d.filename}</span>
-                <DocStatusBadge status={d.status} error={d.error} t={t} />
+                <DocStatusBadge status={d.status} error={d.error} />
               </div>
               <div className="text-xs text-gray-400 mt-0.5">
                 {/* size_bytes can be 0/missing on legacy records — hide the KB
@@ -195,7 +197,8 @@ export function DocsUpload({ projectId, t }: { readonly projectId: string; reado
   )
 }
 
-function DocStatusBadge({ status, error, t }: { readonly status: ProductDoc['status']; readonly error: string | null; readonly t: TFunc }) {
+function DocStatusBadge({ status, error }: { readonly status: ProductDoc['status']; readonly error: string | null }) {
+  const { t } = useTranslation('projectDetail')
   if (status === 'ready') {
     return <span className="inline-flex items-center gap-1 text-xs text-green-700"><CheckCircle2 size={12} /> {t('product.upload.statusReady')}</span>
   }
