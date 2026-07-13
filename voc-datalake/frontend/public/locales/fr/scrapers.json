@@ -25,7 +25,7 @@
     "formatGuide": "Format CSV",
     "headerNote": "Les en-têtes sont insensibles à la casse. Jusqu'à 50 000 lignes / 10 Mo par envoi.",
     "imported_one": "{{count}} ligne mise en file d'attente pour traitement",
-    "imported_many": "",
+    "imported_many": "{{count}} lignes mises en file d'attente pour traitement",
     "imported_other": "{{count}} lignes mises en file d'attente pour traitement",
     "pipelineNote": "Les lignes apparaîtront sur la page Feedback une fois l'enrichissement Bedrock terminé (généralement en moins d'une minute).",
     "title": "Import CSV",

@@ -20,7 +20,7 @@
     "dropZone": ".csv-Datei hier ablegen oder klicken zum Auswählen",
     "errorNotCsv": "Bitte eine .csv-Datei auswählen.",
     "errorTooLarge": "Datei überschreitet das 10-MB-Limit.",
-    "fieldOptional": "— optional.",
+    "fieldOptional": "— optionale Angabe.",
     "fieldText": "— erforderlich. Der Feedback-Inhalt.",
     "formatGuide": "CSV-Format",
     "headerNote": "Spaltenüberschriften sind unabhängig von Groß-/Kleinschreibung. Bis zu 50.000 Zeilen / 10 MB pro Upload.",

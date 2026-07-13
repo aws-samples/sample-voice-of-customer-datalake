@@ -25,7 +25,7 @@
     "formatGuide": "Formato CSV",
     "headerNote": "Los encabezados no distinguen mayúsculas de minúsculas. Hasta 50 000 filas / 10 MB por carga.",
     "imported_one": "{{count}} fila en cola para procesamiento",
-    "imported_many": "",
+    "imported_many": "{{count}} filas en cola para procesamiento",
     "imported_other": "{{count}} filas en cola para procesamiento",
     "pipelineNote": "Las filas aparecerán en la página de Feedback cuando termine el enriquecimiento de Bedrock (normalmente en un minuto).",
     "title": "Carga de CSV",

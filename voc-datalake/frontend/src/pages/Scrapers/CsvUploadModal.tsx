@@ -75,9 +75,9 @@ export default function CsvUploadModal({ isOpen, onClose }: CsvUploadModalProps)
     if (!file) return
     setBusy(true); setError(null); setResult(null)
     try {
-      const csv_text = await file.text()
+      const csvText = await file.text()
       const r = await scrapersApi.uploadCsvFeedback({
-        csv_text,
+        csv_text: csvText,
         default_source: defaultSource.trim() || undefined,
       })
       setResult({

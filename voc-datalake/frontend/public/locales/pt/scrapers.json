@@ -25,7 +25,7 @@
     "formatGuide": "Formato CSV",
     "headerNote": "Os cabeçalhos não diferenciam maiúsculas de minúsculas. Até 50.000 linhas / 10 MB por envio.",
     "imported_one": "{{count}} linha na fila para processamento",
-    "imported_many": "",
+    "imported_many": "{{count}} linhas na fila para processamento",
     "imported_other": "{{count}} linhas na fila para processamento",
     "pipelineNote": "As linhas aparecerão na página de Feedback quando o enriquecimento do Bedrock for concluído (geralmente em um minuto).",
     "title": "Upload de CSV",
