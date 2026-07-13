@@ -289,8 +289,8 @@ function buildPDFExportData(input: PDFExportInput) {
 
 export default function Dashboard() {
   const { t } = useTranslation('common')
-  const { timeRange, customDays, config } = useConfigStore()
-  const dateParams = getDateRangeParams(timeRange, customDays)
+  const { timeRange, customDays, dateBasis, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const isConfigured = !!config.apiEndpoint
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
@@ -348,7 +348,7 @@ export default function Dashboard() {
         categories,
         sources,
         urgentFeedback,
-        timeRange: getTimeRangeLabel(timeRange, customDays),
+        timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
         sourcesCount,
       }))
     } catch {

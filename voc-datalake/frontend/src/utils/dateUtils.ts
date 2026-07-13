@@ -4,6 +4,7 @@
  */
 
 import { format, isValid } from 'date-fns'
+import type { DateBasis } from '../api/types'
 
 /**
  * Human-readable labels for the time-range tokens stored in the config store.
@@ -27,15 +28,24 @@ const TIME_RANGE_LABELS: Record<string, string> = {
  * - Known presets map to their descriptive label.
  * - `'custom'` becomes `Last N days` when `customDays` is set, else `Custom`.
  * - Unknown tokens fall back to the token itself.
+ * - When `dateBasis` is 'review', the label notes that the window applies to
+ *   review dates instead of the (default) imported dates.
  */
-export function getTimeRangeLabel(
-  timeRange: string,
-  customDays?: number | null
-): string {
+/** Base label for a time-range token, before any date-basis annotation. */
+function baseTimeRangeLabel(timeRange: string, customDays?: number | null): string {
   if (timeRange === 'custom') {
     return customDays != null ? `Last ${customDays} days` : 'Custom'
   }
   return TIME_RANGE_LABELS[timeRange] ?? timeRange
+}
+
+export function getTimeRangeLabel(
+  timeRange: string,
+  customDays?: number | null,
+  dateBasis?: DateBasis
+): string {
+  const baseLabel = baseTimeRangeLabel(timeRange, customDays)
+  return dateBasis === 'review' ? `${baseLabel} (by review date)` : baseLabel
 }
 
 /**

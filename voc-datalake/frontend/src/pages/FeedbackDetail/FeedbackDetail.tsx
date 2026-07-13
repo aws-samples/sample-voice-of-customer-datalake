@@ -281,7 +281,15 @@ function MetadataSection({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
     <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-gray-500 pt-3 sm:pt-4 border-t border-gray-100">
       <div className="flex items-center gap-1">
         <Clock size={14} className="flex-shrink-0" />
-        <span className="truncate">Created: {formatDateSafe(feedback.source_created_at)}</span>
+        <span className="truncate" title="When the customer wrote this feedback">
+          Review date: {formatDateSafe(feedback.source_created_at)}
+        </span>
+      </div>
+      <div className="flex items-center gap-1">
+        <Clock size={14} className="flex-shrink-0" />
+        <span className="truncate" title="When this feedback was imported into the platform">
+          Imported: {formatDateSafe(feedback.processed_at)}
+        </span>
       </div>
       <div className="flex items-center gap-1">
         <Globe size={14} className="flex-shrink-0" />

@@ -349,8 +349,8 @@ function useFeedbackData(
 }
 
 export default function Feedback() {
-  const { timeRange, customDays, config } = useConfigStore()
-  const dateParams = getDateRangeParams(timeRange, customDays)
+  const { timeRange, customDays, dateBasis, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const [searchParams, setSearchParams] = useSearchParams()
   const hasApiEndpoint = !!config.apiEndpoint
   
@@ -435,7 +435,7 @@ export default function Feedback() {
         onClearFilters={clearFilters}
       />
 
-      <PDFExportButton items={filteredItems} timeRange={getTimeRangeLabel(timeRange, customDays)} filterState={filterState} />
+      <PDFExportButton items={filteredItems} timeRange={getTimeRangeLabel(timeRange, customDays, dateBasis)} filterState={filterState} />
 
       <FeedbackListContent isLoading={activeLoading} items={filteredItems} />
     </div>

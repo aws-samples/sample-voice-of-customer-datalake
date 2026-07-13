@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
+import type { DateBasis } from '../api/types'
 
 export interface SourceConfig {
   enabled: boolean
@@ -24,9 +25,15 @@ interface ConfigStore {
   timeRange: '24h' | '48h' | '7d' | '30d' | 'custom' | 'all'
   /** Rolling lookback (in days) used when timeRange is 'custom'. */
   customDays: number | null
+  /**
+   * Which date the time range filters on: 'imported' (when the data entered
+   * the lake — historical default) or 'review' (when the customer wrote it).
+   */
+  dateBasis: DateBasis
   setConfig: (config: Partial<Config>) => void
   setTimeRange: (range: '24h' | '48h' | '7d' | '30d' | 'custom' | 'all') => void
   setCustomDays: (days: number | null) => void
+  setDateBasis: (basis: DateBasis) => void
   syncWithRuntimeConfig: () => void
 }
 
@@ -65,11 +72,13 @@ export const useConfigStore = create<ConfigStore>()(
       },
       timeRange: '7d',
       customDays: null,
+      dateBasis: 'imported',
       setConfig: (newConfig) => set((state) => ({ 
         config: { ...state.config, ...newConfig } 
       })),
       setTimeRange: (range) => set({ timeRange: range }),
       setCustomDays: (days) => set({ customDays: days }),
+      setDateBasis: (basis) => set({ dateBasis: basis }),
       /**
        * Syncs the store's apiEndpoint with the runtime config.
        * This ensures first-time users get the correct API endpoint

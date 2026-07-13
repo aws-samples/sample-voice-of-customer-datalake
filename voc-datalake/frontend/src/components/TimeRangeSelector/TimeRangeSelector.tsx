@@ -4,16 +4,18 @@
  * Features:
  * - Preset ranges: 24h, 48h, 7d, 30d, 90d (90-day cap, matches aggregates TTL)
  * - Custom "last N days" rolling lookback input
+ * - Date-basis picker: filter by imported date (when data was collected) or
+ *   review date (when the customer originally wrote the feedback)
  * - Persists selection to config store
  * - Mobile-responsive dropdown
- * - "Data freshness" caption clarifying the window filters by ingestion date
  *
  * @module components/TimeRangeSelector
  */
 
 import { useState, useRef, useEffect } from 'react'
 import { useConfigStore } from '../../store/configStore'
-import { Calendar, X, ChevronDown } from 'lucide-react'
+import type { DateBasis } from '../../api/types'
+import { Calendar, X, ChevronDown, Check } from 'lucide-react'
 import clsx from 'clsx'
 
 const ranges = [
@@ -25,9 +27,30 @@ const ranges = [
   { value: 'custom', label: 'Custom', fullLabel: 'Custom' },
 ] as const
 
-// Explains that the window filters by when feedback entered the data lake
-// (ingestion/processing date), not the original review's authored date.
-const DATA_FRESHNESS_TOOLTIP = 'Filters by when data was collected, not the original review date.'
+// The two dates every feedback item carries. The time range window applies to
+// whichever one is selected here.
+const DATE_BASIS_OPTIONS: ReadonlyArray<{
+  value: DateBasis
+  label: string
+  description: string
+}> = [
+  {
+    value: 'imported',
+    label: 'Imported date',
+    description: 'When the feedback was collected into the platform.',
+  },
+  {
+    value: 'review',
+    label: 'Review date',
+    description: 'When the customer originally wrote the feedback.',
+  },
+]
+
+// Tooltip clarifying which date the current window filters by.
+const BASIS_TOOLTIPS: Record<DateBasis, string> = {
+  imported: 'Filtering by when data was collected, not when the review was written.',
+  review: 'Filtering by when the review was written, not when it was imported.',
+}
 
 // Upper bound for the custom lookback. Capped at 90 days to match the widest
 // preset and the aggregates 90-day TTL: the metrics categories/sentiment
@@ -45,12 +68,14 @@ function parseDaysInput(value: string): number | null {
 }
 
 export default function TimeRangeSelector() {
-  const { timeRange, setTimeRange, customDays, setCustomDays } = useConfigStore()
+  const { timeRange, setTimeRange, customDays, setCustomDays, dateBasis, setDateBasis } = useConfigStore()
   const [showPicker, setShowPicker] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
+  const [showBasisPicker, setShowBasisPicker] = useState(false)
   const [daysInput, setDaysInput] = useState(customDays ? String(customDays) : '')
   const pickerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const basisRef = useRef<HTMLDivElement>(null)
 
   // Close picker/dropdown when clicking outside
   useEffect(() => {
@@ -62,6 +87,9 @@ export default function TimeRangeSelector() {
         }
         if (dropdownRef.current && !dropdownRef.current.contains(target)) {
           setShowDropdown(false)
+        }
+        if (basisRef.current && !basisRef.current.contains(target)) {
+          setShowBasisPicker(false)
         }
       }
     }
@@ -99,6 +127,15 @@ export default function TimeRangeSelector() {
     setShowPicker(false)
   }
 
+  const handleBasisSelect = (basis: DateBasis) => {
+    setDateBasis(basis)
+    setShowBasisPicker(false)
+    setShowDropdown(false)
+  }
+
+  const currentBasis = DATE_BASIS_OPTIONS.find(o => o.value === dateBasis) ?? DATE_BASIS_OPTIONS[0]
+  const basisTooltip = BASIS_TOOLTIPS[currentBasis.value]
+
   const customLabel = customDays ? `Last ${customDays} days` : null
 
   const getDisplayLabel = () => {
@@ -117,12 +154,63 @@ export default function TimeRangeSelector() {
 
   return (
     <div className="relative flex items-center gap-2">
-      <div
-        className="hidden sm:flex items-center gap-1.5 text-gray-400"
-        title={DATA_FRESHNESS_TOOLTIP}
-      >
-        <Calendar size={18} aria-hidden="true" />
-        <span className="text-xs font-medium text-gray-500 whitespace-nowrap">Data freshness</span>
+      {/* Desktop: date-basis picker (imported date vs review date) */}
+      <div className="hidden sm:block relative" ref={basisRef}>
+        <button
+          onClick={() => setShowBasisPicker(!showBasisPicker)}
+          className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+          title={basisTooltip}
+          aria-expanded={showBasisPicker}
+          aria-haspopup="listbox"
+          aria-label={`Filter dates by: ${currentBasis.label}`}
+        >
+          <Calendar size={16} aria-hidden="true" />
+          <span className="whitespace-nowrap">{currentBasis.label}</span>
+          <ChevronDown
+            size={14}
+            className={clsx('transition-transform', showBasisPicker && 'rotate-180')}
+            aria-hidden="true"
+          />
+        </button>
+
+        {showBasisPicker && (
+          <div
+            className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 w-72"
+            role="listbox"
+            aria-label="Filter dates by"
+          >
+            <p className="px-4 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+              Filter dates by
+            </p>
+            {DATE_BASIS_OPTIONS.map(({ value, label, description }) => (
+              <button
+                key={value}
+                onClick={() => handleBasisSelect(value)}
+                role="option"
+                aria-selected={dateBasis === value}
+                className={clsx(
+                  'w-full px-4 py-2.5 text-left transition-colors',
+                  dateBasis === value ? 'bg-blue-50' : 'hover:bg-gray-50'
+                )}
+              >
+                <span className="flex items-start justify-between gap-2">
+                  <span>
+                    <span className={clsx(
+                      'block text-sm font-medium',
+                      dateBasis === value ? 'text-blue-700' : 'text-gray-900'
+                    )}>
+                      {label}
+                    </span>
+                    <span className="block text-xs text-gray-500 mt-0.5">{description}</span>
+                  </span>
+                  {dateBasis === value && (
+                    <Check size={16} className="text-blue-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {/* Mobile: Dropdown selector */}
       <div className="sm:hidden relative" ref={dropdownRef}>
@@ -131,7 +219,7 @@ export default function TimeRangeSelector() {
           className="flex items-center gap-2 px-3 py-2.5 bg-gray-100 rounded-lg text-sm text-gray-700 active:bg-gray-200 touch-manipulation min-h-[44px]"
           aria-expanded={showDropdown}
           aria-haspopup="listbox"
-          title={DATA_FRESHNESS_TOOLTIP}
+          title={basisTooltip}
         >
           <Calendar size={16} className="text-gray-400 flex-shrink-0" aria-hidden="true" />
           <span className="truncate max-w-[100px]">{getDisplayLabel()}</span>
@@ -140,7 +228,7 @@ export default function TimeRangeSelector() {
         
         {showDropdown && (
           <div 
-            className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[160px]"
+            className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[200px]"
             role="listbox"
           >
             {ranges.map(({ value, fullLabel }) => (
@@ -159,6 +247,28 @@ export default function TimeRangeSelector() {
                 {value === 'custom' && customLabel ? getCurrentFullLabel() : fullLabel}
               </button>
             ))}
+            {/* Date-basis section (imported date vs review date) */}
+            <div className="border-t border-gray-100 mt-1 pt-1" role="group" aria-label="Filter dates by">
+              <p className="px-4 pt-1 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                Filter dates by
+              </p>
+              {DATE_BASIS_OPTIONS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => handleBasisSelect(value)}
+                  aria-pressed={dateBasis === value}
+                  className={clsx(
+                    'w-full px-4 py-3 text-sm text-left transition-colors touch-manipulation flex items-center justify-between gap-2',
+                    dateBasis === value
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-gray-700 hover:bg-gray-50 active:bg-gray-100'
+                  )}
+                >
+                  {label}
+                  {dateBasis === value && <Check size={16} className="flex-shrink-0" aria-hidden="true" />}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>

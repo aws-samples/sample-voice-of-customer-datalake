@@ -28,6 +28,16 @@ export interface FeedbackItem {
 }
 
 /**
+ * Which date the `days` window applies to on time-filtered endpoints.
+ *
+ * - 'imported': when the item entered the data lake (historical default)
+ * - 'review':   when the customer originally wrote the feedback
+ *               (`source_created_at`) — excludes old reviews that were only
+ *               imported recently
+ */
+export type DateBasis = 'imported' | 'review'
+
+/**
  * Filter shape shared by feedback list endpoints.
  *
  * Used by `/feedback`, `/feedback/urgent`, and `/feedback/search`. Each filter
@@ -35,6 +45,7 @@ export interface FeedbackItem {
  */
 export interface FeedbackFilters {
   days?: number
+  date_basis?: DateBasis
   source?: string
   category?: string
   sentiment?: string
