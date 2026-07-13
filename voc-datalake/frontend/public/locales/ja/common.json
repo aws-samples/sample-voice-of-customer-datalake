@@ -54,10 +54,19 @@
     "dataExplorer": "データエクスプローラー",
     "feedback": "フィードバック",
     "feedbackForms": "フィードバックフォーム",
+    "home": "ホーム",
     "prioritization": "優先順位付け",
     "problemAnalysis": "問題分析",
     "projects": "プロジェクト",
     "scrapers": "スクレイパー",
+    "section": {
+      "home": "ホーム",
+      "ideation": "アイデア創出",
+      "settings": "設定",
+      "signals": "シグナル",
+      "sources": "データソース",
+      "validation": "検証"
+    },
     "settings": "設定"
   },
   "partialWindowHint": "すべて表示するにはフィルターを絞り込んでください",

@@ -22,5 +22,33 @@
   "urgentIssues_many": "{{count}} problemas urgentes",
   "urgentIssues_other": "{{count}} problemas urgentes",
   "welcome": "Bem-vindo ao VoC Analytics",
-  "welcomeDescription": "Configure o endpoint da API e as configurações de marca para começar a analisar o feedback dos clientes."
+  "welcomeDescription": "Configure o endpoint da API e as configurações de marca para começar a analisar o feedback dos clientes.",
+  "home": {
+    "badge": "Primeiros passos",
+    "flowHint": "Quatro etapas, refletidas pelas seções da barra lateral.",
+    "howItWorks": "Como funciona",
+    "intro": "Transforme o feedback disperso dos clientes em decisões de produto. Traga feedback de qualquer fonte, deixe a IA revelar os temas, molde as descobertas em personas e especificações e, então, valide e priorize o que construir a seguir.",
+    "phase1Desc": "Importe o feedback dos clientes com scrapers da web ou formulários incorporáveis e depois navegue pelos registros brutos e processados.",
+    "phase1Title": "Coletar e inspecionar dados",
+    "phase2Desc": "Veja o que os clientes estão dizendo: sentimento, categorias e os maiores problemas surgem automaticamente.",
+    "phase2Title": "Ler os sinais",
+    "phase3Desc": "Faça perguntas em linguagem natural e transforme as descobertas em projetos de pesquisa com personas, PRDs e PR/FAQs.",
+    "phase3Title": "Transformar insights em ideias",
+    "phase4Desc": "Confirme a demanda com formulários de feedback direcionados e depois classifique o que construir por frequência, gravidade e alcance.",
+    "phase4Title": "Validar e priorizar",
+    "quickStart": "Início rápido",
+    "quickStartHint": "Com pressa? Vá direto para o caminho mais rápido até seus primeiros insights.",
+    "title": "Boas-vindas ao Voice of the Customer"
+  },
+  "onboarding": {
+    "heading": "Bem-vindo — vamos dar vida aos seus feedbacks",
+    "subheading": "Seu espaço de trabalho está vazio. Comece trazendo feedback dos clientes e depois explore e analise.",
+    "cta": "Comece aqui",
+    "step1Title": "Coletar avaliações",
+    "step1Desc": "Conecte scrapers de app stores / web ou importe um CSV para trazer feedback dos clientes.",
+    "step2Title": "Ou compartilhe um formulário",
+    "step2Desc": "Crie um formulário de feedback e colete respostas diretamente dos usuários.",
+    "step3Title": "Depois analise",
+    "step3Desc": "Quando houver dados, use o chat de IA para encontrar tendências e transformá-las em projetos."
+  }
 }

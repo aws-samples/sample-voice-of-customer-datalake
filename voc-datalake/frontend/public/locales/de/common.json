@@ -54,10 +54,19 @@
     "dataExplorer": "Daten-Explorer",
     "feedback": "Rückmeldungen",
     "feedbackForms": "Feedback-Formulare",
+    "home": "Startseite",
     "prioritization": "Priorisierung",
     "problemAnalysis": "Problemanalyse",
     "projects": "Projekte",
     "scrapers": "Scraper",
+    "section": {
+      "home": "Start",
+      "ideation": "Ideenfindung",
+      "settings": "Einstellungen",
+      "signals": "Signale",
+      "sources": "Quellen",
+      "validation": "Validierung"
+    },
     "settings": "Einstellungen"
   },
   "partialWindowHint": "Filter eingrenzen, um alle zu sehen",

@@ -12,6 +12,7 @@
     "synthetic_reviews": true
   },
   "menuStatus": {
+    "home": true,
     "dashboard": true,
     "feedback": true,
     "categories": true,

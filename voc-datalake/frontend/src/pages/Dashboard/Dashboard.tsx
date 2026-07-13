@@ -22,6 +22,7 @@ import SocialFeed from '../../components/SocialFeed'
 import { generateDashboardPDF } from './dashboardPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
+import DashboardEmptyState from './DashboardEmptyState'
 
 const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
 
@@ -328,6 +329,13 @@ export default function Dashboard() {
 
   if (summaryLoading) {
     return <LoadingState />
+  }
+
+  // No feedback in this range → show a compact prompt that points to the Home
+  // page, which carries the full getting-started walkthrough (prd-fix #10
+  // onboarding/IA). Avoids rendering empty charts or duplicating the guide.
+  if ((summary?.total_feedback ?? 0) === 0) {
+    return <DashboardEmptyState />
   }
 
   const sourcesCount = Object.keys(sources?.sources || {}).length

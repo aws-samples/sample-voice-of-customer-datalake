@@ -1,4 +1,5 @@
 {
+  "home": true,
   "dashboard": true,
   "feedback": true,
   "categories": true,

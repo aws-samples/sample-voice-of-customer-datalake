@@ -22,5 +22,33 @@
   "urgentIssues_many": "{{count}} problemas urgentes",
   "urgentIssues_other": "{{count}} problemas urgentes",
   "welcome": "Bienvenido a VoC Analytics",
-  "welcomeDescription": "Configure su endpoint de API y la configuración de marca para comenzar a analizar la retroalimentación de los clientes."
+  "welcomeDescription": "Configure su endpoint de API y la configuración de marca para comenzar a analizar la retroalimentación de los clientes.",
+  "home": {
+    "badge": "Primeros pasos",
+    "flowHint": "Cuatro pasos, reflejados por las secciones de la barra lateral.",
+    "howItWorks": "Cómo funciona",
+    "intro": "Convierte el feedback disperso de los clientes en decisiones de producto. Reúne feedback desde cualquier fuente, deja que la IA revele los temas, transforma los hallazgos en personas y especificaciones, y luego valida y prioriza qué construir a continuación.",
+    "phase1Desc": "Incorpora feedback de clientes con scrapers web o formularios integrables y luego explora los registros brutos y procesados.",
+    "phase1Title": "Recopilar e inspeccionar datos",
+    "phase2Desc": "Observa lo que dicen los clientes: el sentimiento, las categorías y los mayores problemas surgen automáticamente.",
+    "phase2Title": "Leer las señales",
+    "phase3Desc": "Haz preguntas en lenguaje natural y transforma los hallazgos en proyectos de investigación con personas, PRD y PR/FAQ.",
+    "phase3Title": "Convertir la información en ideas",
+    "phase4Desc": "Confirma la demanda con formularios de feedback específicos y luego clasifica qué construir por frecuencia, gravedad y alcance.",
+    "phase4Title": "Validar y priorizar",
+    "quickStart": "Inicio rápido",
+    "quickStartHint": "¿Con prisa? Ve directo al camino más rápido hacia tus primeras conclusiones.",
+    "title": "Te damos la bienvenida a Voice of the Customer"
+  },
+  "onboarding": {
+    "heading": "Bienvenido: pongamos en marcha tus comentarios",
+    "subheading": "Tu espacio de trabajo está vacío. Empieza por incorporar comentarios de clientes y luego explóralos y analízalos.",
+    "cta": "Empieza aquí",
+    "step1Title": "Recopilar reseñas",
+    "step1Desc": "Conecta scrapers de tiendas de apps o web, o importa un CSV para incorporar comentarios de clientes.",
+    "step2Title": "O comparte un formulario",
+    "step2Desc": "Crea un formulario de comentarios y recopila respuestas directamente de los usuarios.",
+    "step3Title": "Luego analiza",
+    "step3Desc": "Cuando haya datos, usa el chat de IA para detectar tendencias y convertirlas en proyectos."
+  }
 }

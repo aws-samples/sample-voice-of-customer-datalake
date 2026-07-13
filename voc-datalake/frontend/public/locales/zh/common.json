@@ -54,10 +54,19 @@
     "dataExplorer": "数据浏览器",
     "feedback": "反馈",
     "feedbackForms": "反馈表单",
+    "home": "首页",
     "prioritization": "优先级排序",
     "problemAnalysis": "问题分析",
     "projects": "项目",
     "scrapers": "抓取器",
+    "section": {
+      "home": "主页",
+      "ideation": "构思",
+      "settings": "设置",
+      "signals": "信号",
+      "sources": "数据源",
+      "validation": "验证"
+    },
     "settings": "设置"
   },
   "partialWindowHint": "缩小筛选范围以查看全部",

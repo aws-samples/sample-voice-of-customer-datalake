@@ -21,5 +21,33 @@
   "urgentIssues_one": "{{count}} dringendes Problem",
   "urgentIssues_other": "{{count}} dringende Probleme",
   "welcome": "Willkommen bei VoC Analytics",
-  "welcomeDescription": "Konfigurieren Sie Ihren API-Endpunkt und Ihre Markeneinstellungen, um mit der Analyse von Kundenfeedback zu beginnen."
+  "welcomeDescription": "Konfigurieren Sie Ihren API-Endpunkt und Ihre Markeneinstellungen, um mit der Analyse von Kundenfeedback zu beginnen.",
+  "home": {
+    "badge": "Erste Schritte",
+    "flowHint": "Vier Schritte, gespiegelt von den Bereichen in der Seitenleiste.",
+    "howItWorks": "So funktioniert es",
+    "intro": "Verwandeln Sie verstreutes Kundenfeedback in Produktentscheidungen. Erfassen Sie Feedback aus jeder Quelle, lassen Sie die KI die Themen herausarbeiten, formen Sie die Erkenntnisse zu Personas und Spezifikationen und validieren und priorisieren Sie dann, was als Nächstes gebaut wird.",
+    "phase1Desc": "Holen Sie Kundenfeedback über Web-Scraper oder einbettbare Formulare herein und durchsuchen Sie dann die Rohdaten und verarbeiteten Datensätze.",
+    "phase1Title": "Daten erfassen & prüfen",
+    "phase2Desc": "Sehen Sie, was Kunden Ihnen sagen – Stimmung, Kategorien und die größten Probleme werden automatisch sichtbar gemacht.",
+    "phase2Title": "Die Signale lesen",
+    "phase3Desc": "Stellen Sie Fragen in natürlicher Sprache und verwandeln Sie Erkenntnisse in Forschungsprojekte mit Personas, PRDs und PR/FAQs.",
+    "phase3Title": "Aus Erkenntnissen Ideen machen",
+    "phase4Desc": "Bestätigen Sie die Nachfrage mit gezielten Feedback-Formularen und ordnen Sie dann nach Häufigkeit, Schwere und Reichweite, was gebaut werden soll.",
+    "phase4Title": "Validieren & priorisieren",
+    "quickStart": "Schnellstart",
+    "quickStartHint": "In Eile? Springen Sie direkt zum schnellsten Weg zu Ihren ersten Erkenntnissen.",
+    "title": "Willkommen bei Voice of the Customer"
+  },
+  "onboarding": {
+    "heading": "Willkommen — bringen wir Ihr Feedback ins Rollen",
+    "subheading": "Ihr Arbeitsbereich ist leer. Sammeln Sie zunächst Kundenfeedback und erkunden und analysieren Sie es anschließend.",
+    "cta": "Hier starten",
+    "step1Title": "Bewertungen sammeln",
+    "step1Desc": "Verbinden Sie App-Store-/Web-Scraper oder importieren Sie eine CSV, um Kundenfeedback abzurufen.",
+    "step2Title": "Oder ein Formular teilen",
+    "step2Desc": "Erstellen Sie ein Feedback-Formular und sammeln Sie Antworten direkt von Nutzern.",
+    "step3Title": "Dann analysieren",
+    "step3Desc": "Sobald Daten vorliegen, finden Sie mit dem KI-Chat Trends und verwandeln sie in Projekte."
+  }
 }

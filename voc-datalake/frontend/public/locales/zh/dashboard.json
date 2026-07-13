@@ -21,5 +21,33 @@
   "urgentIssues_one": "{{count}}个紧急问题",
   "urgentIssues_other": "{{count}}个紧急问题",
   "welcome": "欢迎使用VoC Analytics",
-  "welcomeDescription": "配置API端点和品牌设置，开始分析客户反馈。"
+  "welcomeDescription": "配置API端点和品牌设置，开始分析客户反馈。",
+  "home": {
+    "badge": "快速上手",
+    "flowHint": "四个步骤，与侧边栏中的分区一一对应。",
+    "howItWorks": "工作原理",
+    "intro": "将分散的客户反馈转化为产品决策。从任意来源收集反馈，让 AI 提炼出主题，将洞察塑造为用户画像和规格文档，然后验证并确定接下来要构建的优先级。",
+    "phase1Desc": "通过网页抓取器或可嵌入表单引入客户反馈，然后浏览原始记录和已处理记录。",
+    "phase1Title": "收集与查看数据",
+    "phase2Desc": "了解客户的心声——情感、类别以及最主要的问题都会自动呈现。",
+    "phase2Title": "读取信号",
+    "phase3Desc": "用自然语言提问，并将发现发展为包含用户画像、PRD 和 PR/FAQ 的研究项目。",
+    "phase3Title": "将洞察转化为创意",
+    "phase4Desc": "用有针对性的反馈表单确认需求，然后按频率、严重程度和触达范围排定构建优先级。",
+    "phase4Title": "验证与排定优先级",
+    "quickStart": "快速开始",
+    "quickStartHint": "赶时间？直接前往获取首批洞察的最快路径。",
+    "title": "欢迎使用 Voice of the Customer"
+  },
+  "onboarding": {
+    "heading": "欢迎 — 让反馈流动起来",
+    "subheading": "您的工作区还是空的。请先导入客户反馈，然后再浏览和分析。",
+    "cta": "从这里开始",
+    "step1Title": "收集评价",
+    "step1Desc": "连接应用商店/网页抓取器，或导入 CSV 以引入客户反馈。",
+    "step2Title": "或分享表单",
+    "step2Desc": "创建反馈表单，直接从用户处收集回复。",
+    "step3Title": "然后分析",
+    "step3Desc": "有了数据后，使用 AI 聊天发现趋势并将其转化为项目。"
+  }
 }

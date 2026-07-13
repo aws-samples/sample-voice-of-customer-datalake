@@ -43,6 +43,13 @@ vi.mock('../../store/authStore', () => ({
   useIsAdmin: vi.fn(() => true),
 }))
 
+// Mock menu config so P11 gating tests can toggle individual items.
+// Defaults to all-enabled so existing tests see every nav link.
+const mockIsMenuItemEnabled = vi.fn((_key: string) => true)
+vi.mock('../../config/menuConfig', () => ({
+  isMenuItemEnabled: (key: string) => mockIsMenuItemEnabled(key),
+}))
+
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom')
@@ -67,6 +74,7 @@ vi.mock('../UserProfileModal', () => ({
 }))
 
 import Layout from './Layout'
+import { useIsAdmin } from '../../store/authStore'
 
 function createWrapper(initialEntries = ['/']) {
   const queryClient = new QueryClient({
@@ -262,5 +270,87 @@ describe('Layout with authenticated user', () => {
     await waitFor(() => {
       expect(screen.getByTitle('Sign out')).toBeInTheDocument()
     })
+  })
+})
+
+describe('workflow sections and gating (P11 — AI-PDLC phases)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
+    mockIsMenuItemEnabled.mockImplementation(() => true)
+    vi.mocked(useIsAdmin).mockReturnValue(true)
+  })
+
+  it('renders the AI-PDLC phase section headers', async () => {
+    render(<Layout />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Sources')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Signals')).toBeInTheDocument()
+    expect(screen.getByText('Ideation')).toBeInTheDocument()
+    expect(screen.getByText('Validation')).toBeInTheDocument()
+  })
+
+  it('shows Home and Dashboard as top-level links above the first phase section', async () => {
+    render(<Layout />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Sources')).toBeInTheDocument()
+    })
+    // Home and Dashboard are entry-point links, not phase section headers.
+    expect(screen.getByRole('link', { name: /home/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument()
+    const nav = screen.getByRole('navigation')
+    const text = nav.textContent ?? ''
+    // Home sits above Dashboard, and both sit above the first phase header.
+    expect(text.indexOf('Home')).toBeLessThan(text.indexOf('Dashboard'))
+    expect(text.indexOf('Dashboard')).toBeLessThan(text.indexOf('Sources'))
+  })
+
+  it('orders phases sources → signals → ideation → validation', async () => {
+    render(<Layout />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Sources')).toBeInTheDocument()
+    })
+    const nav = screen.getByRole('navigation')
+    const text = nav.textContent ?? ''
+    expect(text.indexOf('Sources')).toBeLessThan(text.indexOf('Signals'))
+    expect(text.indexOf('Signals')).toBeLessThan(text.indexOf('Ideation'))
+    expect(text.indexOf('Ideation')).toBeLessThan(text.indexOf('Validation'))
+  })
+
+  it('hides a section header when all of its items are disabled by menu config', async () => {
+    // Disable both items in the "Validation" section (feedback-forms + prioritization).
+    mockIsMenuItemEnabled.mockImplementation(
+      (key: string) => key !== 'feedback-forms' && key !== 'prioritization',
+    )
+
+    render(<Layout />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Sources')).toBeInTheDocument()
+    })
+    // The "Validation" header auto-hides because it has no visible items.
+    expect(screen.queryByText('Validation')).not.toBeInTheDocument()
+    // Sibling sections are unaffected.
+    expect(screen.getByText('Signals')).toBeInTheDocument()
+    expect(screen.getByText('Ideation')).toBeInTheDocument()
+  })
+
+  it('hides Settings (link and section) for non-admins', async () => {
+    vi.mocked(useIsAdmin).mockReturnValue(false)
+
+    render(<Layout />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('Sources')).toBeInTheDocument()
+    })
+    // Settings is the only item in its section, so both the link and the
+    // section header disappear for non-admins.
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument()
+    // Non-admin still sees the rest of the nav.
+    expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument()
   })
 })
