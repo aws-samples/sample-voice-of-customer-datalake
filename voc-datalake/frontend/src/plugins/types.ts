@@ -42,7 +42,7 @@ export const PluginManifestSchema = z.object({
   name: z.string(),
   icon: z.string(),
   description: z.string().optional(),
-  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper']).optional(),
+  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper', 'synthetic']).optional(),
   config: z.array(ConfigFieldSchema),
   webhooks: z.array(WebhookInfoSchema).optional(),
   setup: SetupSchema.optional(),

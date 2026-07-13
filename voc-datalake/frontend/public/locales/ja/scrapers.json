@@ -63,6 +63,15 @@
     "description": "スクレイパーを作成してWebサイトからフィードバックの収集を開始",
     "title": "スクレイパーが設定されていません"
   },
+  "generator": {
+    "completed": "{{count}} 件の合成レビューを生成しました。処理後まもなく表示されます。",
+    "completed_one": "{{count}} 件の合成レビューを生成しました。処理後まもなく表示されます。",
+    "completed_other": "{{count}} 件の合成レビューを生成しました。処理後まもなく表示されます。",
+    "generate": "生成",
+    "generating": "生成中…",
+    "runningNote": "AIでレビューを生成しています。最大1分ほどかかる場合があります。",
+    "startFailed": "生成を開始できませんでした。"
+  },
   "jsonUpload": {
     "cancel": "キャンセル",
     "done": "完了",
@@ -168,6 +177,7 @@
     "manualImport": "手動インポート",
     "manualImportDescription": "任意のWebサイトからレビューを貼り付けてAI解析でインポート。",
     "manualInput": "手動入力",
+    "syntheticData": "合成データ",
     "title": "データソースを追加",
     "webScraperTemplates": "Webスクレイパーテンプレート"
   },

@@ -63,6 +63,15 @@
     "description": "创建抓取器以开始从网站收集反馈",
     "title": "未配置抓取器"
   },
+  "generator": {
+    "completed": "已生成 {{count}} 条合成评论。处理后将很快显示。",
+    "completed_one": "已生成 {{count}} 条合成评论。处理后将很快显示。",
+    "completed_other": "已生成 {{count}} 条合成评论。处理后将很快显示。",
+    "generate": "生成",
+    "generating": "生成中…",
+    "runningNote": "正在使用 AI 生成评论。这可能需要长达一分钟。",
+    "startFailed": "无法开始生成。"
+  },
   "jsonUpload": {
     "cancel": "取消",
     "done": "完成",
@@ -168,6 +177,7 @@
     "manualImport": "手动导入",
     "manualImportDescription": "从任何网站粘贴评论并使用AI解析导入。",
     "manualInput": "手动输入",
+    "syntheticData": "合成数据",
     "title": "添加数据源",
     "webScraperTemplates": "网页抓取器模板"
   },

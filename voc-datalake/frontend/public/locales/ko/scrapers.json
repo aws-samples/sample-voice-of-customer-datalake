@@ -63,6 +63,15 @@
     "description": "스크레이퍼를 만들어 웹사이트에서 피드백 수집 시작",
     "title": "구성된 스크레이퍼 없음"
   },
+  "generator": {
+    "completed": "{{count}}개의 합성 리뷰를 생성했습니다. 처리 후 곧 표시됩니다.",
+    "completed_one": "{{count}}개의 합성 리뷰를 생성했습니다. 처리 후 곧 표시됩니다.",
+    "completed_other": "{{count}}개의 합성 리뷰를 생성했습니다. 처리 후 곧 표시됩니다.",
+    "generate": "생성",
+    "generating": "생성 중…",
+    "runningNote": "AI로 리뷰를 생성하고 있습니다. 최대 1분 정도 걸릴 수 있습니다.",
+    "startFailed": "생성을 시작하지 못했습니다."
+  },
   "jsonUpload": {
     "cancel": "취소",
     "done": "완료",
@@ -168,6 +177,7 @@
     "manualImport": "수동 가져오기",
     "manualImportDescription": "웹사이트에서 리뷰를 붙여넣고 AI 분석으로 가져오기.",
     "manualInput": "수동 입력",
+    "syntheticData": "합성 데이터",
     "title": "데이터 소스 추가",
     "webScraperTemplates": "웹 스크레이퍼 템플릿"
   },

@@ -78,8 +78,13 @@ const SetupSchema = z.object({
 const IngestorInfraSchema = z.object({
   enabled: z.boolean(),
   schedule: ScheduleSchema.optional(),
-  timeout: z.number().int().min(1).max(300).default(120),
+  timeout: z.number().int().min(1).max(900).default(120), // 900s = AWS Lambda hard max
   memory: z.number().int().min(128).max(1024).default(256),
+  // Opt-in capability: when true, the plugin's Lambda gets a dedicated IAM role
+  // with a scoped bedrock:InvokeModel grant (Claude models only) instead of the
+  // shared ingestion role. Keeps least-privilege: only plugins that declare this
+  // can call Bedrock. See ingestion-stack.ts createIngestorLambda().
+  bedrock: z.boolean().optional().default(false),
 });
 
 const WebhookInfraSchema = z.object({
@@ -113,7 +118,7 @@ const ManifestSchema = z.object({
   name: SafeStringSchema,
   icon: IconSchema,
   description: SafeStringSchema.optional(),
-  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper']).optional(),
+  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper', 'synthetic']).optional(),
   infrastructure: InfrastructureSchema,
   config: z.array(ConfigFieldSchema).max(20).default([]),
   webhooks: z.array(WebhookInfoSchema).max(5).optional(),
@@ -210,8 +215,8 @@ function validateManifestLimits(manifest: PluginManifest): void {
   const infra = manifest.infrastructure;
 
   if (infra.ingestor) {
-    if (infra.ingestor.timeout > 300) {
-      throw new Error(`Plugin ${manifest.id}: timeout cannot exceed 300 seconds`);
+    if (infra.ingestor.timeout > 900) {
+      throw new Error(`Plugin ${manifest.id}: timeout cannot exceed 900 seconds`);
     }
     if (infra.ingestor.memory > 1024) {
       throw new Error(`Plugin ${manifest.id}: memory cannot exceed 1024 MB`);

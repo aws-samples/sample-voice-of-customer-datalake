@@ -9,7 +9,7 @@
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
-  Loader2, FileJson, Globe, Smartphone, ClipboardPaste, Upload,
+  Loader2, FileJson, Globe, Smartphone, ClipboardPaste, Upload, Sparkles,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
@@ -21,6 +21,7 @@ import type { PluginManifest } from '../../plugins/types'
 interface TemplateSelectorProps {
   readonly onSelect: (template: ScraperTemplate) => void
   readonly onSelectPlugin: (plugin: PluginManifest) => void
+  readonly onSelectGenerator: (plugin: PluginManifest) => void
   readonly onManualImport: () => void
   readonly onJsonUpload: () => void
   readonly onClose: () => void
@@ -102,13 +103,21 @@ function getPluginBorderClass(category?: string): string {
 
 /**
  * Get auto-discovered plugins that should appear in the template selector.
- * Excludes the webscraper plugin (it has its own templates) and only includes
- * plugins with an ingestor (scheduled data collection).
+ * Excludes the webscraper plugin (it has its own templates), synthetic generators
+ * (shown in their own section), and only includes plugins with an ingestor.
  */
 function getDiscoverablePlugins(): PluginManifest[] {
   return getPluginManifests().filter(
-    (p) => p.id !== 'webscraper' && p.hasIngestor,
+    (p) => p.id !== 'webscraper' && p.category !== 'synthetic' && p.hasIngestor,
   )
+}
+
+/**
+ * Get synthetic data generator plugins (category 'synthetic'). These are on-demand
+ * generators configured via a dedicated modal rather than the multi-app plugin config.
+ */
+function getSyntheticPlugins(): PluginManifest[] {
+  return getPluginManifests().filter((p) => p.category === 'synthetic')
 }
 
 /**
@@ -121,7 +130,7 @@ function mergeTemplates(apiTemplates: ScraperTemplate[]): ScraperTemplate[] {
 }
 
 export default function TemplateSelector({
-  onSelect, onSelectPlugin, onManualImport, onJsonUpload, onClose,
+  onSelect, onSelectPlugin, onSelectGenerator, onManualImport, onJsonUpload, onClose,
 }: TemplateSelectorProps) {
   const { t } = useTranslation('scrapers')
   const { config } = useConfigStore()
@@ -136,6 +145,7 @@ export default function TemplateSelector({
 
   const templates = mergeTemplates(data?.templates ?? [])
   const discoverablePlugins = getDiscoverablePlugins()
+  const syntheticPlugins = getSyntheticPlugins()
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
@@ -238,6 +248,28 @@ export default function TemplateSelector({
               </button>
             </div>
           </div>
+
+          {/* Synthetic Data section */}
+          {syntheticPlugins.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('templateSelector.syntheticData')}</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {syntheticPlugins.map((plugin) => (
+                  <button
+                    key={plugin.id}
+                    onClick={() => onSelectGenerator(plugin)}
+                    className="p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-indigo-400 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30"
+                  >
+                    <div className="flex items-center gap-2 sm:gap-3 mb-2">
+                      <Sparkles size={24} className="text-indigo-600" />
+                      <div className="font-medium text-sm sm:text-base">{plugin.name}</div>
+                    </div>
+                    <p className="text-xs sm:text-sm text-gray-600">{plugin.description}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="p-3 sm:p-4 border-t">

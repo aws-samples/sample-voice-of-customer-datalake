@@ -23,7 +23,7 @@ import {
 } from '../plugin-loader';
 import { uniqueName } from '../utils/naming';
 import { NagSuppressions } from 'cdk-nag';
-import { apiSecretsSuppressions } from '../utils/nag-suppressions';
+import { apiSecretsSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 
 export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -46,6 +46,16 @@ export class VocIngestionStack extends cdk.Stack {
   public readonly processingQueue: sqs.Queue;
   public readonly secretsArn: string;
   public readonly s3ImportBucket: s3.Bucket;
+
+  // Grant targets captured in the constructor so per-plugin roles (e.g. for
+  // Bedrock-capable plugins) can be granted the same base permissions.
+  private ingestRoleGrants!: {
+    watermarksTable: dynamodb.Table;
+    aggregatesTable: dynamodb.Table;
+    rawDataBucket: s3.Bucket;
+    kmsKey: kms.Key;
+    apiSecrets: secretsmanager.Secret;
+  };
 
   constructor(scope: Construct, id: string, props: VocIngestionStackProps) {
     super(scope, id, props);
@@ -73,14 +83,11 @@ export class VocIngestionStack extends cdk.Stack {
     const dlq = this.createDLQ(kmsKey);
     this.processingQueue = this.createProcessingQueue(kmsKey, dlq);
 
-    // Common Lambda execution role
-    const ingestionRole = this.createIngestionRole(
-      watermarksTable,
-      aggregatesTable,
-      rawDataBucket,
-      kmsKey,
-      apiSecrets
-    );
+    // Grant targets reused when building per-plugin roles (e.g. Bedrock-capable plugins)
+    this.ingestRoleGrants = { watermarksTable, aggregatesTable, rawDataBucket, kmsKey, apiSecrets };
+
+    // Common Lambda execution role (shared by plugins that don't need extra permissions)
+    const ingestionRole = this.createIngestionRole();
 
     // Common environment variables
     const commonEnv = this.buildCommonEnv(watermarksTable, rawDataBucket, apiSecrets, config);
@@ -242,13 +249,7 @@ export class VocIngestionStack extends cdk.Stack {
     return queue;
   }
 
-  private createIngestionRole(
-    watermarksTable: dynamodb.Table,
-    aggregatesTable: dynamodb.Table,
-    rawDataBucket: s3.Bucket,
-    kmsKey: kms.Key,
-    apiSecrets: secretsmanager.Secret
-  ): iam.Role {
+  private createIngestionRole(): iam.Role {
     const role = new iam.Role(this, 'IngestionLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [
@@ -256,12 +257,53 @@ export class VocIngestionStack extends cdk.Stack {
       ],
     });
 
+    this.applyBaseIngestionGrants(role);
+
+    return role;
+  }
+
+  /** Apply the standard ingestion permissions: watermarks, aggregates, queue, raw bucket, KMS, secrets. */
+  private applyBaseIngestionGrants(role: iam.Role): void {
+    const { watermarksTable, aggregatesTable, rawDataBucket, kmsKey, apiSecrets } = this.ingestRoleGrants;
     watermarksTable.grantReadWriteData(role);
     aggregatesTable.grantReadWriteData(role);
     this.processingQueue.grantSendMessages(role);
     rawDataBucket.grantReadWrite(role);
     kmsKey.grantEncryptDecrypt(role);
     apiSecrets.grantRead(role);
+  }
+
+  /**
+   * Build a dedicated role for a plugin that opts in via `infrastructure.ingestor.bedrock`.
+   * It gets the same base ingestion permissions PLUS a scoped bedrock:InvokeModel grant
+   * (Claude Sonnet only). This keeps least-privilege intact: only opted-in plugins can
+   * reach Bedrock, rather than widening the shared role for the whole plugin fleet.
+   *
+   * The model ARNs must match the model shared/converse.py actually invokes
+   * (shared.aws.BEDROCK_MODEL_ID = global.anthropic.claude-sonnet-4-5-...); a `global.`
+   * inference profile requires BOTH the inference-profile and foundation-model ARNs.
+   */
+  private createBedrockIngestorRole(pluginId: string): iam.Role {
+    const role = new iam.Role(this, `IngestorRole${capitalize(pluginId)}`, {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      ],
+    });
+
+    this.applyBaseIngestionGrants(role);
+
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+      ],
+    }));
+
+    // The stack-level suppressions in bin/ cover the base grants but not Bedrock,
+    // so attach the Bedrock model suppression to this dedicated role explicitly.
+    NagSuppressions.addResourceSuppressions(role, bedrockModelSuppressions, true);
 
     return role;
   }
@@ -331,13 +373,16 @@ export class VocIngestionStack extends cdk.Stack {
     // Parse schedule from manifest
     const schedule = this.parseSchedule(infra.schedule);
 
+    // Bedrock-capable plugins get a dedicated, scoped role; all others share the common role.
+    const role = infra.bedrock === true ? this.createBedrockIngestorRole(plugin.id) : ingestionRole;
+
     const fn = new lambda.Function(this, `Ingestor${capitalize(plugin.id)}`, {
       functionName: uniqueName(`voc-ingestor-${plugin.id}`),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: ingestorCode,
-      role: ingestionRole,
+      role,
       timeout: cdk.Duration.seconds(infra.timeout),
       memorySize: infra.memory,
       environment: lambdaEnv,

@@ -39,6 +39,44 @@ class TestBaseIngestorInit:
     @patch('_shared.base_ingestor.get_s3_client')
     @patch('_shared.base_ingestor.get_sqs_client')
     @patch('_shared.base_ingestor.get_secret')
+    def test_does_not_leak_other_known_plugin_secrets(
+        self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """Keys prefixed for another KNOWN plugin must not leak into this plugin's secrets.
+
+        Regression guard for per-plugin secret isolation: every plugin id must be
+        listed in BaseIngestor._get_known_prefixes(). If a plugin (e.g. synthetic_reviews)
+        is missing from that list, its `<plugin>_*` keys in the shared secret are treated
+        as unprefixed shared/legacy keys and leak into every other plugin's loaded config.
+        This test fails if a known plugin is dropped from the prefix list.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_get_secret.return_value = {
+            'test_source_api_key': 'mine',            # this plugin's own key
+            'synthetic_reviews_api_key': 'not-mine',  # another known plugin's key
+            'shared_legacy_key': 'shared',            # no known prefix -> shared/legacy
+        }
+        mock_dynamo.return_value.Table.return_value = MagicMock()
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield from []
+
+        ingestor = TestIngestor()  # source_platform = 'test_source' (conftest env)
+
+        # own key: present and prefix-stripped
+        assert ingestor.secrets.get('api_key') == 'mine'
+        # unprefixed key: kept as a shared/legacy value
+        assert ingestor.secrets.get('shared_legacy_key') == 'shared'
+        # another known plugin's key: excluded entirely, and never surfaced under any name
+        assert 'synthetic_reviews_api_key' not in ingestor.secrets
+        assert 'not-mine' not in ingestor.secrets.values()
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
     def test_initializes_circuit_breaker(
         self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
     ):
