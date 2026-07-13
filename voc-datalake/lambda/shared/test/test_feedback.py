@@ -559,17 +559,28 @@ class TestQueryFeedbackByDate:
 
         assert len(result) == 2
 
-    def test_per_day_limit_is_forwarded(self):
-        """The per_day_limit parameter is passed to DynamoDB Limit."""
+    def test_paginates_via_last_evaluated_key(self):
+        """A date partition larger than one DynamoDB page is fully paged through
+        via LastEvaluatedKey (regression for the '500개 중' truncation bug)."""
         from shared.feedback import query_feedback_by_date
 
         mock_table = MagicMock()
-        mock_table.query.return_value = {'Items': []}
+        # Two pages: first returns 400 items + a continuation key, second
+        # returns 300 items and no key (end of partition).
+        page1 = [{'id': f'a{i}', 'date': '2099-01-01'} for i in range(400)]
+        page2 = [{'id': f'b{i}', 'date': '2099-01-01'} for i in range(300)]
+        mock_table.query.side_effect = [
+            {'Items': page1, 'LastEvaluatedKey': {'pk': 'x'}},
+            {'Items': page2},
+        ]
 
-        query_feedback_by_date(mock_table, days=1, per_day_limit=123, limit=50)
+        result = query_feedback_by_date(mock_table, days=1, limit=10000)
 
-        call_kwargs = mock_table.query.call_args.kwargs
-        assert call_kwargs['Limit'] == 123
+        # Both pages followed → 700 items, not truncated at the first page.
+        assert mock_table.query.call_count == 2
+        # Second query carried the continuation key.
+        assert mock_table.query.call_args_list[1].kwargs['ExclusiveStartKey'] == {'pk': 'x'}
+        assert len(result) == 700
 
     def test_days_capped_at_max_lookback(self):
         """Days parameter is capped at MAX_LOOKBACK_DAYS."""

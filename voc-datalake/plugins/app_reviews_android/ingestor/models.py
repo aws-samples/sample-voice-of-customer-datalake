@@ -12,6 +12,11 @@ class AndroidAppConfig:
     package_name: str
     enabled: bool = True
     max_reviews_per_run: int = 500
+    # Google Play filters reviews by language: lang="en" only returns
+    # English-written reviews. For a Korean app you MUST set lang="ko" or you
+    # get a tiny English subset. Empty/None = use the ingestor's country sweep.
+    lang: str = ""
+    country: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "AndroidAppConfig":
@@ -29,4 +34,6 @@ class AndroidAppConfig:
             package_name=package_name,
             enabled=data.get("enabled", True),
             max_reviews_per_run=int(data.get("max_reviews_per_run", 500)),
+            lang=str(data.get("lang", "") or "").strip(),
+            country=str(data.get("country", "") or "").strip(),
         )
