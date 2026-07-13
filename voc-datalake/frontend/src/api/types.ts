@@ -97,6 +97,12 @@ export interface MetricsSummary {
   total_feedback: number
   avg_sentiment: number
   urgent_count: number
+  /**
+   * True when the metrics were computed from a truncated raw-item scan
+   * (review-date basis or source filter on a very large window) and the
+   * counts are a lower bound rather than exact aggregates.
+   */
+  is_partial?: boolean
   daily_totals: {
     date: string;
     count: number

@@ -5,11 +5,12 @@ Split from main handler to reduce Lambda resource policy size.
 """
 
 import os
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 
 from shared.logging import tracer
 from shared.aws import get_dynamodb_resource
@@ -33,6 +34,11 @@ DATE_QUERY_LIMIT = 500
 # Soft cap on accumulated candidates when iterating across days for endpoints
 # that aggregate or sample feedback (entities, search, source-filtered metrics).
 CANDIDATES_SOFT_CAP = 1000
+
+# Hard ceiling on rows examined per date partition when paging with
+# LastEvaluatedKey, so a huge backfill can't make one request run forever.
+# Matches shared/feedback.py's MAX_ITEMS_PER_PARTITION rationale.
+MAX_SCANNED_PER_PARTITION = 10000
 
 # AWS Clients
 dynamodb = get_dynamodb_resource()
@@ -65,18 +71,28 @@ app = create_api_resolver()
 # with no extra GSI required.
 
 
+# Shape guard for basis dates: a malformed source_created_at (e.g.
+# "unavailable") would otherwise compare lexicographically above any
+# YYYY-MM-DD cutoff and pollute daily buckets.
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
 def _basis_date(item: dict, date_basis: str) -> str:
     """Return the YYYY-MM-DD date used to filter/bucket an item.
 
     'imported' uses the processing date (`date`, mirrors gsi1-by-date).
     'review' uses the date the customer wrote the feedback
-    (`source_created_at`), falling back to the import date for items that
-    have no source date.
+    (`source_created_at`), falling back to the import date for items whose
+    source date is missing or malformed.
+
+    Note: source_created_at is the source-local date while cutoffs/buckets
+    are UTC, so items written just before/after local midnight can shift by
+    one day at window edges. Accepted at date granularity.
     """
     if date_basis == DATE_BASIS_REVIEW:
-        source_created = item.get('source_created_at') or ''
-        if len(source_created) >= 10:
-            return source_created[:10]
+        source_created = (item.get('source_created_at') or '')[:10]
+        if _ISO_DATE_RE.match(source_created):
+            return source_created
     return item.get('date', '')
 
 
@@ -86,41 +102,109 @@ def _window_cutoff(days: int) -> str:
     return (now - timedelta(days=days - 1)).strftime('%Y-%m-%d')
 
 
+def _query_partition(
+    index_name: str,
+    key_expr,
+    max_matched: int,
+    source: str | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Page one GSI partition via LastEvaluatedKey.
+
+    Returns ``(items, has_more)``. A single query returns at most one page
+    (bounded by DynamoDB's 1MB / the Limit parameter), so without paging a
+    partition dominated by one source starves in-memory filters for every
+    other source (issue #99). When ``source`` is given it is applied as a
+    server-side FilterExpression, so matching rows are found no matter how
+    deep they sit in the partition.
+
+    Paging stops once ``max_matched`` matching rows are collected or
+    ``MAX_SCANNED_PER_PARTITION`` rows have been examined.
+    """
+    matched: list[dict[str, Any]] = []
+    scanned = 0
+    last_key = None
+    has_more = False
+    while True:
+        kwargs: dict[str, Any] = {
+            'IndexName': index_name,
+            'KeyConditionExpression': key_expr,
+            'Limit': DATE_QUERY_LIMIT,
+            'ScanIndexForward': False,
+        }
+        if source:
+            kwargs['FilterExpression'] = Attr('source_platform').eq(source)
+        if last_key:
+            kwargs['ExclusiveStartKey'] = last_key
+        response = feedback_table.query(**kwargs)
+        matched.extend(response.get('Items', []))
+        scanned += response.get('ScannedCount', len(response.get('Items', [])))
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            break
+        if len(matched) >= max_matched or scanned >= MAX_SCANNED_PER_PARTITION:
+            has_more = True
+            break
+    return matched[:max_matched], has_more
+
+
 @tracer.capture_method
 def _scan_recent_items(
     days: int,
-    per_day_limit: int = DATE_QUERY_LIMIT,
-    soft_cap: int = CANDIDATES_SOFT_CAP,
-) -> list[dict[str, Any]]:
-    """Collect items imported in the last `days` days via gsi1-by-date."""
+    per_day_limit: int | None = None,
+    soft_cap: int = MAX_FEEDBACK_OFFSET,
+    source: str | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Collect items imported in the last `days` days via gsi1-by-date.
+
+    Returns ``(items, is_partial)``. ``is_partial`` is True when the scan
+    was truncated (a day partition had more matching rows than the budget
+    allowed, or the soft cap ended the scan with days still unread) — i.e.
+    the result is a sample, not the complete window.
+
+    Each day partition is paged (see :func:`_query_partition`); ``source``
+    is pushed down as a server-side filter so dominated partitions can't
+    starve source-filtered results. ``per_day_limit`` bounds each day for
+    sampling callers (search); by default a day may use the entire
+    remaining budget. The default ``soft_cap`` matches ``/feedback``'s
+    candidate cap so list totals and metric totals agree on the same window.
+    """
     items: list[dict[str, Any]] = []
+    is_partial = False
     current_date = datetime.now(timezone.utc)
     for i in range(days):
         date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        response = feedback_table.query(
-            IndexName='gsi1-by-date',
-            KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-            Limit=per_day_limit,
-            ScanIndexForward=False
+        remaining = soft_cap - len(items)
+        day_items, day_has_more = _query_partition(
+            'gsi1-by-date',
+            Key('gsi1pk').eq(f'DATE#{date}'),
+            max_matched=min(per_day_limit, remaining) if per_day_limit else remaining,
+            source=source,
         )
-        items.extend(response.get('Items', []))
+        items.extend(day_items)
+        is_partial = is_partial or day_has_more
         if len(items) >= soft_cap:
+            if i < days - 1:
+                is_partial = True
             break
-    return items
+    return items, is_partial
 
 
-def _scan_window_items(days: int, date_basis: str) -> list[dict[str, Any]]:
+def _scan_window_items(
+    days: int, date_basis: str, source: str | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
     """Collect items whose basis date falls within the last `days` days.
+
+    Returns ``(items, is_partial)`` — see :func:`_scan_recent_items`.
 
     For 'imported' this is the raw gsi1-by-date window. For 'review' the same
     window is post-filtered down to items actually written within it (see the
     containment note above).
     """
-    items = _scan_recent_items(days)
+    items, is_partial = _scan_recent_items(days, source=source)
     if date_basis == DATE_BASIS_REVIEW:
         cutoff = _window_cutoff(days)
         items = [i for i in items if _basis_date(i, date_basis) >= cutoff]
-    return items
+    return items, is_partial
 
 
 # ============================================
@@ -189,38 +273,40 @@ def list_feedback():
     window_truncated = False
 
     if category and not source:
-        response = feedback_table.query(
-            IndexName='gsi2-by-category',
-            KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{category}'),
-            Limit=candidate_cap,
-            ScanIndexForward=False
+        # Category is the partition key here, so no source push-down needed;
+        # paging still matters because one query returns at most one page.
+        candidates, window_truncated = _query_partition(
+            'gsi2-by-category',
+            Key('gsi2pk').eq(f'CATEGORY#{category}'),
+            max_matched=candidate_cap,
         )
-        candidates = response.get('Items', [])
-        # The category GSI returned a full page at the cap — there may be more.
-        window_truncated = len(candidates) >= candidate_cap and 'LastEvaluatedKey' in response
     else:
         for i in range(days):
             date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            response = feedback_table.query(
-                IndexName='gsi1-by-date',
-                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=DATE_QUERY_LIMIT,
-                ScanIndexForward=False
+            # Push the source filter down to DynamoDB and page the partition:
+            # a day dominated by another source would otherwise fill the whole
+            # page and starve the in-memory filter (issue #99).
+            day_items, day_has_more = _query_partition(
+                'gsi1-by-date',
+                Key('gsi1pk').eq(f'DATE#{date}'),
+                max_matched=candidate_cap - len(candidates),
+                source=source,
             )
-            candidates.extend(response.get('Items', []))
+            candidates.extend(day_items)
             if len(candidates) >= candidate_cap:
                 # We hit the cap before exhausting the date range.
-                window_truncated = i < days - 1
+                window_truncated = day_has_more or i < days - 1
                 break
 
     if date_basis == DATE_BASIS_REVIEW or (category and not source):
         # The `days` window applies to the selected basis date. The date-loop
         # branch already bounds imported-basis candidates by construction, but
         # the category-GSI branch is time-unbounded (sorted by sentiment), so
-        # the cutoff enforces `days` there too — matching the category-path
-        # semantics of shared/feedback.py. Review basis always needs the
-        # post-filter because GSI windows are keyed on import date, and a
-        # review can never be imported before it was written.
+        # the cutoff enforces `days` there too, using this handler's window
+        # definition (_window_cutoff, a days-long window ending today).
+        # Review basis always needs the post-filter because GSI windows are
+        # keyed on import date, and a review can never be imported before it
+        # was written.
         window_cutoff = _window_cutoff(days)
         candidates = [c for c in candidates if _basis_date(c, date_basis) >= window_cutoff]
     if source:
@@ -313,9 +399,7 @@ def get_entities():
     # Aggregates are bucketed by import date only, so both the source filter
     # and the review-date basis require computing entities from raw items.
     if source or date_basis == DATE_BASIS_REVIEW:
-        items = _scan_window_items(days, date_basis)
-        if source:
-            items = [i for i in items if i.get('source_platform') == source]
+        items, is_partial = _scan_window_items(days, date_basis, source=source)
         
         category_counts = {}
         issues = {}
@@ -337,6 +421,7 @@ def get_entities():
         return {
             'period_days': days,
             'feedback_count': len(items),
+            'is_partial': is_partial,
             'entities': {
                 'keywords': {},
                 'categories': dict(sorted(category_counts.items(), key=lambda x: x[1], reverse=True)),
@@ -446,7 +531,12 @@ def search_feedback():
     current_date = datetime.now(timezone.utc)
     cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
     
-    candidates = _scan_recent_items(min(days, 30), per_day_limit=300)
+    candidates, _ = _scan_recent_items(
+        # Sampling scan: search text-matches within a bounded recent sample,
+        # so it keeps the smaller legacy budget rather than the full window.
+        min(days, 30), per_day_limit=300, soft_cap=CANDIDATES_SOFT_CAP,
+        source=source_filter,
+    )
     
     items = []
     for item in candidates:
@@ -550,9 +640,11 @@ def _summary_from_items(days: int) -> dict:
     Pre-computed aggregates are bucketed by import date only, so the
     review-date basis derives daily totals, sentiment averages, and urgent
     counts on the fly (same approach as the source-filtered metric branches).
-    Bounded by CANDIDATES_SOFT_CAP like those branches.
+    The scan budget matches /feedback's candidate cap so both endpoints
+    describe the same window; `is_partial` is set when the scan truncated
+    and the numbers are a lower bound.
     """
-    items = _scan_window_items(days, DATE_BASIS_REVIEW)
+    items, is_partial = _scan_window_items(days, DATE_BASIS_REVIEW)
 
     daily_counts: dict[str, int] = {}
     daily_sentiment: dict[str, dict[str, float]] = {}
@@ -591,6 +683,7 @@ def _summary_from_items(days: int) -> dict:
         'total_feedback': total_feedback,
         'avg_sentiment': round(avg_sentiment, 3),
         'urgent_count': urgent_count,
+        'is_partial': is_partial,
         'daily_totals': totals,
         'daily_sentiment': sentiment_data,
     }
@@ -658,14 +751,13 @@ def get_sentiment_metrics():
     
     sentiments = ['positive', 'neutral', 'negative', 'mixed']
     result = {s: 0 for s in sentiments}
+    is_partial = False
     current_date = datetime.now(timezone.utc)
     
     if source or date_basis == DATE_BASIS_REVIEW:
-        items = _scan_window_items(days, date_basis)
+        items, is_partial = _scan_window_items(days, date_basis, source=source)
         
         for item in items:
-            if source and item.get('source_platform') != source:
-                continue
             sentiment = item.get('sentiment_label', 'neutral')
             if sentiment in result:
                 result[sentiment] += 1
@@ -684,6 +776,7 @@ def get_sentiment_metrics():
     return {
         'period_days': days,
         'total': total,
+        'is_partial': is_partial,
         'breakdown': result,
         'percentages': {k: round(v / max(total, 1) * 100, 1) for k, v in result.items()}
     }
@@ -703,14 +796,13 @@ def get_category_metrics():
         categories = DEFAULT_CATEGORIES
     
     result = {}
+    is_partial = False
     current_date = datetime.now(timezone.utc)
     
     if source or date_basis == DATE_BASIS_REVIEW:
-        items = _scan_window_items(days, date_basis)
+        items, is_partial = _scan_window_items(days, date_basis, source=source)
         
         for item in items:
-            if source and item.get('source_platform') != source:
-                continue
             category = item.get('category', 'other')
             result[category] = result.get(category, 0) + 1
     else:
@@ -727,6 +819,7 @@ def get_category_metrics():
     
     return {
         'period_days': days,
+        'is_partial': is_partial,
         'categories': dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
     }
 
@@ -741,12 +834,14 @@ def get_source_metrics():
     
     if date_basis == DATE_BASIS_REVIEW:
         # Aggregates are bucketed by import date; compute from raw items.
+        items, is_partial = _scan_window_items(days, date_basis)
         source_totals = {}
-        for item in _scan_window_items(days, date_basis):
+        for item in items:
             source = item.get('source_platform', 'unknown')
             source_totals[source] = source_totals.get(source, 0) + 1
         return {
             'period_days': days,
+            'is_partial': is_partial,
             'sources': dict(sorted(source_totals.items(), key=lambda x: x[1], reverse=True))
         }
     
@@ -780,13 +875,15 @@ def get_persona_metrics():
     
     if date_basis == DATE_BASIS_REVIEW:
         # Aggregates are bucketed by import date; compute from raw items.
+        items, is_partial = _scan_window_items(days, date_basis)
         personas = {}
-        for item in _scan_window_items(days, date_basis):
+        for item in items:
             persona_name = item.get('persona_name')
             if persona_name:
                 personas[persona_name] = personas.get(persona_name, 0) + 1
         return {
             'period_days': days,
+            'is_partial': is_partial,
             'personas': dict(sorted(personas.items(), key=lambda x: x[1], reverse=True))
         }
     

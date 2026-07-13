@@ -515,3 +515,246 @@ class TestCategoryBranchDaysWindow:
         body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert [i['feedback_id'] for i in body['items']] == ['fresh-review']
+
+
+
+class TestDominatedPartitionSourceFilter:
+    """Source-filtered reads must survive partitions dominated by one source.
+
+    Regression guard for issue #99: each date partition used to be read with
+    a single unpaged query and filtered in memory afterwards, so a partition
+    whose first page was 100% one source returned zero results for every
+    other source. The fix pushes the source filter into a server-side
+    FilterExpression and pages via LastEvaluatedKey.
+    """
+
+    @staticmethod
+    def _paged_responses(pages):
+        """Build query side effects: every page but the last links onward."""
+        responses = []
+        for idx, items in enumerate(pages):
+            response = {'Items': items, 'ScannedCount': max(len(items), 1)}
+            if idx < len(pages) - 1:
+                response['LastEvaluatedKey'] = {'pk': f'page-{idx}'}
+            responses.append(response)
+        return responses
+
+    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.feedback_table')
+    def test_feedback_list_finds_source_beyond_first_page_of_dominated_day(
+        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+    ):
+        """Items of the requested source on page 2 are returned, not starved."""
+        dominant = [
+            _item(f'c-{i}', imported_days_ago=0, written_days_ago=0,
+                  source_platform='source_c')
+            for i in range(3)
+        ]
+        wanted = [_item('a-1', imported_days_ago=0, written_days_ago=0,
+                        source_platform='source_a')]
+        # Server-side FilterExpression means page 1 yields no matches but
+        # links to page 2 where the wanted row lives.
+        day_pages = self._paged_responses([[], wanted])
+        empty_days = [{'Items': [], 'ScannedCount': 0}] * 6
+        mock_fb.query.side_effect = day_pages + empty_days
+        del dominant  # dominant rows never surface: DynamoDB filters them
+
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/feedback', query_params={'days': '7', 'source': 'source_a'}
+        )
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert [i['feedback_id'] for i in body['items']] == ['a-1']
+        # The source filter must be pushed down to DynamoDB.
+        first_call = mock_fb.query.call_args_list[0]
+        assert 'FilterExpression' in first_call.kwargs
+
+    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.feedback_table')
+    def test_sentiment_metrics_count_source_rows_beyond_first_page(
+        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+    ):
+        wanted = [
+            _item('a-1', imported_days_ago=0, written_days_ago=0,
+                  source_platform='source_a', sentiment_label='negative'),
+            _item('a-2', imported_days_ago=0, written_days_ago=0,
+                  source_platform='source_a', sentiment_label='positive'),
+        ]
+        day_pages = self._paged_responses([[], wanted])
+        empty_days = [{'Items': [], 'ScannedCount': 0}] * 29
+        mock_fb.query.side_effect = day_pages + empty_days
+
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/metrics/sentiment', query_params={'days': '30', 'source': 'source_a'}
+        )
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['total'] == 2
+        assert body['breakdown']['negative'] == 1
+        assert body['breakdown']['positive'] == 1
+
+    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.feedback_table')
+    def test_category_branch_pages_past_the_first_page(
+        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+    ):
+        """The category GSI is paged too — one query is only one page."""
+        page1 = [_item('p1', imported_days_ago=0, written_days_ago=0, category='delivery')]
+        page2 = [_item('p2', imported_days_ago=0, written_days_ago=0, category='delivery')]
+        mock_fb.query.side_effect = self._paged_responses([page1, page2])
+
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/feedback', query_params={'days': '7', 'category': 'delivery'}
+        )
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert {i['feedback_id'] for i in body['items']} == {'p1', 'p2'}
+
+    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.feedback_table')
+    def test_partition_paging_stops_at_scan_ceiling(
+        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+    ):
+        """A pathological partition can't loop forever: the scan ceiling holds."""
+        # Every page scans 5000 rows, matches nothing, and links onward.
+        endless_page = {
+            'Items': [], 'ScannedCount': 5000, 'LastEvaluatedKey': {'pk': 'next'},
+        }
+        mock_fb.query.side_effect = [endless_page] * 50
+
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/feedback', query_params={'days': '1', 'source': 'ghost'}
+        )
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['items'] == []
+        # 10000-row ceiling per partition => exactly 2 pages of 5000 scanned.
+        assert mock_fb.query.call_count == 2
+
+
+
+class TestReviewMetricsPartiality:
+    """Review-basis metrics must disclose when the scan was truncated.
+
+    Aggregates are exact; the review-basis raw scan is budget-bounded. When
+    the budget truncates the window the numbers are a lower bound, and the
+    response must say so via `is_partial` instead of silently degrading.
+    """
+
+    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.feedback_table')
+    def test_summary_flags_partial_when_scan_truncated(
+        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+    ):
+        # First day: the partition hits the per-partition scan ceiling with
+        # rows left behind (LastEvaluatedKey present) => truncated window.
+        truncated_day = {
+            'Items': [_item('a-1', imported_days_ago=0, written_days_ago=0)],
+            'ScannedCount': 10000,
+            'LastEvaluatedKey': {'pk': 'more'},
+        }
+        empty_days = [{'Items': [], 'ScannedCount': 0}] * 29
+        mock_fb.query.side_effect = [truncated_day] + empty_days
+
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/metrics/summary', query_params={'days': '30', 'date_basis': 'review'}
+        )
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['is_partial'] is True
+        assert body['total_feedback'] == 1
+
+    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.feedback_table')
+    def test_summary_not_partial_when_window_fully_scanned(
+        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+    ):
+        items = [_item('a-1', imported_days_ago=0, written_days_ago=0)]
+        mock_fb.query.side_effect = (
+            [{'Items': items, 'ScannedCount': 1}]
+            + [{'Items': [], 'ScannedCount': 0}] * 29
+        )
+
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/metrics/summary', query_params={'days': '30', 'date_basis': 'review'}
+        )
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['is_partial'] is False
+        assert body['total_feedback'] == 1
+
+    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.feedback_table')
+    def test_sentiment_metrics_flag_partial_scan(
+        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+    ):
+        truncated_day = {
+            'Items': [_item('a-1', imported_days_ago=0, written_days_ago=0,
+                            sentiment_label='negative')],
+            'ScannedCount': 10000,
+            'LastEvaluatedKey': {'pk': 'more'},
+        }
+        empty_days = [{'Items': [], 'ScannedCount': 0}] * 29
+        mock_fb.query.side_effect = [truncated_day] + empty_days
+
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/metrics/sentiment',
+            query_params={'days': '30', 'source': 'webscraper'},
+        )
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['is_partial'] is True
+        assert body['breakdown']['negative'] == 1
+
+    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.feedback_table')
+    def test_aggregate_paths_report_complete(
+        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+    ):
+        """The exact pre-computed aggregate branch is never partial."""
+        mock_agg.get_item.return_value = {'Item': {'count': 5}}
+
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/metrics/sentiment', query_params={'days': '7'}
+        )
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['is_partial'] is False
+        mock_fb.query.assert_not_called()
+
+
+class TestMalformedSourceCreatedAt:
+    """Garbage source dates must fall back to the import date, not become
+    lexicographic winners and pollute daily buckets (e.g. 'unavailable')."""
+
+    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.feedback_table')
+    def test_non_date_string_falls_back_to_import_date(
+        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+    ):
+        item = _item('weird', imported_days_ago=0, written_days_ago=0)
+        item['source_created_at'] = 'unavailable-forever'
+        mock_fb.query.side_effect = (
+            [{'Items': [item], 'ScannedCount': 1}]
+            + [{'Items': [], 'ScannedCount': 0}] * 6
+        )
+
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/metrics/summary', query_params={'days': '7', 'date_basis': 'review'}
+        )
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        # Fallback keeps the item (import date is in-window) and buckets it
+        # under a real date rather than a garbage key.
+        assert body['total_feedback'] == 1
+        bucket_dates = [d['date'] for d in body['daily_totals']]
+        assert all(len(d) == 10 and d[4] == '-' for d in bucket_dates)
