@@ -13,6 +13,34 @@ logger = logging.getLogger(__name__)
 # Maximum number of days to look back when querying by date
 MAX_LOOKBACK_DAYS = 90
 
+# Hard ceiling on how many items a single partition (one date / one category)
+# query will page through, so a huge backfill can't make one query run forever.
+# DynamoDB returns up to 1MB per page; without LastEvaluatedKey paging we'd only
+# ever see the first ~500 items of a partition (the "500개 중" truncation bug).
+MAX_ITEMS_PER_PARTITION = 10000
+
+
+def _query_all_pages(feedback_table, *, index_name, key_expr, max_items):
+    """Query a GSI partition, following LastEvaluatedKey until exhausted or
+    `max_items` collected. DynamoDB caps each page at 1MB, so a single query()
+    only returns a slice of a large partition — this pages through the rest."""
+    collected: list[dict] = []
+    last_key = None
+    while True:
+        kwargs = {
+            'IndexName': index_name,
+            'KeyConditionExpression': key_expr,
+            'ScanIndexForward': False,
+        }
+        if last_key:
+            kwargs['ExclusiveStartKey'] = last_key
+        response = feedback_table.query(**kwargs)
+        collected.extend(response.get('Items', []))
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key or len(collected) >= max_items:
+            break
+    return collected[:max_items]
+
 
 def _fetch_and_filter(
     feedback_table,
@@ -34,28 +62,30 @@ def _fetch_and_filter(
     items: list[dict] = []
     current_date = datetime.now(timezone.utc)
 
+    # Per-partition page cap: honour fetch_ceiling when set (early-break path),
+    # otherwise page through the whole partition up to a safety ceiling so we
+    # don't truncate days/categories that hold more than one DynamoDB page.
+    page_cap = fetch_ceiling if fetch_ceiling else MAX_ITEMS_PER_PARTITION
+
     if categories and not sources:
-        per_cat = max(fetch_ceiling // len(categories) + 1 if fetch_ceiling else 5000, 10)
         for category in categories:
-            response = feedback_table.query(
-                IndexName='gsi2-by-category',
-                KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{category}'),
-                Limit=per_cat,
-                ScanIndexForward=False,
-            )
-            items.extend(response.get('Items', []))
+            items.extend(_query_all_pages(
+                feedback_table,
+                index_name='gsi2-by-category',
+                key_expr=Key('gsi2pk').eq(f'CATEGORY#{category}'),
+                max_items=page_cap,
+            ))
         cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
         items = [i for i in items if i.get('date', '') >= cutoff_date]
     else:
         for i in range(days):
             date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            response = feedback_table.query(
-                IndexName='gsi1-by-date',
-                KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
-                Limit=per_day_limit,
-                ScanIndexForward=False,
-            )
-            items.extend(response.get('Items', []))
+            items.extend(_query_all_pages(
+                feedback_table,
+                index_name='gsi1-by-date',
+                key_expr=Key('gsi1pk').eq(f'DATE#{date}'),
+                max_items=page_cap,
+            ))
             if not has_post_filters and fetch_ceiling and len(items) >= fetch_ceiling:
                 break
 

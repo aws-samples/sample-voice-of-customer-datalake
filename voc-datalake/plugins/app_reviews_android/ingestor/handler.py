@@ -49,6 +49,8 @@ class AndroidAppReviewsIngestor(BaseIngestor):
                                 package_name=cfg.get("package_name", "").strip(),
                                 enabled=cfg.get("enabled", True),
                                 max_reviews_per_run=parse_int(str(cfg.get("max_reviews_per_run", "500")), 500),
+                                lang=str(cfg.get("lang", "") or "").strip(),
+                                country=str(cfg.get("country", "") or "").strip(),
                             ))
                         except (ValueError, TypeError) as e:
                             logger.warning(f"Skipping invalid Android app config: {e}")
@@ -81,24 +83,34 @@ class AndroidAppReviewsIngestor(BaseIngestor):
 
     def _collect_reviews_for_app(self, app: AndroidAppConfig) -> list[dict]:
         """
-        Collect reviews across countries for a single app.
+        Collect reviews for a single app, deduplicating by review ID and
+        capping at max_reviews_per_run.
 
-        Shuffles countries for fair coverage, deduplicates by review ID,
-        and caps at max_reviews_per_run.
+        Google Play filters reviews BY LANGUAGE (lang="en" returns only
+        English-written reviews). When the app config sets lang/country
+        (e.g. ko/kr for a Korean app), we target that locale directly to get
+        the full review set. Otherwise we fall back to the country sweep with
+        the default lang.
         """
-        countries = list(ANDROID_COUNTRIES)
-        random.shuffle(countries)
-        if self.max_countries and self.max_countries < len(countries):
-            countries = countries[: self.max_countries]
+        if app.lang or app.country:
+            # Targeted single-locale fetch — paginates fully via play_client.
+            locales = [(app.lang or "en", app.country or "us")]
+        else:
+            countries = list(ANDROID_COUNTRIES)
+            random.shuffle(countries)
+            if self.max_countries and self.max_countries < len(countries):
+                countries = countries[: self.max_countries]
+            locales = [("en", c) for c in countries]
 
         all_reviews: dict[str, dict] = {}
 
-        for country in countries:
+        for lang, country in locales:
             reviews = fetch_reviews_for_country(
                 package_name=app.package_name,
                 country=country,
                 count=app.max_reviews_per_run,
                 sort_by=self.sort_by,
+                lang=lang,
             )
             for review in reviews:
                 review_id = review.get("reviewId", "")
