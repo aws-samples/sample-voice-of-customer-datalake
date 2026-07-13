@@ -22,6 +22,7 @@ import { useManualImportStore } from '../../store/manualImportStore'
 import { AppConfigCard } from './AppConfigComponents'
 import GeneratorConfigModal from './GeneratorConfigModal'
 import JsonUploadModal from './JsonUploadModal'
+import CsvUploadModal from './CsvUploadModal'
 import ManualImportModal from './ManualImportModal'
 import PluginConfigModal from './PluginConfigModal'
 import { getAppIdentifier } from './scraper-helpers'
@@ -275,6 +276,7 @@ export default function Scrapers() {
   const [selectedPlugin, setSelectedPlugin] = useState<PluginManifest | null>(null)
   const [selectedGenerator, setSelectedGenerator] = useState<PluginManifest | null>(null)
   const [showJsonUpload, setShowJsonUpload] = useState(false)
+  const [showCsvUpload, setShowCsvUpload] = useState(false)
   const [deleteAppInfo, setDeleteAppInfo] = useState<{
     pluginId: string;
     appId: string
@@ -376,6 +378,7 @@ export default function Scrapers() {
 
       <ManualImportModal />
       <JsonUploadModal isOpen={showJsonUpload} onClose={() => setShowJsonUpload(false)} />
+      <CsvUploadModal isOpen={showCsvUpload} onClose={() => setShowCsvUpload(false)} />
 
       {showTemplates ? <TemplateSelector onSelect={handleSelectTemplate} onSelectPlugin={handleSelectPlugin} onSelectGenerator={(plugin) => {
         setShowTemplates(false); setSelectedGenerator(plugin)
@@ -383,6 +386,8 @@ export default function Scrapers() {
         setShowTemplates(false); setIsModalOpen(true)
       }} onJsonUpload={() => {
         setShowTemplates(false); setShowJsonUpload(true)
+      }} onCsvUpload={() => {
+        setShowTemplates(false); setShowCsvUpload(true)
       }} onClose={() => setShowTemplates(false)} /> : null}
 
       {selectedPlugin == null ? null : <PluginConfigModal

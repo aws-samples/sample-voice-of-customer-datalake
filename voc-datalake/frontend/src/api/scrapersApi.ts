@@ -140,4 +140,16 @@ export const scrapersApi = {
       method: 'POST',
       body: JSON.stringify({ items }),
     }),
+  uploadCsvFeedback: (params: { csv_text: string; default_source?: string }) =>
+    fetchApi<{
+      success: boolean;
+      imported_count: number;
+      total_rows: number;
+      s3_uri?: string;
+      warnings?: string[];
+      errors?: string[]
+    }>('/scrapers/manual/csv-upload', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
 }

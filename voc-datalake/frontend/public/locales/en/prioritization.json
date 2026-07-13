@@ -21,6 +21,7 @@
     "placeholder": "Add notes about this prioritization decision..."
   },
   "preview": {
+    "prototypeTitle": "Prototype",
     "title": "PR/FAQ Preview",
     "viewFull": "View Full Document",
     "viewMobile": "View"

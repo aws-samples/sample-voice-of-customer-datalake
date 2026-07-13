@@ -85,13 +85,20 @@ class TestJsonUploadEndpoint:
                  'created_at': '2026-01-02T00:00:00Z'},
             ]}
         )
+        mock_sqs.send_message_batch.side_effect = lambda QueueUrl, Entries: {
+            'Successful': [{'Id': e['Id']} for e in Entries], 'Failed': [],
+        }
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         assert body['success'] is True
         assert body['imported_count'] == 2
         assert body['total_items'] == 2
         assert body['s3_uri'] is not None
-        assert mock_sqs.send_message.call_count == 2
+        # Items are sent via SendMessageBatch (both fit one batch of <=10),
+        # not one send_message per item — the P9 batching regression check.
+        assert mock_sqs.send_message_batch.call_count == 1
+        assert len(mock_sqs.send_message_batch.call_args.kwargs['Entries']) == 2
+        mock_sqs.send_message.assert_not_called()
         mock_s3.put_object.assert_called_once()
 
     @patch('manual_import_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/q')
@@ -108,9 +115,13 @@ class TestJsonUploadEndpoint:
                  'url': 'https://example.com', 'user_id': 'u1'},
             ]}
         )
+        mock_sqs.send_message_batch.side_effect = lambda QueueUrl, Entries: {
+            'Successful': [{'Id': e['Id']} for e in Entries], 'Failed': [],
+        }
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         assert body['success'] is True
-        # Verify metadata was passed through in SQS message
-        sqs_body = json.loads(mock_sqs.send_message.call_args.kwargs['MessageBody'])
+        # Verify metadata was passed through in the batched SQS message
+        entries = mock_sqs.send_message_batch.call_args.kwargs['Entries']
+        sqs_body = json.loads(entries[0]['MessageBody'])
         assert sqs_body['metadata'] == {'custom_field': 'value'}

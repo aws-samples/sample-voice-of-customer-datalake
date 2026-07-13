@@ -21,6 +21,7 @@
     "placeholder": "この優先順位付けの決定に関するメモを追加..."
   },
   "preview": {
+    "prototypeTitle": "プロトタイプ",
     "title": "PR/FAQプレビュー",
     "viewFull": "完全なドキュメントを表示",
     "viewMobile": "表示"

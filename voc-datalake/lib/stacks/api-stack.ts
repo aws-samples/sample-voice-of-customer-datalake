@@ -921,6 +921,7 @@ export class VocApiStack extends cdk.Stack {
     manualParseResource.addResource('{jobId}').addMethod('GET', manualImportIntegration, authMethodOptions);
     manualResource.addResource('confirm').addMethod('POST', manualImportIntegration, authMethodOptions);
     manualResource.addResource('json-upload').addMethod('POST', manualImportIntegration, authMethodOptions);
+    manualResource.addResource('csv-upload').addMethod('POST', manualImportIntegration, authMethodOptions);
     scrapersResource.addProxy({ defaultIntegration: scrapersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
     // /s3-import/* — proxy to s3 import Lambda

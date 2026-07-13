@@ -21,6 +21,7 @@
     "placeholder": "添加关于此优先级排序决策的备注..."
   },
   "preview": {
+    "prototypeTitle": "原型",
     "title": "PR/FAQ 预览",
     "viewFull": "查看完整文档",
     "viewMobile": "查看"

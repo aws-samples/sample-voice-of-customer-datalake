@@ -21,6 +21,7 @@
     "placeholder": "Adicione notas sobre esta decisão de priorização..."
   },
   "preview": {
+    "prototypeTitle": "Protótipo",
     "title": "Visualização de PR/FAQ",
     "viewFull": "Visualizar Documento Completo",
     "viewMobile": "Visualizar"

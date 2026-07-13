@@ -16,6 +16,7 @@
     "scrapers": "웹 스크레이퍼",
     "settings": "설정"
   },
+  "cancel": "취소",
   "configureBrand": "브랜드 설정",
   "exportPdf": "PDF 내보내기",
   "exportPdfShort": "PDF",
