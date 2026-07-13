@@ -9,7 +9,7 @@
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
-  Loader2, FileJson, Globe, Smartphone, ClipboardPaste, Upload, Sparkles,
+  Loader2, FileJson, Globe, Smartphone, ClipboardPaste, Upload, Sparkles, FileText,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
@@ -24,6 +24,7 @@ interface TemplateSelectorProps {
   readonly onSelectGenerator: (plugin: PluginManifest) => void
   readonly onManualImport: () => void
   readonly onJsonUpload: () => void
+  readonly onCsvUpload: () => void
   readonly onClose: () => void
 }
 
@@ -130,7 +131,7 @@ function mergeTemplates(apiTemplates: ScraperTemplate[]): ScraperTemplate[] {
 }
 
 export default function TemplateSelector({
-  onSelect, onSelectPlugin, onSelectGenerator, onManualImport, onJsonUpload, onClose,
+  onSelect, onSelectPlugin, onSelectGenerator, onManualImport, onJsonUpload, onCsvUpload, onClose,
 }: TemplateSelectorProps) {
   const { t } = useTranslation('scrapers')
   const { config } = useConfigStore()
@@ -245,6 +246,18 @@ export default function TemplateSelector({
                   <div className="font-medium text-sm sm:text-base">{t('templateSelector.jsonUpload')}</div>
                 </div>
                 <p className="text-xs sm:text-sm text-gray-600">{t('templateSelector.jsonUploadDescription')}</p>
+              </button>
+              <button
+                onClick={onCsvUpload}
+                className="p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-emerald-400 hover:bg-emerald-50 border-emerald-200 bg-emerald-50/30"
+              >
+                <div className="flex items-center gap-2 sm:gap-3 mb-2">
+                  <FileText size={24} className="text-emerald-600" />
+                  <div className="font-medium text-sm sm:text-base">{t('templateSelector.csvUpload', { defaultValue: 'CSV upload' })}</div>
+                </div>
+                <p className="text-xs sm:text-sm text-gray-600">
+                  {t('templateSelector.csvUploadDescription', { defaultValue: 'Upload a CSV file with feedback rows. Each row is enriched and added to the feedback table.' })}
+                </p>
               </button>
             </div>
           </div>
