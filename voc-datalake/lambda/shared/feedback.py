@@ -49,7 +49,7 @@ def _fetch_and_filter(
     categories: list[str],
     sentiments: list[str],
     fetch_ceiling: int,
-    per_day_limit: int,
+    per_day_limit: int,  # deprecated: superseded by LastEvaluatedKey paging
 ) -> list[dict]:
     """Internal: fetch items from DynamoDB and apply in-memory filters.
 
@@ -123,7 +123,9 @@ def query_feedback_by_date(
         sentiments: Optional list of sentiment_label values to keep.
         limit: Maximum number of items to return after filtering.
         offset: Number of items to skip (for pagination).
-        per_day_limit: DynamoDB Limit per date query (default 500).
+        per_day_limit: Deprecated — retained for call-site compatibility.
+            Partition reads now page through LastEvaluatedKey and are bounded
+            by fetch_ceiling / MAX_ITEMS_PER_PARTITION instead.
 
     Returns:
         Filtered list of feedback items, sliced by offset/limit.
