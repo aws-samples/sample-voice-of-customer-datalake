@@ -151,10 +151,16 @@ def get_scraper_logs(scraper_id: str):
         
         logs = []
         for item in response.get('Items', []):
+            # Filter by lookback window — items older than `cutoff` are skipped.
+            # (`cutoff` was previously computed but never applied, making the
+            # `days` query param a no-op.) Runs missing `started_at` are kept.
+            started_at = item.get('started_at', '')
+            if started_at and started_at < cutoff:
+                continue
             logs.append({
                 'run_id': item.get('sk', ''),
                 'status': item.get('status'),
-                'started_at': item.get('started_at'),
+                'started_at': started_at,
                 'completed_at': item.get('completed_at'),
                 'pages_scraped': item.get('pages_scraped', 0),
                 'items_found': item.get('items_found', 0),
