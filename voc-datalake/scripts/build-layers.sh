@@ -1,14 +1,22 @@
 #!/bin/bash
-# Build Lambda layers using Docker for Linux ARM64 (Graviton) compatibility
-# This ensures native dependencies (like pydantic-core) are compiled for Lambda's ARM64 environment
+# Build Lambda layers for Linux ARM64 (Graviton) compatibility.
+# This ensures native dependencies (like pydantic-core) are compiled for Lambda's ARM64 environment.
+#
+# Container runtime: defaults to Docker, but honors the same override the CDK
+# deploys already use — either of:
+#   CONTAINER_CMD=finch ./scripts/build-layers.sh
+#   CDK_DOCKER=finch    ./scripts/build-layers.sh
+# (Finch is a drop-in replacement for `docker run` for this use case.)
 
 set -e
+
+CONTAINER_CMD="${CONTAINER_CMD:-${CDK_DOCKER:-docker}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 LAYERS_DIR="$PROJECT_ROOT/lambda/layers"
 
-echo "Building Lambda layers using Docker (ARM64/Graviton for Lambda)..."
+echo "Building Lambda layers using $CONTAINER_CMD (ARM64/Graviton for Lambda)..."
 echo "Project root: $PROJECT_ROOT"
 
 # Use the official AWS Lambda Python 3.14 image with ARM64 platform
@@ -24,7 +32,7 @@ PROCESSING_DEPS_DIR="$LAYERS_DIR/processing-deps"
 rm -rf "$PROCESSING_DEPS_DIR/python"
 mkdir -p "$PROCESSING_DEPS_DIR/python"
 
-docker run --rm --platform "$PLATFORM" \
+"$CONTAINER_CMD" run --rm --platform "$PLATFORM" \
   -v "$PROCESSING_DEPS_DIR:/var/task" \
   "$DOCKER_IMAGE" \
   pip install -r /var/task/requirements.txt -t /var/task/python --upgrade --quiet
@@ -41,7 +49,7 @@ if [ -f "$INGESTION_DEPS_DIR/requirements.txt" ]; then
   rm -rf "$INGESTION_DEPS_DIR/python"
   mkdir -p "$INGESTION_DEPS_DIR/python"
   
-  docker run --rm --platform "$PLATFORM" \
+  "$CONTAINER_CMD" run --rm --platform "$PLATFORM" \
     -v "$INGESTION_DEPS_DIR:/var/task" \
     "$DOCKER_IMAGE" \
     pip install -r /var/task/requirements.txt -t /var/task/python --upgrade --quiet

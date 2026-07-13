@@ -16,6 +16,7 @@
     "scrapers": "Web-Scraper",
     "settings": "Einstellungen"
   },
+  "cancel": "Abbrechen",
   "configureBrand": "Marke konfigurieren",
   "exportPdf": "PDF exportieren",
   "exportPdfShort": "PDF",

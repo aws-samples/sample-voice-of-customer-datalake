@@ -7,7 +7,7 @@ This guide covers how to deploy the VoC (Voice of Customer) platform, including 
 - **AWS CLI** configured with appropriate credentials
 - **Node.js** 18+ and npm
 - **Python** 3.12+ (for Lambda functions)
-- **Docker** (for building Lambda layers)
+- **Docker or Finch** (for building Lambda layers and CDK asset bundling)
 
 ## Project Structure
 
@@ -32,7 +32,7 @@ From the project root:
 # Install all dependencies
 npm run install:all
 
-# Build Lambda layers (requires Docker)
+# Build Lambda layers (requires Docker; Finch users: CDK_DOCKER=finch npm run build:layers)
 npm run build:layers
 
 # Bootstrap CDK (first time only)
@@ -433,7 +433,7 @@ aws cloudformation describe-stacks \
 | Command | Description |
 |---------|-------------|
 | `npm run install:all` | Install all dependencies (root + CDK + frontend) |
-| `npm run build:layers` | Build Lambda layers with Docker (ARM64) |
+| `npm run build:layers` | Build Lambda layers with Docker (ARM64); honors `CONTAINER_CMD`/`CDK_DOCKER` (e.g. `finch`) |
 | `npm run cdk:bootstrap` | Bootstrap CDK in AWS account |
 | `npm run check` | Run all quality checks (lint + typecheck + test) |
 | `npm run deploy:all` | Deploy infrastructure + frontend |
