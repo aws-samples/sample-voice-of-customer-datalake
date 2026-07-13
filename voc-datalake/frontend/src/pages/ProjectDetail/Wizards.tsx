@@ -283,11 +283,23 @@ export function DocWizard({
   const docCount = docTypes.length
   const bothSelected = hasPrd && hasPrfaq
 
+  const singleTitle = hasPrd
+    ? t('wizards.generatePrdTitle', { defaultValue: 'Generate PRD' })
+    : t('wizards.generatePrfaqTitle', { defaultValue: 'Generate PR-FAQ' })
+  const wizardTitle = bothSelected
+    ? t('wizards.generateBothTitle', { defaultValue: 'Generate PRD + PR-FAQ' })
+    : singleTitle
+
+  const singleSubmitLabel = hasPrd
+    ? t('wizards.generatePrd', { defaultValue: 'Generate PRD' })
+    : t('wizards.generatePrfaq', { defaultValue: 'Generate PR-FAQ' })
+  const submitLabelText = bothSelected
+    ? t('wizards.generateBoth', { defaultValue: 'Generate PRD + PR-FAQ' })
+    : singleSubmitLabel
+
   return (
     <DataSourceWizard
-      title={bothSelected
-        ? t('wizards.generateBothTitle', { defaultValue: 'Generate PRD + PR-FAQ' })
-        : t(hasPrd ? 'wizards.generatePrdTitle' : 'wizards.generatePrfaqTitle', { defaultValue: hasPrd ? 'Generate PRD' : 'Generate PR-FAQ' })}
+      title={wizardTitle}
       accentColor="blue"
       icon={<div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"><FileText size={20} className="text-blue-600" /></div>}
       personas={personas}
@@ -395,9 +407,7 @@ export function DocWizard({
       onClose={onClose}
       onSubmit={onSubmit}
       isSubmitting={generating === 'doc'}
-      submitLabel={<><FileText size={16} />{bothSelected
-        ? t('wizards.generateBoth', { defaultValue: 'Generate PRD + PR-FAQ' })
-        : t(hasPrd ? 'wizards.generatePrd' : 'wizards.generatePrfaq', { defaultValue: hasPrd ? 'Generate PRD' : 'Generate PR-FAQ' })}</>}
+      submitLabel={<><FileText size={16} />{submitLabelText}</>}
     />
   )
 }

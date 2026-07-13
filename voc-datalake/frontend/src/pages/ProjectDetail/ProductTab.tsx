@@ -23,9 +23,26 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
+import { pollJobToCompletion } from './jobPolling'
+import {
+  SelectField, TextAreaField, TextField,
+} from './ProductFormFields'
 import type {
   ProductContext, ProductDoc, ProductLifecycleState,
 } from '../../api/types'
+
+const LIFECYCLE_STATES: readonly ProductLifecycleState[] = ['', 'idea', 'mvp', 'beta', 'ga', 'mature']
+
+function isLifecycleState(value: string): value is ProductLifecycleState {
+  return LIFECYCLE_STATES.some((state) => state === value)
+}
+
+/** Build a single-field patch without a type assertion (computed generic keys widen otherwise). */
+function singleFieldPatch<K extends keyof ProductContext>(field: K, value: ProductContext[K]): Partial<ProductContext> {
+  const patch: Partial<ProductContext> = {}
+  patch[field] = value
+  return patch
+}
 
 const ALLOWED_MIME = {
   'application/pdf': '.pdf',
@@ -78,24 +95,24 @@ export default function ProductTab({ projectId, onDocumentChanged }: ProductTabP
   }, [projectId])
 
   useEffect(() => {
-    let cancelled = false
+    const lifecycle = { cancelled: false }
     setLoading(true)
     projectsApi.getProductContext(projectId).then((r) => {
-      if (!cancelled) setContext({ ...emptyContext(), ...r.context })
+      if (!lifecycle.cancelled) setContext({ ...emptyContext(), ...r.context })
     }).catch((e) => {
       console.error('Failed to load product context', e)
     }).finally(() => {
-      if (!cancelled) setLoading(false)
+      if (!lifecycle.cancelled) setLoading(false)
     })
-    return () => { cancelled = true }
+    return () => { lifecycle.cancelled = true }
   }, [projectId])
 
   const persistField = useCallback(async <K extends keyof ProductContext>(
     field: K, value: ProductContext[K],
   ) => {
-    setSavingField(field as string)
+    setSavingField(field)
     try {
-      const r = await projectsApi.updateProductContext(projectId, { [field]: value } as Partial<ProductContext>)
+      const r = await projectsApi.updateProductContext(projectId, singleFieldPatch(field, value))
       setContext({ ...emptyContext(), ...r.context })
     } catch (e) {
       console.error(`Failed to save ${String(field)}`, e)
@@ -233,7 +250,7 @@ function ProductForm({
         label={t('product.fields.currentState')} field="current_state" value={context.current_state}
         options={lifecycleOptions.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
         savingField={savingField} highlight={highlightFields.has('current_state')}
-        onSave={(v) => onPersistField('current_state', v as ProductLifecycleState)}
+        onSave={(v) => { if (isLifecycleState(v)) onPersistField('current_state', v) }}
       />
       <TextAreaField
         label={t('product.fields.targetUsers')} field="target_users" value={context.target_users}
@@ -292,95 +309,6 @@ function ProductForm({
         onSave={(v) => onPersistField('free_form_notes', v)}
       />
     </div>
-  )
-}
-
-function FieldShell({
-  label, field, savingField, highlight, children,
-}: {
-  readonly label: string
-  readonly field: string
-  readonly savingField: string | null
-  readonly highlight: boolean
-  readonly children: React.ReactNode
-}) {
-  return (
-    <div className={`transition-colors rounded-md ${highlight ? 'ring-2 ring-yellow-300 ring-offset-2 ring-offset-white' : ''}`}>
-      <div className="flex items-center justify-between mb-1">
-        <label className="text-xs font-medium text-gray-700">{label}</label>
-        {savingField === field && <Loader2 size={12} className="animate-spin text-gray-400" />}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function TextField({
-  label, field, value, max, savingField, highlight, placeholder, onSave,
-}: {
-  readonly label: string; readonly field: string; readonly value: string; readonly max: number
-  readonly savingField: string | null; readonly highlight: boolean; readonly placeholder: string
-  readonly onSave: (v: string) => void
-}) {
-  const [draft, setDraft] = useState(value)
-  useEffect(() => { setDraft(value) }, [value])
-  return (
-    <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
-      <input
-        type="text"
-        value={draft}
-        maxLength={max}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { if (draft !== value) onSave(draft) }}
-        className="w-full px-3 py-2 border rounded-md text-sm"
-        placeholder={placeholder}
-      />
-    </FieldShell>
-  )
-}
-
-function TextAreaField({
-  label, field, value, max, rows, savingField, highlight, placeholder, onSave,
-}: {
-  readonly label: string; readonly field: string; readonly value: string; readonly max: number; readonly rows: number
-  readonly savingField: string | null; readonly highlight: boolean; readonly placeholder: string
-  readonly onSave: (v: string) => void
-}) {
-  const [draft, setDraft] = useState(value)
-  useEffect(() => { setDraft(value) }, [value])
-  return (
-    <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
-      <textarea
-        value={draft}
-        rows={rows}
-        maxLength={max}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { if (draft !== value) onSave(draft) }}
-        className="w-full px-3 py-2 border rounded-md text-sm"
-        placeholder={placeholder}
-      />
-    </FieldShell>
-  )
-}
-
-function SelectField({
-  label, field, value, options, savingField, highlight, onSave,
-}: {
-  readonly label: string; readonly field: string; readonly value: string
-  readonly options: { value: string; label: string }[]
-  readonly savingField: string | null; readonly highlight: boolean
-  readonly onSave: (v: string) => void
-}) {
-  return (
-    <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
-      <select
-        value={value}
-        onChange={(e) => onSave(e.target.value)}
-        className="w-full px-3 py-2 border rounded-md text-sm bg-white"
-      >
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </FieldShell>
   )
 }
 
@@ -690,30 +618,14 @@ function ReportCard({
     setSuccess(false)
     try {
       const start = await projectsApi.generateProductReport(projectId, { response_language: language })
-      const jobId = start.job_id
-      const deadline = Date.now() + 5 * 60_000
-      let consecutiveErrors = 0
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 2500))
-        let job
-        try {
-          job = await projectsApi.getJobStatus(projectId, jobId)
-          consecutiveErrors = 0
-        } catch (pollErr) {
-          consecutiveErrors += 1
-          if (consecutiveErrors >= 5) throw pollErr
-          // eslint-disable-next-line no-console -- diagnostic for transient poll failures
-          console.warn(`Job poll error ${consecutiveErrors}/5 — retrying`, pollErr)
-          continue
-        }
-        if (job.status === 'completed') {
-          setSuccess(true)
-          onDocumentChanged?.()
-          return
-        }
-        if (job.status === 'failed') {
-          throw new Error(job.error || 'Report generation failed')
-        }
+      const outcome = await pollJobToCompletion(projectId, start.job_id, { intervalMs: 2500 })
+      if (outcome.status === 'completed') {
+        setSuccess(true)
+        onDocumentChanged?.()
+        return
+      }
+      if (outcome.status === 'failed') {
+        throw new Error(outcome.job.error || 'Report generation failed')
       }
       throw new Error(t('product.report.timeout', { defaultValue: 'Report generation took too long. Check the Documents tab in a moment.' }))
     } catch (e: unknown) {

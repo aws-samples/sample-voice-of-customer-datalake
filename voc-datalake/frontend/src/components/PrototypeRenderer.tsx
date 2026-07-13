@@ -5,58 +5,11 @@
  * from the Documents tab inside a project AND from the Prioritization page
  * (under the PR/FAQ preview, so reviewers see the demo without leaving).
  *
- * Spec shape (mirrors lambda/jobs/document_generator/handler.py):
- *   { title?, banner?, screens: [
- *       { id, label?, heading?, subheading?, blocks?: [
- *           { type: 'text' | 'callout' | 'stats' | 'list' | 'form' | 'buttons', ... }
- *       ] }
- *   ] }
+ * Spec parsing/types live in ./prototypeSpec (Zod-validated).
  */
 import clsx from 'clsx'
 import { useCallback, useMemo, useState } from 'react'
-
-export interface PrototypeBlock {
-  type: string
-  text?: string
-  tone?: string
-  title?: string
-  items?: Array<{
-    label?: string
-    title?: string
-    subtitle?: string
-    badge?: string
-    value?: string
-    goto?: string
-    tone?: string
-  }>
-  fields?: Array<{ label: string; placeholder?: string; type?: string }>
-  submit?: { label: string; goto?: string }
-}
-
-export interface PrototypeScreen {
-  id: string
-  label?: string
-  heading?: string
-  subheading?: string
-  blocks?: PrototypeBlock[]
-}
-
-export interface PrototypeSpec {
-  title?: string
-  banner?: string
-  screens: PrototypeScreen[]
-}
-
-/**
- * Heuristic: does this content look like a self-contained HTML document (the
- * newer Opus-built prototype format) rather than a legacy JSON spec? Used as a
- * fallback when `prototype_format` isn't present on the document.
- */
-export function looksLikeHtmlDocument(content: string | null | undefined): boolean {
-  if (!content) return false
-  const head = content.trimStart().slice(0, 200).toLowerCase()
-  return head.startsWith('<!doctype html') || head.startsWith('<html')
-}
+import type { PrototypeBlock, PrototypeSpec } from './prototypeSpec'
 
 /**
  * Renders a self-contained HTML prototype inside an iframe.
@@ -100,24 +53,6 @@ export function HtmlPrototypeFrame({
       className={className ?? 'w-full h-full border-0'}
     />
   )
-}
-
-/**
- * Parse a prototype document's `content` (which is a JSON string) into a spec
- * object, or return null if it can't be parsed. Caller decides how to display
- * malformed/legacy prototypes.
- */
-export function parsePrototypeSpec(content: string | null | undefined): PrototypeSpec | null {
-  if (!content) return null
-  try {
-    const parsed = JSON.parse(content) as unknown
-    if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { screens?: unknown }).screens)) {
-      return parsed as PrototypeSpec
-    }
-  } catch {
-    // not JSON
-  }
-  return null
 }
 
 export default function PrototypeRenderer({ spec }: { readonly spec: PrototypeSpec }) {
@@ -184,74 +119,16 @@ function PrototypeBlockView({
   switch (block.type) {
     case 'text':
       return <p className="text-sm text-gray-700 whitespace-pre-wrap">{block.text}</p>
-
-    case 'callout': {
-      const toneClass = {
-        info: 'bg-blue-50 border-blue-200 text-blue-800',
-        success: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-        warn: 'bg-amber-50 border-amber-200 text-amber-800',
-        error: 'bg-red-50 border-red-200 text-red-800',
-      }[block.tone || 'info'] ?? 'bg-gray-50 border-gray-200 text-gray-800'
-      return <div className={clsx('text-sm p-3 rounded-md border', toneClass)}>{block.text}</div>
-    }
-
+    case 'callout':
+      return <PrototypeCalloutBlock block={block} />
     case 'stats':
-      return (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {(block.items ?? []).map((s, i) => (
-            <div key={i} className="border rounded-lg p-3 bg-gray-50">
-              <div className="text-xs text-gray-500">{s.label}</div>
-              <div className="text-lg font-semibold mt-0.5">{s.value}</div>
-            </div>
-          ))}
-        </div>
-      )
-
+      return <PrototypeStatsBlock block={block} />
     case 'list':
-      return (
-        <div className="space-y-2">
-          {block.title ? <h4 className="text-sm font-medium text-gray-700">{block.title}</h4> : null}
-          <ul className="divide-y border rounded-lg">
-            {(block.items ?? []).map((item, i) => (
-              <li key={i} className="px-3 py-2 flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate">{item.title}</div>
-                  {item.subtitle ? <div className="text-xs text-gray-500 truncate">{item.subtitle}</div> : null}
-                </div>
-                {item.badge ? (
-                  <span className="ml-2 text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full whitespace-nowrap">
-                    {item.badge}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )
-
+      return <PrototypeListBlock block={block} />
     case 'form':
       return <PrototypeFormBlock block={block} onNavigate={onNavigate} />
-
     case 'buttons':
-      return (
-        <div className="flex flex-wrap gap-2">
-          {(block.items ?? []).map((b, i) => (
-            <button
-              key={i}
-              onClick={() => onNavigate(b.goto)}
-              className={clsx(
-                'px-4 py-2 rounded-md text-sm transition-colors',
-                (b.tone ?? 'primary') === 'secondary'
-                  ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  : 'bg-blue-600 text-white hover:bg-blue-700',
-              )}
-            >
-              {b.label}
-            </button>
-          ))}
-        </div>
-      )
-
+      return <PrototypeButtonsBlock block={block} onNavigate={onNavigate} />
     default:
       return (
         <div className="text-xs text-gray-400 italic">
@@ -259,6 +136,78 @@ function PrototypeBlockView({
         </div>
       )
   }
+}
+
+function PrototypeCalloutBlock({ block }: { readonly block: PrototypeBlock }) {
+  const toneClass = {
+    info: 'bg-blue-50 border-blue-200 text-blue-800',
+    success: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+    warn: 'bg-amber-50 border-amber-200 text-amber-800',
+    error: 'bg-red-50 border-red-200 text-red-800',
+  }[block.tone || 'info'] ?? 'bg-gray-50 border-gray-200 text-gray-800'
+  return <div className={clsx('text-sm p-3 rounded-md border', toneClass)}>{block.text}</div>
+}
+
+function PrototypeStatsBlock({ block }: { readonly block: PrototypeBlock }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      {(block.items ?? []).map((s, i) => (
+        <div key={i} className="border rounded-lg p-3 bg-gray-50">
+          <div className="text-xs text-gray-500">{s.label}</div>
+          <div className="text-lg font-semibold mt-0.5">{s.value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PrototypeListBlock({ block }: { readonly block: PrototypeBlock }) {
+  return (
+    <div className="space-y-2">
+      {block.title ? <h4 className="text-sm font-medium text-gray-700">{block.title}</h4> : null}
+      <ul className="divide-y border rounded-lg">
+        {(block.items ?? []).map((item, i) => (
+          <li key={i} className="px-3 py-2 flex items-center justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium truncate">{item.title}</div>
+              {item.subtitle ? <div className="text-xs text-gray-500 truncate">{item.subtitle}</div> : null}
+            </div>
+            {item.badge ? (
+              <span className="ml-2 text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+                {item.badge}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function PrototypeButtonsBlock({
+  block, onNavigate,
+}: {
+  readonly block: PrototypeBlock
+  readonly onNavigate: (id?: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {(block.items ?? []).map((b, i) => (
+        <button
+          key={i}
+          onClick={() => onNavigate(b.goto)}
+          className={clsx(
+            'px-4 py-2 rounded-md text-sm transition-colors',
+            (b.tone ?? 'primary') === 'secondary'
+              ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              : 'bg-blue-600 text-white hover:bg-blue-700',
+          )}
+        >
+          {b.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function PrototypeFormBlock({
