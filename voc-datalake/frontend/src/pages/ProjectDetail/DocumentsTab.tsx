@@ -11,10 +11,10 @@ import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
+import { pollJobToCompletion } from './jobPolling'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
-import PrototypeRenderer, {
-  parsePrototypeSpec, looksLikeHtmlDocument, HtmlPrototypeFrame,
-} from '../../components/PrototypeRenderer'
+import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
+import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import type {
   ProjectDocument, Project,
 } from '../../api/types'
@@ -171,29 +171,15 @@ function PrototypeFeedbackButton({
         feedback: fb,
         base_prototype_id: basePrototypeId,
       })
-      const jobId = start.job_id
-      const deadline = Date.now() + 5 * 60_000
-      let consecutiveErrors = 0
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 3000))
-        let job
-        try {
-          job = await projectsApi.getJobStatus(projectId, jobId)
-          consecutiveErrors = 0
-        } catch (pollErr) {
-          consecutiveErrors += 1
-          if (consecutiveErrors >= 5) throw pollErr
-          continue
-        }
-        if (job.status === 'completed') {
-          setOpen(false)
-          setFeedback('')
-          onRegenerated?.()
-          return
-        }
-        if (job.status === 'failed') {
-          throw new Error(job.error || 'Prototype revision failed')
-        }
+      const outcome = await pollJobToCompletion(projectId, start.job_id)
+      if (outcome.status === 'completed') {
+        setOpen(false)
+        setFeedback('')
+        onRegenerated?.()
+        return
+      }
+      if (outcome.status === 'failed') {
+        throw new Error(outcome.job.error || 'Prototype revision failed')
       }
       throw new Error(t('documents.prototype.timeout', { defaultValue: 'Prototype build took too long. Check the Documents tab in a moment.' }))
     } catch (e: unknown) {

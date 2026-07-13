@@ -309,7 +309,7 @@
       },
       {
         "key": "num_reviews",
-        "label": "Number of Reviews to Generate (max 50)",
+        "label": "Number of Reviews to Generate (max 150)",
         "type": "text",
         "required": false,
         "placeholder": "10",
@@ -372,7 +372,7 @@
       "steps": [
         "Enter your company/brand and product details so reviews sound realistic.",
         "Optionally describe your target customer and the focus areas to cover (e.g. delivery, pricing, support).",
-        "Choose how many reviews to generate (max 50 per run) and the sentiment mix.",
+        "Choose how many reviews to generate (max 150 per run) and the sentiment mix.",
         "Click Generate. Reviews are created with AI and ingested through the normal pipeline.",
         "Generated items are tagged as synthetic (source: synthetic_reviews) so you can filter them out anytime."
       ]

@@ -434,6 +434,60 @@ describe('ManualImportModal', () => {
 
       expect(mockConfirmManualImport).not.toHaveBeenCalled()
     })
+
+    it('shows Importing... state while confirm is in flight', async () => {
+      // Regression: previously isConfirming was tracked via useRef, which
+      // mutates without re-rendering, so the button never showed the loading
+      // state. After moving to useState, the button should re-render to show
+      // the spinner + "Importing..." label while the API call is pending.
+      const user = userEvent.setup()
+      let resolveConfirm: ((value: { success: boolean }) => void) | null = null
+      mockConfirmManualImport.mockReturnValue(
+        new Promise((resolve) => {
+          resolveConfirm = resolve
+        })
+      )
+
+      render(<ManualImportModal />)
+
+      const importButton = screen.getByRole('button', { name: /import 1 review/i })
+      await user.click(importButton)
+
+      // While the promise is unresolved, the button label should change.
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /importing/i })).toBeInTheDocument()
+      })
+      expect(screen.queryByRole('button', { name: /import 1 review/i })).not.toBeInTheDocument()
+
+      // Resolve so the test can clean up.
+      resolveConfirm?.({ success: false })
+    })
+
+    it('prevents double-submit when import button is clicked twice rapidly', async () => {
+      // The disabled + "Importing…" button (driven by the isConfirming state)
+      // is what blocks the second click; the in-handler guard alone can't,
+      // because the second click's closure still sees the pre-update state.
+      const user = userEvent.setup()
+      let resolveConfirm: ((value: { success: boolean }) => void) | null = null
+      mockConfirmManualImport.mockReturnValue(
+        new Promise((resolve) => {
+          resolveConfirm = resolve
+        })
+      )
+
+      render(<ManualImportModal />)
+
+      const importButton = screen.getByRole('button', { name: /import 1 review/i })
+      await user.click(importButton)
+
+      // Second click should be a no-op while the first is in flight.
+      const importingButton = await screen.findByRole('button', { name: /importing/i })
+      await user.click(importingButton)
+
+      expect(mockConfirmManualImport).toHaveBeenCalledTimes(1)
+
+      resolveConfirm?.({ success: false })
+    })
   })
 
   describe('polling', () => {

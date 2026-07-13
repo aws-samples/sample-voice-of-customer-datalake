@@ -8,6 +8,12 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
 
 
+def _today_iso() -> str:
+    """Today as ISO timestamp. Used for scraper_run started_at fixtures so they
+    fall within the default 7-day lookback regardless of when tests run."""
+    return datetime.now(timezone.utc).isoformat()
+
+
 class TestGetValidationLogs:
     """Tests for GET /logs/validation endpoint."""
 
@@ -236,14 +242,15 @@ class TestGetScraperLogs:
     ):
         """Returns run history for specific scraper."""
         # Arrange
+        recent = _today_iso()
         mock_table.query.return_value = {
             'Items': [
                 {
                     'pk': 'SCRAPER#scraper-123',
-                    'sk': 'RUN#2025-01-01T12:00:00Z',
+                    'sk': f'RUN#{recent}',
                     'status': 'completed',
-                    'started_at': '2025-01-01T12:00:00Z',
-                    'completed_at': '2025-01-01T12:05:00Z',
+                    'started_at': recent,
+                    'completed_at': recent,
                     'pages_scraped': 10,
                     'items_found': 50,
                     'errors': []
@@ -269,6 +276,88 @@ class TestGetScraperLogs:
         assert body['logs'][0]['status'] == 'completed'
         assert body['logs'][0]['pages_scraped'] == 10
         assert body['logs'][0]['items_found'] == 50
+
+    @patch('logs_handler.aggregates_table')
+    def test_excludes_runs_older_than_lookback_window(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """Runs whose started_at predates the `days` window are filtered out.
+
+        Regression: the cutoff was previously computed but never applied, so the
+        `days` query param was a no-op and every run was returned. This test
+        fails if that filter is removed again.
+        """
+        # Arrange: one recent run (kept) and one a year old (must be dropped).
+        recent = _today_iso()
+        old = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+        mock_table.query.return_value = {
+            'Items': [
+                {
+                    'pk': 'SCRAPER#scraper-123', 'sk': f'RUN#{recent}',
+                    'status': 'completed', 'started_at': recent,
+                    'completed_at': recent, 'pages_scraped': 5,
+                    'items_found': 20, 'errors': [],
+                },
+                {
+                    'pk': 'SCRAPER#scraper-123', 'sk': f'RUN#{old}',
+                    'status': 'completed', 'started_at': old,
+                    'completed_at': old, 'pages_scraped': 99,
+                    'items_found': 999, 'errors': [],
+                },
+            ]
+        }
+
+        from logs_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/logs/scraper/scraper-123',
+            path_params={'scraper_id': 'scraper-123'},
+            query_params={'days': '7'},
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        # Assert: only the recent run survives the cutoff.
+        assert response['statusCode'] == 200
+        assert body['count'] == 1
+        assert body['logs'][0]['started_at'] == recent
+        returned_started = [log['started_at'] for log in body['logs']]
+        assert old not in returned_started
+
+    @patch('logs_handler.aggregates_table')
+    def test_keeps_runs_missing_started_at(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """Runs without a started_at are kept (not silently dropped by the filter)."""
+        # Arrange
+        mock_table.query.return_value = {
+            'Items': [
+                {
+                    'pk': 'SCRAPER#scraper-123', 'sk': 'RUN#legacy',
+                    'status': 'completed', 'pages_scraped': 1,
+                    'items_found': 2, 'errors': [],
+                },
+            ]
+        }
+
+        from logs_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/logs/scraper/scraper-123',
+            path_params={'scraper_id': 'scraper-123'},
+            query_params={'days': '7'},
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        # Assert: the run with no timestamp is preserved.
+        assert response['statusCode'] == 200
+        assert body['count'] == 1
+        assert body['logs'][0]['run_id'] == 'RUN#legacy'
 
     @patch('logs_handler.aggregates_table')
     def test_returns_empty_list_for_unknown_scraper(

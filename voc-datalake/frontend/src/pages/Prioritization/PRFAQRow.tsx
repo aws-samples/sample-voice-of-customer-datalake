@@ -11,9 +11,8 @@ import {
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
-import PrototypeRenderer, {
-  parsePrototypeSpec, looksLikeHtmlDocument, HtmlPrototypeFrame,
-} from '../../components/PrototypeRenderer'
+import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
+import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import {
   calculatePriorityScore, getPriorityLabel,
 } from './prioritizationUtils'
@@ -22,7 +21,7 @@ import type { PRFAQWithProject } from './prioritizationUtils'
 import type {
   PrioritizationScore, ProjectDocument,
 } from '../../api/types'
-import type { PrototypeSpec } from '../../components/PrototypeRenderer'
+import type { PrototypeSpec } from '../../components/prototypeSpec'
 import type { TFunction } from 'i18next'
 import type { ReactElement } from 'react'
 

@@ -161,6 +161,9 @@ class IOSAppReviewsIngestor(BaseIngestor):
             return
 
         for app in self.app_configs:
+            if not app.enabled:
+                logger.info(f"Skipping disabled iOS app: {app.name} ({app.app_id})")
+                continue
             yield from process_app_reviews(
                 app_config=app,
                 app_name=app.name,

@@ -131,7 +131,7 @@ export function useProjectMutations({
         customer_questions: docConfig.customerQuestions.filter((q) => q.trim() !== ''),
         response_language: i18n.language,
       }
-      return Promise.all(types.map((doc_type) => projectsApi.generateDocument(projectId, { doc_type, ...base })))
+      return Promise.all(types.map((docType) => projectsApi.generateDocument(projectId, { doc_type: docType, ...base })))
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
