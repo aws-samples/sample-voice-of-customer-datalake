@@ -166,6 +166,9 @@ class AndroidAppReviewsIngestor(BaseIngestor):
             return
 
         for app in self.app_configs:
+            if not app.enabled:
+                logger.info(f"Skipping disabled Android app: {app.name} ({app.package_name})")
+                continue
             yield from process_app_reviews(
                 app_config=app,
                 app_name=app.name,
