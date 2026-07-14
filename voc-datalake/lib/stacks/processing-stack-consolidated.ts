@@ -307,10 +307,7 @@ export class VocProcessingStack extends cdk.Stack {
         // step_initialize ALWAYS returns web_context (empty string when web
         // search is off) — an absent key here would fail the state outright.
         'web_context.$': '$.Payload.web_context',
-        // step_initialize ALWAYS returns documents_context (empty string when
-        // no reference documents are selected) — an absent key here would
-        // fail the state outright, and omitting the selector entry silently
-        // severed selected documents from the analysis prompt (issue #157).
+        // Always returned by step_initialize ('' when unused) — see #157.
         'documents_context.$': '$.Payload.documents_context',
       },
     });
