@@ -85,7 +85,16 @@ def set_problem_resolution():
         raise ValidationError('key must be a non-empty string')
     if len(key) > MAX_PROBLEM_KEY_LEN:
         raise ValidationError(f'key must be at most {MAX_PROBLEM_KEY_LEN} characters')
-    if len(key.encode('utf-8')) > MAX_PROBLEM_KEY_BYTES:
+    try:
+        # JSON happily carries unpaired surrogates ("\ud800"); encoding them
+        # raises, which would 500 here and in the DynamoDB client. Reject
+        # them as the client error they are.
+        key_bytes = len(key.encode('utf-8'))
+    except UnicodeEncodeError as encode_error:
+        raise ValidationError(
+            'key must be valid Unicode (no unpaired surrogates)'
+        ) from encode_error
+    if key_bytes > MAX_PROBLEM_KEY_BYTES:
         raise ValidationError(f'key must be at most {MAX_PROBLEM_KEY_BYTES} bytes (UTF-8)')
     resolved = body.get('resolved')
     if not isinstance(resolved, bool):

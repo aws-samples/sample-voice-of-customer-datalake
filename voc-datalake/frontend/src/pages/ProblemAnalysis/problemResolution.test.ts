@@ -38,6 +38,19 @@ describe('buildResolutionKey', () => {
     // Whole characters only — no replacement glyphs from split code points.
     expect(key.includes('\uFFFD')).toBe(false)
   })
+
+  it('never splits surrogate pairs when truncating emoji-heavy text', () => {
+    // 4-byte emoji are two UTF-16 code units: a code-unit slice could cut a
+    // pair in half, leaving a lone surrogate the server rejects as invalid
+    // UTF-8. Every truncation length must stay well-formed.
+    const emojiProblem = '📦🚚💥 delayed '.repeat(30)
+    const key = buildResolutionKey('delivery', 'speed', emojiProblem)
+    expect(new TextEncoder().encode(key).length).toBeLessThanOrEqual(255)
+    // isWellFormed is the real check: a key may legitimately END with a
+    // complete emoji (whose last code unit is a low surrogate) — only
+    // UNPAIRED surrogates make the string malformed.
+    expect(key.isWellFormed()).toBe(true)
+  })
 })
 
 const makeProblem = (problem: string, items: number, urgent: number) => ({

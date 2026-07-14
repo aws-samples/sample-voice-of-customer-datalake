@@ -46,19 +46,22 @@ const MAX_KEY_CHARS = 255
 const MAX_KEY_BYTES = 255
 
 /** Trim from the end until the UTF-8 byte cap fits (CJK text triples the
- * byte cost). Recursion keeps it mutation-free; depth is bounded by the
- * char cap applied first. */
-function fitToByteCap(value: string): string {
-  if (value.length === 0 || new TextEncoder().encode(value).length <= MAX_KEY_BYTES) {
+ * byte cost). Trims whole CODE POINTS, never UTF-16 code units — slicing a
+ * surrogate pair in half would leave a lone surrogate that the server's
+ * UTF-8 encoding rejects. Recursion keeps it mutation-free; depth is
+ * bounded by the char cap applied first. */
+function fitToByteCap(codePoints: string[]): string {
+  const value = codePoints.join('')
+  if (codePoints.length === 0 || new TextEncoder().encode(value).length <= MAX_KEY_BYTES) {
     return value
   }
-  return fitToByteCap(value.slice(0, -1))
+  return fitToByteCap(codePoints.slice(0, -1))
 }
 
 /** Deterministic truncation to the server caps, so every client derives the
- * same key for the same problem group. */
+ * same key for the same problem group. Both caps count code points. */
 function fitToKeyCaps(key: string): string {
-  return fitToByteCap(key.slice(0, MAX_KEY_CHARS))
+  return fitToByteCap(Array.from(key).slice(0, MAX_KEY_CHARS))
 }
 
 /**

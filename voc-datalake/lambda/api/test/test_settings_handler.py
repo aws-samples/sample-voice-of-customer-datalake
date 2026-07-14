@@ -563,3 +563,33 @@ class TestResolvedProblemsRoundThree:
 
         assert response['statusCode'] == 400
         mock_table.update_item.assert_not_called()
+
+
+class TestResolvedProblemsSurrogates:
+    """Unpaired surrogates must 400, not 500 (review feedback on #153).
+
+    JSON carries lone surrogates ("\\ud800") happily; encoding them to UTF-8
+    raises, which without the guard would surface as a 500 from the handler
+    or the DynamoDB client.
+    """
+
+    @patch('settings_handler.aggregates_table')
+    def test_lone_surrogate_key_is_a_clean_400(self, mock_table, api_gateway_event, lambda_context):
+        import json as json_module
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|problem', 'resolved': True},
+        )
+        # Inject the lone surrogate at the raw-JSON layer, exactly as a
+        # hostile/buggy client would send it.
+        event['body'] = json_module.dumps(
+            {'key': 'cat|sub|broken \ud83d', 'resolved': True}, ensure_ascii=True
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json_module.loads(response['body'])
+
+        assert response['statusCode'] == 400
+        assert 'surrogate' in body['error']
+        mock_table.update_item.assert_not_called()
