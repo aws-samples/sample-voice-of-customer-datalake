@@ -21,6 +21,7 @@ interface VocChatContext {
       category?: string;
       sentiment?: string;
       days: number;
+      dateBasis?: 'imported' | 'review';
     };
   };
 }
@@ -198,6 +199,7 @@ export async function buildVocChatContext(
     message: string;
     context?: string;
     days?: number;
+    date_basis?: 'imported' | 'review';
     response_language?: string;
   },
 ): Promise<VocChatContext> {
@@ -240,7 +242,15 @@ export async function buildVocChatContext(
       total_feedback: totalFeedback,
       days_analyzed: days,
       urgent_count: urgentCount,
-      filters: { source: sourceFilter, category: categoryFilter, sentiment: sentimentFilter, days },
+      filters: {
+        source: sourceFilter,
+        category: categoryFilter,
+        sentiment: sentimentFilter,
+        days,
+        // Rides through to the search tool; the aggregate headline numbers
+        // above stay import-bucketed (they come from daily aggregates).
+        dateBasis: body.date_basis,
+      },
     },
   };
 }

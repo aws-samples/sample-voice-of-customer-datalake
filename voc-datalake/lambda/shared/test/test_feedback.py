@@ -676,3 +676,155 @@ class TestQueryFeedbackPage:
         assert all(i['source_platform'] == 'target' for i in page)
         # Must have queried all 30 days (no early break)
         assert mock_table.query.call_count == 30
+
+
+
+def _dated_item(feedback_id, imported_days_ago, written_days_ago, **overrides):
+    """Feedback item with explicit import and review dates."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    item = {
+        'feedback_id': feedback_id,
+        'source_platform': 'webscraper',
+        'sentiment_label': 'neutral',
+        'category': 'delivery',
+        'date': (now - timedelta(days=imported_days_ago)).strftime('%Y-%m-%d'),
+        'source_created_at': (now - timedelta(days=written_days_ago)).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+    item.update(overrides)
+    return item
+
+
+class TestDateBasis:
+    """date_basis threading through the shared query pipeline (issue #150).
+
+    A review can never be imported before it was written, so the import
+    window always contains the review window — review basis is a post-filter
+    on the same scan, no extra GSI needed.
+    """
+
+    def test_imported_basis_keeps_backfilled_old_reviews(self):
+        """Default basis is unchanged: freshly imported old reviews stay."""
+        from shared.feedback import query_feedback_by_date
+
+        mock_table = MagicMock()
+        mock_table.query.side_effect = [
+            {'Items': [_dated_item('old-review', 0, 400)]},
+        ] + [{'Items': []} for _ in range(30)]
+
+        result = query_feedback_by_date(mock_table, days=7)
+
+        assert [i['feedback_id'] for i in result] == ['old-review']
+
+    def test_review_basis_drops_backfilled_old_reviews(self):
+        from shared.feedback import query_feedback_by_date
+
+        mock_table = MagicMock()
+        mock_table.query.side_effect = [
+            {'Items': [
+                _dated_item('fresh-review', 0, 2),
+                _dated_item('old-review', 0, 400),
+            ]},
+        ] + [{'Items': []} for _ in range(30)]
+
+        result = query_feedback_by_date(mock_table, days=7, date_basis='review')
+
+        assert [i['feedback_id'] for i in result] == ['fresh-review']
+
+    def test_review_basis_disables_early_break(self):
+        """The fetch ceiling must not stop the scan before all in-window
+        days are read: review-basis matches can hide behind old-review
+        items that the post-filter will drop."""
+        from shared.feedback import query_feedback_by_date
+
+        # Day 0 is full of backfilled old reviews (post-filter drops them);
+        # the only match was written recently but imported on day 1.
+        day0 = [_dated_item(f'old-{i}', 0, 400) for i in range(10)]
+        day1 = [_dated_item('fresh', 1, 1)]
+        mock_table = MagicMock()
+        mock_table.query.side_effect = [
+            {'Items': day0}, {'Items': day1},
+        ] + [{'Items': []} for _ in range(30)]
+
+        # limit=1 => fetch_ceiling=3; day0 alone exceeds it. Without the
+        # early-break disable, day1 would never be read.
+        result = query_feedback_by_date(mock_table, days=7, limit=1, date_basis='review')
+
+        assert [i['feedback_id'] for i in result] == ['fresh']
+
+    def test_category_branch_applies_review_basis(self):
+        from shared.feedback import query_feedback_by_date
+
+        mock_table = MagicMock()
+        mock_table.query.side_effect = [
+            {'Items': [
+                _dated_item('fresh-review', 0, 2),
+                _dated_item('old-review', 0, 400),
+            ]},
+        ]
+
+        result = query_feedback_by_date(
+            mock_table, days=7, categories=['delivery'], date_basis='review',
+        )
+
+        assert [i['feedback_id'] for i in result] == ['fresh-review']
+        assert mock_table.query.call_args_list[0].kwargs['IndexName'] == 'gsi2-by-category'
+
+    def test_get_feedback_context_unpacks_date_basis(self):
+        from shared.feedback import get_feedback_context
+
+        mock_table = MagicMock()
+        mock_table.query.side_effect = [
+            {'Items': [
+                _dated_item('fresh-review', 0, 1),
+                _dated_item('old-review', 0, 400),
+            ]},
+        ] + [{'Items': []} for _ in range(30)]
+
+        result = get_feedback_context(
+            mock_table, {'days': 7, 'date_basis': 'review'}, limit=10,
+        )
+
+        assert [i['feedback_id'] for i in result] == ['fresh-review']
+
+    def test_query_feedback_page_totals_respect_review_basis(self):
+        from shared.feedback import query_feedback_page
+
+        mock_table = MagicMock()
+        mock_table.query.side_effect = [
+            {'Items': [
+                _dated_item('fresh-1', 0, 0),
+                _dated_item('fresh-2', 0, 3),
+                _dated_item('old', 0, 100),
+            ]},
+        ] + [{'Items': []} for _ in range(30)]
+
+        page, total = query_feedback_page(mock_table, days=7, date_basis='review')
+
+        assert total == 2
+        assert {i['feedback_id'] for i in page} == {'fresh-1', 'fresh-2'}
+
+
+class TestWindowHelpers:
+    """basis_date / window_cutoff — the shared window definition."""
+
+    def test_window_cutoff_is_days_long_ending_today(self):
+        from datetime import datetime, timedelta, timezone
+        from shared.feedback import window_cutoff
+
+        now = datetime.now(timezone.utc)
+        assert window_cutoff(1) == now.strftime('%Y-%m-%d')
+        assert window_cutoff(7) == (now - timedelta(days=6)).strftime('%Y-%m-%d')
+
+    def test_basis_date_falls_back_on_malformed_source_date(self):
+        from shared.feedback import basis_date
+
+        item = {'date': '2026-07-14', 'source_created_at': 'unavailable-forever'}
+        assert basis_date(item, 'review') == '2026-07-14'
+        assert basis_date(item, 'imported') == '2026-07-14'
+
+    def test_basis_date_uses_source_created_at_for_review(self):
+        from shared.feedback import basis_date
+
+        item = {'date': '2026-07-14', 'source_created_at': '2025-01-02T10:00:00Z'}
+        assert basis_date(item, 'review') == '2025-01-02'

@@ -76,7 +76,10 @@ def step_initialize(event: dict) -> dict:
         'sources': config.get('sources', []),
         'categories': config.get('categories', []),
         'sentiments': config.get('sentiments', []),
-        'days': config.get('days', 30)
+        'days': config.get('days', 30),
+        # 'imported' windows by ingestion date, 'review' by when the customer
+        # wrote the feedback (issue #150). Validated at the API boundary.
+        'date_basis': config.get('date_basis'),
     }
     
     update_job_status(project_id, job_id, 'running', 12, 'fetching_feedback')
