@@ -98,6 +98,9 @@ const mockSourcesStatus = {
 };
 
 // Mock categories config
+// AI model override state (issue #96) — mutable so the picker round-trips.
+const mockModelOverride = { value: null };
+
 const mockCategoriesConfig = {
   categories: [
     { name: 'delivery', display_name: 'Delivery', description: 'Shipping and delivery issues', color: '#EF4444' },
@@ -161,6 +164,17 @@ const handlers = {
   // Settings - Categories
   'GET /settings/categories': () => mockCategoriesConfig,
   'PUT /settings/categories': () => ({ success: true, message: 'Categories saved' }),
+  'GET /settings/model': () => ({
+    model_id: mockModelOverride.value,
+    available_models: [
+      { id: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Claude Sonnet 4.5', description: 'Highest quality — default for analysis and document generation' },
+      { id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5', description: 'Faster and cheaper — good for high-volume enrichment' },
+    ],
+  }),
+  'PUT /settings/model': (body) => {
+    mockModelOverride.value = body?.model_id ?? null;
+    return { success: true, model_id: mockModelOverride.value };
+  },
 
   // Data Explorer
   'GET /data-explorer/buckets': () => ({ buckets: mockBuckets }),

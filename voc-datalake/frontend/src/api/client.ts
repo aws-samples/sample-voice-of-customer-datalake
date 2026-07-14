@@ -273,6 +273,19 @@ export const api = {
     body: JSON.stringify(settings)
   }),
 
+  // AI model override (curated allowlist; admin-only UI). Null = each
+  // feature uses its own default.
+  getModelSettings: () => fetchApi<{
+    model_id: string | null
+    available_models: Array<{ id: string; label: string; description: string }>
+  }>('/settings/model'),
+
+  saveModelSettings: (modelId: string | null) =>
+    fetchApi<{ success: boolean; model_id: string | null }>('/settings/model', {
+      method: 'PUT',
+      body: JSON.stringify({ model_id: modelId })
+    }),
+
   // Categories Configuration
   getCategoriesConfig: () => fetchApi<{ 
     categories: Array<{

@@ -8,7 +8,8 @@ import time
 from typing import Callable
 from botocore.exceptions import ClientError
 from shared.logging import logger
-from shared.aws import get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import get_bedrock_client
+from shared.model_config import get_active_model_id
 
 
 # Retry configuration
@@ -89,7 +90,7 @@ def converse(
         BedrockThrottlingError: If throttled after max retries and raise_on_throttle=True
         ClientError: For non-retryable AWS errors
     """
-    used_model = model_id or BEDROCK_MODEL_ID
+    used_model = model_id or get_active_model_id()
     logger.info(f"[BEDROCK] Starting converse call for step '{step_name}' with model {used_model}")
     logger.info(f"[BEDROCK] Request params: max_tokens={max_tokens}, temperature={temperature}, thinking_budget={thinking_budget}")
     logger.info(f"[BEDROCK] Prompt length: {len(prompt)} chars, system_prompt length: {len(system_prompt)} chars")

@@ -14,9 +14,13 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.api import create_api_resolver, api_handler
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
+from shared.model_config import (
+    ALLOWED_MODELS, ALLOWED_MODEL_IDS, MODEL_SETTINGS_PK, MODEL_SETTINGS_SK,
+    clear_model_cache,
+)
 
 dynamodb = get_dynamodb_resource()
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
@@ -28,6 +32,76 @@ CATEGORIES_PK = "SETTINGS#categories"
 CATEGORIES_SK = "config"
 
 app = create_api_resolver()
+
+
+@app.get("/settings/model")
+@tracer.capture_method
+def get_model_settings():
+    """Get the model override and the curated allowlist (issue #96).
+
+    ``model_id`` is null when no override is set — each surface then uses
+    its own default (Python Lambdas: Sonnet 4.5; streaming chat: its env
+    default). The allowlist is fixed server-side: prompts in this project
+    are tuned for Claude, and entries are covered by the BedrockAccessStack
+    model agreements.
+    """
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    try:
+        response = aggregates_table.get_item(
+            Key={'pk': MODEL_SETTINGS_PK, 'sk': MODEL_SETTINGS_SK}
+        )
+        item = response.get('Item')
+        configured = item.get('model_id') if item else None
+        return {
+            'model_id': configured if configured in ALLOWED_MODEL_IDS else None,
+            'available_models': ALLOWED_MODELS,
+        }
+    except ConfigurationError:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get model settings: {e}")
+        raise ServiceError('Failed to retrieve model settings')
+
+
+@app.put("/settings/model")
+@tracer.capture_method
+def save_model_settings():
+    """Set or clear the Bedrock model override.
+
+    Body: {'model_id': <allowlisted id>} to pin every AI feature to one
+    model, or {'model_id': null} to restore per-feature defaults.
+    """
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    body = app.current_event.json_body or {}
+
+    if 'model_id' not in body:
+        raise ValidationError('model_id is required (an allowlisted id, or null to clear)')
+    model_id = body.get('model_id')
+    if model_id is not None and model_id not in ALLOWED_MODEL_IDS:
+        raise ValidationError(
+            f"model_id must be null or one of: {', '.join(sorted(ALLOWED_MODEL_IDS))}"
+        )
+
+    try:
+        if model_id is None:
+            aggregates_table.delete_item(
+                Key={'pk': MODEL_SETTINGS_PK, 'sk': MODEL_SETTINGS_SK}
+            )
+        else:
+            aggregates_table.put_item(Item={
+                'pk': MODEL_SETTINGS_PK,
+                'sk': MODEL_SETTINGS_SK,
+                'model_id': model_id,
+                'updated_at': datetime.now(timezone.utc).isoformat(),
+            })
+        # Settings Lambda's own cache; other containers refresh within the TTL.
+        clear_model_cache()
+        return {'success': True, 'model_id': model_id}
+    except Exception as e:
+        logger.exception(f"Failed to save model settings: {e}")
+        raise ServiceError('Failed to save model settings')
 
 
 @app.get("/settings/brand")

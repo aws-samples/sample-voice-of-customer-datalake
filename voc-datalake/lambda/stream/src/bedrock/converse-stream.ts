@@ -31,6 +31,8 @@ interface ConverseStreamParams {
   tools?: Tool[];
   maxTokens?: number;
   thinkingBudget?: number;
+  /** Admin-configured model override; falls back to the env default. */
+  modelId?: string;
 }
 
 export async function* converseStream(
@@ -42,12 +44,13 @@ export async function* converseStream(
     tools,
     maxTokens = 16000,
     thinkingBudget = 5000,
+    modelId,
   } = params;
 
   const system: SystemContentBlock[] = [{ text: systemPrompt }];
 
   const command = new ConverseStreamCommand({
-    modelId: MODEL_ID,
+    modelId: modelId ?? MODEL_ID,
     messages,
     system,
     toolConfig: tools && tools.length > 0 ? { tools } : undefined,

@@ -17,6 +17,7 @@ import { isApiError, ValidationError } from './lib/errors.js';
 import { chatRequestSchema, type ChatRequest, type HistoryMessage } from './schema.js';
 import { z } from 'zod';
 import { converseStream } from './bedrock/converse-stream.js';
+import { getModelOverride } from './bedrock/model-override.js';
 import { processStreamEvent, createStreamState, type ToolUseBlock } from './bedrock/stream-processor.js';
 import { executeTool } from './tools/executor.js';
 import { getSearchFeedbackTool, getUpdateDocumentTool, getCreateDocumentTool, getCreateProjectTool } from './tools/index.js';
@@ -174,6 +175,7 @@ async function runConversationLoop(
     tools: tools.length > 0 ? tools : undefined,
     maxTokens: 16000,
     thinkingBudget: 5000,
+    modelId: await getModelOverride(docClient, AGGREGATES_TABLE),
   });
 
   for await (const event of events) {
@@ -316,6 +318,7 @@ Share your own perspective on the user's message in your own voice. Be direct an
         systemPrompt,
         maxTokens: ROUNDTABLE_MAX_TOKENS,
         thinkingBudget: ROUNDTABLE_THINKING_BUDGET,
+        modelId: await getModelOverride(docClient, AGGREGATES_TABLE),
       });
 
       for await (const event of events) {

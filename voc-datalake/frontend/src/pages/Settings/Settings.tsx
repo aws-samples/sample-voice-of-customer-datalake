@@ -25,6 +25,7 @@ import clsx from 'clsx'
 import ConfirmModal from '../../components/ConfirmModal'
 import SourceCard from './SourceCard'
 import LogsSection from './LogsSection'
+import AiModelSection from './AiModelSection'
 import { getEnabledPlugins } from '../../plugins'
 import { getRuntimeConfig, isConfigLoaded } from '../../runtimeConfig'
 
@@ -194,37 +195,31 @@ export default function Settings() {
       {/* Tab Content */}
       <div className="space-y-6">
         {activeTab === 'brand' && (
-          <>
-            <ApiConfigSection
-              apiEndpoint={apiEndpoint}
-              onApiEndpointChange={setApiEndpoint}
-            />
-            <BrandConfigSection
-              apiEndpoint={apiEndpoint}
-              loadingSettings={loadingSettings}
-              brandName={brandName}
-              brandHandles={brandHandles}
-              hashtags={hashtags}
-              urlsToTrack={urlsToTrack}
-              onBrandNameChange={setBrandName}
-              onBrandHandlesChange={setBrandHandles}
-              onHashtagsChange={setHashtags}
-              onUrlsToTrackChange={setUrlsToTrack}
-            />
-            <DangerZoneSection
-              showResetConfirm={showResetConfirm}
-              onShowResetConfirm={setShowResetConfirm}
-              onReset={() => {
-                setConfig({ apiEndpoint: '', brandName: '', brandHandles: [], hashtags: [], urlsToTrack: [] })
-                setApiEndpoint('')
-                setBrandName('')
-                setBrandHandles('')
-                setHashtags('')
-                setUrlsToTrack('')
-                setShowResetConfirm(false)
-              }}
-            />
-          </>
+          <BrandTabSections
+            apiEndpoint={apiEndpoint}
+            isAdmin={isAdmin}
+            loadingSettings={loadingSettings}
+            brandName={brandName}
+            brandHandles={brandHandles}
+            hashtags={hashtags}
+            urlsToTrack={urlsToTrack}
+            showResetConfirm={showResetConfirm}
+            onApiEndpointChange={setApiEndpoint}
+            onBrandNameChange={setBrandName}
+            onBrandHandlesChange={setBrandHandles}
+            onHashtagsChange={setHashtags}
+            onUrlsToTrackChange={setUrlsToTrack}
+            onShowResetConfirm={setShowResetConfirm}
+            onReset={() => {
+              setConfig({ apiEndpoint: '', brandName: '', brandHandles: [], hashtags: [], urlsToTrack: [] })
+              setApiEndpoint('')
+              setBrandName('')
+              setBrandHandles('')
+              setHashtags('')
+              setUrlsToTrack('')
+              setShowResetConfirm(false)
+            }}
+          />
         )}
 
         {activeTab === 'plugins' && (
@@ -320,6 +315,61 @@ function ApiConfigSection({ apiEndpoint, onApiEndpointChange }: ApiConfigSection
         </div>
       )}
     </div>
+  )
+}
+
+// ============================================
+// Brand Tab (composition of brand-tab sections)
+// ============================================
+
+interface BrandTabSectionsProps {
+  readonly apiEndpoint: string
+  readonly isAdmin: boolean
+  readonly loadingSettings: boolean
+  readonly brandName: string
+  readonly brandHandles: string
+  readonly hashtags: string
+  readonly urlsToTrack: string
+  readonly showResetConfirm: boolean
+  readonly onApiEndpointChange: (value: string) => void
+  readonly onBrandNameChange: (value: string) => void
+  readonly onBrandHandlesChange: (value: string) => void
+  readonly onHashtagsChange: (value: string) => void
+  readonly onUrlsToTrackChange: (value: string) => void
+  readonly onShowResetConfirm: (value: boolean) => void
+  readonly onReset: () => void
+}
+
+function BrandTabSections({
+  apiEndpoint, isAdmin, loadingSettings, brandName, brandHandles, hashtags, urlsToTrack,
+  showResetConfirm, onApiEndpointChange, onBrandNameChange, onBrandHandlesChange,
+  onHashtagsChange, onUrlsToTrackChange, onShowResetConfirm, onReset,
+}: BrandTabSectionsProps) {
+  return (
+    <>
+      <ApiConfigSection
+        apiEndpoint={apiEndpoint}
+        onApiEndpointChange={onApiEndpointChange}
+      />
+      <BrandConfigSection
+        apiEndpoint={apiEndpoint}
+        loadingSettings={loadingSettings}
+        brandName={brandName}
+        brandHandles={brandHandles}
+        hashtags={hashtags}
+        urlsToTrack={urlsToTrack}
+        onBrandNameChange={onBrandNameChange}
+        onBrandHandlesChange={onBrandHandlesChange}
+        onHashtagsChange={onHashtagsChange}
+        onUrlsToTrackChange={onUrlsToTrackChange}
+      />
+      {isAdmin && <AiModelSection apiEndpoint={apiEndpoint} />}
+      <DangerZoneSection
+        showResetConfirm={showResetConfirm}
+        onShowResetConfirm={onShowResetConfirm}
+        onReset={onReset}
+      />
+    </>
   )
 }
 

@@ -330,3 +330,99 @@ class TestGenerateCategories:
         # Assert - now returns 500 with error key
         assert response['statusCode'] == 500
         assert 'error' in body
+
+
+
+class TestModelSettings:
+    """Tests for GET/PUT /settings/model (issue #96)."""
+
+    SONNET = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+    HAIKU = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+
+    @patch('settings_handler.aggregates_table')
+    def test_get_returns_no_override_and_allowlist_when_unset(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        mock_table.get_item.return_value = {}
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(method='GET', path='/settings/model')
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['model_id'] is None
+        assert [m['id'] for m in body['available_models']] == [self.SONNET, self.HAIKU]
+
+    @patch('settings_handler.aggregates_table')
+    def test_get_returns_configured_override(self, mock_table, api_gateway_event, lambda_context):
+        mock_table.get_item.return_value = {'Item': {'model_id': self.HAIKU}}
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(method='GET', path='/settings/model')
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['model_id'] == self.HAIKU
+
+    @patch('settings_handler.aggregates_table')
+    def test_get_ignores_non_allowlisted_stored_value(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        mock_table.get_item.return_value = {'Item': {'model_id': 'anthropic.retired-model'}}
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(method='GET', path='/settings/model')
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['model_id'] is None
+
+    @patch('settings_handler.aggregates_table')
+    def test_put_saves_allowlisted_override(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/model', body={'model_id': self.HAIKU},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body == {'success': True, 'model_id': self.HAIKU}
+        saved = mock_table.put_item.call_args.kwargs['Item']
+        assert saved['pk'] == 'SETTINGS#model'
+        assert saved['model_id'] == self.HAIKU
+
+    @patch('settings_handler.aggregates_table')
+    def test_put_null_clears_the_override(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/model', body={'model_id': None},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body == {'success': True, 'model_id': None}
+        mock_table.delete_item.assert_called_once_with(
+            Key={'pk': 'SETTINGS#model', 'sk': 'config'}
+        )
+        mock_table.put_item.assert_not_called()
+
+    @pytest.mark.parametrize('payload', [
+        {},                                          # missing key (must be explicit)
+        {'model_id': ''},                            # empty string
+        {'model_id': 'anthropic.claude-instant-v1'}, # not allowlisted
+        {'model_id': 'arbitrary-injection'},         # free-form rejected
+        {'model_id': 123},                           # wrong type
+    ])
+    @patch('settings_handler.aggregates_table')
+    def test_put_rejects_models_outside_allowlist(
+        self, mock_table, payload, api_gateway_event, lambda_context
+    ):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(method='PUT', path='/settings/model', body=payload)
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        mock_table.put_item.assert_not_called()
+        mock_table.delete_item.assert_not_called()
