@@ -174,11 +174,13 @@ export default function Prioritization() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [sortField, setSortField] = useState<SortField>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
-  const [scores, setScores] = useState<Record<string, PrioritizationScore>>({})
-  const [changedDocIds, setChangedDocIds] = useState<Set<string>>(new Set())
-  const [initialized, setInitialized] = useState(false)
+  // Only unsaved edits live in local state; saved scores stay in the query
+  // cache. Displayed scores are derived (saved ⊕ edits), so a refetch after
+  // saving — or landing here with a stale cache — always shows the server's
+  // latest values instead of a one-time snapshot (issue #95).
+  const [localEdits, setLocalEdits] = useState<Record<string, PrioritizationScore>>({})
 
-  const hasChanges = changedDocIds.size > 0
+  const hasChanges = Object.keys(localEdits).length > 0
 
   const {
     data: projectsData, isLoading: loadingProjects,
@@ -205,17 +207,10 @@ export default function Prioritization() {
     enabled: config.apiEndpoint.length > 0,
   })
 
-  const initialScores = useMemo(() => {
-    if (!initialized && savedScores?.scores) {
-      return savedScores.scores
-    }
-    return null
-  }, [savedScores, initialized])
-
-  if (initialScores && !initialized) {
-    setScores(initialScores)
-    setInitialized(true)
-  }
+  const scores = useMemo(
+    () => ({ ...savedScores?.scores, ...localEdits }),
+    [savedScores, localEdits],
+  )
 
   const allPRFAQs = useMemo(() => collectPRFAQs(allProjectDetails, projects), [allProjectDetails, projects])
 
@@ -225,15 +220,9 @@ export default function Prioritization() {
   }, [allPRFAQs, scores, sortField, sortDirection])
 
   const saveMutation = useMutation({
-    mutationFn: () => {
-      const changedScores: Record<string, PrioritizationScore> = {}
-      for (const docId of changedDocIds) {
-        changedScores[docId] = getScore(scores, docId)
-      }
-      return api.patchPrioritizationScores(changedScores)
-    },
+    mutationFn: () => api.patchPrioritizationScores(localEdits),
     onSuccess: () => {
-      setChangedDocIds(new Set())
+      setLocalEdits({})
       void queryClient.invalidateQueries({ queryKey: ['prioritization-scores'] })
     },
   })
@@ -241,14 +230,13 @@ export default function Prioritization() {
   const blocker = useBlocker(hasChanges)
 
   const updateScore = (docId: string, field: keyof PrioritizationScore, value: number | string) => {
-    setScores((prev) => ({
-      ...prev,
-      [docId]: {
-        ...getScore(prev, docId),
-        [field]: value,
-      },
-    }))
-    setChangedDocIds((prev) => new Set(prev).add(docId))
+    setLocalEdits((prev) => {
+      const base = prev[docId] ?? getScore(savedScores?.scores ?? {}, docId)
+      return {
+        ...prev,
+        [docId]: { ...base, [field]: value },
+      }
+    })
   }
 
   const toggleSort = (field: SortField) => {
@@ -261,8 +249,7 @@ export default function Prioritization() {
   }
 
   const handleReset = () => {
-    setScores(savedScores?.scores ?? {})
-    setChangedDocIds(new Set())
+    setLocalEdits({})
   }
 
   if (config.apiEndpoint === '') {

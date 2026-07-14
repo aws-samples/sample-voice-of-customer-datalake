@@ -32,6 +32,7 @@ describe('configStore', () => {
       },
       timeRange: '7d',
       customDays: null,
+      dateBasis: 'imported',
     })
   })
 
@@ -115,6 +116,42 @@ describe('configStore', () => {
 
       const { customDays } = useConfigStore.getState()
       expect(customDays).toBeNull()
+    })
+  })
+
+  describe('setDateBasis', () => {
+    it('defaults to the imported basis', () => {
+      const { dateBasis } = useConfigStore.getState()
+
+      expect(dateBasis).toBe('imported')
+    })
+
+    it('switches to the review basis', () => {
+      const { setDateBasis } = useConfigStore.getState()
+
+      setDateBasis('review')
+
+      expect(useConfigStore.getState().dateBasis).toBe('review')
+    })
+
+    it('switches back to the imported basis', () => {
+      const { setDateBasis } = useConfigStore.getState()
+
+      setDateBasis('review')
+      setDateBasis('imported')
+
+      expect(useConfigStore.getState().dateBasis).toBe('imported')
+    })
+
+    it('leaves the time range unchanged when the basis changes', () => {
+      const { setTimeRange, setDateBasis } = useConfigStore.getState()
+
+      setTimeRange('30d')
+      setDateBasis('review')
+
+      const state = useConfigStore.getState()
+      expect(state.timeRange).toBe('30d')
+      expect(state.dateBasis).toBe('review')
     })
   })
 

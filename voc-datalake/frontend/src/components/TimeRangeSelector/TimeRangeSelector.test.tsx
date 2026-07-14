@@ -15,6 +15,7 @@ vi.mock('../../store/configStore', () => ({
 describe('TimeRangeSelector', () => {
   const mockSetTimeRange = vi.fn()
   const mockSetCustomDays = vi.fn()
+  const mockSetDateBasis = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -23,6 +24,8 @@ describe('TimeRangeSelector', () => {
       setTimeRange: mockSetTimeRange,
       customDays: null,
       setCustomDays: mockSetCustomDays,
+      dateBasis: 'imported',
+      setDateBasis: mockSetDateBasis,
     })
   })
 
@@ -182,21 +185,69 @@ describe('TimeRangeSelector', () => {
     })
   })
 
-  describe('data freshness label', () => {
-    it('renders the "Data freshness" caption', () => {
+  describe('date basis picker', () => {
+    it('shows "Imported date" on the trigger when filtering by imported date', () => {
       render(<TimeRangeSelector />)
 
-      expect(screen.getByText('Data freshness')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /filter dates by: imported date/i })).toBeInTheDocument()
     })
 
-    it('explains the window filters by ingestion date via a tooltip', () => {
+    it('shows "Review date" on the trigger when filtering by review date', () => {
+      ;(useConfigStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+        timeRange: '7d',
+        setTimeRange: mockSetTimeRange,
+        customDays: null,
+        setCustomDays: mockSetCustomDays,
+        dateBasis: 'review',
+        setDateBasis: mockSetDateBasis,
+      })
       render(<TimeRangeSelector />)
 
-      const caption = screen.getByText('Data freshness')
-      // The tooltip lives on the wrapping element with a title attribute.
-      const tooltipHost = caption.closest('[title]')
-      expect(tooltipHost).not.toBeNull()
-      expect(tooltipHost?.getAttribute('title')).toMatch(/when data was collected/i)
+      expect(screen.getByRole('button', { name: /filter dates by: review date/i })).toBeInTheDocument()
+    })
+
+    it('lists both basis options with explanations when opened', async () => {
+      const user = userEvent.setup()
+      render(<TimeRangeSelector />)
+
+      await user.click(screen.getByRole('button', { name: /filter dates by: imported date/i }))
+
+      const listbox = screen.getByRole('listbox', { name: 'Filter dates by' })
+      expect(listbox).toBeInTheDocument()
+      expect(screen.getByText('When the feedback was collected into the platform.')).toBeInTheDocument()
+      expect(screen.getByText('When the customer originally wrote the feedback.')).toBeInTheDocument()
+    })
+
+    it('marks the active basis as selected in the option list', async () => {
+      const user = userEvent.setup()
+      render(<TimeRangeSelector />)
+
+      await user.click(screen.getByRole('button', { name: /filter dates by: imported date/i }))
+
+      const options = screen.getAllByRole('option')
+      const imported = options.find(o => o.textContent?.includes('Imported date'))
+      const review = options.find(o => o.textContent?.includes('Review date'))
+      expect(imported).toHaveAttribute('aria-selected', 'true')
+      expect(review).toHaveAttribute('aria-selected', 'false')
+    })
+
+    it('calls setDateBasis with "review" when the review option is chosen', async () => {
+      const user = userEvent.setup()
+      render(<TimeRangeSelector />)
+
+      await user.click(screen.getByRole('button', { name: /filter dates by: imported date/i }))
+      const options = screen.getAllByRole('option')
+      const review = options.find(o => o.textContent?.includes('Review date'))
+      await user.click(review as HTMLElement)
+
+      expect(mockSetDateBasis).toHaveBeenCalledWith('review')
+    })
+
+    it('explains the current basis via a tooltip on the trigger', () => {
+      render(<TimeRangeSelector />)
+
+      const trigger = screen.getByRole('button', { name: /filter dates by: imported date/i })
+      expect(trigger.getAttribute('title')).toMatch(/when data was collected/i)
     })
   })
 })

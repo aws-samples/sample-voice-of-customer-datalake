@@ -93,6 +93,47 @@ describe('Prioritization', () => {
     )
   }
 
+  describe('regression: saved scores stay in sync with the server (#95)', () => {
+    it('displays refetched scores instead of the first snapshot', async () => {
+      // First fetch: d1 unscored. Later refetch: d1 scored 5/5/5/5 (priority 4.4).
+      mockGetPrioritizationScores
+        .mockResolvedValueOnce({
+          scores: {
+            d1: { document_id: 'd1', impact: 0, time_to_market: 3, confidence: 0, strategic_fit: 0, notes: '' },
+          },
+        })
+        .mockResolvedValue({
+          scores: {
+            d1: { document_id: 'd1', impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: '' },
+          },
+        })
+
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      })
+      const router = createMemoryRouter([{ path: '/', element: <Prioritization /> }])
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+
+      // Simulate the post-save invalidation (or any background refetch):
+      // the fresh server values must reach the UI. The old implementation
+      // seeded local state once and ignored every refetch.
+      await queryClient.invalidateQueries({ queryKey: ['prioritization-scores'] })
+
+      // All-5s => priority 5×0.4 + 5×0.3 + 5×0.2 + 5×0.1 = 5.0
+      await waitFor(() => {
+        expect(screen.getAllByText('5.0').length).toBeGreaterThan(0)
+      })
+    })
+  })
+
   describe('rendering', () => {
     it('renders page header', async () => {
       renderPrioritization()

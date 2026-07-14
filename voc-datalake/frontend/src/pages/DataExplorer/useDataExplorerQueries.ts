@@ -15,8 +15,8 @@ export function useDataExplorerQueries(
   s3Path: string[],
   sourceFilter: string
 ) {
-  const { timeRange, customDays, config } = useConfigStore()
-  const dateParams = getDateRangeParams(timeRange, customDays)
+  const { timeRange, customDays, dateBasis, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const isConfigured = !!config.apiEndpoint
 
   const bucketsQuery = useQuery({
