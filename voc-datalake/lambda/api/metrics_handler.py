@@ -5,7 +5,6 @@ Split from main handler to reduce Lambda resource policy size.
 """
 
 import os
-import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -19,6 +18,7 @@ from shared.api import (
     validate_date_basis, DATE_BASIS_REVIEW,
     get_configured_categories, api_handler, DEFAULT_CATEGORIES
 )
+from shared.feedback import basis_date, window_cutoff
 
 # Pagination bounds for /feedback. The candidate window is a function of
 # offset+limit, capped to prevent unbounded DynamoDB scans. The cap also defines
@@ -69,37 +69,6 @@ app = create_api_resolver()
 # via gsi1-by-date always CONTAINS every item whose review date falls in the
 # same window — review-basis filtering is a post-filter over the same window,
 # with no extra GSI required.
-
-
-# Shape guard for basis dates: a malformed source_created_at (e.g.
-# "unavailable") would otherwise compare lexicographically above any
-# YYYY-MM-DD cutoff and pollute daily buckets.
-_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
-
-
-def _basis_date(item: dict, date_basis: str) -> str:
-    """Return the YYYY-MM-DD date used to filter/bucket an item.
-
-    'imported' uses the processing date (`date`, mirrors gsi1-by-date).
-    'review' uses the date the customer wrote the feedback
-    (`source_created_at`), falling back to the import date for items whose
-    source date is missing or malformed.
-
-    Note: source_created_at is the source-local date while cutoffs/buckets
-    are UTC, so items written just before/after local midnight can shift by
-    one day at window edges. Accepted at date granularity.
-    """
-    if date_basis == DATE_BASIS_REVIEW:
-        source_created = (item.get('source_created_at') or '')[:10]
-        if _ISO_DATE_RE.match(source_created):
-            return source_created
-    return item.get('date', '')
-
-
-def _window_cutoff(days: int) -> str:
-    """Oldest YYYY-MM-DD covered by an N-day window ending today (UTC)."""
-    now = datetime.now(timezone.utc)
-    return (now - timedelta(days=days - 1)).strftime('%Y-%m-%d')
 
 
 def _query_partition(
@@ -202,8 +171,8 @@ def _scan_window_items(
     """
     items, is_partial = _scan_recent_items(days, source=source)
     if date_basis == DATE_BASIS_REVIEW:
-        cutoff = _window_cutoff(days)
-        items = [i for i in items if _basis_date(i, date_basis) >= cutoff]
+        cutoff = window_cutoff(days)
+        items = [i for i in items if basis_date(i, date_basis) >= cutoff]
     return items, is_partial
 
 
@@ -307,8 +276,8 @@ def list_feedback():
         # Review basis always needs the post-filter because GSI windows are
         # keyed on import date, and a review can never be imported before it
         # was written.
-        window_cutoff = _window_cutoff(days)
-        candidates = [c for c in candidates if _basis_date(c, date_basis) >= window_cutoff]
+        cutoff = window_cutoff(days)
+        candidates = [c for c in candidates if basis_date(c, date_basis) >= cutoff]
     if source:
         candidates = [i for i in candidates if i.get('source_platform') == source]
     if category and source:
@@ -341,8 +310,9 @@ def get_urgent_feedback():
     sentiment_filter = params.get('sentiment')
     category_filter = params.get('category')
     
-    current_date = datetime.now(timezone.utc)
-    cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+    # Unified window definition: a days-long window ending today (same as
+    # /feedback and /metrics/*). Previously spanned days+1 calendar days.
+    cutoff_date = window_cutoff(days)
     
     has_filters = bool(
         source_filter or sentiment_filter or category_filter
@@ -368,7 +338,7 @@ def get_urgent_feedback():
         if not item:
             continue
         
-        if _basis_date(item, date_basis) < cutoff_date:
+        if basis_date(item, date_basis) < cutoff_date:
             continue
         if source_filter and item.get('source_platform') != source_filter:
             continue
@@ -528,8 +498,9 @@ def search_feedback():
     sentiment_filter = params.get('sentiment')
     category_filter = params.get('category')
     
-    current_date = datetime.now(timezone.utc)
-    cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+    # Unified window definition: a days-long window ending today (same as
+    # /feedback and /metrics/*). Previously spanned days+1 calendar days.
+    cutoff_date = window_cutoff(days)
     
     candidates, _ = _scan_recent_items(
         # Sampling scan: search text-matches within a bounded recent sample,
@@ -540,7 +511,7 @@ def search_feedback():
     
     items = []
     for item in candidates:
-        if _basis_date(item, date_basis) < cutoff_date:
+        if basis_date(item, date_basis) < cutoff_date:
             continue
         if source_filter and item.get('source_platform') != source_filter:
             continue
@@ -650,7 +621,7 @@ def _summary_from_items(days: int) -> dict:
     daily_sentiment: dict[str, dict[str, float]] = {}
     urgent_count = 0
     for item in items:
-        day = _basis_date(item, DATE_BASIS_REVIEW)
+        day = basis_date(item, DATE_BASIS_REVIEW)
         daily_counts[day] = daily_counts.get(day, 0) + 1
         score = item.get('sentiment_score')
         if score is not None:

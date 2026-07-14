@@ -11,7 +11,7 @@ from typing import Any
 
 from shared.logging import logger, tracer
 from shared.aws import invoke_lambda_async
-from shared.api import create_api_resolver, validate_days, validate_int, api_handler, DecimalEncoder
+from shared.api import create_api_resolver, validate_days, validate_int, api_handler, DecimalEncoder, validate_date_basis
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
 from shared.jobs import create_job
 from shared.exceptions import NotFoundError, ServiceError, ValidationError
@@ -181,6 +181,7 @@ def api_generate_personas(project_id: str):
         'categories': body.get('categories', []),
         'sentiments': body.get('sentiments', []),
         'days': validate_days(body.get('days'), default=30),
+        'date_basis': validate_date_basis(body.get('date_basis')),
         'persona_count': validate_persona_count(body.get('persona_count')),
         'custom_instructions': body.get('custom_instructions', ''),
         # Forward the user's selected language so the persona generator's Bedrock
@@ -214,6 +215,7 @@ def api_run_research(project_id: str):
         'categories': body.get('categories', []),
         'sentiments': body.get('sentiments', []),
         'days': validate_days(body.get('days'), default=30),
+        'date_basis': validate_date_basis(body.get('date_basis')),
         'selected_persona_ids': body.get('selected_persona_ids', []),
         'selected_document_ids': body.get('selected_document_ids', []),
         'response_language': body.get('response_language'),

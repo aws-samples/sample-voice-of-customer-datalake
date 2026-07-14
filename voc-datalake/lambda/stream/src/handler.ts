@@ -70,6 +70,8 @@ interface ContextFilters {
   category?: string;
   sentiment?: string;
   days?: number;
+  /** 'imported' (default) or 'review' — which date the days window uses. */
+  dateBasis?: 'imported' | 'review';
 }
 
 // ── Route helpers ──
@@ -221,6 +223,7 @@ async function handleVocChat(body: ChatRequest, stream: NodeJS.WritableStream): 
     message: body.message,
     context: body.context,
     days: body.days,
+    date_basis: body.date_basis,
     response_language: body.response_language,
   });
 
@@ -390,7 +393,11 @@ async function handleProjectChat(
   const projectChanges: ProjectChange[] = [];
 
   await runConversationLoop(
-    messages, tools, stream, ctx.systemPrompt, {}, [], documentChanges, projectChanges, 0,
+    messages, tools, stream, ctx.systemPrompt,
+    // Project chat has no context string, but the picker's window settings
+    // still apply to the search tool (issue #150).
+    { days: body.days, dateBasis: body.date_basis },
+    [], documentChanges, projectChanges, 0,
     PROJECTS_TABLE, projectId,
   );
 

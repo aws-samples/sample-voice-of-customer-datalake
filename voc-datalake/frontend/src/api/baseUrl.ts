@@ -77,3 +77,15 @@ export function getAuthHeaders(extraHeaders?: Record<string, string>): Record<st
 
   return headers
 }
+
+
+/**
+ * Body-payload variant of the date-basis convention (issue #150): the
+ * user's "Filter dates by" selection rides along in POST bodies for chat,
+ * project research, and generation requests. 'review' adds the field;
+ * the default 'imported' omits it so existing payloads stay identical.
+ */
+export function getDateBasisBodyParams(): { date_basis?: 'review' } {
+  const { dateBasis } = useConfigStore.getState()
+  return dateBasis === 'review' ? { date_basis: 'review' } : {}
+}

@@ -17,6 +17,8 @@ interface ContextFilters {
   category?: string;
   sentiment?: string;
   days?: number;
+  /** 'imported' (default) or 'review' — which date the days window uses. */
+  dateBasis?: 'imported' | 'review';
 }
 
 interface ToolResult {

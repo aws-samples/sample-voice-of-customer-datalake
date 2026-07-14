@@ -524,3 +524,95 @@ describe('projectsApi', () => {
     })
   })
 })
+
+
+describe('date basis threading (issue #150)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(global, 'fetch').mockImplementation(vi.fn())
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  async function setDateBasis(basis: 'imported' | 'review') {
+    const { useConfigStore } = await import('../store/configStore')
+    ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+      config: { apiEndpoint: 'https://api.example.com' },
+      dateBasis: basis,
+    })
+  }
+
+  function mockOkFetch() {
+    ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true }),
+    })
+  }
+
+  function lastRequestBody(): Record<string, unknown> {
+    const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    return JSON.parse(options.body)
+  }
+
+  it('persona generation carries date_basis on review basis', async () => {
+    await setDateBasis('review')
+    mockOkFetch()
+
+    await projectsApi.generatePersonas('p1', { days: 30, persona_count: 3 })
+
+    expect(lastRequestBody()).toMatchObject({ date_basis: 'review', days: 30 })
+  })
+
+  it('research carries date_basis on review basis', async () => {
+    await setDateBasis('review')
+    mockOkFetch()
+
+    await projectsApi.runResearch('p1', { question: 'What hurts?' })
+
+    expect(lastRequestBody()).toMatchObject({ date_basis: 'review' })
+  })
+
+  it('document generation carries date_basis on review basis', async () => {
+    await setDateBasis('review')
+    mockOkFetch()
+
+    await projectsApi.generateDocument('p1', {
+      doc_type: 'prd',
+      title: 'T',
+      feature_idea: 'F',
+      data_sources: { feedback: true, personas: false, documents: false, research: false },
+      selected_persona_ids: [],
+      selected_document_ids: [],
+      feedback_sources: [],
+      feedback_categories: [],
+      days: 30,
+    })
+
+    expect(lastRequestBody()).toMatchObject({ date_basis: 'review' })
+  })
+
+  it('payloads stay unchanged on the default imported basis', async () => {
+    await setDateBasis('imported')
+    mockOkFetch()
+
+    await projectsApi.generatePersonas('p1', { days: 30 })
+
+    expect(lastRequestBody()).not.toHaveProperty('date_basis')
+  })
+
+  it('an explicit caller value wins over the store', async () => {
+    await setDateBasis('review')
+    mockOkFetch()
+
+    await projectsApi.runResearch('p1', {
+      question: 'q',
+      // Callers may pass their own basis in `data`; it spreads after the
+      // store default, so it takes precedence.
+      ...( { date_basis: 'imported' } as Record<string, unknown>),
+    } as Parameters<typeof projectsApi.runResearch>[1])
+
+    expect(lastRequestBody()).toMatchObject({ date_basis: 'imported' })
+  })
+})

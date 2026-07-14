@@ -45,6 +45,8 @@ interface ContextFilters {
   category?: string;
   sentiment?: string;
   days?: number;
+  /** 'imported' (default) or 'review' — which date the days window uses. */
+  dateBasis?: 'imported' | 'review';
 }
 
 const feedbackItemSchema = z.object({
@@ -70,8 +72,30 @@ type FeedbackItem = z.infer<typeof feedbackItemSchema>;
 
 // ── Filtering ──
 
-function passesDateFilter(item: FeedbackItem, cutoffDate: string): boolean {
-  return (item.date ?? '') >= cutoffDate;
+// Shape guard: a malformed source_created_at ("unavailable") would compare
+// lexicographically above any YYYY-MM-DD cutoff and sneak through.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The YYYY-MM-DD date the window applies to for one item. 'review' uses the
+ * date the customer wrote the feedback (source_created_at), falling back to
+ * the import date when missing/malformed; 'imported' uses the import date.
+ * Mirrors lambda/shared/feedback.py::basis_date.
+ */
+function itemBasisDate(item: FeedbackItem, dateBasis?: 'imported' | 'review'): string {
+  if (dateBasis === 'review') {
+    const sourceCreated = (item.source_created_at ?? '').slice(0, 10);
+    if (ISO_DATE_RE.test(sourceCreated)) return sourceCreated;
+  }
+  return item.date ?? '';
+}
+
+function passesDateFilter(
+  item: FeedbackItem,
+  cutoffDate: string,
+  dateBasis?: 'imported' | 'review',
+): boolean {
+  return itemBasisDate(item, dateBasis) >= cutoffDate;
 }
 
 function passesFieldFilters(item: FeedbackItem, filters: Record<string, string | undefined>): boolean {
@@ -96,8 +120,9 @@ function matchesFeedbackItem(
   query: string,
   filters: Record<string, string | undefined>,
   cutoffDate: string,
+  dateBasis?: 'imported' | 'review',
 ): boolean {
-  return passesDateFilter(item, cutoffDate)
+  return passesDateFilter(item, cutoffDate, dateBasis)
     && passesFieldFilters(item, filters)
     && passesTextSearch(item, query);
 }
@@ -213,12 +238,17 @@ export async function executeSearchFeedback(
 
   const candidates = await fetchCandidatesByDate(docClient, feedbackTable, days);
 
+  // Days-long window ending today (same definition as the metrics API).
+  // Review basis compares against the date the customer wrote the item; the
+  // import-date scan above always contains those items, since a review can't
+  // be imported before it was written (issue #150).
+  const dateBasis = contextFilters.dateBasis;
   const cutoff = new Date();
-  cutoff.setUTCDate(cutoff.getUTCDate() - days);
+  cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1));
   const cutoffDate = cutoff.toISOString().slice(0, 10);
 
   const allMatched = candidates.filter((item) =>
-    matchesFeedbackItem(item, query, filters, cutoffDate),
+    matchesFeedbackItem(item, query, filters, cutoffDate, dateBasis),
   );
 
   // aggregate mode: summarize the WHOLE match set in one call (no list cap),

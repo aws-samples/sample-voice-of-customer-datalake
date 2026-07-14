@@ -20,6 +20,7 @@ from shared.jobs import job_handler, JobContext, update_job_status
 from shared.aws import get_dynamodb_resource
 from shared.converse import converse_chain
 from shared.feedback import query_feedback_by_date
+from shared.api import validate_date_basis
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
 
 # Environment
@@ -64,6 +65,8 @@ def _gather_context(
             sources=doc_config.get('feedback_sources') or None,
             categories=doc_config.get('feedback_categories') or None,
             limit=100,
+            # doc_config is the raw request body, so validate here (issue #150).
+            date_basis=validate_date_basis(doc_config.get('date_basis')),
         )
         if feedback_items:
             parts = []

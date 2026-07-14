@@ -416,3 +416,72 @@ class TestChatEndpointEdgeCases:
         
         assert response['statusCode'] == 200
         assert body['metadata']['days_analyzed'] == 30
+
+
+
+class TestChatDateBasis:
+    """POST /chat honors date_basis for the feedback sample (issue #150)."""
+
+    @staticmethod
+    def _item(feedback_id, written_days_ago):
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        return {
+            'feedback_id': feedback_id,
+            'source_platform': 'webscraper',
+            'sentiment_label': 'negative',
+            'original_text': f'text of {feedback_id}',
+            'date': now.strftime('%Y-%m-%d'),
+            'source_created_at': (now - timedelta(days=written_days_ago)).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        }
+
+    @patch('shared.converse.converse')
+    @patch('chat_handler.feedback_table')
+    @patch('chat_handler.aggregates_table')
+    def test_review_basis_excludes_backfilled_reviews_from_context(
+        self, mock_agg_table, mock_fb_table, mock_converse,
+        api_gateway_event, lambda_context
+    ):
+        mock_converse.return_value = 'ok'
+        mock_agg_table.get_item.return_value = {}
+        mock_fb_table.query.return_value = {
+            'Items': [self._item('fresh', 1), self._item('backfilled', 400)],
+        }
+        from chat_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST', path='/chat', query_params={'days': '7'},
+            body={'message': 'summarize', 'date_basis': 'review'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        # The LLM context prompt must contain the fresh review, not the
+        # 400-day-old backfilled one.
+        prompt = mock_converse.call_args.kwargs.get('prompt') or mock_converse.call_args.args[0]
+        assert 'text of fresh' in prompt
+        assert 'text of backfilled' not in prompt
+
+    @patch('shared.converse.converse')
+    @patch('chat_handler.feedback_table')
+    @patch('chat_handler.aggregates_table')
+    def test_default_basis_keeps_backfilled_reviews(
+        self, mock_agg_table, mock_fb_table, mock_converse,
+        api_gateway_event, lambda_context
+    ):
+        mock_converse.return_value = 'ok'
+        mock_agg_table.get_item.return_value = {}
+        mock_fb_table.query.return_value = {
+            'Items': [self._item('backfilled', 400)],
+        }
+        from chat_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST', path='/chat', query_params={'days': '7'},
+            body={'message': 'summarize'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        prompt = mock_converse.call_args.kwargs.get('prompt') or mock_converse.call_args.args[0]
+        assert 'text of backfilled' in prompt

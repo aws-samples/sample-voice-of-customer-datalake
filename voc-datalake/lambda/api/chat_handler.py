@@ -13,7 +13,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource
-from shared.api import create_api_resolver, api_handler, validate_days, get_configured_categories
+from shared.api import (
+    create_api_resolver, api_handler, validate_days, get_configured_categories,
+    validate_date_basis, DATE_BASIS_REVIEW,
+)
+from shared.feedback import basis_date, window_cutoff
 from shared.exceptions import ConfigurationError, NotFoundError as AppNotFoundError
 
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
@@ -47,6 +51,9 @@ def chat():
     
     params = app.current_event.query_string_parameters or {}
     days = validate_days(params.get('days'), default=7)
+    # `days` arrives via query params; date_basis rides in the body with the
+    # message (the frontend threads the global picker value through).
+    date_basis = validate_date_basis(body.get('date_basis') or params.get('date_basis'))
     
     current_date = datetime.now(timezone.utc)
     
@@ -89,8 +96,11 @@ def chat():
         if item:
             urgent_count += item.get('count', 0)
     
-    # Get recent feedback
+    # Get recent feedback. Review basis post-filters the sample so the LLM
+    # quotes feedback actually written in the window, not just imported into
+    # it (issue #150); the aggregate totals above remain import-bucketed.
     feedback_items = []
+    review_cutoff = window_cutoff(days)
     for i in range(min(days, 7)):
         date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
         response = feedback_table.query(
@@ -99,7 +109,10 @@ def chat():
             Limit=10,
             ScanIndexForward=False
         )
-        feedback_items.extend(response.get('Items', []))
+        day_items = response.get('Items', [])
+        if date_basis == DATE_BASIS_REVIEW:
+            day_items = [x for x in day_items if basis_date(x, date_basis) >= review_cutoff]
+        feedback_items.extend(day_items)
         if len(feedback_items) >= 30:
             break
     
