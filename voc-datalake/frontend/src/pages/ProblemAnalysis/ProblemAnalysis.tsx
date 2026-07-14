@@ -203,6 +203,9 @@ function toPDFCategories(groups: CategoryGroup[]) {
         itemCount: p.items.length,
         avgSentiment: p.avgSentiment,
         urgentCount: p.urgentCount,
+        // With "Show resolved" on, resolved groups reach the export — the
+        // PDF must annotate them, since strike-through/badge is UI-only.
+        resolved: p.resolved === true,
       })),
     })),
   }))
@@ -271,8 +274,9 @@ export default function ProblemAnalysis() {
   })
 
   const handleToggleResolved = (key: string, resolved: boolean) => {
-    // Serialize toggles: a rapid double-click would race SET/REMOVE for the
-    // same key server-side. The mutation error state renders a banner below.
+    // Double defense with the disabled buttons (resolvePending): the guard
+    // covers the render gap before the disabled state paints, so a rapid
+    // double-click can't race SET/REMOVE for the same key server-side.
     if (toggleResolvedMutation.isPending) return
     toggleResolvedMutation.mutate({ key, resolved })
   }

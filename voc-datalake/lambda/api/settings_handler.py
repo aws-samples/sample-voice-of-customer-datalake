@@ -33,10 +33,13 @@ RESOLVED_PROBLEMS_SK = "config"
 
 # Problem keys are client-built as "category|subcategory|normalized problem
 # text". Bound their size in characters AND UTF-8 bytes (CJK text triples
-# the byte cost) plus the entry count, so the single config item stays far
-# from DynamoDB's 400KB cap: worst case 500 entries x ~540 bytes ≈ 270KB.
-MAX_PROBLEM_KEY_LEN = 500
-MAX_PROBLEM_KEY_BYTES = 500
+# the byte cost) plus the entry count. 255 bytes keeps every key safely
+# inside DynamoDB's strictest name-length constraints (the documented
+# 255-byte expression limit measures the alias token, but capping the real
+# name too costs nothing and removes the ambiguity) and shrinks the item
+# math: worst case 500 entries x ~295 bytes ≈ 148KB, far under the 400KB cap.
+MAX_PROBLEM_KEY_LEN = 255
+MAX_PROBLEM_KEY_BYTES = 255
 MAX_RESOLVED_ENTRIES = 500
 
 app = create_api_resolver()
@@ -59,8 +62,8 @@ def get_resolved_problems():
         )
         return {'resolved': response.get('Item', {}).get('resolved', {})}
     except Exception as e:
-        logger.exception(f"Failed to get resolved problems: {e}")
-        raise ServiceError('Failed to retrieve resolved problems')
+        logger.exception("Failed to get resolved problems")
+        raise ServiceError('Failed to retrieve resolved problems') from e
 
 
 @app.put("/settings/resolved-problems")
@@ -97,8 +100,8 @@ def set_problem_resolution():
     except ValidationError:
         raise
     except Exception as e:
-        logger.exception(f"Failed to update problem resolution: {e}")
-        raise ServiceError('Failed to update problem resolution')
+        logger.exception("Failed to update problem resolution")
+        raise ServiceError('Failed to update problem resolution') from e
 
 
 def _set_resolved_entry(key: str) -> None:
@@ -150,7 +153,7 @@ def _resolve_problem_key(key: str) -> None:
             raise ValidationError(
                 f'Resolved-problem limit reached ({MAX_RESOLVED_ENTRIES}). '
                 'Unresolve entries you no longer need first.'
-            )
+            ) from e
         raise
 
 

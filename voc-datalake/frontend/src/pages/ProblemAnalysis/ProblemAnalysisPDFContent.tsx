@@ -13,6 +13,7 @@ interface ProblemGroupPDF {
   readonly itemCount: number
   readonly avgSentiment: number
   readonly urgentCount: number
+  readonly resolved?: boolean
 }
 
 interface SubcategoryGroupPDF {
@@ -149,13 +150,15 @@ function HeaderSection({
 }
 
 function ProblemItem({ problem }: { readonly problem: ProblemGroupPDF }) {
+  const resolved = problem.resolved === true
   return (
     <div data-pdf-section style={{
       padding: '10px 16px',
-      borderLeft: '3px solid #f59e0b',
+      borderLeft: resolved ? '3px solid #16a34a' : '3px solid #f59e0b',
       marginBottom: '8px',
-      backgroundColor: '#fffbeb',
+      backgroundColor: resolved ? '#f0fdf4' : '#fffbeb',
       borderRadius: '0 6px 6px 0',
+      opacity: resolved ? 0.75 : 1,
     }}>
       <div style={{
         display: 'flex',
@@ -170,7 +173,20 @@ function ProblemItem({ problem }: { readonly problem: ProblemGroupPDF }) {
             color: '#1f2937',
             margin: '0 0 4px 0',
           }}>
-            ⚠️ {problem.problem}
+            {resolved ? '✅' : '⚠️'} {problem.problem}
+            {resolved && (
+              <span style={{
+                fontSize: '10px',
+                fontWeight: '600',
+                color: '#166534',
+                backgroundColor: '#dcfce7',
+                borderRadius: '9999px',
+                padding: '2px 8px',
+                marginLeft: '8px',
+              }}>
+                RESOLVED
+              </span>
+            )}
             {problem.similarProblems.length > 0 && (
               <span style={{
                 fontSize: '11px',

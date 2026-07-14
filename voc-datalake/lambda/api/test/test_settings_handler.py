@@ -428,7 +428,7 @@ class TestResolvedProblems:
         {'resolved': True},                          # missing key
         {'key': '', 'resolved': True},               # empty key
         {'key': '  ', 'resolved': True},             # whitespace key
-        {'key': 'x' * 501, 'resolved': True},        # oversized key
+        {'key': 'x' * 256, 'resolved': True},        # over the char cap
         {'key': 'ok', 'resolved': 'yes'},            # non-boolean resolved
         {'key': 'ok'},                               # missing resolved
     ])
@@ -551,9 +551,9 @@ class TestResolvedProblemsRoundThree:
         still blow the byte budget that sizes the 400KB item math."""
         from settings_handler import lambda_handler
 
-        cjk_key = '배송|일반|' + ('느린 배송 문제 ' * 25)  # well under 500 chars, over 500 bytes
-        assert len(cjk_key) <= 500
-        assert len(cjk_key.encode('utf-8')) > 500
+        cjk_key = '배송|일반|' + ('느린 배송 문제 ' * 12)  # under 255 chars, over 255 bytes
+        assert len(cjk_key) <= 255
+        assert len(cjk_key.encode('utf-8')) > 255
 
         event = api_gateway_event(
             method='PUT', path='/settings/resolved-problems',

@@ -41,6 +41,26 @@ export interface CategoryGroup {
   urgentCount: number
 }
 
+// Server-side caps on stored keys (settings_handler.py): stay in lockstep.
+const MAX_KEY_CHARS = 255
+const MAX_KEY_BYTES = 255
+
+/** Trim from the end until the UTF-8 byte cap fits (CJK text triples the
+ * byte cost). Recursion keeps it mutation-free; depth is bounded by the
+ * char cap applied first. */
+function fitToByteCap(value: string): string {
+  if (value.length === 0 || new TextEncoder().encode(value).length <= MAX_KEY_BYTES) {
+    return value
+  }
+  return fitToByteCap(value.slice(0, -1))
+}
+
+/** Deterministic truncation to the server caps, so every client derives the
+ * same key for the same problem group. */
+function fitToKeyCaps(key: string): string {
+  return fitToByteCap(key.slice(0, MAX_KEY_CHARS))
+}
+
 /**
  * Build the stable key a problem group is resolved under.
  *
@@ -49,12 +69,13 @@ export interface CategoryGroup {
  * ("Delivery" vs "delivery") must not orphan a resolution. `|` is the
  * component separator, and since categories are user-configurable it is
  * normalized out of the values themselves so a literal pipe in a category
- * name can't merge two different problems under one key.
+ * name can't merge two different problems under one key. The result is
+ * deterministically truncated to the server's 255-char/255-byte caps.
  */
 export function buildResolutionKey(category: string, subcategory: string, problem: string): string {
   const normalize = (value: string) =>
     value.replaceAll('|', ' ').trim().toLowerCase().replaceAll(/\s+/g, ' ')
-  return `${normalize(category)}|${normalize(subcategory)}|${normalize(problem)}`
+  return fitToKeyCaps(`${normalize(category)}|${normalize(subcategory)}|${normalize(problem)}`)
 }
 
 

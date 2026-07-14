@@ -21,6 +21,23 @@ describe('buildResolutionKey', () => {
     expect(buildResolutionKey('a|b', 'sub', 'problem'))
       .not.toBe(buildResolutionKey('a', 'b|sub', 'problem'))
   })
+
+  it('truncates deterministically to the server caps (255 chars / 255 UTF-8 bytes)', () => {
+    const longProblem = 'very long problem summary '.repeat(30)
+    const key = buildResolutionKey('delivery', 'speed', longProblem)
+    expect(key.length).toBeLessThanOrEqual(255)
+    expect(new TextEncoder().encode(key).length).toBeLessThanOrEqual(255)
+    // Deterministic: same inputs, same truncated key.
+    expect(buildResolutionKey('delivery', 'speed', longProblem)).toBe(key)
+  })
+
+  it('fits CJK keys to the byte cap without splitting characters', () => {
+    const cjkProblem = '느린 배송 문제 '.repeat(40)
+    const key = buildResolutionKey('배송', '일반', cjkProblem)
+    expect(new TextEncoder().encode(key).length).toBeLessThanOrEqual(255)
+    // Whole characters only — no replacement glyphs from split code points.
+    expect(key.includes('\uFFFD')).toBe(false)
+  })
 })
 
 const makeProblem = (problem: string, items: number, urgent: number) => ({
