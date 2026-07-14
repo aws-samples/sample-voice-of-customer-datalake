@@ -278,7 +278,7 @@ class TestPrfaqPromptContract:
     def test_every_placeholder_is_supplied_by_the_chain_builder(self):
         config = self._load()
         for index, (name, step) in enumerate(config['steps'].items()):
-            searched = step['user_prompt_template'] + step.get('system_prompt', '')
+            searched = step['user_prompt_template'] + '\n' + step.get('system_prompt', '')
             # Broad pattern on purpose: malformed slots like {launch date} or
             # {launch_date } are exactly the typo class this guard exists for
             # (format_prompt leaves them as literal text for the LLM).
@@ -373,7 +373,11 @@ class TestLoadPromptFileEncoding:
         real_open = builtins.open
 
         def spy_open(file, *args, **kwargs):
-            seen['encoding'] = kwargs.get('encoding')
+            # Record ONLY the prompt-file open: incidental open() calls
+            # (coverage tooling, future loader logging) must not overwrite
+            # the observation or fake a pass.
+            if str(file).endswith('prfaq-generation.json'):
+                seen['encoding'] = kwargs.get('encoding')
             return real_open(file, *args, **kwargs)
 
         monkeypatch.setattr(builtins, 'open', spy_open)
@@ -384,3 +388,6 @@ class TestLoadPromptFileEncoding:
 
         assert seen['encoding'] == 'utf-8'
         assert 'steps' in config  # the spy delegated to the real loader
+        # And the em-dash-bearing content itself decoded correctly.
+        press_system = config['steps']['press_release']['system_prompt']
+        assert '\u2014' in press_system  # — em dash round-trips
