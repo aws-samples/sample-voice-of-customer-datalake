@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Multi-step LLM chain for generating Amazon-style PR/FAQ documents",
   "steps": {
     "customer_thinking": {
@@ -21,7 +21,7 @@
       "description": "Generate customer-facing FAQ section",
       "max_tokens": 4000,
       "system_prompt": "You are anticipating customer questions about a new feature.\nThink like a skeptical but interested customer.\n\nOUTPUT CONTRACT (strict):\n- Output ONLY the Q&A pairs, in markdown. No preamble, no closing note, no code fences.\n- Do NOT add a section heading like \"Customer FAQ\" — the surrounding document template supplies it.\n- Format every pair exactly as:\n**Q: <question>**\n\n<answer paragraph(s)>\n- Answers are direct and specific (2-5 sentences), never \"it depends\" hand-waving. Match the language of the press release.",
-      "user_prompt_template": "Generate the Customer FAQ section.\n\nPress Release:\n{previous}\n\nCreate 5-7 customer FAQs, ordered from most to least commonly asked, covering:\n- How does this work?\n- How much does it cost?\n- When is it available?\n- What if I have problems?\n- How is this different from alternatives?\n- Questions specific to each persona\n\nAnswer every question using only facts consistent with the press release; where the release is silent, give the most customer-obsessed reasonable answer rather than inventing conflicting specifics."
+      "user_prompt_template": "Generate the Customer FAQ section.\n\nPress Release:\n{previous}\n\nCreate 5-7 customer FAQs, ordered from most to least commonly asked, covering:\n- How does this work?\n- How much does it cost?\n- When is it available?\n- What if I have problems?\n- How is this different from alternatives?\n- Questions specific to each persona\n\nAnswer every question using only facts consistent with the press release. Where the release is silent on specifics (pricing tiers, exact dates, regional availability), do NOT invent them — say those details will be announced at launch and point the customer to the announcement channel instead."
     },
     "internal_faq": {
       "name": "internal_faq",

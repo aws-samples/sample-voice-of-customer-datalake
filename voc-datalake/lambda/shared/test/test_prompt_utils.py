@@ -216,10 +216,19 @@ class TestPrfaqPromptContract:
     can't leave them passing against a stale copy.
     """
 
-    SUPPLIED_PLACEHOLDERS = {
-        'feature_idea', 'personas_context', 'feedback_context',
-        'product_context', 'launch_date', 'previous',
-    }
+    @property
+    def supplied_placeholders(self) -> set:
+        """Derive the supplied-placeholder set from the chain builder itself
+        so a renamed/added parameter can't silently drift from this test.
+
+        `response_language` is consumed by build_chain_steps (system-prompt
+        instruction, never a template slot); `launch_date` is generated
+        inside the builder; `previous` is substituted by the chain executor.
+        """
+        import inspect
+        from shared.prompts import get_prfaq_generation_steps
+        params = set(inspect.signature(get_prfaq_generation_steps).parameters)
+        return (params - {'response_language'}) | {'launch_date', 'previous'}
 
     @pytest.fixture(autouse=True)
     def _route_loader_at_repo_prompts(self, monkeypatch):
@@ -247,16 +256,17 @@ class TestPrfaqPromptContract:
         config = self._load()
         for name, step in config['steps'].items():
             found = set(re.findall(r'\{(\w+)\}', step['user_prompt_template']))
-            unknown = found - self.SUPPLIED_PLACEHOLDERS
+            unknown = found - self.supplied_placeholders
             assert not unknown, f"step '{name}' uses unsupplied placeholders: {unknown}"
 
     def test_steps_forbid_duplicate_section_headings(self):
         """The assembler adds 'Press Release'/'Customer FAQ'/'Internal FAQ'
         headings itself; the prompts must tell the model not to repeat them."""
+        import re as _re
         config = self._load()
         for name in ('press_release', 'customer_faq', 'internal_faq'):
             system = config['steps'][name]['system_prompt'].lower()
-            assert 'do not add' in system, f"step '{name}' lacks the heading ban"
+            assert _re.search(r'(do not|never) add', system), f"step '{name}' lacks the heading ban"
             assert 'no preamble' in system, f"step '{name}' lacks the preamble ban"
 
     def test_faq_steps_pin_the_qa_format(self):
@@ -281,3 +291,10 @@ class TestPrfaqPromptContract:
             assert not leftovers, (
                 f"step '{step['step_name']}' has unresolved placeholders: {leftovers}"
             )
+        # The slots must render coherent content, not just resolve: the
+        # default product_context is a real sentence and launch_date is a
+        # generated future date — neither may leave a dangling section.
+        first_step = steps[0]['user']
+        assert '(No product context provided.)' in first_step
+        press_release = steps[1]['user']
+        assert re.search(r'\d{4}-\d{2}-\d{2}', press_release), 'launch_date slot empty'
