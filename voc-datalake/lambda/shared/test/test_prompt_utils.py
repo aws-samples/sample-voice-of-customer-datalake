@@ -302,6 +302,9 @@ class TestPrfaqPromptContract:
         config = self._load()
         for name, heading in self.BANNED_HEADINGS.items():
             system = config['steps'][name]['system_prompt'].lower()
+            # NOTE: [^.]* couples this pin to sentence punctuation — the ban
+            # verb and the heading must share one sentence. A rephrase that
+            # splits them across a period should update this test too.
             ban = re.search(r'(do not|never|must not) add[^.]*' + re.escape(heading), system)
             assert ban, f"step '{name}' does not ban adding the '{heading}' heading"
             assert 'no preamble' in system, f"step '{name}' lacks the preamble ban"
@@ -324,7 +327,9 @@ class TestPrfaqPromptContract:
         )
         assert len(steps) == 4
         for step in steps:
-            leftovers = set(re.findall(r'\{(\w+)\}', step['user'])) - {'previous'}
+            # Broad pattern for the same malformed-slot class the raw-template
+            # guard catches, applied to the BUILDER's formatted output.
+            leftovers = set(re.findall(r'\{([^{}]+)\}', step['user'])) - {'previous'}
             assert not leftovers, (
                 f"step '{step['step_name']}' has unresolved placeholders: {leftovers}"
             )
