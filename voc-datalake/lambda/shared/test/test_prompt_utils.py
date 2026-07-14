@@ -216,19 +216,35 @@ class TestPrfaqPromptContract:
     can't leave them passing against a stale copy.
     """
 
+    # Builder parameters that ARE template slots, and those that are not
+    # (consumed as a system-prompt instruction). A new parameter must be
+    # classified here explicitly — the drift test below fails loudly on
+    # anything unrecognized rather than silently trusting it is a slot.
+    KNOWN_SLOT_PARAMS = {
+        'feature_idea', 'personas_context', 'feedback_context', 'product_context',
+    }
+    KNOWN_NON_SLOT_PARAMS = {'response_language'}
+
     @property
     def supplied_placeholders(self) -> set:
-        """Derive the supplied-placeholder set from the chain builder itself
-        so a renamed/added parameter can't silently drift from this test.
+        """Slots the chain builder supplies: the classified signature params
+        plus the internally generated launch_date and the executor-substituted
+        previous."""
+        return self.KNOWN_SLOT_PARAMS | {'launch_date', 'previous'}
 
-        `response_language` is consumed by build_chain_steps (system-prompt
-        instruction, never a template slot); `launch_date` is generated
-        inside the builder; `previous` is substituted by the chain executor.
-        """
+    def test_builder_signature_has_no_unclassified_parameters(self):
+        """Fail loudly when get_prfaq_generation_steps gains a parameter this
+        test doesn't know about, instead of silently assuming it is a slot."""
         import inspect
         from shared.prompts import get_prfaq_generation_steps
         params = set(inspect.signature(get_prfaq_generation_steps).parameters)
-        return (params - {'response_language'}) | {'launch_date', 'previous'}
+        unclassified = params - self.KNOWN_SLOT_PARAMS - self.KNOWN_NON_SLOT_PARAMS
+        assert not unclassified, (
+            f"new builder parameter(s) {unclassified}: classify as slot or "
+            "non-slot in TestPrfaqPromptContract"
+        )
+        missing = (self.KNOWN_SLOT_PARAMS | self.KNOWN_NON_SLOT_PARAMS) - params
+        assert not missing, f"classified parameter(s) no longer exist: {missing}"
 
     @pytest.fixture(autouse=True)
     def _route_loader_at_repo_prompts(self, monkeypatch):
@@ -255,18 +271,18 @@ class TestPrfaqPromptContract:
     def test_every_placeholder_is_supplied_by_the_chain_builder(self):
         config = self._load()
         for name, step in config['steps'].items():
-            found = set(re.findall(r'\{(\w+)\}', step['user_prompt_template']))
+            searched = step['user_prompt_template'] + step.get('system_prompt', '')
+            found = set(re.findall(r'\{(\w+)\}', searched))
             unknown = found - self.supplied_placeholders
             assert not unknown, f"step '{name}' uses unsupplied placeholders: {unknown}"
 
     def test_steps_forbid_duplicate_section_headings(self):
         """The assembler adds 'Press Release'/'Customer FAQ'/'Internal FAQ'
         headings itself; the prompts must tell the model not to repeat them."""
-        import re as _re
         config = self._load()
         for name in ('press_release', 'customer_faq', 'internal_faq'):
             system = config['steps'][name]['system_prompt'].lower()
-            assert _re.search(r'(do not|never) add', system), f"step '{name}' lacks the heading ban"
+            assert re.search(r'(do not|never|must not) add', system), f"step '{name}' lacks the heading ban"
             assert 'no preamble' in system, f"step '{name}' lacks the preamble ban"
 
     def test_faq_steps_pin_the_qa_format(self):
@@ -294,7 +310,12 @@ class TestPrfaqPromptContract:
         # The slots must render coherent content, not just resolve: the
         # default product_context is a real sentence and launch_date is a
         # generated future date — neither may leave a dangling section.
+        import inspect
+        default_product_context = inspect.signature(
+            get_prfaq_generation_steps
+        ).parameters['product_context'].default
+        assert default_product_context.strip(), 'builder default must be a real sentence'
         first_step = steps[0]['user']
-        assert '(No product context provided.)' in first_step
+        assert default_product_context in first_step
         press_release = steps[1]['user']
         assert re.search(r'\d{4}-\d{2}-\d{2}', press_release), 'launch_date slot empty'

@@ -51,7 +51,9 @@ def load_prompt_file(filename: str) -> dict:
     if not filepath.exists():
         raise FileNotFoundError(f"Prompt file not found: {filepath}")
     
-    with open(filepath, 'r') as f:
+    # Explicit encoding: prompt files carry em dashes / typographic quotes,
+    # and open()'s default encoding is locale-dependent outside Lambda.
+    with open(filepath, 'r', encoding='utf-8') as f:
         content = json.load(f)
     
     logger.debug(f"Loaded prompt file: {filename}")
