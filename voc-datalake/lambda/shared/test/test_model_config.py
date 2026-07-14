@@ -115,8 +115,9 @@ class TestAllowlistLockstep:
             self._repo_root() / 'lib' / 'stacks' / 'api-stack.ts'
         ).read_text()
         helper_start = cdk_source.index('private allowlistedModelArns()')
-        # Slice generously to the next method; `${...}` braces defeat naive
+        # Slice to the next private method; `${...}` braces defeat naive
         # matching of the closing brace.
-        helper_body = cdk_source[helper_start:helper_start + 1500]
+        next_method = cdk_source.index('private ', helper_start + 1)
+        helper_body = cdk_source[helper_start:next_method]
         granted = set(re.findall(r'inference-profile/(global\.anthropic\.[^`\']+)', helper_body))
         assert granted == ALLOWED_MODEL_IDS

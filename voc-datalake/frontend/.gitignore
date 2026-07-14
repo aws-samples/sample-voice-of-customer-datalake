@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 
 public/config.json
+
+
+# Translation tooling scratch files (Bedrock i18n batch requests/responses)
+.i18n-tmp/

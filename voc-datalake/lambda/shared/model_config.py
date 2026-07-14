@@ -48,7 +48,10 @@ ALLOWED_MODELS = [
 ALLOWED_MODEL_IDS = {model["id"] for model in ALLOWED_MODELS}
 
 # Per-container cache so hot Lambdas don't hit DynamoDB on every inference.
+# Lookup failures are cached for a shorter window: a throttling blip should
+# not silently pin inference to the default for the full TTL.
 _CACHE_TTL_SECONDS = 60
+_ERROR_CACHE_TTL_SECONDS = 10
 _cache: dict = {"value": None, "expires": 0.0}
 
 
@@ -73,6 +76,7 @@ def get_active_model_id() -> str:
         return _cache["value"]
 
     value = BEDROCK_MODEL_ID
+    ttl = _CACHE_TTL_SECONDS
     try:
         table = get_dynamodb_resource().Table(table_name)
         item = table.get_item(
@@ -82,10 +86,11 @@ def get_active_model_id() -> str:
         if configured in ALLOWED_MODEL_IDS:
             value = configured
         elif configured:
-            logger.warning(f"Configured model '{configured}' not in allowlist; using default")
+            logger.warning(f"Configured model '{str(configured)[:80]}' not in allowlist; using default")
     except Exception as e:  # noqa: BLE001 — model lookup must never break inference
         logger.warning(f"Model settings lookup failed; using default: {e}")
+        ttl = _ERROR_CACHE_TTL_SECONDS
 
     _cache["value"] = value
-    _cache["expires"] = now + _CACHE_TTL_SECONDS
+    _cache["expires"] = now + ttl
     return value

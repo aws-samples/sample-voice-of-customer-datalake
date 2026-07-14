@@ -8,7 +8,10 @@
  *
  * Labels/descriptions are translated client-side under the model's stable
  * `key`, falling back to the server-provided English strings for any model
- * the locale files don't know yet.
+ * the locale files don't know yet. Locale files intentionally define only
+ * `aiModel.models.*.description` — model NAMES are product names, identical
+ * in every language, so they ride the server fallback (the i18n gate rejects
+ * same-as-English locale values).
  */
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'

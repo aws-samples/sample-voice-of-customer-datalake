@@ -20,6 +20,9 @@ const ALLOWED_MODEL_IDS = new Set([
 ]);
 
 const CACHE_TTL_MS = 60_000;
+// Lookup failures cache for a shorter window so a throttling blip doesn't
+// silently pin streaming chat to the default for a full minute.
+const ERROR_CACHE_TTL_MS = 10_000;
 
 const cache: { value: string | null; expires: number } = { value: null, expires: 0 };
 
@@ -47,6 +50,7 @@ export async function getModelOverride(
   }
 
   let value: string | null = null;
+  let ttl = CACHE_TTL_MS;
   try {
     const result = await docClient.send(new GetCommand({
       TableName: tableName,
@@ -56,13 +60,14 @@ export async function getModelOverride(
     if (typeof configured === 'string' && ALLOWED_MODEL_IDS.has(configured)) {
       value = configured;
     } else if (configured) {
-      console.warn(`Configured model '${String(configured)}' not in allowlist; using default`);
+      console.warn(`Configured model '${String(configured).slice(0, 80)}' not in allowlist; using default`);
     }
   } catch (error) {
     console.warn('Model override lookup failed; using default:', error);
+    ttl = ERROR_CACHE_TTL_MS;
   }
 
   cache.value = value;
-  cache.expires = now + CACHE_TTL_MS;
+  cache.expires = now + ttl;
   return value ?? undefined;
 }

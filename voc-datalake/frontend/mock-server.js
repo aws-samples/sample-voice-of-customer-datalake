@@ -188,6 +188,8 @@ const handlers = {
   // Settings - Categories
   'GET /settings/categories': () => mockCategoriesConfig,
   'PUT /settings/categories': () => ({ success: true, message: 'Categories saved' }),
+  // Mirrors lambda/shared/model_config.py::ALLOWED_MODELS (source of truth,
+  // lockstep-tested there).
   'GET /settings/model': () => ({
     model_id: mockModelOverride.value,
     available_models: [

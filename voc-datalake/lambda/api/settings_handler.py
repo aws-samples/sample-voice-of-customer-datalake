@@ -73,7 +73,7 @@ def save_model_settings():
     """
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     body = app.current_event.json_body or {}
 
     if 'model_id' not in body:

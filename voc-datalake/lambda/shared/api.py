@@ -98,8 +98,10 @@ def validate_date_basis(value: str | None) -> str:
 def get_caller_groups(event: dict) -> list[str]:
     """Extract Cognito group memberships from the API Gateway authorizer claims.
 
-    Handles the formats API Gateway emits for ``cognito:groups``: a list, a
-    comma-separated string, or a space-separated string.
+    Handles every format API Gateway emits for the ``cognito:groups`` claim:
+    a real list, and strings that are comma- or space-separated — including
+    the REST-authorizer serialization of the array claim as a
+    bracket-wrapped string (``"[admins]"`` / ``"[admins, users]"``).
     """
     try:
         claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
@@ -108,9 +110,13 @@ def get_caller_groups(event: dict) -> list[str]:
             return []
         if isinstance(groups, list):
             return groups
-        if ',' in groups:
-            return [g.strip() for g in groups.split(',')]
-        return groups.split(' ') if ' ' in groups else [groups]
+        # REST API Gateway serializes array claims like "[admins, users]".
+        cleaned = groups.strip().removeprefix('[').removesuffix(']').strip()
+        if not cleaned:
+            return []
+        if ',' in cleaned:
+            return [g.strip() for g in cleaned.split(',')]
+        return cleaned.split(' ') if ' ' in cleaned else [cleaned]
     except Exception:
         return []
 
