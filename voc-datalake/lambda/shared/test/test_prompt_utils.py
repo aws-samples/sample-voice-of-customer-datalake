@@ -210,6 +210,14 @@ class TestConvenienceFunctions:
 REPO_PROMPTS_DIR = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
 
 
+def _extract_slots(text: str) -> set:
+    """All {placeholder}-shaped spans in text — broad on purpose: malformed
+    slots like {launch date} or {launch_date } are exactly the typo class
+    these guards exist for (format_prompt leaves them as literal text for
+    the LLM instead of raising)."""
+    return set(re.findall(r'\{([^{}]+)\}', text))
+
+
 class TestPrfaqPromptContract:
     """Pin the PR/FAQ prompt file to the chain code's contract (issue #93).
 
@@ -295,10 +303,7 @@ class TestPrfaqPromptContract:
         config = self._load()
         for index, (name, step) in enumerate(config['steps'].items()):
             searched = step['user_prompt_template'] + '\n' + step.get('system_prompt', '')
-            # Broad pattern on purpose: malformed slots like {launch date} or
-            # {launch_date } are exactly the typo class this guard exists for
-            # (format_prompt leaves them as literal text for the LLM).
-            found = set(re.findall(r'\{([^{}]+)\}', searched))
+            found = _extract_slots(searched)
             # {previous} is substituted by the chain executor with the prior
             # step's output — the FIRST step has no prior output, so there it
             # would reach the LLM as literal text and must fail the guard.
@@ -315,7 +320,7 @@ class TestPrfaqPromptContract:
         for name, required in self.REQUIRED_PLACEHOLDERS.items():
             step = config['steps'][name]
             searched = step['user_prompt_template'] + '\n' + step.get('system_prompt', '')
-            found = set(re.findall(r'\{([^{}]+)\}', searched))
+            found = _extract_slots(searched)
             missing = required - found
             assert not missing, f"step '{name}' dropped required placeholders: {missing}"
 
@@ -383,9 +388,9 @@ class TestPrfaqPromptContract:
         # deriving EXPECTED from builder output would pin nothing).
         assert [s['step_name'] for s in steps] == list(self._load()['steps'])
         for step in steps:
-            # Broad pattern for the same malformed-slot class the raw-template
-            # guard catches, applied to the BUILDER's formatted output.
-            leftovers = set(re.findall(r'\{([^{}]+)\}', step['user'])) - {'previous'}
+            # Same malformed-slot class as the raw-template guards, applied
+            # to the BUILDER's formatted output.
+            leftovers = _extract_slots(step['user']) - {'previous'}
             assert not leftovers, (
                 f"step '{step['step_name']}' has unresolved placeholders: {leftovers}"
             )
@@ -442,6 +447,11 @@ class TestLoadPromptFileEncoding:
         finally:
             prompts_module.load_prompt_file.cache_clear()
 
+        assert 'encoding' in seen, (
+            'spy never observed the prompt-file open — did the loader stop '
+            'using open() (e.g. Path.open()/read_text() refactor)? '
+            'Re-point the spy so this pin keeps guarding the encoding.'
+        )
         assert seen['encoding'] == 'utf-8'
         assert 'steps' in config  # the spy delegated to the real loader
         # And the em-dash-bearing content itself decoded correctly.
