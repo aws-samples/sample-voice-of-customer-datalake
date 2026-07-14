@@ -1,4 +1,6 @@
 """Tests for shared.prompts module."""
+import re
+
 import pytest
 from unittest.mock import patch, mock_open, MagicMock
 from pathlib import Path
@@ -202,13 +204,16 @@ class TestConvenienceFunctions:
         ml.assert_called_with('avatar-generation.json')
 
 
-
 class TestPrfaqPromptContract:
     """Pin the PR/FAQ prompt file to the chain code's contract (issue #93).
 
     format_prompt leaves unknown placeholders untouched, so a typo like
     {lauch_date} silently reaches the LLM as literal text — these tests make
     that a build failure instead of a quiet quality regression.
+
+    Every test loads the file through the production loader
+    (get_prompts_dir + load_prompt_file), so a relocated prompts directory
+    can't leave them passing against a stale copy.
     """
 
     SUPPLIED_PLACEHOLDERS = {
@@ -216,16 +221,21 @@ class TestPrfaqPromptContract:
         'product_context', 'launch_date', 'previous',
     }
 
-    @staticmethod
-    def _prompt_path():
-        from pathlib import Path
-        return Path(__file__).resolve().parents[2] / 'api' / 'prompts' / 'prfaq-generation.json'
+    @pytest.fixture(autouse=True)
+    def _route_loader_at_repo_prompts(self, monkeypatch):
+        """Point the production loader at the repo's prompts dir (the local
+        fallback in get_prompts_dir doesn't resolve from the test cwd)."""
+        import shared.prompts as prompts_module
+        repo_prompts = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
+        monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: repo_prompts)
+        prompts_module.load_prompt_file.cache_clear()
+        yield
+        prompts_module.load_prompt_file.cache_clear()
 
-    @classmethod
-    def _load(cls):
-        import json
-        with open(cls._prompt_path()) as f:
-            return json.load(f)
+    @staticmethod
+    def _load():
+        from shared.prompts import load_prompt_file
+        return load_prompt_file('prfaq-generation.json')
 
     def test_has_the_four_chain_steps_in_code_order(self):
         config = self._load()
@@ -234,7 +244,6 @@ class TestPrfaqPromptContract:
         ]
 
     def test_every_placeholder_is_supplied_by_the_chain_builder(self):
-        import re
         config = self._load()
         for name, step in config['steps'].items():
             found = set(re.findall(r'\{(\w+)\}', step['user_prompt_template']))
@@ -246,11 +255,9 @@ class TestPrfaqPromptContract:
         headings itself; the prompts must tell the model not to repeat them."""
         config = self._load()
         for name in ('press_release', 'customer_faq', 'internal_faq'):
-            system = config['steps'][name]['system_prompt']
-            assert 'Do NOT add' in system, f"step '{name}' lacks the heading ban"
-            assert 'No preamble' in system or 'no preamble' in system, (
-                f"step '{name}' lacks the preamble ban"
-            )
+            system = config['steps'][name]['system_prompt'].lower()
+            assert 'do not add' in system, f"step '{name}' lacks the heading ban"
+            assert 'no preamble' in system, f"step '{name}' lacks the preamble ban"
 
     def test_faq_steps_pin_the_qa_format(self):
         config = self._load()
@@ -259,24 +266,15 @@ class TestPrfaqPromptContract:
                 f"step '{name}' does not pin the Q&A format"
             )
 
-    def test_chain_builder_formats_prfaq_steps_cleanly(self, monkeypatch):
+    def test_chain_builder_formats_prfaq_steps_cleanly(self):
         """End-to-end through build_chain_steps: no unresolved placeholders
         except the {previous} handled later by the chain executor."""
-        import re
-        import shared.prompts as prompts_module
         from shared.prompts import get_prfaq_generation_steps
-        monkeypatch.setattr(
-            prompts_module, 'get_prompts_dir', lambda: self._prompt_path().parent
+        steps = get_prfaq_generation_steps(
+            feature_idea='Test feature',
+            personas_context='P1',
+            feedback_context='F1',
         )
-        prompts_module.load_prompt_file.cache_clear()
-        try:
-            steps = get_prfaq_generation_steps(
-                feature_idea='Test feature',
-                personas_context='P1',
-                feedback_context='F1',
-            )
-        finally:
-            prompts_module.load_prompt_file.cache_clear()
         assert len(steps) == 4
         for step in steps:
             leftovers = set(re.findall(r'\{(\w+)\}', step['user'])) - {'previous'}
