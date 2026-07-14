@@ -207,6 +207,9 @@ def get_prd_generation_steps(
     )
 
 
+# NOTE: parameters of this builder are classified (slot vs non-slot) in
+# TestPrfaqPromptContract (lambda/shared/test/test_prompt_utils.py) — adding
+# or renaming a parameter requires updating that classification.
 def get_prfaq_generation_steps(
     feature_idea: str,
     personas_context: str,

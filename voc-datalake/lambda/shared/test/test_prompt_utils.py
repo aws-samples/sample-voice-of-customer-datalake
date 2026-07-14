@@ -351,3 +351,36 @@ class TestPrfaqPromptContract:
         assert re.search(r'\d{4}-\d{2}-\d{2}', press_release), (
             'launch_date slot did not render a YYYY-MM-DD date (builder format changed?)'
         )
+
+
+class TestLoadPromptFileEncoding:
+    """Pin the explicit UTF-8 encoding in load_prompt_file.
+
+    Reverting encoding='utf-8' only breaks on non-UTF-8 default locales
+    (Windows/cp1252), so CI would stay green without this platform-
+    independent pin: assert the kwarg is passed, on every platform.
+    """
+
+    def test_opens_prompt_files_with_explicit_utf8(self, monkeypatch):
+        import builtins
+        import shared.prompts as prompts_module
+
+        repo_prompts = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
+        monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: repo_prompts)
+        prompts_module.load_prompt_file.cache_clear()
+
+        seen = {}
+        real_open = builtins.open
+
+        def spy_open(file, *args, **kwargs):
+            seen['encoding'] = kwargs.get('encoding')
+            return real_open(file, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, 'open', spy_open)
+        try:
+            config = prompts_module.load_prompt_file('prfaq-generation.json')
+        finally:
+            prompts_module.load_prompt_file.cache_clear()
+
+        assert seen['encoding'] == 'utf-8'
+        assert 'steps' in config  # the spy delegated to the real loader
