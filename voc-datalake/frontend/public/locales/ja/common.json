@@ -18,6 +18,7 @@
   },
   "cancel": "キャンセル",
   "configureBrand": "ブランドを設定",
+  "dismiss": "閉じる",
   "exportPdf": "PDFをエクスポート",
   "exportPdfShort": "PDF",
   "exportPdfTooltip": "PDFとしてエクスポート",
@@ -76,6 +77,10 @@
     "low": "低",
     "medium": "中",
     "none": "なし"
+  },
+  "problemAnalysisPage": {
+    "emptyHint": "期間を広げるかフィルターを調整してください",
+    "emptyTitle": "選択した期間の問題分析データが見つかりません"
   },
   "problemResolution": {
     "allResolvedHint": "上の「解決済みを表示 ({{total}})」を有効にすると確認できます",

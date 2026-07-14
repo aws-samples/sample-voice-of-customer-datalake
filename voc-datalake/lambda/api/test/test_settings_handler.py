@@ -498,11 +498,13 @@ class TestResolvedProblemsCap:
     def test_unresolve_is_never_capped_and_tolerates_missing_map(
         self, mock_table, api_gateway_event, lambda_context
     ):
+        """Missing parent map surfaces as a FAILED CONDITION (stable error
+        code), not as message-text sniffing on ValidationException."""
         from botocore.exceptions import ClientError
         from settings_handler import lambda_handler
 
         mock_table.update_item.side_effect = ClientError(
-            {'Error': {'Code': 'ValidationException', 'Message': 'document path invalid'}},
+            {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'no map'}},
             'UpdateItem',
         )
 
@@ -514,18 +516,19 @@ class TestResolvedProblemsCap:
 
         # Missing parent map == nothing to remove == success.
         assert response['statusCode'] == 200
+        assert mock_table.update_item.call_args.kwargs['ConditionExpression'] == 'attribute_exists(#r)' 
 
 
 
-class TestResolvedProblemsRoundThree:
-    """Third review round: narrowed exception swallow + UTF-8 byte cap."""
+class TestResolvedProblemsKeyEncoding:
+    """Key byte-cap validation and unresolve error semantics."""
 
     @patch('settings_handler.aggregates_table')
     def test_unresolve_does_not_swallow_real_validation_errors(
         self, mock_table, api_gateway_event, lambda_context
     ):
-        """Only the missing-document-path variant is a no-op; other
-        ValidationExceptions are genuine failures, not success."""
+        """ValidationExceptions are genuine failures, not success — only the
+        failed parent-map condition (stable code) is the no-op."""
         from botocore.exceptions import ClientError
         from settings_handler import lambda_handler
 

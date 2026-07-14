@@ -31,27 +31,27 @@ function makeCategories(): ProblemAnalysisPDFProps['categories'] {
 
 describe('ProblemAnalysisPDFContent', () => {
   it('renders the category name', () => {
-    render(<ProblemAnalysisPDFContent categories={makeCategories()} timeRange="Last 7 days" />)
+    render(<ProblemAnalysisPDFContent resolvedLabel="Resolved" categories={makeCategories()} timeRange="Last 7 days" />)
     expect(screen.getByText('Delivery')).toBeInTheDocument()
   })
 
   it('renders the subcategory name', () => {
-    render(<ProblemAnalysisPDFContent categories={makeCategories()} timeRange="Last 7 days" />)
+    render(<ProblemAnalysisPDFContent resolvedLabel="Resolved" categories={makeCategories()} timeRange="Last 7 days" />)
     expect(screen.getByText('Late shipment')).toBeInTheDocument()
   })
 
   it('renders the problem statement', () => {
-    render(<ProblemAnalysisPDFContent categories={makeCategories()} timeRange="Last 7 days" />)
+    render(<ProblemAnalysisPDFContent resolvedLabel="Resolved" categories={makeCategories()} timeRange="Last 7 days" />)
     expect(screen.getByText(/Package arrived two weeks late/)).toBeInTheDocument()
   })
 
   it('renders the root cause hypothesis', () => {
-    render(<ProblemAnalysisPDFContent categories={makeCategories()} timeRange="Last 7 days" />)
+    render(<ProblemAnalysisPDFContent resolvedLabel="Resolved" categories={makeCategories()} timeRange="Last 7 days" />)
     expect(screen.getByText(/Carrier capacity shortage/)).toBeInTheDocument()
   })
 
   it('indicates similar problems count', () => {
-    render(<ProblemAnalysisPDFContent categories={makeCategories()} timeRange="Last 7 days" />)
+    render(<ProblemAnalysisPDFContent resolvedLabel="Resolved" categories={makeCategories()} timeRange="Last 7 days" />)
     expect(screen.getByText(/\+1 similar/)).toBeInTheDocument()
   })
 })

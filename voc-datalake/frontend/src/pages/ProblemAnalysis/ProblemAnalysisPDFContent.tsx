@@ -34,8 +34,9 @@ export interface ProblemAnalysisPDFProps {
   readonly categories: CategoryGroupPDF[]
   readonly timeRange: string
   /** Translated badge text for resolved problems (the PDF renders outside
-   * the i18n provider, so the page passes the resolved label in). */
-  readonly resolvedLabel?: string
+   * the i18n provider, so the page passes the resolved label in). Required
+   * so a future call site can't silently ship untranslated. */
+  readonly resolvedLabel: string
   readonly filters?: {
     source?: string | null
     category?: string | null
@@ -152,7 +153,7 @@ function HeaderSection({
   )
 }
 
-function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGroupPDF; readonly resolvedLabel?: string }) {
+function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGroupPDF; readonly resolvedLabel: string }) {
   const resolved = problem.resolved === true
   return (
     <div data-pdf-section style={{
@@ -187,7 +188,7 @@ function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGrou
                 padding: '2px 8px',
                 marginLeft: '8px',
               }}>
-                {(resolvedLabel ?? 'Resolved').toUpperCase()}
+                {resolvedLabel.toUpperCase()}
               </span>
             )}
             {problem.similarProblems.length > 0 && (
@@ -251,7 +252,7 @@ function SubcategorySection({
 }: {
   readonly subcategory: SubcategoryGroupPDF;
   readonly categoryName: string;
-  readonly resolvedLabel?: string
+  readonly resolvedLabel: string
 }) {
   return (
     <div data-pdf-section style={{
@@ -298,7 +299,7 @@ function SubcategorySection({
   )
 }
 
-function CategorySection({ category, resolvedLabel }: { readonly category: CategoryGroupPDF; readonly resolvedLabel?: string }) {
+function CategorySection({ category, resolvedLabel }: { readonly category: CategoryGroupPDF; readonly resolvedLabel: string }) {
   return (
     <div data-pdf-section style={{ marginBottom: '28px' }}>
       <div style={{

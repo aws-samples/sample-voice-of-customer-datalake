@@ -169,23 +169,20 @@ def _resolve_problem_key(key: str) -> None:
 def _unresolve_problem_key(key: str) -> None:
     """REMOVE the entry; a missing parent map just means nothing to remove.
 
-    Only the document-path variant of ValidationException is treated as a
-    no-op — any other validation failure (malformed expression, oversized
-    name) is a real error and must not be reported as success.
+    The no-op is detected by a ConditionExpression on the parent map —
+    ConditionalCheckFailedException is a stable error CODE, unlike the
+    document-path ValidationException message text, which is not
+    contractual across SDK/service versions.
     """
     try:
         aggregates_table.update_item(
             Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
             UpdateExpression='REMOVE #r.#k',
+            ConditionExpression='attribute_exists(#r)',
             ExpressionAttributeNames={'#r': 'resolved', '#k': key},
         )
     except ClientError as e:
-        error = e.response.get('Error', {})
-        is_missing_path = (
-            error.get('Code', '') == 'ValidationException'
-            and 'document path' in error.get('Message', '').lower()
-        )
-        if not is_missing_path:
+        if e.response.get('Error', {}).get('Code', '') != 'ConditionalCheckFailedException':
             raise
 
 

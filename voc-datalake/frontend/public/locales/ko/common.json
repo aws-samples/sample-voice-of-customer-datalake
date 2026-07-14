@@ -18,6 +18,7 @@
   },
   "cancel": "취소",
   "configureBrand": "브랜드 설정",
+  "dismiss": "닫기",
   "exportPdf": "PDF 내보내기",
   "exportPdfShort": "PDF",
   "exportPdfTooltip": "PDF로 내보내기",
@@ -76,6 +77,10 @@
     "low": "낮음",
     "medium": "보통",
     "none": "없음"
+  },
+  "problemAnalysisPage": {
+    "emptyHint": "기간을 넓히거나 필터를 조정해 보세요",
+    "emptyTitle": "선택한 기간에 대한 문제 분석 데이터가 없습니다"
   },
   "problemResolution": {
     "allResolvedHint": "위의 \"해결됨 표시 ({{total}})\"를 켜면 확인할 수 있습니다",

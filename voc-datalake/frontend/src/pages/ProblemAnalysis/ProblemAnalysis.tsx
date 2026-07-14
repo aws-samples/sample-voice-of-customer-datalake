@@ -12,7 +12,7 @@
  */
 
 import { useState, useMemo } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { 
   ChevronDown, ChevronRight, AlertTriangle, 
   MessageSquare, TrendingUp, Filter, X, Layers, FileDown
@@ -21,7 +21,8 @@ import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
-import { applyResolution, parseResolvedProblemsResponse } from './problemResolution'
+import { applyResolution } from './problemResolution'
+import { useProblemResolution } from './useProblemResolution'
 import type { CategoryGroup, ProblemGroup, SubcategoryGroup } from './problemResolution'
 import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
@@ -211,6 +212,12 @@ function toPDFCategories(groups: CategoryGroup[]) {
   }))
 }
 
+// Module-level so the operator chain doesn't count against the page
+// component's complexity budget.
+function anyFilterActive(...filters: Array<string | boolean | null>): boolean {
+  return filters.some(Boolean)
+}
+
 // Empty state distinguishes "nothing in this window" from "everything here
 // is resolved" — hiding data behind the toggle must not read as no data.
 // Kept out of the page component for its complexity budget.
@@ -226,8 +233,8 @@ function EmptyProblemsState({ resolvedCount }: { readonly resolvedCount: number 
         </>
       ) : (
         <>
-          <p className="text-gray-500 text-sm sm:text-base">No problem analysis data found for the selected period</p>
-          <p className="text-xs sm:text-sm text-gray-400 mt-1">Try expanding the time range or adjusting filters</p>
+          <p className="text-gray-500 text-sm sm:text-base">{t('problemAnalysisPage.emptyTitle')}</p>
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">{t('problemAnalysisPage.emptyHint')}</p>
         </>
       )}
     </div>
@@ -236,12 +243,15 @@ function EmptyProblemsState({ resolvedCount }: { readonly resolvedCount: number 
 
 // Rendered when persisting a resolve/unresolve fails; kept out of the page
 // component so the conditional doesn't count against its complexity budget.
-function ResolveErrorBanner({ show }: { readonly show: boolean }) {
+function ResolveErrorBanner({ show, onDismiss }: { readonly show: boolean; readonly onDismiss: () => void }) {
   const { t } = useTranslation('common')
   if (!show) return null
   return (
-    <div className="card bg-red-50 border border-red-200 text-red-700 text-sm py-2 px-3" role="alert">
-      {t('problemResolution.saveFailed')}
+    <div className="card bg-red-50 border border-red-200 text-red-700 text-sm py-2 px-3 flex items-center justify-between gap-2" role="alert">
+      <span>{t('problemResolution.saveFailed')}</span>
+      <button type="button" onClick={onDismiss} aria-label={t('dismiss')} className="text-red-500 hover:text-red-700">
+        <X size={14} />
+      </button>
     </div>
   )
 }
@@ -260,7 +270,6 @@ export default function ProblemAnalysis() {
   const [showUrgentOnly, setShowUrgentOnly] = useState(false)
   const [showResolved, setShowResolved] = useState(false)
   const [similarityThreshold, setSimilarityThreshold] = useState(0.4)
-  const queryClient = useQueryClient()
 
   // Fetch entities for dynamic sources and categories
   const { data: entitiesData } = useQuery({
@@ -276,33 +285,12 @@ export default function ProblemAnalysis() {
   })
 
   // Resolved problems are shared across users (issue #66); resolving one
-  // clears it from everyone's default view.
-  const { data: resolvedData } = useQuery({
-    queryKey: ['resolved-problems'],
-    queryFn: async () => parseResolvedProblemsResponse(await api.getResolvedProblems()),
-    enabled: !!config.apiEndpoint,
-    // Resolution state is shared across users, so keep it deliberately
-    // fresh: refetch when the tab regains focus and treat it as stale
-    // after 15s so another user's resolves appear without a remount.
-    staleTime: 15_000,
-    refetchOnWindowFocus: true,
-  })
-
-  const toggleResolvedMutation = useMutation({
-    mutationFn: ({ key, resolved }: { key: string; resolved: boolean }) =>
-      api.setProblemResolved(key, resolved),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['resolved-problems'] })
-    },
-  })
-
-  const handleToggleResolved = (key: string, resolved: boolean) => {
-    // Double defense with the disabled buttons (resolvePending): the guard
-    // covers the render gap before the disabled state paints, so a rapid
-    // double-click can't race SET/REMOVE for the same key server-side.
-    if (toggleResolvedMutation.isPending) return
-    toggleResolvedMutation.mutate({ key, resolved })
-  }
+  // clears it from everyone's default view. All query/mutation wiring lives
+  // in the hook (complexity budget + useSettingsSync convention).
+  const {
+    resolvedMap, resolvedLoading, togglePending, toggleFailed,
+    toggleResolved, dismissToggleError,
+  } = useProblemResolution(!!config.apiEndpoint)
 
   // Build dynamic sources list from entities
   const allSources = useMemo(() => {
@@ -340,7 +328,6 @@ export default function ProblemAnalysis() {
   // Annotate problem groups with their shared resolved status and hide the
   // resolved ones unless requested; category/subcategory totals are
   // recomputed so headers reflect what is actually shown (issue #66).
-  const resolvedMap = useMemo(() => resolvedData?.resolved ?? {}, [resolvedData])
   const { visible: visibleData, resolvedCount } = useMemo(
     () => applyResolution(groupedData, resolvedMap, showResolved),
     [groupedData, resolvedMap, showResolved],
@@ -447,7 +434,9 @@ export default function ProblemAnalysis() {
     )
   }
 
-  if (isLoading) {
+  // Gate on the resolved-state query too: without it, resolved problems
+  // flash as unresolved for a frame and then vanish when the query lands.
+  if (isLoading || resolvedLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -557,7 +546,7 @@ export default function ProblemAnalysis() {
                     (what the toggle would reveal), not the global store. */}
                 <span>{t('problemResolution.showResolved', { total: resolvedCount })}</span>
               </label>
-              {(selectedSource || selectedCategory || selectedSubcategory || showUrgentOnly || showResolved) && (
+              {anyFilterActive(selectedSource, selectedCategory, selectedSubcategory, showUrgentOnly, showResolved) && (
                 <button
                   onClick={() => { setSelectedSource(null); setSelectedCategory(null); setSelectedSubcategory(null); setShowUrgentOnly(false); setShowResolved(false) }}
                   className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 active:scale-95"
@@ -606,7 +595,7 @@ export default function ProblemAnalysis() {
         </div>
       </div>
 
-      <ResolveErrorBanner show={toggleResolvedMutation.isError} />
+      <ResolveErrorBanner show={toggleFailed} onDismiss={dismissToggleError} />
 
       {/* Problem Tree */}
       {visibleData.length === 0 ? (
@@ -654,8 +643,8 @@ export default function ProblemAnalysis() {
                         onToggle={() => toggleSubcategory(subcategoryKey)}
                         expandedProblems={expandedProblems}
                         onToggleProblem={toggleProblem}
-                        onToggleResolved={handleToggleResolved}
-                        resolvePending={toggleResolvedMutation.isPending}
+                        onToggleResolved={toggleResolved}
+                        resolvePending={togglePending}
                       />
                     )
                   })}

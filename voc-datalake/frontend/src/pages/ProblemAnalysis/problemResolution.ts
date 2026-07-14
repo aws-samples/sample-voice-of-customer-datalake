@@ -64,23 +64,28 @@ export interface CategoryGroup {
 const MAX_KEY_CHARS = 255
 const MAX_KEY_BYTES = 255
 
-/** Trim from the end until the UTF-8 byte cap fits (CJK text triples the
- * byte cost). Trims whole CODE POINTS, never UTF-16 code units — slicing a
- * surrogate pair in half would leave a lone surrogate that the server's
- * UTF-8 encoding rejects. Recursion keeps it mutation-free; depth is
- * bounded by the char cap applied first. */
-function fitToByteCap(codePoints: string[]): string {
-  const value = codePoints.join('')
-  if (codePoints.length === 0 || new TextEncoder().encode(value).length <= MAX_KEY_BYTES) {
-    return value
-  }
-  return fitToByteCap(codePoints.slice(0, -1))
-}
-
 /** Deterministic truncation to the server caps, so every client derives the
- * same key for the same problem group. Both caps count code points. */
+ * same key for the same problem group. Operates on whole CODE POINTS, never
+ * UTF-16 code units — slicing a surrogate pair in half would leave a lone
+ * surrogate that the server's UTF-8 encoding rejects. Single-pass: each
+ * code point is encoded once and the prefix that fits the byte cap wins. */
 function fitToKeyCaps(key: string): string {
-  return fitToByteCap(Array.from(key).slice(0, MAX_KEY_CHARS))
+  const encoder = new TextEncoder()
+  const codePoints = Array.from(key).slice(0, MAX_KEY_CHARS)
+  const fit = codePoints.reduce(
+    (acc, codePoint) => {
+      // Stop at the FIRST overflow: continuing would let later smaller code
+      // points "fit" the running budget while the prefix slice still
+      // includes the skipped one, breaking the byte cap.
+      if (acc.stopped) return acc
+      const nextBytes = acc.bytes + encoder.encode(codePoint).length
+      return nextBytes <= MAX_KEY_BYTES
+        ? { bytes: nextBytes, count: acc.count + 1, stopped: false }
+        : { ...acc, stopped: true }
+    },
+    { bytes: 0, count: 0, stopped: false },
+  )
+  return codePoints.slice(0, fit.count).join('')
 }
 
 /**

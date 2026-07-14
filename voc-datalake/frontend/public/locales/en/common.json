@@ -18,6 +18,7 @@
   },
   "cancel": "Cancel",
   "configureBrand": "Configure brand",
+  "dismiss": "Dismiss",
   "exportPdf": "Export PDF",
   "exportPdfShort": "PDF",
   "exportPdfTooltip": "Export as PDF",
@@ -76,6 +77,10 @@
     "low": "Low",
     "medium": "Medium",
     "none": "None"
+  },
+  "problemAnalysisPage": {
+    "emptyHint": "Try expanding the time range or adjusting filters",
+    "emptyTitle": "No problem analysis data found for the selected period"
   },
   "problemResolution": {
     "allResolvedHint": "Enable \"Show resolved ({{total}})\" above to review them",
