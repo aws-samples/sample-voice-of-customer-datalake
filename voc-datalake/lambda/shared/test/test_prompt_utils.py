@@ -277,13 +277,17 @@ class TestPrfaqPromptContract:
 
     def test_every_placeholder_is_supplied_by_the_chain_builder(self):
         config = self._load()
-        for name, step in config['steps'].items():
+        for index, (name, step) in enumerate(config['steps'].items()):
             searched = step['user_prompt_template'] + step.get('system_prompt', '')
             # Broad pattern on purpose: malformed slots like {launch date} or
             # {launch_date } are exactly the typo class this guard exists for
             # (format_prompt leaves them as literal text for the LLM).
             found = set(re.findall(r'\{([^{}]+)\}', searched))
-            unknown = found - self.SUPPLIED_PLACEHOLDERS
+            # {previous} is substituted by the chain executor with the prior
+            # step's output — the FIRST step has no prior output, so there it
+            # would reach the LLM as literal text and must fail the guard.
+            allowed = self.SUPPLIED_PLACEHOLDERS - ({'previous'} if index == 0 else set())
+            unknown = found - allowed
             assert not unknown, f"step '{name}' uses unsupplied placeholders: {unknown}"
 
     # step name -> the section heading the assembler owns and the step's
