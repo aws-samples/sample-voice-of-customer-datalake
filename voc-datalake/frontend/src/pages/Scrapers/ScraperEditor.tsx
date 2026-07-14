@@ -206,6 +206,10 @@ function UrlInput({
   readonly onAutoDetect: () => void
 }) {
   const { t } = useTranslation('scrapers')
+  // Auto-detect exists to discover CSS selectors; JSON-LD scrapers get their
+  // extraction config from the structured data itself, so the button is
+  // hidden there to avoid suggesting an extra required step (issue #18).
+  const showAutoDetect = config.extraction_method !== 'jsonld'
   return (
     <div>
       <label className="block text-sm font-medium mb-1">{t('editor.websiteUrl')}</label>
@@ -214,11 +218,13 @@ function UrlInput({
           ...config,
           base_url: e.target.value,
         })} className="input flex-1" placeholder={t('editor.websiteUrlPlaceholder')} />
-        <button onClick={onAutoDetect} disabled={isAnalyzing || config.base_url === ''} className="btn btn-secondary flex items-center justify-center gap-2 whitespace-nowrap text-sm">
-          {isAnalyzing ? <><Loader2 size={16} className="animate-spin" /> {t('editor.analyzing')}</> : <><Wand2 size={16} /> {t('editor.autoDetect')}</>}
-        </button>
+        {showAutoDetect && (
+          <button onClick={onAutoDetect} disabled={isAnalyzing || config.base_url === ''} className="btn btn-secondary flex items-center justify-center gap-2 whitespace-nowrap text-sm">
+            {isAnalyzing ? <><Loader2 size={16} className="animate-spin" /> {t('editor.analyzing')}</> : <><Wand2 size={16} /> {t('editor.autoDetect')}</>}
+          </button>
+        )}
       </div>
-      <p className="text-xs text-gray-500 mt-1">{t('editor.autoDetectHint')}</p>
+      {showAutoDetect && <p className="text-xs text-gray-500 mt-1">{t('editor.autoDetectHint')}</p>}
     </div>
   )
 }
