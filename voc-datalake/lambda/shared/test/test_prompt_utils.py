@@ -204,6 +204,12 @@ class TestConvenienceFunctions:
         ml.assert_called_with('avatar-generation.json')
 
 
+# Repo location of the prompt files (the production loader's local fallback
+# doesn't resolve from the test cwd). Single definition so the contract
+# fixture and the encoding test can't drift independently.
+REPO_PROMPTS_DIR = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
+
+
 class TestPrfaqPromptContract:
     """Pin the PR/FAQ prompt file to the chain code's contract (issue #93).
 
@@ -254,12 +260,11 @@ class TestPrfaqPromptContract:
         load_prompt_file also partially covers its explicit UTF-8 encoding
         (the file carries em dashes and typographic quotes)."""
         import shared.prompts as prompts_module
-        repo_prompts = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
-        assert repo_prompts.exists(), (
-            f'prompts directory moved? expected it at {repo_prompts} — '
-            'update this fixture alongside the relocation'
+        assert REPO_PROMPTS_DIR.exists(), (
+            f'prompts directory moved? expected it at {REPO_PROMPTS_DIR} — '
+            'update REPO_PROMPTS_DIR alongside the relocation'
         )
-        monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: repo_prompts)
+        monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: REPO_PROMPTS_DIR)
         prompts_module.load_prompt_file.cache_clear()
         yield
         prompts_module.load_prompt_file.cache_clear()
@@ -382,8 +387,7 @@ class TestLoadPromptFileEncoding:
     def test_opens_prompt_files_with_explicit_utf8(self, monkeypatch):
         import shared.prompts as prompts_module
 
-        repo_prompts = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
-        monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: repo_prompts)
+        monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: REPO_PROMPTS_DIR)
         prompts_module.load_prompt_file.cache_clear()
 
         seen = {}
