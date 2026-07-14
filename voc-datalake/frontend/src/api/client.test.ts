@@ -1589,4 +1589,25 @@ describe('getDateRangeParams', () => {
     expect(params).not.toHaveProperty('start_date')
     expect(params).not.toHaveProperty('end_date')
   })
+
+  it('omits date_basis for the default imported basis', () => {
+    // Keeping the params shape unchanged for 'imported' preserves existing
+    // request URLs and TanStack Query cache keys.
+    expect(getDateRangeParams('7d', null, 'imported')).toEqual({ days: 7 })
+    expect(getDateRangeParams('7d')).toEqual({ days: 7 })
+  })
+
+  it('includes date_basis=review when filtering by review date', () => {
+    expect(getDateRangeParams('30d', null, 'review')).toEqual({
+      days: 30,
+      date_basis: 'review',
+    })
+  })
+
+  it('combines the custom lookback with the review basis', () => {
+    expect(getDateRangeParams('custom', 14, 'review')).toEqual({
+      days: 14,
+      date_basis: 'review',
+    })
+  })
 })

@@ -162,6 +162,13 @@ export class BedrockAccessStack extends cdk.Stack {
           },
           physicalResourceId: cr.PhysicalResourceId.of('anthropic-use-case-submission'),
           region: 'us-east-1',
+          // Best-effort submission: accounts that already have Anthropic
+          // access (prior submission, org-level grants, internal accounts)
+          // reject the call, e.g. with "Internal Accounts should not submit
+          // use case details". That must not fail the whole deployment —
+          // model agreements in Step 2 will surface any real access problem.
+          // Access/permission/throttling errors still fail loudly. See #103.
+          ignoreErrorCodesMatching: 'ValidationException|ConflictException',
         },
         onUpdate: undefined,
         onDelete: undefined,

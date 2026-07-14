@@ -230,8 +230,8 @@ function toPDFCategories(groups: CategoryGroup[]) {
 
 export default function ProblemAnalysis() {
   const { t } = useTranslation('common')
-  const { timeRange, customDays, config } = useConfigStore()
-  const dateParams = getDateRangeParams(timeRange, customDays)
+  const { timeRange, customDays, dateBasis, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedSubcategories, setExpandedSubcategories] = useState<Set<string>>(new Set())
@@ -367,7 +367,7 @@ export default function ProblemAnalysis() {
     try {
       generateProblemAnalysisPDF({
         categories: toPDFCategories(groupedData),
-        timeRange: getTimeRangeLabel(timeRange, customDays),
+        timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
         filters: {
           source: selectedSource,
           category: selectedCategory,

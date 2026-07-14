@@ -137,10 +137,10 @@ function useMobileMenu(pathname: string) {
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { timeRange, customDays, config } = useConfigStore()
+  const { timeRange, customDays, dateBasis, config } = useConfigStore()
   const { user, isAuthenticated } = useAuthStore()
   const isAdmin = useIsAdmin()
-  const dateParams = getDateRangeParams(timeRange, customDays)
+  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)

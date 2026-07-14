@@ -122,9 +122,15 @@ function getEnvConfig(): RuntimeConfig {
   const parsed = RuntimeConfigSchema.safeParse(envConfig)
   if (!parsed.success) {
     console.error('Invalid environment config:', parsed.error.message)
-    // Return a minimal config to prevent crashes
+    // Partial env config is normal in local development (Cognito vars are
+    // usually absent). Keep a valid VITE_API_ENDPOINT instead of discarding
+    // it; otherwise point at the documented local mock port (`npm run mock`
+    // serves http://localhost:3001, which the Vite /api proxy also targets).
+    const fallbackEndpoint = urlPattern.test(envConfig.apiEndpoint)
+      ? envConfig.apiEndpoint
+      : 'http://localhost:3001'
     return {
-      apiEndpoint: 'http://localhost:3000',
+      apiEndpoint: fallbackEndpoint,
       cognito: {
         userPoolId: '',
         clientId: '',

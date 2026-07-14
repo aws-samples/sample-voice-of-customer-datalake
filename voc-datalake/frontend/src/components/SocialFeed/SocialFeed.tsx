@@ -96,8 +96,8 @@ interface SocialFeedProps {
 }
 
 export default function SocialFeed({ limit = 10, showFilters = true }: SocialFeedProps) {
-  const { timeRange, customDays, config } = useConfigStore()
-  const dateParams = getDateRangeParams(timeRange, customDays)
+  const { timeRange, customDays, dateBasis, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const [activeSource, setActiveSource] = useState<string | null>(null)
 
   // Fetch available sources dynamically

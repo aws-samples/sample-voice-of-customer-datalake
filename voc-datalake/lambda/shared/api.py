@@ -73,6 +73,28 @@ def validate_int(
         return default
 
 
+# Date-basis values for time filtering.
+# 'imported': filter by when the item entered the data lake (processing date,
+#             the `date` attribute backing gsi1-by-date) — historical default.
+# 'review':   filter by when the customer originally wrote the feedback
+#             (`source_created_at`), e.g. to exclude years-old reviews that
+#             were only imported recently.
+DATE_BASIS_IMPORTED = 'imported'
+DATE_BASIS_REVIEW = 'review'
+VALID_DATE_BASES = (DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW)
+
+
+def validate_date_basis(value: str | None) -> str:
+    """Validate the ``date_basis`` query parameter.
+
+    Returns 'imported' (default) or 'review'. Unknown or missing values fall
+    back to 'imported' so older clients keep the existing behavior.
+    """
+    if isinstance(value, str) and value.strip().lower() in VALID_DATE_BASES:
+        return value.strip().lower()
+    return DATE_BASIS_IMPORTED
+
+
 def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
     """
     Create standard CORS configuration for API Gateway.
@@ -224,6 +246,9 @@ __all__ = [
     'validate_days',
     'validate_limit', 
     'validate_int',
+    'validate_date_basis',
+    'DATE_BASIS_IMPORTED',
+    'DATE_BASIS_REVIEW',
     'create_cors_config',
     'create_api_resolver',
     'api_handler',

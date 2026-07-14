@@ -7,19 +7,26 @@ pagination slice, plus backward compatibility of the `count`/`items` fields.
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _items(n, source='webscraper', sentiment='positive', category='delivery'):
-    """Build n feedback items with sequential ids for slice assertions."""
+    """Build n feedback items with sequential ids for slice assertions.
+
+    Items carry today's import date so they fall inside every `days` window
+    (the category branch now enforces the window on its time-unbounded GSI).
+    """
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     return [
         {
             'feedback_id': str(i),
             'source_platform': source,
             'sentiment_label': sentiment,
             'category': category,
+            'date': today,
             'text': f'item {i}',
         }
         for i in range(n)

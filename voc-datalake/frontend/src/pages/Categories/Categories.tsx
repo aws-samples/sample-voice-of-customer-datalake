@@ -83,8 +83,8 @@ function checkHasActiveFilters(filters: FilterState): boolean {
 
 export default function Categories() {
   const { t } = useTranslation('common')
-  const { timeRange, customDays, config } = useConfigStore()
-  const dateParams = getDateRangeParams(timeRange, customDays)
+  const { timeRange, customDays, dateBasis, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
 
   // State
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
