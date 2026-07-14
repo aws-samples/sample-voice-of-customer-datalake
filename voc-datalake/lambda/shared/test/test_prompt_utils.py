@@ -255,6 +255,10 @@ class TestPrfaqPromptContract:
         (the file carries em dashes and typographic quotes)."""
         import shared.prompts as prompts_module
         repo_prompts = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
+        assert repo_prompts.exists(), (
+            f'prompts directory moved? expected it at {repo_prompts} — '
+            'update this fixture alongside the relocation'
+        )
         monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: repo_prompts)
         prompts_module.load_prompt_file.cache_clear()
         yield
@@ -275,7 +279,10 @@ class TestPrfaqPromptContract:
         config = self._load()
         for name, step in config['steps'].items():
             searched = step['user_prompt_template'] + step.get('system_prompt', '')
-            found = set(re.findall(r'\{(\w+)\}', searched))
+            # Broad pattern on purpose: malformed slots like {launch date} or
+            # {launch_date } are exactly the typo class this guard exists for
+            # (format_prompt leaves them as literal text for the LLM).
+            found = set(re.findall(r'\{([^{}]+)\}', searched))
             unknown = found - self.SUPPLIED_PLACEHOLDERS
             assert not unknown, f"step '{name}' uses unsupplied placeholders: {unknown}"
 
