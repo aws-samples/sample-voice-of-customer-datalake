@@ -225,12 +225,9 @@ class TestPrfaqPromptContract:
     }
     KNOWN_NON_SLOT_PARAMS = {'response_language'}
 
-    @property
-    def supplied_placeholders(self) -> set:
-        """Slots the chain builder supplies: the classified signature params
-        plus the internally generated launch_date and the executor-substituted
-        previous."""
-        return self.KNOWN_SLOT_PARAMS | {'launch_date', 'previous'}
+    # Slots the chain builder supplies: the classified signature params plus
+    # the internally generated launch_date and executor-substituted previous.
+    SUPPLIED_PLACEHOLDERS = KNOWN_SLOT_PARAMS | {'launch_date', 'previous'}
 
     def test_builder_signature_has_no_unclassified_parameters(self):
         """Fail loudly when get_prfaq_generation_steps gains a parameter this
@@ -249,7 +246,13 @@ class TestPrfaqPromptContract:
     @pytest.fixture(autouse=True)
     def _route_loader_at_repo_prompts(self, monkeypatch):
         """Point the production loader at the repo's prompts dir (the local
-        fallback in get_prompts_dir doesn't resolve from the test cwd)."""
+        fallback in get_prompts_dir doesn't resolve from the test cwd).
+
+        Deliberately autouse for the whole class: the cache_clear is a no-op
+        for tests that never load, and a class-wide route means no test can
+        accidentally read a stale copy. Loading the real file through
+        load_prompt_file also partially covers its explicit UTF-8 encoding
+        (the file carries em dashes and typographic quotes)."""
         import shared.prompts as prompts_module
         repo_prompts = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
         monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: repo_prompts)
@@ -273,16 +276,27 @@ class TestPrfaqPromptContract:
         for name, step in config['steps'].items():
             searched = step['user_prompt_template'] + step.get('system_prompt', '')
             found = set(re.findall(r'\{(\w+)\}', searched))
-            unknown = found - self.supplied_placeholders
+            unknown = found - self.SUPPLIED_PLACEHOLDERS
             assert not unknown, f"step '{name}' uses unsupplied placeholders: {unknown}"
 
-    def test_steps_forbid_duplicate_section_headings(self):
+    # step name -> the section heading the assembler owns and the step's
+    # system prompt must explicitly ban re-adding.
+    BANNED_HEADINGS = {
+        'press_release': 'press release',
+        'customer_faq': 'customer faq',
+        'internal_faq': 'internal faq',
+    }
+
+    def test_steps_forbid_their_own_section_heading(self):
         """The assembler adds 'Press Release'/'Customer FAQ'/'Internal FAQ'
-        headings itself; the prompts must tell the model not to repeat them."""
+        headings itself; each prompt must ban re-adding ITS OWN heading —
+        asserting the specific artifact, not a proxy 'do not add' phrase
+        that other bans (e.g. code fences) could satisfy."""
         config = self._load()
-        for name in ('press_release', 'customer_faq', 'internal_faq'):
+        for name, heading in self.BANNED_HEADINGS.items():
             system = config['steps'][name]['system_prompt'].lower()
-            assert re.search(r'(do not|never|must not) add', system), f"step '{name}' lacks the heading ban"
+            ban = re.search(r'(do not|never|must not) add[^.]*' + re.escape(heading), system)
+            assert ban, f"step '{name}' does not ban adding the '{heading}' heading"
             assert 'no preamble' in system, f"step '{name}' lacks the preamble ban"
 
     def test_faq_steps_pin_the_qa_format(self):
@@ -318,4 +332,6 @@ class TestPrfaqPromptContract:
         first_step = steps[0]['user']
         assert default_product_context in first_step
         press_release = steps[1]['user']
-        assert re.search(r'\d{4}-\d{2}-\d{2}', press_release), 'launch_date slot empty'
+        assert re.search(r'\d{4}-\d{2}-\d{2}', press_release), (
+            'launch_date slot did not render a YYYY-MM-DD date (builder format changed?)'
+        )
