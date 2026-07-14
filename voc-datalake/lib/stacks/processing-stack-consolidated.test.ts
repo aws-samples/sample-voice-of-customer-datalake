@@ -8,7 +8,7 @@
  * the analysis prompt. These tests fail if either half of the wiring is
  * removed again (e.g. in a conflict resolution on the selector block).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -49,32 +49,51 @@ function synthProcessingTemplate(): Template {
   return Template.fromStack(stack);
 }
 
-/** The state machine definition as a searchable string (its DefinitionString
- * is an Fn::Join of JSON fragments and Lambda ARN refs). */
+/** The state machine definition as raw JSON text. DefinitionString is an
+ * Fn::Join of string fragments and Lambda ARN refs; joining just the string
+ * fragments yields searchable JSON (with real quotes, so assertions can pin
+ * exact `"key.$":"path"` pairs). */
 function researchDefinition(template: Template): string {
   const machines = template.findResources('AWS::StepFunctions::StateMachine');
   const ids = Object.keys(machines);
   expect(ids).toHaveLength(1);
-  return JSON.stringify(machines[ids[0]].Properties.DefinitionString);
+  const definition: unknown = machines[ids[0]].Properties.DefinitionString;
+  if (
+    typeof definition === 'object' && definition !== null &&
+    'Fn::Join' in definition && Array.isArray(definition['Fn::Join'])
+  ) {
+    const [, pieces] = definition['Fn::Join'] as [unknown, unknown];
+    if (Array.isArray(pieces)) {
+      return pieces.filter((piece): piece is string => typeof piece === 'string').join('');
+    }
+  }
+  // A definition without refs synthesizes as a plain string.
+  expect(typeof definition).toBe('string');
+  return String(definition);
 }
 
 describe('research state machine wiring (issue #157)', () => {
-  const definition = researchDefinition(synthProcessingTemplate());
+  // Synthesized in beforeAll so a synth failure reports as a test failure
+  // with a name, not a file-collection error.
+  const state: { definition: string } = { definition: '' };
+  beforeAll(() => {
+    state.definition = researchDefinition(synthProcessingTemplate());
+  });
 
   it('selects documents_context out of the initialize result', () => {
-    expect(definition).toContain('$.Payload.documents_context');
+    expect(state.definition).toContain('"documents_context.$":"$.Payload.documents_context"');
   });
 
   it('forwards documents_context into the analyze step payload', () => {
-    expect(definition).toContain('$.initialize_result.documents_context');
+    expect(state.definition).toContain('"documents_context.$":"$.initialize_result.documents_context"');
   });
 
   it('keeps the sibling context selections intact', () => {
     // The same silent-drop failure mode applies to every initialize output
     // the analyze prompt consumes; pin the full set that must flow.
     for (const key of ['feedback_context', 'feedback_stats', 'personas_context']) {
-      expect(definition).toContain(`$.Payload.${key}`);
-      expect(definition).toContain(`$.initialize_result.${key}`);
+      expect(state.definition).toContain(`"${key}.$":"$.Payload.${key}"`);
+      expect(state.definition).toContain(`"${key}.$":"$.initialize_result.${key}"`);
     }
   });
 });
