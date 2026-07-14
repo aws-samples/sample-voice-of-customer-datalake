@@ -156,6 +156,17 @@ describe('chatRequestSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('accepts the use_web_search opt-in flag', () => {
+    const result = chatRequestSchema.safeParse({ message: 'hi', use_web_search: true });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.use_web_search).toBe(true);
+  });
+
+  it('rejects a non-boolean use_web_search', () => {
+    const result = chatRequestSchema.safeParse({ message: 'hi', use_web_search: 'yes' });
+    expect(result.success).toBe(false);
+  });
 });
 
 

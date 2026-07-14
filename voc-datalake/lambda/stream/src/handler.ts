@@ -19,7 +19,9 @@ import { z } from 'zod';
 import { converseStream } from './bedrock/converse-stream.js';
 import { processStreamEvent, createStreamState, type ToolUseBlock } from './bedrock/stream-processor.js';
 import { executeTool } from './tools/executor.js';
-import { getSearchFeedbackTool, getUpdateDocumentTool, getCreateDocumentTool, getCreateProjectTool } from './tools/index.js';
+import { getSearchFeedbackTool, getUpdateDocumentTool, getCreateDocumentTool, getCreateProjectTool, getWebSearchTool } from './tools/index.js';
+import { isWebSearchConfigured } from './tools/web-search.js';
+import type { WebSource } from './tools/web-search.js';
 import type { DocumentChange } from './tools/update-document.js';
 import type { ProjectChange } from './tools/create-project.js';
 import { buildVocChatContext } from './context/voc-context.js';
@@ -95,6 +97,18 @@ function extractProjectId(path: string): string | null {
 
 // ── Tool execution helpers ──
 
+/** Artifacts accumulated across all tool rounds of one conversation. */
+interface CollectedArtifacts {
+  sources: Record<string, unknown>[];
+  documentChanges: DocumentChange[];
+  projectChanges: ProjectChange[];
+  webSources: WebSource[];
+}
+
+function createCollectedArtifacts(): CollectedArtifacts {
+  return { sources: [], documentChanges: [], projectChanges: [], webSources: [] };
+}
+
 function buildAssistantContent(state: { textContent: string; toolUseBlocks: ToolUseBlock[] }): ContentBlock[] {
   const content: ContentBlock[] = [];
   if (state.textContent) {
@@ -109,9 +123,7 @@ function buildAssistantContent(state: { textContent: string; toolUseBlocks: Tool
 async function executeToolsAndBuildResults(
   toolUseBlocks: ToolUseBlock[],
   contextFilters: ContextFilters,
-  collectedSources: Record<string, unknown>[],
-  collectedDocumentChanges: DocumentChange[],
-  collectedProjectChanges: ProjectChange[],
+  collected: CollectedArtifacts,
   stream: NodeJS.WritableStream,
   projectsTable?: string,
   projectId?: string,
@@ -127,12 +139,15 @@ async function executeToolsAndBuildResults(
       projectsTable,
       projectId,
     );
-    collectedSources.push(...result.sources);
+    collected.sources.push(...result.sources);
     if (result.documentChange) {
-      collectedDocumentChanges.push(result.documentChange);
+      collected.documentChanges.push(result.documentChange);
     }
     if (result.projectChange) {
-      collectedProjectChanges.push(result.projectChange);
+      collected.projectChanges.push(result.projectChange);
+    }
+    if (result.webSources) {
+      collected.webSources.push(...result.webSources);
     }
     // Notify the frontend that the tool has completed
     sendSSE(stream, { type: 'tool_result', toolName: tb.name });
@@ -150,9 +165,7 @@ async function runConversationLoop(
   stream: NodeJS.WritableStream,
   systemPrompt: string,
   contextFilters: ContextFilters,
-  collectedSources: Record<string, unknown>[],
-  collectedDocumentChanges: DocumentChange[],
-  collectedProjectChanges: ProjectChange[],
+  collected: CollectedArtifacts,
   loopCount: number,
   projectsTable?: string,
   projectId?: string,
@@ -194,14 +207,13 @@ async function runConversationLoop(
   messages.push({ role: 'assistant', content: buildAssistantContent(state) });
 
   const toolResults = await executeToolsAndBuildResults(
-    state.toolUseBlocks, contextFilters, collectedSources, collectedDocumentChanges,
-    collectedProjectChanges, stream, projectsTable, projectId,
+    state.toolUseBlocks, contextFilters, collected, stream, projectsTable, projectId,
   );
   messages.push({ role: 'user', content: toolResults });
 
   await runConversationLoop(
     messages, tools, stream, systemPrompt, contextFilters,
-    collectedSources, collectedDocumentChanges, collectedProjectChanges, loopCount + 1,
+    collected, loopCount + 1,
     projectsTable, projectId,
   );
 }
@@ -238,19 +250,26 @@ async function handleVocChat(body: ChatRequest, stream: NodeJS.WritableStream): 
   // projectId here (VoC chat is project-agnostic), but create_project only
   // needs the table, so PROJECTS_TABLE is passed as the projectsTable arg.
   const tools: Tool[] = [getSearchFeedbackTool(), getCreateProjectTool()];
-  const sources: Record<string, unknown>[] = [];
-  const documentChanges: DocumentChange[] = [];
-  const projectChanges: ProjectChange[] = [];
+  // Public web search is opt-in per request AND requires the AgentCore
+  // gateway to be deployed; otherwise the model never sees the tool.
+  if (body.use_web_search === true && isWebSearchConfigured()) {
+    tools.push(getWebSearchTool());
+  }
+  const collected = createCollectedArtifacts();
 
   await runConversationLoop(
     messages, tools, stream, ctx.systemPrompt, ctx.metadata.filters,
-    sources, documentChanges, projectChanges, 0,
+    collected, 0,
     PROJECTS_TABLE,
   );
 
   sendSSE(stream, {
     type: 'done',
-    metadata: { sources: deduplicateSources(sources), project_changes: projectChanges },
+    metadata: {
+      sources: deduplicateSources(collected.sources),
+      project_changes: collected.projectChanges,
+      web_sources: deduplicateWebSources(collected.webSources),
+    },
   });
   stream.end();
 }
@@ -386,18 +405,20 @@ async function handleProjectChat(
   // Always provide document tools in project chat so the AI can edit/create
   // documents even when they aren't explicitly #-mentioned
   const tools: Tool[] = [getSearchFeedbackTool(), getUpdateDocumentTool(), getCreateDocumentTool()];
+  if (body.use_web_search === true && isWebSearchConfigured()) {
+    tools.push(getWebSearchTool());
+  }
   console.log('Project chat tools:', tools.map(t => t.toolSpec?.name));
   console.log('Project ID:', projectId, 'PROJECTS_TABLE:', PROJECTS_TABLE);
 
-  const documentChanges: DocumentChange[] = [];
-  const projectChanges: ProjectChange[] = [];
+  const collected = createCollectedArtifacts();
 
   await runConversationLoop(
     messages, tools, stream, ctx.systemPrompt,
     // Project chat has no context string, but the picker's window settings
     // still apply to the search tool (issue #150).
     { days: body.days, dateBasis: body.date_basis },
-    [], documentChanges, projectChanges, 0,
+    collected, 0,
     PROJECTS_TABLE, projectId,
   );
 
@@ -405,7 +426,8 @@ async function handleProjectChat(
     type: 'done',
     metadata: {
       ...ctx.metadata,
-      document_changes: documentChanges,
+      document_changes: collected.documentChanges,
+      web_sources: deduplicateWebSources(collected.webSources),
     },
   });
   stream.end();
@@ -419,6 +441,17 @@ function deduplicateSources(sources: Record<string, unknown>[]): Record<string, 
     const id = typeof s.feedback_id === 'string' ? s.feedback_id : '';
     if (!id || seen.has(id)) return false;
     seen.add(id);
+    return true;
+  });
+}
+
+/** Dedupe web results by URL across tool rounds; keep URL-less
+ * knowledge-graph facts out of the citation list (nothing to link). */
+function deduplicateWebSources(webSources: WebSource[]): WebSource[] {
+  const seen = new Set<string>();
+  return webSources.filter((s) => {
+    if (!s.url || seen.has(s.url)) return false;
+    seen.add(s.url);
     return true;
   });
 }

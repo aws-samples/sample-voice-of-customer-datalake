@@ -20,6 +20,7 @@ const DEFAULT_PERSONA_CONFIG: PersonaToolConfig = {
 const DEFAULT_RESEARCH_CONFIG: ResearchToolConfig = {
   question: '',
   title: '',
+  useWebSearch: false,
 }
 const DEFAULT_DOC_CONFIG: DocToolConfig = {
   docTypes: ['prfaq'],

@@ -47,6 +47,11 @@ export interface VocApiStackProps extends cdk.StackProps {
 
   // Processing stack resources
   researchStateMachine: sfn.StateMachine;
+  // Web search (AgentCore Gateway) — absent when the feature isn't deployed
+  // (non-us-east-1 regions or enableWebSearch=false).
+  webSearchGatewayUrl?: string;
+  webSearchGatewayArn?: string;
+  webSearchToolName?: string;
 
   // Config
   brandName: string;
@@ -74,7 +79,8 @@ export class VocApiStack extends cdk.Stack {
       feedbackTable, aggregatesTable, projectsTable, jobsTable, conversationsTable,
       kmsKey, rawDataBucket, avatarsCdnUrl, prototypesCdnUrl, websiteBucket, frontendDistribution,
       frontendDomainName, userPool, userPoolClient, identityPool, processingQueueUrl, processingQueueArn,
-      secretsArn, s3ImportBucket, researchStateMachine, brandName
+      secretsArn, s3ImportBucket, researchStateMachine, brandName,
+      webSearchGatewayUrl, webSearchGatewayArn, webSearchToolName
     } = props;
 
     // Guard: fail fast (before any asset bundling) if frontend/dist is missing
@@ -708,6 +714,19 @@ export class VocApiStack extends cdk.Stack {
     }));
     kmsKey.grantDecrypt(chatStreamLambda);
 
+    // Web search tool (AgentCore Gateway) — optional, opt-in per request.
+    // Without the gateway the env vars stay unset and the tool is never
+    // registered with the model.
+    const webSearchEnabled = Boolean(webSearchGatewayUrl && webSearchGatewayArn && webSearchToolName);
+    if (webSearchGatewayUrl && webSearchGatewayArn && webSearchToolName) {
+      chatStreamLambda.addEnvironment('WEB_SEARCH_GATEWAY_URL', webSearchGatewayUrl);
+      chatStreamLambda.addEnvironment('WEB_SEARCH_TOOL_NAME', webSearchToolName);
+      chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
+        actions: ['bedrock-agentcore:InvokeGateway'],
+        resources: [webSearchGatewayArn],
+      }));
+    }
+
     NagSuppressions.addResourceSuppressions(chatStreamLambda, [
       { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the streaming Lambda — latest stable LTS' },
     ], true);
@@ -1098,6 +1117,11 @@ exports.handler = async (event) => {
         region: this.region,
         identityPoolId: identityPool.attrId
       },
+      // Capability flags so the same frontend build can show/hide features
+      // per environment (web search only exists when the gateway deployed).
+      features: {
+        webSearch: webSearchEnabled,
+      },
     };
 
     const websiteDeployment = new s3deploy.BucketDeployment(this, 'DeployWebsite', {
@@ -1126,6 +1150,10 @@ exports.handler = async (event) => {
     new cdk.CfnOutput(this, 'WebhookPlugins', { value: webhookPlugins.map(p => p.id).join(',') });
     new cdk.CfnOutput(this, 'CognitoUserPoolId', { value: userPool.userPoolId, description: 'Cognito User Pool ID' });
     new cdk.CfnOutput(this, 'CognitoClientId', { value: userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID' });
+    new cdk.CfnOutput(this, 'WebSearchAvailable', {
+      value: webSearchEnabled ? 'true' : 'false',
+      description: 'Whether the AgentCore web search gateway is deployed (drives the frontend feature flag)',
+    });
   }
 
   // ============================================

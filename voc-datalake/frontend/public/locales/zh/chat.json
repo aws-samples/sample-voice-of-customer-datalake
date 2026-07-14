@@ -40,5 +40,10 @@
     "sentimentTrend": "过去一个月情感趋势如何变化？",
     "topComplaints": "本周客户的主要投诉是什么？",
     "urgentIssues": "显示最紧急的问题"
+  },
+  "webSearch": {
+    "sourcesTitle": "网络来源",
+    "toggle": "网页搜索",
+    "tooltip": "允许助手在公共网络中搜索最新信息（会注明来源）"
   }
 }

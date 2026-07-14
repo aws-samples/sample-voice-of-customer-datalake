@@ -3,13 +3,14 @@
  */
 import clsx from 'clsx'
 import {
-  Users, FileText, Search, Shuffle, Sparkles, Loader2, Wand2,
+  Users, FileText, Search, Shuffle, Sparkles, Loader2, Wand2, Globe,
 } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
 import DataSourceWizard from '../../components/DataSourceWizard'
 import ContextSummary from '../../components/DataSourceWizard/ContextSummary'
+import { isWebSearchAvailable } from '../../runtimeConfig'
 import type {
   PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig,
 } from './types'
@@ -172,6 +173,28 @@ export function ResearchWizard({
               title: e.target.value,
             })} placeholder="e.g., Delivery Pain Points Analysis" className="w-full px-3 py-2 border rounded-lg" />
           </div>
+          {isWebSearchAvailable() ? (
+            <label className="flex items-start gap-2.5 p-3 border rounded-lg cursor-pointer hover:border-sky-300 hover:bg-sky-50/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={researchConfig.useWebSearch}
+                onChange={(e) => onResearchConfigChange({
+                  ...researchConfig,
+                  useWebSearch: e.target.checked,
+                })}
+                className="mt-0.5"
+              />
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-gray-800">
+                  <Globe size={14} className="text-sky-600" />
+                  {t('wizards.researchWebSearch', { defaultValue: 'Include public web search' })}
+                </span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  {t('wizards.researchWebSearchHint', { defaultValue: 'Ground the analysis with current public-web results for your research question (served within AWS, sources cited).' })}
+                </span>
+              </span>
+            </label>
+          ) : null}
           <ContextSummary config={contextConfig} personas={personas} documents={documents} />
         </div>
       )}

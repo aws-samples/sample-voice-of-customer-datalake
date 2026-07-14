@@ -313,6 +313,28 @@ Enable/disable menu items in `voc-datalake/cdk.context.json`:
 }
 ```
 
+### Web Search (Amazon Bedrock AgentCore)
+
+AI Chat and Projects research can optionally ground answers with public web
+results via the AWS-managed [Web Search Tool connector](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-search-tool.html)
+behind an AgentCore Gateway (`VocWebSearchStack`). Queries are served
+entirely within AWS and are billed at $7 per 1,000 searches; the feature is
+opt-in per request in both UIs (chat toggle, research wizard checkbox).
+
+The connector only exists in **us-east-1**, so the stack always deploys
+there:
+
+- App deployed to us-east-1: the gateway deploys by default. Disable with
+  `"enableWebSearch": false` in `cdk.context.json`.
+- App deployed to any other region: opt in with `"enableWebSearch": true`.
+  This uses CDK cross-region references and additionally requires a
+  us-east-1 bootstrap (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`).
+
+The frontend discovers availability through the `features.webSearch` flag in
+`config.json` (set by CDK and by `scripts/deploy.sh` from the
+`WebSearchAvailable` stack output). For local development against the mock,
+set `VITE_ENABLE_WEB_SEARCH=true`.
+
 After changing configuration:
 
 ```bash

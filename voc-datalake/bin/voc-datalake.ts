@@ -7,6 +7,7 @@ import { VocCoreStack } from '../lib/stacks/core-stack';
 import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
 import { VocApiStack } from '../lib/stacks/api-stack';
+import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
 import { BedrockAccessStack, AnthropicUseCaseSchema } from '../lib/stacks/bedrock-access-stack';
 import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, comprehendSuppressions, translateSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
 
@@ -38,6 +39,34 @@ const env = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
   region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
 };
+
+// ============================================
+// Stack 0a: VocWebSearchStack (Optional)
+// AgentCore Gateway for the AWS-managed web-search connector.
+// ============================================
+// The connector only exists in us-east-1, so the stack always deploys there.
+// Default: on when the app itself deploys to us-east-1 (no standing cost —
+// searches are opt-in per request at $7/1k queries). For other app regions
+// it must be explicitly enabled with `"enableWebSearch": true` because it
+// additionally requires a us-east-1 bootstrap and cross-region references.
+const webSearchContextRaw = app.node.tryGetContext('enableWebSearch');
+const webSearchExplicitlyEnabled = webSearchContextRaw === true || webSearchContextRaw === 'true';
+const webSearchExplicitlyDisabled = webSearchContextRaw === false || webSearchContextRaw === 'false';
+const appRegionIsUsEast1 = env.region === 'us-east-1';
+const deployWebSearch = !webSearchExplicitlyDisabled && (appRegionIsUsEast1 || webSearchExplicitlyEnabled);
+// Cross-region references (SSM-backed) are only needed when the app lives
+// outside us-east-1; keep the flag off otherwise to avoid template churn.
+const webSearchCrossRegion = deployWebSearch && !appRegionIsUsEast1;
+
+let webSearchStack: VocWebSearchStack | undefined;
+if (deployWebSearch) {
+  webSearchStack = new VocWebSearchStack(app, 'VocWebSearchStack', {
+    env: { account: env.account, region: 'us-east-1' },
+    crossRegionReferences: webSearchCrossRegion,
+    description: 'VoC Data Lake - Web Search (AgentCore Gateway, web-search connector) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
+  });
+  tagStack(webSearchStack, 'WebSearch');
+}
 
 // ============================================
 // Stack 0: BedrockAccessStack (Optional)
@@ -107,6 +136,7 @@ tagStack(ingestionStack, 'Ingestion');
 // ============================================
 const processingStack = new VocProcessingStack(app, 'VocProcessingStack', {
   env,
+  crossRegionReferences: webSearchCrossRegion,
   description: 'VoC Data Lake - Processing Layer (Lambda, Bedrock, Step Functions) (uksb-0q2jyqfvlm)(tag:VocProcessingStack)',
   feedbackTable: coreStack.feedbackTable,
   aggregatesTable: coreStack.aggregatesTable,
@@ -115,6 +145,9 @@ const processingStack = new VocProcessingStack(app, 'VocProcessingStack', {
   idempotencyTable: coreStack.idempotencyTable,
   processingQueue: ingestionStack.processingQueue,
   kmsKey: coreStack.kmsKey,
+  webSearchGatewayUrl: webSearchStack?.gatewayUrl,
+  webSearchGatewayArn: webSearchStack?.gatewayArn,
+  webSearchToolName: webSearchStack?.toolName,
   config,
 });
 processingStack.addDependency(coreStack);
@@ -127,6 +160,7 @@ tagStack(processingStack, 'Processing');
 // ============================================
 const apiStack = new VocApiStack(app, 'VocApiStack', {
   env,
+  crossRegionReferences: webSearchCrossRegion,
   description: 'VoC Data Lake - API & Frontend (API Gateway, Lambda, S3 Deploy) (uksb-0q2jyqfvlm)(tag:VocApiStack)',
   feedbackTable: coreStack.feedbackTable,
   aggregatesTable: coreStack.aggregatesTable,
@@ -149,6 +183,9 @@ const apiStack = new VocApiStack(app, 'VocApiStack', {
   secretsArn: ingestionStack.secretsArn,
   s3ImportBucket: ingestionStack.s3ImportBucket,
   researchStateMachine: processingStack.researchStateMachine,
+  webSearchGatewayUrl: webSearchStack?.gatewayUrl,
+  webSearchGatewayArn: webSearchStack?.gatewayArn,
+  webSearchToolName: webSearchStack?.toolName,
   brandName: config.brandName,
   enabledSources,
 });

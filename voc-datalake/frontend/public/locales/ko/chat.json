@@ -40,5 +40,10 @@
     "sentimentTrend": "지난 한 달간 감정 추세는 어떻게 변했나요?",
     "topComplaints": "이번 주 주요 고객 불만은 무엇인가요?",
     "urgentIssues": "가장 긴급한 문제를 보여주세요"
+  },
+  "webSearch": {
+    "sourcesTitle": "웹 출처",
+    "toggle": "웹 검색",
+    "tooltip": "어시스턴트가 공개 웹에서 최신 정보를 검색하도록 허용합니다(출처가 인용됩니다)"
   }
 }

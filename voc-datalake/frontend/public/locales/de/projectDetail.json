@@ -423,6 +423,8 @@
     "researchSuggestTitle": "Forschungsfragen von der KI aus dem Projekt-Feedback vorschlagen lassen",
     "researchTitle": "Recherche-Titel",
     "researchTitlePlaceholder": "z.B. Analyse der Lieferschmerzpunkte",
+    "researchWebSearch": "Öffentliche Websuche einbeziehen",
+    "researchWebSearchHint": "Stützt die Analyse mit aktuellen Ergebnissen aus dem öffentlichen Web zu Ihrer Forschungsfrage (innerhalb von AWS bereitgestellt, Quellen werden zitiert).",
     "runResearch": "Recherche starten",
     "selectAtLeast2": "⚠️ Wählen Sie mindestens 2 Dokumente zum Remixen aus.",
     "submitGenerateDoc": "{{type}} generieren",

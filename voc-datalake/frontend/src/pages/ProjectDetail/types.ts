@@ -21,6 +21,9 @@ export interface PersonaToolConfig {
 export interface ResearchToolConfig {
   question: string
   title: string
+  // Opt-in public web search grounding (only offered when the deployment
+  // has the AgentCore web search gateway).
+  useWebSearch: boolean
 }
 
 export type DocType = 'prd' | 'prfaq'

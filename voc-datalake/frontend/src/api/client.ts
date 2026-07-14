@@ -57,6 +57,7 @@ export type {
   LogsSummary,
   ApiToken,
   CreateApiTokenResponse,
+  WebSource,
 } from './types'
 export type { ProjectJob, ProjectDocument, ProjectDetail } from './types'
 

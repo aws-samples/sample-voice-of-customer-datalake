@@ -219,6 +219,7 @@ def api_run_research(project_id: str):
         'selected_persona_ids': body.get('selected_persona_ids', []),
         'selected_document_ids': body.get('selected_document_ids', []),
         'response_language': body.get('response_language'),
+        'use_web_search': bool(body.get('use_web_search', False)),
         'filters': body
     }
     job_id, _ = create_job(project_id, 'research', 'research_config', research_config, status='pending')

@@ -352,3 +352,147 @@ class TestTableAccessors:
         result = rsh._get_projects_table()
         assert result is not None
         mock_get.assert_called_once()
+
+
+
+class TestStepInitializeWebSearch:
+    """Web search grounding in step_initialize (issue #68 / AgentCore).
+
+    Contract pinned here: 'web_context' is ALWAYS present in the return
+    value — the Step Functions resultSelector references it unconditionally,
+    so a missing key would fail the whole state, and a web search failure
+    must degrade to '' instead of failing the research job.
+    """
+
+    def _event(self, use_web_search):
+        return {
+            'project_id': 'p1', 'job_id': 'j1',
+            'research_config': {
+                'question': 'What are pain points?',
+                'sources': [], 'categories': [], 'sentiments': [], 'days': 30,
+                'selected_persona_ids': [], 'selected_document_ids': [],
+                'use_web_search': use_web_search,
+            }
+        }
+
+    @patch('research_step_handler.get_feedback_context')
+    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
+    @patch('research_step_handler.get_feedback_statistics', return_value='s')
+    def test_web_context_key_always_present_when_disabled(self, mock_stats, mock_format, mock_get_fb,
+                                                          mock_tables, mock_job_status, feedback_items):
+        from research_step_handler import step_initialize
+        mock_get_fb.return_value = feedback_items
+
+        result = step_initialize(self._event(use_web_search=False))
+
+        assert result['web_context'] == ''
+
+    @patch('research_step_handler.search_web')
+    @patch('research_step_handler.is_web_search_configured', return_value=True)
+    @patch('research_step_handler.get_feedback_context')
+    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
+    @patch('research_step_handler.get_feedback_statistics', return_value='s')
+    def test_searches_the_research_question_when_enabled(self, mock_stats, mock_format, mock_get_fb,
+                                                         mock_configured, mock_search,
+                                                         mock_tables, mock_job_status, feedback_items):
+        from research_step_handler import step_initialize
+        mock_get_fb.return_value = feedback_items
+        mock_search.return_value = [
+            {'title': 'T', 'url': 'https://t.example', 'text': 'Snippet', 'published_date': '2026-01-01'},
+        ]
+
+        result = step_initialize(self._event(use_web_search=True))
+
+        mock_search.assert_called_once_with('What are pain points?')
+        assert 'https://t.example' in result['web_context']
+
+    @patch('research_step_handler.search_web')
+    @patch('research_step_handler.is_web_search_configured', return_value=True)
+    @patch('research_step_handler.get_feedback_context')
+    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
+    @patch('research_step_handler.get_feedback_statistics', return_value='s')
+    def test_search_failure_degrades_to_empty_context(self, mock_stats, mock_format, mock_get_fb,
+                                                      mock_configured, mock_search,
+                                                      mock_tables, mock_job_status, feedback_items):
+        from research_step_handler import step_initialize
+        from shared.web_search import WebSearchError
+        mock_get_fb.return_value = feedback_items
+        mock_search.side_effect = WebSearchError('gateway down')
+
+        result = step_initialize(self._event(use_web_search=True))
+
+        assert result['web_context'] == ''
+        assert result['feedback_count'] == 2  # research proceeded
+
+    @patch('research_step_handler.search_web')
+    @patch('research_step_handler.is_web_search_configured', return_value=False)
+    @patch('research_step_handler.get_feedback_context')
+    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
+    @patch('research_step_handler.get_feedback_statistics', return_value='s')
+    def test_requested_but_unconfigured_skips_without_calling(self, mock_stats, mock_format, mock_get_fb,
+                                                              mock_configured, mock_search,
+                                                              mock_tables, mock_job_status, feedback_items):
+        from research_step_handler import step_initialize
+        mock_get_fb.return_value = feedback_items
+
+        result = step_initialize(self._event(use_web_search=True))
+
+        mock_search.assert_not_called()
+        assert result['web_context'] == ''
+
+
+class TestStepAnalyzeWebContext:
+    """Web results reach the analysis prompt with attribution rules."""
+
+    def _event(self, web_context):
+        return {
+            'project_id': 'p1', 'job_id': 'j1',
+            'research_config': {'question': 'Q?'},
+            'feedback_context': 'fb', 'feedback_stats': 's',
+            'web_context': web_context,
+        }
+
+    def test_web_section_included_with_citation_instructions(self, mock_job_status, mock_converse):
+        from research_step_handler import step_analyze
+
+        step_analyze(self._event('1. [Title](https://t.example)\n   Snippet'))
+
+        prompt = mock_converse.call_args.kwargs['prompt']
+        assert 'PUBLIC WEB SEARCH RESULTS' in prompt
+        assert 'https://t.example' in prompt
+        assert 'cite its source URL' in prompt
+
+    def test_no_web_section_when_context_empty(self, mock_job_status, mock_converse):
+        from research_step_handler import step_analyze
+
+        step_analyze(self._event(''))
+
+        prompt = mock_converse.call_args.kwargs['prompt']
+        assert 'PUBLIC WEB SEARCH RESULTS' not in prompt
+
+
+class TestStepSaveWebSearchNote:
+    """The saved report header discloses that web search was used."""
+
+    def _event(self, use_web_search):
+        return {
+            'project_id': 'p1', 'job_id': 'j1',
+            'research_config': {'question': 'Q?', 'title': 'T', 'filters': {}, 'use_web_search': use_web_search},
+            'feedback_count': 2, 'analysis': 'a', 'synthesis': 's', 'validation': 'v',
+        }
+
+    def test_report_notes_web_search_when_enabled(self, mock_tables, mock_job_status):
+        from research_step_handler import step_save
+
+        step_save(self._event(use_web_search=True))
+
+        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        assert 'Web search: enabled' in saved['content']
+
+    def test_report_silent_when_disabled(self, mock_tables, mock_job_status):
+        from research_step_handler import step_save
+
+        step_save(self._event(use_web_search=False))
+
+        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        assert 'Web search' not in saved['content']
