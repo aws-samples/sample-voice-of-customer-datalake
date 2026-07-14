@@ -9,9 +9,31 @@ import re
 from datetime import datetime, timezone, timedelta
 from boto3.dynamodb.conditions import Key
 
-from shared.api import DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW
-
 logger = logging.getLogger(__name__)
+
+# Date-basis values for time filtering. Defined here (the data layer) so job
+# Lambdas and Step Functions handlers don't pull API-resolver machinery just
+# for the constants; shared.api re-exports them for API handlers.
+# 'imported': filter by when the item entered the data lake (processing date,
+#             the `date` attribute backing gsi1-by-date) — historical default.
+# 'review':   filter by when the customer originally wrote the feedback
+#             (`source_created_at`), e.g. to exclude years-old reviews that
+#             were only imported recently.
+DATE_BASIS_IMPORTED = 'imported'
+DATE_BASIS_REVIEW = 'review'
+VALID_DATE_BASES = (DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW)
+
+
+def validate_date_basis(value: str | None) -> str:
+    """Validate a ``date_basis`` value from any boundary (query param, job
+    payload, Step Functions input).
+
+    Returns 'imported' (default) or 'review'. Unknown or missing values fall
+    back to 'imported' so older clients keep the existing behavior.
+    """
+    if isinstance(value, str) and value.strip().lower() in VALID_DATE_BASES:
+        return value.strip().lower()
+    return DATE_BASIS_IMPORTED
 
 # Maximum number of days to look back when querying by date
 MAX_LOOKBACK_DAYS = 90

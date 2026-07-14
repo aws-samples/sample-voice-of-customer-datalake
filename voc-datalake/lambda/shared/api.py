@@ -22,6 +22,13 @@ from shared.exceptions import (
     ConflictError,
 )
 
+# Date-basis values live in shared.feedback (the data layer) so job Lambdas
+# don't import API-resolver machinery for constants; re-exported here for
+# API handlers and backward compatibility.
+from shared.feedback import (  # noqa: F401 — re-export
+    DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, VALID_DATE_BASES, validate_date_basis,
+)
+
 
 class DecimalEncoder(json.JSONEncoder):
     """JSON encoder that handles Decimal types from DynamoDB."""
@@ -71,28 +78,6 @@ def validate_int(
         return max(min_val, min(val, max_val))
     except (ValueError, TypeError):
         return default
-
-
-# Date-basis values for time filtering.
-# 'imported': filter by when the item entered the data lake (processing date,
-#             the `date` attribute backing gsi1-by-date) — historical default.
-# 'review':   filter by when the customer originally wrote the feedback
-#             (`source_created_at`), e.g. to exclude years-old reviews that
-#             were only imported recently.
-DATE_BASIS_IMPORTED = 'imported'
-DATE_BASIS_REVIEW = 'review'
-VALID_DATE_BASES = (DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW)
-
-
-def validate_date_basis(value: str | None) -> str:
-    """Validate the ``date_basis`` query parameter.
-
-    Returns 'imported' (default) or 'review'. Unknown or missing values fall
-    back to 'imported' so older clients keep the existing behavior.
-    """
-    if isinstance(value, str) and value.strip().lower() in VALID_DATE_BASES:
-        return value.strip().lower()
-    return DATE_BASIS_IMPORTED
 
 
 def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:

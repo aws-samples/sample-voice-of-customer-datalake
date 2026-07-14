@@ -83,3 +83,28 @@ class TestPersonaGeneratorHandler:
         call_args = mock_generate_personas.call_args
         assert call_args[0][0] == persona_generation_event['project_id']
         assert call_args[0][1] == persona_generation_event['filters']
+
+
+
+class TestDateBasisPassThrough:
+    """The filters dict travels intact into generate_personas (issue #150).
+
+    The consumption chain is: projects_handler validates date_basis into the
+    filters dict → this job forwards filters verbatim → projects.py's
+    get_feedback_context unpacks it → shared/feedback.py applies the review
+    post-filter. This test pins the job-Lambda link of that chain, so a
+    future rebuild of the filters dict here can't silently drop the field.
+    """
+
+    def test_filters_including_date_basis_reach_generate_personas(
+        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
+    ):
+        from jobs.persona_generator.handler import lambda_handler
+
+        persona_generation_event['filters']['date_basis'] = 'review'
+        lambda_handler(persona_generation_event, lambda_context)
+
+        forwarded = mock_generate_personas.call_args.args[1]
+        assert forwarded['date_basis'] == 'review'
+        # The whole dict is forwarded verbatim, not rebuilt field-by-field.
+        assert forwarded == persona_generation_event['filters']
