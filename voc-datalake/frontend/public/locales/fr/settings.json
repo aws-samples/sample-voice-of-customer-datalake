@@ -1,4 +1,25 @@
 {
+  "aiModel": {
+    "automatic": {
+      "description": "Chaque fonction utilise son modèle par défaut (recommandé)",
+      "label": "Automatique"
+    },
+    "intro": "Épinglez les fonctions de génération IA (chat, documents, personas, catégories) sur un modèle, ou laissez Automatique pour que chaque fonction utilise son modèle par défaut. Les changements s'appliquent en une minute.",
+    "legend": "Sélectionner le modèle IA",
+    "loadFailed": "Impossible de charger les paramètres du modèle.",
+    "loading": "Chargement des modèles...",
+    "models": {
+      "haiku": {
+        "description": "Plus rapide et moins cher — idéal pour les gros volumes"
+      },
+      "sonnet": {
+        "description": "Qualité maximale — par défaut pour les analyses et la génération de documents"
+      }
+    },
+    "saved": "Enregistré",
+    "saveFailed": "Impossible d'enregistrer la sélection du modèle. Réessayez.",
+    "title": "Modèle IA"
+  },
   "api": {
     "connected": "Connecté",
     "endpointHint": "Le point de terminaison API Gateway de votre déploiement VoC",

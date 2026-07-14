@@ -1,4 +1,25 @@
 {
+  "aiModel": {
+    "automatic": {
+      "description": "각 기능이 자체 기본 모델을 사용합니다(권장)",
+      "label": "자동"
+    },
+    "intro": "AI 생성 기능(채팅, 문서, 페르소나, 카테고리)을 하나의 모델로 고정하거나, 자동으로 두어 각 기능이 최적화된 기본값을 사용하게 합니다. 변경 사항은 1분 이내에 적용됩니다.",
+    "legend": "AI 모델 선택",
+    "loadFailed": "모델 설정을 불러오지 못했습니다.",
+    "loading": "모델 불러오는 중...",
+    "models": {
+      "haiku": {
+        "description": "더 빠르고 저렴함 — 대용량 작업에 적합"
+      },
+      "sonnet": {
+        "description": "최고 품질 — 분석 및 문서 생성 기본값"
+      }
+    },
+    "saved": "저장됨",
+    "saveFailed": "모델 선택을 저장하지 못했습니다. 다시 시도하세요.",
+    "title": "AI 모델"
+  },
   "api": {
     "connected": "연결됨",
     "endpointHint": "VoC 배포의 API Gateway 엔드포인트",

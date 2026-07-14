@@ -1,4 +1,25 @@
 {
+  "aiModel": {
+    "automatic": {
+      "description": "Jede Funktion verwendet ihr eigenes Standardmodell (empfohlen)",
+      "label": "Automatisch"
+    },
+    "intro": "KI-Generierungsfunktionen (Chat, Dokumente, Personas, Kategorien) auf ein Modell festlegen oder auf Automatisch lassen, damit jede Funktion ihren abgestimmten Standard verwendet. Laufende Funktionen übernehmen Änderungen innerhalb einer Minute.",
+    "legend": "KI-Modell auswählen",
+    "loadFailed": "Modelleinstellungen konnten nicht geladen werden.",
+    "loading": "Modelle werden geladen...",
+    "models": {
+      "haiku": {
+        "description": "Schneller und günstiger — gut für hohe Volumen"
+      },
+      "sonnet": {
+        "description": "Höchste Qualität — Standard für Analysen und Dokumentgenerierung"
+      }
+    },
+    "saved": "Gespeichert",
+    "saveFailed": "Modellauswahl konnte nicht gespeichert werden. Bitte erneut versuchen.",
+    "title": "KI-Modell"
+  },
   "api": {
     "connected": "Verbunden",
     "endpointHint": "Der API-Gateway-Endpunkt Ihrer VoC-Bereitstellung",

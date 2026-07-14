@@ -1,4 +1,25 @@
 {
+  "aiModel": {
+    "automatic": {
+      "description": "Each feature uses its own default model (recommended)",
+      "label": "Automatic"
+    },
+    "intro": "Pin AI generation features (chat, documents, personas, categories) to one model, or keep Automatic to let each feature use its tuned default. Running functions pick up changes within a minute.",
+    "legend": "Select AI model",
+    "loadFailed": "Could not load model settings.",
+    "loading": "Loading models...",
+    "models": {
+      "haiku": {
+        "description": "Faster and cheaper — good for high-volume workloads"
+      },
+      "sonnet": {
+        "description": "Highest quality — default for analysis and document generation"
+      }
+    },
+    "saved": "Saved",
+    "saveFailed": "Failed to save model selection. Try again.",
+    "title": "AI Model"
+  },
   "api": {
     "connected": "Connected",
     "endpointHint": "The API Gateway endpoint from your VoC deployment",

@@ -220,8 +220,7 @@ export class VocApiStack extends cdk.Stack {
     scrapersRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        ...this.allowlistedModelArns(),
       ],
     }));
     // AWS Marketplace permissions required for Bedrock model access
@@ -286,7 +285,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(manualImportProcessorRole);
     manualImportProcessorRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
+      resources: this.allowlistedModelArns(),
     }));
 
     new lambda.Function(this, 'ManualImportProcessor', {
@@ -309,7 +308,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(settingsRole);
     settingsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
+      resources: this.allowlistedModelArns(),
     }));
 
     const settingsLambda = new lambda.Function(this, 'SettingsApi', {
@@ -395,7 +394,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(chatRole);
     chatRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
+      resources: this.allowlistedModelArns(),
     }));
 
     const chatLambda = new lambda.Function(this, 'ChatApi', {
@@ -424,8 +423,7 @@ export class VocApiStack extends cdk.Stack {
     projectsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        ...this.allowlistedModelArns(),
         'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
     }));
@@ -482,8 +480,7 @@ export class VocApiStack extends cdk.Stack {
     };
 
     const claudeModelResources = [
-      `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-      'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+      ...this.allowlistedModelArns(),
     ];
     const novaCanvasResource = 'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0';
 
@@ -682,8 +679,7 @@ export class VocApiStack extends cdk.Stack {
     chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        ...this.allowlistedModelArns(),
       ],
     }));
     // AWS Marketplace permissions required for Bedrock model access
@@ -1131,6 +1127,21 @@ exports.handler = async (event) => {
   // ============================================
   // HELPER METHODS
   // ============================================
+
+  /**
+   * ARNs for every model the admin AI-model picker can route inference to
+   * (issue #96). MUST stay in lockstep with the allowlists in
+   * lambda/shared/model_config.py and lambda/stream/src/bedrock/model-override.ts —
+   * a model that is selectable but not invocable AccessDenies every AI feature.
+   */
+  private allowlistedModelArns(): string[] {
+    return [
+      `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
+      'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+      `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
+      'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+    ];
+  }
 
   private createLambdaRole(id: string): iam.Role {
     return new iam.Role(this, id, {

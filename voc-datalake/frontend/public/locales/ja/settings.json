@@ -1,4 +1,25 @@
 {
+  "aiModel": {
+    "automatic": {
+      "description": "各機能が既定のモデルを使用します（推奨）",
+      "label": "自動"
+    },
+    "intro": "AI生成機能（チャット、ドキュメント、ペルソナ、カテゴリ）を1つのモデルに固定するか、自動のままにして各機能に最適化された既定を使わせます。変更は1分以内に反映されます。",
+    "legend": "AIモデルを選択",
+    "loadFailed": "モデル設定を読み込めませんでした。",
+    "loading": "モデルを読み込み中...",
+    "models": {
+      "haiku": {
+        "description": "高速・低コスト — 大量処理向け"
+      },
+      "sonnet": {
+        "description": "最高品質 — 分析とドキュメント生成の既定"
+      }
+    },
+    "saved": "保存しました",
+    "saveFailed": "モデル選択を保存できませんでした。もう一度お試しください。",
+    "title": "AIモデル"
+  },
   "api": {
     "connected": "接続済み",
     "endpointHint": "VoCデプロイメントのAPI Gatewayエンドポイント",

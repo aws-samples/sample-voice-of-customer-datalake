@@ -95,6 +95,36 @@ def validate_date_basis(value: str | None) -> str:
     return DATE_BASIS_IMPORTED
 
 
+def get_caller_groups(event: dict) -> list[str]:
+    """Extract Cognito group memberships from the API Gateway authorizer claims.
+
+    Handles the formats API Gateway emits for ``cognito:groups``: a list, a
+    comma-separated string, or a space-separated string.
+    """
+    try:
+        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+        groups = claims.get('cognito:groups', '')
+        if not groups:
+            return []
+        if isinstance(groups, list):
+            return groups
+        if ',' in groups:
+            return [g.strip() for g in groups.split(',')]
+        return groups.split(' ') if ' ' in groups else [groups]
+    except Exception:
+        return []
+
+
+def require_admin(event: dict) -> None:
+    """Raise AuthorizationError (403) unless the caller is in the admins group.
+
+    The Cognito authorizer only proves authentication; org-wide mutations
+    (user administration, AI model selection) must also check the group.
+    """
+    if 'admins' not in get_caller_groups(event):
+        raise AuthorizationError('Admin access required')
+
+
 def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
     """
     Create standard CORS configuration for API Gateway.

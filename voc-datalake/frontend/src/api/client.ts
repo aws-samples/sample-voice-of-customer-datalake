@@ -280,10 +280,11 @@ export const api = {
   }),
 
   // AI model override (curated allowlist; admin-only UI). Null = each
-  // feature uses its own default.
+  // feature uses its own default. `key` is the stable identifier the
+  // frontend translates labels/descriptions under.
   getModelSettings: () => fetchApi<{
     model_id: string | null
-    available_models: Array<{ id: string; label: string; description: string }>
+    available_models: Array<{ key: string; id: string; label: string; description: string }>
   }>('/settings/model'),
 
   saveModelSettings: (modelId: string | null) =>

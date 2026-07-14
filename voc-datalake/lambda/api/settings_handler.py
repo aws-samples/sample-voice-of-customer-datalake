@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_bedrock_client
-from shared.api import create_api_resolver, api_handler
+from shared.api import create_api_resolver, api_handler, require_admin
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 from shared.model_config import (
     ALLOWED_MODELS, ALLOWED_MODEL_IDS, MODEL_SETTINGS_PK, MODEL_SETTINGS_SK,
@@ -57,8 +57,6 @@ def get_model_settings():
             'model_id': configured if configured in ALLOWED_MODEL_IDS else None,
             'available_models': ALLOWED_MODELS,
         }
-    except ConfigurationError:
-        raise
     except Exception as e:
         logger.exception(f"Failed to get model settings: {e}")
         raise ServiceError('Failed to retrieve model settings')
@@ -71,9 +69,11 @@ def save_model_settings():
 
     Body: {'model_id': <allowlisted id>} to pin every AI feature to one
     model, or {'model_id': null} to restore per-feature defaults.
+    Admin-only: this changes inference cost/quality for the whole org.
     """
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
+    require_admin(app.current_event._data)
     body = app.current_event.json_body or {}
 
     if 'model_id' not in body:

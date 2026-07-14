@@ -191,8 +191,8 @@ const handlers = {
   'GET /settings/model': () => ({
     model_id: mockModelOverride.value,
     available_models: [
-      { id: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Claude Sonnet 4.5', description: 'Highest quality — default for analysis and document generation' },
-      { id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5', description: 'Faster and cheaper — good for high-volume enrichment' },
+      { key: 'sonnet', id: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Claude Sonnet 4.5', description: 'Highest quality — default for analysis and document generation' },
+      { key: 'haiku', id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5', description: 'Faster and cheaper — good for high-volume workloads' },
     ],
   }),
   'PUT /settings/model': (body) => {

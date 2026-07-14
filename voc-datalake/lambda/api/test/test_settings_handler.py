@@ -426,3 +426,48 @@ class TestModelSettings:
         assert response['statusCode'] == 400
         mock_table.put_item.assert_not_called()
         mock_table.delete_item.assert_not_called()
+
+
+
+class TestModelSettingsAuthorization:
+    """PUT /settings/model is org-wide: admins only (review feedback on #154)."""
+
+    @patch('settings_handler.aggregates_table')
+    def test_put_rejects_non_admin_callers(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/model',
+            body={'model_id': 'global.anthropic.claude-haiku-4-5-20251001-v1:0'},
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'users'
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 403
+        mock_table.put_item.assert_not_called()
+        mock_table.delete_item.assert_not_called()
+
+    @patch('settings_handler.aggregates_table')
+    def test_put_rejects_callers_without_any_group(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/model', body={'model_id': None},
+        )
+        del event['requestContext']['authorizer']['claims']['cognito:groups']
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 403
+        mock_table.delete_item.assert_not_called()
+
+    @patch('settings_handler.aggregates_table')
+    def test_get_stays_available_to_non_admin_users(self, mock_table, api_gateway_event, lambda_context):
+        """Reading the active model is harmless; only changing it is gated."""
+        mock_table.get_item.return_value = {}
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(method='GET', path='/settings/model')
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'users'
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200

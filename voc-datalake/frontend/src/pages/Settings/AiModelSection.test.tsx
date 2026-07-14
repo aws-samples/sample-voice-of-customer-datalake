@@ -23,8 +23,8 @@ const HAIKU = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
 const modelSettings = {
   model_id: null,
   available_models: [
-    { id: SONNET, label: 'Claude Sonnet 4.5', description: 'Highest quality' },
-    { id: HAIKU, label: 'Claude Haiku 4.5', description: 'Faster and cheaper' },
+    { key: 'sonnet', id: SONNET, label: 'Claude Sonnet 4.5', description: 'Highest quality' },
+    { key: 'haiku', id: HAIKU, label: 'Claude Haiku 4.5', description: 'Faster and cheaper' },
   ],
 }
 

@@ -1,4 +1,25 @@
 {
+  "aiModel": {
+    "automatic": {
+      "description": "Cada función usa su propio modelo predeterminado (recomendado)",
+      "label": "Automático"
+    },
+    "intro": "Fija las funciones de generación de IA (chat, documentos, personas, categorías) a un modelo, o deja Automático para que cada función use su predeterminado. Los cambios se aplican en un minuto.",
+    "legend": "Seleccionar modelo de IA",
+    "loadFailed": "No se pudo cargar la configuración del modelo.",
+    "loading": "Cargando modelos...",
+    "models": {
+      "haiku": {
+        "description": "Más rápido y económico — ideal para grandes volúmenes"
+      },
+      "sonnet": {
+        "description": "Máxima calidad — predeterminado para análisis y generación de documentos"
+      }
+    },
+    "saved": "Guardado",
+    "saveFailed": "No se pudo guardar la selección del modelo. Inténtalo de nuevo.",
+    "title": "Modelo de IA"
+  },
   "api": {
     "connected": "Conectado",
     "endpointHint": "El endpoint de API Gateway de su despliegue VoC",

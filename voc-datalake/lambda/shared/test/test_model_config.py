@@ -84,3 +84,39 @@ class TestGetActiveModelId:
             clear_model_cache()
             get_active_model_id()
         assert table.get_item.call_count == 2
+
+
+
+class TestAllowlistLockstep:
+    """The allowlist exists in three places; drift AccessDenies at runtime.
+
+    Python (this module) drives REST-API inference, the TS mirror drives
+    streaming chat, and the CDK helper grants the IAM invoke permissions.
+    These tests read the other two sources so a model added to one place
+    fails the build until all three agree (review feedback on #154).
+    """
+
+    @staticmethod
+    def _repo_root():
+        from pathlib import Path
+        return Path(__file__).resolve().parents[3]
+
+    def test_ts_stream_allowlist_matches_python(self):
+        import re
+        ts_source = (
+            self._repo_root() / 'lambda' / 'stream' / 'src' / 'bedrock' / 'model-override.ts'
+        ).read_text()
+        ts_ids = set(re.findall(r"'(global\.anthropic\.[^']+)'", ts_source))
+        assert ts_ids == ALLOWED_MODEL_IDS
+
+    def test_cdk_iam_grants_cover_every_allowlisted_model(self):
+        import re
+        cdk_source = (
+            self._repo_root() / 'lib' / 'stacks' / 'api-stack.ts'
+        ).read_text()
+        helper_start = cdk_source.index('private allowlistedModelArns()')
+        # Slice generously to the next method; `${...}` braces defeat naive
+        # matching of the closing brace.
+        helper_body = cdk_source[helper_start:helper_start + 1500]
+        granted = set(re.findall(r'inference-profile/(global\.anthropic\.[^`\']+)', helper_body))
+        assert granted == ALLOWED_MODEL_IDS

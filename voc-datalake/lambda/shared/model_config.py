@@ -25,18 +25,23 @@ MODEL_SETTINGS_PK = "SETTINGS#model"
 MODEL_SETTINGS_SK = "config"
 
 # Curated allowlist. Both models have agreements created by the
-# BedrockAccessStack; the global inference profile prefix matches how this
-# project invokes Claude everywhere else.
+# BedrockAccessStack. MUST stay in lockstep with:
+#   - lambda/stream/src/bedrock/model-override.ts (streaming chat lookup)
+#   - lib/stacks/api-stack.ts::allowlistedModelArns (IAM invoke grants —
+#     a selectable-but-not-invocable model AccessDenies every AI feature)
+# `key` is the stable identifier the frontend translates labels under.
 ALLOWED_MODELS = [
     {
+        "key": "sonnet",
         "id": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "label": "Claude Sonnet 4.5",
         "description": "Highest quality — default for analysis and document generation",
     },
     {
+        "key": "haiku",
         "id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
         "label": "Claude Haiku 4.5",
-        "description": "Faster and cheaper — good for high-volume enrichment",
+        "description": "Faster and cheaper — good for high-volume workloads",
     },
 ]
 

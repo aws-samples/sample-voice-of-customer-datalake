@@ -1,4 +1,25 @@
 {
+  "aiModel": {
+    "automatic": {
+      "description": "每个功能使用自己的默认模型（推荐）",
+      "label": "自动"
+    },
+    "intro": "将 AI 生成功能（聊天、文档、画像、分类）固定到一个模型，或保持自动，让每个功能使用其调优的默认模型。更改在一分钟内生效。",
+    "legend": "选择 AI 模型",
+    "loadFailed": "无法加载模型设置。",
+    "loading": "正在加载模型...",
+    "models": {
+      "haiku": {
+        "description": "更快更省 — 适合大批量任务"
+      },
+      "sonnet": {
+        "description": "最高质量 — 分析与文档生成的默认模型"
+      }
+    },
+    "saved": "已保存",
+    "saveFailed": "保存模型选择失败，请重试。",
+    "title": "AI 模型"
+  },
   "api": {
     "connected": "已连接",
     "endpointHint": "您的VoC部署的API Gateway端点",
