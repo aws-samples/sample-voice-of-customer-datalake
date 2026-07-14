@@ -55,14 +55,22 @@ function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
   const avgSentiment = summary ? Number(summary.avg_sentiment) : 0
   const sentimentTrend = avgSentiment > 0 ? 'up' : 'down'
   const sentimentColor = avgSentiment > 0 ? 'green' : 'red'
+  // Review-basis metrics come from a budget-bounded scan; when truncated the
+  // counts are lower bounds and the cards must say so instead of look exact.
+  const isPartial = summary?.is_partial ?? false
+  const partialHint = isPartial
+    ? 'Approximate: the window exceeded the scan budget, counts are a lower bound'
+    : undefined
+  const approx = (n: number | string) => (isPartial ? `~${n}` : n)
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
       <MetricCard
         title="Total Feedback"
-        value={summary?.total_feedback.toLocaleString() || 0}
+        value={approx(summary?.total_feedback.toLocaleString() || 0)}
         icon={<MessageSquare size={24} />}
         color="blue"
+        hint={partialHint}
       />
       <MetricCard
         title="Avg Sentiment"
@@ -73,9 +81,10 @@ function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
       />
       <MetricCard
         title="Urgent Issues"
-        value={summary?.urgent_count || 0}
+        value={approx(summary?.urgent_count || 0)}
         icon={<AlertTriangle size={24} />}
         color="orange"
+        hint={partialHint}
       />
       <MetricCard
         title="Sources Active"
@@ -289,8 +298,8 @@ function buildPDFExportData(input: PDFExportInput) {
 
 export default function Dashboard() {
   const { t } = useTranslation('common')
-  const { timeRange, customDays, config } = useConfigStore()
-  const dateParams = getDateRangeParams(timeRange, customDays)
+  const { timeRange, customDays, dateBasis, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const isConfigured = !!config.apiEndpoint
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
@@ -348,7 +357,7 @@ export default function Dashboard() {
         categories,
         sources,
         urgentFeedback,
-        timeRange: getTimeRangeLabel(timeRange, customDays),
+        timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
         sourcesCount,
       }))
     } catch {

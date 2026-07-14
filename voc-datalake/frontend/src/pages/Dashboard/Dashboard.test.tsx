@@ -135,6 +135,24 @@ describe('Dashboard', () => {
       expect(screen.getByText('1,234')).toBeInTheDocument()
     })
 
+    it('marks totals as approximate when the metrics scan was partial', async () => {
+      mockGetSummary.mockResolvedValue({
+        total_feedback: 1234,
+        avg_sentiment: 0.65,
+        urgent_count: 5,
+        is_partial: true,
+        daily_totals: [{ date: '2025-01-01', count: 100 }],
+        daily_sentiment: [{ date: '2025-01-01', avg_sentiment: 0.5, count: 100 }],
+      })
+
+      render(<Dashboard />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('~1,234')).toBeInTheDocument()
+      })
+      expect(screen.getByText('~5')).toBeInTheDocument()
+    })
+
     it('displays average sentiment metric', async () => {
       render(<Dashboard />, { wrapper: createWrapper() })
       

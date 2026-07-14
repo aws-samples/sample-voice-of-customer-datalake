@@ -130,6 +130,25 @@ The `BedrockAccessStack` automates this process. To enable it:
 | `useCases` | Yes | Description of how you'll use the models |
 | `otherIndustryOption` | No | Specify if industryOption is "Other" |
 
+### Accounts That Already Have Model Access
+
+If your account already has Anthropic model access (a previous submission,
+organization-level access, or an AWS-internal account), the use case
+submission is skipped gracefully: rejections such as
+`Internal Accounts should not submit use case details` are treated as a
+no-op instead of failing the deployment. Permission and throttling errors
+still fail loudly.
+
+You can also skip the submission entirely via `cdk.context.json`:
+
+```json
+{
+  "skipUseCaseSubmission": true
+}
+```
+
+or on the CLI: `cdk deploy --all --context skipUseCaseSubmission=true`.
+
 ### Security Note
 
 The `anthropicUseCase` config contains company information. For open source forks:

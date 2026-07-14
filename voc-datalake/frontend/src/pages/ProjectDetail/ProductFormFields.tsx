@@ -3,7 +3,7 @@
  * Extracted from ProductTab.tsx to keep that file under the max-lines budget.
  */
 import { Loader2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 export function FieldShell({
   label, field, savingField, highlight, children,
@@ -33,7 +33,14 @@ export function TextField({
   readonly onSave: (v: string) => void
 }) {
   const [draft, setDraft] = useState(value)
-  useEffect(() => { setDraft(value) }, [value])
+  // Reset the draft when the saved value changes (e.g. after a successful
+  // save or external refresh). Adjusting state during render with a guard is
+  // the React-recommended replacement for a setState-in-effect sync.
+  const [prevValue, setPrevValue] = useState(value)
+  if (prevValue !== value) {
+    setPrevValue(value)
+    setDraft(value)
+  }
   return (
     <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
       <input
@@ -57,7 +64,12 @@ export function TextAreaField({
   readonly onSave: (v: string) => void
 }) {
   const [draft, setDraft] = useState(value)
-  useEffect(() => { setDraft(value) }, [value])
+  // Same render-phase sync pattern as TextField above.
+  const [prevValue, setPrevValue] = useState(value)
+  if (prevValue !== value) {
+    setPrevValue(value)
+    setDraft(value)
+  }
   return (
     <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
       <textarea

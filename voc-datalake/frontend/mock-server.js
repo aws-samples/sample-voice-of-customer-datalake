@@ -3,6 +3,9 @@
 
 import http from 'http';
 
+// Helper: ISO timestamp n days in the past.
+const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
+
 const mockFeedback = [
   {
     feedback_id: '1',
@@ -21,6 +24,7 @@ const mockFeedback = [
     problem_summary: 'Customer experiencing significant delivery delay',
     direct_customer_quote: 'Ordered 2 weeks ago and still waiting',
     persona_name: 'Impatient Shopper',
+    // Written today, imported today
     source_created_at: new Date().toISOString(),
     processed_at: new Date().toISOString(),
   },
@@ -37,10 +41,12 @@ const mockFeedback = [
     sentiment_score: 0.92,
     urgency: 'low',
     impact_area: 'cx',
-    problem_summary: null,
+    // Real API strips null fields (processor removes None values), so
+    // optional fields are omitted rather than null.
     direct_customer_quote: 'resolved my issue within minutes',
     persona_name: 'Satisfied Customer',
-    source_created_at: new Date().toISOString(),
+    // Written 3 days ago, imported today
+    source_created_at: daysAgo(3),
     processed_at: new Date().toISOString(),
   },
   {
@@ -59,10 +65,28 @@ const mockFeedback = [
     problem_summary: 'Multiple defective products received',
     direct_customer_quote: 'last 3 orders had defects',
     persona_name: 'Repeat Customer',
-    source_created_at: new Date().toISOString(),
+    // Old backfilled review: written ~400 days ago, imported today.
+    // Visible under the imported basis, filtered out under the review basis.
+    source_created_at: daysAgo(400),
     processed_at: new Date().toISOString(),
   },
 ];
+
+// Mirrors the real API's date_basis semantics (see metrics_handler.py):
+// 'review' filters by source_created_at (when the customer wrote it),
+// 'imported' (default) by processed_at (when it entered the data lake).
+function filterByDateBasis(items, searchParams) {
+  const daysRaw = Number(searchParams?.get('days'));
+  const days = Number.isFinite(daysRaw) && daysRaw > 0 ? daysRaw : 7;
+  const basis = searchParams?.get('date_basis') === 'review' ? 'review' : 'imported';
+  const cutoff = Date.now() - days * 86400000;
+  return items.filter((item) => {
+    const dateStr = basis === 'review'
+      ? (item.source_created_at ?? item.processed_at)
+      : item.processed_at;
+    return new Date(dateStr).getTime() >= cutoff;
+  });
+}
 
 // Mock feedback form config (in-memory)
 let feedbackFormConfig = {
@@ -186,8 +210,33 @@ const handlers = {
   'GET /scrapers': () => ({ scrapers: mockScrapers }),
   'POST /scrapers': (body) => ({ success: true, scraper: { id: 'scraper_' + Date.now(), ...body } }),
 
-  'GET /feedback': () => ({ count: mockFeedback.length, items: mockFeedback }),
-  'GET /feedback/urgent': () => ({ count: 1, items: mockFeedback.filter(f => f.urgency === 'high') }),
+  'GET /feedback': (_body, searchParams) => {
+    const items = filterByDateBasis(mockFeedback, searchParams);
+    return { count: items.length, total: items.length, offset: 0, limit: 50, is_partial_window: false, items };
+  },
+  'GET /feedback/urgent': (_body, searchParams) => {
+    const items = filterByDateBasis(mockFeedback, searchParams).filter(f => f.urgency === 'high');
+    return { count: items.length, items };
+  },
+  'GET /feedback/entities': (_body, searchParams) => {
+    const items = filterByDateBasis(mockFeedback, searchParams);
+    const countBy = (getKey) => items.reduce((acc, item) => {
+      const key = getKey(item);
+      if (key) acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    return {
+      period_days: Number(searchParams?.get('days')) || 7,
+      feedback_count: items.length,
+      entities: {
+        keywords: {},
+        categories: countBy(i => i.category),
+        issues: countBy(i => i.problem_summary),
+        personas: countBy(i => i.persona_name),
+        sources: countBy(i => i.source_platform),
+      },
+    };
+  },
   'GET /metrics/summary': () => ({
     period_days: 7,
     total_feedback: 1247,
@@ -324,7 +373,19 @@ const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', () => {
-      const result = handler(body ? JSON.parse(body) : null);
+      // Guard against malformed JSON bodies so a bad request can't crash
+      // the dev server (an uncaught throw here kills the process).
+      let parsedBody = null;
+      if (body) {
+        try {
+          parsedBody = JSON.parse(body);
+        } catch {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Invalid JSON body' }));
+          return;
+        }
+      }
+      const result = handler(parsedBody, url.searchParams);
       res.writeHead(200);
       res.end(JSON.stringify(result));
     });
@@ -334,7 +395,7 @@ const server = http.createServer((req, res) => {
   }
 });
 
-const PORT = 3001;
+const PORT = Number(process.env.PORT) || 3001;
 server.listen(PORT, () => {
   console.log(`Mock API server running at http://localhost:${PORT}`);
   console.log('Use this URL in the frontend Settings page');

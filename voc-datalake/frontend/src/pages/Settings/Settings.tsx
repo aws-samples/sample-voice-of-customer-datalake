@@ -10,7 +10,7 @@
  * - User Administration (admin only)
  */
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { 
   Save, Check, AlertCircle, Loader2, CheckCircle2, Tags, Users, 
@@ -25,8 +25,8 @@ import clsx from 'clsx'
 import ConfirmModal from '../../components/ConfirmModal'
 import SourceCard from './SourceCard'
 import LogsSection from './LogsSection'
+import { useApiEndpointField, useBrandForm } from './useSettingsSync'
 import { getEnabledPlugins } from '../../plugins'
-import { getRuntimeConfig, isConfigLoaded } from '../../runtimeConfig'
 
 type SettingsTab = 'brand' | 'plugins' | 'categories' | 'logs' | 'users'
 
@@ -40,28 +40,7 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('brand')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const [apiEndpoint, setApiEndpoint] = useState(() => {
-    // Prefer runtime config (from config.json) over persisted store value
-    if (isConfigLoaded()) {
-      return getRuntimeConfig().apiEndpoint
-    }
-    return config.apiEndpoint
-  })
-  const [brandName, setBrandName] = useState(config.brandName)
-  const [brandHandles, setBrandHandles] = useState(config.brandHandles.join(', '))
-  const [hashtags, setHashtags] = useState(config.hashtags.join(', '))
-  const [urlsToTrack, setUrlsToTrack] = useState(config.urlsToTrack.join('\n'))
-
-  // Sync config store with runtime config on mount
-  useEffect(() => {
-    if (isConfigLoaded()) {
-      const runtimeConfig = getRuntimeConfig()
-      if (runtimeConfig.apiEndpoint && runtimeConfig.apiEndpoint !== config.apiEndpoint) {
-        setConfig({ apiEndpoint: runtimeConfig.apiEndpoint })
-        setApiEndpoint(runtimeConfig.apiEndpoint)
-      }
-    }
-  }, [config.apiEndpoint, setConfig])
+  const { apiEndpoint, setApiEndpoint } = useApiEndpointField(config.apiEndpoint, setConfig)
 
   const { data: backendSettings, isLoading: loadingSettings } = useQuery({
     queryKey: ['brand-settings'],
@@ -69,21 +48,12 @@ export default function Settings() {
     enabled: !!config.apiEndpoint,
   })
 
-  useEffect(() => {
-    if (!backendSettings) return
-    if ('error' in backendSettings && backendSettings.error) return
-
-    const name = backendSettings.brand_name ?? ''
-    const handles = backendSettings.brand_handles ?? []
-    const tags = backendSettings.hashtags ?? []
-    const urls = backendSettings.urls_to_track ?? []
-
-    setBrandName(name)
-    setBrandHandles(handles.join(', '))
-    setHashtags(tags.join(', '))
-    setUrlsToTrack(urls.join('\n'))
-    setConfig({ brandName: name, brandHandles: handles, hashtags: tags, urlsToTrack: urls })
-  }, [backendSettings, setConfig])
+  const {
+    brandName, setBrandName,
+    brandHandles, setBrandHandles,
+    hashtags, setHashtags,
+    urlsToTrack, setUrlsToTrack,
+  } = useBrandForm(config, setConfig, backendSettings)
 
   const parseArrayInput = (input: string, separator: string): string[] =>
     input.split(separator).map(s => s.trim()).filter(Boolean)

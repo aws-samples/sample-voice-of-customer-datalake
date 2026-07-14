@@ -96,6 +96,42 @@ class TestValidateDays:
         assert validate_days('7.5') == 7
 
 
+class TestValidateDateBasis:
+    """Tests for validate_date_basis function."""
+
+    def test_returns_imported_for_none(self):
+        """Defaults to 'imported' when the parameter is absent."""
+        from shared.api import validate_date_basis
+
+        assert validate_date_basis(None) == 'imported'
+
+    def test_accepts_review(self):
+        """Returns 'review' for the review basis."""
+        from shared.api import validate_date_basis
+
+        assert validate_date_basis('review') == 'review'
+
+    def test_accepts_imported(self):
+        """Returns 'imported' when passed explicitly."""
+        from shared.api import validate_date_basis
+
+        assert validate_date_basis('imported') == 'imported'
+
+    def test_normalizes_case_and_whitespace(self):
+        """Accepts padded or upper-cased values."""
+        from shared.api import validate_date_basis
+
+        assert validate_date_basis(' Review ') == 'review'
+        assert validate_date_basis('IMPORTED') == 'imported'
+
+    def test_falls_back_to_imported_for_unknown_values(self):
+        """Unknown values preserve historical behavior."""
+        from shared.api import validate_date_basis
+
+        assert validate_date_basis('bogus') == 'imported'
+        assert validate_date_basis('') == 'imported'
+
+
 class TestValidateLimit:
     """Tests for validate_limit function."""
 

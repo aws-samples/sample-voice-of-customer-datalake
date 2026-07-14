@@ -1,6 +1,7 @@
 import { authService } from '../services/auth'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange, ALL_TIME_DAYS } from './baseUrl'
 import type {
+  DateBasis,
   FeedbackItem,
   FeedbackListParams,
   FeedbackListResponse,
@@ -30,6 +31,7 @@ import type {
 
 // Re-export all types for backward compatibility
 export type {
+  DateBasis,
   FeedbackItem,
   FeedbackListParams,
   FeedbackListResponse,
@@ -65,10 +67,14 @@ export { getDaysFromRange, ALL_TIME_DAYS }
  * Date-range query parameters sent to time-filtered analytics endpoints.
  *
  * All time ranges resolve to a single rolling lookback in `days` (presets,
- * "All", and the "last N days" custom range). See {@link getDateRangeParams}.
+ * "All", and the "last N days" custom range). `date_basis` selects which date
+ * the window applies to ('review' = when the customer wrote the feedback);
+ * it is omitted for the default 'imported' basis so URLs stay unchanged for
+ * existing behavior. See {@link getDateRangeParams}.
  */
 export interface DateRangeParams {
   days?: number
+  date_basis?: DateBasis
 }
 
 function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
@@ -156,13 +162,13 @@ export const api = {
   
   getFeedbackById: async (id: string) => normalizeFeedbackItem(await fetchApi<FeedbackItem>(`/feedback/${id}`)),
   
-  getUrgentFeedback: async (params: { days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
+  getUrgentFeedback: async (params: { days?: number; date_basis?: DateBasis; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
     const res = await fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback/urgent?${searchParams}`)
     return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  searchFeedback: async (params: { q: string; days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
+  searchFeedback: async (params: { q: string; days?: number; date_basis?: DateBasis; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
     const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
     return { ...res, items: normalizeFeedbackItems(res.items) }
@@ -175,7 +181,7 @@ export const api = {
     return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  getEntities: (params: { days?: number; limit?: number; source?: string }) => {
+  getEntities: (params: { days?: number; date_basis?: DateBasis; limit?: number; source?: string }) => {
     const searchParams = buildSearchParams(params)
     return fetchApi<EntitiesResponse>(`/feedback/entities?${searchParams}`)
   },
@@ -710,7 +716,19 @@ export const api = {
  * Every range (presets, "All", and the "last N days" custom range) maps to a
  * single bounded day count so the metrics backend never fans out into an
  * unbounded scan. For 'custom', `customDays` carries the chosen lookback.
+ *
+ * `dateBasis` selects which date the window filters on. The default
+ * 'imported' basis omits the parameter entirely, keeping request URLs (and
+ * TanStack Query keys) identical to the pre-basis behavior.
  */
-export function getDateRangeParams(range: string, customDays?: number | null): DateRangeParams {
-  return { days: getDaysFromRange(range, customDays) }
+export function getDateRangeParams(
+  range: string,
+  customDays?: number | null,
+  dateBasis?: DateBasis
+): DateRangeParams {
+  const params: DateRangeParams = { days: getDaysFromRange(range, customDays) }
+  if (dateBasis === 'review') {
+    params.date_basis = dateBasis
+  }
+  return params
 }

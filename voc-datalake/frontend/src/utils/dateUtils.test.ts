@@ -79,4 +79,14 @@ describe('getTimeRangeLabel', () => {
   it('falls back to the raw token for unknown values', () => {
     expect(getTimeRangeLabel('90d')).toBe('90d')
   })
+
+  it('appends the review-date note when filtering by review date', () => {
+    expect(getTimeRangeLabel('7d', null, 'review')).toBe('7 Days (by review date)')
+    expect(getTimeRangeLabel('custom', 14, 'review')).toBe('Last 14 days (by review date)')
+  })
+
+  it('leaves the label unchanged for the imported basis', () => {
+    expect(getTimeRangeLabel('7d', null, 'imported')).toBe('7 Days')
+    expect(getTimeRangeLabel('7d')).toBe('7 Days')
+  })
 })
