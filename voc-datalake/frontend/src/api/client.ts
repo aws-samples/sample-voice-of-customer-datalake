@@ -279,6 +279,17 @@ export const api = {
     body: JSON.stringify(settings)
   }),
 
+  // Problem resolution (Problem Analysis page; shared across users)
+  getResolvedProblems: () => fetchApi<{
+    resolved: Record<string, { resolved_at: string }>
+  }>('/settings/resolved-problems'),
+
+  setProblemResolved: (key: string, resolved: boolean) =>
+    fetchApi<{ success: boolean; key: string; resolved: boolean }>('/settings/resolved-problems', {
+      method: 'PUT',
+      body: JSON.stringify({ key, resolved })
+    }),
+
   // Categories Configuration
   getCategoriesConfig: () => fetchApi<{ 
     categories: Array<{

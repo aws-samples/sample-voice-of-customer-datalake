@@ -21,32 +21,13 @@ import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
+import { applyResolution } from './problemResolution'
+import { useProblemResolution } from './useProblemResolution'
+import type { CategoryGroup, ProblemGroup, SubcategoryGroup } from './problemResolution'
 import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
 
-interface ProblemGroup {
-  problem: string
-  similarProblems: string[]  // Original problem texts that were merged
-  rootCause: string | null
-  items: FeedbackItem[]
-  avgSentiment: number
-  urgentCount: number
-}
-
-interface SubcategoryGroup {
-  subcategory: string
-  problems: ProblemGroup[]
-  totalItems: number
-  urgentCount: number
-}
-
-interface CategoryGroup {
-  category: string
-  subcategories: SubcategoryGroup[]
-  totalItems: number
-  urgentCount: number
-}
 
 // Normalize text for similarity comparison
 function normalizeText(text: string): string {
@@ -223,9 +204,56 @@ function toPDFCategories(groups: CategoryGroup[]) {
         itemCount: p.items.length,
         avgSentiment: p.avgSentiment,
         urgentCount: p.urgentCount,
+        // With "Show resolved" on, resolved groups reach the export — the
+        // PDF must annotate them, since strike-through/badge is UI-only.
+        resolved: p.resolved === true,
       })),
     })),
   }))
+}
+
+// Module-level so the operator chain doesn't count against the page
+// component's complexity budget.
+function anyFilterActive(...filters: Array<string | boolean | null>): boolean {
+  return filters.some(Boolean)
+}
+
+// Empty state distinguishes "nothing in this window" from "everything here
+// is resolved" — hiding data behind the toggle must not read as no data.
+// Kept out of the page component for its complexity budget.
+function EmptyProblemsState({ resolvedCount }: { readonly resolvedCount: number }) {
+  const { t } = useTranslation('common')
+  return (
+    <div className="card text-center py-8 sm:py-12">
+      <AlertTriangle size={36} className="mx-auto text-gray-300 mb-3 sm:mb-4 sm:w-12 sm:h-12" />
+      {resolvedCount > 0 ? (
+        <>
+          <p className="text-gray-500 text-sm sm:text-base">{t('problemResolution.allResolvedTitle')}</p>
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">{t('problemResolution.allResolvedHint', { total: resolvedCount })}</p>
+        </>
+      ) : (
+        <>
+          <p className="text-gray-500 text-sm sm:text-base">{t('problemAnalysisPage.emptyTitle')}</p>
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">{t('problemAnalysisPage.emptyHint')}</p>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Rendered when persisting a resolve/unresolve fails; kept out of the page
+// component so the conditional doesn't count against its complexity budget.
+function ResolveErrorBanner({ show, onDismiss }: { readonly show: boolean; readonly onDismiss: () => void }) {
+  const { t } = useTranslation('common')
+  if (!show) return null
+  return (
+    <div className="card bg-red-50 border border-red-200 text-red-700 text-sm py-2 px-3 flex items-center justify-between gap-2" role="alert">
+      <span>{t('problemResolution.saveFailed')}</span>
+      <button type="button" onClick={onDismiss} aria-label={t('dismiss')} className="text-red-500 hover:text-red-700">
+        <X size={14} />
+      </button>
+    </div>
+  )
 }
 
 export default function ProblemAnalysis() {
@@ -240,6 +268,7 @@ export default function ProblemAnalysis() {
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null)
   const [selectedSource, setSelectedSource] = useState<string | null>(null)
   const [showUrgentOnly, setShowUrgentOnly] = useState(false)
+  const [showResolved, setShowResolved] = useState(false)
   const [similarityThreshold, setSimilarityThreshold] = useState(0.4)
 
   // Fetch entities for dynamic sources and categories
@@ -254,6 +283,14 @@ export default function ProblemAnalysis() {
     queryFn: () => api.getFeedback({ ...dateParams, limit: 500 }),
     enabled: !!config.apiEndpoint,
   })
+
+  // Resolved problems are shared across users (issue #66); resolving one
+  // clears it from everyone's default view. All query/mutation wiring lives
+  // in the hook (complexity budget + useSettingsSync convention).
+  const {
+    resolvedMap, resolvedLoading, togglePending, toggleFailed,
+    toggleResolved, dismissToggleError,
+  } = useProblemResolution(!!config.apiEndpoint)
 
   // Build dynamic sources list from entities
   const allSources = useMemo(() => {
@@ -287,6 +324,14 @@ export default function ProblemAnalysis() {
 
     return buildCategoryGroups(categoryMap)
   }, [feedbackData, showUrgentOnly, selectedCategory, selectedSubcategory, selectedSource, similarityThreshold])
+
+  // Annotate problem groups with their shared resolved status and hide the
+  // resolved ones unless requested; category/subcategory totals are
+  // recomputed so headers reflect what is actually shown (issue #66).
+  const { visible: visibleData, resolvedCount } = useMemo(
+    () => applyResolution(groupedData, resolvedMap, showResolved),
+    [groupedData, resolvedMap, showResolved],
+  )
 
   // Get unique categories from entities (dynamic)
   const allCategories = useMemo(() => {
@@ -334,10 +379,10 @@ export default function ProblemAnalysis() {
   }
 
   const expandAll = () => {
-    const allCats = new Set(groupedData.map(g => g.category))
+    const allCats = new Set(visibleData.map(g => g.category))
     const allSubs = new Set<string>()
     const allProbs = new Set<string>()
-    for (const g of groupedData) {
+    for (const g of visibleData) {
       for (const s of g.subcategories) {
         allSubs.add(`${g.category}:${s.subcategory}`)
         for (const p of s.problems) {
@@ -356,18 +401,19 @@ export default function ProblemAnalysis() {
     setExpandedProblems(new Set())
   }
 
-  const totalSubcategories = groupedData.reduce((sum, g) => sum + g.subcategories.length, 0)
-  const totalProblems = groupedData.reduce((sum, g) => 
+  const totalSubcategories = visibleData.reduce((sum, g) => sum + g.subcategories.length, 0)
+  const totalProblems = visibleData.reduce((sum, g) => 
     sum + g.subcategories.reduce((s, sub) => s + sub.problems.length, 0), 0)
-  const totalFeedback = groupedData.reduce((sum, g) => sum + g.totalItems, 0)
-  const totalUrgent = groupedData.reduce((sum, g) => sum + g.urgentCount, 0)
+  const totalFeedback = visibleData.reduce((sum, g) => sum + g.totalItems, 0)
+  const totalUrgent = visibleData.reduce((sum, g) => sum + g.urgentCount, 0)
 
   const exportPDF = () => {
-    if (groupedData.length === 0) return
+    if (visibleData.length === 0) return
     try {
       generateProblemAnalysisPDF({
-        categories: toPDFCategories(groupedData),
+        categories: toPDFCategories(visibleData),
         timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
+        resolvedLabel: t('problemResolution.resolved'),
         filters: {
           source: selectedSource,
           category: selectedCategory,
@@ -388,7 +434,9 @@ export default function ProblemAnalysis() {
     )
   }
 
-  if (isLoading) {
+  // Gate on the resolved-state query too: without it, resolved problems
+  // flash as unresolved for a frame and then vanish when the query lands.
+  if (isLoading || resolvedLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -405,7 +453,7 @@ export default function ProblemAnalysis() {
             <TrendingUp size={14} className="sm:w-4 sm:h-4" />
             <span className="text-xs sm:text-sm">Categories</span>
           </div>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900">{groupedData.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900">{visibleData.length}</p>
         </div>
         <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
           <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
@@ -487,9 +535,20 @@ export default function ProblemAnalysis() {
                 />
                 <span>Urgent only</span>
               </label>
-              {(selectedSource || selectedCategory || selectedSubcategory || showUrgentOnly) && (
+              <label className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+                <input
+                  type="checkbox"
+                  checked={showResolved}
+                  onChange={(e) => setShowResolved(e.target.checked)}
+                  className="rounded border-gray-300 w-3.5 h-3.5 sm:w-4 sm:h-4"
+                />
+                {/* Counts resolved problems within the CURRENT filters
+                    (what the toggle would reveal), not the global store. */}
+                <span>{t('problemResolution.showResolved', { total: resolvedCount })}</span>
+              </label>
+              {anyFilterActive(selectedSource, selectedCategory, selectedSubcategory, showUrgentOnly, showResolved) && (
                 <button
-                  onClick={() => { setSelectedSource(null); setSelectedCategory(null); setSelectedSubcategory(null); setShowUrgentOnly(false) }}
+                  onClick={() => { setSelectedSource(null); setSelectedCategory(null); setSelectedSubcategory(null); setShowUrgentOnly(false); setShowResolved(false) }}
                   className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 active:scale-95"
                 >
                   <X size={12} className="sm:w-[14px] sm:h-[14px]" />
@@ -523,7 +582,7 @@ export default function ProblemAnalysis() {
                 </button>
                 <button
                   onClick={exportPDF}
-                  disabled={groupedData.length === 0}
+                  disabled={visibleData.length === 0}
                   className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   title={t('exportPdfTooltip')}
                 >
@@ -536,16 +595,14 @@ export default function ProblemAnalysis() {
         </div>
       </div>
 
+      <ResolveErrorBanner show={toggleFailed} onDismiss={dismissToggleError} />
+
       {/* Problem Tree */}
-      {groupedData.length === 0 ? (
-        <div className="card text-center py-8 sm:py-12">
-          <AlertTriangle size={36} className="mx-auto text-gray-300 mb-3 sm:mb-4 sm:w-12 sm:h-12" />
-          <p className="text-gray-500 text-sm sm:text-base">No problem analysis data found for the selected period</p>
-          <p className="text-xs sm:text-sm text-gray-400 mt-1">Try expanding the time range or adjusting filters</p>
-        </div>
+      {visibleData.length === 0 ? (
+        <EmptyProblemsState resolvedCount={resolvedCount} />
       ) : (
         <div className="space-y-3 sm:space-y-4">
-          {groupedData.map((categoryGroup) => (
+          {visibleData.map((categoryGroup) => (
             <div key={categoryGroup.category} className="card p-0 overflow-hidden">
               {/* Category Header */}
               <button
@@ -586,6 +643,8 @@ export default function ProblemAnalysis() {
                         onToggle={() => toggleSubcategory(subcategoryKey)}
                         expandedProblems={expandedProblems}
                         onToggleProblem={toggleProblem}
+                        onToggleResolved={toggleResolved}
+                        resolvePending={togglePending}
                       />
                     )
                   })}

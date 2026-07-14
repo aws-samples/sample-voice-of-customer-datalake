@@ -86,6 +86,7 @@ describe('SubcategoryRow', () => {
           onToggle={vi.fn()}
           expandedProblems={new Set()}
           onToggleProblem={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -101,6 +102,7 @@ describe('SubcategoryRow', () => {
           onToggle={vi.fn()}
           expandedProblems={new Set()}
           onToggleProblem={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -117,6 +119,7 @@ describe('SubcategoryRow', () => {
           onToggle={vi.fn()}
           expandedProblems={new Set()}
           onToggleProblem={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -134,6 +137,7 @@ describe('SubcategoryRow', () => {
           onToggle={vi.fn()}
           expandedProblems={new Set()}
           onToggleProblem={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -152,6 +156,7 @@ describe('SubcategoryRow', () => {
           onToggle={vi.fn()}
           expandedProblems={new Set()}
           onToggleProblem={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -173,6 +178,7 @@ describe('SubcategoryRow', () => {
           onToggle={onToggle}
           expandedProblems={new Set()}
           onToggleProblem={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -192,6 +198,7 @@ describe('SubcategoryRow', () => {
           onToggle={vi.fn()}
           expandedProblems={new Set()}
           onToggleProblem={onToggleProblem}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -212,6 +219,7 @@ describe('SubcategoryRow', () => {
           onToggle={vi.fn()}
           expandedProblems={expandedProblems}
           onToggleProblem={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 

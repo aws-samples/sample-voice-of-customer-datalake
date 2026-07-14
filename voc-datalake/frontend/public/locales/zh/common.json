@@ -18,6 +18,7 @@
   },
   "cancel": "取消",
   "configureBrand": "配置品牌",
+  "dismiss": "关闭",
   "exportPdf": "导出 PDF",
   "exportPdfShort": "PDF",
   "exportPdfTooltip": "导出为 PDF",
@@ -76,6 +77,19 @@
     "low": "低",
     "medium": "中",
     "none": "无"
+  },
+  "problemAnalysisPage": {
+    "emptyHint": "请尝试扩大时间范围或调整筛选条件",
+    "emptyTitle": "未找到所选时间段的问题分析数据"
+  },
+  "problemResolution": {
+    "allResolvedHint": "启用上方的\"显示已解决 ({{total}})\"即可查看",
+    "allResolvedTitle": "此视图中的所有问题均已标记为已解决",
+    "markResolved": "标记为已解决",
+    "markUnresolved": "标记为未解决",
+    "resolved": "已解决",
+    "saveFailed": "无法更新解决状态，请重试。",
+    "showResolved": "显示已解决 ({{total}})"
   },
   "send": "发送",
   "sentiment": {

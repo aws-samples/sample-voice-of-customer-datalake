@@ -18,6 +18,7 @@
   },
   "cancel": "Cancelar",
   "configureBrand": "Configurar marca",
+  "dismiss": "Dispensar",
   "exportPdf": "Exportar PDF",
   "exportPdfShort": "PDF",
   "exportPdfTooltip": "Exportar como PDF",
@@ -79,6 +80,19 @@
     "low": "Baixa",
     "medium": "Média",
     "none": "Nenhuma"
+  },
+  "problemAnalysisPage": {
+    "emptyHint": "Tente ampliar o intervalo de tempo ou ajustar os filtros",
+    "emptyTitle": "Nenhum dado de análise de problemas encontrado para o período selecionado"
+  },
+  "problemResolution": {
+    "allResolvedHint": "Ative \"Mostrar resolvidos ({{total}})\" acima para revisá-los",
+    "allResolvedTitle": "Todos os problemas desta visualização estão marcados como resolvidos",
+    "markResolved": "Marcar como resolvido",
+    "markUnresolved": "Marcar como não resolvido",
+    "resolved": "Resolvido",
+    "saveFailed": "Não foi possível atualizar o status. Tente novamente.",
+    "showResolved": "Mostrar resolvidos ({{total}})"
   },
   "send": "Enviar",
   "sentiment": {

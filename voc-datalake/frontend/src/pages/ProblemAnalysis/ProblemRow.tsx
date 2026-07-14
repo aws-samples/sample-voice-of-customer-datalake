@@ -1,16 +1,10 @@
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, AlertTriangle, Lightbulb } from 'lucide-react'
+import { ChevronDown, ChevronRight, AlertTriangle, Lightbulb, CheckCircle2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import clsx from 'clsx'
 import SentimentBadge from '../../components/SentimentBadge'
 import type { FeedbackItem } from '../../api/client'
-
-interface ProblemGroup {
-  problem: string
-  similarProblems: string[]
-  rootCause: string | null
-  items: FeedbackItem[]
-  avgSentiment: number
-  urgentCount: number
-}
+import type { ProblemGroup } from './problemResolution'
 
 function getSentimentLabel(score: number): 'positive' | 'negative' | 'neutral' {
   if (score > 0) return 'positive'
@@ -23,14 +17,67 @@ interface ProblemRowProps {
   readonly problemKey: string
   readonly isExpanded: boolean
   readonly onToggle: () => void
+  readonly onToggleResolved: () => void
+  readonly resolvePending?: boolean
 }
 
-export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle }: ProblemRowProps) {
+function ProblemTitle({ problemGroup, resolved }: Readonly<{ problemGroup: ProblemGroup; resolved: boolean }>) {
+  const { t } = useTranslation('common')
   return (
-    <div key={problemKey} className="bg-white">
+    <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
+      <AlertTriangle size={12} className="text-orange-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
+      <span className={clsx('font-medium text-gray-800 text-xs sm:text-sm', resolved && 'line-through')}>
+        {problemGroup.problem}
+      </span>
+      {resolved && (
+        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded-full flex-shrink-0">
+          {t('problemResolution.resolved')}
+        </span>
+      )}
+      {problemGroup.similarProblems.length > 0 && (
+        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full" title={problemGroup.similarProblems.join(', ')}>
+          +{problemGroup.similarProblems.length}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function ResolveToggleButton({ resolved, onToggleResolved, disabled }: Readonly<{ resolved: boolean; onToggleResolved: () => void; disabled?: boolean }>) {
+  const { t } = useTranslation('common')
+  const resolveLabel = resolved
+    ? t('problemResolution.markUnresolved')
+    : t('problemResolution.markResolved')
+  return (
+    <button
+      type="button"
+      onClick={onToggleResolved}
+      disabled={disabled}
+      title={resolveLabel}
+      aria-label={resolveLabel}
+      className={clsx(
+        disabled && 'opacity-40 cursor-not-allowed',
+        'absolute right-2 sm:right-3 top-2.5 sm:top-3 p-1 rounded-full transition-colors',
+        resolved
+          ? 'text-green-600 hover:bg-green-50 active:bg-green-100'
+          : 'text-gray-300 hover:text-green-600 hover:bg-green-50 active:bg-green-100',
+      )}
+    >
+      <CheckCircle2 size={16} className="sm:w-[18px] sm:h-[18px]" />
+    </button>
+  )
+}
+
+export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle, onToggleResolved, resolvePending }: ProblemRowProps) {
+  const resolved = problemGroup.resolved === true
+  return (
+    <div key={problemKey} className="bg-white relative">
       <button
         onClick={onToggle}
-        className="w-full px-3 sm:px-6 py-2.5 sm:py-3 pl-10 sm:pl-16 flex flex-col sm:flex-row sm:items-start justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors text-left gap-2"
+        className={clsx(
+          'w-full px-3 sm:px-6 py-2.5 sm:py-3 pl-10 sm:pl-16 pr-12 sm:pr-14 flex flex-col sm:flex-row sm:items-start justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors text-left gap-2',
+          resolved && 'opacity-60',
+        )}
       >
         <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
           {isExpanded ? (
@@ -39,15 +86,7 @@ export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle }: P
             <ChevronRight size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
           )}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
-              <AlertTriangle size={12} className="text-orange-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
-              <span className="font-medium text-gray-800 text-xs sm:text-sm">{problemGroup.problem}</span>
-              {problemGroup.similarProblems.length > 0 && (
-                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full" title={problemGroup.similarProblems.join(', ')}>
-                  +{problemGroup.similarProblems.length}
-                </span>
-              )}
-            </div>
+            <ProblemTitle problemGroup={problemGroup} resolved={resolved} />
             {problemGroup.rootCause && (
               <div className="flex items-start gap-1.5 sm:gap-2 text-xs text-gray-600">
                 <Lightbulb size={12} className="text-yellow-500 mt-0.5 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
@@ -73,6 +112,10 @@ export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle }: P
           <SentimentBadge sentiment={getSentimentLabel(problemGroup.avgSentiment)} score={problemGroup.avgSentiment} />
         </div>
       </button>
+
+      {/* Sibling of the row toggle (never nested inside it) so both stay
+          valid, independently focusable buttons. */}
+      <ResolveToggleButton resolved={resolved} onToggleResolved={onToggleResolved} disabled={resolvePending} />
 
       {isExpanded && (
         <div className="px-3 sm:px-6 pb-3 sm:pb-4 pl-12 sm:pl-24 space-y-2 sm:space-y-3">

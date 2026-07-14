@@ -330,3 +330,269 @@ class TestGenerateCategories:
         # Assert - now returns 500 with error key
         assert response['statusCode'] == 500
         assert 'error' in body
+
+
+
+class TestResolvedProblems:
+    """Tests for GET/PUT /settings/resolved-problems (issue #66)."""
+
+    @patch('settings_handler.aggregates_table')
+    def test_get_returns_resolved_map(self, mock_table, api_gateway_event, lambda_context):
+        mock_table.get_item.return_value = {
+            'Item': {
+                'pk': 'SETTINGS#resolved_problems',
+                'sk': 'config',
+                'resolved': {'delivery|general|late orders': {'resolved_at': '2026-07-01T00:00:00+00:00'}},
+            }
+        }
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(method='GET', path='/settings/resolved-problems')
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert 'delivery|general|late orders' in body['resolved']
+
+    @patch('settings_handler.aggregates_table')
+    def test_get_returns_empty_map_when_unset(self, mock_table, api_gateway_event, lambda_context):
+        mock_table.get_item.return_value = {}
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(method='GET', path='/settings/resolved-problems')
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['resolved'] == {}
+
+    @patch('settings_handler.aggregates_table')
+    def test_put_resolve_is_a_single_conditional_write(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'delivery|general|late orders', 'resolved': True},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body == {'success': True, 'key': 'delivery|general|late orders', 'resolved': True}
+        # Steady state: exactly ONE write, cap enforced on the same call.
+        assert mock_table.update_item.call_count == 1
+        set_call = mock_table.update_item.call_args
+        assert set_call.kwargs['UpdateExpression'] == 'SET #r.#k = :entry'
+        assert set_call.kwargs['ConditionExpression'] == 'attribute_exists(#r.#k) OR size(#r) < :max'
+        assert set_call.kwargs['ExpressionAttributeNames']['#k'] == 'delivery|general|late orders'
+        assert 'resolved_at' in set_call.kwargs['ExpressionAttributeValues'][':entry']
+        # No read-modify-write: the cap does not cost a get_item.
+        mock_table.get_item.assert_not_called()
+
+    @patch('settings_handler.aggregates_table')
+    def test_first_ever_resolve_materializes_the_parent_map(self, mock_table, api_gateway_event, lambda_context):
+        from botocore.exceptions import ClientError
+        from settings_handler import lambda_handler
+
+        missing_parent = ClientError(
+            {'Error': {'Code': 'ValidationException', 'Message': 'document path invalid'}},
+            'UpdateItem',
+        )
+        # First SET fails (no parent map) -> ensure-parent -> retry succeeds.
+        mock_table.update_item.side_effect = [missing_parent, {}, {}]
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'delivery|general|late orders', 'resolved': True},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert mock_table.update_item.call_count == 3
+        exprs = [c.kwargs['UpdateExpression'] for c in mock_table.update_item.call_args_list]
+        assert exprs == ['SET #r.#k = :entry', 'SET #r = if_not_exists(#r, :empty)', 'SET #r.#k = :entry']
+
+    @patch('settings_handler.aggregates_table')
+    def test_put_unresolve_removes_nested_key(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'delivery|general|late orders', 'resolved': False},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        remove_call = mock_table.update_item.call_args_list[-1]
+        assert remove_call.kwargs['UpdateExpression'] == 'REMOVE #r.#k'
+
+    @pytest.mark.parametrize('payload', [
+        {'resolved': True},                          # missing key
+        {'key': '', 'resolved': True},               # empty key
+        {'key': '  ', 'resolved': True},             # whitespace key
+        {'key': 'x' * 256, 'resolved': True},        # over the char cap
+        {'key': 'ok', 'resolved': 'yes'},            # non-boolean resolved
+        {'key': 'ok'},                               # missing resolved
+    ])
+    @patch('settings_handler.aggregates_table')
+    def test_put_rejects_invalid_payloads(self, mock_table, payload, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems', body=payload,
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        mock_table.update_item.assert_not_called()
+
+
+
+class TestResolvedProblemsCap:
+    """The entry cap is atomic — enforced by ConditionExpression on the same
+    write, not a read-then-check (review feedback on #153)."""
+
+    @staticmethod
+    def _cap_failure():
+        from botocore.exceptions import ClientError
+        return ClientError(
+            {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'cap'}},
+            'UpdateItem',
+        )
+
+    @patch('settings_handler.aggregates_table')
+    def test_rejects_new_entries_beyond_the_cap(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        # Both the first attempt and the post-ensure retry fail the condition:
+        # the map genuinely holds MAX_RESOLVED_ENTRIES other keys.
+        mock_table.update_item.side_effect = [self._cap_failure(), {}, self._cap_failure()]
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|one too many', 'resolved': True},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 400
+        assert 'limit reached' in body['error']
+
+    @patch('settings_handler.aggregates_table')
+    def test_condition_allows_overwriting_existing_keys_at_the_cap(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """attribute_exists(#r.#k) short-circuits the size check, so
+        re-resolving an already-resolved problem never trips the cap."""
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|problem 0', 'resolved': True},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        condition = mock_table.update_item.call_args.kwargs['ConditionExpression']
+        assert condition.startswith('attribute_exists(#r.#k)')
+
+    @patch('settings_handler.aggregates_table')
+    def test_unresolve_is_never_capped_and_tolerates_missing_map(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """Missing parent map surfaces as a FAILED CONDITION (stable error
+        code), not as message-text sniffing on ValidationException."""
+        from botocore.exceptions import ClientError
+        from settings_handler import lambda_handler
+
+        mock_table.update_item.side_effect = ClientError(
+            {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'no map'}},
+            'UpdateItem',
+        )
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|problem 3', 'resolved': False},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        # Missing parent map == nothing to remove == success.
+        assert response['statusCode'] == 200
+        assert mock_table.update_item.call_args.kwargs['ConditionExpression'] == 'attribute_exists(#r)' 
+
+
+
+class TestResolvedProblemsKeyEncoding:
+    """Key byte-cap validation and unresolve error semantics."""
+
+    @patch('settings_handler.aggregates_table')
+    def test_unresolve_does_not_swallow_real_validation_errors(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """ValidationExceptions are genuine failures, not success — only the
+        failed parent-map condition (stable code) is the no-op."""
+        from botocore.exceptions import ClientError
+        from settings_handler import lambda_handler
+
+        mock_table.update_item.side_effect = ClientError(
+            {'Error': {'Code': 'ValidationException',
+                       'Message': 'ExpressionAttributeNames contains invalid value'}},
+            'UpdateItem',
+        )
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|problem', 'resolved': False},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 500
+
+    @patch('settings_handler.aggregates_table')
+    def test_rejects_keys_over_the_utf8_byte_cap(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """CJK text triples the byte cost: 200 chars under the char cap can
+        still blow the byte budget that sizes the 400KB item math."""
+        from settings_handler import lambda_handler
+
+        cjk_key = '배송|일반|' + ('느린 배송 문제 ' * 12)  # under 255 chars, over 255 bytes
+        assert len(cjk_key) <= 255
+        assert len(cjk_key.encode('utf-8')) > 255
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': cjk_key, 'resolved': True},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        mock_table.update_item.assert_not_called()
+
+
+class TestResolvedProblemsSurrogates:
+    """Unpaired surrogates must 400, not 500 (review feedback on #153).
+
+    JSON carries lone surrogates ("\\ud800") happily; encoding them to UTF-8
+    raises, which without the guard would surface as a 500 from the handler
+    or the DynamoDB client.
+    """
+
+    @patch('settings_handler.aggregates_table')
+    def test_lone_surrogate_key_is_a_clean_400(self, mock_table, api_gateway_event, lambda_context):
+        import json as json_module
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|problem', 'resolved': True},
+        )
+        # Inject the lone surrogate at the raw-JSON layer, exactly as a
+        # hostile/buggy client would send it.
+        event['body'] = json_module.dumps(
+            {'key': 'cat|sub|broken \ud83d', 'resolved': True}, ensure_ascii=True
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json_module.loads(response['body'])
+
+        assert response['statusCode'] == 400
+        assert 'surrogate' in body['error']
+        mock_table.update_item.assert_not_called()

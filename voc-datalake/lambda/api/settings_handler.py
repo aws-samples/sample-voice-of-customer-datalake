@@ -10,6 +10,8 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,8 +28,162 @@ SETTINGS_PK = "SETTINGS#brand"
 SETTINGS_SK = "config"
 CATEGORIES_PK = "SETTINGS#categories"
 CATEGORIES_SK = "config"
+RESOLVED_PROBLEMS_PK = "SETTINGS#resolved_problems"
+RESOLVED_PROBLEMS_SK = "config"
+
+# Problem keys are client-built as "category|subcategory|normalized problem
+# text". Bound their size in characters AND UTF-8 bytes (CJK text triples
+# the byte cost) plus the entry count. 255 bytes keeps every key safely
+# inside DynamoDB's strictest name-length constraints (the documented
+# 255-byte expression limit measures the alias token, but capping the real
+# name too costs nothing and removes the ambiguity) and shrinks the item
+# math: worst case 500 entries x ~295 bytes ≈ 148KB, far under the 400KB cap.
+MAX_PROBLEM_KEY_LEN = 255
+MAX_PROBLEM_KEY_BYTES = 255
+MAX_RESOLVED_ENTRIES = 500
 
 app = create_api_resolver()
+
+
+@app.get("/settings/resolved-problems")
+@tracer.capture_method
+def get_resolved_problems():
+    """Get the map of problems marked as resolved on the Problem Analysis page.
+
+    Shape: {'resolved': {problem_key: {'resolved_at': iso8601}}}. Shared
+    across all users by design (issue #66) — resolving a problem clears it
+    from everyone's working view.
+    """
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    try:
+        response = aggregates_table.get_item(
+            Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK}
+        )
+        return {'resolved': response.get('Item', {}).get('resolved', {})}
+    except Exception as e:
+        logger.exception("Failed to get resolved problems")
+        raise ServiceError('Failed to retrieve resolved problems') from e
+
+
+@app.put("/settings/resolved-problems")
+@tracer.capture_method
+def set_problem_resolution():
+    """Mark a single problem group resolved or unresolved.
+
+    Body: {'key': str, 'resolved': bool}. The entry cap is enforced
+    atomically via a ConditionExpression on the same write (no
+    read-then-write race), and the steady state is exactly one write per
+    request: the parent map is only materialized on the first-ever resolve.
+    """
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    body = app.current_event.json_body or {}
+
+    key = body.get('key')
+    if not isinstance(key, str) or not key.strip():
+        raise ValidationError('key must be a non-empty string')
+    if len(key) > MAX_PROBLEM_KEY_LEN:
+        raise ValidationError(f'key must be at most {MAX_PROBLEM_KEY_LEN} characters')
+    try:
+        # JSON happily carries unpaired surrogates ("\ud800"); encoding them
+        # raises, which would 500 here and in the DynamoDB client. Reject
+        # them as the client error they are.
+        key_bytes = len(key.encode('utf-8'))
+    except UnicodeEncodeError as encode_error:
+        raise ValidationError(
+            'key must be valid Unicode (no unpaired surrogates)'
+        ) from encode_error
+    if key_bytes > MAX_PROBLEM_KEY_BYTES:
+        raise ValidationError(f'key must be at most {MAX_PROBLEM_KEY_BYTES} bytes (UTF-8)')
+    resolved = body.get('resolved')
+    if not isinstance(resolved, bool):
+        raise ValidationError('resolved must be a boolean')
+
+    try:
+        if resolved:
+            _resolve_problem_key(key)
+        else:
+            _unresolve_problem_key(key)
+        return {'success': True, 'key': key, 'resolved': resolved}
+    except ValidationError:
+        raise
+    except Exception as e:
+        logger.exception("Failed to update problem resolution")
+        raise ServiceError('Failed to update problem resolution') from e
+
+
+def _set_resolved_entry(key: str) -> None:
+    """Single conditional write: overwrite is always allowed; NEW entries
+    only while the map is under the cap. Atomic — two concurrent resolves
+    at the cap can't both slip through (review feedback on #153)."""
+    aggregates_table.update_item(
+        Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+        UpdateExpression='SET #r.#k = :entry',
+        ConditionExpression='attribute_exists(#r.#k) OR size(#r) < :max',
+        ExpressionAttributeNames={'#r': 'resolved', '#k': key},
+        ExpressionAttributeValues={
+            ':entry': {'resolved_at': datetime.now(timezone.utc).isoformat()},
+            ':max': MAX_RESOLVED_ENTRIES,
+        },
+    )
+
+
+def _ensure_resolved_map() -> None:
+    aggregates_table.update_item(
+        Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+        UpdateExpression='SET #r = if_not_exists(#r, :empty)',
+        ExpressionAttributeNames={'#r': 'resolved'},
+        ExpressionAttributeValues={':empty': {}},
+    )
+
+
+def _resolve_problem_key(key: str) -> None:
+    """Conditionally set the entry, materializing the parent map on first use.
+
+    DynamoDB reports a missing parent map either as a document-path
+    ValidationException or as a failed condition (functions on missing
+    attributes evaluate false), depending on evaluation order — so both
+    first-attempt failures fall through to ensure-parent + one retry, and
+    only a retry failure means the cap was genuinely reached.
+    """
+    try:
+        _set_resolved_entry(key)
+        return
+    except ClientError as e:
+        code = e.response.get('Error', {}).get('Code', '')
+        if code not in ('ConditionalCheckFailedException', 'ValidationException'):
+            raise
+    _ensure_resolved_map()
+    try:
+        _set_resolved_entry(key)
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code', '') == 'ConditionalCheckFailedException':
+            raise ValidationError(
+                f'Resolved-problem limit reached ({MAX_RESOLVED_ENTRIES}). '
+                'Unresolve entries you no longer need first.'
+            ) from e
+        raise
+
+
+def _unresolve_problem_key(key: str) -> None:
+    """REMOVE the entry; a missing parent map just means nothing to remove.
+
+    The no-op is detected by a ConditionExpression on the parent map —
+    ConditionalCheckFailedException is a stable error CODE, unlike the
+    document-path ValidationException message text, which is not
+    contractual across SDK/service versions.
+    """
+    try:
+        aggregates_table.update_item(
+            Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+            UpdateExpression='REMOVE #r.#k',
+            ConditionExpression='attribute_exists(#r)',
+            ExpressionAttributeNames={'#r': 'resolved', '#k': key},
+        )
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code', '') != 'ConditionalCheckFailedException':
+            raise
 
 
 @app.get("/settings/brand")

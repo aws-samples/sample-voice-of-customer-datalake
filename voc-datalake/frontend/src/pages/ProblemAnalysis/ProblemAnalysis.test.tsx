@@ -10,11 +10,15 @@ import { MemoryRouter } from 'react-router-dom'
 // Mock API
 const mockGetFeedback = vi.fn()
 const mockGetEntities = vi.fn()
+const mockGetResolvedProblems = vi.fn()
+const mockSetProblemResolved = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
     getFeedback: (params: unknown) => mockGetFeedback(params),
     getEntities: (params: unknown) => mockGetEntities(params),
+    getResolvedProblems: () => mockGetResolvedProblems(),
+    setProblemResolved: (key: string, resolved: boolean) => mockSetProblemResolved(key, resolved),
   },
   getDaysFromRange: () => 7,
   getDateRangeParams: () => ({ days: 7 }),
@@ -83,6 +87,8 @@ describe('ProblemAnalysis', () => {
     vi.clearAllMocks()
     mockGetFeedback.mockResolvedValue({ items: mockFeedbackItems, count: 2 })
     mockGetEntities.mockResolvedValue(mockEntities)
+    mockGetResolvedProblems.mockResolvedValue({ resolved: {} })
+    mockSetProblemResolved.mockResolvedValue({ success: true })
   })
 
   describe('rendering', () => {
@@ -172,3 +178,58 @@ describe('source filtering', () => {
 
 // Note: Testing "not configured" state requires module re-mocking which is complex
 // The main functionality is tested above
+
+
+describe('problem resolution (issue #66)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetFeedback.mockResolvedValue({ items: mockFeedbackItems, count: 2 })
+    mockGetEntities.mockResolvedValue(mockEntities)
+    mockSetProblemResolved.mockResolvedValue({ success: true })
+    // Both mock feedback items merge into the same "Slow delivery times"
+    // problem group (similarity), which is marked resolved server-side.
+    mockGetResolvedProblems.mockResolvedValue({
+      resolved: {
+        'delivery|shipping_speed|slow delivery times': { resolved_at: '2026-07-01T00:00:00Z' },
+      },
+    })
+  })
+
+  it('hides resolved problems by default and shows them via the toggle', async () => {
+    render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+    // Resolved group hidden: the page falls back to its empty state.
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /show resolved \(1\)/i })).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Slow delivery times')).not.toBeInTheDocument()
+    // The empty state explains WHY the tree is empty instead of "no data".
+    expect(screen.getByText(/marked resolved/i)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /show resolved/i }))
+
+    // Visible again, annotated as resolved (category header appears).
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /delivery/i })).toBeInTheDocument()
+    })
+  })
+
+  it('persists an unresolve action through the API', async () => {
+    render(<ProblemAnalysis />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /show resolved \(1\)/i })).toBeInTheDocument()
+    })
+    await userEvent.click(screen.getByRole('checkbox', { name: /show resolved/i }))
+
+    // Expand category → subcategory to reach the problem row.
+    await userEvent.click(await screen.findByRole('button', { name: /delivery/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /shipping speed/i }))
+
+    await userEvent.click(await screen.findByRole('button', { name: /mark as unresolved/i }))
+
+    expect(mockSetProblemResolved).toHaveBeenCalledWith(
+      'delivery|shipping_speed|slow delivery times', false,
+    )
+  })
+})

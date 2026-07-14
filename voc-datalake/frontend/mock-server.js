@@ -122,6 +122,9 @@ const mockSourcesStatus = {
 };
 
 // Mock categories config
+// Problem resolution state (issue #66) — mutable so the toggle round-trips.
+const mockResolvedProblems = {};
+
 const mockCategoriesConfig = {
   categories: [
     { name: 'delivery', display_name: 'Delivery', description: 'Shipping and delivery issues', color: '#EF4444' },
@@ -185,6 +188,20 @@ const handlers = {
   // Settings - Categories
   'GET /settings/categories': () => mockCategoriesConfig,
   'PUT /settings/categories': () => ({ success: true, message: 'Categories saved' }),
+  'GET /settings/resolved-problems': () => ({ resolved: mockResolvedProblems }),
+  'PUT /settings/resolved-problems': (body) => {
+    if (!body || typeof body.key !== 'string' || body.key.trim() === '' || typeof body.resolved !== 'boolean') {
+      // Mirror the real handler's 400 contract so local dev doesn't mask
+      // client bugs behind a 200.
+      return { __status: 400, body: { success: false, message: 'key and resolved are required' } };
+    }
+    if (body.resolved) {
+      mockResolvedProblems[body.key] = { resolved_at: new Date().toISOString() };
+    } else {
+      delete mockResolvedProblems[body.key];
+    }
+    return { success: true, key: body.key, resolved: body.resolved };
+  },
 
   // Data Explorer
   'GET /data-explorer/buckets': () => ({ buckets: mockBuckets }),
@@ -371,6 +388,13 @@ const server = http.createServer((req, res) => {
         }
       }
       const result = handler(parsedBody, url.searchParams);
+      // Handlers may signal a non-200 status (matching the real API's error
+      // contract) by returning { __status, body }.
+      if (result && typeof result.__status === 'number') {
+        res.writeHead(result.__status);
+        res.end(JSON.stringify(result.body));
+        return;
+      }
       res.writeHead(200);
       res.end(JSON.stringify(result));
     });
