@@ -81,6 +81,7 @@
     "markResolved": "해결됨으로 표시",
     "markUnresolved": "미해결로 표시",
     "resolved": "해결됨",
+    "saveFailed": "상태를 업데이트하지 못했습니다. 다시 시도하세요.",
     "showResolved": "해결됨 표시 ({{total}})"
   },
   "send": "보내기",

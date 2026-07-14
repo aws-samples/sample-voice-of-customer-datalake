@@ -10,9 +10,9 @@ describe('buildResolutionKey', () => {
       .toBe('delivery|shipping_speed|slow delivery times')
   })
 
-  it('normalizes whitespace and case so cosmetic changes keep the key stable', () => {
-    expect(buildResolutionKey('delivery', 'general', '  Slow   DELIVERY  times '))
-      .toBe('delivery|general|slow delivery times')
+  it('normalizes whitespace and case in all three components', () => {
+    expect(buildResolutionKey(' Delivery ', 'Shipping  Speed', '  Slow   DELIVERY  times '))
+      .toBe('delivery|shipping speed|slow delivery times')
   })
 })
 

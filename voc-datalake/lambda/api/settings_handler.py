@@ -30,9 +30,10 @@ RESOLVED_PROBLEMS_PK = "SETTINGS#resolved_problems"
 RESOLVED_PROBLEMS_SK = "config"
 
 # Problem keys are client-built as "category|subcategory|normalized problem
-# text". Bound their size so the single config item stays far away from
-# DynamoDB's 400KB item cap even with thousands of resolved problems.
+# text". Bound their size AND count so the single config item stays far away
+# from DynamoDB's 400KB item cap (worst case ~500 entries x ~540 bytes).
 MAX_PROBLEM_KEY_LEN = 500
+MAX_RESOLVED_ENTRIES = 500
 
 app = create_api_resolver()
 
@@ -53,8 +54,6 @@ def get_resolved_problems():
             Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK}
         )
         return {'resolved': response.get('Item', {}).get('resolved', {})}
-    except ConfigurationError:
-        raise
     except Exception as e:
         logger.exception(f"Failed to get resolved problems: {e}")
         raise ServiceError('Failed to retrieve resolved problems')
@@ -92,6 +91,17 @@ def set_problem_resolution():
             ExpressionAttributeValues={':empty': {}},
         )
         if resolved:
+            # Bound the map so orphaned keys can't grow the single config
+            # item toward DynamoDB's 400KB cap. Overwriting an existing key
+            # is always allowed; only NEW entries count against the cap.
+            current = aggregates_table.get_item(
+                Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK}
+            ).get('Item', {}).get('resolved', {})
+            if key not in current and len(current) >= MAX_RESOLVED_ENTRIES:
+                raise ValidationError(
+                    f'Resolved-problem limit reached ({MAX_RESOLVED_ENTRIES}). '
+                    'Unresolve entries you no longer need first.'
+                )
             aggregates_table.update_item(
                 Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
                 UpdateExpression='SET #r.#k = :entry',
@@ -107,7 +117,7 @@ def set_problem_resolution():
                 ExpressionAttributeNames={'#r': 'resolved', '#k': key},
             )
         return {'success': True, 'key': key, 'resolved': resolved}
-    except (ConfigurationError, ValidationError):
+    except ValidationError:
         raise
     except Exception as e:
         logger.exception(f"Failed to update problem resolution: {e}")

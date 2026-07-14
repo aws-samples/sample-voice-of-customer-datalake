@@ -14,14 +14,15 @@ export type ResolvedProblemsMap = Record<string, { resolved_at: string }>
 /**
  * Build the stable key a problem group is resolved under.
  *
- * Normalizes the problem text (trim + lowercase + collapsed whitespace) so
- * cosmetic changes in the LLM's problem summary don't orphan a resolution.
- * Uses `|` as separator — it cannot appear in category/subcategory values
- * (they are LLM-classified snake_case tokens).
+ * All three components are normalized (trim + lowercase + collapsed
+ * whitespace): they are LLM-classified values, so casing/whitespace drift
+ * ("Delivery" vs "delivery") must not orphan a resolution. Uses `|` as
+ * separator — it cannot appear in category/subcategory values (they are
+ * snake_case tokens).
  */
 export function buildResolutionKey(category: string, subcategory: string, problem: string): string {
-  const normalized = problem.trim().toLowerCase().replaceAll(/\s+/g, ' ')
-  return `${category}|${subcategory}|${normalized}`
+  const normalize = (value: string) => value.trim().toLowerCase().replaceAll(/\s+/g, ' ')
+  return `${normalize(category)}|${normalize(subcategory)}|${normalize(problem)}`
 }
 
 

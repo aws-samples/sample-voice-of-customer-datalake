@@ -418,3 +418,60 @@ class TestResolvedProblems:
 
         assert response['statusCode'] == 400
         mock_table.update_item.assert_not_called()
+
+
+
+class TestResolvedProblemsCap:
+    """The single config item is bounded (review feedback on #153)."""
+
+    @patch('settings_handler.aggregates_table')
+    def test_rejects_new_entries_beyond_the_cap(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import MAX_RESOLVED_ENTRIES, lambda_handler
+
+        full_map = {f'cat|sub|problem {i}': {'resolved_at': 'x'} for i in range(MAX_RESOLVED_ENTRIES)}
+        mock_table.get_item.return_value = {'Item': {'resolved': full_map}}
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|one too many', 'resolved': True},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        # Only the ensure-parent update ran; the SET never happened.
+        update_expressions = [
+            c.kwargs['UpdateExpression'] for c in mock_table.update_item.call_args_list
+        ]
+        assert 'SET #r.#k = :entry' not in update_expressions
+
+    @patch('settings_handler.aggregates_table')
+    def test_overwriting_an_existing_key_is_allowed_at_the_cap(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        from settings_handler import MAX_RESOLVED_ENTRIES, lambda_handler
+
+        full_map = {f'cat|sub|problem {i}': {'resolved_at': 'x'} for i in range(MAX_RESOLVED_ENTRIES)}
+        mock_table.get_item.return_value = {'Item': {'resolved': full_map}}
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|problem 0', 'resolved': True},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+
+    @patch('settings_handler.aggregates_table')
+    def test_unresolve_is_never_capped(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import MAX_RESOLVED_ENTRIES, lambda_handler
+
+        full_map = {f'cat|sub|problem {i}': {'resolved_at': 'x'} for i in range(MAX_RESOLVED_ENTRIES)}
+        mock_table.get_item.return_value = {'Item': {'resolved': full_map}}
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|problem 3', 'resolved': False},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200

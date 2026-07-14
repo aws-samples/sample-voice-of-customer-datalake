@@ -58,6 +58,7 @@ function ResolveToggleButton({ resolved, onToggleResolved }: Readonly<{ resolved
     : t('problemResolution.markResolved')
   return (
     <button
+      type="button"
       onClick={onToggleResolved}
       title={resolveLabel}
       aria-label={resolveLabel}

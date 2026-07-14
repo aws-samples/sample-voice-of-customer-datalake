@@ -230,6 +230,18 @@ function toPDFCategories(groups: CategoryGroup[]) {
   }))
 }
 
+// Rendered when persisting a resolve/unresolve fails; kept out of the page
+// component so the conditional doesn't count against its complexity budget.
+function ResolveErrorBanner({ show }: { readonly show: boolean }) {
+  const { t } = useTranslation('common')
+  if (!show) return null
+  return (
+    <div className="card bg-red-50 border border-red-200 text-red-700 text-sm py-2 px-3" role="alert">
+      {t('problemResolution.saveFailed')}
+    </div>
+  )
+}
+
 export default function ProblemAnalysis() {
   const { t } = useTranslation('common')
   const { timeRange, customDays, dateBasis, config } = useConfigStore()
@@ -275,6 +287,13 @@ export default function ProblemAnalysis() {
     },
   })
 
+  const handleToggleResolved = (key: string, resolved: boolean) => {
+    // Serialize toggles: a rapid double-click would race SET/REMOVE for the
+    // same key server-side. The mutation error state renders a banner below.
+    if (toggleResolvedMutation.isPending) return
+    toggleResolvedMutation.mutate({ key, resolved })
+  }
+
   // Build dynamic sources list from entities
   const allSources = useMemo(() => {
     if (!entitiesData?.entities?.sources) return []
@@ -316,10 +335,6 @@ export default function ProblemAnalysis() {
     () => applyResolution(groupedData, resolvedMap, showResolved),
     [groupedData, resolvedMap, showResolved],
   )
-
-  const handleToggleResolved = (key: string, resolved: boolean) => {
-    toggleResolvedMutation.mutate({ key, resolved })
-  }
 
   // Get unique categories from entities (dynamic)
   const allCategories = useMemo(() => {
@@ -577,6 +592,8 @@ export default function ProblemAnalysis() {
           </div>
         </div>
       </div>
+
+      <ResolveErrorBanner show={toggleResolvedMutation.isError} />
 
       {/* Problem Tree */}
       {visibleData.length === 0 ? (

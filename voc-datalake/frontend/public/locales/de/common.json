@@ -81,6 +81,7 @@
     "markResolved": "Als gelöst markieren",
     "markUnresolved": "Als ungelöst markieren",
     "resolved": "Gelöst",
+    "saveFailed": "Der Status konnte nicht aktualisiert werden. Bitte erneut versuchen.",
     "showResolved": "Gelöste anzeigen ({{total}})"
   },
   "send": "Senden",

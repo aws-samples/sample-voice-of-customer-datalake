@@ -84,6 +84,7 @@
     "markResolved": "Marquer comme résolu",
     "markUnresolved": "Marquer comme non résolu",
     "resolved": "Résolu",
+    "saveFailed": "Impossible de mettre à jour le statut. Réessayez.",
     "showResolved": "Afficher les résolus ({{total}})"
   },
   "send": "Envoyer",

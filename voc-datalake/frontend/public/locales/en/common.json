@@ -81,6 +81,7 @@
     "markResolved": "Mark as resolved",
     "markUnresolved": "Mark as unresolved",
     "resolved": "Resolved",
+    "saveFailed": "Could not update the resolved status. Try again.",
     "showResolved": "Show resolved ({{total}})"
   },
   "send": "Send",
