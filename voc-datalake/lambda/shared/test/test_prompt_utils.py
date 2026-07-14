@@ -323,12 +323,22 @@ class TestPrfaqPromptContract:
     def test_chain_builder_formats_prfaq_steps_cleanly(self):
         """End-to-end through build_chain_steps: no unresolved placeholders
         except the {previous} handled later by the chain executor."""
+        from datetime import datetime, timedelta, timezone
         from shared.prompts import get_prfaq_generation_steps
+
+        def launch_date_now() -> str:
+            return (datetime.now(timezone.utc) + timedelta(days=90)).strftime('%Y-%m-%d')
+
+        # Sample the expected date BEFORE and AFTER the builder call: if the
+        # test straddles a UTC midnight, the builder's date matches one of
+        # the two samples instead of flaking.
+        expected_before = launch_date_now()
         steps = get_prfaq_generation_steps(
             feature_idea='Test feature',
             personas_context='P1',
             feedback_context='F1',
         )
+        expected_after = launch_date_now()
         assert len(steps) == 4
         # Cross-check: the builder's emitted step names track the JSON keys
         # (the hardcoded-order test above stays as the human-intent pin —
@@ -355,10 +365,9 @@ class TestPrfaqPromptContract:
         # Match the ACTUAL generated date (today + ~90 days), not any
         # date-shaped text — a future literal example date in the template
         # must not satisfy this vacuously.
-        from datetime import datetime, timedelta, timezone
-        expected_launch = (datetime.now(timezone.utc) + timedelta(days=90)).strftime('%Y-%m-%d')
-        assert expected_launch in press_release, (
-            f'launch_date slot did not render the builder-generated date {expected_launch}'
+        assert expected_before in press_release or expected_after in press_release, (
+            'launch_date slot did not render the builder-generated date '
+            f'({expected_before} / {expected_after})'
         )
 
 
