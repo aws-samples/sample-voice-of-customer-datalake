@@ -200,9 +200,11 @@ describe('problem resolution (issue #66)', () => {
 
     // Resolved group hidden: the page falls back to its empty state.
     await waitFor(() => {
-      expect(screen.getByText(/show resolved \(1\)/i)).toBeInTheDocument()
+      expect(screen.getByRole('checkbox', { name: /show resolved \(1\)/i })).toBeInTheDocument()
     })
     expect(screen.queryByText('Slow delivery times')).not.toBeInTheDocument()
+    // The empty state explains WHY the tree is empty instead of "no data".
+    expect(screen.getByText(/marked resolved/i)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('checkbox', { name: /show resolved/i }))
 
@@ -216,7 +218,7 @@ describe('problem resolution (issue #66)', () => {
     render(<ProblemAnalysis />, { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(screen.getByText(/show resolved \(1\)/i)).toBeInTheDocument()
+      expect(screen.getByRole('checkbox', { name: /show resolved \(1\)/i })).toBeInTheDocument()
     })
     await userEvent.click(screen.getByRole('checkbox', { name: /show resolved/i }))
 

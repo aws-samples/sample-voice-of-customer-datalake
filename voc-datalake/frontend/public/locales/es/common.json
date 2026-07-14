@@ -81,6 +81,8 @@
     "none": "Ninguna"
   },
   "problemResolution": {
+    "allResolvedHint": "Activa \"Mostrar resueltos ({{total}})\" arriba para revisarlos",
+    "allResolvedTitle": "Todos los problemas de esta vista están marcados como resueltos",
     "markResolved": "Marcar como resuelto",
     "markUnresolved": "Marcar como no resuelto",
     "resolved": "Resuelto",

@@ -33,6 +33,9 @@ interface CategoryGroupPDF {
 export interface ProblemAnalysisPDFProps {
   readonly categories: CategoryGroupPDF[]
   readonly timeRange: string
+  /** Translated badge text for resolved problems (the PDF renders outside
+   * the i18n provider, so the page passes the resolved label in). */
+  readonly resolvedLabel?: string
   readonly filters?: {
     source?: string | null
     category?: string | null
@@ -149,7 +152,7 @@ function HeaderSection({
   )
 }
 
-function ProblemItem({ problem }: { readonly problem: ProblemGroupPDF }) {
+function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGroupPDF; readonly resolvedLabel?: string }) {
   const resolved = problem.resolved === true
   return (
     <div data-pdf-section style={{
@@ -184,7 +187,7 @@ function ProblemItem({ problem }: { readonly problem: ProblemGroupPDF }) {
                 padding: '2px 8px',
                 marginLeft: '8px',
               }}>
-                RESOLVED
+                {(resolvedLabel ?? 'Resolved').toUpperCase()}
               </span>
             )}
             {problem.similarProblems.length > 0 && (
@@ -244,10 +247,11 @@ function ProblemItem({ problem }: { readonly problem: ProblemGroupPDF }) {
 }
 
 function SubcategorySection({
-  subcategory, categoryName,
+  subcategory, categoryName, resolvedLabel,
 }: {
   readonly subcategory: SubcategoryGroupPDF;
-  readonly categoryName: string
+  readonly categoryName: string;
+  readonly resolvedLabel?: string
 }) {
   return (
     <div data-pdf-section style={{
@@ -288,13 +292,13 @@ function SubcategorySection({
         )}
       </div>
       {subcategory.problems.map((problem) => (
-        <ProblemItem key={`${categoryName}-${subcategory.subcategory}-${problem.problem}`} problem={problem} />
+        <ProblemItem key={`${categoryName}-${subcategory.subcategory}-${problem.problem}`} problem={problem} resolvedLabel={resolvedLabel} />
       ))}
     </div>
   )
 }
 
-function CategorySection({ category }: { readonly category: CategoryGroupPDF }) {
+function CategorySection({ category, resolvedLabel }: { readonly category: CategoryGroupPDF; readonly resolvedLabel?: string }) {
   return (
     <div data-pdf-section style={{ marginBottom: '28px' }}>
       <div style={{
@@ -344,6 +348,7 @@ function CategorySection({ category }: { readonly category: CategoryGroupPDF }) 
           key={`${category.category}-${sub.subcategory}`}
           subcategory={sub}
           categoryName={category.category}
+          resolvedLabel={resolvedLabel}
         />
       ))}
     </div>
@@ -363,7 +368,7 @@ export default function ProblemAnalysisPDFContent(props: ProblemAnalysisPDFProps
         marginBottom: '24px',
       }} />
       {props.categories.map((category) => (
-        <CategorySection key={category.category} category={category} />
+        <CategorySection key={category.category} category={category} resolvedLabel={props.resolvedLabel} />
       ))}
       <div data-pdf-section>
         <hr style={{

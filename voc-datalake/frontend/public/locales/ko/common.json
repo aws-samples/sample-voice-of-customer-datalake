@@ -78,6 +78,8 @@
     "none": "없음"
   },
   "problemResolution": {
+    "allResolvedHint": "위의 \"해결됨 표시 ({{total}})\"를 켜면 확인할 수 있습니다",
+    "allResolvedTitle": "이 보기의 모든 문제가 해결됨으로 표시되어 있습니다",
     "markResolved": "해결됨으로 표시",
     "markUnresolved": "미해결로 표시",
     "resolved": "해결됨",

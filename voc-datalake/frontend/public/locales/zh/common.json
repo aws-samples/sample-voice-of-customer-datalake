@@ -78,6 +78,8 @@
     "none": "无"
   },
   "problemResolution": {
+    "allResolvedHint": "启用上方的\"显示已解决 ({{total}})\"即可查看",
+    "allResolvedTitle": "此视图中的所有问题均已标记为已解决",
     "markResolved": "标记为已解决",
     "markUnresolved": "标记为未解决",
     "resolved": "已解决",

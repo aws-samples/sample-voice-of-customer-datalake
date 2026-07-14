@@ -21,7 +21,7 @@ import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
-import { applyResolution } from './problemResolution'
+import { applyResolution, parseResolvedProblemsResponse } from './problemResolution'
 import type { CategoryGroup, ProblemGroup, SubcategoryGroup } from './problemResolution'
 import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
@@ -211,6 +211,29 @@ function toPDFCategories(groups: CategoryGroup[]) {
   }))
 }
 
+// Empty state distinguishes "nothing in this window" from "everything here
+// is resolved" — hiding data behind the toggle must not read as no data.
+// Kept out of the page component for its complexity budget.
+function EmptyProblemsState({ resolvedCount }: { readonly resolvedCount: number }) {
+  const { t } = useTranslation('common')
+  return (
+    <div className="card text-center py-8 sm:py-12">
+      <AlertTriangle size={36} className="mx-auto text-gray-300 mb-3 sm:mb-4 sm:w-12 sm:h-12" />
+      {resolvedCount > 0 ? (
+        <>
+          <p className="text-gray-500 text-sm sm:text-base">{t('problemResolution.allResolvedTitle')}</p>
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">{t('problemResolution.allResolvedHint', { total: resolvedCount })}</p>
+        </>
+      ) : (
+        <>
+          <p className="text-gray-500 text-sm sm:text-base">No problem analysis data found for the selected period</p>
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">Try expanding the time range or adjusting filters</p>
+        </>
+      )}
+    </div>
+  )
+}
+
 // Rendered when persisting a resolve/unresolve fails; kept out of the page
 // component so the conditional doesn't count against its complexity budget.
 function ResolveErrorBanner({ show }: { readonly show: boolean }) {
@@ -256,7 +279,7 @@ export default function ProblemAnalysis() {
   // clears it from everyone's default view.
   const { data: resolvedData } = useQuery({
     queryKey: ['resolved-problems'],
-    queryFn: () => api.getResolvedProblems(),
+    queryFn: async () => parseResolvedProblemsResponse(await api.getResolvedProblems()),
     enabled: !!config.apiEndpoint,
     // Resolution state is shared across users, so keep it deliberately
     // fresh: refetch when the tab regains focus and treat it as stale
@@ -403,6 +426,7 @@ export default function ProblemAnalysis() {
       generateProblemAnalysisPDF({
         categories: toPDFCategories(visibleData),
         timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
+        resolvedLabel: t('problemResolution.resolved'),
         filters: {
           source: selectedSource,
           category: selectedCategory,
@@ -586,11 +610,7 @@ export default function ProblemAnalysis() {
 
       {/* Problem Tree */}
       {visibleData.length === 0 ? (
-        <div className="card text-center py-8 sm:py-12">
-          <AlertTriangle size={36} className="mx-auto text-gray-300 mb-3 sm:mb-4 sm:w-12 sm:h-12" />
-          <p className="text-gray-500 text-sm sm:text-base">No problem analysis data found for the selected period</p>
-          <p className="text-xs sm:text-sm text-gray-400 mt-1">Try expanding the time range or adjusting filters</p>
-        </div>
+        <EmptyProblemsState resolvedCount={resolvedCount} />
       ) : (
         <div className="space-y-3 sm:space-y-4">
           {visibleData.map((categoryGroup) => (

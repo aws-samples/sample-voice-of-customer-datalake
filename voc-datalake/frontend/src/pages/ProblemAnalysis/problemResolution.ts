@@ -7,10 +7,29 @@
  * reloads and is shared across users.
  * @module pages/ProblemAnalysis/problemResolution
  */
+import { z } from 'zod'
 import type { FeedbackItem } from '../../api/client'
 
 /** Map of resolution keys to their resolution metadata, as stored server-side. */
 export type ResolvedProblemsMap = Record<string, { resolved_at: string }>
+
+const resolvedProblemsResponseSchema = z.object({
+  resolved: z.record(z.string(), z.object({ resolved_at: z.string() })),
+})
+
+/**
+ * Validate the GET /settings/resolved-problems response at the boundary.
+ * A malformed payload degrades to an empty map (problems simply show as
+ * unresolved) instead of crashing the tree pipeline.
+ */
+export function parseResolvedProblemsResponse(payload: unknown): { resolved: ResolvedProblemsMap } {
+  const parsed = resolvedProblemsResponseSchema.safeParse(payload)
+  if (!parsed.success) {
+    console.error('Invalid resolved-problems response:', parsed.error.message)
+    return { resolved: {} }
+  }
+  return parsed.data
+}
 
 /**
  * Shared shape of the client-side problem tree (issue #66 review feedback:

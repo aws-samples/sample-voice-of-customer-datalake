@@ -78,6 +78,8 @@
     "none": "None"
   },
   "problemResolution": {
+    "allResolvedHint": "Enable \"Show resolved ({{total}})\" above to review them",
+    "allResolvedTitle": "All problems in this view are marked resolved",
     "markResolved": "Mark as resolved",
     "markUnresolved": "Mark as unresolved",
     "resolved": "Resolved",

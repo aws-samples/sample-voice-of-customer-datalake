@@ -78,6 +78,8 @@
     "none": "Keine"
   },
   "problemResolution": {
+    "allResolvedHint": "Aktiviere oben „Gelöste anzeigen ({{total}})\", um sie zu prüfen",
+    "allResolvedTitle": "Alle Probleme in dieser Ansicht sind als gelöst markiert",
     "markResolved": "Als gelöst markieren",
     "markUnresolved": "Als ungelöst markieren",
     "resolved": "Gelöst",
