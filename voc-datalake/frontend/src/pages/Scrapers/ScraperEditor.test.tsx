@@ -84,4 +84,12 @@ describe('ScraperEditor auto-detect visibility', () => {
 
     expect(screen.getByRole('button', { name: AUTO_DETECT_LABEL })).toBeInTheDocument()
   })
+
+  it('keeps auto-detect for legacy configs without an extraction_method', () => {
+    // Configs saved before JSON-LD support predate the field and are CSS
+    // scrapers — the positive === check must not hide their button.
+    renderEditor(makeScraper({ extraction_method: undefined }))
+
+    expect(screen.getByRole('button', { name: AUTO_DETECT_LABEL })).toBeInTheDocument()
+  })
 })

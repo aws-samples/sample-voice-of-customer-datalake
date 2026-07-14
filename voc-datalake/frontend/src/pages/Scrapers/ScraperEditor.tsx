@@ -206,10 +206,12 @@ function UrlInput({
   readonly onAutoDetect: () => void
 }) {
   const { t } = useTranslation('scrapers')
-  // Auto-detect exists to discover CSS selectors; JSON-LD scrapers get their
-  // extraction config from the structured data itself, so the button is
-  // hidden there to avoid suggesting an extra required step (issue #18).
-  const showAutoDetect = config.extraction_method !== 'jsonld'
+  // Auto-detect exists to discover CSS selectors, so it renders only for
+  // the CSS extraction method — JSON-LD scrapers get their extraction
+  // config from the structured data itself, and any future method defaults
+  // to hidden rather than shown. Legacy configs without the field predate
+  // JSON-LD support and are CSS scrapers.
+  const showAutoDetect = (config.extraction_method ?? 'css') === 'css'
   return (
     <div>
       <label className="block text-sm font-medium mb-1">{t('editor.websiteUrl')}</label>
