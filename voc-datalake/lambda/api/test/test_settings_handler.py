@@ -514,3 +514,52 @@ class TestResolvedProblemsCap:
 
         # Missing parent map == nothing to remove == success.
         assert response['statusCode'] == 200
+
+
+
+class TestResolvedProblemsRoundThree:
+    """Third review round: narrowed exception swallow + UTF-8 byte cap."""
+
+    @patch('settings_handler.aggregates_table')
+    def test_unresolve_does_not_swallow_real_validation_errors(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """Only the missing-document-path variant is a no-op; other
+        ValidationExceptions are genuine failures, not success."""
+        from botocore.exceptions import ClientError
+        from settings_handler import lambda_handler
+
+        mock_table.update_item.side_effect = ClientError(
+            {'Error': {'Code': 'ValidationException',
+                       'Message': 'ExpressionAttributeNames contains invalid value'}},
+            'UpdateItem',
+        )
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|problem', 'resolved': False},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 500
+
+    @patch('settings_handler.aggregates_table')
+    def test_rejects_keys_over_the_utf8_byte_cap(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """CJK text triples the byte cost: 200 chars under the char cap can
+        still blow the byte budget that sizes the 400KB item math."""
+        from settings_handler import lambda_handler
+
+        cjk_key = '배송|일반|' + ('느린 배송 문제 ' * 25)  # well under 500 chars, over 500 bytes
+        assert len(cjk_key) <= 500
+        assert len(cjk_key.encode('utf-8')) > 500
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': cjk_key, 'resolved': True},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        mock_table.update_item.assert_not_called()

@@ -32,9 +32,11 @@ RESOLVED_PROBLEMS_PK = "SETTINGS#resolved_problems"
 RESOLVED_PROBLEMS_SK = "config"
 
 # Problem keys are client-built as "category|subcategory|normalized problem
-# text". Bound their size AND count so the single config item stays far away
-# from DynamoDB's 400KB item cap (worst case ~500 entries x ~540 bytes).
+# text". Bound their size in characters AND UTF-8 bytes (CJK text triples
+# the byte cost) plus the entry count, so the single config item stays far
+# from DynamoDB's 400KB cap: worst case 500 entries x ~540 bytes ≈ 270KB.
 MAX_PROBLEM_KEY_LEN = 500
+MAX_PROBLEM_KEY_BYTES = 500
 MAX_RESOLVED_ENTRIES = 500
 
 app = create_api_resolver()
@@ -80,6 +82,8 @@ def set_problem_resolution():
         raise ValidationError('key must be a non-empty string')
     if len(key) > MAX_PROBLEM_KEY_LEN:
         raise ValidationError(f'key must be at most {MAX_PROBLEM_KEY_LEN} characters')
+    if len(key.encode('utf-8')) > MAX_PROBLEM_KEY_BYTES:
+        raise ValidationError(f'key must be at most {MAX_PROBLEM_KEY_BYTES} bytes (UTF-8)')
     resolved = body.get('resolved')
     if not isinstance(resolved, bool):
         raise ValidationError('resolved must be a boolean')
@@ -151,7 +155,12 @@ def _resolve_problem_key(key: str) -> None:
 
 
 def _unresolve_problem_key(key: str) -> None:
-    """REMOVE the entry; a missing parent map just means nothing to remove."""
+    """REMOVE the entry; a missing parent map just means nothing to remove.
+
+    Only the document-path variant of ValidationException is treated as a
+    no-op — any other validation failure (malformed expression, oversized
+    name) is a real error and must not be reported as success.
+    """
     try:
         aggregates_table.update_item(
             Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
@@ -159,7 +168,12 @@ def _unresolve_problem_key(key: str) -> None:
             ExpressionAttributeNames={'#r': 'resolved', '#k': key},
         )
     except ClientError as e:
-        if e.response.get('Error', {}).get('Code', '') != 'ValidationException':
+        error = e.response.get('Error', {})
+        is_missing_path = (
+            error.get('Code', '') == 'ValidationException'
+            and 'document path' in error.get('Message', '').lower()
+        )
+        if not is_missing_path:
             raise
 
 

@@ -11,7 +11,7 @@ interface SubcategoryRowProps {
   readonly expandedProblems: Set<string>
   readonly onToggleProblem: (key: string) => void
   readonly onToggleResolved: (key: string, resolved: boolean) => void
-  readonly resolvePending: boolean
+  readonly resolvePending?: boolean
 }
 
 export function SubcategoryRow({

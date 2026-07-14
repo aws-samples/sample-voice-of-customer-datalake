@@ -255,6 +255,11 @@ export default function ProblemAnalysis() {
     queryKey: ['resolved-problems'],
     queryFn: () => api.getResolvedProblems(),
     enabled: !!config.apiEndpoint,
+    // Resolution state is shared across users, so keep it deliberately
+    // fresh: refetch when the tab regains focus and treat it as stale
+    // after 15s so another user's resolves appear without a remount.
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
   })
 
   const toggleResolvedMutation = useMutation({
