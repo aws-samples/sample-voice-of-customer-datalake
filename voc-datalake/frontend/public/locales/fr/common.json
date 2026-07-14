@@ -80,6 +80,12 @@
     "medium": "Moyenne",
     "none": "Aucune"
   },
+  "problemResolution": {
+    "markResolved": "Marquer comme résolu",
+    "markUnresolved": "Marquer comme non résolu",
+    "resolved": "Résolu",
+    "showResolved": "Afficher les résolus ({{total}})"
+  },
   "send": "Envoyer",
   "sentiment": {
     "mixed": "Mixte",

@@ -77,6 +77,12 @@
     "medium": "보통",
     "none": "없음"
   },
+  "problemResolution": {
+    "markResolved": "해결됨으로 표시",
+    "markUnresolved": "미해결로 표시",
+    "resolved": "해결됨",
+    "showResolved": "해결됨 표시 ({{total}})"
+  },
   "send": "보내기",
   "sentiment": {
     "mixed": "혼합",

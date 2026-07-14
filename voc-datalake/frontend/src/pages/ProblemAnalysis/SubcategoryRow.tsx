@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react'
 import { ProblemRow } from './ProblemRow'
+import { buildResolutionKey } from './problemResolution'
 import type { FeedbackItem } from '../../api/client'
 
 interface ProblemGroup {
@@ -9,6 +10,7 @@ interface ProblemGroup {
   items: FeedbackItem[]
   avgSentiment: number
   urgentCount: number
+  resolved?: boolean
 }
 
 interface SubcategoryGroup {
@@ -25,6 +27,7 @@ interface SubcategoryRowProps {
   readonly onToggle: () => void
   readonly expandedProblems: Set<string>
   readonly onToggleProblem: (key: string) => void
+  readonly onToggleResolved: (key: string, resolved: boolean) => void
 }
 
 export function SubcategoryRow({
@@ -34,6 +37,7 @@ export function SubcategoryRow({
   onToggle,
   expandedProblems,
   onToggleProblem,
+  onToggleResolved,
 }: SubcategoryRowProps) {
   const subcategoryKey = `${categoryName}:${subcategoryGroup.subcategory}`
 
@@ -68,6 +72,7 @@ export function SubcategoryRow({
         <div className="divide-y divide-gray-50">
           {subcategoryGroup.problems.map((problemGroup) => {
             const problemKey = `${categoryName}:${subcategoryGroup.subcategory}:${problemGroup.problem}`
+            const resolutionKey = buildResolutionKey(categoryName, subcategoryGroup.subcategory, problemGroup.problem)
             return (
               <ProblemRow
                 key={problemKey}
@@ -75,6 +80,7 @@ export function SubcategoryRow({
                 problemKey={problemKey}
                 isExpanded={expandedProblems.has(problemKey)}
                 onToggle={() => onToggleProblem(problemKey)}
+                onToggleResolved={() => onToggleResolved(resolutionKey, !problemGroup.resolved)}
               />
             )
           })}

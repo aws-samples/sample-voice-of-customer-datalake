@@ -77,6 +77,12 @@
     "medium": "中",
     "none": "なし"
   },
+  "problemResolution": {
+    "markResolved": "解決済みにする",
+    "markUnresolved": "未解決に戻す",
+    "resolved": "解決済み",
+    "showResolved": "解決済みを表示 ({{total}})"
+  },
   "send": "送信",
   "sentiment": {
     "mixed": "混合",

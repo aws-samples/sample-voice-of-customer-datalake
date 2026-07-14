@@ -330,3 +330,91 @@ class TestGenerateCategories:
         # Assert - now returns 500 with error key
         assert response['statusCode'] == 500
         assert 'error' in body
+
+
+
+class TestResolvedProblems:
+    """Tests for GET/PUT /settings/resolved-problems (issue #66)."""
+
+    @patch('settings_handler.aggregates_table')
+    def test_get_returns_resolved_map(self, mock_table, api_gateway_event, lambda_context):
+        mock_table.get_item.return_value = {
+            'Item': {
+                'pk': 'SETTINGS#resolved_problems',
+                'sk': 'config',
+                'resolved': {'delivery|general|late orders': {'resolved_at': '2026-07-01T00:00:00+00:00'}},
+            }
+        }
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(method='GET', path='/settings/resolved-problems')
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert 'delivery|general|late orders' in body['resolved']
+
+    @patch('settings_handler.aggregates_table')
+    def test_get_returns_empty_map_when_unset(self, mock_table, api_gateway_event, lambda_context):
+        mock_table.get_item.return_value = {}
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(method='GET', path='/settings/resolved-problems')
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['resolved'] == {}
+
+    @patch('settings_handler.aggregates_table')
+    def test_put_resolve_sets_nested_key_atomically(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'delivery|general|late orders', 'resolved': True},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body == {'success': True, 'key': 'delivery|general|late orders', 'resolved': True}
+        # Two updates: ensure the parent map exists, then set the nested key.
+        assert mock_table.update_item.call_count == 2
+        ensure, set_call = mock_table.update_item.call_args_list
+        assert 'if_not_exists' in ensure.kwargs['UpdateExpression']
+        assert set_call.kwargs['UpdateExpression'] == 'SET #r.#k = :entry'
+        assert set_call.kwargs['ExpressionAttributeNames']['#k'] == 'delivery|general|late orders'
+        assert 'resolved_at' in set_call.kwargs['ExpressionAttributeValues'][':entry']
+
+    @patch('settings_handler.aggregates_table')
+    def test_put_unresolve_removes_nested_key(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'delivery|general|late orders', 'resolved': False},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        remove_call = mock_table.update_item.call_args_list[-1]
+        assert remove_call.kwargs['UpdateExpression'] == 'REMOVE #r.#k'
+
+    @pytest.mark.parametrize('payload', [
+        {'resolved': True},                          # missing key
+        {'key': '', 'resolved': True},               # empty key
+        {'key': '  ', 'resolved': True},             # whitespace key
+        {'key': 'x' * 501, 'resolved': True},        # oversized key
+        {'key': 'ok', 'resolved': 'yes'},            # non-boolean resolved
+        {'key': 'ok'},                               # missing resolved
+    ])
+    @patch('settings_handler.aggregates_table')
+    def test_put_rejects_invalid_payloads(self, mock_table, payload, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems', body=payload,
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        mock_table.update_item.assert_not_called()

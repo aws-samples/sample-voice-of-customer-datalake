@@ -80,6 +80,12 @@
     "medium": "Média",
     "none": "Nenhuma"
   },
+  "problemResolution": {
+    "markResolved": "Marcar como resolvido",
+    "markUnresolved": "Marcar como não resolvido",
+    "resolved": "Resolvido",
+    "showResolved": "Mostrar resolvidos ({{total}})"
+  },
   "send": "Enviar",
   "sentiment": {
     "mixed": "Misto",

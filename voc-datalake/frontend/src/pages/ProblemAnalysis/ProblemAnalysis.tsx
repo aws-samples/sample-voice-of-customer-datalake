@@ -12,7 +12,7 @@
  */
 
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { 
   ChevronDown, ChevronRight, AlertTriangle, 
   MessageSquare, TrendingUp, Filter, X, Layers, FileDown
@@ -21,6 +21,7 @@ import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
+import { applyResolution } from './problemResolution'
 import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
@@ -32,6 +33,7 @@ interface ProblemGroup {
   items: FeedbackItem[]
   avgSentiment: number
   urgentCount: number
+  resolved?: boolean
 }
 
 interface SubcategoryGroup {
@@ -240,7 +242,9 @@ export default function ProblemAnalysis() {
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null)
   const [selectedSource, setSelectedSource] = useState<string | null>(null)
   const [showUrgentOnly, setShowUrgentOnly] = useState(false)
+  const [showResolved, setShowResolved] = useState(false)
   const [similarityThreshold, setSimilarityThreshold] = useState(0.4)
+  const queryClient = useQueryClient()
 
   // Fetch entities for dynamic sources and categories
   const { data: entitiesData } = useQuery({
@@ -253,6 +257,22 @@ export default function ProblemAnalysis() {
     queryKey: ['feedback-problems', dateParams],
     queryFn: () => api.getFeedback({ ...dateParams, limit: 500 }),
     enabled: !!config.apiEndpoint,
+  })
+
+  // Resolved problems are shared across users (issue #66); resolving one
+  // clears it from everyone's default view.
+  const { data: resolvedData } = useQuery({
+    queryKey: ['resolved-problems'],
+    queryFn: () => api.getResolvedProblems(),
+    enabled: !!config.apiEndpoint,
+  })
+
+  const toggleResolvedMutation = useMutation({
+    mutationFn: ({ key, resolved }: { key: string; resolved: boolean }) =>
+      api.setProblemResolved(key, resolved),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['resolved-problems'] })
+    },
   })
 
   // Build dynamic sources list from entities
@@ -287,6 +307,19 @@ export default function ProblemAnalysis() {
 
     return buildCategoryGroups(categoryMap)
   }, [feedbackData, showUrgentOnly, selectedCategory, selectedSubcategory, selectedSource, similarityThreshold])
+
+  // Annotate problem groups with their shared resolved status and hide the
+  // resolved ones unless requested; category/subcategory totals are
+  // recomputed so headers reflect what is actually shown (issue #66).
+  const resolvedMap = useMemo(() => resolvedData?.resolved ?? {}, [resolvedData])
+  const { visible: visibleData, resolvedCount } = useMemo(
+    () => applyResolution(groupedData, resolvedMap, showResolved),
+    [groupedData, resolvedMap, showResolved],
+  )
+
+  const handleToggleResolved = (key: string, resolved: boolean) => {
+    toggleResolvedMutation.mutate({ key, resolved })
+  }
 
   // Get unique categories from entities (dynamic)
   const allCategories = useMemo(() => {
@@ -334,10 +367,10 @@ export default function ProblemAnalysis() {
   }
 
   const expandAll = () => {
-    const allCats = new Set(groupedData.map(g => g.category))
+    const allCats = new Set(visibleData.map(g => g.category))
     const allSubs = new Set<string>()
     const allProbs = new Set<string>()
-    for (const g of groupedData) {
+    for (const g of visibleData) {
       for (const s of g.subcategories) {
         allSubs.add(`${g.category}:${s.subcategory}`)
         for (const p of s.problems) {
@@ -356,17 +389,17 @@ export default function ProblemAnalysis() {
     setExpandedProblems(new Set())
   }
 
-  const totalSubcategories = groupedData.reduce((sum, g) => sum + g.subcategories.length, 0)
-  const totalProblems = groupedData.reduce((sum, g) => 
+  const totalSubcategories = visibleData.reduce((sum, g) => sum + g.subcategories.length, 0)
+  const totalProblems = visibleData.reduce((sum, g) => 
     sum + g.subcategories.reduce((s, sub) => s + sub.problems.length, 0), 0)
-  const totalFeedback = groupedData.reduce((sum, g) => sum + g.totalItems, 0)
-  const totalUrgent = groupedData.reduce((sum, g) => sum + g.urgentCount, 0)
+  const totalFeedback = visibleData.reduce((sum, g) => sum + g.totalItems, 0)
+  const totalUrgent = visibleData.reduce((sum, g) => sum + g.urgentCount, 0)
 
   const exportPDF = () => {
-    if (groupedData.length === 0) return
+    if (visibleData.length === 0) return
     try {
       generateProblemAnalysisPDF({
-        categories: toPDFCategories(groupedData),
+        categories: toPDFCategories(visibleData),
         timeRange: getTimeRangeLabel(timeRange, customDays),
         filters: {
           source: selectedSource,
@@ -405,7 +438,7 @@ export default function ProblemAnalysis() {
             <TrendingUp size={14} className="sm:w-4 sm:h-4" />
             <span className="text-xs sm:text-sm">Categories</span>
           </div>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900">{groupedData.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900">{visibleData.length}</p>
         </div>
         <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
           <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
@@ -487,9 +520,18 @@ export default function ProblemAnalysis() {
                 />
                 <span>Urgent only</span>
               </label>
-              {(selectedSource || selectedCategory || selectedSubcategory || showUrgentOnly) && (
+              <label className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+                <input
+                  type="checkbox"
+                  checked={showResolved}
+                  onChange={(e) => setShowResolved(e.target.checked)}
+                  className="rounded border-gray-300 w-3.5 h-3.5 sm:w-4 sm:h-4"
+                />
+                <span>{t('problemResolution.showResolved', { total: resolvedCount })}</span>
+              </label>
+              {(selectedSource || selectedCategory || selectedSubcategory || showUrgentOnly || showResolved) && (
                 <button
-                  onClick={() => { setSelectedSource(null); setSelectedCategory(null); setSelectedSubcategory(null); setShowUrgentOnly(false) }}
+                  onClick={() => { setSelectedSource(null); setSelectedCategory(null); setSelectedSubcategory(null); setShowUrgentOnly(false); setShowResolved(false) }}
                   className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 active:scale-95"
                 >
                   <X size={12} className="sm:w-[14px] sm:h-[14px]" />
@@ -523,7 +565,7 @@ export default function ProblemAnalysis() {
                 </button>
                 <button
                   onClick={exportPDF}
-                  disabled={groupedData.length === 0}
+                  disabled={visibleData.length === 0}
                   className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   title={t('exportPdfTooltip')}
                 >
@@ -537,7 +579,7 @@ export default function ProblemAnalysis() {
       </div>
 
       {/* Problem Tree */}
-      {groupedData.length === 0 ? (
+      {visibleData.length === 0 ? (
         <div className="card text-center py-8 sm:py-12">
           <AlertTriangle size={36} className="mx-auto text-gray-300 mb-3 sm:mb-4 sm:w-12 sm:h-12" />
           <p className="text-gray-500 text-sm sm:text-base">No problem analysis data found for the selected period</p>
@@ -545,7 +587,7 @@ export default function ProblemAnalysis() {
         </div>
       ) : (
         <div className="space-y-3 sm:space-y-4">
-          {groupedData.map((categoryGroup) => (
+          {visibleData.map((categoryGroup) => (
             <div key={categoryGroup.category} className="card p-0 overflow-hidden">
               {/* Category Header */}
               <button
@@ -586,6 +628,7 @@ export default function ProblemAnalysis() {
                         onToggle={() => toggleSubcategory(subcategoryKey)}
                         expandedProblems={expandedProblems}
                         onToggleProblem={toggleProblem}
+                        onToggleResolved={handleToggleResolved}
                       />
                     )
                   })}

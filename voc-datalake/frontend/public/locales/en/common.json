@@ -77,6 +77,12 @@
     "medium": "Medium",
     "none": "None"
   },
+  "problemResolution": {
+    "markResolved": "Mark as resolved",
+    "markUnresolved": "Mark as unresolved",
+    "resolved": "Resolved",
+    "showResolved": "Show resolved ({{total}})"
+  },
   "send": "Send",
   "sentiment": {
     "mixed": "Mixed",

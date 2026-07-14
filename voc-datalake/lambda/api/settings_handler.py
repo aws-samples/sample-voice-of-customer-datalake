@@ -26,8 +26,92 @@ SETTINGS_PK = "SETTINGS#brand"
 SETTINGS_SK = "config"
 CATEGORIES_PK = "SETTINGS#categories"
 CATEGORIES_SK = "config"
+RESOLVED_PROBLEMS_PK = "SETTINGS#resolved_problems"
+RESOLVED_PROBLEMS_SK = "config"
+
+# Problem keys are client-built as "category|subcategory|normalized problem
+# text". Bound their size so the single config item stays far away from
+# DynamoDB's 400KB item cap even with thousands of resolved problems.
+MAX_PROBLEM_KEY_LEN = 500
 
 app = create_api_resolver()
+
+
+@app.get("/settings/resolved-problems")
+@tracer.capture_method
+def get_resolved_problems():
+    """Get the map of problems marked as resolved on the Problem Analysis page.
+
+    Shape: {'resolved': {problem_key: {'resolved_at': iso8601}}}. Shared
+    across all users by design (issue #66) — resolving a problem clears it
+    from everyone's working view.
+    """
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    try:
+        response = aggregates_table.get_item(
+            Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK}
+        )
+        return {'resolved': response.get('Item', {}).get('resolved', {})}
+    except ConfigurationError:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get resolved problems: {e}")
+        raise ServiceError('Failed to retrieve resolved problems')
+
+
+@app.put("/settings/resolved-problems")
+@tracer.capture_method
+def set_problem_resolution():
+    """Mark a single problem group resolved or unresolved.
+
+    Body: {'key': str, 'resolved': bool}. Each key is updated atomically
+    (nested-attribute SET/REMOVE), so two users resolving different problems
+    concurrently can't clobber each other's writes.
+    """
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    body = app.current_event.json_body or {}
+
+    key = body.get('key')
+    if not isinstance(key, str) or not key.strip():
+        raise ValidationError('key must be a non-empty string')
+    if len(key) > MAX_PROBLEM_KEY_LEN:
+        raise ValidationError(f'key must be at most {MAX_PROBLEM_KEY_LEN} characters')
+    resolved = body.get('resolved')
+    if not isinstance(resolved, bool):
+        raise ValidationError('resolved must be a boolean')
+
+    try:
+        # Ensure the parent map exists so the nested-path update can't fail
+        # with an invalid-document-path error on first use.
+        aggregates_table.update_item(
+            Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+            UpdateExpression='SET #r = if_not_exists(#r, :empty)',
+            ExpressionAttributeNames={'#r': 'resolved'},
+            ExpressionAttributeValues={':empty': {}},
+        )
+        if resolved:
+            aggregates_table.update_item(
+                Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+                UpdateExpression='SET #r.#k = :entry',
+                ExpressionAttributeNames={'#r': 'resolved', '#k': key},
+                ExpressionAttributeValues={
+                    ':entry': {'resolved_at': datetime.now(timezone.utc).isoformat()},
+                },
+            )
+        else:
+            aggregates_table.update_item(
+                Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+                UpdateExpression='REMOVE #r.#k',
+                ExpressionAttributeNames={'#r': 'resolved', '#k': key},
+            )
+        return {'success': True, 'key': key, 'resolved': resolved}
+    except (ConfigurationError, ValidationError):
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to update problem resolution: {e}")
+        raise ServiceError('Failed to update problem resolution')
 
 
 @app.get("/settings/brand")

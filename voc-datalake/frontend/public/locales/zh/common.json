@@ -77,6 +77,12 @@
     "medium": "中",
     "none": "无"
   },
+  "problemResolution": {
+    "markResolved": "标记为已解决",
+    "markUnresolved": "标记为未解决",
+    "resolved": "已解决",
+    "showResolved": "显示已解决 ({{total}})"
+  },
   "send": "发送",
   "sentiment": {
     "mixed": "混合",
