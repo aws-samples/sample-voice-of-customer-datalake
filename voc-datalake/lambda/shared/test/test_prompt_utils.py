@@ -330,6 +330,10 @@ class TestPrfaqPromptContract:
             feedback_context='F1',
         )
         assert len(steps) == 4
+        # Cross-check: the builder's emitted step names track the JSON keys
+        # (the hardcoded-order test above stays as the human-intent pin —
+        # deriving EXPECTED from builder output would pin nothing).
+        assert [s['step_name'] for s in steps] == list(self._load()['steps'])
         for step in steps:
             # Broad pattern for the same malformed-slot class the raw-template
             # guard catches, applied to the BUILDER's formatted output.
