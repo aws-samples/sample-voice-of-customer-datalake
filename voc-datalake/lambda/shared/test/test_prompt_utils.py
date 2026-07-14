@@ -235,6 +235,17 @@ class TestPrfaqPromptContract:
     # the internally generated launch_date and executor-substituted previous.
     SUPPLIED_PLACEHOLDERS = KNOWN_SLOT_PARAMS | {'launch_date', 'previous'}
 
+    # Slots each step MUST keep: dropping one silently severs the LLM from
+    # its grounding data (the reverse failure mode of an unknown placeholder).
+    # customer_thinking carries the four context slots; later steps are
+    # grounded through {previous}; press_release also needs {launch_date}.
+    REQUIRED_PLACEHOLDERS = {
+        'customer_thinking': KNOWN_SLOT_PARAMS,
+        'press_release': {'launch_date', 'previous'},
+        'customer_faq': {'previous'},
+        'internal_faq': {'previous'},
+    }
+
     def test_builder_signature_has_no_unclassified_parameters(self):
         """Fail loudly when get_prfaq_generation_steps gains a parameter this
         test doesn't know about, instead of silently assuming it is a slot."""
@@ -295,6 +306,19 @@ class TestPrfaqPromptContract:
             unknown = found - allowed
             assert not unknown, f"step '{name}' uses unsupplied placeholders: {unknown}"
 
+    def test_steps_keep_their_required_placeholders(self):
+        """Reverse direction of the guard above: a prompt edit that DROPS a
+        required slot (e.g. {launch_date} vanishing from press_release) must
+        fail, not silently lose the LLM's grounding data."""
+        config = self._load()
+        assert set(self.REQUIRED_PLACEHOLDERS) == set(config['steps'])
+        for name, required in self.REQUIRED_PLACEHOLDERS.items():
+            step = config['steps'][name]
+            searched = step['user_prompt_template'] + '\n' + step.get('system_prompt', '')
+            found = set(re.findall(r'\{([^{}]+)\}', searched))
+            missing = required - found
+            assert not missing, f"step '{name}' dropped required placeholders: {missing}"
+
     # step name -> the section heading the assembler owns and the step's
     # system prompt must explicitly ban re-adding.
     BANNED_HEADINGS = {
@@ -316,7 +340,16 @@ class TestPrfaqPromptContract:
             # splits them across a period should update this test too.
             ban = re.search(r'(do not|never|must not) add[^.]*' + re.escape(heading), system)
             assert ban, f"step '{name}' does not ban adding the '{heading}' heading"
-            assert 'no preamble' in system, f"step '{name}' lacks the preamble ban"
+
+    def test_every_step_bans_preambles(self):
+        """All four steps — including customer_thinking, which owns no section
+        heading and so is absent from BANNED_HEADINGS — must keep their
+        'no preamble' instruction so chained outputs stay assembly-clean."""
+        config = self._load()
+        for name, step in config['steps'].items():
+            assert 'no preamble' in step['system_prompt'].lower(), (
+                f"step '{name}' lacks the preamble ban"
+            )
 
     def test_faq_steps_pin_the_qa_format(self):
         config = self._load()
