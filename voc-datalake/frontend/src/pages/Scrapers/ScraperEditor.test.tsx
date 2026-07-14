@@ -10,21 +10,27 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import i18n from 'i18next'
 import ScraperEditor from './ScraperEditor'
 import { DEFAULT_SCRAPER } from './constants'
-import enScrapers from '../../../public/locales/en/scrapers.json'
 import type { ScraperConfig, ScraperTemplate } from '../../api/types'
 
-vi.mock('../../api/scrapersApi', () => ({
-  scrapersApi: {
-    analyzeUrlForSelectors: vi.fn(),
-  },
-}))
+vi.mock('../../api/scrapersApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api/scrapersApi')>()
+  // Stub the WHOLE real API surface: a future call from the component hits
+  // an assertable vi.fn() instead of an opaque "x is not a function", and
+  // newly added methods are covered automatically.
+  const stubs = Object.fromEntries(
+    Object.keys(actual.scrapersApi).map((name) => [name, vi.fn()]),
+  )
+  return { scrapersApi: stubs }
+})
 
-// Match on the shipped translation strings so a fallback to raw keys
-// ("editor.autoDetect") fails loudly instead of passing by accident.
-const AUTO_DETECT_LABEL = enScrapers.editor.autoDetect
-const AUTO_DETECT_HINT = enScrapers.editor.autoDetectHint
+// Derive the shipped strings from the shared i18n test setup (the single
+// owner of locale loading — src/test/setup.ts) instead of coupling this file
+// to the locale directory layout.
+const AUTO_DETECT_LABEL = i18n.t('editor.autoDetect', { ns: 'scrapers' })
+const AUTO_DETECT_HINT = i18n.t('editor.autoDetectHint', { ns: 'scrapers' })
 
 function makeScraper(overrides: Partial<ScraperConfig>): ScraperConfig {
   return {
@@ -43,6 +49,14 @@ function renderEditor(scraper: ScraperConfig | null, template?: ScraperTemplate)
 }
 
 describe('ScraperEditor auto-detect visibility', () => {
+  it('resolves the shipped strings from the i18n test setup', () => {
+    // Guard against vacuous passes: if the namespace/keys stop resolving,
+    // t() returns the raw key — which a broken component would also render,
+    // letting every assertion below "agree" on the wrong thing.
+    expect(AUTO_DETECT_LABEL).not.toContain('editor.autoDetect')
+    expect(AUTO_DETECT_HINT).not.toContain('editor.autoDetectHint')
+  })
+
   it('shows the auto-detect button and hint for CSS scrapers', () => {
     renderEditor(makeScraper({ extraction_method: 'css' }))
 
