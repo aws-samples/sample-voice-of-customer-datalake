@@ -200,3 +200,86 @@ class TestConvenienceFunctions:
         ml.return_value = {}
         get_avatar_prompt_config()
         ml.assert_called_with('avatar-generation.json')
+
+
+
+class TestPrfaqPromptContract:
+    """Pin the PR/FAQ prompt file to the chain code's contract (issue #93).
+
+    format_prompt leaves unknown placeholders untouched, so a typo like
+    {lauch_date} silently reaches the LLM as literal text — these tests make
+    that a build failure instead of a quiet quality regression.
+    """
+
+    SUPPLIED_PLACEHOLDERS = {
+        'feature_idea', 'personas_context', 'feedback_context',
+        'product_context', 'launch_date', 'previous',
+    }
+
+    @staticmethod
+    def _prompt_path():
+        from pathlib import Path
+        return Path(__file__).resolve().parents[2] / 'api' / 'prompts' / 'prfaq-generation.json'
+
+    @classmethod
+    def _load(cls):
+        import json
+        with open(cls._prompt_path()) as f:
+            return json.load(f)
+
+    def test_has_the_four_chain_steps_in_code_order(self):
+        config = self._load()
+        assert list(config['steps']) == [
+            'customer_thinking', 'press_release', 'customer_faq', 'internal_faq',
+        ]
+
+    def test_every_placeholder_is_supplied_by_the_chain_builder(self):
+        import re
+        config = self._load()
+        for name, step in config['steps'].items():
+            found = set(re.findall(r'\{(\w+)\}', step['user_prompt_template']))
+            unknown = found - self.SUPPLIED_PLACEHOLDERS
+            assert not unknown, f"step '{name}' uses unsupplied placeholders: {unknown}"
+
+    def test_steps_forbid_duplicate_section_headings(self):
+        """The assembler adds 'Press Release'/'Customer FAQ'/'Internal FAQ'
+        headings itself; the prompts must tell the model not to repeat them."""
+        config = self._load()
+        for name in ('press_release', 'customer_faq', 'internal_faq'):
+            system = config['steps'][name]['system_prompt']
+            assert 'Do NOT add' in system, f"step '{name}' lacks the heading ban"
+            assert 'No preamble' in system or 'no preamble' in system, (
+                f"step '{name}' lacks the preamble ban"
+            )
+
+    def test_faq_steps_pin_the_qa_format(self):
+        config = self._load()
+        for name in ('customer_faq', 'internal_faq'):
+            assert '**Q:' in config['steps'][name]['system_prompt'], (
+                f"step '{name}' does not pin the Q&A format"
+            )
+
+    def test_chain_builder_formats_prfaq_steps_cleanly(self, monkeypatch):
+        """End-to-end through build_chain_steps: no unresolved placeholders
+        except the {previous} handled later by the chain executor."""
+        import re
+        import shared.prompts as prompts_module
+        from shared.prompts import get_prfaq_generation_steps
+        monkeypatch.setattr(
+            prompts_module, 'get_prompts_dir', lambda: self._prompt_path().parent
+        )
+        prompts_module.load_prompt_file.cache_clear()
+        try:
+            steps = get_prfaq_generation_steps(
+                feature_idea='Test feature',
+                personas_context='P1',
+                feedback_context='F1',
+            )
+        finally:
+            prompts_module.load_prompt_file.cache_clear()
+        assert len(steps) == 4
+        for step in steps:
+            leftovers = set(re.findall(r'\{(\w+)\}', step['user'])) - {'previous'}
+            assert not leftovers, (
+                f"step '{step['step_name']}' has unresolved placeholders: {leftovers}"
+            )
