@@ -321,6 +321,40 @@ describe('API Client', () => {
         })
       )
     })
+
+    it('threads the review date basis into the body (issue #150)', async () => {
+      const { useConfigStore } = await import('../store/configStore')
+      ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+        config: { apiEndpoint: 'https://api.example.com' },
+        dateBasis: 'review',
+      })
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ response: 'Response' }),
+      })
+
+      await api.chat('Question')
+
+      const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      expect(JSON.parse(options.body)).toMatchObject({ date_basis: 'review' })
+    })
+
+    it('omits date_basis on the default imported basis', async () => {
+      const { useConfigStore } = await import('../store/configStore')
+      ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+        config: { apiEndpoint: 'https://api.example.com' },
+        dateBasis: 'imported',
+      })
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ response: 'Response' }),
+      })
+
+      await api.chat('Question')
+
+      const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      expect(JSON.parse(options.body)).not.toHaveProperty('date_basis')
+    })
   })
 
   describe('getScrapers', () => {

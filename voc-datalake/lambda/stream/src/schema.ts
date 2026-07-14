@@ -29,6 +29,9 @@ export const chatRequestSchema = z.object({
   // VoC chat fields
   context: z.string().optional(),
   days: z.number().int().min(1).max(365).optional(),
+  // Which date the days window applies to: 'imported' (default, ingestion
+  // date) or 'review' (when the customer wrote the feedback). Issue #150.
+  date_basis: z.enum(['imported', 'review']).optional(),
   response_language: z.string().optional(),
   // Project chat fields
   project_id: z.string().optional(),

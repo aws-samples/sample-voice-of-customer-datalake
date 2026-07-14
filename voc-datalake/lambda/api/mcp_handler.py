@@ -18,7 +18,7 @@ from aws_lambda_powertools import Logger, Tracer, Metrics
 from boto3.dynamodb.conditions import Key
 
 from shared.aws import get_dynamodb_resource
-from shared.api import DecimalEncoder
+from shared.api import DecimalEncoder, validate_date_basis
 from shared.feedback import query_feedback_by_date
 from shared.tokens import hash_token
 from shared.tables import get_projects_table, get_feedback_table, get_aggregates_table
@@ -149,6 +149,16 @@ MCP_TOOLS = [
                     "enum": ["positive", "negative", "neutral", "mixed"],
                     "description": "Filter by sentiment label",
                 },
+                "date_basis": {
+                    "type": "string",
+                    "enum": ["imported", "review"],
+                    "description": (
+                        "Which date the days window applies to: 'imported' (default, "
+                        "when the item entered the data lake) or 'review' (when the "
+                        "customer wrote it)"
+                    ),
+                    "default": "imported",
+                },
                 "source": {
                     "type": "string",
                     "description": "Filter by source platform (e.g. webscraper, feedback-form)",
@@ -238,6 +248,7 @@ def _tool_search_feedback(args: dict, _token_info: dict) -> list[dict]:
     source = args.get('source')
     query = args.get('query', '').lower()
     limit = min(args.get('limit', 20), 50)
+    date_basis = validate_date_basis(args.get('date_basis'))
 
     items = query_feedback_by_date(
         feedback_table,
@@ -246,6 +257,7 @@ def _tool_search_feedback(args: dict, _token_info: dict) -> list[dict]:
         categories=[category] if category else None,
         sentiments=[sentiment] if sentiment else None,
         limit=limit,
+        date_basis=date_basis,
     )
 
     if query:

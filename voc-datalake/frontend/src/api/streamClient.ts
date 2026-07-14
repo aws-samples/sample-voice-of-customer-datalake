@@ -5,7 +5,7 @@
  * Cognito token auth through API Gateway.
  */
 import {
-  getBaseUrl, getAuthHeaders,
+  getBaseUrl, getAuthHeaders, getDateBasisBodyParams,
 } from './baseUrl'
 
 class StreamAuthError extends Error {
@@ -158,6 +158,7 @@ export function streamVocChat(options: VocChatOptions): AsyncGenerator<StreamEve
     message: options.message,
     context: options.context,
     days: options.days ?? 7,
+    ...getDateBasisBodyParams(),
     response_language: options.responseLanguage,
     history: options.history,
   }, options.signal)
@@ -190,6 +191,7 @@ export function streamProjectChat(options: ProjectChatOptions): AsyncGenerator<S
     project_id: options.projectId,
     selected_personas: options.selectedPersonas,
     selected_documents: options.selectedDocuments,
+    ...getDateBasisBodyParams(),
     response_language: options.responseLanguage,
     attachments: options.attachments,
     history: options.history,

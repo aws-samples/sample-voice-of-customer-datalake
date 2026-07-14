@@ -157,3 +157,24 @@ describe('chatRequestSchema', () => {
     expect(result.success).toBe(false);
   });
 });
+
+
+describe('chatRequestSchema date_basis (issue #150)', () => {
+  it('accepts imported and review values', () => {
+    for (const basis of ['imported', 'review'] as const) {
+      const result = chatRequestSchema.safeParse({ message: 'hi', date_basis: basis });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('defaults to absent without erroring', () => {
+    const result = chatRequestSchema.safeParse({ message: 'hi' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.date_basis).toBeUndefined();
+  });
+
+  it('rejects values outside the allowlist', () => {
+    const result = chatRequestSchema.safeParse({ message: 'hi', date_basis: 'whenever' });
+    expect(result.success).toBe(false);
+  });
+});

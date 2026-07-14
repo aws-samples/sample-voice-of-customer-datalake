@@ -5,10 +5,35 @@ and job Lambdas (document generator, document merger).
 """
 
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 from boto3.dynamodb.conditions import Key
 
 logger = logging.getLogger(__name__)
+
+# Date-basis values for time filtering. Defined here (the data layer) so job
+# Lambdas and Step Functions handlers don't pull API-resolver machinery just
+# for the constants; shared.api re-exports them for API handlers.
+# 'imported': filter by when the item entered the data lake (processing date,
+#             the `date` attribute backing gsi1-by-date) — historical default.
+# 'review':   filter by when the customer originally wrote the feedback
+#             (`source_created_at`), e.g. to exclude years-old reviews that
+#             were only imported recently.
+DATE_BASIS_IMPORTED = 'imported'
+DATE_BASIS_REVIEW = 'review'
+VALID_DATE_BASES = (DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW)
+
+
+def validate_date_basis(value: str | None) -> str:
+    """Validate a ``date_basis`` value from any boundary (query param, job
+    payload, Step Functions input).
+
+    Returns 'imported' (default) or 'review'. Unknown or missing values fall
+    back to 'imported' so older clients keep the existing behavior.
+    """
+    if isinstance(value, str) and value.strip().lower() in VALID_DATE_BASES:
+        return value.strip().lower()
+    return DATE_BASIS_IMPORTED
 
 # Maximum number of days to look back when querying by date
 MAX_LOOKBACK_DAYS = 90
@@ -18,6 +43,36 @@ MAX_LOOKBACK_DAYS = 90
 # DynamoDB returns up to 1MB per page; without LastEvaluatedKey paging we'd only
 # ever see the first ~500 items of a partition (the "500개 중" truncation bug).
 MAX_ITEMS_PER_PARTITION = 10000
+
+# Shape guard for basis dates: a malformed source_created_at (e.g.
+# "unavailable") would otherwise compare lexicographically above any
+# YYYY-MM-DD cutoff.
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
+def basis_date(item: dict, date_basis: str) -> str:
+    """Return the YYYY-MM-DD date used to filter/bucket an item.
+
+    'imported' uses the processing date (`date`, mirrors gsi1-by-date).
+    'review' uses the date the customer wrote the feedback
+    (`source_created_at`), falling back to the import date for items whose
+    source date is missing or malformed.
+
+    Note: source_created_at is the source-local date while cutoffs are UTC,
+    so items written just before/after local midnight can shift by one day
+    at window edges. Accepted at date granularity.
+    """
+    if date_basis == DATE_BASIS_REVIEW:
+        source_created = (item.get('source_created_at') or '')[:10]
+        if _ISO_DATE_RE.match(source_created):
+            return source_created
+    return item.get('date', '')
+
+
+def window_cutoff(days: int) -> str:
+    """Oldest YYYY-MM-DD covered by an N-day window ending today (UTC)."""
+    now = datetime.now(timezone.utc)
+    return (now - timedelta(days=days - 1)).strftime('%Y-%m-%d')
 
 
 def _query_all_pages(feedback_table, *, index_name, key_expr, max_items):
@@ -50,6 +105,7 @@ def _fetch_and_filter(
     sentiments: list[str],
     fetch_ceiling: int,
     per_day_limit: int,  # deprecated: superseded by LastEvaluatedKey paging
+    date_basis: str = DATE_BASIS_IMPORTED,
 ) -> list[dict]:
     """Internal: fetch items from DynamoDB and apply in-memory filters.
 
@@ -57,8 +113,13 @@ def _fetch_and_filter(
         fetch_ceiling: When no post-filters are active, stop querying
             once we have this many raw items (early-break optimisation).
             Pass 0 to disable early break (scan all dates).
+        date_basis: Which date the `days` window applies to. 'imported'
+            (default) keeps the raw import window; 'review' post-filters it
+            down to items actually written within the window — a review can
+            never be imported before it was written, so the import window
+            always contains the review window (no extra GSI needed).
     """
-    has_post_filters = bool(sources or sentiments)
+    has_post_filters = bool(sources or sentiments) or date_basis == DATE_BASIS_REVIEW
     items: list[dict] = []
     current_date = datetime.now(timezone.utc)
 
@@ -75,8 +136,8 @@ def _fetch_and_filter(
                 key_expr=Key('gsi2pk').eq(f'CATEGORY#{category}'),
                 max_items=page_cap,
             ))
-        cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
-        items = [i for i in items if i.get('date', '') >= cutoff_date]
+        cutoff_date = window_cutoff(days)
+        items = [i for i in items if basis_date(i, date_basis) >= cutoff_date]
     else:
         for i in range(days):
             date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
@@ -88,6 +149,9 @@ def _fetch_and_filter(
             ))
             if not has_post_filters and fetch_ceiling and len(items) >= fetch_ceiling:
                 break
+        if date_basis == DATE_BASIS_REVIEW:
+            cutoff_date = window_cutoff(days)
+            items = [i for i in items if basis_date(i, date_basis) >= cutoff_date]
 
     if sources:
         items = [i for i in items if i.get('source_platform') in sources]
@@ -108,6 +172,7 @@ def query_feedback_by_date(
     limit: int = 500,
     offset: int = 0,
     per_day_limit: int = 500,
+    date_basis: str = DATE_BASIS_IMPORTED,
 ) -> list[dict]:
     """Query feedback items by date range with optional filters.
 
@@ -126,6 +191,9 @@ def query_feedback_by_date(
         per_day_limit: Deprecated — retained for call-site compatibility.
             Partition reads now page through LastEvaluatedKey and are bounded
             by fetch_ceiling / MAX_ITEMS_PER_PARTITION instead.
+        date_basis: 'imported' (default) windows by ingestion date;
+            'review' windows by the date the customer wrote the feedback
+            (source_created_at, import-date fallback).
 
     Returns:
         Filtered list of feedback items, sliced by offset/limit.
@@ -143,6 +211,7 @@ def query_feedback_by_date(
         sentiments=sentiments or [],
         fetch_ceiling=target * 3,
         per_day_limit=per_day_limit,
+        date_basis=date_basis or DATE_BASIS_IMPORTED,
     )
     return items[offset:offset + limit]
 
@@ -156,6 +225,7 @@ def query_feedback_page(
     limit: int = 100,
     offset: int = 0,
     per_day_limit: int = 500,
+    date_basis: str = DATE_BASIS_IMPORTED,
 ) -> tuple[list[dict], int]:
     """Query a page of feedback items and return the total count.
 
@@ -177,6 +247,7 @@ def query_feedback_page(
         sentiments=sentiments or [],
         fetch_ceiling=0,
         per_day_limit=per_day_limit,
+        date_basis=date_basis or DATE_BASIS_IMPORTED,
     )
     total = len(items)
     page = items[offset:offset + limit]
@@ -192,7 +263,8 @@ def get_feedback_context(feedback_table, filters: dict, limit: int = 50) -> list
 
     Args:
         feedback_table: DynamoDB Table resource for feedback
-        filters: Dict with keys: days, categories, sentiments, sources
+        filters: Dict with keys: days, categories, sentiments, sources,
+            date_basis ('imported' default | 'review')
         limit: Maximum number of items to return
 
     Returns:
@@ -205,6 +277,7 @@ def get_feedback_context(feedback_table, filters: dict, limit: int = 50) -> list
         categories=filters.get('categories'),
         sentiments=filters.get('sentiments'),
         limit=limit,
+        date_basis=filters.get('date_basis') or DATE_BASIS_IMPORTED,
     )
 def format_feedback_for_llm(items: list[dict]) -> str:
     """Format feedback items for LLM context with rich details.

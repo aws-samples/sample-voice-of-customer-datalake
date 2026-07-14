@@ -1,6 +1,7 @@
 // Projects API - extracted from client.ts to reduce file size
 // Uses shared fetchApi from client.ts for consistent 401 retry + token refresh
 import { fetchApi } from './client'
+import { getDateBasisBodyParams } from './baseUrl'
 import type {
   Project, ProjectDetail, ProjectPersona, ProjectDocument, ProjectJob,
   ProductContext, ProductDoc, ProductInterviewTurnResponse,
@@ -51,7 +52,7 @@ export const projectsApi = {
       }
     }>(`/projects/${projectId}/personas/generate`, {
       method: 'POST',
-      body: JSON.stringify(filters ?? {}),
+      body: JSON.stringify({ ...getDateBasisBodyParams(), ...(filters ?? {}) }),
     }),
 
   createPersona: (projectId: string, persona: Omit<ProjectPersona, 'persona_id' | 'created_at'>) =>
@@ -105,7 +106,7 @@ export const projectsApi = {
       message: string
     }>(`/projects/${projectId}/research`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
     }),
 
   generateDocument: (projectId: string, data: {
@@ -133,7 +134,7 @@ export const projectsApi = {
       message: string
     }>(`/projects/${projectId}/document`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
     }),
 
   mergeDocuments: (projectId: string, data: {

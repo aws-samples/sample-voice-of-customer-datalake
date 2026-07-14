@@ -306,3 +306,91 @@ describe('executeSearchFeedback', () => {
     expect(result.formatted).toContain('No feedback found');
   });
 });
+
+
+describe('date basis (issue #150)', () => {
+  const daysAgo = (n: number) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - n);
+    return d.toISOString().slice(0, 10);
+  };
+
+  it('keeps freshly imported old reviews on the default (imported) basis', async () => {
+    const backfilled = makeFeedbackItem({
+      feedback_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      date: today,
+      source_created_at: `${daysAgo(400)}T10:00:00Z`,
+    });
+    const docClient = createMockDocClient([[backfilled]]);
+
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', {}, { days: 7 },
+    );
+
+    expect(result.items).toHaveLength(1);
+  });
+
+  it('drops backfilled old reviews on review basis', async () => {
+    const fresh = makeFeedbackItem({
+      feedback_id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      original_text: 'fresh review text',
+      source_created_at: `${daysAgo(1)}T10:00:00Z`,
+    });
+    const backfilled = makeFeedbackItem({
+      feedback_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      original_text: 'ancient review text',
+      source_created_at: `${daysAgo(400)}T10:00:00Z`,
+    });
+    const docClient = createMockDocClient([[fresh, backfilled]]);
+
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', {}, { days: 7, dateBasis: 'review' },
+    );
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].original_text).toBe('fresh review text');
+  });
+
+  it('falls back to the import date when source_created_at is malformed', async () => {
+    const weird = makeFeedbackItem({
+      feedback_id: 'cccccccccccccccccccccccccccccccc',
+      date: today,
+      source_created_at: 'unavailable-forever',
+    });
+    const docClient = createMockDocClient([[weird]]);
+
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', {}, { days: 7, dateBasis: 'review' },
+    );
+
+    // Import date is today => in-window via the fallback, and no garbage
+    // lexicographic comparison sneaks it through on its own.
+    expect(result.items).toHaveLength(1);
+  });
+
+  it('uses a days-long window ending today (unified definition)', async () => {
+    // Item imported exactly `days` days ago sits just outside the window
+    // (the old definition spanned days+1 calendar days and kept it).
+    const boundary = makeFeedbackItem({
+      feedback_id: 'dddddddddddddddddddddddddddddddd',
+      date: daysAgo(7),
+      source_created_at: `${daysAgo(7)}T10:00:00Z`,
+    });
+    const inWindow = makeFeedbackItem({
+      feedback_id: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      date: daysAgo(6),
+      source_created_at: `${daysAgo(6)}T10:00:00Z`,
+    });
+    // The date loop only queries in-window partitions; simulate both items
+    // arriving from the scans regardless so the cutoff does the work.
+    const docClient = createMockDocClient([[boundary, inWindow]]);
+
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', {}, { days: 7 },
+    );
+
+    expect(result.items.map((i) => i.feedback_id)).toEqual([
+      'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    ]);
+  });
+});

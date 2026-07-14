@@ -19,6 +19,7 @@ from shared.feedback import (
     get_feedback_context as _get_feedback_context,
     format_feedback_for_llm,
     get_feedback_statistics,
+    validate_date_basis,
 )
 from shared.tables import get_projects_table, get_feedback_table
 from shared.jobs import update_job_status
@@ -76,7 +77,11 @@ def step_initialize(event: dict) -> dict:
         'sources': config.get('sources', []),
         'categories': config.get('categories', []),
         'sentiments': config.get('sentiments', []),
-        'days': config.get('days', 30)
+        'days': config.get('days', 30),
+        # Step Functions execution input is an unvalidated boundary (anyone
+        # with StartExecution can pass arbitrary JSON), so validate here
+        # rather than trusting the API layer's earlier validation.
+        'date_basis': validate_date_basis(config.get('date_basis')),
     }
     
     update_job_status(project_id, job_id, 'running', 12, 'fetching_feedback')

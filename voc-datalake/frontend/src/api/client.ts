@@ -1,5 +1,5 @@
 import { authService } from '../services/auth'
-import { getBaseUrl, getAuthHeaders, getDaysFromRange, ALL_TIME_DAYS } from './baseUrl'
+import { getBaseUrl, getAuthHeaders, getDaysFromRange, getDateBasisBodyParams, ALL_TIME_DAYS } from './baseUrl'
 import type {
   DateBasis,
   FeedbackItem,
@@ -211,7 +211,7 @@ export const api = {
   // Chat
   chat: (message: string, context?: string) => fetchApi<{ response: string; sources?: FeedbackItem[] }>('/chat', {
     method: 'POST',
-    body: JSON.stringify({ message, context })
+    body: JSON.stringify({ message, context, ...getDateBasisBodyParams() })
   }),
 
   // Data Source Schedules
