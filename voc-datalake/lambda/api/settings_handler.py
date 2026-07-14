@@ -10,6 +10,8 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -64,9 +66,10 @@ def get_resolved_problems():
 def set_problem_resolution():
     """Mark a single problem group resolved or unresolved.
 
-    Body: {'key': str, 'resolved': bool}. Each key is updated atomically
-    (nested-attribute SET/REMOVE), so two users resolving different problems
-    concurrently can't clobber each other's writes.
+    Body: {'key': str, 'resolved': bool}. The entry cap is enforced
+    atomically via a ConditionExpression on the same write (no
+    read-then-write race), and the steady state is exactly one write per
+    request: the parent map is only materialized on the first-ever resolve.
     """
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
@@ -82,46 +85,82 @@ def set_problem_resolution():
         raise ValidationError('resolved must be a boolean')
 
     try:
-        # Ensure the parent map exists so the nested-path update can't fail
-        # with an invalid-document-path error on first use.
-        aggregates_table.update_item(
-            Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
-            UpdateExpression='SET #r = if_not_exists(#r, :empty)',
-            ExpressionAttributeNames={'#r': 'resolved'},
-            ExpressionAttributeValues={':empty': {}},
-        )
         if resolved:
-            # Bound the map so orphaned keys can't grow the single config
-            # item toward DynamoDB's 400KB cap. Overwriting an existing key
-            # is always allowed; only NEW entries count against the cap.
-            current = aggregates_table.get_item(
-                Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK}
-            ).get('Item', {}).get('resolved', {})
-            if key not in current and len(current) >= MAX_RESOLVED_ENTRIES:
-                raise ValidationError(
-                    f'Resolved-problem limit reached ({MAX_RESOLVED_ENTRIES}). '
-                    'Unresolve entries you no longer need first.'
-                )
-            aggregates_table.update_item(
-                Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
-                UpdateExpression='SET #r.#k = :entry',
-                ExpressionAttributeNames={'#r': 'resolved', '#k': key},
-                ExpressionAttributeValues={
-                    ':entry': {'resolved_at': datetime.now(timezone.utc).isoformat()},
-                },
-            )
+            _resolve_problem_key(key)
         else:
-            aggregates_table.update_item(
-                Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
-                UpdateExpression='REMOVE #r.#k',
-                ExpressionAttributeNames={'#r': 'resolved', '#k': key},
-            )
+            _unresolve_problem_key(key)
         return {'success': True, 'key': key, 'resolved': resolved}
     except ValidationError:
         raise
     except Exception as e:
         logger.exception(f"Failed to update problem resolution: {e}")
         raise ServiceError('Failed to update problem resolution')
+
+
+def _set_resolved_entry(key: str) -> None:
+    """Single conditional write: overwrite is always allowed; NEW entries
+    only while the map is under the cap. Atomic — two concurrent resolves
+    at the cap can't both slip through (review feedback on #153)."""
+    aggregates_table.update_item(
+        Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+        UpdateExpression='SET #r.#k = :entry',
+        ConditionExpression='attribute_exists(#r.#k) OR size(#r) < :max',
+        ExpressionAttributeNames={'#r': 'resolved', '#k': key},
+        ExpressionAttributeValues={
+            ':entry': {'resolved_at': datetime.now(timezone.utc).isoformat()},
+            ':max': MAX_RESOLVED_ENTRIES,
+        },
+    )
+
+
+def _ensure_resolved_map() -> None:
+    aggregates_table.update_item(
+        Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+        UpdateExpression='SET #r = if_not_exists(#r, :empty)',
+        ExpressionAttributeNames={'#r': 'resolved'},
+        ExpressionAttributeValues={':empty': {}},
+    )
+
+
+def _resolve_problem_key(key: str) -> None:
+    """Conditionally set the entry, materializing the parent map on first use.
+
+    DynamoDB reports a missing parent map either as a document-path
+    ValidationException or as a failed condition (functions on missing
+    attributes evaluate false), depending on evaluation order — so both
+    first-attempt failures fall through to ensure-parent + one retry, and
+    only a retry failure means the cap was genuinely reached.
+    """
+    try:
+        _set_resolved_entry(key)
+        return
+    except ClientError as e:
+        code = e.response.get('Error', {}).get('Code', '')
+        if code not in ('ConditionalCheckFailedException', 'ValidationException'):
+            raise
+    _ensure_resolved_map()
+    try:
+        _set_resolved_entry(key)
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code', '') == 'ConditionalCheckFailedException':
+            raise ValidationError(
+                f'Resolved-problem limit reached ({MAX_RESOLVED_ENTRIES}). '
+                'Unresolve entries you no longer need first.'
+            )
+        raise
+
+
+def _unresolve_problem_key(key: str) -> None:
+    """REMOVE the entry; a missing parent map just means nothing to remove."""
+    try:
+        aggregates_table.update_item(
+            Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+            UpdateExpression='REMOVE #r.#k',
+            ExpressionAttributeNames={'#r': 'resolved', '#k': key},
+        )
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code', '') != 'ValidationException':
+            raise
 
 
 @app.get("/settings/brand")

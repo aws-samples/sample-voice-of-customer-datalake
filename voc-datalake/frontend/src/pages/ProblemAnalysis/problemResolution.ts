@@ -7,61 +7,70 @@
  * reloads and is shared across users.
  * @module pages/ProblemAnalysis/problemResolution
  */
+import type { FeedbackItem } from '../../api/client'
 
 /** Map of resolution keys to their resolution metadata, as stored server-side. */
 export type ResolvedProblemsMap = Record<string, { resolved_at: string }>
+
+/**
+ * Shared shape of the client-side problem tree (issue #66 review feedback:
+ * previously duplicated across ProblemAnalysis/ProblemRow/SubcategoryRow —
+ * a field added to one copy would silently type-check).
+ */
+export interface ProblemGroup {
+  problem: string
+  similarProblems: string[]
+  rootCause: string | null
+  items: FeedbackItem[]
+  avgSentiment: number
+  urgentCount: number
+  resolved?: boolean
+}
+
+export interface SubcategoryGroup {
+  subcategory: string
+  problems: ProblemGroup[]
+  totalItems: number
+  urgentCount: number
+}
+
+export interface CategoryGroup {
+  category: string
+  subcategories: SubcategoryGroup[]
+  totalItems: number
+  urgentCount: number
+}
 
 /**
  * Build the stable key a problem group is resolved under.
  *
  * All three components are normalized (trim + lowercase + collapsed
  * whitespace): they are LLM-classified values, so casing/whitespace drift
- * ("Delivery" vs "delivery") must not orphan a resolution. Uses `|` as
- * separator — it cannot appear in category/subcategory values (they are
- * snake_case tokens).
+ * ("Delivery" vs "delivery") must not orphan a resolution. `|` is the
+ * component separator, and since categories are user-configurable it is
+ * normalized out of the values themselves so a literal pipe in a category
+ * name can't merge two different problems under one key.
  */
 export function buildResolutionKey(category: string, subcategory: string, problem: string): string {
-  const normalize = (value: string) => value.trim().toLowerCase().replaceAll(/\s+/g, ' ')
+  const normalize = (value: string) =>
+    value.replaceAll('|', ' ').trim().toLowerCase().replaceAll(/\s+/g, ' ')
   return `${normalize(category)}|${normalize(subcategory)}|${normalize(problem)}`
 }
 
 
-interface ResolvableProblem {
-  problem: string
-  items: unknown[]
-  urgentCount: number
-  resolved?: boolean
-}
-
-interface ResolvableSubcategory<P extends ResolvableProblem> {
-  subcategory: string
-  problems: P[]
-  totalItems: number
-  urgentCount: number
-}
-
-interface ResolvableCategory<P extends ResolvableProblem, S extends ResolvableSubcategory<P>> {
-  category: string
-  subcategories: S[]
-  totalItems: number
-  urgentCount: number
-}
-
-function annotateProblems<P extends ResolvableProblem>(
+function annotateProblems(
   category: string,
   subcategory: string,
-  problems: P[],
+  problems: ProblemGroup[],
   resolvedMap: ResolvedProblemsMap,
-): P[] {
+): ProblemGroup[] {
   return problems.map((problemGroup) => ({
     ...problemGroup,
     resolved: buildResolutionKey(category, subcategory, problemGroup.problem) in resolvedMap,
   }))
 }
 
-function withoutResolved<P extends ResolvableProblem, S extends ResolvableSubcategory<P>>(
-  subcategoryGroup: S,
-): S {
+function withoutResolved(subcategoryGroup: SubcategoryGroup): SubcategoryGroup {
   const problems = subcategoryGroup.problems.filter((problemGroup) => !problemGroup.resolved)
   return {
     ...subcategoryGroup,
@@ -76,15 +85,11 @@ function withoutResolved<P extends ResolvableProblem, S extends ResolvableSubcat
  * `showResolved`, drop resolved groups — recomputing subcategory/category
  * totals so headers reflect what is actually rendered.
  */
-export function applyResolution<
-  P extends ResolvableProblem,
-  S extends ResolvableSubcategory<P>,
-  C extends ResolvableCategory<P, S>,
->(
-  categories: C[],
+export function applyResolution(
+  categories: CategoryGroup[],
   resolvedMap: ResolvedProblemsMap,
   showResolved: boolean,
-): { visible: C[]; resolvedCount: number } {
+): { visible: CategoryGroup[]; resolvedCount: number } {
   const annotated = categories.map((categoryGroup) => ({
     ...categoryGroup,
     subcategories: categoryGroup.subcategories.map((subcategoryGroup) => ({

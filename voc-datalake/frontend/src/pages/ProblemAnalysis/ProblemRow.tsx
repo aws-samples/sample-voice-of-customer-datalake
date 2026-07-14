@@ -4,16 +4,7 @@ import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import SentimentBadge from '../../components/SentimentBadge'
 import type { FeedbackItem } from '../../api/client'
-
-interface ProblemGroup {
-  problem: string
-  similarProblems: string[]
-  rootCause: string | null
-  items: FeedbackItem[]
-  avgSentiment: number
-  urgentCount: number
-  resolved?: boolean
-}
+import type { ProblemGroup } from './problemResolution'
 
 function getSentimentLabel(score: number): 'positive' | 'negative' | 'neutral' {
   if (score > 0) return 'positive'
@@ -27,6 +18,7 @@ interface ProblemRowProps {
   readonly isExpanded: boolean
   readonly onToggle: () => void
   readonly onToggleResolved: () => void
+  readonly resolvePending?: boolean
 }
 
 function ProblemTitle({ problemGroup, resolved }: Readonly<{ problemGroup: ProblemGroup; resolved: boolean }>) {
@@ -51,7 +43,7 @@ function ProblemTitle({ problemGroup, resolved }: Readonly<{ problemGroup: Probl
   )
 }
 
-function ResolveToggleButton({ resolved, onToggleResolved }: Readonly<{ resolved: boolean; onToggleResolved: () => void }>) {
+function ResolveToggleButton({ resolved, onToggleResolved, disabled }: Readonly<{ resolved: boolean; onToggleResolved: () => void; disabled?: boolean }>) {
   const { t } = useTranslation('common')
   const resolveLabel = resolved
     ? t('problemResolution.markUnresolved')
@@ -60,9 +52,11 @@ function ResolveToggleButton({ resolved, onToggleResolved }: Readonly<{ resolved
     <button
       type="button"
       onClick={onToggleResolved}
+      disabled={disabled}
       title={resolveLabel}
       aria-label={resolveLabel}
       className={clsx(
+        disabled && 'opacity-40 cursor-not-allowed',
         'absolute right-2 sm:right-3 top-2.5 sm:top-3 p-1 rounded-full transition-colors',
         resolved
           ? 'text-green-600 hover:bg-green-50 active:bg-green-100'
@@ -74,7 +68,7 @@ function ResolveToggleButton({ resolved, onToggleResolved }: Readonly<{ resolved
   )
 }
 
-export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle, onToggleResolved }: ProblemRowProps) {
+export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle, onToggleResolved, resolvePending }: ProblemRowProps) {
   const resolved = problemGroup.resolved === true
   return (
     <div key={problemKey} className="bg-white relative">
@@ -121,7 +115,7 @@ export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle, onT
 
       {/* Sibling of the row toggle (never nested inside it) so both stay
           valid, independently focusable buttons. */}
-      <ResolveToggleButton resolved={resolved} onToggleResolved={onToggleResolved} />
+      <ResolveToggleButton resolved={resolved} onToggleResolved={onToggleResolved} disabled={resolvePending} />
 
       {isExpanded && (
         <div className="px-3 sm:px-6 pb-3 sm:pb-4 pl-12 sm:pl-24 space-y-2 sm:space-y-3">

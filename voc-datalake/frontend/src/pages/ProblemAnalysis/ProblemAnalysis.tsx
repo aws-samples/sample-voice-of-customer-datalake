@@ -22,33 +22,11 @@ import { useConfigStore } from '../../store/configStore'
 import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
 import { applyResolution } from './problemResolution'
+import type { CategoryGroup, ProblemGroup, SubcategoryGroup } from './problemResolution'
 import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
 
-interface ProblemGroup {
-  problem: string
-  similarProblems: string[]  // Original problem texts that were merged
-  rootCause: string | null
-  items: FeedbackItem[]
-  avgSentiment: number
-  urgentCount: number
-  resolved?: boolean
-}
-
-interface SubcategoryGroup {
-  subcategory: string
-  problems: ProblemGroup[]
-  totalItems: number
-  urgentCount: number
-}
-
-interface CategoryGroup {
-  category: string
-  subcategories: SubcategoryGroup[]
-  totalItems: number
-  urgentCount: number
-}
 
 // Normalize text for similarity comparison
 function normalizeText(text: string): string {
@@ -542,6 +520,8 @@ export default function ProblemAnalysis() {
                   onChange={(e) => setShowResolved(e.target.checked)}
                   className="rounded border-gray-300 w-3.5 h-3.5 sm:w-4 sm:h-4"
                 />
+                {/* Counts resolved problems within the CURRENT filters
+                    (what the toggle would reveal), not the global store. */}
                 <span>{t('problemResolution.showResolved', { total: resolvedCount })}</span>
               </label>
               {(selectedSource || selectedCategory || selectedSubcategory || showUrgentOnly || showResolved) && (
@@ -646,6 +626,7 @@ export default function ProblemAnalysis() {
                         expandedProblems={expandedProblems}
                         onToggleProblem={toggleProblem}
                         onToggleResolved={handleToggleResolved}
+                        resolvePending={toggleResolvedMutation.isPending}
                       />
                     )
                   })}

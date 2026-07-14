@@ -14,6 +14,13 @@ describe('buildResolutionKey', () => {
     expect(buildResolutionKey(' Delivery ', 'Shipping  Speed', '  Slow   DELIVERY  times '))
       .toBe('delivery|shipping speed|slow delivery times')
   })
+
+  it('strips literal pipes so user-configured category names cannot merge keys', () => {
+    expect(buildResolutionKey('a|b', 'sub', 'problem'))
+      .toBe('a b|sub|problem')
+    expect(buildResolutionKey('a|b', 'sub', 'problem'))
+      .not.toBe(buildResolutionKey('a', 'b|sub', 'problem'))
+  })
 })
 
 const makeProblem = (problem: string, items: number, urgent: number) => ({
