@@ -175,12 +175,12 @@ async function rpc(method: string, params: Record<string, unknown>): Promise<unk
 
 // ── Tool name resolution ──
 
-// Resolved once per container: the configured name is used as-is, but if the
+// Resolved lazily and cached: the configured name is used as-is, but if the
 // gateway reports it unknown (target renamed, prefix convention change), we
-// fall back to one tools/list discovery.
+// fall back to tools/list discovery — at most once per call.
 const resolvedToolName: { name: string | null } = { name: null };
 
-/** Test hook: clears the per-container tool-name cache. */
+/** @internal Test hook: clears the per-container tool-name cache. */
 export function resetToolNameCacheForTesting(): void {
   resolvedToolName.name = null;
 }
@@ -189,6 +189,8 @@ const toolsListSchema = z.object({
   tools: z.array(z.object({ name: z.string() }).passthrough()).optional(),
 }).passthrough();
 
+/** Reads only the first page: MCP tools/list can paginate via nextCursor,
+ * but this gateway exposes a single connector target with one tool. */
 async function discoverToolName(): Promise<string> {
   const result = toolsListSchema.safeParse(await rpc('tools/list', {}));
   const tools = result.success ? result.data.tools ?? [] : [];
@@ -203,6 +205,9 @@ function isUnknownToolError(err: unknown): boolean {
   return message.includes('tool') && (message.includes('not found') || message.includes('unknown'));
 }
 
+/** tools/call with the configured (or previously discovered) name; on an
+ * unknown-tool error — including a stale cached name after a target rename
+ * — discover the real name via tools/list and retry once. */
 async function callWebSearchTool(query: string, maxResults: number): Promise<unknown> {
   const toolName = resolvedToolName.name ?? configuredToolName();
   const params = { name: toolName, arguments: { query, maxResults } };
@@ -211,7 +216,7 @@ async function callWebSearchTool(query: string, maxResults: number): Promise<unk
     resolvedToolName.name = toolName;
     return result;
   } catch (err) {
-    if (resolvedToolName.name !== null || !isUnknownToolError(err)) throw err;
+    if (!isUnknownToolError(err)) throw err;
     const discovered = await discoverToolName();
     console.log(`Web search tool name resolved via tools/list: ${discovered}`);
     resolvedToolName.name = discovered;

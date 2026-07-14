@@ -66,7 +66,7 @@ export class VocWebSearchStack extends cdk.Stack {
           actions: ['bedrock-agentcore:InvokeWebSearch'],
           // Service-owned tool ARN (the account segment is literally "aws")
           // — checked per invocation when the gateway calls the connector.
-          resources: [`arn:aws:bedrock-agentcore:${this.region}:aws:tool/web-search.v1`],
+          resources: [`arn:${this.partition}:bedrock-agentcore:${this.region}:aws:tool/web-search.v1`],
         }),
       ],
     });

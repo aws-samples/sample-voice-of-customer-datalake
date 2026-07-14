@@ -203,6 +203,26 @@ describe('tool name discovery fallback', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('re-discovers when a previously cached name goes stale (target renamed)', async () => {
+    const first = 'first-target___WebSearch';
+    const renamed = 'renamed-target___WebSearch';
+    // Populate the cache through a successful call.
+    vi.stubEnv('WEB_SEARCH_TOOL_NAME', first);
+    mockFetch.mockResolvedValueOnce(jsonResponse(toolCallBody([])));
+    await executeWebSearch({ query: 'warm up' });
+
+    // The cached name now fails; a fresh discovery must self-heal.
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { message: `tool '${first}' not found` } })))
+      .mockResolvedValueOnce(jsonResponse(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: [{ name: renamed }] } })))
+      .mockResolvedValueOnce(jsonResponse(toolCallBody(SAMPLE_RESULTS)));
+
+    const result = await executeWebSearch({ query: 'query' });
+
+    expect(result.webSources).toHaveLength(2);
+    expect(sentBody(3).params.name).toBe(renamed);
+  });
+
   it('fails clearly when the gateway exposes no WebSearch tool', async () => {
     mockFetch
       .mockResolvedValueOnce(jsonResponse(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { message: 'unknown tool' } })))

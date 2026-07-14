@@ -95,9 +95,22 @@ function isWebSource(value: unknown): value is WebSource {
   return typeof value.url === 'string' && typeof value.title === 'string' && typeof value.text === 'string'
 }
 
+/** Normalize a guard-passing record into a complete WebSource: WebSource
+ * declares published_date as a required string (the renderer compares it to
+ * ''), so a backend payload omitting it must default rather than leak
+ * undefined through the type. */
+function toWebSource(value: WebSource): WebSource {
+  return {
+    title: value.title,
+    url: value.url,
+    text: value.text,
+    published_date: typeof value.published_date === 'string' ? value.published_date : '',
+  }
+}
+
 function extractWebSources(meta: Record<string, unknown> | undefined): WebSource[] {
   const raw = meta?.web_sources
-  return Array.isArray(raw) ? raw.filter((item) => isWebSource(item)) : []
+  return Array.isArray(raw) ? raw.filter((item) => isWebSource(item)).map((item) => toWebSource(item)) : []
 }
 
 function applyMetadataEvent(prev: StreamChatState, event: StreamEvent): StreamChatState {

@@ -172,7 +172,9 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
   }
 
   const clearFilters = () => {
-    onChange({})
+    // "Clear" resets the data filters (source/category/sentiment); the web
+    // search capability toggle is a separate concern and survives it.
+    onChange(filters.useWebSearch === true ? { useWebSearch: true } : {})
   }
 
   return (

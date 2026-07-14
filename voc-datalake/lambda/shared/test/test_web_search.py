@@ -158,6 +158,23 @@ class TestToolNameDiscoveryFallback:
         assert web_search._resolved_tool_name['name'] == actual_name
 
     @patch.object(web_search, '_signed_post')
+    def test_stale_cached_name_re_triggers_discovery(self, mock_post):
+        """A target rename mid-container must self-heal: the cached name
+        failing with unknown-tool re-runs discovery instead of raising."""
+        web_search._resolved_tool_name['name'] = 'stale-target___WebSearch'
+        fresh = 'fresh-target___WebSearch'
+        mock_post.side_effect = [
+            {'error': {'message': "tool 'stale-target___WebSearch' not found"}},
+            {'result': {'tools': [{'name': fresh}]}},
+            {'result': _tool_result(SAMPLE_RESULTS)},
+        ]
+
+        results = search_web('query')
+
+        assert len(results) == 2
+        assert web_search._resolved_tool_name['name'] == fresh
+
+    @patch.object(web_search, '_signed_post')
     def test_non_name_errors_do_not_trigger_discovery(self, mock_post):
         mock_post.return_value = {'error': {'message': 'access denied'}}
         with pytest.raises(WebSearchError, match='access denied'):

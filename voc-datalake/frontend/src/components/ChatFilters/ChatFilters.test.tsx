@@ -402,5 +402,15 @@ describe('ChatFilters', () => {
 
       expect(screen.queryByText(/clear/i)).not.toBeInTheDocument()
     })
+
+    it('survives clearing the data filters', async () => {
+      mockIsWebSearchAvailable.mockReturnValue(true)
+      const user = userEvent.setup()
+      render(<ChatFilters filters={{ source: 'webscraper', useWebSearch: true }} onChange={mockOnChange} />)
+
+      await user.click(screen.getByText(/clear/i))
+
+      expect(mockOnChange).toHaveBeenCalledWith({ useWebSearch: true })
+    })
   })
 })

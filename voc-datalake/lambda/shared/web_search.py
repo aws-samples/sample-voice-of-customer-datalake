@@ -38,8 +38,19 @@ _REQUEST_TIMEOUT_SECONDS = 20
 
 # Resolved lazily and cached: the configured name is used as-is, but if the
 # gateway reports it unknown (target renamed, prefix convention change), we
-# fall back to one tools/list discovery per container.
+# fall back to tools/list discovery — at most once per call.
 _resolved_tool_name: dict = {'name': None}
+
+# Module-level credential cache (repo pattern: module-level boto3 state for
+# connection/credential reuse). botocore credentials self-refresh, so caching
+# the resolved provider is safe across invocations.
+_credentials_cache: dict = {'credentials': None}
+
+
+def _get_credentials():
+    if _credentials_cache['credentials'] is None:
+        _credentials_cache['credentials'] = boto3.session.Session().get_credentials()
+    return _credentials_cache['credentials']
 
 
 class WebSearchError(Exception):
@@ -74,8 +85,7 @@ def _region_from_gateway_url(url: str) -> str:
 def _signed_post(url: str, payload: dict) -> dict:
     """POST a JSON-RPC payload to the gateway MCP endpoint with SigV4."""
     body = json.dumps(payload)
-    session = boto3.session.Session()
-    credentials = session.get_credentials()
+    credentials = _get_credentials()
     if credentials is None:
         raise WebSearchError('No AWS credentials available to sign the gateway request')
 
@@ -145,7 +155,11 @@ def _rpc(method: str, params: dict) -> dict:
 
 def _discover_tool_name() -> str:
     """Find the WebSearch tool via tools/list (name is target-prefixed,
-    e.g. `web-search-tool___WebSearch`)."""
+    e.g. `web-search-tool___WebSearch`).
+
+    Reads only the first page: MCP tools/list can paginate via nextCursor,
+    but this gateway exposes a single connector target with one tool.
+    """
     result = _rpc('tools/list', {})
     tools = result.get('tools', [])
     for tool in tools:
@@ -162,14 +176,15 @@ def _is_unknown_tool_error(error: WebSearchError) -> bool:
 
 
 def _call_web_search_tool(query: str, max_results: int) -> dict:
-    """tools/call with the configured name; on an unknown-tool error,
-    discover the real name once per container and retry."""
+    """tools/call with the configured (or previously discovered) name; on an
+    unknown-tool error — including a stale cached name after a target rename
+    — discover the real name via tools/list and retry once."""
     tool_name = _resolved_tool_name['name'] or _configured_tool_name()
     arguments = {'query': query, 'maxResults': max_results}
     try:
         result = _rpc('tools/call', {'name': tool_name, 'arguments': arguments})
     except WebSearchError as e:
-        if _resolved_tool_name['name'] or not _is_unknown_tool_error(e):
+        if not _is_unknown_tool_error(e):
             raise
         discovered = _discover_tool_name()
         logger.info(f"Web search tool name resolved via tools/list: {discovered}")
