@@ -209,7 +209,7 @@ def get_prd_generation_steps(
 
 # NOTE: parameters of this builder are classified (slot vs non-slot) in
 # TestPrfaqPromptContract — adding or renaming a parameter requires updating
-# that classification (its drift test fails loudly if you forget).
+# that classification (test_builder_signature_has_no_unclassified_parameters fails loudly if you forget).
 def get_prfaq_generation_steps(
     feature_idea: str,
     personas_context: str,

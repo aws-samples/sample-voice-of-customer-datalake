@@ -352,8 +352,13 @@ class TestPrfaqPromptContract:
         first_step = steps[0]['user']
         assert default_product_context in first_step
         press_release = steps[1]['user']
-        assert re.search(r'\d{4}-\d{2}-\d{2}', press_release), (
-            'launch_date slot did not render a YYYY-MM-DD date (builder format changed?)'
+        # Match the ACTUAL generated date (today + ~90 days), not any
+        # date-shaped text — a future literal example date in the template
+        # must not satisfy this vacuously.
+        from datetime import datetime, timedelta, timezone
+        expected_launch = (datetime.now(timezone.utc) + timedelta(days=90)).strftime('%Y-%m-%d')
+        assert expected_launch in press_release, (
+            f'launch_date slot did not render the builder-generated date {expected_launch}'
         )
 
 
@@ -366,7 +371,6 @@ class TestLoadPromptFileEncoding:
     """
 
     def test_opens_prompt_files_with_explicit_utf8(self, monkeypatch):
-        import builtins
         import shared.prompts as prompts_module
 
         repo_prompts = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
@@ -374,7 +378,7 @@ class TestLoadPromptFileEncoding:
         prompts_module.load_prompt_file.cache_clear()
 
         seen = {}
-        real_open = builtins.open
+        real_open = open
 
         def spy_open(file, *args, **kwargs):
             # Record ONLY the prompt-file open: incidental open() calls
@@ -384,7 +388,9 @@ class TestLoadPromptFileEncoding:
                 seen['encoding'] = kwargs.get('encoding')
             return real_open(file, *args, **kwargs)
 
-        monkeypatch.setattr(builtins, 'open', spy_open)
+        # Scope the spy to the module under test — unrelated open() calls
+        # elsewhere are never intercepted at all.
+        monkeypatch.setattr('shared.prompts.open', spy_open, raising=False)
         try:
             config = prompts_module.load_prompt_file('prfaq-generation.json')
         finally:
