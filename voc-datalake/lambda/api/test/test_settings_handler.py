@@ -5,7 +5,7 @@ Manages brand configuration and categories.
 import json
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 class TestGetBrandSettings:
@@ -463,8 +463,10 @@ class TestResolvedProblemsCap:
         from settings_handler import lambda_handler
 
         # Both the first attempt and the post-ensure retry fail the condition:
-        # the map genuinely holds MAX_RESOLVED_ENTRIES other keys.
+        # the map genuinely holds MAX_RESOLVED_ENTRIES other keys — and none
+        # of them are expired, so pruning (issue #159) frees nothing.
         mock_table.update_item.side_effect = [self._cap_failure(), {}, self._cap_failure()]
+        mock_table.get_item.return_value = {'Item': {'resolved': {}}}
 
         event = api_gateway_event(
             method='PUT', path='/settings/resolved-problems',
@@ -516,8 +518,135 @@ class TestResolvedProblemsCap:
 
         # Missing parent map == nothing to remove == success.
         assert response['statusCode'] == 200
-        assert mock_table.update_item.call_args.kwargs['ConditionExpression'] == 'attribute_exists(#r)' 
+        assert mock_table.update_item.call_args.kwargs['ConditionExpression'] == 'attribute_exists(#r)'
 
+
+
+class TestResolvedProblemsExpiry:
+    """Entry expiry and cap-pressure pruning (issue #159).
+
+    Resolution keys are client-derived from similarity groups, so a key can
+    be orphaned forever when its group re-forms differently. Entries expire
+    after RESOLVED_PROBLEMS_TTL_DAYS: GET filters them from responses, and a
+    resolve that hits the entry cap prunes them from storage before the cap
+    error is surfaced.
+    """
+
+    @staticmethod
+    def _entry(days_old: int) -> dict:
+        return {'resolved_at': (datetime.now(timezone.utc) - timedelta(days=days_old)).isoformat()}
+
+    @staticmethod
+    def _cap_failure():
+        from botocore.exceptions import ClientError
+        return ClientError(
+            {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'cap'}},
+            'UpdateItem',
+        )
+
+    @patch('settings_handler.aggregates_table')
+    def test_get_filters_expired_entries(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        mock_table.get_item.return_value = {
+            'Item': {'resolved': {
+                'cat|sub|fresh': self._entry(days_old=1),
+                'cat|sub|ancient': self._entry(days_old=181),
+            }}
+        }
+
+        event = api_gateway_event(method='GET', path='/settings/resolved-problems')
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert 'cat|sub|fresh' in body['resolved']
+        assert 'cat|sub|ancient' not in body['resolved']
+
+    @patch('settings_handler.RESOLVED_PROBLEMS_TTL_DAYS', 0)
+    @patch('settings_handler.aggregates_table')
+    def test_ttl_zero_disables_expiry(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+
+        mock_table.get_item.return_value = {
+            'Item': {'resolved': {'cat|sub|ancient': self._entry(days_old=5000)}}
+        }
+
+        event = api_gateway_event(method='GET', path='/settings/resolved-problems')
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert 'cat|sub|ancient' in body['resolved']
+
+    @patch('settings_handler.aggregates_table')
+    def test_malformed_entries_count_as_expired(self, mock_table, api_gateway_event, lambda_context):
+        """Entries without a comparable resolved_at can never be displayed or
+        aged out normally — they must not hold cap slots forever."""
+        from settings_handler import lambda_handler
+
+        mock_table.get_item.return_value = {
+            'Item': {'resolved': {
+                'cat|sub|no-date': {},
+                'cat|sub|wrong-type': {'resolved_at': 12345},
+                'cat|sub|fresh': self._entry(days_old=1),
+            }}
+        }
+
+        event = api_gateway_event(method='GET', path='/settings/resolved-problems')
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert list(body['resolved']) == ['cat|sub|fresh']
+
+    @patch('settings_handler.aggregates_table')
+    def test_cap_pressure_prunes_expired_then_succeeds(self, mock_table, api_gateway_event, lambda_context):
+        """At the cap, expired entries are reclaimed and the resolve retried —
+        the user only sees the cap error when every entry is live."""
+        from settings_handler import lambda_handler
+
+        mock_table.update_item.side_effect = [
+            self._cap_failure(),  # initial conditional SET
+            {},                   # ensure parent map
+            self._cap_failure(),  # post-ensure retry: genuinely at cap
+            {},                   # pruning REMOVE
+            {},                   # final SET succeeds in the freed slot
+        ]
+        mock_table.get_item.return_value = {
+            'Item': {'resolved': {
+                'cat|sub|orphaned': self._entry(days_old=200),
+                'cat|sub|live': self._entry(days_old=3),
+            }}
+        }
+
+        event = api_gateway_event(
+            method='PUT', path='/settings/resolved-problems',
+            body={'key': 'cat|sub|new problem', 'resolved': True},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        remove_call = mock_table.update_item.call_args_list[3]
+        assert remove_call.kwargs['UpdateExpression'].startswith('REMOVE ')
+        # Only the expired key is pruned; the live one keeps its slot.
+        assert 'cat|sub|orphaned' in remove_call.kwargs['ExpressionAttributeNames'].values()
+        assert 'cat|sub|live' not in remove_call.kwargs['ExpressionAttributeNames'].values()
+
+    @patch('settings_handler.aggregates_table')
+    def test_prune_chunks_large_removals(self, mock_table):
+        """REMOVE expressions are chunked so they stay far below DynamoDB's
+        4KB expression limit even with hundreds of stale keys."""
+        from settings_handler import _prune_expired_entries
+
+        stale = {f'cat|sub|old {i}': self._entry(days_old=300) for i in range(45)}
+        mock_table.get_item.return_value = {'Item': {'resolved': stale}}
+        mock_table.update_item.return_value = {}
+
+        pruned = _prune_expired_entries()
+
+        assert pruned == 45
+        assert mock_table.update_item.call_count == 3  # 20 + 20 + 5
+        for call in mock_table.update_item.call_args_list:
+            aliases = [k for k in call.kwargs['ExpressionAttributeNames'] if k != '#r']
+            assert len(aliases) <= 20
 
 
 class TestResolvedProblemsKeyEncoding:

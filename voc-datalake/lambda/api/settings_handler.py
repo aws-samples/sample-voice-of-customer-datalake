@@ -7,7 +7,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -42,7 +42,47 @@ MAX_PROBLEM_KEY_LEN = 255
 MAX_PROBLEM_KEY_BYTES = 255
 MAX_RESOLVED_ENTRIES = 500
 
+# Resolution keys are derived CLIENT-side from similarity groups, so a key
+# can be orphaned forever when its group re-forms differently (issue #159):
+# nothing would ever unresolve it and it would hold one of the 500 slots.
+# Entries therefore expire after this many days: GET filters them out (an
+# old resolution resurfaces for re-review) and hitting the entry cap prunes
+# them from storage. 0 disables expiry entirely.
+RESOLVED_PROBLEMS_TTL_DAYS = int(os.environ.get('RESOLVED_PROBLEMS_TTL_DAYS', '180'))
+# REMOVE-expression chunk size when pruning (bounded so the update
+# expression stays far below DynamoDB's 4KB expression limit).
+_PRUNE_CHUNK_SIZE = 20
+
 app = create_api_resolver()
+
+
+def _resolution_expiry_cutoff() -> str | None:
+    """ISO-8601 cutoff below which resolutions are expired, or None when
+    expiry is disabled. Stored timestamps are UTC isoformat, so plain
+    lexicographic comparison is correct."""
+    if RESOLVED_PROBLEMS_TTL_DAYS <= 0:
+        return None
+    return (datetime.now(timezone.utc) - timedelta(days=RESOLVED_PROBLEMS_TTL_DAYS)).isoformat()
+
+
+def _is_expired_entry(entry: Any, cutoff: str) -> bool:
+    """An entry is expired when its resolved_at predates the cutoff.
+    Malformed entries (missing/non-string resolved_at) count as expired:
+    they can't be compared, can't be displayed meaningfully, and would
+    otherwise hold a cap slot forever."""
+    if not isinstance(entry, dict):
+        return True
+    resolved_at = entry.get('resolved_at')
+    if not isinstance(resolved_at, str) or not resolved_at:
+        return True
+    return resolved_at < cutoff
+
+
+def _without_expired(resolved: dict) -> dict:
+    cutoff = _resolution_expiry_cutoff()
+    if cutoff is None:
+        return resolved
+    return {key: entry for key, entry in resolved.items() if not _is_expired_entry(entry, cutoff)}
 
 
 @app.get("/settings/resolved-problems")
@@ -52,7 +92,10 @@ def get_resolved_problems():
 
     Shape: {'resolved': {problem_key: {'resolved_at': iso8601}}}. Shared
     across all users by design (issue #66) — resolving a problem clears it
-    from everyone's working view.
+    from everyone's working view. Entries older than
+    RESOLVED_PROBLEMS_TTL_DAYS are filtered out (issue #159): the problem
+    resurfaces for re-review, and the stored entry is reclaimed the next
+    time the entry cap is under pressure.
     """
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
@@ -60,7 +103,7 @@ def get_resolved_problems():
         response = aggregates_table.get_item(
             Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK}
         )
-        return {'resolved': response.get('Item', {}).get('resolved', {})}
+        return {'resolved': _without_expired(response.get('Item', {}).get('resolved', {}))}
     except Exception as e:
         logger.exception("Failed to get resolved problems")
         raise ServiceError('Failed to retrieve resolved problems') from e
@@ -138,6 +181,36 @@ def _ensure_resolved_map() -> None:
     )
 
 
+def _prune_expired_entries() -> int:
+    """Remove expired entries from storage; returns how many were removed.
+
+    Called only under cap pressure (a resolve hit the entry cap), keeping
+    the steady state at one write per request. Removals are chunked so the
+    UpdateExpression stays small; each chunk is one atomic REMOVE."""
+    cutoff = _resolution_expiry_cutoff()
+    if cutoff is None:
+        return 0
+    response = aggregates_table.get_item(
+        Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK}
+    )
+    resolved = response.get('Item', {}).get('resolved', {})
+    if not isinstance(resolved, dict):
+        # Malformed storage — nothing safely prunable.
+        return 0
+    stale = [key for key, entry in resolved.items() if _is_expired_entry(entry, cutoff)]
+    for start in range(0, len(stale), _PRUNE_CHUNK_SIZE):
+        chunk = stale[start:start + _PRUNE_CHUNK_SIZE]
+        names = {f'#k{i}': key for i, key in enumerate(chunk)}
+        aggregates_table.update_item(
+            Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+            UpdateExpression='REMOVE ' + ', '.join(f'#r.{alias}' for alias in names),
+            ExpressionAttributeNames={'#r': 'resolved', **names},
+        )
+    if stale:
+        logger.info(f"Pruned {len(stale)} expired resolved-problem entries under cap pressure")
+    return len(stale)
+
+
 def _resolve_problem_key(key: str) -> None:
     """Conditionally set the entry, materializing the parent map on first use.
 
@@ -145,7 +218,9 @@ def _resolve_problem_key(key: str) -> None:
     ValidationException or as a failed condition (functions on missing
     attributes evaluate false), depending on evaluation order — so both
     first-attempt failures fall through to ensure-parent + one retry, and
-    only a retry failure means the cap was genuinely reached.
+    only a retry failure means the cap was genuinely reached. At that point
+    expired entries are pruned (issue #159) and the write retried once more;
+    the cap error only surfaces when the map is full of LIVE entries.
     """
     try:
         _set_resolved_entry(key)
@@ -157,13 +232,22 @@ def _resolve_problem_key(key: str) -> None:
     _ensure_resolved_map()
     try:
         _set_resolved_entry(key)
+        return
     except ClientError as e:
-        if e.response.get('Error', {}).get('Code', '') == 'ConditionalCheckFailedException':
-            raise ValidationError(
-                f'Resolved-problem limit reached ({MAX_RESOLVED_ENTRIES}). '
-                'Unresolve entries you no longer need first.'
-            ) from e
-        raise
+        if e.response.get('Error', {}).get('Code', '') != 'ConditionalCheckFailedException':
+            raise
+    # Cap reached: reclaim slots held by expired (often orphaned) entries.
+    if _prune_expired_entries() > 0:
+        try:
+            _set_resolved_entry(key)
+            return
+        except ClientError as e:
+            if e.response.get('Error', {}).get('Code', '') != 'ConditionalCheckFailedException':
+                raise
+    raise ValidationError(
+        f'Resolved-problem limit reached ({MAX_RESOLVED_ENTRIES}). '
+        'Unresolve entries you no longer need first.'
+    )
 
 
 def _unresolve_problem_key(key: str) -> None:
