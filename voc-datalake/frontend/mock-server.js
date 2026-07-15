@@ -136,12 +136,46 @@ const mockCategoriesConfig = {
   ]
 };
 
-// Mock feedback forms
+// Mock feedback forms — real wire shape (form_id, full FeedbackFormFields).
+// form_3 is deliberately sparse (no theme/title/etc.), mirroring records
+// persisted before those fields existed, so local dev exercises the
+// normalizeFeedbackForm() boundary from issue #171.
+const mockFormTheme = (primary) => ({ primary_color: primary, background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' });
 const mockFeedbackForms = [
-  { id: 'form_1', name: 'Website Feedback', enabled: true, submissions: 234, created_at: new Date().toISOString() },
-  { id: 'form_2', name: 'Post-Purchase Survey', enabled: true, submissions: 567, created_at: new Date().toISOString() },
-  { id: 'form_3', name: 'Support Feedback', enabled: false, submissions: 89, created_at: new Date().toISOString() },
+  {
+    form_id: 'form_1', name: 'Website Feedback', enabled: true,
+    title: 'Share Your Website Feedback', description: 'Tell us about your experience on our site.',
+    question: 'How was your experience?', placeholder: 'Tell us about your experience...',
+    rating_enabled: true, rating_type: 'stars', rating_max: 5,
+    submit_button_text: 'Submit Feedback', success_message: 'Thank you for your feedback!',
+    theme: mockFormTheme('#3B82F6'), collect_email: false, collect_name: false, custom_fields: [],
+    category: 'website', subcategory: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  },
+  {
+    form_id: 'form_2', name: 'Post-Purchase Survey', enabled: true,
+    title: 'How was your purchase?', description: 'Rate your recent purchase experience.',
+    question: 'What could we do better?', placeholder: 'Share any additional feedback...',
+    rating_enabled: true, rating_type: 'emoji', rating_max: 5,
+    submit_button_text: 'Submit', success_message: 'Thanks for rating your experience!',
+    theme: mockFormTheme('#22C55E'), collect_email: true, collect_name: false, custom_fields: [],
+    category: 'delivery', subcategory: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  },
+  // Sparse legacy record: only identity fields on the wire.
+  { form_id: 'form_3', name: 'Support Feedback', enabled: false, created_at: new Date().toISOString() },
+  // Partial theme: exercises the deep-merge branch (set color survives,
+  // missing theme keys default) rather than the fully-missing-theme branch.
+  {
+    form_id: 'form_4', name: 'Checkout Survey', enabled: true,
+    title: 'How was checkout?', theme: { primary_color: '#F97316' },
+    created_at: new Date().toISOString(),
+  },
 ];
+const mockFormStats = {
+  form_1: { total_submissions: 234, avg_rating: 4.2, rating_count: 180 },
+  form_2: { total_submissions: 567, avg_rating: 3.8, rating_count: 512 },
+  form_3: { total_submissions: 89, avg_rating: null, rating_count: 0 },
+  form_4: { total_submissions: 41, avg_rating: 4.6, rating_count: 38 },
+};
 
 // Mock scrapers — real ScraperConfig shape (issue #169). scraper_2 is
 // deliberately sparse (identity fields only), mirroring records persisted
@@ -369,6 +403,21 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify(run ?? {
       scraper_id: id, status: 'never_run', pages_scraped: 0, items_found: 0, errors: [],
     }));
+    return;
+  }
+
+  // Handle feedback form stats by ID
+  if (req.method === 'GET' && url.pathname.match(/^\/feedback-forms\/[^/]+\/stats$/)) {
+    const formId = url.pathname.split('/')[2];
+    const stats = mockFormStats[formId];
+    if (stats) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, form_id: formId, stats }));
+    } else {
+      // Honest 404 for unknown forms so dev doesn't mask client bugs.
+      res.writeHead(404);
+      res.end(JSON.stringify({ success: false, message: 'Form not found' }));
+    }
     return;
   }
 
