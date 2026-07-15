@@ -19,6 +19,7 @@ import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type
 import { uniqueName } from '../utils/naming';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
+import { allowlistedModelArns } from '../utils/model-allowlist';
 
 export interface VocApiStackProps extends cdk.StackProps {
   // Core stack resources
@@ -225,10 +226,7 @@ export class VocApiStack extends cdk.Stack {
     NagSuppressions.addResourceSuppressions(scrapersRole, pluginSystemSuppressions, true);
     scrapersRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-      ],
+      resources: allowlistedModelArns(this.region, this.account),
     }));
     // AWS Marketplace permissions required for Bedrock model access
     scrapersRole.addToPolicy(new iam.PolicyStatement({
@@ -292,7 +290,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(manualImportProcessorRole);
     manualImportProcessorRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
+      resources: allowlistedModelArns(this.region, this.account),
     }));
 
     new lambda.Function(this, 'ManualImportProcessor', {
@@ -315,7 +313,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(settingsRole);
     settingsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
+      resources: allowlistedModelArns(this.region, this.account),
     }));
 
     const settingsLambda = new lambda.Function(this, 'SettingsApi', {
@@ -401,7 +399,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(chatRole);
     chatRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`, 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'],
+      resources: allowlistedModelArns(this.region, this.account),
     }));
 
     const chatLambda = new lambda.Function(this, 'ChatApi', {
@@ -430,8 +428,8 @@ export class VocApiStack extends cdk.Stack {
     projectsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
+        ...allowlistedModelArns(this.region, this.account),
+        // Nova Canvas powers persona avatar image generation.
         'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
       ],
     }));
@@ -487,10 +485,10 @@ export class VocApiStack extends cdk.Stack {
       });
     };
 
-    const claudeModelResources = [
-      `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-      'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-    ];
+    // Every allowlisted model (issue #96) so any AI surface can be repointed
+    // via the picker. Single source of truth kept in lockstep with
+    // lambda/shared/model_config.py and lambda/stream/src/bedrock/model-override.ts.
+    const claudeModelResources = allowlistedModelArns(this.region, this.account);
     const novaCanvasResource = 'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0';
 
     // Persona Generator Job Lambda
@@ -534,15 +532,14 @@ export class VocApiStack extends cdk.Stack {
     feedbackTable.grantReadData(documentGeneratorRole);
     projectsTable.grantReadWriteData(documentGeneratorRole);
     jobsTable.grantReadWriteData(documentGeneratorRole);
+    // Model picker: read per-surface overrides (documents/prototype) from aggregates.
+    aggregatesTable.grantReadData(documentGeneratorRole);
     kmsKey.grantEncryptDecrypt(documentGeneratorRole);
     documentGeneratorRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [
-        ...claudeModelResources,
-        // Opus 4.8 powers the HTML prototype builder (_generate_prototype).
-        `arn:aws:bedrock:*:${this.account}:inference-profile/global.anthropic.claude-opus-4-8`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-8',
-      ],
+      // Opus 4.8 (the prototype-builder default) is now part of the allowlist,
+      // so claudeModelResources already covers it — no separate grant needed.
+      resources: claudeModelResources,
     }));
     // Product context: read extracted product-doc text when generating PRD/PR-FAQ.
     rawDataBucket.grantRead(documentGeneratorRole, 'projects/*/product_docs/extracted/*');
@@ -563,6 +560,7 @@ export class VocApiStack extends cdk.Stack {
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
+        AGGREGATES_TABLE: aggregatesTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
         PROTOTYPES_CDN_URL: prototypesCdnUrl,
@@ -578,6 +576,8 @@ export class VocApiStack extends cdk.Stack {
     feedbackTable.grantReadData(documentMergerRole);
     projectsTable.grantReadWriteData(documentMergerRole);
     jobsTable.grantReadWriteData(documentMergerRole);
+    // Model picker: read the documents-surface override from aggregates.
+    aggregatesTable.grantReadData(documentMergerRole);
     kmsKey.grantEncryptDecrypt(documentMergerRole);
     documentMergerRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
@@ -596,6 +596,7 @@ export class VocApiStack extends cdk.Stack {
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
+        AGGREGATES_TABLE: aggregatesTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
         POWERTOOLS_SERVICE_NAME: 'voc-job-document-merger',
         LOG_LEVEL: 'INFO',
@@ -608,6 +609,8 @@ export class VocApiStack extends cdk.Stack {
     const personaImporterRole = this.createLambdaRole('PersonaImporterRole');
     projectsTable.grantReadWriteData(personaImporterRole);
     jobsTable.grantReadWriteData(personaImporterRole);
+    // Model picker: read the documents-surface override from aggregates.
+    aggregatesTable.grantReadData(personaImporterRole);
     kmsKey.grantEncryptDecrypt(personaImporterRole);
     personaImporterRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
@@ -626,6 +629,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 512,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
+        AGGREGATES_TABLE: aggregatesTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
         AVATARS_CDN_URL: avatarsCdnUrl,
@@ -674,7 +678,10 @@ export class VocApiStack extends cdk.Stack {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
-        BEDROCK_MODEL_ID: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+        // Streaming-chat ('chat' surface) default when no override is set.
+        // Bumped Sonnet 4.5 → Sonnet 5 (latest). The per-surface picker can
+        // override this at runtime via model-override.ts.
+        BEDROCK_MODEL_ID: 'global.anthropic.claude-sonnet-5',
         AVATARS_CDN_URL: avatarsCdnUrl,
         ALLOWED_ORIGIN: allowedOrigin,
       },
@@ -698,13 +705,11 @@ export class VocApiStack extends cdk.Stack {
       logGroup: this.createLogGroup('ChatStreamLogs', uniqueName('voc-chat-stream')),
     });
 
-    // Bedrock permissions — InvokeModelWithResponseStream
+    // Bedrock permissions — InvokeModelWithResponseStream. Grant every
+    // allowlisted model so the 'chat' surface can be repointed via the picker.
     chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-      resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-      ],
+      resources: allowlistedModelArns(this.region, this.account),
     }));
     // AWS Marketplace permissions required for Bedrock model access
     chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({

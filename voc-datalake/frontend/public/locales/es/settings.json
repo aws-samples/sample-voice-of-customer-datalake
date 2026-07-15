@@ -1,4 +1,35 @@
 {
+  "aiModel": {
+    "automaticOption": "Automático — {{model}}",
+    "intro": "Elija qué modelo de Claude impulsa cada función de IA, o mantenga Automático para usar el valor predeterminado ajustado de cada función. Las funciones en ejecución aplican los cambios en un minuto.",
+    "loadFailed": "No se pudo cargar la configuración de modelos.",
+    "loading": "Cargando modelos...",
+    "saveFailed": "No se pudo guardar la selección de modelo. Inténtelo de nuevo.",
+    "saved": "Guardado",
+    "surfaces": {
+      "chat": {
+        "description": "Consultas de datos conversacionales y chat de proyecto",
+        "label": "Chat de IA"
+      },
+      "documents": {
+        "description": "PRD, PR/FAQ, personas e informes de investigación",
+        "label": "Generación de documentos"
+      },
+      "enrichment": {
+        "description": "Sentimiento, categorías y urgencia en cada elemento ingerido",
+        "label": "Enriquecimiento de comentarios"
+      },
+      "prototype": {
+        "description": "Prototipos HTML interactivos",
+        "label": "Generador de prototipos"
+      },
+      "utility": {
+        "description": "Sugerencias de categorías y detección de selectores del scraper",
+        "label": "Utilidades"
+      }
+    },
+    "title": "Modelos de IA"
+  },
   "api": {
     "connected": "Conectado",
     "endpointHint": "El endpoint de API Gateway de su despliegue VoC",

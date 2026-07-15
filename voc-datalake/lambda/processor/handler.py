@@ -24,6 +24,7 @@ sys.path.insert(0, plugins_dir)
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.converse import converse, BedrockThrottlingError
+from shared.model_config import get_active_model_id
 from shared.idempotency import (
     get_persistence_layer,
     get_idempotency_config,
@@ -50,8 +51,11 @@ FEEDBACK_TABLE = os.environ['FEEDBACK_TABLE']
 AGGREGATES_TABLE = os.environ['AGGREGATES_TABLE']
 IDEMPOTENCY_TABLE = os.environ.get('IDEMPOTENCY_TABLE', '')
 PRIMARY_LANGUAGE = os.environ.get('PRIMARY_LANGUAGE', 'en')
-# Processor uses Haiku for cost efficiency (processes many items)
-PROCESSOR_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'global.anthropic.claude-haiku-4-5-20251001-v1:0')
+# Enrichment runs on every ingested item, so its built-in default is the
+# cheap/fast Haiku. The model is resolved through the per-surface AI-model
+# picker ('enrichment' surface) so admins can override it; the default and
+# allowlist live in shared.model_config (get_active_model_id never raises and
+# always returns a usable ID, so no local fallback is needed here).
 PROMPT_VERSION = '1.0.0'
 
 # Logs configuration - max entries to keep per source
@@ -332,13 +336,16 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
         categories_instruction=categories_instruction
     )
     
+    # Resolve the enrichment model through the picker (defaults to Haiku).
+    # Recorded on the record's metadata so downstream can see which model ran.
+    active_model = get_active_model_id('enrichment')
     try:
         content = converse(
             prompt=user_prompt,
             system_prompt=SYSTEM_PROMPT,
             max_tokens=800,
             temperature=0.1,
-            model_id=PROCESSOR_MODEL_ID,
+            model_id=active_model,
             max_retries=5,
             raise_on_throttle=raise_on_throttle,
         )
@@ -353,7 +360,7 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
         return {
             'insights': llm_result,
             'metadata': {
-                'model_name': PROCESSOR_MODEL_ID,
+                'model_name': active_model,
                 'prompt_version': PROMPT_VERSION,
                 'latency_ms': latency_ms,
             }

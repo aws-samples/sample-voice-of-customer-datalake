@@ -497,6 +497,11 @@ class TestAnalyzeUrl:
         assert body['success'] is True
         assert 'selectors' in body
         assert body['selectors']['container_selector'] == '.review'
+        # Regression (live-caught on voc-deploy, PR #166): strict-JSON output
+        # must fit ONE Bedrock call — adaptive-thinking models spend output
+        # budget on thinking, and continuation is unreliable mid-JSON.
+        assert mock_converse.call_args.kwargs['max_tokens'] >= 2048
+        assert mock_converse.call_args.kwargs['surface'] == 'utility'
 
     @patch('scrapers_handler.socket.getaddrinfo')
     def test_rejects_invalid_url(

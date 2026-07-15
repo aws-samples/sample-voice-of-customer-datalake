@@ -5,6 +5,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { z } from 'zod';
+import { ALLOWED_FOUNDATION_MODEL_IDS } from '../utils/model-allowlist';
 import { NagSuppressions } from 'cdk-nag';
 import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 
@@ -49,12 +50,12 @@ export const AnthropicUseCaseSchema = z.object({
 export type AnthropicUseCaseConfig = z.infer<typeof AnthropicUseCaseSchema>;
 
 /**
- * Models that require agreement acceptance for VoC platform.
+ * Models that require agreement acceptance for the VoC platform. Sourced from
+ * the shared allowlist so every model the per-surface picker can select
+ * (issue #96) has its agreement created — Sonnet 5, Sonnet 4.6, Opus 4.8,
+ * and Haiku 4.5. Kept in lockstep with lambda/shared/model_config.py.
  */
-const REQUIRED_MODELS = [
-  'anthropic.claude-sonnet-4-5-20250929-v1:0',  // Chat/API
-  'anthropic.claude-haiku-4-5-20251001-v1:0',   // Processor
-];
+const REQUIRED_MODELS = [...ALLOWED_FOUNDATION_MODEL_IDS];
 
 export interface BedrockAccessStackProps extends cdk.StackProps {
   /**

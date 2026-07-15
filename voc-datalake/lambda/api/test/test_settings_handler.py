@@ -284,6 +284,12 @@ class TestGenerateCategories:
         assert body['success'] is True
         assert len(body['categories']) > 0
         mock_converse.assert_called_once()
+        # Regression (live-caught on voc-deploy, PR #166): the strict-JSON
+        # category list must fit ONE Bedrock call — adaptive-thinking models
+        # (Sonnet 5) spend output budget on thinking, and the auto-continuation
+        # resume seam is unreliable mid-JSON (dropped a comma → 500).
+        assert mock_converse.call_args.kwargs['max_tokens'] >= 4096
+        assert mock_converse.call_args.kwargs['surface'] == 'utility'
 
     @patch('settings_handler.aggregates_table')
     def test_returns_error_when_description_missing(
@@ -750,3 +756,212 @@ class TestResolvedProblemsSurrogates:
         assert response['statusCode'] == 400
         assert 'surrogate' in body['error']
         mock_table.update_item.assert_not_called()
+
+
+class TestGetModelSettings:
+    """Tests for GET /settings/model (per-surface AI model picker, issue #96)."""
+
+    @patch('settings_handler.aggregates_table')
+    def test_returns_allowlist_and_surfaces_when_unset(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """With nothing configured every surface is Automatic (selected=null)
+        and carries its built-in default."""
+        mock_table.get_item.return_value = {}
+
+        from settings_handler import lambda_handler
+        event = api_gateway_event(method='GET', path='/settings/model')
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        model_ids = {m['id'] for m in body['available_models']}
+        assert model_ids == {
+            'global.anthropic.claude-sonnet-5',
+            'global.anthropic.claude-sonnet-4-6',
+            'global.anthropic.claude-opus-4-8',
+            'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+        }
+        surfaces = {s['key']: s for s in body['surfaces']}
+        assert set(surfaces) == {'chat', 'documents', 'prototype', 'enrichment', 'utility'}
+        assert all(s['selected'] is None for s in body['surfaces'])
+        assert surfaces['prototype']['default_id'] == 'global.anthropic.claude-opus-4-8'
+        assert surfaces['enrichment']['default_id'] == 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+        assert body['model_id'] is None
+
+    @patch('settings_handler.aggregates_table')
+    def test_returns_configured_surface_overrides(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        mock_table.get_item.return_value = {
+            'Item': {
+                'pk': 'SETTINGS#model', 'sk': 'config',
+                'surfaces': {'chat': 'global.anthropic.claude-haiku-4-5-20251001-v1:0'},
+            }
+        }
+
+        from settings_handler import lambda_handler
+        event = api_gateway_event(method='GET', path='/settings/model')
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        surfaces = {s['key']: s for s in body['surfaces']}
+        assert surfaces['chat']['selected'] == 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+        assert surfaces['documents']['selected'] is None
+
+    @patch('settings_handler.aggregates_table')
+    def test_hides_non_allowlisted_stored_values(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """A stale/tampered stored id (e.g. delisted Sonnet 4.5) reads back
+        as Automatic, never as a selectable value."""
+        mock_table.get_item.return_value = {
+            'Item': {
+                'pk': 'SETTINGS#model', 'sk': 'config',
+                'surfaces': {'chat': 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'},
+                'model_id': 'anthropic.evil-model-v9',
+            }
+        }
+
+        from settings_handler import lambda_handler
+        event = api_gateway_event(method='GET', path='/settings/model')
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        surfaces = {s['key']: s for s in body['surfaces']}
+        assert surfaces['chat']['selected'] is None
+        assert body['model_id'] is None
+
+    @patch('settings_handler.aggregates_table')
+    def test_non_admin_can_read_model_settings(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """GET stays open to all authenticated users (read-only)."""
+        mock_table.get_item.return_value = {}
+
+        from settings_handler import lambda_handler
+        event = api_gateway_event(method='GET', path='/settings/model')
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'users'
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+
+
+class TestSaveModelSettings:
+    """Tests for PUT /settings/model (admin-gated, per-surface)."""
+
+    HAIKU = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+
+    @patch('settings_handler.clear_model_cache')
+    @patch('settings_handler.aggregates_table')
+    def test_pins_a_surface_and_clears_cache(
+        self, mock_table, mock_clear, api_gateway_event, lambda_context
+    ):
+        mock_table.get_item.return_value = {}
+
+        from settings_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT', path='/settings/model',
+            body={'surface': 'chat', 'model_id': self.HAIKU},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body == {'success': True, 'surface': 'chat', 'model_id': self.HAIKU}
+        item = mock_table.put_item.call_args.kwargs['Item']
+        assert item['surfaces'] == {'chat': self.HAIKU}
+        assert item['pk'] == 'SETTINGS#model'
+        assert 'updated_at' in item
+        mock_clear.assert_called_once()
+
+    @patch('settings_handler.aggregates_table')
+    def test_clearing_a_surface_preserves_other_surfaces(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """{'surface': X, 'model_id': null} returns X to Automatic without
+        touching other pinned surfaces."""
+        mock_table.get_item.return_value = {
+            'Item': {
+                'pk': 'SETTINGS#model', 'sk': 'config',
+                'surfaces': {
+                    'chat': self.HAIKU,
+                    'prototype': 'global.anthropic.claude-opus-4-8',
+                },
+            }
+        }
+
+        from settings_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT', path='/settings/model',
+            body={'surface': 'chat', 'model_id': None},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        item = mock_table.put_item.call_args.kwargs['Item']
+        assert item['surfaces'] == {'prototype': 'global.anthropic.claude-opus-4-8'}
+
+    @patch('settings_handler.aggregates_table')
+    def test_global_override_without_surface_is_legacy_path(
+        self, mock_table, api_gateway_event, lambda_context
+    ):
+        """Body without 'surface' sets the legacy global override."""
+        mock_table.get_item.return_value = {}
+
+        from settings_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT', path='/settings/model',
+            body={'model_id': self.HAIKU},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['surface'] is None
+        item = mock_table.put_item.call_args.kwargs['Item']
+        assert item['model_id'] == self.HAIKU
+
+    @pytest.mark.parametrize('payload', [
+        {'surface': 'chat'},                                        # missing model_id
+        {'surface': 'chat', 'model_id': 'anthropic.evil-model'},    # not allowlisted
+        {'surface': 'chat', 'model_id': 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'},  # delisted
+        {'surface': 'bogus', 'model_id': None},                     # unknown surface
+        {'surface': 'default', 'model_id': None},                   # internal bucket, not pickable
+    ])
+    @patch('settings_handler.aggregates_table')
+    def test_rejects_invalid_payloads(
+        self, mock_table, payload, api_gateway_event, lambda_context
+    ):
+        from settings_handler import lambda_handler
+        event = api_gateway_event(method='PUT', path='/settings/model', body=payload)
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        mock_table.put_item.assert_not_called()
+
+    @patch('settings_handler.aggregates_table')
+    def test_non_admin_put_is_403(self, mock_table, api_gateway_event, lambda_context):
+        """The Cognito authorizer only proves authentication; changing the
+        org-wide model mix requires the admins group server-side."""
+        from settings_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT', path='/settings/model',
+            body={'surface': 'chat', 'model_id': self.HAIKU},
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'users'
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 403
+        mock_table.put_item.assert_not_called()
+
+    @patch('settings_handler.aggregates_table')
+    def test_missing_groups_put_is_403(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT', path='/settings/model',
+            body={'surface': 'chat', 'model_id': self.HAIKU},
+        )
+        del event['requestContext']['authorizer']['claims']['cognito:groups']
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 403
+        mock_table.put_item.assert_not_called()

@@ -17,6 +17,7 @@ import { isApiError, ValidationError } from './lib/errors.js';
 import { chatRequestSchema, type ChatRequest, type HistoryMessage } from './schema.js';
 import { z } from 'zod';
 import { converseStream } from './bedrock/converse-stream.js';
+import { resolveModelOverride } from './bedrock/model-override.js';
 import { processStreamEvent, createStreamState, type ToolUseBlock } from './bedrock/stream-processor.js';
 import { executeTool } from './tools/executor.js';
 import { getSearchFeedbackTool, getUpdateDocumentTool, getCreateDocumentTool, getCreateProjectTool, getWebSearchTool } from './tools/index.js';
@@ -183,12 +184,17 @@ async function runConversationLoop(
 
   const state = createStreamState();
 
+  // Streaming chat is the "chat" AI surface — resolve the admin-configured
+  // model override (falls back to the env default inside converseStream).
+  const modelId = await resolveModelOverride(docClient, AGGREGATES_TABLE, 'chat');
+
   const events = converseStream({
     messages,
     systemPrompt,
     tools: tools.length > 0 ? tools : undefined,
     maxTokens: 16000,
     thinkingBudget: 5000,
+    modelId,
   });
 
   for await (const event of events) {

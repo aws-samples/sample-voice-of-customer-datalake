@@ -145,6 +145,80 @@ class TestProcessJob:
         process_job('job-123')
 
 
+class TestCapabilityAwareBedrockBody:
+    """The raw invoke_model body must match the resolved model's capabilities.
+
+    Regression for the Sonnet 5 default bump: an explicit `temperature` or
+    `thinking` budget in the request body 400s on adaptive-thinking /
+    temperature-restricted models. These tests fail if either field is
+    reintroduced unconditionally or the model stops routing through the
+    utility-surface picker.
+    """
+
+    JOB_ITEM = {
+        'Item': {
+            'raw_text': 'Great product! 5 stars. - John',
+            'source_origin': 'g2',
+        }
+    }
+    BEDROCK_RESPONSE = {
+        'body': MagicMock(read=lambda: json.dumps({
+            'content': [{'type': 'text', 'text': '{"reviews": [], "unparsed_sections": []}'}]
+        }).encode())
+    }
+
+    def _invoke_and_capture_body(self, mock_table, mock_bedrock):
+        mock_table.get_item.return_value = self.JOB_ITEM
+        mock_bedrock.invoke_model.return_value = self.BEDROCK_RESPONSE
+
+        from manual_import_processor import process_job
+        process_job('job-123')
+
+        kwargs = mock_bedrock.invoke_model.call_args.kwargs
+        return kwargs, json.loads(kwargs['body'])
+
+    @patch('manual_import_processor.get_active_model_id')
+    @patch('manual_import_processor.bedrock')
+    @patch('manual_import_processor.aggregates_table')
+    def test_routes_model_through_utility_surface(self, mock_table, mock_bedrock, mock_resolve):
+        """Model ID comes from get_active_model_id('utility'), not a hardcoded env."""
+        mock_resolve.return_value = 'global.anthropic.claude-sonnet-5'
+
+        kwargs, _ = self._invoke_and_capture_body(mock_table, mock_bedrock)
+
+        mock_resolve.assert_called_once_with('utility')
+        assert kwargs['modelId'] == 'global.anthropic.claude-sonnet-5'
+
+    @patch('manual_import_processor.get_active_model_id')
+    @patch('manual_import_processor.bedrock')
+    @patch('manual_import_processor.aggregates_table')
+    def test_adaptive_thinking_model_omits_thinking_and_temperature(
+        self, mock_table, mock_bedrock, mock_resolve
+    ):
+        """Sonnet 5 (adaptive thinking always-on) rejects both params."""
+        mock_resolve.return_value = 'global.anthropic.claude-sonnet-5'
+
+        _, body = self._invoke_and_capture_body(mock_table, mock_bedrock)
+
+        assert 'thinking' not in body
+        assert 'temperature' not in body
+
+    @patch('manual_import_processor.get_active_model_id')
+    @patch('manual_import_processor.bedrock')
+    @patch('manual_import_processor.aggregates_table')
+    def test_budgeted_thinking_model_keeps_thinking_but_omits_temperature(
+        self, mock_table, mock_bedrock, mock_resolve
+    ):
+        """Haiku 4.5 accepts an explicit thinking budget; temperature stays
+        omitted everywhere (defaults to 1, the only value thinking accepts)."""
+        mock_resolve.return_value = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+
+        _, body = self._invoke_and_capture_body(mock_table, mock_bedrock)
+
+        assert body['thinking'] == {'type': 'enabled', 'budget_tokens': 5000}
+        assert 'temperature' not in body
+
+
 class TestLambdaHandler:
     """Tests for the main Lambda handler."""
 

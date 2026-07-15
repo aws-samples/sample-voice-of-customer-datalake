@@ -349,7 +349,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         update_progress(20, 'executing_llm_chain')
         
         try:
-            results = converse_chain(chain_steps, progress_callback=lambda p, s: update_progress(p, s))
+            results = converse_chain(chain_steps, progress_callback=lambda p, s: update_progress(p, s), surface='documents')
             logger.info(f"[PERSONA] LLM chain returned {len(results)} results")
         except Exception as e:
             logger.error(f"[PERSONA] LLM chain execution failed: {e}")
@@ -545,7 +545,7 @@ def generate_prd(project_id: str, body: dict) -> dict:
     )
 
     try:
-        results = converse_chain(chain_steps)
+        results = converse_chain(chain_steps, surface='documents')
         
         # Save PRD
         now = datetime.now(timezone.utc).isoformat()
@@ -654,11 +654,14 @@ def autofill_prfaq_questions(project_id: str, body: dict) -> dict:
         "5. What does the customer experience look like?"
     )
 
+    # 4096: strict-JSON output must fit ONE call (see the strict-JSON
+    # doctrine in shared/converse.py).
     raw = converse(
         prompt=user_prompt,
         system_prompt=system_prompt,
-        max_tokens=2500,
+        max_tokens=4096,
         temperature=0.3,
+        surface='documents',
         step_name='prfaq_autofill',
     )
 
@@ -740,8 +743,9 @@ def suggest_document_brief(project_id: str, body: dict) -> dict:
     raw = converse(
         prompt=user_prompt,
         system_prompt=system_prompt,
-        max_tokens=1200,
+        max_tokens=2048,  # strict JSON: fit ONE call (doctrine in shared/converse.py)
         temperature=0.4,
+        surface='documents',
         step_name='document_brief_suggest',
     )
 
@@ -820,8 +824,9 @@ def suggest_research_questions(project_id: str, body: dict) -> dict:
     raw = converse(
         prompt=user_prompt,
         system_prompt=system_prompt,
-        max_tokens=1500,
+        max_tokens=2048,  # strict JSON: fit ONE call (doctrine in shared/converse.py)
         temperature=0.4,
+        surface='documents',
         step_name='research_suggest',
     )
 
@@ -892,7 +897,7 @@ Quote: "{p.get('quote', '')}"
     )
 
     try:
-        results = converse_chain(chain_steps)
+        results = converse_chain(chain_steps, surface='documents')
         
         # Combine into final document
         full_document = f"""# PR/FAQ: {feature_idea}
@@ -1411,7 +1416,7 @@ def run_research(project_id: str, body: dict) -> dict:
     )
 
     try:
-        results = converse_chain(chain_steps)
+        results = converse_chain(chain_steps, surface='documents')
         
         # Save research - combine all results into a comprehensive report
         now = datetime.now(timezone.utc).isoformat()

@@ -17,8 +17,8 @@ from typing import Any
 from botocore.exceptions import ClientError, BotoCoreError
 
 from shared.logging import logger, tracer
-from shared.api import create_api_resolver, api_handler
-from shared.exceptions import ValidationError, NotFoundError, ServiceError, ConflictError, AuthorizationError
+from shared.api import create_api_resolver, api_handler, require_admin
+from shared.exceptions import ValidationError, NotFoundError, ServiceError, ConflictError
 
 # AWS Clients
 cognito = boto3.client('cognito-idp')
@@ -29,39 +29,16 @@ USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
 app = create_api_resolver()
 
 
-def get_caller_groups(event: dict) -> list[str]:
-    """Extract user groups from Cognito authorizer claims."""
-    try:
-        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
-        groups_str = claims.get('cognito:groups', '')
-        logger.info(f"Claims: {claims}")
-        logger.info(f"Groups string: {groups_str}, type: {type(groups_str)}")
-        if not groups_str:
-            return []
-        # Groups come as space-separated string or already a list
-        if isinstance(groups_str, list):
-            return groups_str
-        # Handle comma-separated groups (API Gateway format)
-        if ',' in groups_str:
-            return [g.strip() for g in groups_str.split(',')]
-        return groups_str.split(' ') if ' ' in groups_str else [groups_str]
-    except Exception as e:
-        logger.error(f"Error parsing groups: {e}")
-        return []
-
-
-def require_admin(event: dict) -> None:
-    """Verify caller is in admins group."""
-    groups = get_caller_groups(event)
-    if 'admins' not in groups:
-        raise AuthorizationError('Admin access required')
+# Admin gating uses the shared require_admin/get_caller_groups (shared/api.py):
+# same semantics as the old local copy, plus handling for the REST-authorizer
+# bracket-wrapped groups claim ("[admins, users]") the local copy missed.
 
 
 @app.get('/users')
 @tracer.capture_method
 def list_users():
     """List all users in the Cognito User Pool."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     try:
         users = []
@@ -116,7 +93,7 @@ def list_users():
 @tracer.capture_method
 def create_user():
     """Create a new user in Cognito."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     body = app.current_event.json_body or {}
     email = body.get('email', '').strip()
@@ -189,7 +166,7 @@ def create_user():
 @tracer.capture_method
 def update_user(username: str):
     """Update user attributes (given_name, family_name)."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
 
     body = app.current_event.json_body or {}
 
@@ -256,7 +233,7 @@ def update_user(username: str):
 @tracer.capture_method
 def update_user_group(username: str):
     """Update user's group (admins/users)."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     body = app.current_event.json_body or {}
     new_group = body.get('group', '').strip()
@@ -306,7 +283,7 @@ def update_user_group(username: str):
 @tracer.capture_method
 def reset_user_password(username: str):
     """Reset user's password (sends new temporary password via email)."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     try:
         cognito.admin_reset_user_password(
@@ -331,7 +308,7 @@ def reset_user_password(username: str):
 @tracer.capture_method
 def enable_user(username: str):
     """Enable a disabled user."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     try:
         cognito.admin_enable_user(
@@ -356,7 +333,7 @@ def enable_user(username: str):
 @tracer.capture_method
 def disable_user(username: str):
     """Disable a user (prevents login)."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     try:
         cognito.admin_disable_user(
@@ -381,7 +358,7 @@ def disable_user(username: str):
 @tracer.capture_method
 def delete_user(username: str):
     """Delete a user from Cognito."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     try:
         cognito.admin_delete_user(

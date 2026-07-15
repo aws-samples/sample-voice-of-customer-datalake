@@ -1,4 +1,35 @@
 {
+  "aiModel": {
+    "automaticOption": "Automatisch — {{model}}",
+    "intro": "Wählen Sie, welches Claude-Modell die einzelnen KI-Funktionen antreibt, oder behalten Sie „Automatisch“ bei, um die abgestimmte Voreinstellung jeder Funktion zu nutzen. Laufende Funktionen übernehmen Änderungen innerhalb einer Minute.",
+    "loadFailed": "Modelleinstellungen konnten nicht geladen werden.",
+    "loading": "Modelle werden geladen...",
+    "saveFailed": "Modellauswahl konnte nicht gespeichert werden. Bitte erneut versuchen.",
+    "saved": "Gespeichert",
+    "surfaces": {
+      "chat": {
+        "description": "Konversationelle Datenabfragen und Projekt-Chat",
+        "label": "KI-Chat"
+      },
+      "documents": {
+        "description": "PRDs, PR/FAQs, Personas und Forschungsberichte",
+        "label": "Dokumenterstellung"
+      },
+      "enrichment": {
+        "description": "Stimmung, Kategorien und Dringlichkeit für jedes erfasste Element",
+        "label": "Feedback-Anreicherung"
+      },
+      "prototype": {
+        "description": "Interaktive HTML-Prototypen",
+        "label": "Prototyp-Builder"
+      },
+      "utility": {
+        "description": "Kategorievorschläge und Scraper-Selektor-Erkennung",
+        "label": "Dienstprogramme"
+      }
+    },
+    "title": "KI-Modelle"
+  },
   "api": {
     "connected": "Verbunden",
     "endpointHint": "Der API-Gateway-Endpunkt Ihrer VoC-Bereitstellung",

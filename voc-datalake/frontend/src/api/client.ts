@@ -280,6 +280,24 @@ export const api = {
     body: JSON.stringify(settings)
   }),
 
+  // AI model selection — per-surface, curated allowlist, admin-only UI (issue #96).
+  // `surfaces` lists each pickable AI surface with its built-in default and the
+  // admin-selected override (null = Automatic). `model_id` is a legacy global
+  // override kept for backward compatibility.
+  getModelSettings: () => fetchApi<{
+    available_models: Array<{ key: string; id: string; label: string; description: string }>
+    surfaces: Array<{ key: string; default_id: string; selected: string | null }>
+    model_id: string | null
+  }>('/settings/model'),
+
+  // Set (modelId = allowlisted id) or clear (modelId = null) the model for one
+  // surface. Backend is admin-gated; the UI only shows this to admins.
+  saveModelSettings: (surface: string, modelId: string | null) =>
+    fetchApi<{ success: boolean; surface: string | null; model_id: string | null }>('/settings/model', {
+      method: 'PUT',
+      body: JSON.stringify({ surface, model_id: modelId }),
+    }),
+
   // Problem resolution (Problem Analysis page; shared across users)
   getResolvedProblems: () => fetchApi<{
     resolved: Record<string, { resolved_at: string }>

@@ -46,7 +46,7 @@ class TestConverse:
 
     @patch('shared.converse.get_bedrock_client')
     def test_extended_thinking_budget(self, mock_get_client):
-        """Includes extended thinking when budget > 0."""
+        """Includes extended thinking when budget > 0 (explicit-budget model)."""
         mock_client = MagicMock()
         mock_client.converse.return_value = {
             'output': {'message': {'content': [{'text': 'Thoughtful response'}]}}
@@ -54,13 +54,31 @@ class TestConverse:
         mock_get_client.return_value = mock_client
         
         from shared.converse import converse
-        converse('Complex question', thinking_budget=5000)
+        converse('Complex question', thinking_budget=5000,
+                 model_id='global.anthropic.claude-sonnet-4-6')
         
         call_args = mock_client.converse.call_args
         assert 'additionalModelRequestFields' in call_args.kwargs
         thinking = call_args.kwargs['additionalModelRequestFields']['thinking']
         assert thinking['type'] == 'enabled'
         assert thinking['budget_tokens'] == 5000
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_skips_explicit_thinking_for_adaptive_models(self, mock_get_client):
+        """Sonnet 5 runs adaptive thinking always-on and rejects an explicit
+        budget — the field must be omitted so the call can't 400."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'Thoughtful response'}]}}
+        }
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        converse('Complex question', thinking_budget=5000,
+                 model_id='global.anthropic.claude-sonnet-5')
+
+        call_args = mock_client.converse.call_args
+        assert 'additionalModelRequestFields' not in call_args.kwargs
 
     @patch('shared.converse.get_bedrock_client')
     def test_no_thinking_when_budget_zero(self, mock_get_client):
@@ -79,7 +97,7 @@ class TestConverse:
 
     @patch('shared.converse.get_bedrock_client')
     def test_includes_temperature_by_default(self, mock_get_client):
-        """Temperature is sent in inferenceConfig when a float is given."""
+        """Temperature is sent in inferenceConfig when the model accepts it."""
         mock_client = MagicMock()
         mock_client.converse.return_value = {
             'output': {'message': {'content': [{'text': 'R'}]}}
@@ -87,10 +105,30 @@ class TestConverse:
         mock_get_client.return_value = mock_client
 
         from shared.converse import converse
-        converse('Hi', temperature=0.4)
+        converse('Hi', temperature=0.4,
+                 model_id='global.anthropic.claude-sonnet-4-6')
 
         cfg = mock_client.converse.call_args.kwargs['inferenceConfig']
         assert cfg['temperature'] == 0.4
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_auto_omits_temperature_for_restricted_models(self, mock_get_client):
+        """Sonnet 5 / Opus 4.8 reject `temperature` — converse() drops it
+        automatically so any surface can be pointed at them via the picker
+        without every caller special-casing the param."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'R'}]}}
+        }
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        for model in ('global.anthropic.claude-sonnet-5',
+                      'global.anthropic.claude-opus-4-8'):
+            converse('Hi', temperature=0.4, model_id=model)
+            cfg = mock_client.converse.call_args.kwargs['inferenceConfig']
+            assert 'temperature' not in cfg, model
+            assert cfg['maxTokens']  # other config still present
 
     @patch('shared.converse.get_bedrock_client')
     def test_omits_temperature_when_none(self, mock_get_client):
@@ -438,7 +476,8 @@ class TestConverseEdgeCases:
         mock_get_client.return_value = mock_client
         
         from shared.converse import converse
-        converse('Hello', max_tokens=500, temperature=0.7)
+        converse('Hello', max_tokens=500, temperature=0.7,
+                 model_id='global.anthropic.claude-sonnet-4-6')
         
         call_args = mock_client.converse.call_args
         assert call_args.kwargs['inferenceConfig']['maxTokens'] == 500
@@ -591,16 +630,87 @@ class TestConverseAutoContinuation:
 
     @patch('shared.converse.get_bedrock_client')
     def test_continuation_disabled_with_thinking_budget(self, mock_get_client):
-        """Continuation is skipped when extended thinking is enabled."""
+        """Continuation is skipped when EXPLICIT extended thinking is sent
+        (thinking-block replay is unsupported). Uses a model that accepts an
+        explicit budget — adaptive-thinking models never send the field and
+        so keep continuation."""
         mock_client = MagicMock()
         mock_client.converse.return_value = self._resp('partial', stop_reason='max_tokens')
         mock_get_client.return_value = mock_client
 
         from shared.converse import converse
-        result = converse('Hello', step_name='test', thinking_budget=5000)
+        result = converse('Hello', step_name='test', thinking_budget=5000,
+                          model_id='global.anthropic.claude-sonnet-4-6')
 
         assert result == 'partial'
         mock_client.converse.assert_called_once()
 
 
 
+
+
+class TestConverseSurfaceRouting:
+    """converse() resolves its model through the per-surface picker (issue #96)."""
+
+    @staticmethod
+    def _client(text='R'):
+        client = MagicMock()
+        client.converse.return_value = {
+            'output': {'message': {'content': [{'text': text}]}}
+        }
+        return client
+
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_resolves_model_for_named_surface(self, mock_get_client, mock_resolve):
+        mock_get_client.return_value = self._client()
+        mock_resolve.return_value = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+
+        from shared.converse import converse
+        converse('Hi', surface='enrichment')
+
+        mock_resolve.assert_called_once_with('enrichment')
+        call = mock_get_client.return_value.converse.call_args
+        assert call.kwargs['modelId'] == 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_explicit_model_id_bypasses_surface_resolution(self, mock_get_client, mock_resolve):
+        """explicit arg > configured surface — the documented precedence."""
+        mock_get_client.return_value = self._client()
+
+        from shared.converse import converse
+        converse('Hi', surface='chat', model_id='global.anthropic.claude-opus-4-8')
+
+        mock_resolve.assert_not_called()
+        call = mock_get_client.return_value.converse.call_args
+        assert call.kwargs['modelId'] == 'global.anthropic.claude-opus-4-8'
+
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_chain_threads_surface_to_every_step(self, mock_get_client, mock_resolve):
+        mock_get_client.return_value = self._client()
+        mock_resolve.return_value = 'global.anthropic.claude-sonnet-5'
+
+        from shared.converse import converse_chain
+        converse_chain(
+            [{'system': '', 'user': 'a'}, {'system': '', 'user': 'b'}],
+            surface='documents',
+        )
+
+        assert mock_resolve.call_count == 2
+        assert all(c.args == ('documents',) for c in mock_resolve.call_args_list)
+
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_chain_step_surface_overrides_chain_surface(self, mock_get_client, mock_resolve):
+        mock_get_client.return_value = self._client()
+        mock_resolve.return_value = 'global.anthropic.claude-sonnet-5'
+
+        from shared.converse import converse_chain
+        converse_chain(
+            [{'system': '', 'user': 'a', 'surface': 'prototype'}],
+            surface='documents',
+        )
+
+        mock_resolve.assert_called_once_with('prototype')

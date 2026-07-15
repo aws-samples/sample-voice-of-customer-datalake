@@ -1,4 +1,35 @@
 {
+  "aiModel": {
+    "automaticOption": "자동 — {{model}}",
+    "intro": "각 AI 기능을 구동할 Claude 모델을 선택하거나, 자동으로 두어 각 기능에 맞게 조정된 기본값을 사용하세요. 실행 중인 함수는 1분 이내에 변경 사항을 반영합니다.",
+    "loadFailed": "모델 설정을 불러오지 못했습니다.",
+    "loading": "모델을 불러오는 중...",
+    "saveFailed": "모델 선택을 저장하지 못했습니다. 다시 시도하세요.",
+    "saved": "저장됨",
+    "surfaces": {
+      "chat": {
+        "description": "대화형 데이터 질의 및 프로젝트 채팅",
+        "label": "AI 채팅"
+      },
+      "documents": {
+        "description": "PRD, PR/FAQ, 페르소나, 리서치 보고서",
+        "label": "문서 생성"
+      },
+      "enrichment": {
+        "description": "수집된 모든 항목의 감성, 카테고리, 긴급도",
+        "label": "피드백 보강"
+      },
+      "prototype": {
+        "description": "인터랙티브 HTML 프로토타입",
+        "label": "프로토타입 빌더"
+      },
+      "utility": {
+        "description": "카테고리 제안 및 스크레이퍼 선택자 감지",
+        "label": "유틸리티"
+      }
+    },
+    "title": "AI 모델"
+  },
   "api": {
     "connected": "연결됨",
     "endpointHint": "VoC 배포의 API Gateway 엔드포인트",

@@ -128,12 +128,13 @@ describe('converseStream', () => {
     );
   });
 
-  it('uses default maxTokens and thinkingBudget', async () => {
+  it('uses default maxTokens and thinkingBudget (explicit-budget model)', async () => {
     mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
 
     for await (const _ of converseStream({
       messages: [{ role: 'user', content: [{ text: 'hi' }] }],
       systemPrompt: 'test',
+      modelId: 'global.anthropic.claude-sonnet-4-6',
     })) {
       // no-op
     }
@@ -156,6 +157,7 @@ describe('converseStream', () => {
       systemPrompt: 'test',
       maxTokens: 4096,
       thinkingBudget: 2000,
+      modelId: 'global.anthropic.claude-sonnet-4-6',
     })) {
       // no-op
     }
@@ -166,6 +168,50 @@ describe('converseStream', () => {
         additionalModelRequestFields: {
           thinking: { type: 'enabled', budget_tokens: 2000 },
         },
+      }),
+    );
+  });
+
+  it('omits the explicit thinking budget for adaptive-thinking models (Sonnet 5)', async () => {
+    // Sonnet 5 runs adaptive thinking always-on and rejects an explicit
+    // budget — sending it would 400 every chat turn. It is also the default
+    // model, so the no-modelId path must omit the field too.
+    mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
+    mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
+
+    for await (const _ of converseStream({
+      messages: [{ role: 'user', content: [{ text: 'hi' }] }],
+      systemPrompt: 'test',
+      modelId: 'global.anthropic.claude-sonnet-5',
+    })) {
+      // no-op
+    }
+    for await (const _ of converseStream({
+      messages: [{ role: 'user', content: [{ text: 'hi' }] }],
+      systemPrompt: 'test',
+    })) {
+      // no-op (env default is Sonnet 5)
+    }
+
+    for (const call of mockConverseStreamCommandCtor.mock.calls) {
+      expect(call[0]).not.toHaveProperty('additionalModelRequestFields');
+    }
+  });
+
+  it('passes the resolved model override as modelId', async () => {
+    mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
+
+    for await (const _ of converseStream({
+      messages: [{ role: 'user', content: [{ text: 'hi' }] }],
+      systemPrompt: 'test',
+      modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+    })) {
+      // no-op
+    }
+
+    expect(mockConverseStreamCommandCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
       }),
     );
   });

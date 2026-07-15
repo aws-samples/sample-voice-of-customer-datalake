@@ -138,12 +138,15 @@ export const bedrockModelSuppressions: NagPackSuppression[] = [
   {
     id: 'AwsSolutions-IAM5',
     reason: 'Bedrock foundation model ARNs require region wildcard as models are cross-region resources',
+    // Every model in the per-surface AI-model picker allowlist (issue #96),
+    // kept in lockstep with lib/utils/model-allowlist.ts. Only the
+    // foundation-model ARNs carry a region wildcard; the inference-profile
+    // ARNs are region/account-scoped and need no suppression.
     appliesTo: [
-      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
-      // Opus 4.8 powers the HTML prototype builder (document-generator Lambda).
+      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-5',
+      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
       'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-8',
-      { regex: '/Resource::arn:aws:bedrock:\\*:.*:inference-profile/global\\.anthropic\\.claude-opus-4-8/' },
+      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
     ],
   },
 ];

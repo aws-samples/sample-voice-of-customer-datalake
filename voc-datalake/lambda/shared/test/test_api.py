@@ -415,3 +415,68 @@ class TestApiHandlerDecorator:
         assert len(call_tracker) == 1
         assert call_tracker[0][0] == event
 
+
+
+class TestGetCallerGroups:
+    """Tests for get_caller_groups (moved from test_users_handler when the
+    local users_handler copy was consolidated into shared.api)."""
+
+    def _event(self, groups):
+        claims = {} if groups is None else {'cognito:groups': groups}
+        return {'requestContext': {'authorizer': {'claims': claims}}}
+
+    def test_extracts_space_separated_groups(self):
+        from shared.api import get_caller_groups
+        groups = get_caller_groups(self._event('admins viewers'))
+        assert 'admins' in groups
+        assert 'viewers' in groups
+
+    def test_handles_comma_separated_groups(self):
+        from shared.api import get_caller_groups
+        groups = get_caller_groups(self._event('admins, viewers'))
+        assert 'admins' in groups
+        assert 'viewers' in groups
+
+    def test_handles_list_claim(self):
+        from shared.api import get_caller_groups
+        assert get_caller_groups(self._event(['admins'])) == ['admins']
+
+    def test_handles_bracket_wrapped_rest_serialization(self):
+        """REST API Gateway serializes the array claim as '[admins, users]' —
+        the format the old users_handler local copy mishandled."""
+        from shared.api import get_caller_groups
+        groups = get_caller_groups(self._event('[admins, users]'))
+        assert groups == ['admins', 'users']
+
+    def test_returns_empty_list_when_no_groups(self):
+        from shared.api import get_caller_groups
+        assert get_caller_groups(self._event(None)) == []
+
+    def test_handles_single_group(self):
+        from shared.api import get_caller_groups
+        assert get_caller_groups(self._event('admins')) == ['admins']
+
+
+class TestRequireAdmin:
+    """Tests for require_admin (the single shared implementation — all
+    handlers, including users_handler, gate through this)."""
+
+    def _event(self, groups):
+        claims = {} if groups is None else {'cognito:groups': groups}
+        return {'requestContext': {'authorizer': {'claims': claims}}}
+
+    def test_passes_for_admin_caller(self):
+        from shared.api import require_admin
+        require_admin(self._event('admins'))  # must not raise
+
+    def test_raises_authorization_error_for_non_admin(self):
+        from shared.api import require_admin
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            require_admin(self._event('users'))
+
+    def test_raises_authorization_error_when_groups_missing(self):
+        from shared.api import require_admin
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            require_admin(self._event(None))

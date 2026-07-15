@@ -24,6 +24,7 @@ import {
 import { uniqueName } from '../utils/naming';
 import { NagSuppressions } from 'cdk-nag';
 import { apiSecretsSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
+import { allowlistedModelArns } from '../utils/model-allowlist';
 
 export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -276,12 +277,13 @@ export class VocIngestionStack extends cdk.Stack {
   /**
    * Build a dedicated role for a plugin that opts in via `infrastructure.ingestor.bedrock`.
    * It gets the same base ingestion permissions PLUS a scoped bedrock:InvokeModel grant
-   * (Claude Sonnet only). This keeps least-privilege intact: only opted-in plugins can
-   * reach Bedrock, rather than widening the shared role for the whole plugin fleet.
+   * for the curated model allowlist. This keeps least-privilege intact: only opted-in
+   * plugins can reach Bedrock, rather than widening the shared role for the whole plugin
+   * fleet.
    *
-   * The model ARNs must match the model shared/converse.py actually invokes
-   * (shared.aws.BEDROCK_MODEL_ID = global.anthropic.claude-sonnet-4-5-...); a `global.`
-   * inference profile requires BOTH the inference-profile and foundation-model ARNs.
+   * The grant covers every model the per-surface picker can resolve to (issue #96),
+   * since these plugins invoke via shared/converse.py — kept in lockstep with
+   * lambda/shared/model_config.py through lib/utils/model-allowlist.ts.
    */
   private createBedrockIngestorRole(pluginId: string): iam.Role {
     const role = new iam.Role(this, `IngestorRole${capitalize(pluginId)}`, {
@@ -295,10 +297,7 @@ export class VocIngestionStack extends cdk.Stack {
 
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-      ],
+      resources: allowlistedModelArns(this.region, this.account),
     }));
 
     // The stack-level suppressions in bin/ cover the base grants but not Bedrock,

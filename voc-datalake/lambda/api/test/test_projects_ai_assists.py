@@ -171,3 +171,30 @@ class TestAutofillPrfaqQuestions(_Assists):
             import projects
             with pytest.raises(ConfigurationError):
                 projects.autofill_prfaq_questions('proj-1', {})
+
+
+class TestStrictJsonTokenHeadroom(_Assists):
+    """Regression: strict-JSON assists must fit their output in ONE Bedrock call.
+
+    Live-caught on voc-deploy (PR #166): adaptive-thinking models (Sonnet 5)
+    spend output budget on thinking, so a tight max_tokens truncated the JSON
+    and the auto-continuation resume seam dropped a comma → JSONDecodeError →
+    500. These floors would fail if the headroom fix were reverted; raising
+    max_continuations instead is NOT a fix here — continuation is unreliable
+    mid-JSON by design.
+    """
+
+    RAW_SUGGESTIONS = json.dumps({'suggestions': [{'title': 't', 'question': 'q'}]})
+    RAW_ANSWERS = json.dumps({'answers': {'q1': 'a'}})
+
+    def test_research_suggest_requests_one_call_headroom(self):
+        _, mock_converse = self.run('suggest_research_questions', {}, self.RAW_SUGGESTIONS)
+        assert mock_converse.call_args.kwargs['max_tokens'] >= 2048
+
+    def test_document_brief_requests_one_call_headroom(self):
+        _, mock_converse = self.run('suggest_document_brief', {'doc_type': 'prd'}, self.RAW_SUGGESTIONS)
+        assert mock_converse.call_args.kwargs['max_tokens'] >= 2048
+
+    def test_prfaq_autofill_requests_one_call_headroom(self):
+        _, mock_converse = self.run('autofill_prfaq_questions', {'feature_idea': 'x'}, self.RAW_ANSWERS)
+        assert mock_converse.call_args.kwargs['max_tokens'] >= 4096
