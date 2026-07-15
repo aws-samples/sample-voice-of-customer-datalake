@@ -53,6 +53,12 @@
     "downloadTXT": "TXTでダウンロード",
     "kiroPromptTip": "ヒント：プロジェクト設定でKiroプロンプトを設定してください"
   },
+  "errorBoundary": {
+    "description": "このページで予期しないエラーが発生しました。再読み込みするか、ホームに戻ってください。アプリの他の部分には影響ありません。",
+    "goHome": "ホームへ戻る",
+    "reload": "ページを再読み込み",
+    "title": "問題が発生しました"
+  },
   "feedbackCard": {
     "copyText": "テキストをコピー",
     "details": "詳細",

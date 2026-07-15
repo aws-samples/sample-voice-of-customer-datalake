@@ -57,6 +57,12 @@
     "downloadTXT": "Baixar como TXT",
     "kiroPromptTip": "Dica: Configure o prompt do Kiro nas configurações do projeto"
   },
+  "errorBoundary": {
+    "description": "Esta página encontrou um erro inesperado. Você pode recarregá-la ou voltar ao início — o restante do aplicativo não é afetado.",
+    "goHome": "Ir para o início",
+    "reload": "Recarregar página",
+    "title": "Algo deu errado"
+  },
   "feedbackCard": {
     "copyText": "Copiar texto",
     "details": "Detalhes",

@@ -53,6 +53,12 @@
     "downloadTXT": "Als TXT herunterladen",
     "kiroPromptTip": "Tipp: Kiro-Eingabeaufforderung in Projekteinstellungen konfigurieren"
   },
+  "errorBoundary": {
+    "description": "Auf dieser Seite ist ein unerwarteter Fehler aufgetreten. Sie können sie neu laden oder zur Startseite zurückkehren — der Rest der Anwendung ist nicht betroffen.",
+    "goHome": "Zur Startseite",
+    "reload": "Seite neu laden",
+    "title": "Etwas ist schiefgelaufen"
+  },
   "feedbackCard": {
     "copyText": "Text kopieren",
     "details": "Einzelheiten",
