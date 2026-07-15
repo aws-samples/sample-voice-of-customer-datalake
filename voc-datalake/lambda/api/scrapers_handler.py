@@ -287,7 +287,11 @@ def analyze_url():
         from shared.converse import converse
         prompt = f"""Analyze this HTML and identify CSS selectors for extracting reviews:\n\n```html\n{html_sample}\n```\n\nReturn JSON with: container_selector, text_selector, rating_selector, author_selector, date_selector, confidence (high/medium/low), detected_reviews_count"""
 
-        response_text = converse(prompt=prompt, max_tokens=1000, surface='utility')
+        # 2048 (was 1000): adaptive-thinking models (Sonnet 5) spend output
+        # budget on thinking; strict-JSON outputs must fit in ONE call because
+        # the auto-continuation seam is unreliable mid-JSON (live-caught on
+        # the categories endpoint).
+        response_text = converse(prompt=prompt, max_tokens=2048, surface='utility')
         
         json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
         if not json_match:

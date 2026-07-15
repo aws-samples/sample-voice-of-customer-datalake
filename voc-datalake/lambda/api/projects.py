@@ -654,10 +654,13 @@ def autofill_prfaq_questions(project_id: str, body: dict) -> dict:
         "5. What does the customer experience look like?"
     )
 
+    # JSON output must fit ONE call: adaptive-thinking models (Sonnet 5)
+    # spend output budget on thinking, and the continuation seam is
+    # unreliable mid-JSON (live-caught on categories generate).
     raw = converse(
         prompt=user_prompt,
         system_prompt=system_prompt,
-        max_tokens=2500,
+        max_tokens=4096,
         temperature=0.3,
         surface='documents',
         step_name='prfaq_autofill',
@@ -741,7 +744,7 @@ def suggest_document_brief(project_id: str, body: dict) -> dict:
     raw = converse(
         prompt=user_prompt,
         system_prompt=system_prompt,
-        max_tokens=1200,
+        max_tokens=2048,  # JSON headroom for adaptive-thinking models (see prfaq_autofill note)
         temperature=0.4,
         surface='documents',
         step_name='document_brief_suggest',
@@ -822,7 +825,7 @@ def suggest_research_questions(project_id: str, body: dict) -> dict:
     raw = converse(
         prompt=user_prompt,
         system_prompt=system_prompt,
-        max_tokens=1500,
+        max_tokens=2048,  # JSON headroom for adaptive-thinking models (see prfaq_autofill note)
         temperature=0.4,
         surface='documents',
         step_name='research_suggest',

@@ -427,7 +427,11 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
   ]
 }}"""
 
-        response_text = converse(prompt=prompt, max_tokens=2000, temperature=0.3, surface='utility')
+        # 4096 (was 2000): Sonnet 5's always-on adaptive thinking counts
+        # against maxTokens, and a truncated strict-JSON response can't be
+        # stitched reliably by auto-continuation (live-caught: the resume seam
+        # dropped a comma → JSONDecodeError). Headroom keeps it to one call.
+        response_text = converse(prompt=prompt, max_tokens=4096, temperature=0.3, surface='utility')
 
         json_match = re.search(r"\{[\s\S]*\}", response_text)
         if json_match:
