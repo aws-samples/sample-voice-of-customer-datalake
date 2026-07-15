@@ -389,11 +389,20 @@ export class VocCoreStack extends cdk.Stack {
     });
 
     // Cognito User Pool
+    //
+    // signInCaseSensitive (#105) maps to UsernameConfiguration, which Cognito
+    // treats as CREATE-ONLY: introducing it on a pool deployed before #105
+    // fails the whole stack update with "Updates are not allowed for property
+    // - UsernameConfiguration" (issue #184). Pre-#105 stacks set the context
+    // flag below to keep their pool untouched; greenfield deployments keep
+    // case-insensitive sign-in.
+    const omitUsernameConfigRaw = this.node.tryGetContext('omitUserPoolUsernameConfiguration');
+    const omitUsernameConfig = omitUsernameConfigRaw === true || omitUsernameConfigRaw === 'true';
     this.userPool = new cognito.UserPool(this, 'VocUserPool', {
       userPoolName: uniqueName('voc-user-pool'),
       selfSignUpEnabled: false,
       signInAliases: { email: true, username: true },
-      signInCaseSensitive: false,
+      ...(omitUsernameConfig ? {} : { signInCaseSensitive: false }),
       autoVerify: { email: true },
       standardAttributes: {
         email: { required: true, mutable: true },
