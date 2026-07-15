@@ -20,9 +20,22 @@
 import { z } from 'zod'
 import type { Category, Subcategory } from './CategoriesManager'
 
-/** Stable id for legacy rows that never had one: slug of the name. */
-function deriveId(prefix: string, name: string): string {
-  return `${prefix}_${name.trim().toLowerCase().replace(/\s+/g, '_')}`
+/** Slug of a name for derived ids: lowercase, non-alphanumerics collapsed
+ * to underscores, trimmed — 'billing/refunds' → 'billing_refunds'. */
+function slugify(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+/** Reserve a unique id: first-come keeps the plain candidate, later
+ * collisions get a numeric suffix (cat_app, cat_app_2, ...) so two legacy
+ * rows named 'App' and 'app' can't share delete/expand/edit actions. */
+function uniqueId(candidate: string, used: Set<string>, attempt = 1): string {
+  const proposal = attempt === 1 ? candidate : `${candidate}_${attempt}`
+  if (!used.has(proposal)) {
+    used.add(proposal)
+    return proposal
+  }
+  return uniqueId(candidate, used, attempt + 1)
 }
 
 // Loose objects: legacy fields (display_name, color, ...) survive the edit
@@ -40,42 +53,54 @@ const rawCategorySchema = z.looseObject({
   subcategories: z.array(z.unknown()).catch(() => []),
 })
 
-function normalizeSubcategory(raw: unknown): Subcategory[] {
+/** A usable identity source: a non-empty stored id, or a name that slugs
+ * to something non-empty (whitespace-only and symbol-only names don't). */
+function identityFor(prefix: string, id: string | undefined, name: string): string | null {
+  if (id !== undefined && id.trim() !== '') return id
+  const slug = slugify(name)
+  return slug === '' ? null : `${prefix}_${slug}`
+}
+
+function normalizeSubcategory(raw: unknown, usedIds: Set<string>): Subcategory[] {
   const parsed = rawSubcategorySchema.safeParse(raw)
   if (!parsed.success) return []
-  const { id, name } = parsed.data
-  if ((id === undefined || id === '') && name === '') return []
-  return [{ ...parsed.data, id: id !== undefined && id !== '' ? id : deriveId('sub', name), name }]
+  const identity = identityFor('sub', parsed.data.id, parsed.data.name)
+  if (identity === null) return []
+  return [{ ...parsed.data, id: uniqueId(identity, usedIds), name: parsed.data.name }]
 }
 
 /**
  * Make the declared Category contract true for one wire row, or drop it
  * (empty array) when there is no usable identity at all.
  */
-function normalizeCategory(raw: unknown): Category[] {
+function normalizeCategory(raw: unknown, usedIds: Set<string>): Category[] {
   const parsed = rawCategorySchema.safeParse(raw)
   if (!parsed.success) {
     console.warn('Dropping category record that failed schema validation:', parsed.error.issues)
     return []
   }
-  const { id, name, subcategories } = parsed.data
-  if ((id === undefined || id === '') && name === '') {
-    console.warn('Dropping category record without usable id or name:', parsed.data)
+  const identity = identityFor('cat', parsed.data.id, parsed.data.name)
+  if (identity === null) {
+    console.warn('Dropping category record without usable id or name; keys present:', Object.keys(parsed.data))
     return []
   }
+  const usedSubIds = new Set<string>()
   return [{
     ...parsed.data,
-    id: id !== undefined && id !== '' ? id : deriveId('cat', name),
-    name,
-    subcategories: subcategories.flatMap(normalizeSubcategory),
+    id: uniqueId(identity, usedIds),
+    name: parsed.data.name,
+    subcategories: parsed.data.subcategories.flatMap((sub) => normalizeSubcategory(sub, usedSubIds)),
   }]
 }
 
 /**
  * Normalize the categories list at the query boundary: legacy rows get a
  * derived id and an empty subcategories array instead of crashing the tab;
- * unknown legacy fields pass through so saves lose nothing.
+ * unknown legacy fields pass through so saves lose nothing. Ids are
+ * de-duplicated across the list (derived or stored) so row actions can
+ * never cross-target.
  */
 export function normalizeCategories(rawCategories: readonly unknown[]): Category[] {
-  return rawCategories.flatMap(normalizeCategory)
+  const usedIds = new Set<string>()
+  return rawCategories.flatMap((raw) => normalizeCategory(raw, usedIds))
 }

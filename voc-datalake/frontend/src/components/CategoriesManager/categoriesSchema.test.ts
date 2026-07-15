@@ -71,6 +71,40 @@ describe('normalizeCategories (issue #181)', () => {
     expect(first[0].id).toBe(second[0].id)
   })
 
+  it('de-duplicates colliding derived ids so row actions cannot cross-target', () => {
+    const categories = normalizeCategories([
+      { name: 'App' },
+      { name: 'app' },
+      { name: 'app  ' },
+    ])
+
+    expect(categories.map((c) => c.id)).toEqual(['cat_app', 'cat_app_2', 'cat_app_3'])
+  })
+
+  it('de-duplicates a derived id against a stored one', () => {
+    const categories = normalizeCategories([
+      { id: 'cat_app', name: 'application', subcategories: [] },
+      { name: 'app' },
+    ])
+
+    expect(categories.map((c) => c.id)).toEqual(['cat_app', 'cat_app_2'])
+  })
+
+  it('sanitizes non-alphanumerics in derived ids', () => {
+    const [category] = normalizeCategories([{ name: 'billing/refunds & credits' }])
+
+    expect(category.id).toBe('cat_billing_refunds_credits')
+  })
+
+  it('treats whitespace-only and symbol-only names as unusable identity', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const categories = normalizeCategories([legacyRow, { name: '   ' }, { name: '///' }])
+
+    expect(categories.map((c) => c.id)).toEqual(['cat_app'])
+    expect(warn).toHaveBeenCalledTimes(2)
+  })
+
   it('drops a row only when both id and name are unusable', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
