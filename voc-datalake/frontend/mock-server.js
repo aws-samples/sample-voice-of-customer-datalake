@@ -142,15 +142,35 @@ const mockSurfaceDefaults = {
   utility: 'global.anthropic.claude-sonnet-5',
 };
 
+// Categories config — real contract shape (id + subcategories, issue #181).
+// The last entry is a deliberately sparse legacy row ({name, display_name,
+// color} only — what old DynamoDB rows carry) so local dev permanently
+// exercises the normalizeCategories() boundary.
 const mockCategoriesConfig = {
   categories: [
-    { name: 'delivery', display_name: 'Delivery', description: 'Shipping and delivery issues', color: '#EF4444' },
-    { name: 'customer_support', display_name: 'Customer Support', description: 'Support interactions', color: '#3B82F6' },
-    { name: 'product_quality', display_name: 'Product Quality', description: 'Quality concerns', color: '#F59E0B' },
-    { name: 'pricing', display_name: 'Pricing', description: 'Price-related feedback', color: '#10B981' },
-    { name: 'website', display_name: 'Website', description: 'Website experience', color: '#8B5CF6' },
+    {
+      id: 'cat_delivery', name: 'delivery', description: 'Shipping and delivery issues',
+      subcategories: [
+        { id: 'sub_late_delivery', name: 'late_delivery', description: 'Late deliveries' },
+        { id: 'sub_tracking', name: 'tracking', description: 'Tracking visibility' },
+      ],
+    },
+    {
+      id: 'cat_customer_support', name: 'customer_support', description: 'Support interactions',
+      subcategories: [
+        { id: 'sub_response_time', name: 'response_time', description: 'Slow responses' },
+      ],
+    },
+    {
+      id: 'cat_product_quality', name: 'product_quality', description: 'Quality concerns',
+      subcategories: [],
+    },
+    { id: 'cat_pricing', name: 'pricing', description: 'Price-related feedback', subcategories: [] },
+    { id: 'cat_website', name: 'website', description: 'Website experience', subcategories: [] },
+    // Sparse legacy row: no id, no subcategories.
     { name: 'app', display_name: 'Mobile App', description: 'App experience', color: '#EC4899' },
-  ]
+  ],
+  updated_at: new Date().toISOString(),
 };
 
 // Mock feedback forms — real wire shape (form_id, full FeedbackFormFields).
