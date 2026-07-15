@@ -7,72 +7,9 @@ from unittest.mock import patch
 from datetime import datetime, timezone
 
 
-class TestGetCallerGroups:
-    """Tests for get_caller_groups helper function."""
-
-    def test_extracts_groups_from_claims(self):
-        """Extracts user groups from Cognito authorizer claims."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from users_handler import get_caller_groups
-        
-        event = {
-            'requestContext': {
-                'authorizer': {
-                    'claims': {'cognito:groups': 'admins viewers'}
-                }
-            }
-        }
-        
-        groups = get_caller_groups(event)
-        assert 'admins' in groups
-        assert 'viewers' in groups
-
-    def test_handles_comma_separated_groups(self):
-        """Handles comma-separated groups format."""
-        from users_handler import get_caller_groups
-        
-        event = {
-            'requestContext': {
-                'authorizer': {
-                    'claims': {'cognito:groups': 'admins, viewers'}
-                }
-            }
-        }
-        
-        groups = get_caller_groups(event)
-        assert 'admins' in groups
-
-    def test_returns_empty_list_when_no_groups(self):
-        """Returns empty list when no groups in claims."""
-        from users_handler import get_caller_groups
-        
-        event = {
-            'requestContext': {
-                'authorizer': {
-                    'claims': {}
-                }
-            }
-        }
-        
-        groups = get_caller_groups(event)
-        assert groups == []
-
-    def test_handles_single_group(self):
-        """Handles single group string."""
-        from users_handler import get_caller_groups
-        
-        event = {
-            'requestContext': {
-                'authorizer': {
-                    'claims': {'cognito:groups': 'admins'}
-                }
-            }
-        }
-        
-        groups = get_caller_groups(event)
-        assert groups == ['admins']
+# NOTE: group-parsing/require_admin unit tests live in
+# lambda/shared/test/test_api.py — users_handler now gates through the
+# shared implementation instead of a local copy.
 
 
 class TestListUsers:

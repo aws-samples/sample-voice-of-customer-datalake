@@ -130,6 +130,12 @@ def process_job(job_id: str) -> None:
         # it defaults to 1, which is also the only accepted value with thinking
         # enabled, while temperature-restricted models (Sonnet 5, Opus 4.8)
         # reject the parameter outright when sent explicitly.
+        #
+        # This raw invoke_model path bypasses converse() and has NO
+        # auto-continuation, so the strict-JSON doctrine (shared/converse.py)
+        # applies in its single-call form: max_tokens=16000 must fit the whole
+        # JSON answer in one call; a truncated response falls through
+        # parse_llm_response() into unparsed_sections rather than corrupting.
         model_id = get_active_model_id('utility')
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
