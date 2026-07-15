@@ -1,24 +1,18 @@
 // Scrapers & Manual Import API - extracted from client.ts for code splitting
 import { fetchApi } from './client'
+import { normalizeScrapers, normalizeScraperRunStatus } from './scrapersSchema'
+import type { ScraperRunStatus } from './scrapersSchema'
 import type {
   ScraperConfig, ScraperTemplate,
 } from './types'
 
-// What /scrapers actually returns: base_url is declared required on
-// ScraperConfig, but runtime payloads have delivered scrapers without it
-// (issue #167). Model that honestly here and normalize on entry so the
-// declared contract is true for every consumer.
-type RawScraperConfig = Omit<ScraperConfig, 'base_url'> & { base_url?: string }
-
 export const scrapersApi = {
+  // ScraperConfig declares its fields required, but runtime payloads have
+  // delivered sparse records (issues #167/#169). Normalize on entry so the
+  // declared contract is true for every consumer.
   getScrapers: async (): Promise<{ scrapers: ScraperConfig[] }> => {
-    const response = await fetchApi<{ scrapers: RawScraperConfig[] }>('/scrapers')
-    return {
-      scrapers: (response.scrapers ?? []).map((scraper) => ({
-        ...scraper,
-        base_url: typeof scraper.base_url === 'string' ? scraper.base_url : '',
-      })),
-    }
+    const response = await fetchApi<{ scrapers?: unknown[] }>('/scrapers')
+    return { scrapers: normalizeScrapers(response.scrapers ?? []) }
   },
 
   getScraperTemplates: () => fetchApi<{ templates: ScraperTemplate[] }>('/scrapers/templates'),
@@ -65,17 +59,13 @@ export const scrapersApi = {
       status: string
     }>(`/scrapers/${id}/run`, { method: 'POST' }),
 
-  getScraperStatus: (id: string) =>
-    fetchApi<{
-      scraper_id: string
-      execution_id?: string
-      status: string
-      started_at?: string
-      completed_at?: string
-      pages_scraped: number
-      items_found: number
-      errors: string[]
-    }>(`/scrapers/${id}/status`),
+  // The status endpoint's runtime shape has drifted from the declared one
+  // (issue #169: undefined counts rendered 'Last: pages, reviews' blank).
+  // Normalize on entry: counts degrade to 0, errors to [].
+  getScraperStatus: async (id: string): Promise<ScraperRunStatus> => {
+    const response = await fetchApi<unknown>(`/scrapers/${id}/status`)
+    return normalizeScraperRunStatus(response)
+  },
 
   getScraperRuns: (id: string) =>
     fetchApi<{

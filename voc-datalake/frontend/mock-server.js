@@ -143,11 +143,33 @@ const mockFeedbackForms = [
   { id: 'form_3', name: 'Support Feedback', enabled: false, submissions: 89, created_at: new Date().toISOString() },
 ];
 
-// Mock scrapers
+// Mock scrapers — real ScraperConfig shape (issue #169). scraper_2 is
+// deliberately sparse (identity fields only), mirroring records persisted
+// before newer fields existed, so local dev exercises the normalizeScrapers()
+// boundary: base_url '' renders Not configured, frequency 0 renders
+// 'Manual only' (never 'undefinedm').
 const mockScrapers = [
-  { id: 'scraper_1', name: 'Product Reviews', url: 'https://example.com/reviews', enabled: true, schedule: 'rate(30 minutes)', last_run: new Date().toISOString(), status: 'success' },
-  { id: 'scraper_2', name: 'Forum Posts', url: 'https://forum.example.com', enabled: false, schedule: 'rate(1 hour)', last_run: null, status: 'disabled' },
+  {
+    id: 'scraper_1', name: 'Product Reviews', enabled: true,
+    base_url: 'https://example.com/reviews', urls: ['https://example.com/reviews?sort=recent'],
+    frequency_minutes: 30, extraction_method: 'css',
+    container_selector: '.review', text_selector: '.review-text',
+    rating_selector: '.review-stars@data-rating', author_selector: '.review-author',
+    date_selector: '.review-date',
+    pagination: { enabled: true, param: 'page', max_pages: 3, start: 1 },
+    last_run: new Date().toISOString(), items_found: 42,
+  },
+  // Sparse legacy record: identity fields only.
+  { id: 'scraper_2', name: 'Forum Posts', enabled: false },
 ];
+const mockScraperRuns = {
+  scraper_1: {
+    scraper_id: 'scraper_1', status: 'completed',
+    started_at: new Date(Date.now() - 3600000).toISOString(),
+    completed_at: new Date(Date.now() - 3590000).toISOString(),
+    pages_scraped: 3, items_found: 42, errors: [],
+  },
+};
 
 // Mock S3 data explorer
 const mockBuckets = [
@@ -338,17 +360,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Handle scraper status by ID
+  // Handle scraper status by ID — real RunStatus shape (issue #169):
+  // pages_scraped/items_found/errors, 'never_run' for scrapers without runs.
   if (req.method === 'GET' && url.pathname.match(/^\/scrapers\/[^/]+\/status$/)) {
     const id = url.pathname.split('/')[2];
-    const scraper = mockScrapers.find(s => s.id === id);
+    const run = mockScraperRuns[id];
     res.writeHead(200);
-    res.end(JSON.stringify({
-      id,
-      status: scraper ? scraper.status : 'unknown',
-      last_run: scraper ? scraper.last_run : null,
-      items_scraped: Math.floor(Math.random() * 50) + 10,
-      errors: 0
+    res.end(JSON.stringify(run ?? {
+      scraper_id: id, status: 'never_run', pages_scraped: 0, items_found: 0, errors: [],
     }));
     return;
   }

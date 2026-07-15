@@ -95,3 +95,29 @@ describe('ScraperCard base_url resilience (issue #167)', () => {
     expect(screen.getByTitle(i18n.t('card.runNow', { ns: 'scrapers' }))).not.toBeDisabled()
   })
 })
+
+describe('ScraperCard frequency resilience (issue #169)', () => {
+  it('renders a dash instead of "undefinedm" for a runtime record without frequency', () => {
+    const scraper = makeScraper({ base_url: 'https://example.com' })
+    // The wire can deliver records persisted before frequency_minutes
+    // existed; static types say it is required, runtime reality disagrees.
+    Reflect.deleteProperty(scraper, 'frequency_minutes')
+
+    renderCard(scraper)
+
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument()
+  })
+
+  it('renders the human label for a known frequency', () => {
+    renderCard(makeScraper({ frequency_minutes: 30 }))
+
+    expect(screen.getByText('Every 30 minutes')).toBeInTheDocument()
+  })
+
+  it('renders Manual only for the normalized no-schedule default (0)', () => {
+    renderCard(makeScraper({ frequency_minutes: 0 }))
+
+    expect(screen.getByText('Manual only')).toBeInTheDocument()
+  })
+})
