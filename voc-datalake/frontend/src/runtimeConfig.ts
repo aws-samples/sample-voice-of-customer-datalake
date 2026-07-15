@@ -122,6 +122,14 @@ function getEnvString(key: string, defaultValue = ''): string {
  * Used for local development or when config.json is unavailable.
  */
 function getEnvConfig(): RuntimeConfig {
+  // Constructed as a literal boolean (=== 'true'), so this object is
+  // schema-conformant BY CONSTRUCTION — which is what lets the invalid-env
+  // fallback below reuse it verbatim. Single construction site on purpose.
+  const features = {
+    // Local development: VITE_ENABLE_WEB_SEARCH=true surfaces the web search
+    // toggles without a deployed config.json.
+    webSearch: getEnvString('VITE_ENABLE_WEB_SEARCH') === 'true',
+  }
   const envConfig = {
     apiEndpoint: getEnvString('VITE_API_ENDPOINT'),
     cognito: {
@@ -130,11 +138,7 @@ function getEnvConfig(): RuntimeConfig {
       region: getEnvString('VITE_COGNITO_REGION', 'us-east-1'),
       identityPoolId: getEnvString('VITE_IDENTITY_POOL_ID'),
     },
-    // Local development: VITE_ENABLE_WEB_SEARCH=true surfaces the web search
-    // toggles without a deployed config.json.
-    features: {
-      webSearch: getEnvString('VITE_ENABLE_WEB_SEARCH') === 'true',
-    },
+    features,
   }
 
   // Validate env config
@@ -156,6 +160,11 @@ function getEnvConfig(): RuntimeConfig {
         region: 'us-east-1',
         identityPoolId: '',
       },
+      // Keep the feature flags: mock-only dev (no Cognito vars) is exactly
+      // when this branch runs, and it's also exactly when the
+      // VITE_ENABLE_WEB_SEARCH escape hatch is needed. Safe to reuse: the
+      // shared `features` object above is boolean-by-construction.
+      features,
     }
   }
 
