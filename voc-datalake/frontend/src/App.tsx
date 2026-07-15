@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
@@ -39,7 +40,7 @@ const queryClient = new QueryClient({
 // Lazy pages share the same suspense fallback and, per issue #173, a
 // route-scoped error boundary: a render error in one page replaces only
 // that page's content — the layout and sidebar stay mounted.
-const page = (element: React.ReactNode) => ({
+const page = (element: ReactNode) => ({
   element: <Suspense fallback={<PageLoader />}>{element}</Suspense>,
   errorElement: <RouteErrorBoundary />,
 })

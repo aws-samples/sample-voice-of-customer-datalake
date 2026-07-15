@@ -7,6 +7,7 @@
  * each child route, this fallback replaces only the failing route content —
  * the layout and sidebar stay interactive.
  */
+import { useEffect } from 'react'
 import { AlertTriangle, Home, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { isRouteErrorResponse, Link, useRouteError } from 'react-router-dom'
@@ -14,7 +15,9 @@ import { isRouteErrorResponse, Link, useRouteError } from 'react-router-dom'
 /** Human-readable summary of whatever useRouteError() delivered (unknown). */
 export function describeRouteError(error: unknown): string {
   if (isRouteErrorResponse(error)) {
-    return `${error.status} ${error.statusText}`.trim()
+    const base = `${error.status} ${error.statusText}`.trim()
+    // Loader-thrown Responses often carry the actionable message in data.
+    return typeof error.data === 'string' && error.data ? `${base} — ${error.data}` : base
   }
   if (error instanceof Error) {
     return error.message
@@ -26,6 +29,13 @@ export default function RouteErrorBoundary() {
   const error = useRouteError()
   const { t } = useTranslation('components')
 
+  // Graceful catching must not swallow observability: report the FULL error
+  // object (stack included) so production render crashes stay diagnosable —
+  // console.error feeds CloudWatch RUM / browser monitoring when configured.
+  useEffect(() => {
+    console.error('Route render error caught by RouteErrorBoundary:', error)
+  }, [error])
+
   return (
     <div className="flex items-center justify-center min-h-[60vh] p-6" role="alert">
       <div className="max-w-md w-full text-center">
@@ -34,9 +44,13 @@ export default function RouteErrorBoundary() {
         </div>
         <h1 className="text-xl font-semibold text-gray-900 mb-2">{t('errorBoundary.title')}</h1>
         <p className="text-gray-600 mb-4">{t('errorBoundary.description')}</p>
-        <p className="text-sm font-mono text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-6 break-words">
-          {describeRouteError(error)}
-        </p>
+        {import.meta.env.DEV && (
+          // Technical detail is dev-only: raw messages leak implementation
+          // internals to end users; production keeps them in the log path.
+          <p className="text-sm font-mono text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-6 break-words">
+            {describeRouteError(error)}
+          </p>
+        )}
         <div className="flex items-center justify-center gap-3">
           <button
             onClick={() => window.location.reload()}
