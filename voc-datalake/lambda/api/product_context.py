@@ -21,7 +21,8 @@ from typing import Any
 from boto3.dynamodb.conditions import Key
 
 from shared.logging import logger, tracer
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.model_config import get_active_model_id, omits_temperature
 from shared.exceptions import (
     ConfigurationError, NotFoundError, ValidationError, ServiceError,
 )
@@ -341,12 +342,19 @@ def interview_turn(project_id: str, body: dict) -> dict:
     messages.append({'role': 'user', 'content': [{'text': message}]})
 
     client = get_bedrock_client()
+    # Product-interview chat surface. Raw client call (tool use isn't wrapped by
+    # the shared converse helper), so resolve the model and omit temperature for
+    # models that reject it (Sonnet 5 / Opus 4.8) exactly as converse() does.
+    model = get_active_model_id('chat')
+    inference_config: dict = {'maxTokens': 1024}
+    if not omits_temperature(model):
+        inference_config['temperature'] = 0.3
     try:
         resp = client.converse(
-            modelId=BEDROCK_MODEL_ID,
+            modelId=model,
             messages=messages,
             system=[{'text': system_prompt}],
-            inferenceConfig={'maxTokens': 1024, 'temperature': 0.3},
+            inferenceConfig=inference_config,
             toolConfig={'tools': [_build_interview_tool()]},
         )
     except Exception as e:
@@ -603,6 +611,7 @@ def generate_report(project_id: str, body: dict) -> dict:
             system_prompt=system_prompt,
             max_tokens=4000,
             temperature=0.2,
+            surface='documents',
             step_name='product_report',
         )
     except Exception as e:

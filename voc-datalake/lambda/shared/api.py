@@ -80,6 +80,42 @@ def validate_int(
         return default
 
 
+def get_caller_groups(event: dict) -> list[str]:
+    """Extract Cognito group memberships from the API Gateway authorizer claims.
+
+    Handles every format API Gateway emits for the ``cognito:groups`` claim:
+    a real list, and strings that are comma- or space-separated — including
+    the REST-authorizer serialization of the array claim as a
+    bracket-wrapped string (``"[admins]"`` / ``"[admins, users]"``).
+    """
+    try:
+        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+        groups = claims.get('cognito:groups', '')
+        if not groups:
+            return []
+        if isinstance(groups, list):
+            return groups
+        # REST API Gateway serializes array claims like "[admins, users]".
+        cleaned = groups.strip().removeprefix('[').removesuffix(']').strip()
+        if not cleaned:
+            return []
+        if ',' in cleaned:
+            return [g.strip() for g in cleaned.split(',')]
+        return cleaned.split(' ') if ' ' in cleaned else [cleaned]
+    except Exception:
+        return []
+
+
+def require_admin(event: dict) -> None:
+    """Raise AuthorizationError (403) unless the caller is in the admins group.
+
+    The Cognito authorizer only proves authentication; org-wide mutations
+    (user administration, AI model selection) must also check the group.
+    """
+    if 'admins' not in get_caller_groups(event):
+        raise AuthorizationError('Admin access required')
+
+
 def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
     """
     Create standard CORS configuration for API Gateway.
@@ -237,6 +273,8 @@ __all__ = [
     'create_cors_config',
     'create_api_resolver',
     'api_handler',
+    'get_caller_groups',
+    'require_admin',
     'get_configured_categories',
     'DEFAULT_CATEGORIES',
     # Exceptions

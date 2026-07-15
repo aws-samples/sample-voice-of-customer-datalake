@@ -1,4 +1,35 @@
 {
+  "aiModel": {
+    "automaticOption": "Automatic — {{model}}",
+    "intro": "Choose which Claude model powers each AI feature, or keep Automatic to use each feature’s tuned default. Running functions pick up changes within a minute.",
+    "loadFailed": "Could not load model settings.",
+    "loading": "Loading models...",
+    "saveFailed": "Failed to save model selection. Try again.",
+    "saved": "Saved",
+    "surfaces": {
+      "chat": {
+        "description": "Conversational data queries and project chat",
+        "label": "AI Chat"
+      },
+      "documents": {
+        "description": "PRDs, PR/FAQs, personas, and research reports",
+        "label": "Document Generation"
+      },
+      "enrichment": {
+        "description": "Sentiment, categories, and urgency on every ingested item",
+        "label": "Feedback Enrichment"
+      },
+      "prototype": {
+        "description": "Interactive HTML prototypes",
+        "label": "Prototype Builder"
+      },
+      "utility": {
+        "description": "Category suggestions and scraper selector detection",
+        "label": "Utilities"
+      }
+    },
+    "title": "AI Models"
+  },
   "api": {
     "connected": "Connected",
     "endpointHint": "The API Gateway endpoint from your VoC deployment",

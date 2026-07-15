@@ -287,7 +287,7 @@ def analyze_url():
         from shared.converse import converse
         prompt = f"""Analyze this HTML and identify CSS selectors for extracting reviews:\n\n```html\n{html_sample}\n```\n\nReturn JSON with: container_selector, text_selector, rating_selector, author_selector, date_selector, confidence (high/medium/low), detected_reviews_count"""
 
-        response_text = converse(prompt=prompt, max_tokens=1000)
+        response_text = converse(prompt=prompt, max_tokens=1000, surface='utility')
         
         json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
         if not json_match:

@@ -8,7 +8,10 @@ import time
 from typing import Callable
 from botocore.exceptions import ClientError
 from shared.logging import logger
-from shared.aws import get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import get_bedrock_client
+from shared.model_config import (
+    get_active_model_id, omits_temperature, uses_adaptive_thinking, DEFAULT_SURFACE,
+)
 
 
 # Retry configuration
@@ -56,6 +59,7 @@ def converse(
     temperature: float | None = 0.1,
     thinking_budget: int = 0,
     model_id: str | None = None,
+    surface: str = DEFAULT_SURFACE,
     max_retries: int = DEFAULT_MAX_RETRIES,
     raise_on_throttle: bool = True,
     step_name: str = "unknown",
@@ -72,7 +76,12 @@ def converse(
             entirely — required for models like Opus 4.8 that reject/deprecate
             the `temperature` inference parameter.
         thinking_budget: If > 0, enables extended thinking with this token budget
-        model_id: Optional model ID override
+        model_id: Explicit model ID override. When None, the model is resolved
+            from the per-surface AI-model picker via ``surface``.
+        surface: AI surface whose configured model to use when ``model_id`` is
+            None (e.g. "chat", "documents", "prototype", "enrichment",
+            "utility"). See shared.model_config for the resolution order and
+            defaults. Ignored when ``model_id`` is passed explicitly.
         max_retries: Maximum retry attempts for throttling (default: 5)
         raise_on_throttle: If True, raise BedrockThrottlingError after max retries
         step_name: Name of the current step for logging
@@ -89,8 +98,8 @@ def converse(
         BedrockThrottlingError: If throttled after max retries and raise_on_throttle=True
         ClientError: For non-retryable AWS errors
     """
-    used_model = model_id or BEDROCK_MODEL_ID
-    logger.info(f"[BEDROCK] Starting converse call for step '{step_name}' with model {used_model}")
+    used_model = model_id or get_active_model_id(surface)
+    logger.info(f"[BEDROCK] Starting converse call for step '{step_name}' with model {used_model} (surface={surface})")
     logger.info(f"[BEDROCK] Request params: max_tokens={max_tokens}, temperature={temperature}, thinking_budget={thinking_budget}")
     logger.info(f"[BEDROCK] Prompt length: {len(prompt)} chars, system_prompt length: {len(system_prompt)} chars")
     
@@ -105,9 +114,11 @@ def converse(
     system = [{'text': system_prompt}] if system_prompt else None
     
     inference_config = {'maxTokens': max_tokens}
-    # Some models (e.g. Opus 4.8) reject `temperature` as deprecated. Pass
-    # temperature=None to omit it; otherwise include it as before.
-    if temperature is not None:
+    # Some models reject `temperature` as deprecated (Opus 4.8) or run adaptive
+    # thinking always-on (Sonnet 5). Omit it for those automatically — so any
+    # surface can be pointed at them via the picker without a 400 — and also
+    # when the caller explicitly passes temperature=None.
+    if temperature is not None and not omits_temperature(used_model):
         inference_config['temperature'] = temperature
     kwargs = {
         'modelId': used_model,
@@ -117,8 +128,11 @@ def converse(
     if system:
         kwargs['system'] = system
     
-    # Add extended thinking if budget specified
-    if thinking_budget > 0:
+    # Add extended thinking if budget specified. Models with always-on adaptive
+    # thinking (Sonnet 5) reject an explicit budget, so skip the field for them
+    # — their thinking runs automatically.
+    explicit_thinking = thinking_budget > 0 and not uses_adaptive_thinking(used_model)
+    if explicit_thinking:
         kwargs['additionalModelRequestFields'] = {
             'thinking': {
                 'type': 'enabled',
@@ -129,10 +143,11 @@ def converse(
     logger.info(f"[BEDROCK] Invoking Bedrock converse API for step '{step_name}'...")
     start_time = time.time()
 
-    # Continuation is incompatible with extended thinking: resuming a truncated
-    # turn requires replaying the assistant message, and thinking blocks have
-    # signing/ordering rules we don't handle here. Disable it in that case.
-    allow_continuation = max_continuations > 0 and thinking_budget <= 0
+    # Continuation is incompatible with EXPLICIT extended thinking: resuming a
+    # truncated turn requires replaying the assistant message, and thinking
+    # blocks have signing/ordering rules we don't handle here. Models where we
+    # skip the explicit budget (always-on adaptive thinking) can still continue.
+    allow_continuation = max_continuations > 0 and not explicit_thinking
 
     try:
         result, stop_reason = _invoke_with_retry(
@@ -344,6 +359,7 @@ def converse_chain(
     steps: list[dict],
     progress_callback: Callable[[int, str], None] | None = None,
     max_retries: int = DEFAULT_MAX_RETRIES,
+    surface: str = DEFAULT_SURFACE,
 ) -> list[str]:
     """
     Execute a chain of LLM calls, each building on the previous.
@@ -354,11 +370,15 @@ def converse_chain(
         - max_tokens: Max output tokens (default 4096)
         - thinking_budget: Extended thinking budget (default 0 = disabled)
         - step_name: Optional name for progress reporting
+        - surface: Optional per-step AI surface override (defaults to the
+          chain-level `surface`)
     
     Args:
         steps: List of step configurations
         progress_callback: Optional callback(progress: int, step: str) to report progress
         max_retries: Maximum retry attempts for throttling (default: 5)
+        surface: AI surface whose configured model the steps resolve to when
+            they don't set their own model (default: the neutral fallback).
     
     Returns:
         List of results from each step
@@ -400,6 +420,7 @@ def converse_chain(
                 system_prompt=system,
                 max_tokens=max_tokens,
                 thinking_budget=thinking_budget,
+                surface=step.get('surface', surface),
                 max_retries=max_retries,
                 step_name=step_name,
             )

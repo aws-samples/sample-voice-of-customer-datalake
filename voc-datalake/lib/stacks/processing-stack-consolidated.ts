@@ -12,6 +12,7 @@ import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { uniqueName } from '../utils/naming';
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
+import { allowlistedModelArns } from '../utils/model-allowlist';
 
 export interface VocProcessingStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -84,15 +85,12 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     // Bedrock permissions
+    // Enrichment defaults to Haiku but admins can repoint the 'enrichment'
+    // surface via the picker, so grant every allowlisted model (issue #96).
     processingRole.addToPolicy(new iam.PolicyStatement({
       sid: 'BedrockInvoke',
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-      resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
-      ],
+      resources: allowlistedModelArns(this.region, this.account),
     }));
 
     // Comprehend + Translate permissions
@@ -217,14 +215,14 @@ export class VocProcessingStack extends cdk.Stack {
     feedbackTable.grantReadData(researchRole);
     projectsTable.grantReadWriteData(researchRole);
     jobsTable.grantReadWriteData(researchRole);
+    aggregatesTable.grantReadData(researchRole);
     kmsKey.grantEncryptDecrypt(researchRole);
 
+    // Research is a 'documents' surface (defaults to Sonnet 5) and is
+    // repointable via the picker, so grant every allowlisted model (issue #96).
     researchRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-      ],
+      resources: allowlistedModelArns(this.region, this.account),
     }));
 
     const researchCode = lambda.Code.fromAsset('.', {
@@ -249,6 +247,9 @@ export class VocProcessingStack extends cdk.Stack {
         FEEDBACK_TABLE: feedbackTable.tableName,
         PROJECTS_TABLE: projectsTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
+        // Needed so the per-surface AI-model picker ('documents') can resolve
+        // an admin override for research generation (issue #96).
+        AGGREGATES_TABLE: aggregatesTable.tableName,
         POWERTOOLS_SERVICE_NAME: 'voc-research-step',
         LOG_LEVEL: 'INFO',
       },

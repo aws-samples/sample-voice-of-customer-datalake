@@ -16,9 +16,13 @@ from botocore.exceptions import ClientError
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
-from shared.api import create_api_resolver, api_handler
+from shared.aws import get_dynamodb_resource
+from shared.api import create_api_resolver, api_handler, require_admin
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
+from shared.model_config import (
+    ALLOWED_MODELS, ALLOWED_MODEL_IDS, PICKER_SURFACES, SURFACE_DEFAULTS,
+    MODEL_SETTINGS_PK, MODEL_SETTINGS_SK, clear_model_cache,
+)
 
 dynamodb = get_dynamodb_resource()
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
@@ -43,6 +47,139 @@ MAX_PROBLEM_KEY_BYTES = 255
 MAX_RESOLVED_ENTRIES = 500
 
 app = create_api_resolver()
+
+
+@app.get("/settings/model")
+@tracer.capture_method
+def get_model_settings():
+    """Get the per-surface model overrides and the curated allowlist (issue #96).
+
+    Returns the allowlist plus, for each pickable surface, its built-in
+    default and the admin-selected override (``selected`` is null when the
+    surface is on Automatic). ``model_id`` is a legacy global override kept
+    for backward compatibility with the earlier single-model picker; when
+    set it applies to any surface left on Automatic.
+    """
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    try:
+        response = aggregates_table.get_item(
+            Key={'pk': MODEL_SETTINGS_PK, 'sk': MODEL_SETTINGS_SK}
+        )
+        item = response.get('Item') or {}
+        stored = item.get('surfaces')
+        stored = stored if isinstance(stored, dict) else {}
+        legacy_global = item.get('model_id')
+        surfaces = [
+            {
+                'key': key,
+                'default_id': SURFACE_DEFAULTS[key],
+                # Ignore any stored value that has since left the allowlist.
+                'selected': stored.get(key) if stored.get(key) in ALLOWED_MODEL_IDS else None,
+            }
+            for key in PICKER_SURFACES
+        ]
+        return {
+            'available_models': ALLOWED_MODELS,
+            'surfaces': surfaces,
+            'model_id': legacy_global if legacy_global in ALLOWED_MODEL_IDS else None,
+        }
+    except ConfigurationError:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get model settings: {e}")
+        raise ServiceError('Failed to retrieve model settings')
+
+
+@app.put("/settings/model")
+@tracer.capture_method
+def save_model_settings():
+    """Set or clear a per-surface Bedrock model override (issue #96).
+
+    Body shapes:
+      - ``{'surface': <picker surface>, 'model_id': <allowlisted id>}`` — pin
+        that surface to a model.
+      - ``{'surface': <picker surface>, 'model_id': null}`` — clear the
+        surface (back to Automatic / its default).
+      - ``{'model_id': <allowlisted id>|null}`` (no ``surface``) — set/clear
+        the legacy global override that applies to every un-pinned surface.
+
+    Admin-only: this changes inference cost/quality for the whole org, so it
+    is gated on the ``admins`` Cognito group server-side (not just in the UI).
+    """
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    require_admin(app.current_event.raw_event)
+    body = app.current_event.json_body or {}
+    if 'model_id' not in body:
+        raise ValidationError('model_id is required (an allowlisted id, or null to clear)')
+    model_id = body.get('model_id')
+    if model_id is not None and model_id not in ALLOWED_MODEL_IDS:
+        raise ValidationError(
+            f"model_id must be null or one of: {', '.join(sorted(ALLOWED_MODEL_IDS))}"
+        )
+    surface = body.get('surface')
+    if surface is not None and surface not in PICKER_SURFACES:
+        raise ValidationError(
+            f"surface must be null or one of: {', '.join(PICKER_SURFACES)}"
+        )
+    try:
+        if surface is None:
+            _save_global_model(model_id)
+        else:
+            _save_surface_model(surface, model_id)
+        # Refresh this Lambda's own cache; other containers pick it up within the TTL.
+        clear_model_cache()
+        return {'success': True, 'surface': surface, 'model_id': model_id}
+    except Exception as e:
+        logger.exception(f"Failed to save model settings: {e}")
+        raise ServiceError('Failed to save model settings')
+
+
+def _load_model_item() -> dict:
+    """Read the model-settings item as a dict with a guaranteed surfaces map.
+
+    Config writes are a rare admin action, so read-modify-write is simpler and
+    safer than nested-map update expressions (which ValidationException when
+    the parent map doesn't exist yet).
+    """
+    response = aggregates_table.get_item(
+        Key={'pk': MODEL_SETTINGS_PK, 'sk': MODEL_SETTINGS_SK}
+    )
+    item = response.get('Item') or {}
+    if not isinstance(item.get('surfaces'), dict):
+        item['surfaces'] = {}
+    return item
+
+
+def _put_model_item(item: dict) -> None:
+    item['pk'] = MODEL_SETTINGS_PK
+    item['sk'] = MODEL_SETTINGS_SK
+    item['updated_at'] = datetime.now(timezone.utc).isoformat()
+    # Keep the item tidy: drop an empty surfaces map and a null legacy global.
+    if not item.get('surfaces'):
+        item.pop('surfaces', None)
+    if item.get('model_id') is None:
+        item.pop('model_id', None)
+    aggregates_table.put_item(Item=item)
+
+
+def _save_surface_model(surface: str, model_id: str | None) -> None:
+    item = _load_model_item()
+    if model_id is None:
+        item['surfaces'].pop(surface, None)
+    else:
+        item['surfaces'][surface] = model_id
+    _put_model_item(item)
+
+
+def _save_global_model(model_id: str | None) -> None:
+    item = _load_model_item()
+    if model_id is None:
+        item.pop('model_id', None)
+    else:
+        item['model_id'] = model_id
+    _put_model_item(item)
 
 
 @app.get("/settings/resolved-problems")
@@ -290,7 +427,7 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
   ]
 }}"""
 
-        response_text = converse(prompt=prompt, max_tokens=2000, temperature=0.3)
+        response_text = converse(prompt=prompt, max_tokens=2000, temperature=0.3, surface='utility')
 
         json_match = re.search(r"\{[\s\S]*\}", response_text)
         if json_match:

@@ -61,6 +61,7 @@ def invoke_bedrock_with_retry(system_prompt: str, user_message: str, max_tokens:
         prompt=user_message,
         system_prompt=system_prompt,
         max_tokens=max_tokens,
+        surface='documents',
         max_retries=max_retries,
         raise_on_throttle=True,
     )

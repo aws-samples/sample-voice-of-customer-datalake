@@ -1,4 +1,35 @@
 {
+  "aiModel": {
+    "automaticOption": "自動 — {{model}}",
+    "intro": "各AI機能を動かすClaudeモデルを選択するか、「自動」のままにして各機能に最適化されたデフォルトを使用します。実行中の関数は1分以内に変更を反映します。",
+    "loadFailed": "モデル設定を読み込めませんでした。",
+    "loading": "モデルを読み込んでいます...",
+    "saveFailed": "モデル選択の保存に失敗しました。もう一度お試しください。",
+    "saved": "保存済み",
+    "surfaces": {
+      "chat": {
+        "description": "対話型データクエリとプロジェクトチャット",
+        "label": "AIチャット"
+      },
+      "documents": {
+        "description": "PRD、PR/FAQ、ペルソナ、調査レポート",
+        "label": "ドキュメント生成"
+      },
+      "enrichment": {
+        "description": "取り込んだ全項目のセンチメント・カテゴリ・緊急度",
+        "label": "フィードバック強化"
+      },
+      "prototype": {
+        "description": "インタラクティブなHTMLプロトタイプ",
+        "label": "プロトタイプビルダー"
+      },
+      "utility": {
+        "description": "カテゴリ提案とスクレイパーセレクター検出",
+        "label": "ユーティリティ"
+      }
+    },
+    "title": "AIモデル"
+  },
   "api": {
     "connected": "接続済み",
     "endpointHint": "VoCデプロイメントのAPI Gatewayエンドポイント",

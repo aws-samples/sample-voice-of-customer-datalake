@@ -158,6 +158,7 @@ Top Categories: {', '.join([f"{cat}: {count}" for cat, count in sorted(category_
             prompt=f"{data_context}\n\nQuestion: {message}",
             system_prompt=system_prompt,
             max_tokens=1500,
+            surface='chat',
         )
         
         return {

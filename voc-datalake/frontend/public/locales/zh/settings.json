@@ -1,4 +1,35 @@
 {
+  "aiModel": {
+    "automaticOption": "自动 — {{model}}",
+    "intro": "选择为每项 AI 功能提供支持的 Claude 模型，或保持“自动”以使用每项功能的调优默认值。正在运行的函数会在一分钟内应用更改。",
+    "loadFailed": "无法加载模型设置。",
+    "loading": "正在加载模型...",
+    "saveFailed": "保存模型选择失败。请重试。",
+    "saved": "已保存",
+    "surfaces": {
+      "chat": {
+        "description": "对话式数据查询和项目聊天",
+        "label": "AI 聊天"
+      },
+      "documents": {
+        "description": "PRD、PR/FAQ、用户画像和研究报告",
+        "label": "文档生成"
+      },
+      "enrichment": {
+        "description": "对每条采集项进行情感、类别和紧急度分析",
+        "label": "反馈增强"
+      },
+      "prototype": {
+        "description": "交互式 HTML 原型",
+        "label": "原型构建器"
+      },
+      "utility": {
+        "description": "类别建议和抓取器选择器检测",
+        "label": "实用工具"
+      }
+    },
+    "title": "AI 模型"
+  },
   "api": {
     "connected": "已连接",
     "endpointHint": "您的VoC部署的API Gateway端点",

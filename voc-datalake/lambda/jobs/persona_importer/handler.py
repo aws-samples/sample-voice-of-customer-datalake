@@ -15,7 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.model_config import get_active_model_id
 from api.projects import generate_persona_avatar, get_avatar_cdn_url
 
 # Environment
@@ -74,8 +75,12 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
     ctx.update_progress(30, 'calling_ai')
     
     bedrock = get_bedrock_client()
+    # Persona import is a document-generation surface. Raw client call (image
+    # input isn't supported by the text-only shared converse helper), so resolve
+    # the model through the picker directly. No temperature is sent, so there's
+    # nothing to omit for temperature-restricted models.
     response = bedrock.converse(
-        modelId=BEDROCK_MODEL_ID,
+        modelId=get_active_model_id('documents'),
         system=[{'text': system_prompt}],
         messages=[{'role': 'user', 'content': converse_content}],
         inferenceConfig={'maxTokens': 4096}

@@ -113,7 +113,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     # Higher token limits to support CJK languages (Korean, Japanese, Chinese)
     # which use 2-3x more tokens than English for equivalent content.
     max_tokens = 16000 if output_type == 'prfaq' else 12000
-    content = converse(prompt=user_prompt, system_prompt=system_prompt, max_tokens=max_tokens)
+    content = converse(prompt=user_prompt, system_prompt=system_prompt, max_tokens=max_tokens, surface='documents')
     
     ctx.update_progress(90, 'saving_document')
     now = datetime.now(timezone.utc).isoformat()

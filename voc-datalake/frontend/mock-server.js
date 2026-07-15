@@ -125,6 +125,23 @@ const mockSourcesStatus = {
 // Problem resolution state (issue #66) — mutable so the toggle round-trips.
 const mockResolvedProblems = {};
 
+// Per-surface AI model picker state (issue #96) — mutable so selects round-trip.
+// Mirrors lambda/shared/model_config.py (source of truth, lockstep-tested there).
+const mockModelSurfaces = {};
+const mockAvailableModels = [
+  { key: 'sonnet5', id: 'global.anthropic.claude-sonnet-5', label: 'Claude Sonnet 5', description: 'Latest, highest-quality Sonnet — best for analysis and generation' },
+  { key: 'sonnet46', id: 'global.anthropic.claude-sonnet-4-6', label: 'Claude Sonnet 4.6', description: 'Previous-generation Sonnet — strong quality, accepts temperature tuning' },
+  { key: 'opus48', id: 'global.anthropic.claude-opus-4-8', label: 'Claude Opus 4.8', description: 'Deepest reasoning — best for prototypes and complex documents' },
+  { key: 'haiku45', id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5', description: 'Fastest and cheapest — good for high-volume enrichment' },
+];
+const mockSurfaceDefaults = {
+  chat: 'global.anthropic.claude-sonnet-5',
+  documents: 'global.anthropic.claude-sonnet-5',
+  prototype: 'global.anthropic.claude-opus-4-8',
+  enrichment: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+  utility: 'global.anthropic.claude-sonnet-5',
+};
+
 const mockCategoriesConfig = {
   categories: [
     { name: 'delivery', display_name: 'Delivery', description: 'Shipping and delivery issues', color: '#EF4444' },
@@ -188,6 +205,34 @@ const handlers = {
   // Settings - Categories
   'GET /settings/categories': () => mockCategoriesConfig,
   'PUT /settings/categories': () => ({ success: true, message: 'Categories saved' }),
+
+  // Settings - Per-surface AI model picker (issue #96)
+  'GET /settings/model': () => ({
+    available_models: mockAvailableModels,
+    surfaces: Object.entries(mockSurfaceDefaults).map(([key, defaultId]) => ({
+      key,
+      default_id: defaultId,
+      selected: mockModelSurfaces[key] ?? null,
+    })),
+    model_id: null,
+  }),
+  'PUT /settings/model': (body) => {
+    const surface = body?.surface;
+    const modelId = body?.model_id ?? null;
+    if (!surface || !(surface in mockSurfaceDefaults)) {
+      return { __status: 400, body: { success: false, error: 'surface must be a known picker surface' } };
+    }
+    if (modelId !== null && !mockAvailableModels.some((m) => m.id === modelId)) {
+      return { __status: 400, body: { success: false, error: 'model_id must be null or allowlisted' } };
+    }
+    if (modelId === null) {
+      delete mockModelSurfaces[surface];
+    } else {
+      mockModelSurfaces[surface] = modelId;
+    }
+    return { success: true, surface, model_id: modelId };
+  },
+
   'GET /settings/resolved-problems': () => ({ resolved: mockResolvedProblems }),
   'PUT /settings/resolved-problems': (body) => {
     if (!body || typeof body.key !== 'string' || body.key.trim() === '' || typeof body.resolved !== 'boolean') {

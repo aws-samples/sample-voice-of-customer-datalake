@@ -131,5 +131,9 @@ def clear_secret_cache():
     get_secret.cache_clear()
 
 
-# Bedrock model ID - Claude Sonnet 4.5 global cross-region inference profile
-BEDROCK_MODEL_ID = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+# Default Bedrock model — Claude Sonnet 5 global cross-region inference profile.
+# This is the ultimate fallback for text inference. The per-surface AI-model
+# picker (shared/model_config.py) resolves a model per surface and only falls
+# back to this constant when nothing is configured and the surface has no more
+# specific default. Bumped from Sonnet 4.5 → Sonnet 5 (latest).
+BEDROCK_MODEL_ID = "global.anthropic.claude-sonnet-5"

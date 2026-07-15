@@ -140,7 +140,7 @@ def _generate_prd(ctx: JobContext, feature_idea: str, feedback_context: str,
         mapped = 50 + int((progress - 15) / 60 * 35)
         ctx.update_progress(mapped, step)
 
-    results = converse_chain(chain_steps, progress_callback=progress_callback)
+    results = converse_chain(chain_steps, progress_callback=progress_callback, surface='documents')
 
     # results[0] = problem_analysis, results[1] = solution_design, results[2] = prd_document
     content = results[2] if len(results) >= 3 else results[-1]
@@ -171,7 +171,7 @@ def _generate_prfaq(ctx: JobContext, feature_idea: str, feedback_context: str,
         mapped = 50 + int((progress - 15) / 60 * 35)
         ctx.update_progress(mapped, step)
 
-    results = converse_chain(chain_steps, progress_callback=progress_callback)
+    results = converse_chain(chain_steps, progress_callback=progress_callback, surface='documents')
 
     # results[0] = customer_thinking, [1] = press_release, [2] = customer_faq, [3] = internal_faq
     full_document = f"""# PR/FAQ: {feature_idea}
@@ -459,14 +459,15 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     ) + feedback_section
 
     ctx.update_progress(40, 'invoking_bedrock')
-    # Opus 4.8 for the prototype build — stronger frontend/design instincts than
-    # the default chat model. converse() accepts a per-call model override.
+    # The 'prototype' surface defaults to Opus 4.8 — stronger frontend/design
+    # instincts than the chat model — but admins can repoint it via the picker.
+    # converse() drops `temperature` automatically for models that reject it
+    # (Opus 4.8 / Sonnet 5), so we no longer hard-pin the model or temperature.
     raw = converse(
         prompt=user_prompt,
         system_prompt=system_prompt,
-        model_id='global.anthropic.claude-opus-4-8',
+        surface='prototype',
         max_tokens=32000,
-        temperature=None,  # Opus 4.8 deprecates the temperature inference param.
         step_name='build_prototype',
     )
 
@@ -746,6 +747,7 @@ def _run_one_step(project_id: str, job_id: str, index: int) -> None:
         system_prompt=step.get('system', ''),
         max_tokens=step.get('max_tokens', 4096),
         thinking_budget=step.get('thinking_budget', 0),
+        surface=step.get('surface', 'documents'),
         step_name=step_name,
     )
     logger.info(f"[DOCSTEP] step '{step_name}' produced {len(result)} chars")
