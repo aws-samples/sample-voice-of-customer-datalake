@@ -71,6 +71,7 @@ const mockCreateConversation = vi.fn()
 const mockAddMessage = vi.fn()
 const mockGetActiveConversation = vi.fn()
 const mockUpdateConversationFilters = vi.fn()
+const mockSetDraftFilters = vi.fn()
 
 vi.mock('../../store/chatStore', () => ({
   useChatStore: () => ({
@@ -79,6 +80,8 @@ vi.mock('../../store/chatStore', () => ({
     addMessage: mockAddMessage,
     getActiveConversation: mockGetActiveConversation,
     updateConversationFilters: mockUpdateConversationFilters,
+    draftFilters: {},
+    setDraftFilters: mockSetDraftFilters,
   }),
   // Export types for the component
 }))
@@ -383,6 +386,21 @@ describe('Chat', () => {
       // sendMessage was called
       // eslint-disable-next-line vitest/prefer-called-with
       expect(mockSendMessage).toHaveBeenCalled()
+    })
+  })
+
+  describe('filter changes without an active conversation (issue #161)', () => {
+    it('buffers the change as a draft instead of silently dropping it', async () => {
+      // Regression: with no active conversation, filter changes (source/
+      // category/sentiment dropdowns and the web-search toggle) used to
+      // no-op — the control snapped back and the user got no feedback.
+      const user = userEvent.setup()
+      render(<Chat />, { wrapper: createWrapper() })
+
+      await user.click(screen.getByRole('button', { name: 'Set Source Filter' }))
+
+      expect(mockSetDraftFilters).toHaveBeenCalledWith({ source: 'webscraper' })
+      expect(mockUpdateConversationFilters).not.toHaveBeenCalled()
     })
   })
 })

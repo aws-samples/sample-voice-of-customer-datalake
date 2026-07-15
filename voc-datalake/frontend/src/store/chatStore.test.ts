@@ -10,6 +10,7 @@ describe('chatStore', () => {
     useChatStore.setState({
       conversations: [],
       activeConversationId: null,
+      draftFilters: {},
     })
   })
 
@@ -23,6 +24,14 @@ describe('chatStore', () => {
       expect(state.conversations).toHaveLength(1)
       expect(state.conversations[0].title).toBe('New Conversation')
       expect(state.conversations[0].id).toBe(id)
+    })
+
+    it('generates unique IDs for back-to-back creations (issue #160)', () => {
+      // Date.now()-based IDs collided within the same millisecond — two
+      // conversations then shared an ID and store operations affected both.
+      const ids = Array.from({ length: 50 }, () => useChatStore.getState().createConversation())
+
+      expect(new Set(ids).size).toBe(50)
     })
 
     it('sets new conversation as active', () => {
@@ -77,17 +86,15 @@ describe('chatStore', () => {
       expect(state.activeConversationId).toBeNull()
     })
 
-    it('preserves activeConversationId when deleting different conversation', async () => {
+    it('preserves activeConversationId when deleting different conversation', () => {
       // Reset state completely first
       useChatStore.setState({ conversations: [], activeConversationId: null })
       
       // Create first conversation
       const firstId = useChatStore.getState().createConversation()
-      
-      // Wait a tick to ensure different timestamp for second ID
-      await new Promise(resolve => setTimeout(resolve, 1))
-      
-      // Create second conversation
+      // Back-to-back creation is safe: IDs are collision-proof (issue #160),
+      // so no timestamp-separation sleep is needed (the old 1ms wait still
+      // flaked under full-suite load).
       const secondId = useChatStore.getState().createConversation()
       
       // Verify we have two different conversations
@@ -145,6 +152,19 @@ describe('chatStore', () => {
       expect(conv?.messages).toHaveLength(1)
       expect(conv?.messages[0].content).toBe('Hello')
       expect(conv?.messages[0].role).toBe('user')
+    })
+
+    it('generates unique message IDs within the same tick (issue #160)', () => {
+      const { createConversation, addMessage } = useChatStore.getState()
+
+      const convId = createConversation()
+      for (let i = 0; i < 50; i++) {
+        addMessage(convId, { role: 'user', content: `m${i}` })
+      }
+
+      const conv = useChatStore.getState().conversations.find(c => c.id === convId)
+      const ids = (conv?.messages ?? []).map(m => m.id)
+      expect(new Set(ids).size).toBe(50)
     })
 
     it('auto-generates title from first user message', () => {
@@ -219,6 +239,74 @@ describe('chatStore', () => {
       const state = useChatStore.getState()
       const conv = state.conversations.find(c => c.id === convId)
       expect(conv?.title).toBe('Custom Title')
+    })
+  })
+
+  describe('draftFilters (issue #161)', () => {
+    it('buffers filters set before any conversation exists', () => {
+      useChatStore.getState().setDraftFilters({ source: 'webscraper', useWebSearch: true })
+
+      expect(useChatStore.getState().draftFilters).toEqual({ source: 'webscraper', useWebSearch: true })
+    })
+
+    it('is consumed by the next conversation, however it is created', () => {
+      // Covers both entry points: the first message on the Chat page and
+      // the sidebar's New Chat both go through createConversation.
+      useChatStore.getState().setDraftFilters({ sentiment: 'negative' })
+
+      const id = useChatStore.getState().createConversation()
+
+      const conversation = useChatStore.getState().conversations.find(c => c.id === id)
+      expect(conversation?.filters).toEqual({ sentiment: 'negative' })
+      // Draft is cleared so the NEXT fresh conversation starts clean.
+      expect(useChatStore.getState().draftFilters).toEqual({})
+    })
+
+    it('creates conversations with empty filters when no draft is set', () => {
+      const id = useChatStore.getState().createConversation()
+
+      const conversation = useChatStore.getState().conversations.find(c => c.id === id)
+      expect(conversation?.filters).toEqual({})
+    })
+
+    it('consumes a lingering draft even after the active conversation was deleted', () => {
+      // Store-level lifecycle pin: however the app got into "draft set, no
+      // active conversation" (e.g. delete), the next creation consumes it.
+      const store = useChatStore.getState()
+      const firstId = store.createConversation()
+      store.setDraftFilters({ category: 'delivery' })
+      store.deleteConversation(firstId)
+
+      const secondId = useChatStore.getState().createConversation()
+
+      const conversation = useChatStore.getState().conversations.find(c => c.id === secondId)
+      expect(conversation?.filters).toEqual({ category: 'delivery' })
+      expect(useChatStore.getState().draftFilters).toEqual({})
+    })
+
+    it('hands the conversation its own copy of the draft, not a shared reference', () => {
+      useChatStore.getState().setDraftFilters({ source: 'webscraper' })
+      const draftBefore = useChatStore.getState().draftFilters
+
+      const id = useChatStore.getState().createConversation()
+
+      const conversation = useChatStore.getState().conversations.find(c => c.id === id)
+      expect(conversation?.filters).not.toBe(draftBefore)
+      expect(conversation?.filters).toEqual({ source: 'webscraper' })
+    })
+
+    it('is excluded from the persisted payload', () => {
+      // A stale draft applying to a conversation created in a LATER session
+      // would be the same surprising-filter-state bug in reverse — the
+      // draft is ephemeral by design.
+      useChatStore.getState().setDraftFilters({ useWebSearch: true })
+
+      const options = useChatStore.persist.getOptions()
+      const persisted = options.partialize?.(useChatStore.getState()) ?? useChatStore.getState()
+
+      expect(persisted).not.toHaveProperty('draftFilters')
+      expect(persisted).toHaveProperty('conversations')
+      expect(persisted).toHaveProperty('activeConversationId')
     })
   })
 
