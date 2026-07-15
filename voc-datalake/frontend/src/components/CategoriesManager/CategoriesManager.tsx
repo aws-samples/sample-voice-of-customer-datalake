@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { api } from '../../api/client'
 import ConfirmModal from '../ConfirmModal'
+import { normalizeCategories } from './categoriesSchema'
 
 export interface Category {
   id: string
@@ -51,6 +52,10 @@ export default function CategoriesManager() {
   const { data: categoriesConfig, isLoading } = useQuery({
     queryKey: ['categories-config'],
     queryFn: () => api.getCategoriesConfig(),
+    // Normalize once at the query boundary so the declared Category contract
+    // is true for every consumer — legacy rows lack id/subcategories and
+    // crashed this tab (issue #181).
+    select: (data) => ({ ...data, categories: normalizeCategories(data.categories ?? []) }),
   })
 
   const saveMutation = useMutation({
@@ -64,7 +69,8 @@ export default function CategoriesManager() {
     mutationFn: (description: string) => api.generateCategories(description),
     onSuccess: (data) => {
       if (data.categories) {
-        saveMutation.mutate(data.categories)
+        // The LLM response is a wire boundary too — normalize before saving.
+        saveMutation.mutate(normalizeCategories(data.categories))
       }
       setIsGenerating(false)
     },
@@ -125,7 +131,7 @@ export default function CategoriesManager() {
     }
     saveMutation.mutate(
       categories.map(c => c.id === categoryId 
-        ? { ...c, subcategories: [...c.subcategories, newSub] }
+        ? { ...c, subcategories: [...(c.subcategories ?? []), newSub] }
         : c
       )
     )
@@ -137,7 +143,7 @@ export default function CategoriesManager() {
       if (c.id !== categoryId) return c
       return {
         ...c,
-        subcategories: c.subcategories.map(s => {
+        subcategories: (c.subcategories ?? []).map(s => {
           if (s.id !== subcategoryId) return s
           return {
             ...s,
@@ -154,7 +160,7 @@ export default function CategoriesManager() {
   const handleDeleteSubcategory = (categoryId: string, subcategoryId: string) => {
     saveMutation.mutate(
       categories.map(c => c.id === categoryId 
-        ? { ...c, subcategories: c.subcategories.filter(s => s.id !== subcategoryId) }
+        ? { ...c, subcategories: (c.subcategories ?? []).filter(s => s.id !== subcategoryId) }
         : c
       )
     )
@@ -283,7 +289,9 @@ export default function CategoriesManager() {
                     {category.name}
                   </span>
                   <span className="text-xs text-gray-400 flex-shrink-0">
-                    {category.subcategories.length} sub
+                    {/* Belt-and-braces for issue #181: the query boundary
+                        normalizes, but the render must stay safe standalone. */}
+                    {(category.subcategories ?? []).length} sub
                   </span>
                   <button
                     onClick={() => handleDeleteCategory(category.id)}
@@ -296,7 +304,7 @@ export default function CategoriesManager() {
                 {/* Subcategories */}
                 {expandedCategories.has(category.id) && (
                   <div className="p-2 sm:p-3 pl-4 sm:pl-10 space-y-2 bg-white">
-                    {category.subcategories.map((sub) => (
+                    {(category.subcategories ?? []).map((sub) => (
                       <div key={sub.id} className="flex items-center gap-2 text-sm">
                         <span className="w-2 h-2 bg-gray-300 rounded-full flex-shrink-0" />
                         {editingSubcategory === sub.id ? (
