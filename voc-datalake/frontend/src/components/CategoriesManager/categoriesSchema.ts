@@ -26,17 +26,43 @@ function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
-/** Reserve a unique id: first-come keeps the plain candidate, later
- * collisions get a numeric suffix (cat_app, cat_app_2, ...) so two legacy
- * rows named 'App' and 'app' can't share delete/expand/edit actions. */
-function uniqueId(candidate: string, used: Set<string>, attempt = 1): string {
-  const proposal = attempt === 1 ? candidate : `${candidate}_${attempt}`
-  if (!used.has(proposal)) {
-    used.add(proposal)
-    return proposal
+/**
+ * Two-pass id allocation: every usable STORED id is reserved up front, so a
+ * derived id can never claim — and therefore silently rewrite — a stored
+ * identity that appears later in the list (the save flow round-trips
+ * wholesale, so a rewrite would persist). Within that constraint ids are
+ * de-duplicated first-come with numeric suffixes (cat_app, cat_app_2, ...),
+ * covering same-named legacy rows and pathological duplicate stored ids.
+ */
+function createIdAllocator(reservedStoredIds: ReadonlySet<string>) {
+  const assigned = new Set<string>()
+  const nextFree = (candidate: string, attempt: number): string => {
+    const proposal = attempt === 1 ? candidate : `${candidate}_${attempt}`
+    if (!assigned.has(proposal) && !reservedStoredIds.has(proposal)) {
+      assigned.add(proposal)
+      return proposal
+    }
+    return nextFree(candidate, attempt + 1)
   }
-  return uniqueId(candidate, used, attempt + 1)
+  return {
+    /** A stored id keeps itself; only a duplicate stored id gets suffixed. */
+    stored(id: string): string {
+      if (!assigned.has(id)) {
+        assigned.add(id)
+        return id
+      }
+      return nextFree(id, 2)
+    },
+    /** A derived id must not collide with anything stored or assigned. */
+    derived(candidate: string): string {
+      return nextFree(candidate, 1)
+    },
+  }
 }
+
+type IdAllocator = ReturnType<typeof createIdAllocator>
+
+const usableStoredId = (id: string | undefined): id is string => id !== undefined && id.trim() !== ''
 
 // Loose objects: legacy fields (display_name, color, ...) survive the edit
 // round-trip — the save flow PUTs the whole list back.
@@ -53,54 +79,63 @@ const rawCategorySchema = z.looseObject({
   subcategories: z.array(z.unknown()).catch(() => []),
 })
 
-/** A usable identity source: a non-empty stored id, or a name that slugs
- * to something non-empty (whitespace-only and symbol-only names don't). */
-function identityFor(prefix: string, id: string | undefined, name: string): string | null {
-  if (id !== undefined && id.trim() !== '') return id
+type RawCategory = z.infer<typeof rawCategorySchema>
+
+/** Allocate this row's id: stored ids keep themselves, missing ones are
+ * derived from the slugged name — or null when neither is usable. */
+function allocateIdentity(
+  prefix: string, id: string | undefined, name: string, allocator: IdAllocator,
+): string | null {
+  if (usableStoredId(id)) return allocator.stored(id)
   const slug = slugify(name)
-  return slug === '' ? null : `${prefix}_${slug}`
+  return slug === '' ? null : allocator.derived(`${prefix}_${slug}`)
 }
 
-function normalizeSubcategory(raw: unknown, usedIds: Set<string>): Subcategory[] {
-  const parsed = rawSubcategorySchema.safeParse(raw)
-  if (!parsed.success) return []
-  const identity = identityFor('sub', parsed.data.id, parsed.data.name)
-  if (identity === null) return []
-  return [{ ...parsed.data, id: uniqueId(identity, usedIds), name: parsed.data.name }]
+function normalizeSubcategories(rawSubs: readonly unknown[]): Subcategory[] {
+  const parsed = rawSubs
+    .map((raw) => rawSubcategorySchema.safeParse(raw))
+    .flatMap((result) => (result.success ? [result.data] : []))
+  const allocator = createIdAllocator(
+    new Set(parsed.map((sub) => sub.id).filter(usableStoredId)),
+  )
+  return parsed.flatMap((sub) => {
+    const identity = allocateIdentity('sub', sub.id, sub.name, allocator)
+    return identity === null ? [] : [{ ...sub, id: identity, name: sub.name }]
+  })
 }
 
-/**
- * Make the declared Category contract true for one wire row, or drop it
- * (empty array) when there is no usable identity at all.
- */
-function normalizeCategory(raw: unknown, usedIds: Set<string>): Category[] {
-  const parsed = rawCategorySchema.safeParse(raw)
-  if (!parsed.success) {
-    console.warn('Dropping category record that failed schema validation:', parsed.error.issues)
-    return []
-  }
-  const identity = identityFor('cat', parsed.data.id, parsed.data.name)
+function normalizeCategory(parsed: RawCategory, allocator: IdAllocator): Category[] {
+  const identity = allocateIdentity('cat', parsed.id, parsed.name, allocator)
   if (identity === null) {
-    console.warn('Dropping category record without usable id or name; keys present:', Object.keys(parsed.data))
+    console.warn('Dropping category record without usable id or name; keys present:', Object.keys(parsed))
     return []
   }
-  const usedSubIds = new Set<string>()
   return [{
-    ...parsed.data,
-    id: uniqueId(identity, usedIds),
-    name: parsed.data.name,
-    subcategories: parsed.data.subcategories.flatMap((sub) => normalizeSubcategory(sub, usedSubIds)),
+    ...parsed,
+    id: identity,
+    name: parsed.name,
+    subcategories: normalizeSubcategories(parsed.subcategories),
   }]
 }
 
 /**
  * Normalize the categories list at the query boundary: legacy rows get a
  * derived id and an empty subcategories array instead of crashing the tab;
- * unknown legacy fields pass through so saves lose nothing. Ids are
- * de-duplicated across the list (derived or stored) so row actions can
- * never cross-target.
+ * unknown legacy fields pass through so saves lose nothing. Stored ids are
+ * never rewritten (reserved before any derivation); all ids are unique
+ * across the list so row actions can never cross-target.
  */
 export function normalizeCategories(rawCategories: readonly unknown[]): Category[] {
-  const usedIds = new Set<string>()
-  return rawCategories.flatMap((raw) => normalizeCategory(raw, usedIds))
+  const parsedRows = rawCategories.flatMap((raw) => {
+    const result = rawCategorySchema.safeParse(raw)
+    if (!result.success) {
+      console.warn('Dropping category record that failed schema validation:', result.error.issues)
+      return []
+    }
+    return [result.data]
+  })
+  const allocator = createIdAllocator(
+    new Set(parsedRows.map((row) => row.id).filter(usableStoredId)),
+  )
+  return parsedRows.flatMap((row) => normalizeCategory(row, allocator))
 }

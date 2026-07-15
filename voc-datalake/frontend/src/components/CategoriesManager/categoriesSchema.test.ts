@@ -90,6 +90,18 @@ describe('normalizeCategories (issue #181)', () => {
     expect(categories.map((c) => c.id)).toEqual(['cat_app', 'cat_app_2'])
   })
 
+  it('never rewrites a stored id, regardless of list order', () => {
+    // The save flow round-trips wholesale: if the derived row (listed FIRST)
+    // claimed cat_app, the stored identity would be silently rewritten and
+    // persisted on the next save.
+    const categories = normalizeCategories([
+      { name: 'app' },
+      { id: 'cat_app', name: 'application', subcategories: [] },
+    ])
+
+    expect(categories.map((c) => c.id)).toEqual(['cat_app_2', 'cat_app'])
+  })
+
   it('sanitizes non-alphanumerics in derived ids', () => {
     const [category] = normalizeCategories([{ name: 'billing/refunds & credits' }])
 
