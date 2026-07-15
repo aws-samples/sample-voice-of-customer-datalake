@@ -574,6 +574,121 @@ const mockProjectDetails = {
   },
 };
 
+// ── Product tab state (issue #179) ─────────────────────────────────────────
+// Stateful per-project product context, docs, and report jobs so the whole
+// Product tab (form persistence, interview, uploads, report generation) is
+// exercisable against the mock.
+
+const emptyProductContext = () => ({
+  product_name: '', one_liner: '', target_users: '', problem_solved: '',
+  current_state: '', key_features: '', differentiators: '',
+  known_limitations: '', non_goals: '', success_metrics: '', free_form_notes: '',
+});
+const mockProductContexts = {}; // projectId -> ProductContext
+const mockProductDocs = {};     // projectId -> ProductDoc[]
+const mockProductJobs = {};     // jobId -> { projectId, job, polls, documentAppended }
+// Monotonic suffix so ids can't collide within one millisecond.
+let mockIdCounter = 0;
+const nextMockId = (prefix) => `${prefix}_${Date.now()}_${++mockIdCounter}`;
+
+function getProductContext(projectId) {
+  if (!mockProductContexts[projectId]) {
+    mockProductContexts[projectId] = emptyProductContext();
+  }
+  return mockProductContexts[projectId];
+}
+
+// Scripted interview: each turn stores the user's answer into the first
+// unfilled field (in this order) and asks the next question — so the
+// "I'll fill the form on the left as you answer" behavior is demonstrable
+// locally. current_state is a select, so the script skips it.
+const INTERVIEW_SCRIPT = [
+  ['product_name', 'Got it. What would be a good one-liner for it?'],
+  ['one_liner', 'Who are the target users?'],
+  ['target_users', 'What problem does it solve for them?'],
+  ['problem_solved', 'What are its key features?'],
+  ['key_features', 'What differentiates it from alternatives?'],
+  ['differentiators', 'Thanks — the essentials are filled in. Anything else you add now lands in free-form notes.'],
+];
+
+function applyInterviewTurn(projectId, message) {
+  const context = getProductContext(projectId);
+  const nextEntry = INTERVIEW_SCRIPT.find(([field]) => context[field] === '');
+  if (nextEntry) {
+    const [field, question] = nextEntry;
+    context[field] = message;
+    return { assistant_message: question, applied_patch: { [field]: message }, context };
+  }
+  const notes = context.free_form_notes === '' ? message : `${context.free_form_notes}\n${message}`;
+  context.free_form_notes = notes;
+  return {
+    assistant_message: 'Noted — added to free-form notes.',
+    applied_patch: { free_form_notes: notes },
+    context,
+  };
+}
+
+function buildProductReportDocument(projectId) {
+  const context = getProductContext(projectId);
+  const name = context.product_name || 'Unnamed product';
+  return {
+    document_id: nextMockId('product_report'),
+    document_type: 'product_report',
+    title: `Product / Service Report: ${name}`,
+    content: `# Product / Service Report\n\n## ${name}\n\n${context.one_liner || '_No one-liner captured._'}\n\n## Target users\n${context.target_users || '_Not captured._'}\n\n## Problem solved\n${context.problem_solved || '_Not captured._'}\n\n## Key features\n${context.key_features || '_Not captured._'}\n\n## Differentiators\n${context.differentiators || '_Not captured._'}`,
+    created_at: new Date().toISOString(),
+  };
+}
+
+// Advance a mock product-report job on each poll: running on the first
+// poll, completed afterwards — completion appends the generated document
+// to the project detail fixtures exactly once, so it shows up in the
+// Documents tab like the real flow.
+function pollProductJob(entry) {
+  entry.polls += 1;
+  if (entry.polls === 1) {
+    entry.job.status = 'running';
+    entry.job.progress = 50;
+    entry.job.current_step = 'Synthesizing report';
+  } else {
+    entry.job.status = 'completed';
+    entry.job.progress = 100;
+    entry.job.completed_at = entry.job.completed_at || new Date().toISOString();
+    if (!entry.documentAppended) {
+      const doc = buildProductReportDocument(entry.projectId);
+      mockProjectDetails[entry.projectId].documents.push(doc);
+      mockProjectDetails[entry.projectId].project.document_count += 1;
+      entry.job.result = { document_id: doc.document_id, title: doc.title };
+      entry.documentAppended = true;
+    }
+  }
+  entry.job.updated_at = new Date().toISOString();
+  return entry.job;
+}
+
+/** Collect and JSON-parse a request body, replying 400 on malformed JSON.
+ * An aborted request ends the response instead of leaving it hanging. */
+function collectJson(req, res, onBody) {
+  let raw = '';
+  req.on('data', chunk => raw += chunk);
+  req.on('error', () => {
+    res.writeHead(400);
+    res.end(JSON.stringify({ success: false, error: 'Request aborted' }));
+  });
+  req.on('end', () => {
+    if (!raw) {
+      onBody(null);
+      return;
+    }
+    try {
+      onBody(JSON.parse(raw));
+    } catch {
+      res.writeHead(400);
+      res.end(JSON.stringify({ success: false, error: 'Invalid JSON body' }));
+    }
+  });
+}
+
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -644,6 +759,176 @@ const server = http.createServer((req, res) => {
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Project not found' }));
     }
+    return;
+  }
+
+  // Single-job polling (issue #179). Limitation: only product-report jobs
+  // are registered here — other job flows (prototype builds, doc generation)
+  // will 404 until someone extends mockProductJobs, same as before this route
+  // existed.
+  const jobStatusMatch = url.pathname.match(/^\/projects\/([^/]+)\/jobs\/([^/]+)$/);
+  if (req.method === 'GET' && jobStatusMatch) {
+    const entry = mockProductJobs[jobStatusMatch[2]];
+    if (!entry || entry.projectId !== jobStatusMatch[1]) {
+      res.writeHead(404);
+      res.end(JSON.stringify({ success: false, error: 'Job not found' }));
+      return;
+    }
+    res.writeHead(200);
+    res.end(JSON.stringify(pollProductJob(entry)));
+    return;
+  }
+
+  // Product context: load / per-field persist / interview (issue #179).
+  const productContextMatch = url.pathname.match(/^\/projects\/([^/]+)\/product-context(\/interview)?$/);
+  if (productContextMatch) {
+    const projectId = productContextMatch[1];
+    const isInterview = productContextMatch[2] === '/interview';
+    if (!mockProjectDetails[projectId]) {
+      res.writeHead(404);
+      res.end(JSON.stringify({ success: false, error: 'Project not found' }));
+      return;
+    }
+    if (req.method === 'GET' && !isInterview) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ context: getProductContext(projectId) }));
+      return;
+    }
+    if (req.method === 'PUT' && !isInterview) {
+      collectJson(req, res, (body) => {
+        const context = getProductContext(projectId);
+        // Allowlist assignment: only known context fields, string values —
+        // keeps the mock contract-faithful and immune to __proto__ keys.
+        for (const field of Object.keys(emptyProductContext())) {
+          if (body && typeof body[field] === 'string') {
+            context[field] = body[field];
+          }
+        }
+        res.writeHead(200);
+        res.end(JSON.stringify({ context }));
+      });
+      return;
+    }
+    if (req.method === 'POST' && isInterview) {
+      collectJson(req, res, (body) => {
+        if (!body || typeof body.message !== 'string' || body.message.trim() === '') {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'message is required' }));
+          return;
+        }
+        res.writeHead(200);
+        res.end(JSON.stringify(applyInterviewTurn(projectId, body.message.trim())));
+      });
+      return;
+    }
+    res.writeHead(405);
+    res.end(JSON.stringify({ success: false, error: 'Method not allowed' }));
+    return;
+  }
+
+  // Product docs: list / presigned upload / delete (issue #179). The
+  // "presigned URL" points back at this mock (/mock-upload/...), where the
+  // PUT flips the doc from pending to ready.
+  const productDocsMatch = url.pathname.match(/^\/projects\/([^/]+)\/product-docs(?:\/([^/]+))?$/);
+  if (productDocsMatch) {
+    const projectId = productDocsMatch[1];
+    const docSegment = productDocsMatch[2];
+    if (!mockProjectDetails[projectId]) {
+      res.writeHead(404);
+      res.end(JSON.stringify({ success: false, error: 'Project not found' }));
+      return;
+    }
+    const docs = mockProductDocs[projectId] ?? (mockProductDocs[projectId] = []);
+    if (req.method === 'GET' && !docSegment) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ docs }));
+      return;
+    }
+    if (req.method === 'POST' && docSegment === 'upload-url') {
+      collectJson(req, res, (body) => {
+        if (!body || typeof body.filename !== 'string' || body.filename === '') {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'filename is required' }));
+          return;
+        }
+        const docId = nextMockId('doc');
+        docs.push({
+          doc_id: docId, filename: body.filename,
+          content_type: typeof body.content_type === 'string' ? body.content_type : 'application/octet-stream',
+          size_bytes: Number.isFinite(body.size_bytes) ? body.size_bytes : 0,
+          status: 'pending', error: null, extracted_chars: 0,
+          created_at: new Date().toISOString(),
+        });
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          doc_id: docId,
+          presigned_url: `http://${req.headers.host}/mock-upload/${projectId}/${docId}`,
+          headers: { 'Content-Type': typeof body.content_type === 'string' ? body.content_type : 'application/octet-stream' },
+        }));
+      });
+      return;
+    }
+    if (req.method === 'DELETE' && docSegment) {
+      const index = docs.findIndex(d => d.doc_id === docSegment);
+      if (index === -1) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ success: false, error: 'Document not found' }));
+        return;
+      }
+      docs.splice(index, 1);
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true }));
+      return;
+    }
+    res.writeHead(405);
+    res.end(JSON.stringify({ success: false, error: 'Method not allowed' }));
+    return;
+  }
+
+  // Mock "S3" upload target for the presigned PUT: drain the bytes and flip
+  // the doc to ready, mimicking the extract pipeline.
+  const mockUploadMatch = url.pathname.match(/^\/mock-upload\/([^/]+)\/([^/]+)$/);
+  if (req.method === 'PUT' && mockUploadMatch) {
+    const doc = (mockProductDocs[mockUploadMatch[1]] ?? []).find(d => d.doc_id === mockUploadMatch[2]);
+    let bytes = 0;
+    req.on('data', chunk => { bytes += chunk.length; });
+    req.on('end', () => {
+      if (!doc) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ success: false, error: 'Upload target not found' }));
+        return;
+      }
+      doc.status = 'ready';
+      doc.extracted_chars = bytes; // bytes ≈ chars is close enough for a mock
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true }));
+    });
+    return;
+  }
+
+  // Kick off a product report job (issue #179); completion is driven by the
+  // single-job poll route above.
+  const productReportMatch = url.pathname.match(/^\/projects\/([^/]+)\/product-report$/);
+  if (req.method === 'POST' && productReportMatch) {
+    const projectId = productReportMatch[1];
+    if (!mockProjectDetails[projectId]) {
+      res.writeHead(404);
+      res.end(JSON.stringify({ success: false, error: 'Project not found' }));
+      return;
+    }
+    const jobId = nextMockId('job');
+    mockProductJobs[jobId] = {
+      projectId,
+      polls: 0,
+      documentAppended: false,
+      job: {
+        success: true, job_id: jobId, job_type: 'generate_product_report',
+        status: 'pending', progress: 0, created_at: new Date().toISOString(),
+      },
+    };
+    res.writeHead(200);
+    // status mirrors the stored job so poll traces read consistently.
+    res.end(JSON.stringify({ success: true, job_id: jobId, status: 'pending', message: 'Report generation started' }));
     return;
   }
 
