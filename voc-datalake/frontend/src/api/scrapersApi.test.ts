@@ -41,4 +41,32 @@ describe('scrapersApi.getScrapers base_url normalization', () => {
 
     expect(scrapers).toEqual([])
   })
+
+  it('defaults a missing frequency so the card can never render undefinedm (issue #169)', async () => {
+    mockFetchApi.mockResolvedValue({ scrapers: [{ id: 's-1', name: 'Sparse', enabled: false }] })
+
+    const { scrapers } = await scrapersApi.getScrapers()
+
+    expect(scrapers[0].frequency_minutes).toBe(0)
+    expect(scrapers[0].urls).toEqual([])
+    expect(scrapers[0].pagination.enabled).toBe(false)
+  })
+})
+
+describe('scrapersApi.getScraperStatus normalization (issue #169)', () => {
+  beforeEach(() => {
+    mockFetchApi.mockReset()
+  })
+
+  it('degrades the drifted status shape to safe counts instead of blanks', async () => {
+    // What the mock server historically returned: items_scraped (not
+    // items_found), no pages_scraped, errors as a number.
+    mockFetchApi.mockResolvedValue({ id: 's-1', status: 'success', items_scraped: 12, errors: 0 })
+
+    const status = await scrapersApi.getScraperStatus('s-1')
+
+    expect(status.pages_scraped).toBe(0)
+    expect(status.items_found).toBe(0)
+    expect(status.errors).toEqual([])
+  })
 })

@@ -200,6 +200,10 @@ function calculateTotalUrls(scraper: ScraperConfig): number {
 }
 
 function getFrequencyLabel(minutes: number): string {
+  // Belt-and-braces for issue #169: the list normalizes at the API boundary,
+  // but the card must stay render-safe standalone — a runtime-sparse record
+  // used to render 'undefinedm' here.
+  if (!Number.isFinite(minutes)) return '—'
   return FREQUENCY_OPTIONS.find((f) => f.value === minutes)?.label ?? `${minutes}m`
 }
 
