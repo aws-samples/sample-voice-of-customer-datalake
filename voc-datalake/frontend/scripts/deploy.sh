@@ -113,9 +113,24 @@ jq -n \
 echo "  ✓ config.json generated with CloudFormation values"
 
 # Step 4: Sync to S3
+#
+# Cache-Control is split by mutability (issue #188): Vite's /assets/* are
+# content-hashed, so they can cache forever — but everything with a STABLE
+# name (index.html, config.json, locales/**, manifests) must revalidate on
+# every load. Without this, browsers heuristically cache the old locale
+# JSONs across deploys and the new JS bundle renders raw i18n keys
+# (nav.home, home.title, ...) until a hard refresh. CloudFront invalidation
+# can't fix that: the staleness lives in the browser cache.
 echo ""
 echo "Step 5: Syncing to S3..."
-aws s3 sync dist/ "s3://${BUCKET_NAME}" --delete
+# Hashed, immutable assets: cache for a year.
+aws s3 sync dist/assets/ "s3://${BUCKET_NAME}/assets" --delete \
+  --cache-control 'public,max-age=31536000,immutable'
+# Everything else (stable names): always revalidate. ETags make this cheap
+# (304s), and no visitor ever holds a stale config/locale/index again.
+aws s3 sync dist/ "s3://${BUCKET_NAME}" --delete \
+  --exclude 'assets/*' \
+  --cache-control 'no-cache'
 
 # Step 5: Invalidate CloudFront cache
 echo ""
