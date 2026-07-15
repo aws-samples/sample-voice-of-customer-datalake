@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { FeedbackItem } from '../api/client'
+import type { FeedbackItem, WebSource } from '../api/client'
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   sources?: FeedbackItem[]
+  webSources?: WebSource[]
   thinking?: string
   timestamp: Date
   filters?: ChatFilters
@@ -16,6 +17,9 @@ export interface ChatFilters {
   source?: string
   category?: string
   sentiment?: string
+  // Opt-in public web search for this conversation (only offered when the
+  // deployment has the AgentCore web search gateway).
+  useWebSearch?: boolean
 }
 
 export interface Conversation {

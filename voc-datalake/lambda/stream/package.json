@@ -14,7 +14,11 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.750.0",
     "@aws-sdk/client-dynamodb": "^3.750.0",
+    "@aws-sdk/credential-provider-node": "^3.750.0",
     "@aws-sdk/lib-dynamodb": "^3.750.0",
+    "@smithy/protocol-http": "^5.3.0",
+    "@smithy/signature-v4": "^5.3.0",
+    "@smithy/types": "^4.13.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

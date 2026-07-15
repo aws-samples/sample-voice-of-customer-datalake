@@ -39,6 +39,9 @@ export const chatRequestSchema = z.object({
   selected_documents: z.array(z.string()).optional(),
   // Roundtable mode: each selected persona responds in turn
   roundtable: z.boolean().optional(),
+  // Opt-in public web search (only honored when the AgentCore web search
+  // gateway is deployed; silently ignored otherwise)
+  use_web_search: z.boolean().optional(),
   // Attachments (images, PDFs)
   attachments: z.array(attachmentSchema).max(5).optional(),
   // Conversation history for multi-turn context

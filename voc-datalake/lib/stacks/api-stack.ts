@@ -47,6 +47,11 @@ export interface VocApiStackProps extends cdk.StackProps {
 
   // Processing stack resources
   researchStateMachine: sfn.StateMachine;
+  // Web search (AgentCore Gateway) — absent when the feature isn't deployed
+  // (non-us-east-1 regions or enableWebSearch=false).
+  webSearchGatewayUrl?: string;
+  webSearchGatewayArn?: string;
+  webSearchToolName?: string;
 
   // Config
   brandName: string;
@@ -74,7 +79,8 @@ export class VocApiStack extends cdk.Stack {
       feedbackTable, aggregatesTable, projectsTable, jobsTable, conversationsTable,
       kmsKey, rawDataBucket, avatarsCdnUrl, prototypesCdnUrl, websiteBucket, frontendDistribution,
       frontendDomainName, userPool, userPoolClient, identityPool, processingQueueUrl, processingQueueArn,
-      secretsArn, s3ImportBucket, researchStateMachine, brandName
+      secretsArn, s3ImportBucket, researchStateMachine, brandName,
+      webSearchGatewayUrl, webSearchGatewayArn, webSearchToolName
     } = props;
 
     // Guard: fail fast (before any asset bundling) if frontend/dist is missing
@@ -651,6 +657,11 @@ export class VocApiStack extends cdk.Stack {
     const chatStreamLambda = new NodejsFunction(this, 'ChatStreamApi', {
       functionName: uniqueName('voc-chat-stream'),
       entry: path.join(__dirname, '../../lambda/stream/src/handler.ts'),
+      // The nodeModules install step below pairs CDK's generated minimal
+      // package.json with a copied lockfile. Without this, CDK discovers the
+      // CDK app's root package-lock.json (which doesn't contain the stream
+      // Lambda's deps) and `npm ci` fails with EUSAGE at bundling time.
+      depsLockFilePath: path.join(__dirname, '../../lambda/stream/package-lock.json'),
       handler: 'handler',
       runtime: lambda.Runtime.NODEJS_22_X,
       architecture: lambda.Architecture.ARM_64,
@@ -670,6 +681,15 @@ export class VocApiStack extends cdk.Stack {
         externalModules: [
           '@aws-sdk/*',
           '@smithy/*',
+        ],
+        // The web-search SigV4 client imports these directly; bundle them so
+        // it runs against the pinned versions from package.json instead of
+        // whatever the managed runtime's SDK happens to hoist (transitive
+        // availability is not a documented contract). They are tiny.
+        nodeModules: [
+          '@aws-sdk/credential-provider-node',
+          '@smithy/protocol-http',
+          '@smithy/signature-v4',
         ],
       },
       logGroup: this.createLogGroup('ChatStreamLogs', uniqueName('voc-chat-stream')),
@@ -703,6 +723,22 @@ export class VocApiStack extends cdk.Stack {
       resources: [projectsTable.tableArn, `${projectsTable.tableArn}/index/*`],
     }));
     kmsKey.grantDecrypt(chatStreamLambda);
+
+    // Web search tool (AgentCore Gateway) — optional, opt-in per request.
+    // Without the gateway the env vars stay unset and the tool is never
+    // registered with the model. Collapse the three optional props into one
+    // narrowed value so enablement is decided exactly once.
+    const webSearch = webSearchGatewayUrl && webSearchGatewayArn && webSearchToolName
+      ? { gatewayUrl: webSearchGatewayUrl, gatewayArn: webSearchGatewayArn, toolName: webSearchToolName }
+      : undefined;
+    if (webSearch) {
+      chatStreamLambda.addEnvironment('WEB_SEARCH_GATEWAY_URL', webSearch.gatewayUrl);
+      chatStreamLambda.addEnvironment('WEB_SEARCH_TOOL_NAME', webSearch.toolName);
+      chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
+        actions: ['bedrock-agentcore:InvokeGateway'],
+        resources: [webSearch.gatewayArn],
+      }));
+    }
 
     NagSuppressions.addResourceSuppressions(chatStreamLambda, [
       { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the streaming Lambda — latest stable LTS' },
@@ -1094,6 +1130,11 @@ exports.handler = async (event) => {
         region: this.region,
         identityPoolId: identityPool.attrId
       },
+      // Capability flags so the same frontend build can show/hide features
+      // per environment (web search only exists when the gateway deployed).
+      features: {
+        webSearch: webSearch !== undefined,
+      },
     };
 
     const websiteDeployment = new s3deploy.BucketDeployment(this, 'DeployWebsite', {
@@ -1122,6 +1163,10 @@ exports.handler = async (event) => {
     new cdk.CfnOutput(this, 'WebhookPlugins', { value: webhookPlugins.map(p => p.id).join(',') });
     new cdk.CfnOutput(this, 'CognitoUserPoolId', { value: userPool.userPoolId, description: 'Cognito User Pool ID' });
     new cdk.CfnOutput(this, 'CognitoClientId', { value: userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID' });
+    new cdk.CfnOutput(this, 'WebSearchAvailable', {
+      value: webSearch !== undefined ? 'true' : 'false',
+      description: 'Whether the AgentCore web search gateway is deployed (drives the frontend feature flag)',
+    });
   }
 
   // ============================================

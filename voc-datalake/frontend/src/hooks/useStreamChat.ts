@@ -9,7 +9,7 @@ import {
 } from '../api/streamClient'
 import { isRecord } from '../lib/typeGuards'
 import type { StreamEvent } from '../api/streamClient'
-import type { FeedbackItem } from '../api/types'
+import type { FeedbackItem, WebSource } from '../api/types'
 
 interface ChatOptions {
   projectId?: string
@@ -18,6 +18,7 @@ interface ChatOptions {
   selectedPersonas?: string[]
   selectedDocuments?: string[]
   responseLanguage?: string
+  useWebSearch?: boolean
   attachments?: Array<{
     name: string;
     media_type: string;
@@ -48,6 +49,7 @@ interface StreamChatState {
   activeTools: string[]
   toolSteps: ToolStep[]
   sources: FeedbackItem[]
+  webSources: WebSource[]
   metadata: Record<string, unknown>
   documentChanges: Array<{
     document_id: string;
@@ -71,6 +73,7 @@ const initialState: StreamChatState = {
   activeTools: [],
   toolSteps: [],
   sources: [],
+  webSources: [],
   metadata: {},
   documentChanges: [],
   error: null,
@@ -87,8 +90,32 @@ function extractSources(meta: Record<string, unknown> | undefined): FeedbackItem
   return isFeedbackArray(raw) ? raw : []
 }
 
+function isWebSource(value: unknown): value is WebSource {
+  if (!isRecord(value)) return false
+  return typeof value.url === 'string' && typeof value.title === 'string' && typeof value.text === 'string'
+}
+
+/** Normalize a guard-passing record into a complete WebSource: WebSource
+ * declares published_date as a required string (the renderer compares it to
+ * ''), so a backend payload omitting it must default rather than leak
+ * undefined through the type. */
+function toWebSource(value: WebSource): WebSource {
+  return {
+    title: value.title,
+    url: value.url,
+    text: value.text,
+    published_date: typeof value.published_date === 'string' ? value.published_date : '',
+  }
+}
+
+function extractWebSources(meta: Record<string, unknown> | undefined): WebSource[] {
+  const raw = meta?.web_sources
+  return Array.isArray(raw) ? raw.filter((item) => isWebSource(item)).map((item) => toWebSource(item)) : []
+}
+
 function applyMetadataEvent(prev: StreamChatState, event: StreamEvent): StreamChatState {
   const sources = extractSources(event.metadata)
+  const webSources = extractWebSources(event.metadata)
   return {
     ...prev,
     metadata: {
@@ -96,14 +123,17 @@ function applyMetadataEvent(prev: StreamChatState, event: StreamEvent): StreamCh
       ...event.metadata,
     },
     sources: sources.length > 0 ? sources : prev.sources,
+    webSources: webSources.length > 0 ? webSources : prev.webSources,
   }
 }
 
 function applyDoneEvent(prev: StreamChatState, event: StreamEvent): StreamChatState {
   const sources = extractSources(event.metadata)
+  const webSources = extractWebSources(event.metadata)
   return {
     ...prev,
     sources: sources.length > 0 ? sources : prev.sources,
+    webSources: webSources.length > 0 ? webSources : prev.webSources,
     metadata: event.metadata ? {
       ...prev.metadata,
       ...event.metadata,
@@ -261,6 +291,7 @@ function createStream(message: string, options: ChatOptions | undefined, signal:
     context: options?.context,
     days: options?.days,
     responseLanguage: options?.responseLanguage,
+    useWebSearch: options?.useWebSearch,
     history: options?.history,
     signal,
   })

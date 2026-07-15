@@ -22,6 +22,11 @@ const RuntimeConfigSchema = z.object({
     region: z.string().min(1),
     identityPoolId: z.string().min(1),
   }),
+  // Optional capability flags: deployments without a given capability omit
+  // the flag (or the whole block) and the UI hides the feature.
+  features: z.object({
+    webSearch: z.boolean().optional(),
+  }).optional(),
 })
 
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>
@@ -71,6 +76,15 @@ export function isConfigLoaded(): boolean {
   return configState.config !== null
 }
 
+/**
+ * Whether this deployment has the AgentCore web search gateway, i.e. the
+ * chat/research "search the web" options should be offered at all.
+ * Safe to call before config load (returns false).
+ */
+export function isWebSearchAvailable(): boolean {
+  return configState.config?.features?.webSearch === true
+}
+
 async function fetchConfig(): Promise<RuntimeConfig> {
   try {
     const response = await fetch('/config.json', {
@@ -115,6 +129,11 @@ function getEnvConfig(): RuntimeConfig {
       clientId: getEnvString('VITE_COGNITO_CLIENT_ID'),
       region: getEnvString('VITE_COGNITO_REGION', 'us-east-1'),
       identityPoolId: getEnvString('VITE_IDENTITY_POOL_ID'),
+    },
+    // Local development: VITE_ENABLE_WEB_SEARCH=true surfaces the web search
+    // toggles without a deployed config.json.
+    features: {
+      webSearch: getEnvString('VITE_ENABLE_WEB_SEARCH') === 'true',
     },
   }
 

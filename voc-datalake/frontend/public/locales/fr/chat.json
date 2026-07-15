@@ -41,5 +41,10 @@
     "sentimentTrend": "Comment le sentiment a-t-il évolué au cours du dernier mois ?",
     "topComplaints": "Quelles sont les principales plaintes des clients cette semaine ?",
     "urgentIssues": "Montre-moi les problèmes les plus urgents"
+  },
+  "webSearch": {
+    "sourcesTitle": "Sources web",
+    "toggle": "Recherche web",
+    "tooltip": "Autorise l'assistant à rechercher des informations actuelles sur le web public (les sources sont citées)"
   }
 }

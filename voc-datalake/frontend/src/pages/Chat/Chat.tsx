@@ -218,6 +218,7 @@ export default function Chat() {
     thinkingText,
     activeTools,
     sources,
+    webSources,
     error: streamError,
     sendMessage: sendStreamMessage,
     cancel,
@@ -237,6 +238,7 @@ export default function Chat() {
     thinkingText,
     streamError,
     sources,
+    webSources,
     filters,
     activeConversationId,
     addMessage,
@@ -248,6 +250,7 @@ export default function Chat() {
       thinkingText,
       streamError,
       sources,
+      webSources,
       filters,
       activeConversationId,
       addMessage,
@@ -259,7 +262,7 @@ export default function Chat() {
   const prevStreamingRef = useRef(false)
   useEffect(() => {
     const {
-      streamingText: text, thinkingText: thinking, streamError: error, sources: src, filters: f, activeConversationId: convId, addMessage: add, t: translate,
+      streamingText: text, thinkingText: thinking, streamError: error, sources: src, webSources: webSrc, filters: f, activeConversationId: convId, addMessage: add, t: translate,
     } = latestRef.current
     if (prevStreamingRef.current && !isStreaming && convId != null && convId !== '') {
       if (text !== '') {
@@ -267,6 +270,7 @@ export default function Chat() {
           role: 'assistant',
           content: text,
           sources: src.length > 0 ? src : undefined,
+          webSources: webSrc.length > 0 ? webSrc : undefined,
           thinking: thinking === '' ? undefined : thinking,
           filters: f,
         })
@@ -310,6 +314,7 @@ export default function Chat() {
       context,
       days,
       responseLanguage: i18n.language,
+      useWebSearch: filters.useWebSearch,
       history,
     })
     setInput('')

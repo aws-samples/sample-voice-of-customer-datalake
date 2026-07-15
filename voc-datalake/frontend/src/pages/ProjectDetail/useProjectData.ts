@@ -151,6 +151,7 @@ export function useProjectMutations({
       selected_persona_ids: contextConfig.selectedPersonaIds,
       selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
       response_language: i18n.language,
+      use_web_search: researchConfig.useWebSearch,
     }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })

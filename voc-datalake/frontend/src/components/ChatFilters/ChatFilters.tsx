@@ -10,10 +10,12 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Filter, X, ChevronDown } from 'lucide-react'
+import { Filter, X, ChevronDown, Globe } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { ChatFilters as ChatFiltersType } from '../../store/chatStore'
 import { api } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
+import { isWebSearchAvailable } from '../../runtimeConfig'
 import clsx from 'clsx'
 
 // Default options as fallback
@@ -115,6 +117,33 @@ function FilterSelect({
   )
 }
 
+/** Opt-in public web search toggle. Only rendered when the deployment has
+ * the AgentCore web search gateway (runtime config feature flag). */
+function WebSearchToggle({
+  enabled,
+  onToggle,
+}: Readonly<{
+  enabled: boolean
+  onToggle: (enabled: boolean) => void
+}>) {
+  const { t } = useTranslation('chat')
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(!enabled)}
+      aria-pressed={enabled}
+      title={t('webSearch.tooltip')}
+      className={clsx(
+        'flex items-center gap-1.5 text-xs px-2 py-2 sm:py-1.5 rounded border cursor-pointer transition-colors',
+        enabled ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+      )}
+    >
+      <Globe size={12} className={enabled ? 'text-sky-600' : 'text-gray-400'} />
+      <span>{t('webSearch.toggle')}</span>
+    </button>
+  )
+}
+
 export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
   const [sources, setSources] = useState(defaultSources)
   const [categories, setCategories] = useState(defaultCategories)
@@ -143,7 +172,9 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
   }
 
   const clearFilters = () => {
-    onChange({})
+    // "Clear" resets the data filters (source/category/sentiment); the web
+    // search capability toggle is a separate concern and survives it.
+    onChange(filters.useWebSearch === true ? { useWebSearch: true } : {})
   }
 
   return (
@@ -181,6 +212,12 @@ export default function ChatFilters({ filters, onChange }: ChatFiltersProps) {
           onChange={(v) => updateFilter('sentiment', v)}
           activeColorClass="bg-green-50 border-green-200 text-green-700"
         />
+        {isWebSearchAvailable() && (
+          <WebSearchToggle
+            enabled={filters.useWebSearch === true}
+            onToggle={(enabled) => onChange({ ...filters, useWebSearch: enabled || undefined })}
+          />
+        )}
       </div>
 
       {hasActiveFilters && (

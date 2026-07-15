@@ -423,6 +423,8 @@
     "researchSuggestTitle": "让 AI 根据项目反馈提出研究问题",
     "researchTitle": "研究标题",
     "researchTitlePlaceholder": "例如，配送痛点分析",
+    "researchWebSearch": "包含公共网页搜索",
+    "researchWebSearchHint": "使用与您的研究问题相关的最新公共网页结果为分析提供依据（在 AWS 内部处理，并注明来源）。",
     "runResearch": "运行研究",
     "selectAtLeast2": "⚠️ 至少选择2个文档进行重新组合。",
     "submitGenerateDoc": "生成{{type}}",
