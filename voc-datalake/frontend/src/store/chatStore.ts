@@ -66,10 +66,10 @@ export const useChatStore = create<ChatStore>()(
           title: 'New Conversation',
           messages: [],
           // The new conversation consumes any draft filters chosen before it
-          // existed (issue #161) instead of silently resetting them —
-          // regardless of whether it was created by the first message or
-          // the sidebar's New Chat.
-          filters: get().draftFilters,
+          // existed instead of silently resetting them — regardless of
+          // whether it was created by the first message or the sidebar's
+          // New Chat. Copied so no live reference is shared with the draft.
+          filters: { ...get().draftFilters },
           createdAt: new Date(),
           updatedAt: new Date(),
         }

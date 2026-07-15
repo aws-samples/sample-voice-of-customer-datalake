@@ -249,6 +249,46 @@ describe('chatStore', () => {
       const conversation = useChatStore.getState().conversations.find(c => c.id === id)
       expect(conversation?.filters).toEqual({})
     })
+
+    it('consumes a lingering draft even after the active conversation was deleted', () => {
+      // Store-level lifecycle pin: however the app got into "draft set, no
+      // active conversation" (e.g. delete), the next creation consumes it.
+      const store = useChatStore.getState()
+      const firstId = store.createConversation()
+      store.setDraftFilters({ category: 'delivery' })
+      store.deleteConversation(firstId)
+
+      const secondId = useChatStore.getState().createConversation()
+
+      const conversation = useChatStore.getState().conversations.find(c => c.id === secondId)
+      expect(conversation?.filters).toEqual({ category: 'delivery' })
+      expect(useChatStore.getState().draftFilters).toEqual({})
+    })
+
+    it('hands the conversation its own copy of the draft, not a shared reference', () => {
+      useChatStore.getState().setDraftFilters({ source: 'webscraper' })
+      const draftBefore = useChatStore.getState().draftFilters
+
+      const id = useChatStore.getState().createConversation()
+
+      const conversation = useChatStore.getState().conversations.find(c => c.id === id)
+      expect(conversation?.filters).not.toBe(draftBefore)
+      expect(conversation?.filters).toEqual({ source: 'webscraper' })
+    })
+
+    it('is excluded from the persisted payload', () => {
+      // A stale draft applying to a conversation created in a LATER session
+      // would be the same surprising-filter-state bug in reverse — the
+      // draft is ephemeral by design.
+      useChatStore.getState().setDraftFilters({ useWebSearch: true })
+
+      const options = useChatStore.persist.getOptions()
+      const persisted = options.partialize?.(useChatStore.getState()) ?? useChatStore.getState()
+
+      expect(persisted).not.toHaveProperty('draftFilters')
+      expect(persisted).toHaveProperty('conversations')
+      expect(persisted).toHaveProperty('activeConversationId')
+    })
   })
 
   describe('updateConversationFilters', () => {
