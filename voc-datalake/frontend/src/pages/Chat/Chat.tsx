@@ -212,8 +212,8 @@ export default function Chat() {
   } = useChatStore()
 
   const activeConversation = getActiveConversation()
-  // Treat null/undefined and '' uniformly everywhere (an empty-string id
-  // buffering a draft that ?? would never consume was a reviewer catch).
+  // Treat null/undefined and '' uniformly everywhere: an empty-string id
+  // must not buffer a draft that ?? would then never consume.
   const hasActiveConversation = activeConversationId != null && activeConversationId !== ''
   // Filters live on the conversation; before one exists they buffer in the
   // store's draft (issue #161: filter changes — including the web-search
