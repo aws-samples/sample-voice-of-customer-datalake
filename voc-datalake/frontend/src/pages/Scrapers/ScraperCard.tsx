@@ -131,7 +131,7 @@ function LastRunSummary({ lastRunInfo }: { readonly lastRunInfo: RunStatus }) {
   )
 }
 
-/** base_url as runtime data actually delivers it (absent on the mock
+/** Exported for tests (not public API). base_url as runtime data actually delivers it (absent on the mock
  * server and possibly on older configs, despite the declared type),
  * normalized to a trimmed string — '' meaning "not configured". Single
  * owner of that check so the label and the Run-button gate can't drift. */
@@ -139,7 +139,7 @@ export function normalizedBaseUrl(baseUrl: string | undefined): string {
   return typeof baseUrl === 'string' ? baseUrl.trim() : ''
 }
 
-/** Display label for a scraper's target site. Never throws: a render-time
+/** Exported for tests (not public API). Display label for a scraper's target site. Never throws: a render-time
  * TypeError here took down the whole /scrapers route (issue #167).
  * Unparseable-but-present values fall back to the raw string so the user
  * can still see what is configured. */
