@@ -25,6 +25,14 @@ describe('chatStore', () => {
       expect(state.conversations[0].id).toBe(id)
     })
 
+    it('generates unique IDs for back-to-back creations (issue #160)', () => {
+      // Date.now()-based IDs collided within the same millisecond — two
+      // conversations then shared an ID and store operations affected both.
+      const ids = Array.from({ length: 50 }, () => useChatStore.getState().createConversation())
+
+      expect(new Set(ids).size).toBe(50)
+    })
+
     it('sets new conversation as active', () => {
       const { createConversation } = useChatStore.getState()
       
@@ -77,17 +85,15 @@ describe('chatStore', () => {
       expect(state.activeConversationId).toBeNull()
     })
 
-    it('preserves activeConversationId when deleting different conversation', async () => {
+    it('preserves activeConversationId when deleting different conversation', () => {
       // Reset state completely first
       useChatStore.setState({ conversations: [], activeConversationId: null })
       
       // Create first conversation
       const firstId = useChatStore.getState().createConversation()
-      
-      // Wait a tick to ensure different timestamp for second ID
-      await new Promise(resolve => setTimeout(resolve, 1))
-      
-      // Create second conversation
+      // Back-to-back creation is safe: IDs are collision-proof (issue #160),
+      // so no timestamp-separation sleep is needed (the old 1ms wait still
+      // flaked under full-suite load).
       const secondId = useChatStore.getState().createConversation()
       
       // Verify we have two different conversations
@@ -145,6 +151,19 @@ describe('chatStore', () => {
       expect(conv?.messages).toHaveLength(1)
       expect(conv?.messages[0].content).toBe('Hello')
       expect(conv?.messages[0].role).toBe('user')
+    })
+
+    it('generates unique message IDs within the same tick (issue #160)', () => {
+      const { createConversation, addMessage } = useChatStore.getState()
+
+      const convId = createConversation()
+      for (let i = 0; i < 50; i++) {
+        addMessage(convId, { role: 'user', content: `m${i}` })
+      }
+
+      const conv = useChatStore.getState().conversations.find(c => c.id === convId)
+      const ids = (conv?.messages ?? []).map(m => m.id)
+      expect(new Set(ids).size).toBe(50)
     })
 
     it('auto-generates title from first user message', () => {
