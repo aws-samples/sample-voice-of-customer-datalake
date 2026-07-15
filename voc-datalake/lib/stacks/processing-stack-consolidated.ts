@@ -140,7 +140,9 @@ export class VocProcessingStack extends cdk.Stack {
         PROJECTS_TABLE: projectsTable.tableName,
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
         PRIMARY_LANGUAGE: config.primaryLanguage,
-        BEDROCK_MODEL_ID: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+        // No BEDROCK_MODEL_ID env: the enrichment model resolves through the
+        // per-surface AI-model picker (lambda/shared/model_config.py — the
+        // 'enrichment' surface defaults to Haiku, admins can override it).
         POWERTOOLS_SERVICE_NAME: 'voc-processor',
         POWERTOOLS_IDEMPOTENCY_DISABLED: '0',
         LOG_LEVEL: 'INFO',

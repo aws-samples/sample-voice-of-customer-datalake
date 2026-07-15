@@ -29,6 +29,14 @@ DEFAULT_MAX_DELAY = 30.0  # seconds
 # output and can blow the Lambda timeout on its own; many small calls each finish
 # in ~1-2 min and resume cleanly. This ceiling must therefore be generous enough
 # to assemble a long document from those small chunks (8 × ~8K ≈ 64K tokens).
+#
+# STRICT-JSON DOCTRINE: auto-continuation is safe for prose but NOT for strict
+# JSON output — the resume seam is lossy at token boundaries (live-caught: a
+# dropped comma between continued chunks → JSONDecodeError). Callers that parse
+# the response as JSON must size max_tokens so the answer fits in ONE call,
+# with headroom for adaptive-thinking models (Sonnet 5), whose always-on
+# thinking counts against maxTokens. See TestStrictJsonTokenHeadroom for the
+# enforced per-site floors.
 DEFAULT_MAX_CONTINUATIONS = 8
 
 # Nudge sent as the user turn when resuming a truncated response. Kept terse and

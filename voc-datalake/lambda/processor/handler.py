@@ -54,9 +54,8 @@ PRIMARY_LANGUAGE = os.environ.get('PRIMARY_LANGUAGE', 'en')
 # Enrichment runs on every ingested item, so its built-in default is the
 # cheap/fast Haiku. The model is resolved through the per-surface AI-model
 # picker ('enrichment' surface) so admins can override it; the default and
-# allowlist live in shared.model_config. Kept as a last-resort literal for the
-# rare path where the resolver is unavailable at import time.
-PROCESSOR_FALLBACK_MODEL_ID = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+# allowlist live in shared.model_config (get_active_model_id never raises and
+# always returns a usable ID, so no local fallback is needed here).
 PROMPT_VERSION = '1.0.0'
 
 # Logs configuration - max entries to keep per source
@@ -339,7 +338,7 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
     
     # Resolve the enrichment model through the picker (defaults to Haiku).
     # Recorded on the record's metadata so downstream can see which model ran.
-    active_model = get_active_model_id('enrichment') or PROCESSOR_FALLBACK_MODEL_ID
+    active_model = get_active_model_id('enrichment')
     try:
         content = converse(
             prompt=user_prompt,

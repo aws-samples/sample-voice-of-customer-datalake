@@ -427,10 +427,8 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
   ]
 }}"""
 
-        # 4096 (was 2000): Sonnet 5's always-on adaptive thinking counts
-        # against maxTokens, and a truncated strict-JSON response can't be
-        # stitched reliably by auto-continuation (live-caught: the resume seam
-        # dropped a comma → JSONDecodeError). Headroom keeps it to one call.
+        # 4096: strict-JSON output must fit ONE call (see the strict-JSON
+        # doctrine in shared/converse.py).
         response_text = converse(prompt=prompt, max_tokens=4096, temperature=0.3, surface='utility')
 
         json_match = re.search(r"\{[\s\S]*\}", response_text)

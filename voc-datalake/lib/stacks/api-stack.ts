@@ -532,6 +532,8 @@ export class VocApiStack extends cdk.Stack {
     feedbackTable.grantReadData(documentGeneratorRole);
     projectsTable.grantReadWriteData(documentGeneratorRole);
     jobsTable.grantReadWriteData(documentGeneratorRole);
+    // Model picker: read per-surface overrides (documents/prototype) from aggregates.
+    aggregatesTable.grantReadData(documentGeneratorRole);
     kmsKey.grantEncryptDecrypt(documentGeneratorRole);
     documentGeneratorRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
@@ -558,6 +560,7 @@ export class VocApiStack extends cdk.Stack {
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
+        AGGREGATES_TABLE: aggregatesTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
         PROTOTYPES_CDN_URL: prototypesCdnUrl,
@@ -573,6 +576,8 @@ export class VocApiStack extends cdk.Stack {
     feedbackTable.grantReadData(documentMergerRole);
     projectsTable.grantReadWriteData(documentMergerRole);
     jobsTable.grantReadWriteData(documentMergerRole);
+    // Model picker: read the documents-surface override from aggregates.
+    aggregatesTable.grantReadData(documentMergerRole);
     kmsKey.grantEncryptDecrypt(documentMergerRole);
     documentMergerRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
@@ -591,6 +596,7 @@ export class VocApiStack extends cdk.Stack {
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
+        AGGREGATES_TABLE: aggregatesTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
         POWERTOOLS_SERVICE_NAME: 'voc-job-document-merger',
         LOG_LEVEL: 'INFO',
@@ -603,6 +609,8 @@ export class VocApiStack extends cdk.Stack {
     const personaImporterRole = this.createLambdaRole('PersonaImporterRole');
     projectsTable.grantReadWriteData(personaImporterRole);
     jobsTable.grantReadWriteData(personaImporterRole);
+    // Model picker: read the documents-surface override from aggregates.
+    aggregatesTable.grantReadData(personaImporterRole);
     kmsKey.grantEncryptDecrypt(personaImporterRole);
     personaImporterRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
@@ -621,6 +629,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 512,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
+        AGGREGATES_TABLE: aggregatesTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
         AVATARS_CDN_URL: avatarsCdnUrl,

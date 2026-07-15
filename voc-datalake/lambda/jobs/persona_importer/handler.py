@@ -79,8 +79,10 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
     # input isn't supported by the text-only shared converse helper), so resolve
     # the model through the picker directly. No temperature is sent, so there's
     # nothing to omit for temperature-restricted models.
+    model_id = get_active_model_id('documents')
+    logger.info(f"[IMPORT_PERSONA_JOB] Invoking Bedrock with model {model_id}")
     response = bedrock.converse(
-        modelId=get_active_model_id('documents'),
+        modelId=model_id,
         system=[{'text': system_prompt}],
         messages=[{'role': 'user', 'content': converse_content}],
         inferenceConfig={'maxTokens': 4096}
