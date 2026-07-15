@@ -194,6 +194,66 @@ const mockFormStats = {
   form_4: { total_submissions: 41, avg_rating: 4.6, rating_count: 38 },
 };
 
+// Mock Cognito users (issue #177) — stateful so create/enable/disable/delete
+// reflect in the UI during a dev session. Shape mirrors CognitoUser.
+const mockUsers = [
+  {
+    username: 'admin-demo', email: 'admin@example.com', name: 'Ada Admin',
+    given_name: 'Ada', family_name: 'Admin', status: 'CONFIRMED', enabled: true,
+    groups: ['admins'], created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+    last_modified: new Date().toISOString(),
+  },
+  {
+    username: 'viewer-demo', email: 'viewer@example.com', name: 'Vic Viewer',
+    given_name: 'Vic', family_name: 'Viewer', status: 'CONFIRMED', enabled: true,
+    groups: ['users'], created_at: new Date(Date.now() - 10 * 86400000).toISOString(),
+    last_modified: new Date().toISOString(),
+  },
+  {
+    username: 'disabled-demo', email: 'disabled@example.com', name: 'Dee Disabled',
+    given_name: 'Dee', family_name: 'Disabled', status: 'CONFIRMED', enabled: false,
+    groups: ['users'], created_at: new Date(Date.now() - 60 * 86400000).toISOString(),
+    last_modified: new Date().toISOString(),
+  },
+];
+
+// Apply a user-admin mutation (issue #177). Returns { status, payload };
+// keeps the dispatch block small and the mutations in one auditable place.
+// Error payloads use the `error` key, matching the real API's shape
+// ({'success': False, 'error': ...} from lambda/shared/api.py).
+function handleUserAction(method, user, action, body) {
+  const touch = () => { user.last_modified = new Date().toISOString(); };
+  if (method === 'PUT' && action === 'group') {
+    const group = body?.group === 'admins' ? 'admins' : 'users';
+    user.groups = [group];
+    touch();
+    return { status: 200, payload: { success: true, message: `Moved ${user.username} to ${group}` } };
+  }
+  if (method === 'POST' && action === 'reset-password') {
+    return { status: 200, payload: { success: true, message: 'Password reset initiated' } };
+  }
+  if (method === 'PUT' && (action === 'enable' || action === 'disable')) {
+    user.enabled = action === 'enable';
+    touch();
+    const confirmation = { enable: 'User enabled', disable: 'User disabled' };
+    return { status: 200, payload: { success: true, message: confirmation[action] } };
+  }
+  if (method === 'PUT' && !action) {
+    const given = typeof body?.given_name === 'string' ? body.given_name : user.given_name;
+    const family = typeof body?.family_name === 'string' ? body.family_name : user.family_name;
+    user.given_name = given;
+    user.family_name = family;
+    user.name = [given, family].filter(Boolean).join(' ') || user.username;
+    touch();
+    return { status: 200, payload: { success: true, message: 'User updated', given_name: given, family_name: family, name: user.name } };
+  }
+  if (method === 'DELETE' && !action) {
+    mockUsers.splice(mockUsers.indexOf(user), 1);
+    return { status: 200, payload: { success: true, message: 'User deleted' } };
+  }
+  return { status: 405, payload: { success: false, error: 'Method not allowed' } };
+}
+
 // Mock scrapers — real ScraperConfig shape (issue #169). scraper_2 is
 // deliberately sparse (identity fields only), mirroring records persisted
 // before newer fields existed, so local dev exercises the normalizeScrapers()
@@ -257,6 +317,31 @@ const handlers = {
 
   // Sources status
   'GET /sources/status': () => mockSourcesStatus,
+
+  // User administration (issue #177) — stateful list; mutations live in the
+  // parameterized /users/:username dispatch block.
+  'GET /users': () => ({ success: true, users: mockUsers }),
+  'POST /users': (body) => {
+    if (!body || typeof body.username !== 'string' || body.username.trim() === '') {
+      return { __status: 400, body: { success: false, error: 'username is required' } };
+    }
+    if (mockUsers.some(u => u.username === body.username)) {
+      return { __status: 409, body: { success: false, error: 'User already exists' } };
+    }
+    const given = typeof body.given_name === 'string' ? body.given_name : '';
+    const family = typeof body.family_name === 'string' ? body.family_name : '';
+    const user = {
+      username: body.username,
+      email: typeof body.email === 'string' ? body.email : '',
+      name: [given, family].filter(Boolean).join(' ') || body.username,
+      given_name: given, family_name: family,
+      status: 'FORCE_CHANGE_PASSWORD', enabled: true,
+      groups: [body.group === 'admins' ? 'admins' : 'users'],
+      created_at: new Date().toISOString(), last_modified: new Date().toISOString(),
+    };
+    mockUsers.push(user);
+    return { success: true, user };
+  },
 
   // Settings - Categories
   'GET /settings/categories': () => mockCategoriesConfig,
@@ -574,6 +659,38 @@ const server = http.createServer((req, res) => {
       res.writeHead(404);
       res.end(JSON.stringify({ success: false, message: 'Form not found' }));
     }
+    return;
+  }
+
+  // User admin by username (issue #177). Exact-key routes ('GET /users',
+  // 'POST /users') win; unknown usernames 404 like the real API.
+  const userMatch = url.pathname.match(/^\/users\/([^/]+)(?:\/(group|reset-password|enable|disable))?$/);
+  if (userMatch && !(key in handlers)) {
+    const username = decodeURIComponent(userMatch[1]);
+    const action = userMatch[2];
+    let rawBody = '';
+    req.on('data', chunk => rawBody += chunk);
+    req.on('end', () => {
+      const user = mockUsers.find(u => u.username === username);
+      if (!user) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ success: false, error: 'User not found' }));
+        return;
+      }
+      let parsedBody = null;
+      if (rawBody) {
+        try {
+          parsedBody = JSON.parse(rawBody);
+        } catch {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Invalid JSON body' }));
+          return;
+        }
+      }
+      const result = handleUserAction(req.method, user, action, parsedBody);
+      res.writeHead(result.status);
+      res.end(JSON.stringify(result.payload));
+    });
     return;
   }
 
