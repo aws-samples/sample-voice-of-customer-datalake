@@ -75,6 +75,11 @@ function researchDefinition(template: Template): string {
 describe('research state machine wiring (issue #157)', () => {
   // Synthesized in beforeAll so a synth failure reports as a test failure
   // with a name, not a file-collection error.
+  //
+  // NOTE: the exact '"key.$":"path"' pins assume CDK's compact JSON
+  // serialization of the definition (no whitespace around ':'). Stable
+  // today; if a CDK upgrade ever pretty-prints definitions, all three
+  // tests fail together — loosen to a whitespace-tolerant match then.
   const state: { definition: string } = { definition: '' };
   beforeAll(() => {
     state.definition = researchDefinition(synthProcessingTemplate());
