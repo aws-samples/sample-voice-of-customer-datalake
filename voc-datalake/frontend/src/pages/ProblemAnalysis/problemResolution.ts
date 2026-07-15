@@ -98,6 +98,14 @@ function fitToKeyCaps(key: string): string {
  * normalized out of the values themselves so a literal pipe in a category
  * name can't merge two different problems under one key. The result is
  * deterministically truncated to the server's 255-char/255-byte caps.
+ *
+ * Lifecycle caveat (issue #159): the problem component is the similarity
+ * group's REPRESENTATIVE text, which can shift as the similarity slider or
+ * the data window changes — a resolution whose group re-forms differently
+ * becomes unreachable from the UI. The server compensates by expiring
+ * entries after RESOLVED_PROBLEMS_TTL_DAYS (default 180): expired
+ * resolutions drop out of GET responses (the problem resurfaces for
+ * re-review) and are pruned from storage under entry-cap pressure.
  */
 export function buildResolutionKey(category: string, subcategory: string, problem: string): string {
   const normalize = (value: string) =>

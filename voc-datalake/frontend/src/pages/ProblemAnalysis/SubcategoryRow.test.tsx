@@ -6,6 +6,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { SubcategoryRow } from './SubcategoryRow'
+import { buildResolutionKey } from './problemResolution'
 
 const mockSubcategoryGroup = {
   subcategory: 'shipping_speed',
@@ -225,6 +226,27 @@ describe('SubcategoryRow', () => {
 
       // When problem is expanded, feedback items should be visible
       expect(screen.getByText('Delivery was slow')).toBeInTheDocument()
+    })
+  })
+
+  describe('per-key pending (issue #159)', () => {
+    it('disables only the resolve button whose key is pending', () => {
+      renderWithRouter(
+        <SubcategoryRow
+          categoryName="delivery"
+          subcategoryGroup={mockSubcategoryGroup}
+          isExpanded={true}
+          onToggle={vi.fn()}
+          expandedProblems={new Set()}
+          onToggleProblem={vi.fn()}
+          onToggleResolved={vi.fn()}
+          pendingKeys={new Set([buildResolutionKey('delivery', 'shipping_speed', 'Slow delivery times')])}
+        />
+      )
+
+      const [slowDeliveryButton, damagedButton] = screen.getAllByRole('button', { name: /resolved/i })
+      expect(slowDeliveryButton).toBeDisabled()
+      expect(damagedButton).not.toBeDisabled()
     })
   })
 })

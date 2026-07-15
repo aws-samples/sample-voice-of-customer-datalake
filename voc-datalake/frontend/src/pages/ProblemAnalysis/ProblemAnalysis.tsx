@@ -288,7 +288,7 @@ export default function ProblemAnalysis() {
   // clears it from everyone's default view. All query/mutation wiring lives
   // in the hook (complexity budget + useSettingsSync convention).
   const {
-    resolvedMap, resolvedLoading, togglePending, toggleFailed,
+    resolvedMap, resolvedLoading, pendingKeys, toggleFailed,
     toggleResolved, dismissToggleError,
   } = useProblemResolution(!!config.apiEndpoint)
 
@@ -644,7 +644,7 @@ export default function ProblemAnalysis() {
                         expandedProblems={expandedProblems}
                         onToggleProblem={toggleProblem}
                         onToggleResolved={toggleResolved}
-                        resolvePending={togglePending}
+                        pendingKeys={pendingKeys}
                       />
                     )
                   })}

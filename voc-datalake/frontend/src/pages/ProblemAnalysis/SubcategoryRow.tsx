@@ -11,7 +11,9 @@ interface SubcategoryRowProps {
   readonly expandedProblems: Set<string>
   readonly onToggleProblem: (key: string) => void
   readonly onToggleResolved: (key: string, resolved: boolean) => void
-  readonly resolvePending?: boolean
+  /** Resolution keys with an in-flight toggle — disables only their own
+   * button (issue #159: no page-wide lock). */
+  readonly pendingKeys?: ReadonlySet<string>
 }
 
 export function SubcategoryRow({
@@ -22,7 +24,7 @@ export function SubcategoryRow({
   expandedProblems,
   onToggleProblem,
   onToggleResolved,
-  resolvePending,
+  pendingKeys,
 }: SubcategoryRowProps) {
   const subcategoryKey = `${categoryName}:${subcategoryGroup.subcategory}`
 
@@ -66,7 +68,7 @@ export function SubcategoryRow({
                 isExpanded={expandedProblems.has(problemKey)}
                 onToggle={() => onToggleProblem(problemKey)}
                 onToggleResolved={() => onToggleResolved(resolutionKey, !problemGroup.resolved)}
-                resolvePending={resolvePending}
+                resolvePending={pendingKeys?.has(resolutionKey) === true}
               />
             )
           })}
