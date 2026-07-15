@@ -48,7 +48,7 @@ MAX_RESOLVED_ENTRIES = 500
 # Entries therefore expire after this many days: GET filters them out (an
 # old resolution resurfaces for re-review) and hitting the entry cap prunes
 # them from storage. 0 disables expiry entirely.
-def _parse_ttl_days(raw: str) -> int:
+def _parse_ttl_days(raw: str | None) -> int:
     """Parse the TTL env var defensively: the Lambda environment is a system
     boundary, and a console typo ("180d") must degrade to the default with a
     warning — not crash the whole settings Lambda at import."""
