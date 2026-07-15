@@ -21,9 +21,17 @@ import { z } from 'zod'
 import type { Category, Subcategory } from './CategoriesManager'
 
 /** Slug of a name for derived ids: lowercase, non-alphanumerics collapsed
- * to underscores, trimmed — 'billing/refunds' → 'billing_refunds'. */
+ * to underscores, trimmed — 'billing/refunds' → 'billing_refunds'.
+ * split/filter/join strips leading/trailing separators without the
+ * backtracking-prone /^_+|_+$/ anchors (sonarjs/slow-regex). */
 function slugify(name: string): string {
-  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .split('_')
+    .filter(Boolean)
+    .join('_')
 }
 
 /**

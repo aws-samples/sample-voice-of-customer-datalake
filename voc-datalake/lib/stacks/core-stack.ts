@@ -185,7 +185,6 @@ export class VocCoreStack extends cdk.Stack {
       compress: true,
       cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
     });
-    cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
     this.avatarsCdnUrl = `https://${this.frontendDomainName}/avatars`;
 
     // Prototypes served from the same distribution under /prototypes/* with their
@@ -218,6 +217,16 @@ export class VocCoreStack extends cdk.Stack {
       responseHeadersPolicy: prototypeHeadersPolicy,
     });
     this.prototypesCdnUrl = `https://${this.frontendDomainName}/prototypes`;
+
+    // Acknowledged wildcard-key-policy warning (issue #189): the synthesized
+    // KMS condition is already scoped to THIS ACCOUNT's distributions
+    // (arn:...:cloudfront::ACCOUNT:distribution/*); scoping to the concrete
+    // distribution id would create exactly the circular dependency the
+    // warning describes, and the CDK README documents the wildcard as the
+    // supported shape. The ack must come AFTER the last
+    // withOriginAccessControl() call — each origin re-emits the warning, and
+    // acknowledgeWarning only strips messages added before it runs.
+    cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
 
     // ============================================
     // DYNAMODB TABLES
