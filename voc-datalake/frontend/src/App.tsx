@@ -1,10 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 import PageLoader from './components/PageLoader'
+import RouteErrorBoundary from './components/RouteErrorBoundary'
 import Login from './pages/Login'
 import { loadRuntimeConfig, isConfigLoaded } from './runtimeConfig'
 import { useConfigStore } from './store/configStore'
@@ -35,10 +37,19 @@ const queryClient = new QueryClient({
   },
 })
 
+// Lazy pages share the same suspense fallback and, per issue #173, a
+// route-scoped error boundary: a render error in one page replaces only
+// that page's content — the layout and sidebar stay mounted.
+const page = (element: ReactNode) => ({
+  element: <Suspense fallback={<PageLoader />}>{element}</Suspense>,
+  errorElement: <RouteErrorBoundary />,
+})
+
 const router = createBrowserRouter([
   {
     path: '/login',
     element: <Login />,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/',
@@ -47,21 +58,24 @@ const router = createBrowserRouter([
         <Layout />
       </ProtectedRoute>
     ),
+    // Catches errors thrown by Layout/ProtectedRoute themselves; page-level
+    // errors are handled by each child's errorElement so the layout survives.
+    errorElement: <RouteErrorBoundary />,
     children: [
-      { index: true, element: <Suspense fallback={<PageLoader />}><Home /></Suspense> },
-      { path: 'dashboard', element: <Suspense fallback={<PageLoader />}><Dashboard /></Suspense> },
-      { path: 'feedback', element: <Suspense fallback={<PageLoader />}><Feedback /></Suspense> },
-      { path: 'feedback/:id', element: <Suspense fallback={<PageLoader />}><FeedbackDetail /></Suspense> },
-      { path: 'categories', element: <Suspense fallback={<PageLoader />}><Categories /></Suspense> },
-      { path: 'problems', element: <Suspense fallback={<PageLoader />}><ProblemAnalysis /></Suspense> },
-      { path: 'chat', element: <Suspense fallback={<PageLoader />}><Chat /></Suspense> },
-      { path: 'projects', element: <Suspense fallback={<PageLoader />}><Projects /></Suspense> },
-      { path: 'projects/:id', element: <Suspense fallback={<PageLoader />}><ProjectDetail /></Suspense> },
-      { path: 'prioritization', element: <Suspense fallback={<PageLoader />}><Prioritization /></Suspense> },
-      { path: 'data-explorer', element: <Suspense fallback={<PageLoader />}><DataExplorer /></Suspense> },
-      { path: 'scrapers', element: <Suspense fallback={<PageLoader />}><Scrapers /></Suspense> },
-      { path: 'feedback-forms', element: <Suspense fallback={<PageLoader />}><FeedbackForms /></Suspense> },
-      { path: 'settings', element: <Suspense fallback={<PageLoader />}><AdminRoute><Settings /></AdminRoute></Suspense> },
+      { index: true, ...page(<Home />) },
+      { path: 'dashboard', ...page(<Dashboard />) },
+      { path: 'feedback', ...page(<Feedback />) },
+      { path: 'feedback/:id', ...page(<FeedbackDetail />) },
+      { path: 'categories', ...page(<Categories />) },
+      { path: 'problems', ...page(<ProblemAnalysis />) },
+      { path: 'chat', ...page(<Chat />) },
+      { path: 'projects', ...page(<Projects />) },
+      { path: 'projects/:id', ...page(<ProjectDetail />) },
+      { path: 'prioritization', ...page(<Prioritization />) },
+      { path: 'data-explorer', ...page(<DataExplorer />) },
+      { path: 'scrapers', ...page(<Scrapers />) },
+      { path: 'feedback-forms', ...page(<FeedbackForms />) },
+      { path: 'settings', ...page(<AdminRoute><Settings /></AdminRoute>) },
     ],
   },
 ])

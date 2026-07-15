@@ -53,6 +53,12 @@
     "downloadTXT": "TXT로 다운로드",
     "kiroPromptTip": "팁: 프로젝트 설정에서 Kiro 프롬프트 구성"
   },
+  "errorBoundary": {
+    "description": "이 페이지에서 예기치 않은 오류가 발생했습니다. 페이지를 새로 고치거나 홈으로 돌아갈 수 있으며, 앱의 나머지 부분은 영향을 받지 않습니다.",
+    "goHome": "홈으로 이동",
+    "reload": "페이지 새로 고침",
+    "title": "문제가 발생했습니다"
+  },
   "feedbackCard": {
     "copyText": "텍스트 복사",
     "details": "세부정보",

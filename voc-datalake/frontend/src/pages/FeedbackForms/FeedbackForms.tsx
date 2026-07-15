@@ -22,6 +22,7 @@ import type { FeedbackForm } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import ConfirmModal from '../../components/ConfirmModal'
 import { defaultFormConfig } from './formTemplates'
+import { normalizeFeedbackForms } from './formSchema'
 import TemplateWizard from './TemplateWizard'
 import FormCard from './FormCard'
 
@@ -460,6 +461,10 @@ export default function FeedbackForms() {
   const { data: formsData, isLoading } = useQuery({
     queryKey: ['feedback-forms'],
     queryFn: () => api.getFeedbackForms(),
+    // Stored forms can predate newer fields (and fixtures can be sparse):
+    // normalize once at the query boundary so FeedbackForm's declared
+    // contract is true for every consumer (issue #171).
+    select: (data) => ({ ...data, forms: normalizeFeedbackForms(data.forms ?? []) }),
     enabled: !!config.apiEndpoint,
   })
 
