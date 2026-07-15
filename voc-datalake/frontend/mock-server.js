@@ -311,7 +311,8 @@ const handlers = {
 
 // Project detail fixtures for /projects/:id — shape mirrors ProjectDetail
 // ({ project, personas, documents }) so the Project Detail page works
-// against the mock in local dev.
+// against the mock in local dev. Timestamps are frozen at server start on
+// purpose: stable fixtures beat fake freshness for a mock.
 const mockProjectDetails = {
   proj_1: {
     project: { project_id: 'proj_1', name: 'Q1 Product Improvements', description: 'Customer-driven improvements', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 2, document_count: 2 },
@@ -432,9 +433,10 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Handle project detail by ID ('prioritization' is an exact-key route,
-  // not a project id — let it fall through to the routes table).
-  if (req.method === 'GET' && url.pathname.match(/^\/projects\/[^/]+$/) && url.pathname !== '/projects/prioritization') {
+  // Handle project detail by ID. Exact-key routes win: anything present in
+  // the handlers table (e.g. 'GET /projects/prioritization', or any future
+  // /projects/... exact route) must never be shadowed by the id pattern.
+  if (req.method === 'GET' && url.pathname.match(/^\/projects\/[^/]+$/) && !(key in handlers)) {
     const id = url.pathname.split('/')[2];
     const detail = mockProjectDetails[id];
     if (detail) {
@@ -447,8 +449,9 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Project jobs polling (research/persona generation) — none running locally.
-  if (req.method === 'GET' && url.pathname.match(/^\/projects\/[^/]+\/jobs$/)) {
+  // Project jobs polling (research/persona generation) — none running
+  // locally. Same exact-key precedence rule as above.
+  if (req.method === 'GET' && url.pathname.match(/^\/projects\/[^/]+\/jobs$/) && !(key in handlers)) {
     res.writeHead(200);
     res.end(JSON.stringify({ jobs: [] }));
     return;
