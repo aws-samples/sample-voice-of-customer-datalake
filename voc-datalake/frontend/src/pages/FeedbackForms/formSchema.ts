@@ -122,7 +122,9 @@ export function normalizeFeedbackForms(rawForms: readonly unknown[]): FeedbackFo
   return rawForms.flatMap((raw) => {
     const parsed = FeedbackFormSchema.safeParse(raw)
     if (!parsed.success) {
-      console.warn('Dropping feedback form record without usable identity:', parsed.error.issues, raw)
+      // Neutral wording: today the only non-catching field is form_id, but
+      // the failure set grows with any future catch-less field.
+      console.warn('Dropping feedback form record that failed schema validation:', parsed.error.issues, raw)
       return []
     }
     return [parsed.data]
