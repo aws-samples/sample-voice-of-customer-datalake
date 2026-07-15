@@ -10,6 +10,7 @@ describe('chatStore', () => {
     useChatStore.setState({
       conversations: [],
       activeConversationId: null,
+      draftFilters: {},
     })
   })
 
@@ -219,6 +220,34 @@ describe('chatStore', () => {
       const state = useChatStore.getState()
       const conv = state.conversations.find(c => c.id === convId)
       expect(conv?.title).toBe('Custom Title')
+    })
+  })
+
+  describe('draftFilters (issue #161)', () => {
+    it('buffers filters set before any conversation exists', () => {
+      useChatStore.getState().setDraftFilters({ source: 'webscraper', useWebSearch: true })
+
+      expect(useChatStore.getState().draftFilters).toEqual({ source: 'webscraper', useWebSearch: true })
+    })
+
+    it('is consumed by the next conversation, however it is created', () => {
+      // Covers both entry points: the first message on the Chat page and
+      // the sidebar's New Chat both go through createConversation.
+      useChatStore.getState().setDraftFilters({ sentiment: 'negative' })
+
+      const id = useChatStore.getState().createConversation()
+
+      const conversation = useChatStore.getState().conversations.find(c => c.id === id)
+      expect(conversation?.filters).toEqual({ sentiment: 'negative' })
+      // Draft is cleared so the NEXT fresh conversation starts clean.
+      expect(useChatStore.getState().draftFilters).toEqual({})
+    })
+
+    it('creates conversations with empty filters when no draft is set', () => {
+      const id = useChatStore.getState().createConversation()
+
+      const conversation = useChatStore.getState().conversations.find(c => c.id === id)
+      expect(conversation?.filters).toEqual({})
     })
   })
 

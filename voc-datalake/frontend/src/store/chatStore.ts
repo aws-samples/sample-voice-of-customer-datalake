@@ -34,6 +34,11 @@ export interface Conversation {
 interface ChatStore {
   conversations: Conversation[]
   activeConversationId: string | null
+  /** Filters chosen while NO conversation is active (issue #161: they used
+   * to silently no-op). Ephemeral by design (not persisted): the next
+   * conversation to be created consumes them, however it is created (first
+   * message on the Chat page or the sidebar's New Chat). */
+  draftFilters: ChatFilters
   
   // Actions
   createConversation: () => string
@@ -42,6 +47,7 @@ interface ChatStore {
   addMessage: (conversationId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>) => void
   updateConversationTitle: (id: string, title: string) => void
   updateConversationFilters: (id: string, filters: ChatFilters) => void
+  setDraftFilters: (filters: ChatFilters) => void
   getActiveConversation: () => Conversation | null
   clearAllConversations: () => void
 }
@@ -51,6 +57,7 @@ export const useChatStore = create<ChatStore>()(
     (set, get) => ({
       conversations: [],
       activeConversationId: null,
+      draftFilters: {},
 
       createConversation: () => {
         const id = `conv_${Date.now()}`
@@ -58,15 +65,24 @@ export const useChatStore = create<ChatStore>()(
           id,
           title: 'New Conversation',
           messages: [],
-          filters: {},
+          // The new conversation consumes any draft filters chosen before it
+          // existed (issue #161) instead of silently resetting them —
+          // regardless of whether it was created by the first message or
+          // the sidebar's New Chat.
+          filters: get().draftFilters,
           createdAt: new Date(),
           updatedAt: new Date(),
         }
         set((state) => ({
           conversations: [newConversation, ...state.conversations],
           activeConversationId: id,
+          draftFilters: {},
         }))
         return id
+      },
+
+      setDraftFilters: (filters) => {
+        set({ draftFilters: filters })
       },
 
       deleteConversation: (id) => {
