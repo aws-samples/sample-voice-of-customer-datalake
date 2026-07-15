@@ -31,11 +31,15 @@ function createWrapper() {
   }
 }
 
-/** A promise the test resolves manually, to hold a mutation in flight. */
+/** A promise the test resolves or rejects manually, to hold a mutation in flight. */
 function deferred<T>() {
-  const holder: { resolve: (value: T) => void } = { resolve: () => undefined }
-  const promise = new Promise<T>((resolve) => {
+  const holder: { resolve: (value: T) => void; reject: (reason: Error) => void } = {
+    resolve: () => undefined,
+    reject: () => undefined,
+  }
+  const promise = new Promise<T>((resolve, reject) => {
     holder.resolve = resolve
+    holder.reject = reject
   })
   return { promise, holder }
 }
@@ -109,5 +113,33 @@ describe('useProblemResolution per-key pending', () => {
     await waitFor(() => expect(result.current.toggleFailed).toBe(true))
     // The key must be re-toggleable after a failure, not stuck pending.
     expect(result.current.pendingKeys.has('cat|sub|a')).toBe(false)
+  })
+
+  it('surfaces an early failure even when a later toggle succeeds', async () => {
+    // Regression (review round 1): mutation.isError only reflects the LATEST
+    // mutate() call, so key A's failure was masked once key B succeeded.
+    const failing = deferred<{ success: boolean }>()
+    const succeeding = deferred<{ success: boolean }>()
+    mockSetProblemResolved
+      .mockReturnValueOnce(failing.promise)
+      .mockReturnValueOnce(succeeding.promise)
+
+    const { result } = renderHook(() => useProblemResolution(true), { wrapper: createWrapper() })
+
+    act(() => result.current.toggleResolved('cat|sub|a', true))
+    await waitFor(() => expect(result.current.pendingKeys.has('cat|sub|a')).toBe(true))
+    act(() => result.current.toggleResolved('cat|sub|b', true))
+    await waitFor(() => expect(result.current.pendingKeys.has('cat|sub|b')).toBe(true))
+
+    // B succeeds AFTER A fails — A's failure must still be visible.
+    act(() => failing.holder.reject(new Error('boom')))
+    await waitFor(() => expect(result.current.pendingKeys.has('cat|sub|a')).toBe(false))
+    act(() => succeeding.holder.resolve({ success: true }))
+    await waitFor(() => expect(result.current.pendingKeys.size).toBe(0))
+
+    expect(result.current.toggleFailed).toBe(true)
+
+    act(() => result.current.dismissToggleError())
+    expect(result.current.toggleFailed).toBe(false)
   })
 })

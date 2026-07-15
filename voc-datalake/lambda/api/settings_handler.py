@@ -48,7 +48,21 @@ MAX_RESOLVED_ENTRIES = 500
 # Entries therefore expire after this many days: GET filters them out (an
 # old resolution resurfaces for re-review) and hitting the entry cap prunes
 # them from storage. 0 disables expiry entirely.
-RESOLVED_PROBLEMS_TTL_DAYS = int(os.environ.get('RESOLVED_PROBLEMS_TTL_DAYS', '180'))
+def _parse_ttl_days(raw: str) -> int:
+    """Parse the TTL env var defensively: the Lambda environment is a system
+    boundary, and a console typo ("180d") must degrade to the default with a
+    warning — not crash the whole settings Lambda at import."""
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid RESOLVED_PROBLEMS_TTL_DAYS; falling back to default",
+            extra={"raw_value": raw, "default_days": 180},
+        )
+        return 180
+
+
+RESOLVED_PROBLEMS_TTL_DAYS = _parse_ttl_days(os.environ.get('RESOLVED_PROBLEMS_TTL_DAYS', '180'))
 # REMOVE-expression chunk size when pruning (bounded so the update
 # expression stays far below DynamoDB's 4KB expression limit).
 _PRUNE_CHUNK_SIZE = 20
@@ -78,7 +92,11 @@ def _is_expired_entry(entry: Any, cutoff: str) -> bool:
     return resolved_at < cutoff
 
 
-def _without_expired(resolved: dict) -> dict:
+def _without_expired(resolved: Any) -> dict:
+    # Same malformed-storage guard as _prune_expired_entries (symmetry):
+    # a non-dict value degrades to "nothing resolved", not a 500.
+    if not isinstance(resolved, dict):
+        return {}
     cutoff = _resolution_expiry_cutoff()
     if cutoff is None:
         return resolved
@@ -181,12 +199,21 @@ def _ensure_resolved_map() -> None:
     )
 
 
+@tracer.capture_method
 def _prune_expired_entries() -> int:
     """Remove expired entries from storage; returns how many were removed.
 
     Called only under cap pressure (a resolve hit the entry cap), keeping
     the steady state at one write per request. Removals are chunked so the
-    UpdateExpression stays small; each chunk is one atomic REMOVE."""
+    UpdateExpression stays small; each chunk is one atomic REMOVE.
+
+    Known race, accepted: the stale list is a get_item snapshot, and GET
+    already filters expired entries — so a user could re-resolve one of
+    these keys (fresh resolved_at) between the snapshot and the REMOVE,
+    losing the fresh entry. The window is milliseconds wide, requires the
+    same key, and self-heals (resolving again just works); a per-key
+    conditional REMOVE would trade that for N extra conditional writes.
+    """
     cutoff = _resolution_expiry_cutoff()
     if cutoff is None:
         return 0
@@ -207,7 +234,10 @@ def _prune_expired_entries() -> int:
             ExpressionAttributeNames={'#r': 'resolved', **names},
         )
     if stale:
-        logger.info(f"Pruned {len(stale)} expired resolved-problem entries under cap pressure")
+        logger.info(
+            "Pruned expired resolved-problem entries under cap pressure",
+            extra={"count": len(stale)},
+        )
     return len(stale)
 
 
@@ -236,6 +266,7 @@ def _resolve_problem_key(key: str) -> None:
     except ClientError as e:
         if e.response.get('Error', {}).get('Code', '') != 'ConditionalCheckFailedException':
             raise
+        cap_error = e
     # Cap reached: reclaim slots held by expired (often orphaned) entries.
     if _prune_expired_entries() > 0:
         try:
@@ -244,10 +275,11 @@ def _resolve_problem_key(key: str) -> None:
         except ClientError as e:
             if e.response.get('Error', {}).get('Code', '') != 'ConditionalCheckFailedException':
                 raise
+            cap_error = e
     raise ValidationError(
         f'Resolved-problem limit reached ({MAX_RESOLVED_ENTRIES}). '
         'Unresolve entries you no longer need first.'
-    )
+    ) from cap_error
 
 
 def _unresolve_problem_key(key: str) -> None:

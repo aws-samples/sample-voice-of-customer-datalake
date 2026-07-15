@@ -30,6 +30,11 @@ interface ProblemResolutionState {
 export function useProblemResolution(enabled: boolean): ProblemResolutionState {
   const queryClient = useQueryClient()
   const [pendingKeys, setPendingKeys] = useState<ReadonlySet<string>>(new Set())
+  // Failure is tracked in state, NOT via mutation.isError: all toggles share
+  // one useMutation, whose isError reflects only the LATEST mutate() call —
+  // under concurrent toggles (this hook's whole point), an earlier key's
+  // failure would be silently masked by a later key's success.
+  const [toggleFailed, setToggleFailed] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['resolved-problems'],
@@ -55,15 +60,19 @@ export function useProblemResolution(enabled: boolean): ProblemResolutionState {
         return next
       })
     },
+    onError: () => {
+      setToggleFailed(true)
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['resolved-problems'] })
     },
   })
 
   const toggleResolved = (key: string, resolved: boolean) => {
-    // Per-key double defense with the disabled button: covers the render gap
-    // before the disabled state paints, so a rapid double-click can't race
-    // SET/REMOVE for the same key server-side. Other keys stay toggleable.
+    // Per-key best-effort guard alongside the disabled button; the real
+    // backstop for a same-key SET/REMOVE race is that each request is a
+    // single atomic DynamoDB write — this just avoids firing an obviously
+    // redundant request. Other keys stay toggleable (issue #159).
     if (pendingKeys.has(key)) return
     mutation.mutate({ key, resolved })
   }
@@ -72,8 +81,8 @@ export function useProblemResolution(enabled: boolean): ProblemResolutionState {
     resolvedMap: data?.resolved ?? {},
     resolvedLoading: isLoading,
     pendingKeys,
-    toggleFailed: mutation.isError,
+    toggleFailed,
     toggleResolved,
-    dismissToggleError: () => mutation.reset(),
+    dismissToggleError: () => setToggleFailed(false),
   }
 }

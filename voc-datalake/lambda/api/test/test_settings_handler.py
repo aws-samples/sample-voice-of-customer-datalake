@@ -631,6 +631,31 @@ class TestResolvedProblemsExpiry:
         assert 'cat|sub|live' not in remove_call.kwargs['ExpressionAttributeNames'].values()
 
     @patch('settings_handler.aggregates_table')
+    def test_get_tolerates_malformed_resolved_attribute(self, mock_table, api_gateway_event, lambda_context):
+        """Non-dict storage under 'resolved' degrades to an empty map, not a 500
+        (symmetry with the prune path's guard)."""
+        from settings_handler import lambda_handler
+
+        mock_table.get_item.return_value = {'Item': {'resolved': 'corrupted'}}
+
+        event = api_gateway_event(method='GET', path='/settings/resolved-problems')
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert json.loads(response['body'])['resolved'] == {}
+
+    def test_ttl_env_parse_falls_back_on_garbage(self):
+        """A console typo in RESOLVED_PROBLEMS_TTL_DAYS must not crash the
+        whole settings Lambda at import — boundary validation."""
+        from settings_handler import _parse_ttl_days
+
+        assert _parse_ttl_days('180d') == 180
+        assert _parse_ttl_days('') == 180
+        assert _parse_ttl_days(None) == 180
+        assert _parse_ttl_days('30') == 30
+        assert _parse_ttl_days('0') == 0
+
+    @patch('settings_handler.aggregates_table')
     def test_prune_chunks_large_removals(self, mock_table):
         """REMOVE expressions are chunked so they stay far below DynamoDB's
         4KB expression limit even with hundreds of stale keys."""
