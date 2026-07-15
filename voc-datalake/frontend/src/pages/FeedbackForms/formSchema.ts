@@ -80,8 +80,10 @@ const customFieldsSchema = z
  *   a usable form_id are dropped (with a warning) by normalizeFeedbackForms.
  * - Every other field falls back to defaultFormConfig on absence, null, or
  *   wrong type; rating_max additionally coerces numeric strings.
- * - Zod returns fresh objects/arrays, so no two normalized forms share
- *   default (or input) references.
+ * - Enumerated objects/arrays (theme, custom_fields) are re-parsed into
+ *   fresh instances, so normalized forms never share those references with
+ *   each other or with inputs. Passthrough (unknown) values are shallow-
+ *   copied and DO share references with the input object.
  */
 export const FeedbackFormSchema = z.looseObject({
   form_id: z.string().min(1),
