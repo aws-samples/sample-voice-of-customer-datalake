@@ -56,6 +56,8 @@ export const useChatStore = create<ChatStore>()(
         // crypto.randomUUID over Date.now(): two calls in the same
         // millisecond produced identical IDs (issue #160) — a real store
         // corruption risk and an observed test flake under full-suite load.
+        // randomUUID requires a secure context (https/localhost); dev over a
+        // plain-http LAN IP is not a supported workflow.
         const id = `conv_${crypto.randomUUID()}`
         const newConversation: Conversation = {
           id,
@@ -86,7 +88,7 @@ export const useChatStore = create<ChatStore>()(
       addMessage: (conversationId, message) => {
         const newMessage: ChatMessage = {
           ...message,
-          // Collision-proof per issue #160 (same rationale as conversation IDs).
+          // Collision-proof (see createConversation).
           id: `msg_${crypto.randomUUID()}`,
           timestamp: new Date(),
         }
