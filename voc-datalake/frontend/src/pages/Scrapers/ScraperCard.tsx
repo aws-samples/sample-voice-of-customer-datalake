@@ -131,17 +131,26 @@ function LastRunSummary({ lastRunInfo }: { readonly lastRunInfo: RunStatus }) {
   )
 }
 
-/** Display label for a scraper's target site. Never throws: base_url is
- * typed as a string but runtime data can violate that (the mock server
- * omits it; older saved configs may hold scheme-less or garbage values),
- * and a render-time TypeError here took down the whole /scrapers route
- * (issue #167). Unparseable-but-present values fall back to the raw
- * string so the user can still see what is configured. */
+/** base_url as runtime data actually delivers it (absent on the mock
+ * server and possibly on older configs, despite the declared type),
+ * normalized to a trimmed string — '' meaning "not configured". Single
+ * owner of that check so the label and the Run-button gate can't drift. */
+export function normalizedBaseUrl(baseUrl: string | undefined): string {
+  return typeof baseUrl === 'string' ? baseUrl.trim() : ''
+}
+
+/** Display label for a scraper's target site. Never throws: a render-time
+ * TypeError here took down the whole /scrapers route (issue #167).
+ * Unparseable-but-present values fall back to the raw string so the user
+ * can still see what is configured. */
 export function scraperDomainLabel(baseUrl: string | undefined, notConfigured: string): string {
-  const raw = typeof baseUrl === 'string' ? baseUrl.trim() : ''
+  const raw = normalizedBaseUrl(baseUrl)
   if (raw === '') return notConfigured
   try {
-    return new URL(raw).hostname
+    // mailto:/file: URLs parse successfully with an EMPTY hostname —
+    // fall back to the raw value rather than rendering an empty label.
+    const host = new URL(raw).hostname
+    return host !== '' ? host : raw
   } catch {
     return raw
   }
@@ -158,7 +167,7 @@ function ScraperCardHeader({
 }) {
   const { t } = useTranslation('scrapers')
   const domain = scraperDomainLabel(scraper.base_url, t('card.notConfigured'))
-  const hasUrl = typeof scraper.base_url === 'string' && scraper.base_url.trim() !== ''
+  const hasUrl = normalizedBaseUrl(scraper.base_url) !== ''
   return (
     <div className="flex items-start justify-between mb-3">
       <div className="flex items-center gap-3">

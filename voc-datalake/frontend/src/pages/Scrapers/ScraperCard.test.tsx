@@ -41,6 +41,12 @@ function renderCard(scraper: ScraperConfig) {
 }
 
 describe('scraperDomainLabel', () => {
+  it('resolves the shipped not-configured string from the i18n test setup', () => {
+    // Guard against vacuous passes: if the key stopped resolving, t() would
+    // return the raw key and component + test would "agree" on it.
+    expect(NOT_CONFIGURED).not.toContain('card.notConfigured')
+  })
+
   it('resolves the hostname for a valid URL', () => {
     expect(scraperDomainLabel('https://shop.example.com/reviews?page=1', NOT_CONFIGURED))
       .toBe('shop.example.com')
@@ -55,6 +61,13 @@ describe('scraperDomainLabel', () => {
   it('falls back to the raw value for unparseable URLs instead of throwing', () => {
     expect(scraperDomainLabel('example.com', NOT_CONFIGURED)).toBe('example.com')
     expect(scraperDomainLabel('not a url at all', NOT_CONFIGURED)).toBe('not a url at all')
+  })
+
+  it('falls back to the raw value for parseable URLs with an empty hostname', () => {
+    // mailto:/file: URLs construct successfully but have hostname === '' —
+    // an empty label would look like broken rendering.
+    expect(scraperDomainLabel('mailto:x@example.com', NOT_CONFIGURED)).toBe('mailto:x@example.com')
+    expect(scraperDomainLabel('file:///tmp/reviews.html', NOT_CONFIGURED)).toBe('file:///tmp/reviews.html')
   })
 })
 

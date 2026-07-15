@@ -4,8 +4,22 @@ import type {
   ScraperConfig, ScraperTemplate,
 } from './types'
 
+// What /scrapers actually returns: base_url is declared required on
+// ScraperConfig, but runtime payloads have delivered scrapers without it
+// (issue #167). Model that honestly here and normalize on entry so the
+// declared contract is true for every consumer.
+type RawScraperConfig = Omit<ScraperConfig, 'base_url'> & { base_url?: string }
+
 export const scrapersApi = {
-  getScrapers: () => fetchApi<{ scrapers: ScraperConfig[] }>('/scrapers'),
+  getScrapers: async (): Promise<{ scrapers: ScraperConfig[] }> => {
+    const response = await fetchApi<{ scrapers: RawScraperConfig[] }>('/scrapers')
+    return {
+      scrapers: (response.scrapers ?? []).map((scraper) => ({
+        ...scraper,
+        base_url: typeof scraper.base_url === 'string' ? scraper.base_url : '',
+      })),
+    }
+  },
 
   getScraperTemplates: () => fetchApi<{ templates: ScraperTemplate[] }>('/scrapers/templates'),
 
