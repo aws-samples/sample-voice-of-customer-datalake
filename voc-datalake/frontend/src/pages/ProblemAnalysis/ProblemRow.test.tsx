@@ -68,6 +68,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={false}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -81,6 +82,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={false}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -94,6 +96,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={false}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -107,6 +110,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={false}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -120,6 +124,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={false}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -133,6 +138,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={false}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -148,6 +154,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={true}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -162,6 +169,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={true}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -175,6 +183,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={true}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -194,6 +203,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={false}
           onToggle={onToggle}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -212,6 +222,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={false}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -227,6 +238,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={false}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -242,6 +254,7 @@ describe('ProblemRow', () => {
           problemKey="delivery:shipping:slow"
           isExpanded={false}
           onToggle={vi.fn()}
+          onToggleResolved={vi.fn()}
         />
       )
 
@@ -249,5 +262,56 @@ describe('ProblemRow', () => {
       const badges = screen.getAllByText('2')
       expect(badges).toHaveLength(1)
     })
+  })
+})
+
+
+describe('problem resolution (issue #66)', () => {
+  it('fires onToggleResolved from the resolve control without toggling the row', async () => {
+    const onToggle = vi.fn()
+    const onToggleResolved = vi.fn()
+    renderWithRouter(
+      <ProblemRow
+        problemGroup={mockProblemGroup}
+        problemKey="delivery:shipping:slow"
+        isExpanded={false}
+        onToggle={onToggle}
+        onToggleResolved={onToggleResolved}
+      />
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /mark as resolved/i }))
+
+    expect(onToggleResolved).toHaveBeenCalledTimes(1)
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('shows the resolved badge and unresolve control for resolved groups', () => {
+    renderWithRouter(
+      <ProblemRow
+        problemGroup={{ ...mockProblemGroup, resolved: true }}
+        problemKey="delivery:shipping:slow"
+        isExpanded={false}
+        onToggle={vi.fn()}
+        onToggleResolved={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Resolved')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /mark as unresolved/i })).toBeInTheDocument()
+  })
+
+  it('shows no resolved badge for unresolved groups', () => {
+    renderWithRouter(
+      <ProblemRow
+        problemGroup={mockProblemGroup}
+        problemKey="delivery:shipping:slow"
+        isExpanded={false}
+        onToggle={vi.fn()}
+        onToggleResolved={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('Resolved')).not.toBeInTheDocument()
   })
 })

@@ -51,7 +51,9 @@ def load_prompt_file(filename: str) -> dict:
     if not filepath.exists():
         raise FileNotFoundError(f"Prompt file not found: {filepath}")
     
-    with open(filepath, 'r') as f:
+    # Explicit encoding: prompt files carry em dashes / typographic quotes,
+    # and open()'s default encoding is locale-dependent outside Lambda.
+    with open(filepath, 'r', encoding='utf-8') as f:
         content = json.load(f)
     
     logger.debug(f"Loaded prompt file: {filename}")
@@ -205,6 +207,10 @@ def get_prd_generation_steps(
     )
 
 
+# NOTE: parameters of this builder are classified (slot vs non-slot) in
+# TestPrfaqPromptContract (shared/test/test_prompt_utils.py) — adding or
+# renaming a parameter requires updating that classification; its signature
+# drift test fails loudly if you forget.
 def get_prfaq_generation_steps(
     feature_idea: str,
     personas_context: str,
