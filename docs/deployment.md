@@ -330,6 +330,12 @@ is new — enable it with `"enableWebSearch": true` in `cdk.context.json`:
   (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`); CDK cross-region references
   carry the gateway URL/ARN to the app region.
 
+**Data residency note:** search queries are processed by the connector in
+us-east-1 regardless of where the app is deployed. Queries are derived from
+user input — the research question is sent as-is, and in chat the model
+composes queries from the conversation — so deployments with regional
+data-handling requirements should factor this in before enabling the flag.
+
 The frontend discovers availability through the `features.webSearch` flag in
 `config.json` (set by CDK and by `scripts/deploy.sh` from the
 `WebSearchAvailable` stack output). For local development against the mock,
