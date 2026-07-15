@@ -96,7 +96,7 @@ describe('research state machine wiring (issue #157)', () => {
   it('keeps the sibling context selections intact', () => {
     // The same silent-drop failure mode applies to every initialize output
     // the analyze prompt consumes; pin the full set that must flow.
-    for (const key of ['feedback_context', 'feedback_stats', 'personas_context']) {
+    for (const key of ['feedback_context', 'feedback_stats', 'personas_context', 'web_context']) {
       expect(state.definition).toContain(`"${key}.$":"$.Payload.${key}"`);
       expect(state.definition).toContain(`"${key}.$":"$.initialize_result.${key}"`);
     }
