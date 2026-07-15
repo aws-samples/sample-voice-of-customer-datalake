@@ -98,6 +98,7 @@ export const projectsApi = {
     selected_persona_ids?: string[]
     selected_document_ids?: string[]
     response_language?: string
+    use_web_search?: boolean
   }) =>
     fetchApi<{
       success: boolean;

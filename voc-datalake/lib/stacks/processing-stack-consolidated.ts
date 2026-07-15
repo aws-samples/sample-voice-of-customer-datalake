@@ -21,6 +21,11 @@ export interface VocProcessingStackProps extends cdk.StackProps {
   idempotencyTable: dynamodb.Table;
   processingQueue: sqs.Queue;
   kmsKey: kms.Key;
+  // Web search (AgentCore Gateway, deployed in us-east-1 by VocWebSearchStack)
+  // — absent when the feature isn't enabled.
+  webSearchGatewayUrl?: string;
+  webSearchGatewayArn?: string;
+  webSearchToolName?: string;
   config: {
     brandName: string;
     brandHandles: string[];
@@ -260,6 +265,21 @@ export class VocProcessingStack extends cdk.Stack {
     NagSuppressions.addResourceSuppressions(this.researchStateMachine, pluginSystemSuppressions, true);
 
     // ============================================
+    // WEB SEARCH (AgentCore Gateway — see VocWebSearchStack)
+    // ============================================
+    // Opt-in per research request; without the gateway the env vars stay
+    // unset and step_initialize skips web grounding.
+    const { webSearchGatewayUrl, webSearchGatewayArn, webSearchToolName } = props;
+    if (webSearchGatewayUrl && webSearchGatewayArn && webSearchToolName) {
+      researchStepLambda.addEnvironment('WEB_SEARCH_GATEWAY_URL', webSearchGatewayUrl);
+      researchStepLambda.addEnvironment('WEB_SEARCH_TOOL_NAME', webSearchToolName);
+      researchStepLambda.addToRolePolicy(new iam.PolicyStatement({
+        actions: ['bedrock-agentcore:InvokeGateway'],
+        resources: [webSearchGatewayArn],
+      }));
+    }
+
+    // ============================================
     // OUTPUTS
     // ============================================
     new cdk.CfnOutput(this, 'ProcessorFunctionArn', { value: this.processingLambda.functionArn });
@@ -284,6 +304,9 @@ export class VocProcessingStack extends cdk.Stack {
         'feedback_stats.$': '$.Payload.feedback_stats',
         'feedback_count.$': '$.Payload.feedback_count',
         'personas_context.$': '$.Payload.personas_context',
+        // step_initialize ALWAYS returns web_context (empty string when web
+        // search is off) — an absent key here would fail the state outright.
+        'web_context.$': '$.Payload.web_context',
       },
     });
     initializeStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'], interval: cdk.Duration.seconds(2), maxAttempts: 3, backoffRate: 2 });
@@ -299,6 +322,7 @@ export class VocProcessingStack extends cdk.Stack {
         'feedback_context.$': '$.initialize_result.feedback_context',
         'feedback_stats.$': '$.initialize_result.feedback_stats',
         'personas_context.$': '$.initialize_result.personas_context',
+        'web_context.$': '$.initialize_result.web_context',
       }),
       resultPath: '$.analysis_result',
       resultSelector: { 'analysis.$': '$.Payload.analysis' },

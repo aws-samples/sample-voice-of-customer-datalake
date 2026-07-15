@@ -40,5 +40,10 @@
     "sentimentTrend": "先月の感情はどのように変化しましたか？",
     "topComplaints": "今週の顧客の主な苦情は何ですか？",
     "urgentIssues": "最も緊急な問題を表示してください"
+  },
+  "webSearch": {
+    "sourcesTitle": "ウェブ出典",
+    "toggle": "ウェブ検索",
+    "tooltip": "アシスタントが公開ウェブで最新情報を検索できるようにします（出典を引用します）"
   }
 }

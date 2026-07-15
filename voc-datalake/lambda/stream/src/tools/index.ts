@@ -171,3 +171,35 @@ export function getCreateProjectTool(): Tool {
     },
   };
 }
+
+
+export function getWebSearchTool(): Tool {
+  return {
+    toolSpec: {
+      name: 'web_search',
+      description:
+        'Search the public web for current, external information: competitor moves, industry ' +
+        'news, product releases, market context, or anything not present in the customer ' +
+        'feedback dataset. The user explicitly enabled web search for this conversation. ' +
+        'Use search_feedback (not this tool) for anything about the customers\u2019 own feedback. ' +
+        'Keep queries under 200 characters. ALWAYS cite the source URLs from the results ' +
+        'inline in your answer \u2014 uncited web claims are not acceptable.',
+      inputSchema: {
+        json: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Natural-language search query (200 characters max).',
+            },
+            max_results: {
+              type: 'number',
+              description: 'How many results to return (1-10, default 5).',
+            },
+          },
+          required: ['query'],
+        },
+      },
+    },
+  };
+}

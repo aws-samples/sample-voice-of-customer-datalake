@@ -517,3 +517,16 @@ export interface CreateApiTokenResponse {
   name: string
   message?: string
 }
+
+
+/**
+ * A public-web search result returned by the AI chat web_search tool
+ * (Amazon Bedrock AgentCore Web Search). Acceptable use requires surfacing
+ * these citations alongside any answer that draws on them.
+ */
+export interface WebSource {
+  title: string
+  url: string
+  text: string
+  published_date: string
+}

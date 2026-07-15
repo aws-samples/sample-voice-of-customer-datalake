@@ -14,10 +14,15 @@ const mockExecuteSearchFeedback = vi.fn();
 const mockExecuteUpdateDocument = vi.fn();
 const mockExecuteCreateDocument = vi.fn();
 const mockExecuteCreateProject = vi.fn();
+const mockExecuteWebSearch = vi.fn();
 const mockSendSSE = vi.fn();
 
 vi.mock('./search-feedback.js', () => ({
   executeSearchFeedback: (...args: unknown[]) => mockExecuteSearchFeedback(...args),
+}));
+
+vi.mock('./web-search.js', () => ({
+  executeWebSearch: (...args: unknown[]) => mockExecuteWebSearch(...args),
 }));
 
 vi.mock('./update-document.js', () => ({
@@ -374,6 +379,51 @@ describe('executeTool', () => {
       );
 
       expect(result.projectChange).toEqual(projectChange);
+    });
+  });
+
+  describe('web_search', () => {
+    const webSources = [
+      { title: 'A Title', url: 'https://a.example', text: 'Snippet', published_date: '2026-01-01' },
+    ];
+
+    it('routes to executeWebSearch and returns webSources without feedback sources', async () => {
+      mockExecuteWebSearch.mockResolvedValueOnce({ content: 'Found 1 web results...', webSources });
+
+      const result = await executeTool(
+        makeToolBlock({ name: 'web_search', input: { query: 'competitor news' } }),
+        docClient, feedbackTable, {}, stream,
+      );
+
+      expect(mockExecuteWebSearch).toHaveBeenCalledWith({ query: 'competitor news' });
+      expect(result.webSources).toEqual(webSources);
+      // Web results must NOT masquerade as feedback sources (the frontend
+      // renders sources as feedback cards, web sources as cited links).
+      expect(result.sources).toEqual([]);
+      expect(result.content).toBe('Found 1 web results...');
+    });
+
+    it('emits a web-result count in the tool_result SSE event', async () => {
+      mockExecuteWebSearch.mockResolvedValueOnce({ content: 'ok', webSources });
+
+      await executeTool(
+        makeToolBlock({ name: 'web_search', input: { query: 'q' } }),
+        docClient, feedbackTable, {}, stream,
+      );
+
+      const toolResultEvents = mockSendSSE.mock.calls
+        .map((call) => call[1] as { type: string; content?: string })
+        .filter((event) => event.type === 'tool_result');
+      expect(toolResultEvents[0].content).toBe('Found 1 web results');
+    });
+
+    it('propagates web search failures', async () => {
+      mockExecuteWebSearch.mockRejectedValueOnce(new Error('gateway down'));
+
+      await expect(executeTool(
+        makeToolBlock({ name: 'web_search', input: { query: 'q' } }),
+        docClient, feedbackTable, {}, stream,
+      )).rejects.toThrow('gateway down');
     });
   });
 });

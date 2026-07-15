@@ -22,6 +22,12 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
+// Web search availability is a runtime-config capability flag
+const mockIsWebSearchAvailable = vi.fn()
+vi.mock('../../runtimeConfig', () => ({
+  isWebSearchAvailable: () => mockIsWebSearchAvailable(),
+}))
+
 describe('ChatFilters', () => {
   const mockOnChange = vi.fn()
   const defaultFilters: ChatFiltersType = {}
@@ -31,6 +37,7 @@ describe('ChatFilters', () => {
     ;(useConfigStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       config: { apiEndpoint: 'https://api.example.com' },
     })
+    mockIsWebSearchAvailable.mockReturnValue(false)
   })
 
   describe('basic rendering', () => {
@@ -348,6 +355,62 @@ describe('ChatFilters', () => {
       render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
       
       expect(screen.getByText(/max 30 reviews/i)).toBeInTheDocument()
+    })
+  })
+
+  describe('web search toggle', () => {
+    it('is hidden when the deployment has no web search gateway', () => {
+      mockIsWebSearchAvailable.mockReturnValue(false)
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+
+      expect(screen.queryByRole('button', { name: /web search/i })).not.toBeInTheDocument()
+    })
+
+    it('renders unpressed by default when available', () => {
+      mockIsWebSearchAvailable.mockReturnValue(true)
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+
+      const toggle = screen.getByRole('button', { name: /web search/i })
+      expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('enables web search on click', async () => {
+      mockIsWebSearchAvailable.mockReturnValue(true)
+      const user = userEvent.setup()
+      render(<ChatFilters filters={defaultFilters} onChange={mockOnChange} />)
+
+      await user.click(screen.getByRole('button', { name: /web search/i }))
+
+      expect(mockOnChange).toHaveBeenCalledWith({ useWebSearch: true })
+    })
+
+    it('disables web search on click when active, dropping the key', async () => {
+      mockIsWebSearchAvailable.mockReturnValue(true)
+      const user = userEvent.setup()
+      render(<ChatFilters filters={{ useWebSearch: true }} onChange={mockOnChange} />)
+
+      const toggle = screen.getByRole('button', { name: /web search/i })
+      expect(toggle).toHaveAttribute('aria-pressed', 'true')
+      await user.click(toggle)
+
+      expect(mockOnChange).toHaveBeenCalledWith({ useWebSearch: undefined })
+    })
+
+    it('does not count toward active filters (no clear button for it alone)', () => {
+      mockIsWebSearchAvailable.mockReturnValue(true)
+      render(<ChatFilters filters={{ useWebSearch: true }} onChange={mockOnChange} />)
+
+      expect(screen.queryByText(/clear/i)).not.toBeInTheDocument()
+    })
+
+    it('survives clearing the data filters', async () => {
+      mockIsWebSearchAvailable.mockReturnValue(true)
+      const user = userEvent.setup()
+      render(<ChatFilters filters={{ source: 'webscraper', useWebSearch: true }} onChange={mockOnChange} />)
+
+      await user.click(screen.getByText(/clear/i))
+
+      expect(mockOnChange).toHaveBeenCalledWith({ useWebSearch: true })
     })
   })
 })

@@ -423,6 +423,8 @@
     "researchSuggestTitle": "Let AI suggest research questions from this project's feedback",
     "researchTitle": "Research Title",
     "researchTitlePlaceholder": "e.g., Delivery Pain Points Analysis",
+    "researchWebSearch": "Include public web search",
+    "researchWebSearchHint": "Ground the analysis with current public-web results for your research question (served within AWS, sources cited).",
     "runResearch": "Run Research",
     "selectAtLeast2": "⚠️ Select at least 2 documents to remix.",
     "submitGenerateDoc": "Generate {{type}}",

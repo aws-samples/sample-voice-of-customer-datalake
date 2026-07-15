@@ -17,6 +17,7 @@ const {
   mockSendErrorAndClose,
   mockStreamifyResponse,
   mockWrapStreamWithHeaders,
+  mockIsWebSearchConfigured,
 } = vi.hoisted(() => ({
   mockBuildVocChatContext: vi.fn(),
   mockBuildProjectChatContext: vi.fn(),
@@ -26,6 +27,7 @@ const {
   mockSendErrorAndClose: vi.fn(),
   mockStreamifyResponse: vi.fn(),
   mockWrapStreamWithHeaders: vi.fn(),
+  mockIsWebSearchConfigured: vi.fn(),
 }));
 
 vi.mock('./context/voc-context.js', () => ({
@@ -55,6 +57,11 @@ vi.mock('./tools/index.js', () => ({
   getUpdateDocumentTool: vi.fn().mockReturnValue({ toolSpec: { name: 'update_document' } }),
   getCreateDocumentTool: vi.fn().mockReturnValue({ toolSpec: { name: 'create_document' } }),
   getCreateProjectTool: vi.fn().mockReturnValue({ toolSpec: { name: 'create_project' } }),
+  getWebSearchTool: vi.fn().mockReturnValue({ toolSpec: { name: 'web_search' } }),
+}));
+
+vi.mock('./tools/web-search.js', () => ({
+  isWebSearchConfigured: mockIsWebSearchConfigured,
 }));
 
 vi.mock('./tools/executor.js', () => ({
@@ -119,6 +126,48 @@ describe('handler', () => {
       selectedDocumentIds: [],
       documents: [],
     });
+
+    // Default: web search gateway not deployed (mirrors the env default).
+    mockIsWebSearchConfigured.mockReturnValue(false);
+  });
+
+  // ── Web search tool registration ──
+
+  function toolNamesPassedToConverse(): string[] {
+    const call = mockConverseStream.mock.calls[0]?.[0] as { tools?: Array<{ toolSpec?: { name?: string } }> } | undefined;
+    return (call?.tools ?? []).map((tool) => tool.toolSpec?.name ?? '');
+  }
+
+  it('registers web_search in VoC chat when opted in and configured', async () => {
+    mockIsWebSearchConfigured.mockReturnValue(true);
+
+    await (handler as Function)(makeEvent({ message: 'hello', use_web_search: true }), mockStream());
+
+    expect(toolNamesPassedToConverse()).toContain('web_search');
+  });
+
+  it('omits web_search without the opt-in flag even when configured', async () => {
+    mockIsWebSearchConfigured.mockReturnValue(true);
+
+    await (handler as Function)(makeEvent({ message: 'hello' }), mockStream());
+
+    expect(toolNamesPassedToConverse()).not.toContain('web_search');
+  });
+
+  it('omits web_search when opted in but the gateway is not deployed', async () => {
+    mockIsWebSearchConfigured.mockReturnValue(false);
+
+    await (handler as Function)(makeEvent({ message: 'hello', use_web_search: true }), mockStream());
+
+    expect(toolNamesPassedToConverse()).not.toContain('web_search');
+  });
+
+  it('registers web_search in project chat when opted in and configured', async () => {
+    mockIsWebSearchConfigured.mockReturnValue(true);
+
+    await (handler as Function)(makeEvent({ message: 'hello', project_id: 'proj-1', use_web_search: true }), mockStream());
+
+    expect(toolNamesPassedToConverse()).toContain('web_search');
   });
 
   it('routes to VoC chat when no project_id', async () => {

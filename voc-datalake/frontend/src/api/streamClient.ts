@@ -144,6 +144,7 @@ interface VocChatOptions {
   context?: string
   days?: number
   responseLanguage?: string
+  useWebSearch?: boolean
   history?: Array<{
     role: string;
     content: string
@@ -161,6 +162,7 @@ export function streamVocChat(options: VocChatOptions): AsyncGenerator<StreamEve
     ...getDateBasisBodyParams(),
     response_language: options.responseLanguage,
     history: options.history,
+    ...(options.useWebSearch === true ? { use_web_search: true } : {}),
   }, options.signal)
 }
 

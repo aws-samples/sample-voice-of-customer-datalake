@@ -40,5 +40,10 @@
     "sentimentTrend": "Wie hat sich die Stimmung im letzten Monat verändert?",
     "topComplaints": "Was sind die häufigsten Kundenbeschwerden diese Woche?",
     "urgentIssues": "Zeige mir die dringendsten Probleme"
+  },
+  "webSearch": {
+    "sourcesTitle": "Webquellen",
+    "toggle": "Websuche",
+    "tooltip": "Der Assistent darf im öffentlichen Web nach aktuellen Informationen suchen (Quellen werden zitiert)"
   }
 }

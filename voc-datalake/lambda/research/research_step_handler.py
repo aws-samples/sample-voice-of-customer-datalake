@@ -23,6 +23,12 @@ from shared.feedback import (
 )
 from shared.tables import get_projects_table, get_feedback_table
 from shared.jobs import update_job_status
+from shared.web_search import (
+    WebSearchError,
+    format_web_results_for_llm,
+    is_web_search_configured,
+    search_web,
+)
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -134,6 +140,27 @@ def step_initialize(event: dict) -> dict:
                 content = d.get('content', '')[:5000]  # Truncate long docs
                 documents_context += f"### {d.get('title', 'Untitled')} ({d.get('document_type', 'doc').upper()})\n\n{content}\n\n---\n\n"
     
+    # Optional: web search grounding (AgentCore Web Search Tool). Always an
+    # enrichment — a search failure must never fail the research job, and the
+    # 'web_context' key must ALWAYS be present in the return value because the
+    # Step Functions resultSelector references it unconditionally.
+    # Strict boolean: the state machine can be started by other producers or
+    # execution replays, where a string "false" must not enable a billed
+    # feature (parity with projects_handler's normalization).
+    web_context = ''
+    if config.get('use_web_search') is True:
+        if is_web_search_configured():
+            update_job_status(project_id, job_id, 'running', 19, 'searching_web')
+            question = config.get('question', '')
+            try:
+                web_results = search_web(question)
+                web_context = format_web_results_for_llm(web_results)
+                logger.info(f"Web search grounding: {len(web_results)} results")
+            except WebSearchError as e:
+                logger.warning(f"Web search failed, continuing without web context: {e}")
+        else:
+            logger.warning("use_web_search requested but web search is not configured; skipping")
+
     update_job_status(project_id, job_id, 'running', 20, 'data_ready')
     
     return {
@@ -141,7 +168,8 @@ def step_initialize(event: dict) -> dict:
         'feedback_stats': feedback_stats,
         'feedback_count': len(feedback_items),
         'personas_context': personas_context,
-        'documents_context': documents_context
+        'documents_context': documents_context,
+        'web_context': web_context
     }
 @tracer.capture_method
 def step_analyze(event: dict) -> dict:
@@ -153,6 +181,7 @@ def step_analyze(event: dict) -> dict:
     feedback_stats = event['feedback_stats']
     personas_context = event.get('personas_context', '')
     documents_context = event.get('documents_context', '')
+    web_context = event.get('web_context', '')
     
     research_question = config.get('question', 'What are the main customer pain points?')
     
@@ -177,6 +206,17 @@ Be thorough, data-driven, and cite specific examples."""
         additional_context += f"\n{personas_context}\n"
     if documents_context:
         additional_context += f"\n{documents_context}\n"
+    if web_context:
+        additional_context += f"""
+## PUBLIC WEB SEARCH RESULTS
+
+The following results come from a public web search, NOT from customer
+feedback. Use them only to add market/industry context. When you draw on a
+web result, cite its source URL inline and clearly attribute the finding to
+"public web sources" rather than to customers.
+
+{web_context}
+"""
     
     user_prompt = f"""Conduct a thorough analysis to answer this research question based on the ACTUAL CUSTOMER FEEDBACK DATA provided below.
 
@@ -311,12 +351,15 @@ def step_save(event: dict) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     research_id = f"research_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     
+    # Strict boolean for parity with step_initialize's gating: a foreign
+    # "false" string skips the search, so it must not stamp the disclosure.
+    web_search_note = ' | Web search: enabled' if config.get('use_web_search') is True else ''
     # Build comprehensive report
     full_report = f"""# Research Report: {research_question}
 
 **Generated:** {now[:10]}
 **Feedback Analyzed:** {feedback_count} items
-**Filters:** Sources: {', '.join(filters.get('sources', [])) or 'All'} | Categories: {', '.join(filters.get('categories', [])) or 'All'} | Sentiments: {', '.join(filters.get('sentiments', [])) or 'All'} | Days: {filters.get('days', 30)}
+**Filters:** Sources: {', '.join(filters.get('sources', [])) or 'All'} | Categories: {', '.join(filters.get('categories', [])) or 'All'} | Sentiments: {', '.join(filters.get('sentiments', [])) or 'All'} | Days: {filters.get('days', 30)}{web_search_note}
 
 ---
 
