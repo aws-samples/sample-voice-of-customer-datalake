@@ -53,6 +53,12 @@
     "downloadTXT": "Download as TXT",
     "kiroPromptTip": "Tip: Configure Kiro prompt in project settings"
   },
+  "errorBoundary": {
+    "description": "This page hit an unexpected error. You can reload it or go back home — the rest of the app is unaffected.",
+    "goHome": "Go to home",
+    "reload": "Reload page",
+    "title": "Something went wrong"
+  },
   "feedbackCard": {
     "copyText": "Copy text",
     "details": "Details",
