@@ -156,6 +156,10 @@ function getEnvConfig(): RuntimeConfig {
         region: 'us-east-1',
         identityPoolId: '',
       },
+      // Keep the feature flags: mock-only dev (no Cognito vars) is exactly
+      // when this branch runs, and it's also exactly when the
+      // VITE_ENABLE_WEB_SEARCH escape hatch is needed.
+      features: envConfig.features,
     }
   }
 

@@ -309,6 +309,85 @@ const handlers = {
   }),
 };
 
+// Project detail fixtures for /projects/:id — shape mirrors ProjectDetail
+// ({ project, personas, documents }) so the Project Detail page works
+// against the mock in local dev.
+const mockProjectDetails = {
+  proj_1: {
+    project: { project_id: 'proj_1', name: 'Q1 Product Improvements', description: 'Customer-driven improvements', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 2, document_count: 2 },
+    personas: [
+      {
+        persona_id: 'persona_1',
+        name: 'Deadline-Driven Dana',
+        tagline: 'Orders late, expects miracles',
+        created_at: new Date().toISOString(),
+        confidence: 'high',
+        feedback_count: 14,
+        goals: ['Get orders delivered before the promised date', 'Track packages without contacting support'],
+        frustrations: ['Late deliveries with no proactive updates', 'Support wait times'],
+        quote: 'If the app just told me the truth about delivery dates, I would stop refreshing it every hour.',
+      },
+      {
+        persona_id: 'persona_2',
+        name: 'Value-Hunter Victor',
+        tagline: 'Compares every price twice',
+        created_at: new Date().toISOString(),
+        confidence: 'medium',
+        feedback_count: 9,
+        goals: ['Find the best price without coupons breaking at checkout'],
+        frustrations: ['Prices changing between cart and checkout'],
+        quote: 'I do not mind paying, I mind being surprised.',
+      },
+    ],
+    documents: [
+      {
+        document_id: 'research_1',
+        document_type: 'research',
+        title: 'Delivery Pain Points Analysis',
+        question: 'What are the main delivery-related pain points?',
+        content: '# Research Report: Delivery Pain Points\n\n## Executive Summary\nCustomers consistently report late deliveries and poor tracking visibility as their top frustrations.\n\n## Key Findings\n1. **Late deliveries** dominate negative feedback (62% of delivery mentions).\n2. **Tracking opacity** amplifies frustration more than lateness itself.\n\n## Recommendations\n- Proactive delay notifications\n- Honest delivery estimates at checkout',
+        feedback_count: 23,
+        created_at: new Date().toISOString(),
+      },
+      {
+        document_id: 'prfaq_1',
+        document_type: 'prfaq',
+        title: 'Proactive Delivery Updates',
+        feature_idea: 'Proactive delivery delay notifications',
+        content: '# PR/FAQ: Proactive Delivery Updates\n\n## Press Release\nToday we announced proactive delivery updates: customers are notified the moment a delay is detected, with an honest new estimate.\n\n## Customer FAQ\n**Q: Will I be spammed with notifications?**\nA: No — you are only notified when the estimate actually changes.\n\n## Internal FAQ\n**Q: What is the hardest technical dependency?**\nA: Carrier webhook latency and estimate recalculation.',
+        created_at: new Date().toISOString(),
+      },
+    ],
+  },
+  proj_2: {
+    project: { project_id: 'proj_2', name: 'Mobile App Redesign', description: 'UX improvements based on feedback', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 1, document_count: 1 },
+    personas: [
+      {
+        persona_id: 'persona_3',
+        name: 'On-the-Go Grace',
+        tagline: 'Thumb-first, patience-last',
+        created_at: new Date().toISOString(),
+        confidence: 'medium',
+        feedback_count: 7,
+        goals: ['Reorder in under 30 seconds'],
+        frustrations: ['App logs her out weekly', 'Checkout buttons below the fold'],
+        quote: 'Every extra tap is a reason to use the website of your competitor.',
+      },
+    ],
+    documents: [
+      {
+        document_id: 'research_2',
+        document_type: 'research',
+        title: 'Mobile Checkout Friction',
+        question: 'Where do mobile users abandon checkout?',
+        content: '# Research Report: Mobile Checkout Friction\n\n## Executive Summary\nSession-loss on login and below-the-fold CTAs drive most abandonment mentions.',
+        feedback_count: 11,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  },
+};
+
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -350,6 +429,28 @@ const server = http.createServer((req, res) => {
       items_scraped: Math.floor(Math.random() * 50) + 10,
       errors: 0
     }));
+    return;
+  }
+
+  // Handle project detail by ID ('prioritization' is an exact-key route,
+  // not a project id — let it fall through to the routes table).
+  if (req.method === 'GET' && url.pathname.match(/^\/projects\/[^/]+$/) && url.pathname !== '/projects/prioritization') {
+    const id = url.pathname.split('/')[2];
+    const detail = mockProjectDetails[id];
+    if (detail) {
+      res.writeHead(200);
+      res.end(JSON.stringify(detail));
+    } else {
+      res.writeHead(404);
+      res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+    return;
+  }
+
+  // Project jobs polling (research/persona generation) — none running locally.
+  if (req.method === 'GET' && url.pathname.match(/^\/projects\/[^/]+\/jobs$/)) {
+    res.writeHead(200);
+    res.end(JSON.stringify({ jobs: [] }));
     return;
   }
 
