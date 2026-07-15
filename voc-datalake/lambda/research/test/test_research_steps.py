@@ -517,3 +517,14 @@ class TestStepSaveWebSearchNote:
 
         saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
         assert 'Web search' not in saved['content']
+
+    def test_report_silent_for_string_false(self, mock_tables, mock_job_status):
+        """Disclosure parity with the strict gating in step_initialize: a
+        foreign \"false\" string skips the search, so the report must not
+        claim web search was used."""
+        from research_step_handler import step_save
+
+        step_save(self._event(use_web_search='false'))
+
+        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        assert 'Web search' not in saved['content']

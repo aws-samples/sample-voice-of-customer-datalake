@@ -351,7 +351,9 @@ def step_save(event: dict) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     research_id = f"research_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     
-    web_search_note = ' | Web search: enabled' if config.get('use_web_search') else ''
+    # Strict boolean for parity with step_initialize's gating: a foreign
+    # "false" string skips the search, so it must not stamp the disclosure.
+    web_search_note = ' | Web search: enabled' if config.get('use_web_search') is True else ''
     # Build comprehensive report
     full_report = f"""# Research Report: {research_question}
 
