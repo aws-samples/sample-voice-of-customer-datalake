@@ -36,8 +36,9 @@ function toOptionalFiniteNumber(value: unknown): number | undefined {
 
 // Per-field catches deep-merge a PARTIAL theme (set colors survive, missing
 // ones default); the object-level catch covers theme: null/absent wholesale.
+// Loose: unknown theme keys survive edit round-trips (see form schema note).
 const themeSchema = z
-  .object({
+  .looseObject({
     primary_color: z.string().catch(defaultFormConfig.theme.primary_color),
     background_color: z.string().catch(defaultFormConfig.theme.background_color),
     text_color: z.string().catch(defaultFormConfig.theme.text_color),
@@ -45,7 +46,7 @@ const themeSchema = z
   })
   .catch(() => ({ ...defaultFormConfig.theme }))
 
-const customFieldSchema = z.object({
+const customFieldSchema = z.looseObject({
   id: z.string().catch(''),
   label: z.string().catch(''),
   type: z.string().catch('text'),
@@ -69,6 +70,10 @@ const customFieldsSchema = z
 /**
  * Schema for a stored feedback form.
  *
+ * - Loose object: unknown backend fields pass through untouched, so a
+ *   record read from the list and saved back by the edit modal
+ *   round-trips without silent data loss (same rationale as
+ *   api/scrapersSchema.ts).
  * - form_id is the one field that CANNOT be invented: it feeds React list
  *   keys and the ['form-stats', form_id] query key, so defaulting it to ''
  *   would make two identity-less records collide on both. Records without
@@ -77,9 +82,8 @@ const customFieldsSchema = z
  *   wrong type; rating_max additionally coerces numeric strings.
  * - Zod returns fresh objects/arrays, so no two normalized forms share
  *   default (or input) references.
- * - Unknown keys (DynamoDB internal attributes) are stripped.
  */
-export const FeedbackFormSchema = z.object({
+export const FeedbackFormSchema = z.looseObject({
   form_id: z.string().min(1),
   name: z.string().catch(''),
   enabled: z.boolean().catch(false),

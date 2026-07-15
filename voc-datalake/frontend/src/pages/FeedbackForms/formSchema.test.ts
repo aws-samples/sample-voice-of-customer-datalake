@@ -79,6 +79,18 @@ describe('normalizeFeedbackForm (issue #171)', () => {
     expect(form.custom_fields).toEqual([{ id: 'f1', label: 'Order ID', type: 'text', required: true }])
   })
 
+  it('passes unknown backend fields through so edit round-trips lose nothing', () => {
+    const form = normalizeFeedbackForm({
+      ...sparseForm,
+      brand_name: 'Acme',
+      future_field: { nested: true },
+    })
+
+    // A record read from the list and saved back by the edit modal must
+    // not silently shed fields this schema doesn't enumerate.
+    expect(form).toMatchObject({ brand_name: 'Acme', future_field: { nested: true } })
+  })
+
   it('keeps a complete record unchanged', () => {
     const complete: FeedbackForm = {
       ...defaultFormConfig,
