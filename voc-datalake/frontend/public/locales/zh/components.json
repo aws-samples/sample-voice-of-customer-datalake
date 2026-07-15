@@ -53,6 +53,12 @@
     "downloadTXT": "下载为 TXT",
     "kiroPromptTip": "提示：在项目设置中配置 Kiro 提示词"
   },
+  "errorBoundary": {
+    "description": "此页面遇到意外错误。您可以重新加载或返回首页，应用的其他部分不受影响。",
+    "goHome": "返回首页",
+    "reload": "重新加载页面",
+    "title": "出现问题"
+  },
   "feedbackCard": {
     "copyText": "复制文本",
     "details": "详情",

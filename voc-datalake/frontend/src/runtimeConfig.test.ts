@@ -152,4 +152,18 @@ describe('isWebSearchAvailable', () => {
 
     expect(isWebSearchAvailable()).toBe(true)
   })
+
+  it('keeps the flag on the mock-only path (no Cognito vars at all)', async () => {
+    // Regression: the invalid-env fallback (the branch that ALWAYS runs in
+    // mock-only dev) rebuilt the config without the features block, so the
+    // escape hatch never worked in the very environment it exists for.
+    vi.stubEnv('VITE_ENABLE_WEB_SEARCH', 'true')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+
+    const { loadRuntimeConfig, isWebSearchAvailable } = await import('./runtimeConfig')
+    const config = await loadRuntimeConfig()
+
+    expect(config.apiEndpoint).toBe('http://localhost:3001')
+    expect(isWebSearchAvailable()).toBe(true)
+  })
 })

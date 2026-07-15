@@ -153,18 +153,74 @@ const mockCategoriesConfig = {
   ]
 };
 
-// Mock feedback forms
+// Mock feedback forms — real wire shape (form_id, full FeedbackFormFields).
+// form_3 is deliberately sparse (no theme/title/etc.), mirroring records
+// persisted before those fields existed, so local dev exercises the
+// normalizeFeedbackForm() boundary from issue #171.
+const mockFormTheme = (primary) => ({ primary_color: primary, background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' });
 const mockFeedbackForms = [
-  { id: 'form_1', name: 'Website Feedback', enabled: true, submissions: 234, created_at: new Date().toISOString() },
-  { id: 'form_2', name: 'Post-Purchase Survey', enabled: true, submissions: 567, created_at: new Date().toISOString() },
-  { id: 'form_3', name: 'Support Feedback', enabled: false, submissions: 89, created_at: new Date().toISOString() },
+  {
+    form_id: 'form_1', name: 'Website Feedback', enabled: true,
+    title: 'Share Your Website Feedback', description: 'Tell us about your experience on our site.',
+    question: 'How was your experience?', placeholder: 'Tell us about your experience...',
+    rating_enabled: true, rating_type: 'stars', rating_max: 5,
+    submit_button_text: 'Submit Feedback', success_message: 'Thank you for your feedback!',
+    theme: mockFormTheme('#3B82F6'), collect_email: false, collect_name: false, custom_fields: [],
+    category: 'website', subcategory: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  },
+  {
+    form_id: 'form_2', name: 'Post-Purchase Survey', enabled: true,
+    title: 'How was your purchase?', description: 'Rate your recent purchase experience.',
+    question: 'What could we do better?', placeholder: 'Share any additional feedback...',
+    rating_enabled: true, rating_type: 'emoji', rating_max: 5,
+    submit_button_text: 'Submit', success_message: 'Thanks for rating your experience!',
+    theme: mockFormTheme('#22C55E'), collect_email: true, collect_name: false, custom_fields: [],
+    category: 'delivery', subcategory: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  },
+  // Sparse legacy record: only identity fields on the wire.
+  { form_id: 'form_3', name: 'Support Feedback', enabled: false, created_at: new Date().toISOString() },
+  // Partial theme: exercises the deep-merge branch (set color survives,
+  // missing theme keys default) rather than the fully-missing-theme branch.
+  {
+    form_id: 'form_4', name: 'Checkout Survey', enabled: true,
+    title: 'How was checkout?', theme: { primary_color: '#F97316' },
+    created_at: new Date().toISOString(),
+  },
 ];
+const mockFormStats = {
+  form_1: { total_submissions: 234, avg_rating: 4.2, rating_count: 180 },
+  form_2: { total_submissions: 567, avg_rating: 3.8, rating_count: 512 },
+  form_3: { total_submissions: 89, avg_rating: null, rating_count: 0 },
+  form_4: { total_submissions: 41, avg_rating: 4.6, rating_count: 38 },
+};
 
-// Mock scrapers
+// Mock scrapers — real ScraperConfig shape (issue #169). scraper_2 is
+// deliberately sparse (identity fields only), mirroring records persisted
+// before newer fields existed, so local dev exercises the normalizeScrapers()
+// boundary: base_url '' renders Not configured, frequency 0 renders
+// 'Manual only' (never 'undefinedm').
 const mockScrapers = [
-  { id: 'scraper_1', name: 'Product Reviews', url: 'https://example.com/reviews', enabled: true, schedule: 'rate(30 minutes)', last_run: new Date().toISOString(), status: 'success' },
-  { id: 'scraper_2', name: 'Forum Posts', url: 'https://forum.example.com', enabled: false, schedule: 'rate(1 hour)', last_run: null, status: 'disabled' },
+  {
+    id: 'scraper_1', name: 'Product Reviews', enabled: true,
+    base_url: 'https://example.com/reviews', urls: ['https://example.com/reviews?sort=recent'],
+    frequency_minutes: 30, extraction_method: 'css',
+    container_selector: '.review', text_selector: '.review-text',
+    rating_selector: '.review-stars@data-rating', author_selector: '.review-author',
+    date_selector: '.review-date',
+    pagination: { enabled: true, param: 'page', max_pages: 3, start: 1 },
+    last_run: new Date().toISOString(), items_found: 42,
+  },
+  // Sparse legacy record: identity fields only.
+  { id: 'scraper_2', name: 'Forum Posts', enabled: false },
 ];
+const mockScraperRuns = {
+  scraper_1: {
+    scraper_id: 'scraper_1', status: 'completed',
+    started_at: new Date(Date.now() - 3600000).toISOString(),
+    completed_at: new Date(Date.now() - 3590000).toISOString(),
+    pages_scraped: 3, items_found: 42, errors: [],
+  },
+};
 
 // Mock S3 data explorer
 const mockBuckets = [
@@ -341,10 +397,9 @@ const handlers = {
     sources: mockFeedback.slice(0, 2),
   }),
   'GET /projects': () => ({
-    projects: [
-      { project_id: 'proj_1', name: 'Q1 Product Improvements', description: 'Customer-driven improvements', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 3, document_count: 2 },
-      { project_id: 'proj_2', name: 'Mobile App Redesign', description: 'UX improvements based on feedback', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 2, document_count: 1 },
-    ]
+    // Derived from the detail fixtures — one source of truth, so list and
+    // detail can't drift when someone edits a project.
+    projects: Object.values(mockProjectDetails).map((detail) => detail.project),
   }),
   'GET /projects/prioritization': () => ({
     scores: {}
@@ -352,6 +407,86 @@ const handlers = {
   'PUT /projects/prioritization': () => ({
     success: true
   }),
+};
+
+// Project detail fixtures for /projects/:id — shape mirrors ProjectDetail
+// ({ project, personas, documents }) so the Project Detail page works
+// against the mock in local dev. Timestamps are frozen at server start on
+// purpose: stable fixtures beat fake freshness for a mock.
+const mockProjectDetails = {
+  proj_1: {
+    project: { project_id: 'proj_1', name: 'Q1 Product Improvements', description: 'Customer-driven improvements', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 2, document_count: 2 },
+    personas: [
+      {
+        persona_id: 'persona_1',
+        name: 'Deadline-Driven Dana',
+        tagline: 'Orders late, expects miracles',
+        created_at: new Date().toISOString(),
+        confidence: 'high',
+        feedback_count: 14,
+        goals: ['Get orders delivered before the promised date', 'Track packages without contacting support'],
+        frustrations: ['Late deliveries with no proactive updates', 'Support wait times'],
+        quote: 'If the app just told me the truth about delivery dates, I would stop refreshing it every hour.',
+      },
+      {
+        persona_id: 'persona_2',
+        name: 'Value-Hunter Victor',
+        tagline: 'Compares every price twice',
+        created_at: new Date().toISOString(),
+        confidence: 'medium',
+        feedback_count: 9,
+        goals: ['Find the best price without coupons breaking at checkout'],
+        frustrations: ['Prices changing between cart and checkout'],
+        quote: 'I do not mind paying, I mind being surprised.',
+      },
+    ],
+    documents: [
+      {
+        document_id: 'research_1',
+        document_type: 'research',
+        title: 'Delivery Pain Points Analysis',
+        question: 'What are the main delivery-related pain points?',
+        content: '# Research Report: Delivery Pain Points\n\n## Executive Summary\nCustomers consistently report late deliveries and poor tracking visibility as their top frustrations.\n\n## Key Findings\n1. **Late deliveries** dominate negative feedback (62% of delivery mentions).\n2. **Tracking opacity** amplifies frustration more than lateness itself.\n\n## Recommendations\n- Proactive delay notifications\n- Honest delivery estimates at checkout',
+        feedback_count: 23,
+        created_at: new Date().toISOString(),
+      },
+      {
+        document_id: 'prfaq_1',
+        document_type: 'prfaq',
+        title: 'Proactive Delivery Updates',
+        feature_idea: 'Proactive delivery delay notifications',
+        content: '# PR/FAQ: Proactive Delivery Updates\n\n## Press Release\nToday we announced proactive delivery updates: customers are notified the moment a delay is detected, with an honest new estimate.\n\n## Customer FAQ\n**Q: Will I be spammed with notifications?**\nA: No — you are only notified when the estimate actually changes.\n\n## Internal FAQ\n**Q: What is the hardest technical dependency?**\nA: Carrier webhook latency and estimate recalculation.',
+        created_at: new Date().toISOString(),
+      },
+    ],
+  },
+  proj_2: {
+    project: { project_id: 'proj_2', name: 'Mobile App Redesign', description: 'UX improvements based on feedback', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 1, document_count: 1 },
+    personas: [
+      {
+        persona_id: 'persona_3',
+        name: 'On-the-Go Grace',
+        tagline: 'Thumb-first, patience-last',
+        created_at: new Date().toISOString(),
+        confidence: 'medium',
+        feedback_count: 7,
+        goals: ['Reorder in under 30 seconds'],
+        frustrations: ['App logs her out weekly', 'Checkout buttons below the fold'],
+        quote: 'Every extra tap is a reason to use the website of your competitor.',
+      },
+    ],
+    documents: [
+      {
+        document_id: 'research_2',
+        document_type: 'research',
+        title: 'Mobile Checkout Friction',
+        question: 'Where do mobile users abandon checkout?',
+        content: '# Research Report: Mobile Checkout Friction\n\n## Executive Summary\nSession-loss on login and below-the-fold CTAs drive most abandonment mentions.',
+        feedback_count: 11,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  },
 };
 
 const server = http.createServer((req, res) => {
@@ -383,18 +518,62 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Handle scraper status by ID
+  // Handle scraper status by ID — real RunStatus shape (issue #169):
+  // pages_scraped/items_found/errors, 'never_run' for scrapers without runs.
   if (req.method === 'GET' && url.pathname.match(/^\/scrapers\/[^/]+\/status$/)) {
     const id = url.pathname.split('/')[2];
-    const scraper = mockScrapers.find(s => s.id === id);
+    const run = mockScraperRuns[id];
     res.writeHead(200);
-    res.end(JSON.stringify({
-      id,
-      status: scraper ? scraper.status : 'unknown',
-      last_run: scraper ? scraper.last_run : null,
-      items_scraped: Math.floor(Math.random() * 50) + 10,
-      errors: 0
+    res.end(JSON.stringify(run ?? {
+      scraper_id: id, status: 'never_run', pages_scraped: 0, items_found: 0, errors: [],
     }));
+    return;
+  }
+
+  // Handle project detail by ID. Exact-key routes win: anything present in
+  // the handlers table (e.g. 'GET /projects/prioritization', or any future
+  // /projects/... exact route) must never be shadowed by the id pattern.
+  const projectDetailMatch = url.pathname.match(/^\/projects\/([^/]+)$/);
+  if (req.method === 'GET' && projectDetailMatch && !(key in handlers)) {
+    const detail = mockProjectDetails[projectDetailMatch[1]];
+    if (detail) {
+      res.writeHead(200);
+      res.end(JSON.stringify(detail));
+    } else {
+      res.writeHead(404);
+      res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+    return;
+  }
+
+  // Project jobs polling (research/persona generation) — none running
+  // locally. Same exact-key precedence rule as above, and unknown project
+  // ids 404 like the real API instead of masking bad-id bugs with an
+  // empty list.
+  const projectJobsMatch = url.pathname.match(/^\/projects\/([^/]+)\/jobs$/);
+  if (req.method === 'GET' && projectJobsMatch && !(key in handlers)) {
+    if (mockProjectDetails[projectJobsMatch[1]]) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ jobs: [] }));
+    } else {
+      res.writeHead(404);
+      res.end(JSON.stringify({ error: 'Project not found' }));
+    }
+    return;
+  }
+
+  // Handle feedback form stats by ID
+  if (req.method === 'GET' && url.pathname.match(/^\/feedback-forms\/[^/]+\/stats$/)) {
+    const formId = url.pathname.split('/')[2];
+    const stats = mockFormStats[formId];
+    if (stats) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, form_id: formId, stats }));
+    } else {
+      // Honest 404 for unknown forms so dev doesn't mask client bugs.
+      res.writeHead(404);
+      res.end(JSON.stringify({ success: false, message: 'Form not found' }));
+    }
     return;
   }
 

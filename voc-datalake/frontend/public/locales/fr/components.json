@@ -57,6 +57,12 @@
     "downloadTXT": "Télécharger en TXT",
     "kiroPromptTip": "Conseil : Configurez l'invite Kiro dans les paramètres du projet"
   },
+  "errorBoundary": {
+    "description": "Cette page a rencontré une erreur inattendue. Vous pouvez la recharger ou revenir à l'accueil — le reste de l'application n'est pas affecté.",
+    "goHome": "Retour à l'accueil",
+    "reload": "Recharger la page",
+    "title": "Une erreur est survenue"
+  },
   "feedbackCard": {
     "copyText": "Copier le texte",
     "details": "Détails",

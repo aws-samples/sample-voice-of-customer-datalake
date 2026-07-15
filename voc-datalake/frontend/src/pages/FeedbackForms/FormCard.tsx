@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Trash2, Copy, Check, Code, ExternalLink, ToggleLeft, ToggleRight, Edit2, MessageSquare, Star, BarChart3 } from 'lucide-react'
 import type { FeedbackForm } from '../../api/client'
 import { api } from '../../api/client'
+import { defaultFormConfig } from './formTemplates'
 import clsx from 'clsx'
 import SubmissionsModal from './SubmissionsModal'
 
@@ -117,6 +118,10 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
   const [copied, setCopied] = useState<string | null>(null)
   const [showEmbed, setShowEmbed] = useState(false)
   const [showSubmissions, setShowSubmissions] = useState(false)
+  // Belt-and-braces for issue #171: the list normalizes at its query boundary,
+  // but FormCard must stay render-safe standalone (sparse records pre-dating
+  // the theme field crashed the whole /feedback-forms route).
+  const theme = form.theme ?? defaultFormConfig.theme
 
   const { data: statsData } = useQuery({
     queryKey: ['form-stats', form.form_id],
@@ -186,8 +191,8 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
           <div>
             <p className="text-xs text-gray-500">Theme</p>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded flex-shrink-0" style={{ backgroundColor: form.theme.primary_color }} />
-              <span className="text-sm font-mono truncate">{form.theme.primary_color}</span>
+              <div className="w-4 h-4 rounded flex-shrink-0" style={{ backgroundColor: theme.primary_color }} />
+              <span className="text-sm font-mono truncate">{theme.primary_color}</span>
             </div>
           </div>
         </div>
