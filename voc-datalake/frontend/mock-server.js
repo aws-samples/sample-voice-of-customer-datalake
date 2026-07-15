@@ -219,6 +219,8 @@ const mockUsers = [
 
 // Apply a user-admin mutation (issue #177). Returns { status, payload };
 // keeps the dispatch block small and the mutations in one auditable place.
+// Error payloads use the `error` key, matching the real API's shape
+// ({'success': False, 'error': ...} from lambda/shared/api.py).
 function handleUserAction(method, user, action, body) {
   const touch = () => { user.last_modified = new Date().toISOString(); };
   if (method === 'PUT' && action === 'group') {
@@ -233,7 +235,8 @@ function handleUserAction(method, user, action, body) {
   if (method === 'PUT' && (action === 'enable' || action === 'disable')) {
     user.enabled = action === 'enable';
     touch();
-    return { status: 200, payload: { success: true, message: `User ${action}d` } };
+    const confirmation = { enable: 'User enabled', disable: 'User disabled' };
+    return { status: 200, payload: { success: true, message: confirmation[action] } };
   }
   if (method === 'PUT' && !action) {
     const given = typeof body?.given_name === 'string' ? body.given_name : user.given_name;
@@ -248,7 +251,7 @@ function handleUserAction(method, user, action, body) {
     mockUsers.splice(mockUsers.indexOf(user), 1);
     return { status: 200, payload: { success: true, message: 'User deleted' } };
   }
-  return { status: 405, payload: { success: false, message: 'Method not allowed' } };
+  return { status: 405, payload: { success: false, error: 'Method not allowed' } };
 }
 
 // Mock scrapers — real ScraperConfig shape (issue #169). scraper_2 is
@@ -671,7 +674,7 @@ const server = http.createServer((req, res) => {
       const user = mockUsers.find(u => u.username === username);
       if (!user) {
         res.writeHead(404);
-        res.end(JSON.stringify({ success: false, message: 'User not found' }));
+        res.end(JSON.stringify({ success: false, error: 'User not found' }));
         return;
       }
       let parsedBody = null;

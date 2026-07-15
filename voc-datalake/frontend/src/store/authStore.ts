@@ -122,9 +122,16 @@ export const useAuthStore = create<AuthState>()(
 /**
  * Whether Cognito is configured in the runtime config. Mirrors
  * authService.isConfigured(), which cannot be imported here because
- * services/auth.ts imports this store (import cycle). The pre-load guard
- * treats "config not loaded yet" as "not configured"; App gates rendering
- * on config load, so hooks never actually run before it resolves.
+ * services/auth.ts imports this store (import cycle).
+ *
+ * Pre-load: "config not loaded yet" is treated as "not configured", which
+ * in a DEV build activates the bypass below. This is safe ONLY because
+ * App.tsx gates <RouterProvider> on loadRuntimeConfig() resolving
+ * (configReady state), so no component calls this hook pre-load. If that
+ * loading gate is ever refactored away, a DEV build pointed at real
+ * Cognito would briefly report admin during the load window — keep the
+ * gate, or make this reactive to config load. The unloaded short-circuit
+ * itself is pinned by a test (getRuntimeConfig must not be called).
  */
 function cognitoConfigured(): boolean {
   if (!isConfigLoaded()) return false
