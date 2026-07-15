@@ -284,6 +284,12 @@ class TestGenerateCategories:
         assert body['success'] is True
         assert len(body['categories']) > 0
         mock_converse.assert_called_once()
+        # Regression (live-caught on voc-deploy, PR #166): the strict-JSON
+        # category list must fit ONE Bedrock call — adaptive-thinking models
+        # (Sonnet 5) spend output budget on thinking, and the auto-continuation
+        # resume seam is unreliable mid-JSON (dropped a comma → 500).
+        assert mock_converse.call_args.kwargs['max_tokens'] >= 4096
+        assert mock_converse.call_args.kwargs['surface'] == 'utility'
 
     @patch('settings_handler.aggregates_table')
     def test_returns_error_when_description_missing(
