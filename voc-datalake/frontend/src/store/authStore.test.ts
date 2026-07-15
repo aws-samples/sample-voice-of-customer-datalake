@@ -1,8 +1,31 @@
 /**
  * @fileoverview Tests for authStore Zustand store.
  */
-import { describe, it, expect, beforeEach } from 'vitest'
-import { useAuthStore } from './authStore'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { renderHook } from '@testing-library/react'
+import { useAuthStore, useIsAdmin } from './authStore'
+import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
+
+// useIsAdmin reads the runtime config directly (services/auth imports this
+// store, so importing authService here would be a cycle) — mock the module
+// so each test controls whether Cognito is "configured".
+vi.mock('../runtimeConfig', () => ({
+  getRuntimeConfig: vi.fn(),
+  isConfigLoaded: vi.fn(),
+}))
+
+const mockGetRuntimeConfig = vi.mocked(getRuntimeConfig)
+const mockIsConfigLoaded = vi.mocked(isConfigLoaded)
+
+function stubCognito(configured: boolean) {
+  mockIsConfigLoaded.mockReturnValue(true)
+  mockGetRuntimeConfig.mockReturnValue({
+    apiEndpoint: 'https://api.example.com',
+    cognito: configured
+      ? { userPoolId: 'us-east-1_abc', clientId: 'client-123', region: 'us-east-1', identityPoolId: 'pool-1' }
+      : { userPoolId: '', clientId: '', region: '', identityPoolId: '' },
+  })
+}
 
 describe('authStore', () => {
   beforeEach(() => {
@@ -127,6 +150,71 @@ describe('authStore', () => {
       setError(null)
 
       expect(useAuthStore.getState().error).toBeNull()
+    })
+  })
+})
+
+
+/**
+ * Regression tests for issue #177: useIsAdmin lacked the routes' documented
+ * no-Cognito dev bypass, so mock-only local dev opened /settings (the routes
+ * bypass) while hiding every isAdmin-driven surface. Vitest runs as a DEV
+ * build (import.meta.env.DEV === true), which is exactly the branch under
+ * test; the production side of the gate is compile-time eliminated by Vite
+ * and enforced server-side (require_admin + Cognito authorizer) regardless.
+ */
+describe('useIsAdmin', () => {
+  beforeEach(() => {
+    useAuthStore.getState().logout()
+    vi.clearAllMocks()
+  })
+
+  describe('dev bypass (Cognito not configured, issue #177)', () => {
+    it('reports admin with no user at all', () => {
+      stubCognito(false)
+
+      const { result } = renderHook(() => useIsAdmin())
+
+      expect(result.current).toBe(true)
+    })
+
+    it('treats an unloaded config as not configured (still bypasses)', () => {
+      mockIsConfigLoaded.mockReturnValue(false)
+
+      const { result } = renderHook(() => useIsAdmin())
+
+      expect(result.current).toBe(true)
+      // Pre-load short-circuit: the config must never be read while unloaded
+      // (getRuntimeConfig throws in that state).
+      expect(mockGetRuntimeConfig).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('with Cognito configured (the bypass must be inert)', () => {
+    it('reports admin only for users in the admins group', () => {
+      stubCognito(true)
+      useAuthStore.getState().setUser({ username: 'ada', email: 'ada@example.com', groups: ['admins'] })
+
+      const { result } = renderHook(() => useIsAdmin())
+
+      expect(result.current).toBe(true)
+    })
+
+    it('denies users outside the admins group', () => {
+      stubCognito(true)
+      useAuthStore.getState().setUser({ username: 'vic', email: 'vic@example.com', groups: ['users'] })
+
+      const { result } = renderHook(() => useIsAdmin())
+
+      expect(result.current).toBe(false)
+    })
+
+    it('denies when no user is present', () => {
+      stubCognito(true)
+
+      const { result } = renderHook(() => useIsAdmin())
+
+      expect(result.current).toBe(false)
     })
   })
 })

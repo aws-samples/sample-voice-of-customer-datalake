@@ -15,6 +15,7 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
 
 /**
  * Authenticated user information extracted from Cognito ID token.
@@ -119,10 +120,34 @@ export const useAuthStore = create<AuthState>()(
 )
 
 /**
+ * Whether Cognito is configured in the runtime config. Mirrors
+ * authService.isConfigured(), which cannot be imported here because
+ * services/auth.ts imports this store (import cycle). The pre-load guard
+ * treats "config not loaded yet" as "not configured"; App gates rendering
+ * on config load, so hooks never actually run before it resolves.
+ */
+function cognitoConfigured(): boolean {
+  if (!isConfigLoaded()) return false
+  const cfg = getRuntimeConfig()
+  return cfg.cognito.userPoolId !== '' && cfg.cognito.clientId !== ''
+}
+
+/**
  * Helper hook to check if current user is an admin.
- * @returns true if user is in the 'admins' group
+ *
+ * Local-dev bypass (issue #177): when Cognito is NOT configured and this is
+ * a DEV build, report admin — mirroring the documented bypass in
+ * ProtectedRoute/AdminRoute. Without it the routes open but every
+ * isAdmin-driven surface (Settings sidebar link, Users tab, AI Models card)
+ * stays hidden in mock-only dev. A production build without Cognito still
+ * fails closed here, exactly like the routes.
+ *
+ * @returns true if user is in the 'admins' group (or in the dev bypass)
  */
 export const useIsAdmin = (): boolean => {
   const user = useAuthStore((state) => state.user)
+  if (import.meta.env.DEV && !cognitoConfigured()) {
+    return true
+  }
   return user?.groups.includes('admins') ?? false
 }
