@@ -322,13 +322,13 @@ entirely within AWS and are billed at $7 per 1,000 searches; the feature is
 opt-in per request in both UIs (chat toggle, research wizard checkbox).
 
 The connector only exists in **us-east-1**, so the stack always deploys
-there:
+there. Deployment is **explicitly opt-in** while the connector integration
+is new — enable it with `"enableWebSearch": true` in `cdk.context.json`:
 
-- App deployed to us-east-1: the gateway deploys by default. Disable with
-  `"enableWebSearch": false` in `cdk.context.json`.
-- App deployed to any other region: opt in with `"enableWebSearch": true`.
-  This uses CDK cross-region references and additionally requires a
-  us-east-1 bootstrap (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`).
+- App deployed to us-east-1: the flag is all that's needed.
+- App deployed to any other region: the flag plus a us-east-1 bootstrap
+  (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`); CDK cross-region references
+  carry the gateway URL/ARN to the app region.
 
 The frontend discovers availability through the `features.webSearch` flag in
 `config.json` (set by CDK and by `scripts/deploy.sh` from the

@@ -144,8 +144,11 @@ def step_initialize(event: dict) -> dict:
     # enrichment — a search failure must never fail the research job, and the
     # 'web_context' key must ALWAYS be present in the return value because the
     # Step Functions resultSelector references it unconditionally.
+    # Strict boolean: the state machine can be started by other producers or
+    # execution replays, where a string "false" must not enable a billed
+    # feature (parity with projects_handler's normalization).
     web_context = ''
-    if config.get('use_web_search'):
+    if config.get('use_web_search') is True:
         if is_web_search_configured():
             update_job_status(project_id, job_id, 'running', 19, 'searching_web')
             question = config.get('question', '')

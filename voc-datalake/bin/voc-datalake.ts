@@ -41,22 +41,22 @@ const env = {
 };
 
 // ============================================
-// Stack 0a: VocWebSearchStack (Optional)
+// Stack 0a: VocWebSearchStack (Optional, opt-in)
 // AgentCore Gateway for the AWS-managed web-search connector.
 // ============================================
-// The connector only exists in us-east-1, so the stack always deploys there.
-// Default: on when the app itself deploys to us-east-1 (no standing cost —
-// searches are opt-in per request at $7/1k queries). For other app regions
-// it must be explicitly enabled with `"enableWebSearch": true` because it
-// additionally requires a us-east-1 bootstrap and cross-region references.
+// Explicitly opt-in via `"enableWebSearch": true` in cdk.context.json (or
+// `-c enableWebSearch=true`). The gateway itself has no standing cost and
+// searches are opt-in per request ($7/1k queries), but the connector
+// integration is new — keep deployment a conscious choice until a real
+// gateway round-trip has been validated post-release, then consider
+// defaulting it on for us-east-1.
+//
+// The connector only exists in us-east-1, so the stack always deploys
+// there. When the app itself lives in another region this additionally
+// requires a us-east-1 bootstrap and CDK cross-region references.
 const webSearchContextRaw = app.node.tryGetContext('enableWebSearch');
-const webSearchExplicitlyEnabled = webSearchContextRaw === true || webSearchContextRaw === 'true';
-const webSearchExplicitlyDisabled = webSearchContextRaw === false || webSearchContextRaw === 'false';
-const appRegionIsUsEast1 = env.region === 'us-east-1';
-const deployWebSearch = !webSearchExplicitlyDisabled && (appRegionIsUsEast1 || webSearchExplicitlyEnabled);
-// Cross-region references (SSM-backed) are only needed when the app lives
-// outside us-east-1; keep the flag off otherwise to avoid template churn.
-const webSearchCrossRegion = deployWebSearch && !appRegionIsUsEast1;
+const deployWebSearch = webSearchContextRaw === true || webSearchContextRaw === 'true';
+const webSearchCrossRegion = deployWebSearch && env.region !== 'us-east-1';
 
 let webSearchStack: VocWebSearchStack | undefined;
 if (deployWebSearch) {

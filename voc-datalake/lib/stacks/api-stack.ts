@@ -680,6 +680,15 @@ export class VocApiStack extends cdk.Stack {
           '@aws-sdk/*',
           '@smithy/*',
         ],
+        // The web-search SigV4 client imports these directly; bundle them so
+        // it runs against the pinned versions from package.json instead of
+        // whatever the managed runtime's SDK happens to hoist (transitive
+        // availability is not a documented contract). They are tiny.
+        nodeModules: [
+          '@aws-sdk/credential-provider-node',
+          '@smithy/protocol-http',
+          '@smithy/signature-v4',
+        ],
       },
       logGroup: this.createLogGroup('ChatStreamLogs', uniqueName('voc-chat-stream')),
     });
@@ -716,14 +725,17 @@ export class VocApiStack extends cdk.Stack {
 
     // Web search tool (AgentCore Gateway) — optional, opt-in per request.
     // Without the gateway the env vars stay unset and the tool is never
-    // registered with the model.
-    const webSearchEnabled = Boolean(webSearchGatewayUrl && webSearchGatewayArn && webSearchToolName);
-    if (webSearchGatewayUrl && webSearchGatewayArn && webSearchToolName) {
-      chatStreamLambda.addEnvironment('WEB_SEARCH_GATEWAY_URL', webSearchGatewayUrl);
-      chatStreamLambda.addEnvironment('WEB_SEARCH_TOOL_NAME', webSearchToolName);
+    // registered with the model. Collapse the three optional props into one
+    // narrowed value so enablement is decided exactly once.
+    const webSearch = webSearchGatewayUrl && webSearchGatewayArn && webSearchToolName
+      ? { gatewayUrl: webSearchGatewayUrl, gatewayArn: webSearchGatewayArn, toolName: webSearchToolName }
+      : undefined;
+    if (webSearch) {
+      chatStreamLambda.addEnvironment('WEB_SEARCH_GATEWAY_URL', webSearch.gatewayUrl);
+      chatStreamLambda.addEnvironment('WEB_SEARCH_TOOL_NAME', webSearch.toolName);
       chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
         actions: ['bedrock-agentcore:InvokeGateway'],
-        resources: [webSearchGatewayArn],
+        resources: [webSearch.gatewayArn],
       }));
     }
 
@@ -1120,7 +1132,7 @@ exports.handler = async (event) => {
       // Capability flags so the same frontend build can show/hide features
       // per environment (web search only exists when the gateway deployed).
       features: {
-        webSearch: webSearchEnabled,
+        webSearch: webSearch !== undefined,
       },
     };
 
@@ -1151,7 +1163,7 @@ exports.handler = async (event) => {
     new cdk.CfnOutput(this, 'CognitoUserPoolId', { value: userPool.userPoolId, description: 'Cognito User Pool ID' });
     new cdk.CfnOutput(this, 'CognitoClientId', { value: userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID' });
     new cdk.CfnOutput(this, 'WebSearchAvailable', {
-      value: webSearchEnabled ? 'true' : 'false',
+      value: webSearch !== undefined ? 'true' : 'false',
       description: 'Whether the AgentCore web search gateway is deployed (drives the frontend feature flag)',
     });
   }

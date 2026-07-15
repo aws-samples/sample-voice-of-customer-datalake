@@ -425,6 +425,27 @@ class TestStepInitializeWebSearch:
         assert result['feedback_count'] == 2  # research proceeded
 
     @patch('research_step_handler.search_web')
+    @patch('research_step_handler.is_web_search_configured', return_value=True)
+    @patch('research_step_handler.get_feedback_context')
+    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
+    @patch('research_step_handler.get_feedback_statistics', return_value='s')
+    def test_non_boolean_truthy_values_do_not_enable_web_search(self, mock_stats, mock_format, mock_get_fb,
+                                                                mock_configured, mock_search,
+                                                                mock_tables, mock_job_status, feedback_items):
+        """Strict-boolean parity with projects_handler: replayed or foreign
+        state-machine inputs carrying the STRING \"false\" (or \"true\") must
+        not trigger a billed search."""
+        from research_step_handler import step_initialize
+        mock_get_fb.return_value = feedback_items
+
+        for value in ('false', 'true', 1, 'yes'):
+            event = self._event(use_web_search=value)
+            result = step_initialize(event)
+            assert result['web_context'] == ''
+
+        mock_search.assert_not_called()
+
+    @patch('research_step_handler.search_web')
     @patch('research_step_handler.is_web_search_configured', return_value=False)
     @patch('research_step_handler.get_feedback_context')
     @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
