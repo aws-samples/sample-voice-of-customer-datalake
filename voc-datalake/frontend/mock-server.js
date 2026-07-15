@@ -296,10 +296,9 @@ const handlers = {
     sources: mockFeedback.slice(0, 2),
   }),
   'GET /projects': () => ({
-    projects: [
-      { project_id: 'proj_1', name: 'Q1 Product Improvements', description: 'Customer-driven improvements', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 3, document_count: 2 },
-      { project_id: 'proj_2', name: 'Mobile App Redesign', description: 'UX improvements based on feedback', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 2, document_count: 1 },
-    ]
+    // Derived from the detail fixtures — one source of truth, so list and
+    // detail can't drift when someone edits a project.
+    projects: Object.values(mockProjectDetails).map((detail) => detail.project),
   }),
   'GET /projects/prioritization': () => ({
     scores: {}
@@ -436,9 +435,9 @@ const server = http.createServer((req, res) => {
   // Handle project detail by ID. Exact-key routes win: anything present in
   // the handlers table (e.g. 'GET /projects/prioritization', or any future
   // /projects/... exact route) must never be shadowed by the id pattern.
-  if (req.method === 'GET' && url.pathname.match(/^\/projects\/[^/]+$/) && !(key in handlers)) {
-    const id = url.pathname.split('/')[2];
-    const detail = mockProjectDetails[id];
+  const projectDetailMatch = url.pathname.match(/^\/projects\/([^/]+)$/);
+  if (req.method === 'GET' && projectDetailMatch && !(key in handlers)) {
+    const detail = mockProjectDetails[projectDetailMatch[1]];
     if (detail) {
       res.writeHead(200);
       res.end(JSON.stringify(detail));
@@ -450,10 +449,18 @@ const server = http.createServer((req, res) => {
   }
 
   // Project jobs polling (research/persona generation) — none running
-  // locally. Same exact-key precedence rule as above.
-  if (req.method === 'GET' && url.pathname.match(/^\/projects\/[^/]+\/jobs$/) && !(key in handlers)) {
-    res.writeHead(200);
-    res.end(JSON.stringify({ jobs: [] }));
+  // locally. Same exact-key precedence rule as above, and unknown project
+  // ids 404 like the real API instead of masking bad-id bugs with an
+  // empty list.
+  const projectJobsMatch = url.pathname.match(/^\/projects\/([^/]+)\/jobs$/);
+  if (req.method === 'GET' && projectJobsMatch && !(key in handlers)) {
+    if (mockProjectDetails[projectJobsMatch[1]]) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ jobs: [] }));
+    } else {
+      res.writeHead(404);
+      res.end(JSON.stringify({ error: 'Project not found' }));
+    }
     return;
   }
 
