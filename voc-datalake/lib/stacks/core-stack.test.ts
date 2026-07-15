@@ -48,6 +48,9 @@ describe('VocCoreStack UserPool UsernameConfiguration (issue #184)', () => {
 
     const poolProps = Object.values(template.findResources('AWS::Cognito::UserPool'))
       .map((p) => p.Properties ?? {});
+    // Guard against a vacuous pass: the pool must exist for the absence
+    // assertion below to mean anything.
+    expect(poolProps).toHaveLength(1);
     expect(poolProps[0]).not.toHaveProperty('UsernameConfiguration');
   });
 });

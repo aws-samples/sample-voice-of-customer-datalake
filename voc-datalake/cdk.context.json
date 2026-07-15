@@ -3,7 +3,6 @@
     34892
   ],
   "environment": "production",
-  "omitUserPoolUsernameConfiguration": true,
   "brandName": "VoC Analytics",
   "pluginStatus": {
     "webscraper": true,

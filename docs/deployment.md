@@ -457,6 +457,25 @@ npm run cdk:bootstrap
 aws cloudformation continue-update-rollback --stack-name STACK_NAME
 ```
 
+### VocCoreStack fails: "Updates are not allowed for property - UsernameConfiguration"
+
+User pools created before #105 predate the `signInCaseSensitive: false`
+setting, and Cognito treats `UsernameConfiguration` as create-only — any
+stack update that introduces it on an existing pool is rejected and the
+whole VocCoreStack update rolls back. (A secondary
+`Invalid AttributeDataType` error on the same update is a symptom of the
+same rejected pool update.)
+
+Deploy with the compatibility flag to leave the existing pool untouched:
+
+```bash
+cdk deploy VocCoreStack -c omitUserPoolUsernameConfiguration=true
+```
+
+Add the flag to every subsequent deploy of that environment (or to a
+local, uncommitted context override). New deployments should NOT set it —
+fresh pools get case-insensitive sign-in by default.
+
 ### CloudFront Cache
 
 If changes don't appear after deployment:
