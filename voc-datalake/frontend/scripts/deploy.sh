@@ -112,7 +112,7 @@ jq -n \
 
 echo "  ✓ config.json generated with CloudFormation values"
 
-# Step 4: Sync to S3
+# Step 5: Sync to S3
 #
 # Cache-Control is split by mutability (issue #188): Vite's /assets/* are
 # content-hashed, so they can cache forever — but everything with a STABLE
@@ -121,13 +121,25 @@ echo "  ✓ config.json generated with CloudFormation values"
 # JSONs across deploys and the new JS bundle renders raw i18n keys
 # (nav.home, home.title, ...) until a hard refresh. CloudFront invalidation
 # can't fix that: the staleness lives in the browser cache.
+#
+# Metadata note: sync only sets Cache-Control on objects it uploads. That
+# is sufficient because `npm run build` regenerates dist/ with fresh
+# mtimes, so every file uploads (and gets metadata) on each deploy —
+# including the first deploy after this change on buckets that predate it.
+# Don't add --size-only: it would skip unchanged-content files and leave
+# their old metadata in place.
 echo ""
 echo "Step 5: Syncing to S3..."
-# Hashed, immutable assets: cache for a year.
-aws s3 sync dist/assets/ "s3://${BUCKET_NAME}/assets" --delete \
+# Hashed, immutable assets: cache for a year. Deliberately NO --delete:
+# visitors whose browsers cached the previous index.html (which nothing
+# revalidates until they pick up this fix) still reference the previous
+# deploy's chunks — deleting them would turn a stale-but-working page into
+# 404s. Old hashed chunks are harmless and pennies to keep.
+aws s3 sync dist/assets/ "s3://${BUCKET_NAME}/assets" \
   --cache-control 'public,max-age=31536000,immutable'
 # Everything else (stable names): always revalidate. ETags make this cheap
 # (304s), and no visitor ever holds a stale config/locale/index again.
+# --exclude also shields assets/* from this pass's --delete.
 aws s3 sync dist/ "s3://${BUCKET_NAME}" --delete \
   --exclude 'assets/*' \
   --cache-control 'no-cache'

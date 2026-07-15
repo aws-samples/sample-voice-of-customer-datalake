@@ -22,8 +22,9 @@ import type { Category, Subcategory } from './CategoriesManager'
 
 /** Slug of a name for derived ids: lowercase, non-alphanumerics collapsed
  * to underscores, trimmed — 'billing/refunds' → 'billing_refunds'.
- * split/filter/join strips leading/trailing separators without the
- * backtracking-prone /^_+|_+$/ anchors (sonarjs/slow-regex). */
+ * split/filter/join instead of trim anchors (/^_+|_+$/): that regex is
+ * actually linear-time, but sonarjs/slow-regex conservatively flags the
+ * alternation, and the imperative form is just as clear. */
 function slugify(name: string): string {
   return name
     .trim()
