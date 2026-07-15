@@ -131,6 +131,31 @@ function LastRunSummary({ lastRunInfo }: { readonly lastRunInfo: RunStatus }) {
   )
 }
 
+/** Exported for tests (not public API). base_url as runtime data actually delivers it (absent on the mock
+ * server and possibly on older configs, despite the declared type),
+ * normalized to a trimmed string — '' meaning "not configured". Single
+ * owner of that check so the label and the Run-button gate can't drift. */
+export function normalizedBaseUrl(baseUrl: string | undefined): string {
+  return typeof baseUrl === 'string' ? baseUrl.trim() : ''
+}
+
+/** Exported for tests (not public API). Display label for a scraper's target site. Never throws: a render-time
+ * TypeError here took down the whole /scrapers route (issue #167).
+ * Unparseable-but-present values fall back to the raw string so the user
+ * can still see what is configured. */
+export function scraperDomainLabel(baseUrl: string | undefined, notConfigured: string): string {
+  const raw = normalizedBaseUrl(baseUrl)
+  if (raw === '') return notConfigured
+  try {
+    // mailto:/file: URLs parse successfully with an EMPTY hostname —
+    // fall back to the raw value rather than rendering an empty label.
+    const host = new URL(raw).hostname
+    return host !== '' ? host : raw
+  } catch {
+    return raw
+  }
+}
+
 function ScraperCardHeader({
   scraper, isRunning, onRun, onEdit, onDelete,
 }: {
@@ -141,7 +166,8 @@ function ScraperCardHeader({
   readonly onDelete: () => void
 }) {
   const { t } = useTranslation('scrapers')
-  const domain = scraper.base_url === '' ? t('card.notConfigured') : new URL(scraper.base_url).hostname
+  const domain = scraperDomainLabel(scraper.base_url, t('card.notConfigured'))
+  const hasUrl = normalizedBaseUrl(scraper.base_url) !== ''
   return (
     <div className="flex items-start justify-between mb-3">
       <div className="flex items-center gap-3">
@@ -154,7 +180,7 @@ function ScraperCardHeader({
         </div>
       </div>
       <div className="flex items-center gap-1">
-        <button onClick={onRun} disabled={isRunning || scraper.base_url === ''} className={clsx('p-2 rounded transition-colors', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600')} title={t('card.runNow')}>
+        <button onClick={onRun} disabled={isRunning || !hasUrl} className={clsx('p-2 rounded transition-colors', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600')} title={t('card.runNow')}>
           {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
         </button>
         <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title={t('card.edit')}><Settings size={16} /></button>
