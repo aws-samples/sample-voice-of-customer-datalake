@@ -660,6 +660,11 @@ export class VocApiStack extends cdk.Stack {
     const chatStreamLambda = new NodejsFunction(this, 'ChatStreamApi', {
       functionName: uniqueName('voc-chat-stream'),
       entry: path.join(__dirname, '../../lambda/stream/src/handler.ts'),
+      // The nodeModules install step below pairs CDK's generated minimal
+      // package.json with a copied lockfile. Without this, CDK discovers the
+      // CDK app's root package-lock.json (which doesn't contain the stream
+      // Lambda's deps) and `npm ci` fails with EUSAGE at bundling time.
+      depsLockFilePath: path.join(__dirname, '../../lambda/stream/package-lock.json'),
       handler: 'handler',
       runtime: lambda.Runtime.NODEJS_22_X,
       architecture: lambda.Architecture.ARM_64,
