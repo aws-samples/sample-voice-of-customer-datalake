@@ -207,10 +207,19 @@ export default function Chat() {
     addMessage,
     getActiveConversation,
     updateConversationFilters,
+    draftFilters,
+    setDraftFilters,
   } = useChatStore()
 
   const activeConversation = getActiveConversation()
-  const filters: ChatFiltersType = activeConversation?.filters ?? {}
+  // Treat null/undefined and '' uniformly everywhere: an empty-string id
+  // must not buffer a draft that ?? would then never consume.
+  const hasActiveConversation = activeConversationId != null && activeConversationId !== ''
+  // Filters live on the conversation; before one exists they buffer in the
+  // store's draft (issue #161: filter changes — including the web-search
+  // toggle — used to silently no-op on a fresh page and snap back). The
+  // next conversation to be created consumes the draft.
+  const filters: ChatFiltersType = activeConversation?.filters ?? draftFilters
 
   const {
     isStreaming,
@@ -285,8 +294,10 @@ export default function Chat() {
   }, [isStreaming])
 
   const handleFiltersChange = (newFilters: ChatFiltersType) => {
-    if (activeConversationId != null && activeConversationId !== '') {
+    if (hasActiveConversation) {
       updateConversationFilters(activeConversationId, newFilters)
+    } else {
+      setDraftFilters(newFilters)
     }
   }
 
@@ -301,7 +312,9 @@ export default function Chat() {
       content: m.content,
     }))
 
-    const conversationId = activeConversationId ?? createConversation()
+    // The first message materializes the conversation, which consumes any
+    // draft filters the user set beforehand.
+    const conversationId = hasActiveConversation ? activeConversationId : createConversation()
     addMessage(conversationId, {
       role: 'user',
       content: input,
