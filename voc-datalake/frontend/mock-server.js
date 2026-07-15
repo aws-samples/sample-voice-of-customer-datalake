@@ -587,6 +587,9 @@ const emptyProductContext = () => ({
 const mockProductContexts = {}; // projectId -> ProductContext
 const mockProductDocs = {};     // projectId -> ProductDoc[]
 const mockProductJobs = {};     // jobId -> { projectId, job, polls, documentAppended }
+// Monotonic suffix so ids can't collide within one millisecond.
+let mockIdCounter = 0;
+const nextMockId = (prefix) => `${prefix}_${Date.now()}_${++mockIdCounter}`;
 
 function getProductContext(projectId) {
   if (!mockProductContexts[projectId]) {
@@ -629,7 +632,7 @@ function buildProductReportDocument(projectId) {
   const context = getProductContext(projectId);
   const name = context.product_name || 'Unnamed product';
   return {
-    document_id: `product_report_${Date.now()}`,
+    document_id: nextMockId('product_report'),
     document_type: 'product_report',
     title: `Product / Service Report: ${name}`,
     content: `# Product / Service Report\n\n## ${name}\n\n${context.one_liner || '_No one-liner captured._'}\n\n## Target users\n${context.target_users || '_Not captured._'}\n\n## Problem solved\n${context.problem_solved || '_Not captured._'}\n\n## Key features\n${context.key_features || '_Not captured._'}\n\n## Differentiators\n${context.differentiators || '_Not captured._'}`,
@@ -663,10 +666,15 @@ function pollProductJob(entry) {
   return entry.job;
 }
 
-/** Collect and JSON-parse a request body, replying 400 on malformed JSON. */
+/** Collect and JSON-parse a request body, replying 400 on malformed JSON.
+ * An aborted request ends the response instead of leaving it hanging. */
 function collectJson(req, res, onBody) {
   let raw = '';
   req.on('data', chunk => raw += chunk);
+  req.on('error', () => {
+    res.writeHead(400);
+    res.end(JSON.stringify({ success: false, error: 'Request aborted' }));
+  });
   req.on('end', () => {
     if (!raw) {
       onBody(null);
@@ -754,7 +762,10 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Single-job polling (issue #179) — product reports advance to completed.
+  // Single-job polling (issue #179). Limitation: only product-report jobs
+  // are registered here — other job flows (prototype builds, doc generation)
+  // will 404 until someone extends mockProductJobs, same as before this route
+  // existed.
   const jobStatusMatch = url.pathname.match(/^\/projects\/([^/]+)\/jobs\/([^/]+)$/);
   if (req.method === 'GET' && jobStatusMatch) {
     const entry = mockProductJobs[jobStatusMatch[2]];
@@ -786,7 +797,13 @@ const server = http.createServer((req, res) => {
     if (req.method === 'PUT' && !isInterview) {
       collectJson(req, res, (body) => {
         const context = getProductContext(projectId);
-        Object.assign(context, body ?? {});
+        // Allowlist assignment: only known context fields, string values —
+        // keeps the mock contract-faithful and immune to __proto__ keys.
+        for (const field of Object.keys(emptyProductContext())) {
+          if (body && typeof body[field] === 'string') {
+            context[field] = body[field];
+          }
+        }
         res.writeHead(200);
         res.end(JSON.stringify({ context }));
       });
@@ -834,7 +851,7 @@ const server = http.createServer((req, res) => {
           res.end(JSON.stringify({ success: false, error: 'filename is required' }));
           return;
         }
-        const docId = `doc_${Date.now()}`;
+        const docId = nextMockId('doc');
         docs.push({
           doc_id: docId, filename: body.filename,
           content_type: typeof body.content_type === 'string' ? body.content_type : 'application/octet-stream',
@@ -882,7 +899,7 @@ const server = http.createServer((req, res) => {
         return;
       }
       doc.status = 'ready';
-      doc.extracted_chars = bytes;
+      doc.extracted_chars = bytes; // bytes ≈ chars is close enough for a mock
       res.writeHead(200);
       res.end(JSON.stringify({ success: true }));
     });
@@ -899,7 +916,7 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ success: false, error: 'Project not found' }));
       return;
     }
-    const jobId = `job_${Date.now()}`;
+    const jobId = nextMockId('job');
     mockProductJobs[jobId] = {
       projectId,
       polls: 0,
@@ -910,7 +927,8 @@ const server = http.createServer((req, res) => {
       },
     };
     res.writeHead(200);
-    res.end(JSON.stringify({ success: true, job_id: jobId, status: 'processing', message: 'Report generation started' }));
+    // status mirrors the stored job so poll traces read consistently.
+    res.end(JSON.stringify({ success: true, job_id: jobId, status: 'pending', message: 'Report generation started' }));
     return;
   }
 
