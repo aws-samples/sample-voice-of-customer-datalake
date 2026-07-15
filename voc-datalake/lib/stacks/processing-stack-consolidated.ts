@@ -307,6 +307,8 @@ export class VocProcessingStack extends cdk.Stack {
         // step_initialize ALWAYS returns web_context (empty string when web
         // search is off) — an absent key here would fail the state outright.
         'web_context.$': '$.Payload.web_context',
+        // Always returned by step_initialize ('' when unused) — see #157.
+        'documents_context.$': '$.Payload.documents_context',
       },
     });
     initializeStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'], interval: cdk.Duration.seconds(2), maxAttempts: 3, backoffRate: 2 });
@@ -323,6 +325,7 @@ export class VocProcessingStack extends cdk.Stack {
         'feedback_stats.$': '$.initialize_result.feedback_stats',
         'personas_context.$': '$.initialize_result.personas_context',
         'web_context.$': '$.initialize_result.web_context',
+        'documents_context.$': '$.initialize_result.documents_context',
       }),
       resultPath: '$.analysis_result',
       resultSelector: { 'analysis.$': '$.Payload.analysis' },

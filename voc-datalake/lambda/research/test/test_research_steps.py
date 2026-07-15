@@ -160,6 +160,28 @@ class TestStepInitialize:
         assert 'Doc Title' in result['documents_context']
 
 
+    @patch('research_step_handler.get_feedback_context')
+    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
+    @patch('research_step_handler.get_feedback_statistics', return_value='s')
+    def test_documents_context_key_always_present(self, mock_stats, mock_format, mock_get_fb,
+                                                  mock_tables, mock_job_status, feedback_items):
+        """Contract for the Step Functions resultSelector (issue #157): it
+        references $.Payload.documents_context unconditionally, so the key
+        must exist (as '') even when no reference documents are selected —
+        a missing key would fail the InitializeResearch state outright."""
+        from research_step_handler import step_initialize
+        mock_get_fb.return_value = feedback_items
+
+        event = {
+            'project_id': 'p1', 'job_id': 'j1',
+            'research_config': {'sources': [], 'categories': [], 'sentiments': [], 'days': 30,
+                                'selected_persona_ids': [], 'selected_document_ids': []}
+        }
+
+        result = step_initialize(event)
+        assert result['documents_context'] == ''
+
+
 class TestStepAnalyze:
 
     def test_successful_analysis(self, mock_tables, mock_job_status, mock_converse):
@@ -189,6 +211,22 @@ class TestStepAnalyze:
         step_analyze(event)
         prompt = mock_converse.call_args.kwargs.get('prompt', '')
         assert 'Persona info' in prompt
+
+    def test_includes_documents_context(self, mock_tables, mock_job_status, mock_converse):
+        """Selected reference documents must reach the analysis prompt
+        (issue #157: the SF resultSelector used to drop them silently)."""
+        from research_step_handler import step_analyze
+
+        event = {
+            'project_id': 'p1', 'job_id': 'j1',
+            'research_config': {'question': 'Q?'},
+            'feedback_context': 'fb', 'feedback_stats': 's',
+            'documents_context': '## Reference Documents\n\n### Doc Title (PRD)\n\nDoc body',
+        }
+
+        step_analyze(event)
+        prompt = mock_converse.call_args.kwargs.get('prompt', '')
+        assert 'Doc Title' in prompt
 
     def test_with_response_language(self, mock_tables, mock_job_status, mock_converse):
         from research_step_handler import step_analyze
