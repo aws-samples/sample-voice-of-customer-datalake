@@ -85,6 +85,19 @@ describe('normalizeScrapers (issue #169)', () => {
     expect(scrapers.map((s) => s.id)).toEqual(['scraper_2'])
     expect(warn).toHaveBeenCalledTimes(2)
   })
+
+  it('passes unknown backend fields through so edit round-trips lose nothing', () => {
+    const [scraper] = normalizeScrapers([
+      { ...sparseScraper, created_at: '2026-01-01T00:00:00Z', future_field: { nested: true } },
+    ])
+
+    // A record read from getScrapers() and saved back by the editor must
+    // not silently shed fields this schema doesn't enumerate.
+    expect(scraper).toMatchObject({
+      created_at: '2026-01-01T00:00:00Z',
+      future_field: { nested: true },
+    })
+  })
 })
 
 describe('normalizeScraperRunStatus (issue #169)', () => {
@@ -110,6 +123,17 @@ describe('normalizeScraperRunStatus (issue #169)', () => {
 
   it('defaults a missing status to never_run (nothing-to-show for the card)', () => {
     expect(normalizeScraperRunStatus({}).status).toBe('never_run')
+  })
+
+  it('degrades even a non-object response to never_run instead of throwing', () => {
+    // Error bodies and empty responses must not throw out of the polling
+    // path — same degrade-don't-reject philosophy as the fields.
+    for (const garbage of [null, undefined, 'Internal Server Error', 42]) {
+      const status = normalizeScraperRunStatus(garbage)
+      expect(status.status).toBe('never_run')
+      expect(status.pages_scraped).toBe(0)
+      expect(status.errors).toEqual([])
+    }
   })
 
   it('keeps string errors and drops junk elements', () => {

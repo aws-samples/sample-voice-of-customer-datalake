@@ -51,6 +51,9 @@ const optionalString = z.string().optional().catch(undefined)
 /**
  * Schema for a stored scraper config.
  *
+ * - Loose object: unknown backend fields (created_at, future additions)
+ *   pass through untouched, so a record read from getScrapers() and saved
+ *   back by the editor round-trips without silent data loss.
  * - id is the one field that CANNOT be invented: it feeds React list keys
  *   and the status-polling endpoint, so records without a usable id are
  *   dropped (with a warning) by normalizeScrapers.
@@ -59,13 +62,15 @@ const optionalString = z.string().optional().catch(undefined)
  *   never happen ('undefinedm' was the rendered symptom, issue #169).
  * - base_url defaults to '' (the card's not-configured state, issue #167).
  */
-export const ScraperConfigSchema = z.object({
+export const ScraperConfigSchema = z.looseObject({
   id: z.string().min(1),
   name: z.string().catch(''),
   enabled: z.boolean().catch(false),
   base_url: z.string().catch(''),
   urls: stringArraySchema,
   frequency_minutes: z.preprocess(toOptionalFiniteNumber, z.number().catch(0)),
+  // Must grow in lockstep with the backend's supported methods: an unknown
+  // method degrades to undefined (renderable), not a dropped record.
   extraction_method: z.enum(['css', 'jsonld']).optional().catch(undefined),
   template: optionalString,
   container_selector: z.string().catch(''),
@@ -90,7 +95,9 @@ export function normalizeScrapers(rawScrapers: readonly unknown[]): ScraperConfi
   return rawScrapers.flatMap((raw) => {
     const parsed = ScraperConfigSchema.safeParse(raw)
     if (!parsed.success) {
-      console.warn('Dropping scraper record that failed schema validation:', parsed.error.issues, raw)
+      // Issues only — no raw payload, which may carry config the user
+      // considers internal (URLs, selectors).
+      console.warn('Dropping scraper record that failed schema validation:', parsed.error.issues)
       return []
     }
     return [parsed.data]
@@ -102,22 +109,36 @@ export function normalizeScrapers(rawScrapers: readonly unknown[]): ScraperConfi
  * future statuses render as a benign amber badge rather than being
  * misreported); a missing status means 'never_run', which the card treats
  * as nothing-to-show. Counts degrade to 0 so the last-run summary renders
- * '0 pages, 0 reviews' instead of 'pages, reviews' (issue #169).
+ * '0 pages, 0 reviews' instead of 'pages, reviews' (issue #169). The
+ * object-level catch makes even a non-object response (null, an error
+ * string body) degrade to never_run — same philosophy, never throw.
  */
-export const ScraperRunStatusSchema = z.object({
-  scraper_id: optionalString,
-  execution_id: optionalString,
-  status: z.string().catch('never_run'),
-  started_at: optionalString,
-  completed_at: optionalString,
-  pages_scraped: z.preprocess(toOptionalFiniteNumber, z.number().catch(0)),
-  items_found: z.preprocess(toOptionalFiniteNumber, z.number().catch(0)),
-  errors: stringArraySchema,
-})
+export const ScraperRunStatusSchema = z
+  .object({
+    scraper_id: optionalString,
+    execution_id: optionalString,
+    status: z.string().catch('never_run'),
+    started_at: optionalString,
+    completed_at: optionalString,
+    pages_scraped: z.preprocess(toOptionalFiniteNumber, z.number().catch(0)),
+    items_found: z.preprocess(toOptionalFiniteNumber, z.number().catch(0)),
+    errors: stringArraySchema,
+  })
+  .catch(() => ({
+    scraper_id: undefined,
+    execution_id: undefined,
+    status: 'never_run',
+    started_at: undefined,
+    completed_at: undefined,
+    pages_scraped: 0,
+    items_found: 0,
+    errors: [],
+  }))
 
 export type ScraperRunStatus = z.infer<typeof ScraperRunStatusSchema>
 
-/** Make the declared run-status contract true for one wire response. */
+/** Make the declared run-status contract true for one wire response.
+ * Total: even a non-object response degrades to never_run. */
 export function normalizeScraperRunStatus(raw: unknown): ScraperRunStatus {
   return ScraperRunStatusSchema.parse(raw)
 }

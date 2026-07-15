@@ -96,7 +96,6 @@ describe('ScraperCard base_url resilience (issue #167)', () => {
   })
 })
 
-
 describe('ScraperCard frequency resilience (issue #169)', () => {
   it('renders a dash instead of "undefinedm" for a runtime record without frequency', () => {
     const scraper = makeScraper({ base_url: 'https://example.com' })
