@@ -52,10 +52,27 @@ const customFieldSchema = z.object({
   required: z.boolean().catch(false),
 })
 
+// Per-item salvage: one junk element must not discard the whole array
+// (the array-level catch only covers a non-array wholesale). Items that
+// aren't objects at all are filtered; object items survive via the
+// per-field catches above.
+const customFieldsSchema = z
+  .array(z.unknown())
+  .catch(() => [])
+  .transform((items) =>
+    items.flatMap((item) => {
+      const parsed = customFieldSchema.safeParse(item)
+      return parsed.success ? [parsed.data] : []
+    }),
+  )
+
 /**
  * Schema for a stored feedback form.
  *
- * - Identity fields degrade to safe fallbacks rather than rejecting the row.
+ * - form_id is the one field that CANNOT be invented: it feeds React list
+ *   keys and the ['form-stats', form_id] query key, so defaulting it to ''
+ *   would make two identity-less records collide on both. Records without
+ *   a usable form_id are dropped (with a warning) by normalizeFeedbackForms.
  * - Every other field falls back to defaultFormConfig on absence, null, or
  *   wrong type; rating_max additionally coerces numeric strings.
  * - Zod returns fresh objects/arrays, so no two normalized forms share
@@ -63,7 +80,7 @@ const customFieldSchema = z.object({
  * - Unknown keys (DynamoDB internal attributes) are stripped.
  */
 export const FeedbackFormSchema = z.object({
-  form_id: z.string().catch(''),
+  form_id: z.string().min(1),
   name: z.string().catch(''),
   enabled: z.boolean().catch(false),
   title: z.string().catch(defaultFormConfig.title),
@@ -78,7 +95,7 @@ export const FeedbackFormSchema = z.object({
   theme: themeSchema,
   collect_email: z.boolean().catch(defaultFormConfig.collect_email),
   collect_name: z.boolean().catch(defaultFormConfig.collect_name),
-  custom_fields: z.array(customFieldSchema).catch(() => []),
+  custom_fields: customFieldsSchema,
   category: z.string().catch(''),
   subcategory: z.string().catch(''),
   created_at: z.string().catch(''),
@@ -87,10 +104,27 @@ export const FeedbackFormSchema = z.object({
 
 /**
  * Make the declared FeedbackForm contract true for one wire record.
- * Unparseable fields degrade to defaults per the schema; like the
- * feedbackSchema.ts precedent, a non-object record is a hard error —
- * that's a broken API response, not a sparse row.
+ * Non-identity fields degrade to defaults per the schema; a record without
+ * a usable form_id (or a non-object) is a hard error — identity can't be
+ * invented, and a broken API response shouldn't be silently rendered.
  */
 export function normalizeFeedbackForm(raw: unknown): FeedbackForm {
   return FeedbackFormSchema.parse(raw)
+}
+
+/**
+ * Normalize a wire list for rendering: records without a usable form_id are
+ * dropped with a warning instead of defaulting to '' — an invented identity
+ * would collide React list keys and the ['form-stats', form_id] query key
+ * across records. Sparse-but-identified records normalize as usual.
+ */
+export function normalizeFeedbackForms(rawForms: readonly unknown[]): FeedbackForm[] {
+  return rawForms.flatMap((raw) => {
+    const parsed = FeedbackFormSchema.safeParse(raw)
+    if (!parsed.success) {
+      console.warn('Dropping feedback form record without usable identity:', parsed.error.issues, raw)
+      return []
+    }
+    return [parsed.data]
+  })
 }

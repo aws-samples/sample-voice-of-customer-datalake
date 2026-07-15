@@ -5,8 +5,8 @@
  * existed). normalizeFeedbackForm makes the FeedbackForm contract true at
  * the query boundary via a lenient Zod schema.
  */
-import { describe, it, expect } from 'vitest'
-import { normalizeFeedbackForm } from './formSchema'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { normalizeFeedbackForm, normalizeFeedbackForms } from './formSchema'
 import type { SparseFeedbackForm } from './formSchema'
 import { defaultFormConfig } from './formTemplates'
 import type { FeedbackForm } from '../../api/client'
@@ -66,6 +66,19 @@ describe('normalizeFeedbackForm (issue #171)', () => {
     expect(normalizeFeedbackForm({ ...sparseForm, rating_type: 'invalid-kind' }).rating_type).toBe(defaultFormConfig.rating_type)
   })
 
+  it('salvages valid custom_fields items instead of discarding the array wholesale', () => {
+    const form = normalizeFeedbackForm({
+      ...sparseForm,
+      custom_fields: [
+        'junk-string',
+        { id: 'f1', label: 'Order ID', type: 'text', required: true },
+        42,
+      ],
+    })
+
+    expect(form.custom_fields).toEqual([{ id: 'f1', label: 'Order ID', type: 'text', required: true }])
+  })
+
   it('keeps a complete record unchanged', () => {
     const complete: FeedbackForm = {
       ...defaultFormConfig,
@@ -100,5 +113,35 @@ describe('normalizeFeedbackForm (issue #171)', () => {
     const c = normalizeFeedbackForm({ ...sparseForm, custom_fields: inputFields })
     expect(c.custom_fields).not.toBe(inputFields)
     expect(c.custom_fields).toEqual(inputFields)
+  })
+})
+
+
+describe('normalizeFeedbackForms (list boundary)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('drops records without a usable form_id instead of inventing one', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    // Defaulting form_id to '' would collide React list keys and the
+    // ['form-stats', form_id] query key across such records.
+    const forms = normalizeFeedbackForms([
+      sparseForm,
+      { name: 'No Identity', enabled: true },
+      { form_id: '', name: 'Empty Identity', enabled: true },
+      { form_id: null, name: 'Null Identity', enabled: true },
+    ])
+
+    expect(forms.map((f) => f.form_id)).toEqual(['form_3'])
+    expect(warn).toHaveBeenCalledTimes(3)
+  })
+
+  it('normalizes every identified record like the single-record path', () => {
+    const forms = normalizeFeedbackForms([sparseForm, { ...sparseForm, form_id: 'form_4' }])
+
+    expect(forms).toHaveLength(2)
+    expect(forms[0]).toEqual(normalizeFeedbackForm(sparseForm))
   })
 })
