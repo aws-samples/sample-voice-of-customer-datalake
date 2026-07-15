@@ -177,32 +177,3 @@ if (!blankTemplate) {
   throw new Error('Blank template not found in formTemplates')
 }
 export const defaultFormConfig = blankTemplate.config
-
-
-/** What the wire can actually deliver for a stored form: every field of
- * FeedbackFormFields may be absent on records persisted before that field
- * existed (and on sparse fixtures) — reading e.g. theme.primary_color off
- * such a record crashed the whole /feedback-forms route (issue #171).
- * The nested theme may itself be partial (a record saved when the theme
- * had fewer keys), hence Partial on both levels. */
-export type SparseFeedbackForm =
-  Partial<Omit<FeedbackForm, 'theme'>> &
-  Pick<FeedbackForm, 'form_id' | 'name' | 'enabled'> &
-  { theme?: Partial<FeedbackForm['theme']> }
-
-/**
- * Make the declared FeedbackForm contract true at the list's query boundary:
- * missing fields fall back to defaultFormConfig, with the nested theme
- * deep-merged (a PARTIAL theme keeps its set colors) and fresh object
- * copies per form so no two forms share default references.
- */
-export function normalizeFeedbackForm(raw: SparseFeedbackForm): FeedbackForm {
-  return {
-    ...defaultFormConfig,
-    created_at: '',
-    updated_at: '',
-    ...raw,
-    theme: { ...defaultFormConfig.theme, ...raw.theme },
-    custom_fields: raw.custom_fields ?? [],
-  }
-}

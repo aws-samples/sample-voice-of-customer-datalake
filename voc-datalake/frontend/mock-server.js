@@ -162,11 +162,19 @@ const mockFeedbackForms = [
   },
   // Sparse legacy record: only identity fields on the wire.
   { form_id: 'form_3', name: 'Support Feedback', enabled: false, created_at: new Date().toISOString() },
+  // Partial theme: exercises the deep-merge branch (set color survives,
+  // missing theme keys default) rather than the fully-missing-theme branch.
+  {
+    form_id: 'form_4', name: 'Checkout Survey', enabled: true,
+    title: 'How was checkout?', theme: { primary_color: '#F97316' },
+    created_at: new Date().toISOString(),
+  },
 ];
 const mockFormStats = {
   form_1: { total_submissions: 234, avg_rating: 4.2, rating_count: 180 },
   form_2: { total_submissions: 567, avg_rating: 3.8, rating_count: 512 },
   form_3: { total_submissions: 89, avg_rating: null, rating_count: 0 },
+  form_4: { total_submissions: 41, avg_rating: 4.6, rating_count: 38 },
 };
 
 // Mock scrapers
