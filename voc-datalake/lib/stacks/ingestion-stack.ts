@@ -10,6 +10,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as fs from 'fs';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import {
@@ -26,6 +27,7 @@ import { NagSuppressions } from 'cdk-nag';
 import { apiSecretsSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
+import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
 
 export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -97,7 +99,13 @@ export class VocIngestionStack extends cdk.Stack {
     // Lambda Layer for common dependencies
     const dependenciesLayer = this.createDependenciesLayer();
 
-    // Create Lambda functions for each enabled plugin with ingestor
+    // Create Lambda functions for each enabled plugin with ingestor.
+    // Sibling excludes derive from DISK, not the loader: a plugin dir the
+    // loader skips (malformed manifest, fresh scaffold) must still be
+    // excluded from every other ingestor's hash or it churns them all.
+    const allPluginIds = fs.readdirSync(pluginsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
+      .map((entry) => entry.name);
     const ingestorPlugins = getPluginsWithIngestor(enabledPlugins);
     for (const plugin of ingestorPlugins) {
       this.createIngestorLambda(
@@ -105,7 +113,8 @@ export class VocIngestionStack extends cdk.Stack {
         ingestionRole,
         commonEnv,
         dependenciesLayer,
-        aggregatesTable
+        aggregatesTable,
+        allPluginIds
       );
     }
 
@@ -344,6 +353,7 @@ export class VocIngestionStack extends cdk.Stack {
     commonEnv: Record<string, string>,
     dependenciesLayer: lambda.LayerVersion,
     aggregatesTable: dynamodb.Table,
+    allPluginIds: string[],
   ): void {
     const infra = plugin.infrastructure.ingestor;
     if (!infra?.enabled) return;
@@ -359,7 +369,7 @@ export class VocIngestionStack extends cdk.Stack {
     lambdaEnv.AGGREGATES_TABLE = aggregatesTable.tableName;
 
     // Bundle plugin code from plugins/ directory
-    const ingestorCode = this.bundlePluginCode(plugin.id);
+    const ingestorCode = this.bundlePluginCode(plugin.id, allPluginIds);
 
     // Parse schedule from manifest
     const schedule = this.parseSchedule(infra.schedule);
@@ -398,21 +408,16 @@ export class VocIngestionStack extends cdk.Stack {
     this.ingestionLambdas.set(plugin.id, fn);
   }
 
-  private bundlePluginCode(pluginId: string): lambda.Code {
-    // Root-based staging (this bundle spans plugins/ AND lambda/shared), so
-    // everything not excluded here feeds the asset hash and redeploys all
-    // ingestors on unrelated edits (issue #194 follow-up). Only
-    // plugins/<id>/ingestor, plugins/_shared and lambda/shared are copied.
+  private bundlePluginCode(pluginId: string, allPluginIds: string[]): lambda.Code {
+    // Root-based staging (this bundle spans plugins/ AND lambda/shared):
+    // everything not excluded feeds the asset hash. The exclude list lives
+    // in lambda-asset-excludes.ts — see its doc for why GIT ignore mode
+    // (issue #203: GLOB's 'dir/**' leaked dot-children like cdk.out/.cache,
+    // churning every ingestor hash on every deploy) and why sibling plugins
+    // are excluded per-id (their edits must not redeploy THIS ingestor).
     return lambda.Code.fromAsset('.', {
-      exclude: [
-        '**/__pycache__', '**/*.pyc', '**/.DS_Store', '**/test/**', '**/conftest.py', '**/test_*.py',
-        'plugins/_template/**', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md',
-        'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**', '.ruff_cache/**', 'coverage_html/**',
-        '.coverage', 'pytest.ini', 'requirements-dev.txt', 'chrome-extension/**', 'scripts/**', 'schemas/**',
-        'Workshop/**',
-        'lambda/aggregator/**', 'lambda/api/**', 'lambda/custom_resources/**', 'lambda/jobs/**',
-        'lambda/layers/**', 'lambda/processor/**', 'lambda/research/**', 'lambda/stream/**',
-      ],
+      exclude: rootPluginAssetExcludes(pluginId, allPluginIds),
+      ignoreMode: cdk.IgnoreMode.GIT,
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: [
