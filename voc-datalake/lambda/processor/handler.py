@@ -7,22 +7,20 @@ Validates incoming messages using Pydantic schemas before processing.
 """
 import json
 import os
-import uuid
 import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
-from aws_lambda_powertools.utilities.batch.exceptions import BatchProcessingError
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
 
-# Add plugins directory to path for schema imports
-plugins_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'plugins')
-sys.path.insert(0, plugins_dir)
+# Add plugins directory to path for schema imports (single sys.path call:
+# ruff's E402 exempts path setup before imports, but not assignments)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'plugins'))
 
 # Shared module imports
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.aws import get_dynamodb_resource
 from shared.converse import converse, BedrockThrottlingError
 from shared.model_config import get_active_model_id
 from shared.idempotency import (
@@ -35,7 +33,7 @@ import boto3
 
 # Import validation schemas from plugins
 try:
-    from _shared.schemas import safe_validate_message, MessageValidationError
+    from _shared.schemas import safe_validate_message
     VALIDATION_ENABLED = True
 except ImportError:
     logger.warning("Could not import validation schemas - validation disabled")

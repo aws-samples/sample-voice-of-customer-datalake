@@ -17,10 +17,10 @@ def get_prompts_dir() -> Path:
     if lambda_path.exists():
         return lambda_path
     
-    # Local development - relative to lambda directory
-    local_path = Path(__file__).parent.parent.parent / 'prompts'
-    if local_path.exists():
-        return local_path
+    # Local development / tests - repo layout keeps them in lambda/api/prompts
+    repo_path = Path(__file__).parent.parent / 'api' / 'prompts'
+    if repo_path.exists():
+        return repo_path
     
     # Fallback - try current working directory
     cwd_path = Path.cwd() / 'prompts'

@@ -7,6 +7,7 @@ the bug that previously truncated large apps to a single ~200-review page.
 """
 import sys
 import types
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,7 +15,6 @@ from unittest.mock import patch
 # imports without the full Lambda layer present.
 _shared = types.ModuleType("_shared")
 _base = types.ModuleType("_shared.base_ingestor")
-import logging
 _base.logger = logging.getLogger("test")
 sys.modules.setdefault("_shared", _shared)
 sys.modules.setdefault("_shared.base_ingestor", _base)
@@ -34,7 +34,6 @@ class TestPagination:
 
         def fake_reviews(pkg, **kwargs):
             calls.append(kwargs)
-            token = kwargs.get("continuation_token")
             page = len(calls) - 1
             # 3 pages of 200, then token=None (exhausted)
             if page < 3:

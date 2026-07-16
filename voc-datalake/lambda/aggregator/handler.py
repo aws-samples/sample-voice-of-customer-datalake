@@ -5,7 +5,6 @@ Updates real-time aggregates in DynamoDB when new feedback arrives via Streams.
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
-from collections import defaultdict
 from typing import Any
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
 from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord

@@ -14,7 +14,7 @@ from aws_lambda_powertools.event_handler import Response
 from boto3.dynamodb.conditions import Key
 
 # Shared module imports
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, get_sqs_client
 from shared.api import create_api_resolver, api_handler, validate_limit
 from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError

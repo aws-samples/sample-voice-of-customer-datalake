@@ -137,6 +137,9 @@ export class VocApiStack extends cdk.Stack {
             `cp -r /asset-input/shared /asset-output/ && ` +
             `if [ -f /asset-input/api/projects.py ]; then cp /asset-input/api/projects.py /asset-output/; fi && ` +
             `if [ -f /asset-input/api/product_context.py ]; then cp /asset-input/api/product_context.py /asset-output/; fi && ` +
+            // INVARIANT: prompts land at the bundle ROOT (/var/task/prompts) —
+            // shared/prompts.py::get_prompts_dir resolves that path first and
+            // its other branches are dev-only. Keep it root-level.
             `if [ -d /asset-input/api/prompts ]; then cp -r /asset-input/api/prompts /asset-output/; fi && ` +
             `if [ -d /asset-input/api/static ]; then cp -r /asset-input/api/static /asset-output/; fi`
           ],
@@ -475,6 +478,8 @@ export class VocApiStack extends cdk.Stack {
             // for both the product_report doc_type and the PRD/PR-FAQ product-context
             // injection — this file must ship in the bundle or both paths fail/degrade.
             `cp /asset-input/api/product_context.py /asset-output/api/ && ` +
+            // INVARIANT: prompts land at the bundle ROOT (/var/task/prompts) —
+            // shared/prompts.py::get_prompts_dir resolves that path first.
             `cp -r /asset-input/api/prompts /asset-output/prompts`
           ],
           platform: 'linux/arm64',

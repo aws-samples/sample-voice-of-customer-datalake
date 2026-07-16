@@ -10,7 +10,6 @@ import io
 import hashlib
 import boto3
 import urllib.parse
-from datetime import datetime, timezone
 from typing import Generator
 from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
 

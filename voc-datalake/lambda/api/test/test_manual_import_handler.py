@@ -3,8 +3,7 @@ Tests for manual_import_handler.py - /scrapers/manual/* endpoints.
 """
 import json
 import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
+from unittest.mock import patch
 
 
 class TestExtractSourceFromUrl:

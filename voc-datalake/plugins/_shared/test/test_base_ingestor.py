@@ -1,9 +1,6 @@
 """Tests for base_ingestor.py - Base class for all ingestors."""
-import os
-import json
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
 
 
 class TestBaseIngestorInit:

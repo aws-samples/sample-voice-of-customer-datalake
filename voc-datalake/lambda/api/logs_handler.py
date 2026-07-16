@@ -11,12 +11,12 @@ from typing import Any
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource
 from shared.api import create_api_resolver, api_handler
 from shared.exceptions import ConfigurationError, ServiceError
 
-from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.conditions import Key
 
 dynamodb = get_dynamodb_resource()
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")

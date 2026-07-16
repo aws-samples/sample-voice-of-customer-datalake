@@ -469,8 +469,23 @@ jobs:
         with:
           node-version: '20'
           
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
       - name: Install dependencies
         run: npm run install:all
+          
+      - name: Install Python dev dependencies
+        # The check gate needs the venv: test:backend runs
+        # .venv/bin/python -m pytest and lint:python runs
+        # .venv/bin/python -m ruff
+        run: |
+          cd voc-datalake
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt \
+            -r lambda/layers/ingestion-deps/requirements.txt \
+            -r lambda/layers/processing-deps/requirements.txt
           
       - name: Build Lambda layers
         run: npm run build:layers

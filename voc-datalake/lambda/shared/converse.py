@@ -113,7 +113,7 @@ def converse(
     
     try:
         client = get_bedrock_client()
-        logger.info(f"[BEDROCK] Got Bedrock client successfully")
+        logger.info("[BEDROCK] Got Bedrock client successfully")
     except Exception as e:
         logger.error(f"[BEDROCK] Failed to get Bedrock client: {e}")
         raise

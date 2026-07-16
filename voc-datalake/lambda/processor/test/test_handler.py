@@ -8,7 +8,6 @@ Tests the core feedback processing functions:
 - check_duplicate()
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
 
@@ -788,7 +787,6 @@ class TestRecordHandler:
     ):
         """Processes valid SQS record successfully."""
         from processor.handler import record_handler
-        from unittest.mock import MagicMock
         
         mock_validate.return_value = (sample_sqs_record, [])
         mock_process.return_value = {
@@ -811,7 +809,6 @@ class TestRecordHandler:
     def test_skips_invalid_message(self, mock_validate, sample_sqs_record):
         """Skips message that fails validation."""
         from processor.handler import record_handler
-        from unittest.mock import MagicMock
         
         mock_validate.return_value = (None, ['Missing required field: text'])
         
@@ -833,7 +830,6 @@ class TestRecordHandler:
     ):
         """Skips duplicate feedback."""
         from processor.handler import record_handler
-        from unittest.mock import MagicMock
         
         mock_validate.return_value = (sample_sqs_record, [])
         mock_process.return_value = None  # Indicates duplicate

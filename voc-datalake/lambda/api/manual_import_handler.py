@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, get_sqs_client, get_s3_client, invoke_lambda_async
 from shared.api import create_api_resolver, api_handler, decimal_default
 from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError

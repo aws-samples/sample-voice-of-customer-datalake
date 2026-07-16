@@ -2,8 +2,7 @@
 import json
 import os
 import pytest
-from unittest.mock import MagicMock, patch
-from decimal import Decimal
+from unittest.mock import MagicMock
 
 # Set processor-specific environment variables
 os.environ.setdefault('IDEMPOTENCY_TABLE', 'test-idempotency')

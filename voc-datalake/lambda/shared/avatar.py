@@ -178,7 +178,7 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
         if 'AccessDenied' in error_type or 'AccessDenied' in str(e):
             logger.error(f"[PERSONA_AVATAR] ACCESS DENIED - Check IAM policy includes arn:aws:bedrock:{NOVA_CANVAS_REGION}::foundation-model/{NOVA_CANVAS_MODEL_ID}", extra={"error": str(e)})
         elif 'ValidationException' in error_type or 'ValidationException' in str(e):
-            logger.error(f"[PERSONA_AVATAR] VALIDATION ERROR - Check Nova Canvas request format (must use 1024x1024, no quality/cfgScale params)", extra={"error": str(e)})
+            logger.error("[PERSONA_AVATAR] VALIDATION ERROR - Check Nova Canvas request format (must use 1024x1024, no quality/cfgScale params)", extra={"error": str(e)})
         else:
             logger.error(f"[PERSONA_AVATAR] FAILED - Avatar generation error: {error_type}: {e}", extra={
                 "persona_id": persona_id,

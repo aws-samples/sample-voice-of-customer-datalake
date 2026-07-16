@@ -1,9 +1,6 @@
 """Tests for base_webhook.py - Base class for webhook handlers."""
-import os
 import json
-import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
 
 
 class TestBaseWebhookInit:

@@ -6,7 +6,6 @@ This catches missing shared modules (like shared.http) that would cause
 Lambda runtime import failures at runtime.
 """
 import importlib
-import pytest
 
 
 class TestSharedModuleImports:

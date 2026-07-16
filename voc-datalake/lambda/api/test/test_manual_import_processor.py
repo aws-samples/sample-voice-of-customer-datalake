@@ -4,7 +4,6 @@ Tests for manual_import_processor.py - Async LLM parsing of pasted reviews.
 import json
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
 
 
 class TestParseLlmResponse:

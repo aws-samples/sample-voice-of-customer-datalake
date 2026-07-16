@@ -268,7 +268,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     """
     import time
     
-    logger.info(f"[PERSONA] ========== STARTING PERSONA GENERATION ==========")
+    logger.info("[PERSONA] ========== STARTING PERSONA GENERATION ==========")
     logger.info(f"[PERSONA] Project: {project_id}")
     logger.info(f"[PERSONA] Filters: {filters}")
     overall_start = time.time()
@@ -279,7 +279,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         if progress_callback:
             try:
                 progress_callback(progress, step)
-                logger.info(f"[PERSONA] Progress callback succeeded")
+                logger.info("[PERSONA] Progress callback succeeded")
             except Exception as e:
                 logger.warning(f"[PERSONA] Progress callback failed: {e}")
     
@@ -308,7 +308,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         logger.warning("[PERSONA] No feedback data found for filters")
         raise ValidationError('No feedback data found for the given filters')
     
-    logger.info(f"[PERSONA] Step 2/6: Formatting feedback data for LLM...")
+    logger.info("[PERSONA] Step 2/6: Formatting feedback data for LLM...")
     update_progress(10, 'formatting_data')
     
     try:
@@ -323,7 +323,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     # Truncate context if too large
     if len(feedback_context) > 30000:
         feedback_context = feedback_context[:30000] + "\n\n[... additional feedback truncated ...]"
-        logger.info(f"[PERSONA] Context truncated to 30000 chars")
+        logger.info("[PERSONA] Context truncated to 30000 chars")
     
     try:
         llm_start_time = time.time()
@@ -476,7 +476,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         )
         
         overall_elapsed = time.time() - overall_start
-        logger.info(f"[PERSONA] ========== PERSONA GENERATION COMPLETE ==========")
+        logger.info("[PERSONA] ========== PERSONA GENERATION COMPLETE ==========")
         logger.info(f"[PERSONA] Total time: {overall_elapsed:.2f}s, Personas created: {len(saved_personas)}")
         
         return {

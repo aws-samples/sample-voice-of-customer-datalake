@@ -20,11 +20,13 @@ class TestGetPromptsDir:
         assert get_prompts_dir() == d['/var/task/prompts']
 
     def test_real_resolution(self):
+        """Resolves the real repo prompts dir (lambda/api/prompts) — no skip:
+        a FileNotFoundError here means the local-dev branch regressed."""
         from shared.prompts import get_prompts_dir
-        try:
-            assert get_prompts_dir().exists()
-        except FileNotFoundError:
-            pytest.skip("No prompts dir")
+        prompts_dir = get_prompts_dir()
+        assert prompts_dir.exists()
+        # Non-empty is the invariant; don't bake in the file format.
+        assert any(prompts_dir.iterdir())
 
     def test_raises_not_found(self, tmp_path):
         """get_prompts_dir raises FileNotFoundError when no dir exists."""

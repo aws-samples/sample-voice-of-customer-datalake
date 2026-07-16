@@ -8,7 +8,6 @@ import json
 from contextlib import contextmanager
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 
 @contextmanager
