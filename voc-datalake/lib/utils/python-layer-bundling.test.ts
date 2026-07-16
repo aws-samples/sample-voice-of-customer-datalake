@@ -104,7 +104,9 @@ describe('stacks use the shared helper', () => {
   it('no stack defines an inline pip install', () => {
     const stacksDir = path.join(process.cwd(), 'lib', 'stacks');
     const offenders = fs.readdirSync(stacksDir)
-      .filter((file) => file.endsWith('.ts'))
+      // Non-test sources only, matching lambda-asset-excludes.test.ts — a
+      // stack test may legitimately mention "pip install" in a string.
+      .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
       .filter((file) => fs.readFileSync(path.join(stacksDir, file), 'utf8').includes('pip install'));
     expect(offenders).toEqual([]);
   });

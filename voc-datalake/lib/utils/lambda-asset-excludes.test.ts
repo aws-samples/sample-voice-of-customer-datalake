@@ -20,9 +20,44 @@ function stackSources(): Array<{ file: string; source: string }> {
     .map((file) => ({ file, source: fs.readFileSync(path.join(stacksDir, file), 'utf8') }));
 }
 
+/**
+ * The full `fromAsset(...)` options argument: from the first `{` after the
+ * call start to its balanced closing brace. Exact rather than a fixed-width
+ * window, so refactors inside the options object can't slide the assertion
+ * off target. The only braces inside these call sites' string literals are
+ * balanced `${...}` interpolations, which cancel out in the depth count; an
+ * unbalanced brace would end the slice early and fail the containment
+ * assertions loudly.
+ */
+function optionsObject(source: string, callStart: number): string {
+  const open = source.indexOf('{', callStart);
+  if (open === -1) return '';
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === '{') depth += 1;
+    if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, i + 1);
+    }
+  }
+  return source.slice(open);
+}
+
+function forEachCallSite(needle: string, visit: (file: string, options: string) => void): void {
+  for (const { file, source } of stackSources()) {
+    let searchFrom = 0;
+    for (;;) {
+      const at = source.indexOf(needle, searchFrom);
+      if (at === -1) break;
+      visit(file, optionsObject(source, at + needle.length));
+      searchFrom = at + 1;
+    }
+  }
+}
+
 describe('PY_LAMBDA_ASSET_EXCLUDES', () => {
   it('keeps the load-bearing noise patterns', () => {
-    for (const pattern of ['layers/**', 'stream/**', '**/test/**', '**/conftest.py', '**/__pycache__']) {
+    for (const pattern of ['layers/**', 'stream/**', '**/test/**', '**/test_*.py', '**/conftest.py', '**/__pycache__']) {
       expect(PY_LAMBDA_ASSET_EXCLUDES).toContain(pattern);
     }
   });
@@ -30,30 +65,15 @@ describe('PY_LAMBDA_ASSET_EXCLUDES', () => {
 
 describe('asset staging sites', () => {
   it("every fromAsset('lambda') spreads the shared excludes", () => {
-    for (const { file, source } of stackSources()) {
-      let searchFrom = 0;
-      for (;;) {
-        const at = source.indexOf("fromAsset('lambda'", searchFrom);
-        if (at === -1) break;
-        // The exclude must appear within the option object that follows.
-        const window = source.slice(at, at + 400);
-        expect(window, `${file} stages lambda/ without PY_LAMBDA_ASSET_EXCLUDES`).toContain('...PY_LAMBDA_ASSET_EXCLUDES');
-        searchFrom = at + 1;
-      }
-    }
+    forEachCallSite("fromAsset('lambda'", (file, options) => {
+      expect(options, `${file} stages lambda/ without PY_LAMBDA_ASSET_EXCLUDES`).toContain('...PY_LAMBDA_ASSET_EXCLUDES');
+    });
   });
 
   it("every root-based fromAsset('.') excludes the layer build output and the stream Lambda", () => {
-    for (const { file, source } of stackSources()) {
-      let searchFrom = 0;
-      for (;;) {
-        const at = source.indexOf("fromAsset('.'", searchFrom);
-        if (at === -1) break;
-        const window = source.slice(at, at + 900);
-        expect(window, `${file} stages the project root without excluding lambda/layers`).toContain('lambda/layers/**');
-        expect(window, `${file} stages the project root without excluding lambda/stream`).toContain('lambda/stream/**');
-        searchFrom = at + 1;
-      }
-    }
+    forEachCallSite("fromAsset('.'", (file, options) => {
+      expect(options, `${file} stages the project root without excluding lambda/layers`).toContain('lambda/layers/**');
+      expect(options, `${file} stages the project root without excluding lambda/stream`).toContain('lambda/stream/**');
+    });
   });
 });

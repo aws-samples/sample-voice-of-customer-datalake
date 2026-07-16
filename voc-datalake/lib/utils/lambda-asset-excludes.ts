@@ -11,13 +11,14 @@
  *
  * Spread this into the `exclude` of EVERY fromAsset('lambda') call, then add
  * the sibling handler dirs that particular bundle does not copy
- * (lib/utils/python-layer-bundling.test.ts enforces the spread).
+ * (lib/utils/lambda-asset-excludes.test.ts enforces the spread).
  */
 export const PY_LAMBDA_ASSET_EXCLUDES = [
   '**/__pycache__',
   '**/*.pyc',
   '**/.DS_Store',
   '**/test/**',      // pytest suites (api/test, shared/test, jobs/*/test) never ship
+  '**/test_*.py',    // stray test modules outside test/ dirs
   '**/conftest.py',
   'layers/**',       // pip layer sources + local build output (see python-layer-bundling.ts)
   'stream/**',       // Node.js streaming Lambda — bundled separately by NodejsFunction
