@@ -332,7 +332,7 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+MODEL_ID = get_active_model_id(surface)  # shared/model_config.py — never hardcode ids
 
 
 @pytest.fixture

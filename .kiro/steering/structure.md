@@ -46,7 +46,7 @@ voice-of-customer-datalake/       # Root repository
     │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 15 handlers
     │   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
     │   │   ├── chat_handler.py           # /chat/* (conversations)
-    │   │   ├── chat_stream_handler.py    # Streaming chat (Lambda Function URL)
+    │   │   └── (streaming chat lives in lambda/stream — TypeScript, SSE at /chat/stream via API Gateway)
     │   │   ├── integrations_handler.py   # /integrations/*, /sources/* (credentials, schedules)
     │   │   ├── scrapers_handler.py       # /scrapers/* (web scraper management)
     │   │   ├── settings_handler.py       # /settings/* (brand, categories config)
@@ -303,11 +303,12 @@ VocCoreStack (DynamoDB tables, S3 raw data bucket, KMS, Cognito, CloudFront)
        │
        ├──▶ VocIngestionStack (Plugin Lambdas, EventBridge, SQS, Secrets)
        │           │
-       │           └──▶ VocProcessingStackConsolidated (Processor, Aggregator, Step Functions, Bedrock)
+       │           └──▶ VocProcessingStack (Processor, Aggregator, Step Functions, Bedrock)
        │
        ├──▶ VocApiStack (API Gateway, API Lambdas, Webhooks, WAF)
        │           │
        │           └── Depends on: processingQueue, secretsArn, researchStateMachine, userPool
        │
-       └──▶ VocBedrockAccessStack (Bedrock model access configuration)
+       ├──▶ BedrockAccessStack (optional: Bedrock model access / Anthropic use case)
+       └──▶ VocWebSearchStack (optional, us-east-1: AgentCore web-search gateway, -c enableWebSearch=true)
 ```

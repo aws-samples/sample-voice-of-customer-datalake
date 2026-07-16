@@ -72,9 +72,10 @@ The platform consists of 5 CDK stacks (consolidated architecture):
 |-------|-------------|--------------|
 | `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
-| `VocProcessingStackConsolidated` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
+| `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
-| `VocBedrockAccessStack` | Bedrock model access configuration | None |
+| `BedrockAccessStack` (optional) | Bedrock model access / Anthropic use case | None |
+| `VocWebSearchStack` (optional) | AgentCore web-search gateway — `-c enableWebSearch=true`, always us-east-1 | None |
 
 ### Deploy All Stacks
 
@@ -103,9 +104,9 @@ cdk deploy --all --require-approval never
 
 Due to dependencies, stacks should be deployed in this order:
 
-1. `VocCoreStack` + `VocBedrockAccessStack` (parallel, no dependencies)
+1. `VocCoreStack` (+ optional `BedrockAccessStack` / `VocWebSearchStack`, no dependencies)
 2. `VocIngestionStack`
-3. `VocProcessingStackConsolidated`
+3. `VocProcessingStack`
 4. `VocApiStack`
 
 The `cdk deploy --all` command handles this automatically.

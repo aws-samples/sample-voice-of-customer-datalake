@@ -169,15 +169,16 @@ Access is granted immediately after successful submission.
 
 ## CDK Stacks
 
-The platform consists of 5 CDK stacks:
+The platform consists of 4 core stacks plus 2 optional ones:
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
 | `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
-| `VocProcessingStackConsolidated` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
+| `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
-| `VocBedrockAccessStack` | Bedrock model access configuration | None |
+| `BedrockAccessStack` (optional) | Bedrock model access / Anthropic use case submission — created only when `anthropicUseCase` is set in `cdk.context.json` | None |
+| `VocWebSearchStack` (optional) | AgentCore Gateway for public web search — opt-in via `enableWebSearch: true`; always deploys to us-east-1 (the connector only exists there) | None |
 
 ### Deploy All Stacks
 
@@ -193,7 +194,7 @@ cd voc-datalake
 # Deploy specific stack
 cdk deploy VocCoreStack
 cdk deploy VocIngestionStack
-cdk deploy VocProcessingStackConsolidated
+cdk deploy VocProcessingStack
 cdk deploy VocApiStack
 
 # Deploy multiple stacks
@@ -203,16 +204,41 @@ cdk deploy VocCoreStack VocIngestionStack
 cdk deploy --all --require-approval never
 ```
 
+A clean `cdk synth`/`cdk deploy` prints **zero warnings** — treat any new
+warning as a regression to investigate rather than noise to ignore.
+
 ### Stack Deployment Order
 
 Due to dependencies, stacks should be deployed in this order:
 
-1. `VocCoreStack` + `VocBedrockAccessStack` (parallel, no dependencies)
+1. `VocCoreStack` (+ optional `BedrockAccessStack` / `VocWebSearchStack`, no dependencies)
 2. `VocIngestionStack`
-3. `VocProcessingStackConsolidated`
+3. `VocProcessingStack`
 4. `VocApiStack`
 
 The `cdk deploy --all` command handles this automatically.
+
+### Enabling Web Search (optional)
+
+Public web search in AI Chat and Research is opt-in and off by default —
+without it the UI hides the web-search toggle entirely (the deployment
+reports `WebSearchAvailable=false` and `config.json` ships
+`features.webSearch: false`).
+
+To enable it:
+
+```bash
+# One-time: the gateway only exists in us-east-1, so that region must be
+# bootstrapped even when the app lives elsewhere (cross-region references)
+cdk bootstrap aws://ACCOUNT_ID/us-east-1
+
+cdk deploy --all -c enableWebSearch=true
+npm run deploy:frontend   # regenerates config.json with webSearch: true
+```
+
+Cost model: the gateway has no standing cost; searches bill per query
+(see AgentCore pricing) and only run for requests where the user turned
+the toggle on.
 
 ## Frontend Deployment
 
@@ -238,6 +264,28 @@ This script:
 2. Builds the frontend (`npm run build`)
 3. Syncs to S3
 4. Invalidates CloudFront cache
+
+### Frontend Caching Model
+
+Learned the hard way (issues #188/#191 — returning browsers rendered raw
+i18n keys after a redeploy):
+
+- **Hashed assets** (`dist/assets/*`) upload with
+  `Cache-Control: public,max-age=31536000,immutable` — content-hashed
+  names change on every code change, so they can cache forever.
+- **Stable-name files** (`index.html`, `config.json`, `locales/**`,
+  manifests) upload with `Cache-Control: no-cache` — browsers revalidate
+  with ETags (cheap 304s) and can never serve a stale copy. Without this,
+  browsers apply *heuristic* caching (~10% of object age) and can serve
+  week-old locale JSONs for days, no matter how many CloudFront
+  invalidations run — the staleness lives in the browser.
+- **Locale URLs are version-stamped** (`/locales/en/common.json?v=<git-sha>`
+  via `import.meta.env.APP_VERSION`, injected at build): each new bundle
+  requests URLs no old cache entry can match, which also retroactively
+  bust caches created before the headers existed.
+- The assets sync deliberately does **not** `--delete`: visitors holding a
+  previously-cached `index.html` still reference the previous deploy's
+  chunks; deleting them would turn a stale-but-working page into 404s.
 
 ### Frontend Build Process
 

@@ -103,30 +103,26 @@ def lambda_handler(event: dict, context: Any) -> dict:
     return processor.response()
 ```
 
-### Bedrock Invocation with Retry
+### Bedrock Invocation
+
+Never hardcode model ids — resolution goes through
+`shared/model_config.py` (the admin model picker's per-surface overrides
+apply automatically), and `shared/converse.py` shapes requests per model
+capability (Sonnet 5 / Opus 4.8 reject `temperature`; Sonnet 5 rejects an
+explicit thinking budget). Pass a `surface` and let the helper resolve:
 
 ```python
-BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+from shared.converse import converse
 
 @tracer.capture_method
-def invoke_bedrock_llm(prompt: str) -> dict:
-    request_body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 800,
-        "temperature": 0.1,
-        "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": prompt}]
-    }
-    
-    response = bedrock_runtime.invoke_model(
-        modelId=BEDROCK_MODEL_ID,
-        body=json.dumps(request_body),
-        contentType='application/json',
-        accept='application/json'
+def invoke_bedrock_llm(prompt: str) -> str:
+    return converse(
+        prompt=prompt,
+        system_prompt=SYSTEM_PROMPT,
+        max_tokens=800,
+        surface='utilities',  # resolved via shared/model_config.py
+        step_name='my_feature',
     )
-    
-    response_body = json.loads(response['body'].read())
-    return json.loads(response_body['content'][0]['text'])
 ```
 
 ### Lambda Domain Isolation Pattern (MANDATORY)
@@ -148,7 +144,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. When a single Lamb
 lambda/api/
 ├── metrics_handler.py       # /feedback/*, /metrics/* (read-only)
 ├── chat_handler.py          # /chat/*
-├── chat_stream_handler.py   # Streaming chat (Lambda Function URL)
+├── (streaming chat: lambda/stream — TypeScript, SSE at /chat/stream)
 ├── integrations_handler.py  # /integrations/*, /sources/*
 ├── scrapers_handler.py      # /scrapers/*
 ├── settings_handler.py      # /settings/*
@@ -165,7 +161,7 @@ lambda/api/
 |--------|---------|-----------------|
 | Metrics | `metrics_handler.py` | DynamoDB read (feedback, aggregates) |
 | Chat | `chat_handler.py` | DynamoDB RW (conversations), Bedrock |
-| Chat Stream | `chat_stream_handler.py` | DynamoDB read, Bedrock streaming |
+| Chat Stream | `lambda/stream` (TypeScript) | DynamoDB read, Bedrock streaming |
 | Integrations | `integrations_handler.py` | Secrets Manager, EventBridge |
 | Scrapers | `scrapers_handler.py` | Secrets Manager, Lambda invoke, Bedrock |
 | Settings | `settings_handler.py` | DynamoDB (aggregates), Bedrock |
@@ -179,7 +175,7 @@ lambda/api/
 1. Identify which domain the endpoint belongs to
 2. Add the route to the appropriate existing handler
 3. If creating a new domain, create a new `{domain}_handler.py` file
-4. Update `analytics-stack.ts` to create the Lambda and wire API Gateway routes
+4. Update `api-stack.ts` to create the Lambda and wire API Gateway routes
 5. Grant only the minimum required permissions
 
 **Example - Adding a new endpoint to existing domain:**
@@ -278,7 +274,7 @@ export class MyStack extends cdk.Stack {
 
 AWS Lambda execution roles have a **20KB policy size limit**. The CDK stack must create separate Lambdas for each domain with isolated permissions.
 
-**Current Lambda Architecture in `analytics-stack.ts`:**
+**Current Lambda Architecture in `api-stack.ts`:**
 
 ```typescript
 // 1. Metrics Lambda - read-only feedback/metrics queries
@@ -597,7 +593,7 @@ GET  /metrics/personas            # Persona breakdown
 
 # Chat
 POST /chat                        # AI chat endpoint
-POST /chat/stream                 # Streaming chat (via Lambda Function URL)
+POST /chat/stream                 # Streaming chat (SSE via API Gateway)
 
 # Scrapers
 GET  /scrapers                    # List scraper configs
@@ -685,14 +681,16 @@ aws cognito-idp initiate-auth \
 
 ### Manual Streaming API Test
 
-The streaming chat API uses a Lambda Function URL to bypass API Gateway's 29-second timeout:
+Streaming chat is SSE through API Gateway at `POST {api}/chat/stream`
+(the old SigV4 Lambda Function URL / `ChatStreamUrl` output no longer
+exists):
 
 ```bash
 # Get endpoints from CloudFormation
 CLIENT_ID=$(aws cloudformation describe-stacks --stack-name VocCoreStack \
   --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
-STREAM_URL=$(aws cloudformation describe-stacks --stack-name VocApiStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`ChatStreamUrl`].OutputValue' --output text)
+API_URL=$(aws cloudformation describe-stacks --stack-name VocApiStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text)
 
 # Get Cognito token (use single quotes for password with !)
 # Note: Create test user first with aws cognito-idp admin-create-user
@@ -703,9 +701,10 @@ TOKEN=$(aws cognito-idp initiate-auth \
   --query 'AuthenticationResult.IdToken' \
   --output text)
 
-# Test streaming API
-curl -X POST "$STREAM_URL/chat/stream" \
+# Test streaming API — expect SSE events (metadata, text..., done)
+curl -N -X POST "${API_URL}chat/stream" \
   -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"hello"}'
 ```
@@ -714,6 +713,10 @@ curl -X POST "$STREAM_URL/chat/stream" \
 
 1. Build Lambda layers with Docker: `./scripts/build-layers.sh`
 2. Deploy stacks: `npx cdk deploy --all --context frontendDomain=<domain>`
+   — a clean synth/deploy prints **zero warnings**; treat new warnings as
+   regressions. Pre-#105 environments additionally need
+   `-c omitUserPoolUsernameConfiguration=true` (see docs/deployment.md
+   troubleshooting).
 3. Validate API endpoints: `./scripts/test-api.sh <api_url> "Bearer <token>"`
 4. Check Lambda logs if any endpoint fails: `aws logs tail /aws/lambda/<function-name> --since 5m`
 
