@@ -166,7 +166,9 @@ const MAX_CANDIDATES = 10000;
  * Page through one day's GSI partition via LastEvaluatedKey (not just the
  * first page), appending valid rows to `candidates`. Per-row safeParse: a
  * single malformed item must not throw and discard the whole day's results.
- * Recursion depth = pages per day, bounded by the MAX_CANDIDATES stop.
+ * Recursion depth = pages in the day's partition; the MAX_CANDIDATES check
+ * stops early only as parsed rows accumulate (a day of entirely malformed
+ * rows still pages to its end, same as the previous do/while).
  */
 async function fetchDayPages(
   docClient: DynamoDBDocumentClient,
@@ -222,7 +224,7 @@ async function fetchCandidatesByDate(
 function resolveSearchParams(toolInput: unknown, contextFilters: ContextFilters): {
   input: SearchInput;
   query: string;
-  mode: string;
+  mode: 'list' | 'aggregate';
   limit: number;
   days: number;
   filters: { source?: string; category?: string; sentiment?: string; urgency?: string };
