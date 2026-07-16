@@ -23,8 +23,9 @@ import { defineConfig } from 'vite'
  * no-cache headers keep same-sha fetches revalidating regardless.
  */
 function buildId(): string {
-  const ciSha = process.env.GITHUB_SHA ?? process.env.CODEBUILD_RESOLVED_SOURCE_VERSION
-  if (ciSha !== undefined && ciSha !== '') return ciSha.slice(0, 7)
+  const ciSha = [process.env.GITHUB_SHA, process.env.CODEBUILD_RESOLVED_SOURCE_VERSION]
+    .find((value) => value !== undefined && value !== '')
+  if (ciSha !== undefined) return ciSha.slice(0, 7)
   try {
     const gitDir = resolveGitDir()
     if (gitDir === null) return `${Date.now()}`
