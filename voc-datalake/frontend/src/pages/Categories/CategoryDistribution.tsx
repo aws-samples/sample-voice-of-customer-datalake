@@ -72,7 +72,7 @@ export function CategoryDistribution({
           {periodDays ? ` • Last ${periodDays} days` : ''}
         </p>
       </div>
-      <p className="text-xs text-gray-400 mb-2 sm:mb-3">Click a category to filter the results below</p>
+      <p className="text-xs text-gray-400 mb-1.5">Click a category to filter the results below</p>
       <div className="divide-y divide-gray-100">
         {(expanded ? categoryData : visibleWhileCollapsed(categoryData, selectedCategories)).map((category) => {
           const percentage = totalIssues > 0 ? (category.value / totalIssues) * 100 : 0
@@ -83,19 +83,19 @@ export function CategoryDistribution({
               onClick={() => onToggleCategory(category.name)}
               aria-pressed={isSelected}
               className={clsx(
-                'block w-full text-left py-2.5 sm:py-3 px-2 -mx-2 rounded-lg transition-colors active:scale-[0.99]',
+                'block w-full text-left py-1.5 px-2 -mx-2 rounded-lg transition-colors active:scale-[0.99]',
                 isSelected ? 'bg-blue-50 ring-1 ring-inset ring-blue-300' : 'hover:bg-gray-50'
               )}
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className={clsx('font-medium text-sm capitalize', isSelected && 'text-blue-800')}>
+              <div className="flex items-center justify-between mb-0.5">
+                <span className={clsx('font-medium text-sm leading-tight capitalize', isSelected && 'text-blue-800')}>
                   {category.name.replace('_', ' ')}
                 </span>
-                <span className="text-sm text-gray-600">
+                <span className="text-xs text-gray-600 leading-tight">
                   {category.value} ({percentage.toFixed(1)}%)
                 </span>
               </div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full"
                   style={{ width: `${percentage}%`, backgroundColor: category.color }}
@@ -108,7 +108,7 @@ export function CategoryDistribution({
       {categoryData.length > MAX_COLLAPSED_ROWS && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="mt-2 flex items-center gap-1 text-xs sm:text-sm text-blue-600 hover:text-blue-800"
+          className="mt-1.5 flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
         >
           {expanded ? (
             <>
