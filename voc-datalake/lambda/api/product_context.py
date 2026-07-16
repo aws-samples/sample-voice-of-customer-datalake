@@ -12,7 +12,6 @@ Three pieces:
 `build_product_context_block(project_id) -> str` is consumed by projects.generate_prd /
 generate_prfaq and substituted into the {product_context} placeholder.
 """
-import json
 import os
 import secrets
 from datetime import datetime, timezone

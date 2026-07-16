@@ -9,7 +9,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import i18n from 'i18next'
-import ScraperCard, { scraperDomainLabel } from './ScraperCard'
+import ScraperCard from './ScraperCard'
+import { scraperDomainLabel } from './scraperUrl'
 import { DEFAULT_SCRAPER } from './constants'
 import type { ScraperConfig } from '../../api/types'
 

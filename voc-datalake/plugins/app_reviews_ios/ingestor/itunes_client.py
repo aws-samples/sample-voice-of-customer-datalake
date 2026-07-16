@@ -11,7 +11,7 @@ page in the middle of a populated feed (e.g. kr page 4 is empty while pages
 We instead skip empty pages and only stop after several consecutive empties.
 """
 
-from app_store_web_scraper import AppStoreEntry, AppStoreSession
+from app_store_web_scraper import AppStoreSession
 from app_store_web_scraper._errors import AppStoreError
 from app_store_web_scraper._utils import fromisoformat_utc
 from _shared.base_ingestor import logger

@@ -6,8 +6,7 @@ Tests the core aggregation functions:
 - process_new_feedback()
 - record_handler()
 """
-import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 from decimal import Decimal
 
 

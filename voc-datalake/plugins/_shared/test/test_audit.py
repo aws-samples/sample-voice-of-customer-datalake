@@ -1,9 +1,6 @@
 """Tests for audit.py"""
-import os
-import json
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
+from unittest.mock import patch
+from datetime import datetime
 
 
 class TestAuditEvent:

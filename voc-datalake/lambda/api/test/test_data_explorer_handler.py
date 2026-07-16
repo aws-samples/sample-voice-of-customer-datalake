@@ -3,7 +3,6 @@ Tests for data_explorer_handler.py - /data-explorer/* endpoints.
 Full CRUD for S3 raw data and DynamoDB feedback.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
 

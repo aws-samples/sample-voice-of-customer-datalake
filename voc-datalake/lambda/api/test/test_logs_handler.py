@@ -3,7 +3,6 @@ Tests for logs_handler.py - /logs/* endpoints.
 Provides access to validation failures and processing errors.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
 

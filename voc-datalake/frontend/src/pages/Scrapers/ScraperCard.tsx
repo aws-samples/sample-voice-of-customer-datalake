@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
 import { FREQUENCY_OPTIONS } from './constants'
 import type { ScraperConfig } from '../../api/types'
+import { normalizedBaseUrl, scraperDomainLabel } from './scraperUrl'
 
 interface RunStatus {
   status: string
@@ -129,31 +130,6 @@ function LastRunSummary({ lastRunInfo }: { readonly lastRunInfo: RunStatus }) {
       {lastRunInfo.errors.length > 0 && <p className="text-red-500 truncate mt-1">{lastRunInfo.errors[0]}</p>}
     </div>
   )
-}
-
-/** Exported for tests (not public API). base_url as runtime data actually delivers it (absent on the mock
- * server and possibly on older configs, despite the declared type),
- * normalized to a trimmed string — '' meaning "not configured". Single
- * owner of that check so the label and the Run-button gate can't drift. */
-export function normalizedBaseUrl(baseUrl: string | undefined): string {
-  return typeof baseUrl === 'string' ? baseUrl.trim() : ''
-}
-
-/** Exported for tests (not public API). Display label for a scraper's target site. Never throws: a render-time
- * TypeError here took down the whole /scrapers route (issue #167).
- * Unparseable-but-present values fall back to the raw string so the user
- * can still see what is configured. */
-export function scraperDomainLabel(baseUrl: string | undefined, notConfigured: string): string {
-  const raw = normalizedBaseUrl(baseUrl)
-  if (raw === '') return notConfigured
-  try {
-    // mailto:/file: URLs parse successfully with an EMPTY hostname —
-    // fall back to the raw value rather than rendering an empty label.
-    const host = new URL(raw).hostname
-    return host !== '' ? host : raw
-  } catch {
-    return raw
-  }
 }
 
 function ScraperCardHeader({

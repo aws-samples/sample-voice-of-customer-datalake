@@ -9,7 +9,6 @@ Regression tests for the bug where:
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
-import pytest
 
 from _shared.app_reviews_utils import (
     is_due_for_run,

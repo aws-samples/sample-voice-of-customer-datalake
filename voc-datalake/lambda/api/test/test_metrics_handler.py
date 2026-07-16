@@ -2,9 +2,7 @@
 Tests for metrics_handler.py - /feedback/* and /metrics/* endpoints.
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone, timedelta
+from unittest.mock import patch
 
 
 class TestListFeedbackEndpoint:
@@ -250,6 +248,7 @@ class TestGetUrgentFeedback:
         body = json.loads(response['body'])
         
         assert response['statusCode'] == 200
+        assert 'items' in body
 
     @patch('metrics_handler.feedback_table')
     def test_filters_by_source(

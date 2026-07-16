@@ -39,7 +39,6 @@ from product_context import (
     list_docs as pc_list_docs,
     create_upload_url as pc_create_upload_url,
     delete_doc as pc_delete_doc,
-    generate_report as pc_generate_report,
 )
 
 # API resolver with standard CORS

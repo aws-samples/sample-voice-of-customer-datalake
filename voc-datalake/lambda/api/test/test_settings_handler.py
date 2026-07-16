@@ -4,7 +4,7 @@ Manages brand configuration and categories.
 """
 import json
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 
 
