@@ -7,7 +7,7 @@ export default defineConfig({
   define: {
     // Mirror vite.config.ts's build-id stamp (issue #191) — a stable value
     // in tests so assertions on versioned URLs are deterministic.
-    APP_VERSION: JSON.stringify('test'),
+    'import.meta.env.APP_VERSION': JSON.stringify('test'),
   },
   test: {
     globals: true,

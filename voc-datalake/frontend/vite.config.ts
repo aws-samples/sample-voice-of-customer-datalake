@@ -1,16 +1,34 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
+
+/**
+ * Build id for cache-busting runtime-fetched locale JSONs (issue #191).
+ * Derived from the git commit (plus a -dirty marker for uncommitted trees)
+ * so identical source produces identical bundles — a content-neutral
+ * redeploy keeps clients cache-warm. Post-#188 fetches revalidate via
+ * no-cache headers regardless, so a same-sha deploy loses nothing.
+ * Falls back to a timestamp where git isn't available (CI tarballs).
+ */
+function buildId(): string {
+  try {
+    const sha = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim()
+    const dirty = execSync('git status --porcelain', { encoding: 'utf8' }).trim() !== ''
+    return dirty ? `${sha}-dirty` : sha
+  } catch {
+    return `${Date.now()}`
+  }
+}
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
     global: 'globalThis',
-    // Build id stamped into runtime-fetched URLs (/config.json, locale
-    // JSONs) so each new bundle requests URLs no stale browser-cache entry
-    // can match (issue #191). The JS bundle itself is hash-busted, so the
-    // stamp always travels with fresh code.
-    APP_VERSION: JSON.stringify(`${Date.now()}`),
+    // Namespaced under import.meta.env: a bare identifier define would be
+    // replaced ANYWHERE the identifier appears in source (Vite does
+    // identifier-level substitution), silently corrupting unrelated code.
+    'import.meta.env.APP_VERSION': JSON.stringify(buildId()),
   },
   build: {
     rollupOptions: {

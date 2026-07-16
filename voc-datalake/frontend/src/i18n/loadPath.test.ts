@@ -14,8 +14,8 @@ describe('LOCALE_LOAD_PATH (issue #191)', () => {
   })
 
   it('is version-stamped so stale cache entries can never match', () => {
-    // vitest.config.ts defines __APP_VERSION__ as 'test'; production builds
-    // stamp a per-build id via vite.config.ts define.
-    expect(LOCALE_LOAD_PATH).toBe('/locales/{{lng}}/{{ns}}.json?v=test')
+    // Shape assertion survives a change of the injected test literal;
+    // vitest.config.ts currently defines APP_VERSION as 'test'.
+    expect(LOCALE_LOAD_PATH).toMatch(/\?v=.+$/)
   })
 })

@@ -15,12 +15,17 @@
  * @module i18n/loadPath
  */
 
-/** Build id injected by Vite `define` (vite.config.ts / vitest.config.ts).
- * Declared here rather than in a .d.ts because the root .gitignore
+/** Build id injected by Vite `define` (vite.config.ts / vitest.config.ts),
+ * namespaced under import.meta.env so the substitution can't collide with
+ * user identifiers. This `declare global` augmentation is project-wide by
+ * nature (any module reading import.meta.env.APP_VERSION gets the type);
+ * it lives here rather than in vite-env.d.ts because the root .gitignore
  * excludes all *.d.ts files (build-emitted declarations). */
 declare global {
-  const APP_VERSION: string
+  interface ImportMetaEnv {
+    readonly APP_VERSION: string
+  }
 }
 
 /** i18next-http-backend loadPath, cache-busted per build. */
-export const LOCALE_LOAD_PATH = `/locales/{{lng}}/{{ns}}.json?v=${APP_VERSION}`
+export const LOCALE_LOAD_PATH = `/locales/{{lng}}/{{ns}}.json?v=${import.meta.env.APP_VERSION}`
