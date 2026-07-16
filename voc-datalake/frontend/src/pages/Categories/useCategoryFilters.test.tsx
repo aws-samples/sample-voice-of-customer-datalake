@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { MemoryRouter, useSearchParams } from 'react-router-dom'
+import { MemoryRouter, useNavigate, useSearchParams } from 'react-router-dom'
 import { useCategoryFilters } from './useCategoryFilters'
 
 function createWrapper(initialEntries = ['/categories']) {
@@ -81,6 +81,72 @@ describe('useCategoryFilters', () => {
     it('omits default values from the URL', () => {
       const { result } = renderFiltersWithUrl()
       expect([...result.current.searchParams.keys()]).toEqual([])
+    })
+  })
+
+  describe('external URL changes (back/forward, same-route navigation)', () => {
+    /** Hook plus a navigate handle, so tests can simulate external navigations. */
+    function renderFiltersWithNavigate(initialEntries = ['/categories']) {
+      return renderHook(
+        () => {
+          const filters = useCategoryFilters()
+          const [searchParams] = useSearchParams()
+          const navigate = useNavigate()
+          return { filters, searchParams, navigate }
+        },
+        { wrapper: createWrapper(initialEntries) }
+      )
+    }
+
+    it('adopts filters from a same-route navigation with new params', () => {
+      const { result } = renderFiltersWithNavigate(['/categories'])
+
+      act(() => {
+        result.current.navigate('/categories?category=pricing&q=refund')
+      })
+
+      expect(result.current.filters.selectedCategories).toEqual(['pricing'])
+      expect(result.current.filters.searchText).toBe('refund')
+    })
+
+    it('clears filters when navigation removes the params', () => {
+      const { result } = renderFiltersWithNavigate(['/categories?category=delivery&sentiment=negative'])
+
+      act(() => {
+        result.current.navigate('/categories')
+      })
+
+      expect(result.current.filters.selectedCategories).toEqual([])
+      expect(result.current.filters.sentimentFilter).toBe('all')
+    })
+
+    it('restores filters on browser back navigation', () => {
+      const { result } = renderFiltersWithNavigate(['/categories?category=delivery'])
+
+      act(() => {
+        result.current.navigate('/categories?category=pricing')
+      })
+      expect(result.current.filters.selectedCategories).toEqual(['pricing'])
+
+      act(() => {
+        result.current.navigate(-1)
+      })
+      expect(result.current.filters.selectedCategories).toEqual(['delivery'])
+    })
+
+    it('does not reset state from its own URL mirroring', () => {
+      const { result } = renderFiltersWithNavigate(['/categories'])
+
+      act(() => {
+        result.current.filters.setSearchText('refund')
+      })
+      act(() => {
+        result.current.filters.setShowUrgentOnly(true)
+      })
+
+      // Non-URL-synced state survives the mirroring write-back.
+      expect(result.current.filters.searchText).toBe('refund')
+      expect(result.current.filters.showUrgentOnly).toBe(true)
     })
   })
 

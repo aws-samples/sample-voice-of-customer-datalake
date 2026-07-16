@@ -93,9 +93,9 @@ describe('FeedbackResults', () => {
       expect(screen.getByText(/Source: webscraper/)).toBeInTheDocument()
     })
 
-    it('shows sentiment filter in subtitle', () => {
+    it('shows the localized sentiment filter in the subtitle', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} sentimentFilter="positive" filteredFeedback={[]} />)
-      expect(screen.getByText(/positive/)).toBeInTheDocument()
+      expect(screen.getByText(/• Positive/)).toBeInTheDocument()
     })
 
     it('shows the & up rating filter in the subtitle', () => {

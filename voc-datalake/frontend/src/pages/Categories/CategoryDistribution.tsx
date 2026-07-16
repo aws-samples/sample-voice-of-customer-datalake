@@ -18,6 +18,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, FolderOpen } from 'lucide-react'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import type { CategoryData } from './types'
 
 /** Rows shown while collapsed. */
@@ -50,29 +51,33 @@ export function CategoryDistribution({
   selectedCategories,
   onToggleCategory,
 }: CategoryDistributionProps) {
+  const { t } = useTranslation('categories')
   const [expanded, setExpanded] = useState(false)
   if (categoryData.length === 0) {
     return (
       <div className="card">
-        <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Category Distribution</h2>
+        <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('categoryDistribution')}</h2>
         <div className="py-8 text-center text-gray-500">
           <FolderOpen size={40} className="mx-auto mb-3 opacity-50" />
-          <p>No categories</p>
+          <p>{t('noCategories')}</p>
         </div>
       </div>
     )
   }
 
+  const headerMeta = [
+    t('categories', { count: categoryData.length }),
+    t('items', { count: totalIssues }),
+    ...(periodDays ? [t('lastDays', { count: periodDays })] : []),
+  ].join(' • ')
+
   return (
     <div className="card">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
-        <h2 className="text-base sm:text-lg font-semibold">Category Distribution</h2>
-        <p className="text-xs sm:text-sm text-gray-500">
-          {categoryData.length} categories • {totalIssues} items
-          {periodDays ? ` • Last ${periodDays} days` : ''}
-        </p>
+        <h2 className="text-base sm:text-lg font-semibold">{t('categoryDistribution')}</h2>
+        <p className="text-xs sm:text-sm text-gray-500">{headerMeta}</p>
       </div>
-      <p className="text-xs text-gray-400 mb-1.5">Click a category to filter the results below</p>
+      <p className="text-xs text-gray-400 mb-1.5">{t('categoryDistributionHint')}</p>
       <div className="divide-y divide-gray-100">
         {(expanded ? categoryData : visibleWhileCollapsed(categoryData, selectedCategories)).map((category) => {
           const percentage = totalIssues > 0 ? (category.value / totalIssues) * 100 : 0
@@ -113,12 +118,12 @@ export function CategoryDistribution({
           {expanded ? (
             <>
               <ChevronUp size={14} />
-              Show top {MAX_COLLAPSED_ROWS}
+              {t('showTop', { count: MAX_COLLAPSED_ROWS })}
             </>
           ) : (
             <>
               <ChevronDown size={14} />
-              Show all {categoryData.length} categories
+              {t('showAllCategories', { count: categoryData.length })}
             </>
           )}
         </button>

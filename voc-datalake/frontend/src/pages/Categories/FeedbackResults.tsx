@@ -60,12 +60,14 @@ function ActiveFiltersLine({
   sentimentFilter: SentimentFilter
   ratingFilter: RatingFilter
 }>) {
+  const { t } = useTranslation(['common', 'categories'])
+  const sentimentText = sentimentFilter !== 'all' ? t(`categories:${sentimentFilter}`) : null
   return (
     <p className="text-xs sm:text-sm text-gray-500 truncate">
-      {selectedSource && `Source: ${selectedSource}`}
+      {selectedSource && t('categories:sourceFilterLabel', { source: selectedSource })}
       {selectedCategories.length > 0 && `${selectedSource ? ' • ' : ''}${selectedCategories.map(c => c.replace('_', ' ')).join(', ')}`}
-      {sentimentFilter !== 'all' && ` • ${sentimentFilter}`}
-      {ratingFilter.value > 0 && ` • ${ratingFilterLabel(ratingFilter)}`}
+      {sentimentText && ` • ${sentimentText}`}
+      {ratingFilter.value > 0 && ` • ${ratingFilterLabel(ratingFilter, t)}`}
     </p>
   )
 }
@@ -86,13 +88,13 @@ export function FeedbackResults({
   onLoadMore,
   isLoadingMore,
 }: FeedbackResultsProps) {
-  const { t } = useTranslation('common')
+  const { t } = useTranslation(['common', 'categories'])
   return (
     <div className="card">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
         <div className="min-w-0">
           <h2 className="text-base sm:text-lg font-semibold">
-            Feedback Results
+            {t('categories:feedbackResults')}
             <span className="ml-2 text-sm font-normal text-gray-500">({filteredFeedback.length})</span>
           </h2>
           <ResultsCountLine
@@ -112,14 +114,14 @@ export function FeedbackResults({
             <button
               onClick={() => onViewModeChange('grid')}
               className={clsx('p-1.5 rounded active:scale-95', viewMode === 'grid' ? 'bg-white shadow-sm' : 'hover:bg-gray-200')}
-              aria-label="Grid view"
+              aria-label={t('categories:gridView')}
             >
               <LayoutGrid size={14} className="sm:w-4 sm:h-4" />
             </button>
             <button
               onClick={() => onViewModeChange('list')}
               className={clsx('p-1.5 rounded active:scale-95', viewMode === 'list' ? 'bg-white shadow-sm' : 'hover:bg-gray-200')}
-              aria-label="List view"
+              aria-label={t('categories:listView')}
             >
               <List size={14} className="sm:w-4 sm:h-4" />
             </button>
@@ -152,6 +154,7 @@ export function FeedbackResults({
 }
 
 function FeedbackContentDisplay({ isLoading, items, viewMode }: Readonly<{ isLoading: boolean; items: FeedbackItem[]; viewMode: ViewMode }>) {
+  const { t } = useTranslation(['common', 'categories'])
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8 sm:py-12">
@@ -160,7 +163,7 @@ function FeedbackContentDisplay({ isLoading, items, viewMode }: Readonly<{ isLoa
     )
   }
   if (items.length === 0) {
-    return <p className="text-gray-500 text-center py-8 sm:py-12 text-sm">No feedback found matching your filters</p>
+    return <p className="text-gray-500 text-center py-8 sm:py-12 text-sm">{t('categories:noFeedbackFound')}</p>
   }
   return (
     <div className={clsx(viewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4' : 'space-y-2 sm:space-y-3')}>

@@ -24,40 +24,49 @@ import { generateCategoriesPDF } from './categoriesPdfGenerator'
 import { useCategoryFilters } from './useCategoryFilters'
 import { useFeedbackListData } from './useFeedbackListData'
 import { useCategoryAnalytics } from './useCategoryAnalytics'
+import { csvField } from '../../utils/csv'
 import { useTranslation } from 'react-i18next'
 
 function exportFeedbackCsv(items: FeedbackItem[]): void {
   const csv = [
-    ['ID', 'Source', 'Category', 'Sentiment', 'Rating', 'Text', 'Date'].join(','),
+    ['ID', 'Source', 'Category', 'Sentiment', 'Rating', 'Text', 'Date'].map(csvField).join(','),
     ...items.map(item => [
-      item.feedback_id,
-      item.source_platform,
-      item.category,
-      item.sentiment_label,
-      item.rating || '',
-      `"${item.original_text.replace(/"/g, '""')}"`,
-      item.source_created_at,
+      csvField(item.feedback_id),
+      csvField(item.source_platform),
+      csvField(item.category),
+      csvField(item.sentiment_label),
+      csvField(item.rating ?? ''),
+      csvField(item.original_text),
+      csvField(item.source_created_at),
     ].join(',')),
   ].join('\n')
   const blob = new Blob([csv], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `feedback-export-${new Date().toISOString().split('T')[0]}.csv`
-  a.click()
+  try {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `feedback-export-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
-/** PDF generation is best-effort (e.g. popup blocked) — never crash the page. */
+/**
+ * PDF generation is best-effort (e.g. popup blocked) — never crash the page.
+ * Only the error message is logged: the full error object could carry
+ * feedback content from the report payload.
+ */
 function safeGeneratePdf(generate: () => void): void {
   try {
     generate()
   } catch (err) {
-    console.error('PDF export failed:', err)
+    console.error('PDF export failed:', err instanceof Error ? err.message : String(err))
   }
 }
 
 export default function Categories() {
-  const { t } = useTranslation('common')
+  const { t } = useTranslation(['common', 'categories'])
   const { timeRange, customDays, dateBasis, config } = useConfigStore()
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
 
@@ -84,7 +93,7 @@ export default function Categories() {
   if (!config.apiEndpoint) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Please configure your API endpoint in Settings</p>
+        <p className="text-gray-500">{t('categories:configureApiEndpoint')}</p>
       </div>
     )
   }

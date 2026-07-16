@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -110,7 +111,31 @@ describe('FilterBar', () => {
 
     expect(screen.getByRole('radio', { name: '& below' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByRole('radio', { name: '& up' })).toHaveAttribute('aria-checked', 'false')
-    expect(screen.getByTitle('3 or fewer stars')).toBeInTheDocument()
+    expect(screen.getByTitle('3 stars or fewer')).toBeInTheDocument()
+  })
+
+  it('moves the selection with arrow keys and keeps only the checked option tabbable', async () => {
+    const user = userEvent.setup()
+
+    function Harness() {
+      const [ratingFilter, setRatingFilter] = useState<RatingFilter>({ value: 3, direction: 'up' })
+      return <FilterBar {...defaultProps} ratingFilter={ratingFilter} onRatingFilterChange={setRatingFilter} />
+    }
+    render(<Harness />)
+
+    expect(screen.getByRole('radio', { name: '& up' })).toHaveAttribute('tabindex', '0')
+    expect(screen.getByRole('radio', { name: '& below' })).toHaveAttribute('tabindex', '-1')
+
+    screen.getByRole('radio', { name: '& up' }).focus()
+    await user.keyboard('{ArrowRight}')
+
+    expect(screen.getByRole('radio', { name: '& below' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '& below' })).toHaveAttribute('tabindex', '0')
+    expect(screen.getByRole('radio', { name: '& up' })).toHaveAttribute('tabindex', '-1')
+    expect(screen.getByRole('radio', { name: '& below' })).toHaveFocus()
+
+    await user.keyboard('{ArrowLeft}')
+    expect(screen.getByRole('radio', { name: '& up' })).toHaveAttribute('aria-checked', 'true')
   })
 
   it('shows the clear button only when filters are active and fires onClearFilters', async () => {
@@ -134,11 +159,12 @@ describe('FilterBar', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Export PDF' })).toBeInTheDocument()
+    expect(screen.getByTestId('filter-bar-trailing')).toBeInTheDocument()
   })
 
   it('omits the trailing container when no trailing content is provided', () => {
-    const { container } = render(<FilterBar {...defaultProps} />)
+    render(<FilterBar {...defaultProps} />)
 
-    expect(container.querySelector('.lg\\:ml-auto')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('filter-bar-trailing')).not.toBeInTheDocument()
   })
 })

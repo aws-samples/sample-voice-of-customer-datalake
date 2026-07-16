@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import i18n from 'i18next'
 import {
   getSentimentScoreColorClass,
   getSentimentColorClass,
@@ -110,11 +111,11 @@ describe('types utilities', () => {
 
   describe('ratingFilterLabel', () => {
     it('formats the & up direction as N+', () => {
-      expect(ratingFilterLabel({ value: 4, direction: 'up' })).toBe('4+ stars')
+      expect(ratingFilterLabel({ value: 4, direction: 'up' }, i18n.t)).toBe('4+ stars')
     })
 
     it('formats the & below direction as ≤N', () => {
-      expect(ratingFilterLabel({ value: 3, direction: 'below' })).toBe('≤3 stars')
+      expect(ratingFilterLabel({ value: 3, direction: 'below' }, i18n.t)).toBe('≤3 stars')
     })
   })
 })

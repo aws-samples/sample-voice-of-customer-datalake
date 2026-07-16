@@ -13,6 +13,8 @@
 
 import { Search, Star, X } from 'lucide-react'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import type { RatingDirection, RatingFilter } from './types'
 
 interface FilterBarProps {
@@ -45,6 +47,7 @@ export function FilterBar({
   onClearFilters,
   trailing,
 }: FilterBarProps) {
+  const { t } = useTranslation('categories')
   return (
     <div className="card !p-4 sm:!p-6">
       <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4">
@@ -52,7 +55,7 @@ export function FilterBar({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
           <input
             type="text"
-            placeholder="Search feedback..."
+            placeholder={t('searchPlaceholder')}
             value={searchText}
             onChange={(e) => onSearchChange(e.target.value)}
             className="input !pl-11"
@@ -62,10 +65,10 @@ export function FilterBar({
           <select
             value={selectedSource || ''}
             onChange={(e) => onSourceChange(e.target.value || null)}
-            aria-label="Filter by source"
+            aria-label={t('filterBySource')}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value="">All Sources</option>
+            <option value="">{t('allSources')}</option>
             {allSources.map(source => (
               <option key={source} value={source}>{source}</option>
             ))}
@@ -78,7 +81,7 @@ export function FilterBar({
               onChange={(e) => onUrgentChange(e.target.checked)}
               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
-            <span className="text-sm text-gray-700">Urgent only</span>
+            <span className="text-sm text-gray-700">{t('urgentOnly')}</span>
           </label>
           {hasActiveFilters && (
             <button
@@ -86,12 +89,15 @@ export function FilterBar({
               className="flex items-center gap-1 text-xs sm:text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap"
             >
               <X size={14} />
-              Clear filters
+              {t('clearFilters')}
             </button>
           )}
         </div>
         {trailing && (
-          <div className="flex items-center lg:ml-auto lg:border-l lg:border-gray-200 lg:pl-4">
+          <div
+            data-testid="filter-bar-trailing"
+            className="flex items-center lg:ml-auto lg:border-l lg:border-gray-200 lg:pl-4"
+          >
             {trailing}
           </div>
         )}
@@ -100,30 +106,31 @@ export function FilterBar({
   )
 }
 
-function starTitle(rating: number, direction: RatingDirection): string {
-  if (rating === 0) return 'Any rating'
-  return direction === 'up' ? `${rating}+ stars` : `${rating} or fewer stars`
+function starTitle(t: TFunction<'categories'>, rating: number, direction: RatingDirection): string {
+  if (rating === 0) return t('anyRating')
+  return direction === 'up' ? t('starsMin', { count: rating }) : t('starsMax', { count: rating })
 }
 
 function RatingPicker({
   ratingFilter,
   onRatingFilterChange,
 }: Readonly<{ ratingFilter: RatingFilter; onRatingFilterChange: (filter: RatingFilter) => void }>) {
+  const { t } = useTranslation('categories')
   return (
     <div className="flex items-center gap-1.5 sm:gap-2">
-      <div className="flex items-center gap-0.5 sm:gap-1" role="group" aria-label="Star rating">
+      <div className="flex items-center gap-0.5 sm:gap-1" role="group" aria-label={t('starRating')}>
         {[0, 1, 2, 3, 4, 5].map(rating => (
           <button
             key={rating}
             onClick={() => onRatingFilterChange({ ...ratingFilter, value: rating })}
-            title={starTitle(rating, ratingFilter.direction)}
+            title={starTitle(t, rating, ratingFilter.direction)}
             className={clsx(
               'p-1 sm:p-1.5 rounded transition-colors active:scale-95',
               ratingFilter.value === rating ? 'bg-yellow-100' : 'hover:bg-gray-100'
             )}
           >
             {rating === 0 ? (
-              <span className="text-xs text-gray-500 px-1">Any</span>
+              <span className="text-xs text-gray-500 px-1">{t('any')}</span>
             ) : (
               <Star
                 size={14}
@@ -140,27 +147,46 @@ function RatingPicker({
   )
 }
 
+/**
+ * Two-option radiogroup with the full keyboard pattern: arrow keys move the
+ * selection, and only the checked option is tabbable (roving tabindex).
+ * With exactly two options, any arrow key selects the other one.
+ */
 function RatingDirectionToggle({
   ratingFilter,
   onRatingFilterChange,
 }: Readonly<{ ratingFilter: RatingFilter; onRatingFilterChange: (filter: RatingFilter) => void }>) {
+  const { t } = useTranslation('categories')
+
+  const select = (direction: RatingDirection) => onRatingFilterChange({ ...ratingFilter, direction })
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return
+    e.preventDefault()
+    const next: RatingDirection = ratingFilter.direction === 'up' ? 'below' : 'up'
+    select(next)
+    const radios = e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+    radios[next === 'up' ? 0 : 1]?.focus()
+  }
+
   return (
     <div
       className="flex items-center rounded-lg bg-gray-100 p-0.5 text-xs"
       role="radiogroup"
-      aria-label="Rating direction"
+      aria-label={t('ratingDirection')}
+      onKeyDown={handleKeyDown}
     >
       <DirectionOption
-        label="& up"
-        title="Selected rating or more stars"
+        label={t('ratingUp')}
+        title={t('ratingUpTitle')}
         checked={ratingFilter.direction === 'up'}
-        onSelect={() => onRatingFilterChange({ ...ratingFilter, direction: 'up' })}
+        onSelect={() => select('up')}
       />
       <DirectionOption
-        label="& below"
-        title="Selected rating or fewer stars"
+        label={t('ratingBelow')}
+        title={t('ratingBelowTitle')}
         checked={ratingFilter.direction === 'below'}
-        onSelect={() => onRatingFilterChange({ ...ratingFilter, direction: 'below' })}
+        onSelect={() => select('below')}
       />
     </div>
   )
@@ -178,6 +204,7 @@ function DirectionOption({
       title={title}
       role="radio"
       aria-checked={checked}
+      tabIndex={checked ? 0 : -1}
       className={clsx(
         'px-1.5 py-0.5 rounded whitespace-nowrap transition-colors active:scale-95',
         checked ? 'bg-white shadow-sm text-gray-700' : 'text-gray-500 hover:text-gray-700'

@@ -68,6 +68,21 @@ function computeHasActiveFilters(state: CategoryFiltersState): boolean {
   )
 }
 
+/** Canonical query string for the URL-synced subset of the filter state. */
+function buildShareableParams(
+  searchText: string,
+  selectedSource: string | null,
+  sentimentFilter: SentimentFilter,
+  selectedCategories: string[]
+): URLSearchParams {
+  const params = new URLSearchParams()
+  if (searchText) params.set('q', searchText)
+  if (selectedSource) params.set('source', selectedSource)
+  if (sentimentFilter !== 'all') params.set('sentiment', sentimentFilter)
+  if (selectedCategories.length > 0) params.set('category', selectedCategories.join(','))
+  return params
+}
+
 export function useCategoryFilters(): CategoryFiltersApi {
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -82,15 +97,40 @@ export function useCategoryFilters(): CategoryFiltersApi {
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>(ANY_RATING_FILTER)
   const [showUrgentOnly, setShowUrgentOnly] = useState(false)
 
+  // Canonical form of what the URL says vs. what the state says. When they
+  // disagree right after the URL changed, the change came from outside
+  // (browser back/forward, same-route navigation to /categories?...) and the
+  // state adopts it. Guarded render-phase updates per React's "adjusting
+  // state when props change" pattern — our own URL mirroring converges the
+  // two snapshots, so it never re-triggers adoption.
+  const urlSnapshot = buildShareableParams(
+    searchParams.get('q') ?? '',
+    searchParams.get('source'),
+    parseSentimentParam(searchParams.get('sentiment')),
+    parseCategoriesParam(searchParams.get('category'))
+  ).toString()
+  const stateSnapshot = buildShareableParams(
+    searchText,
+    selectedSource,
+    sentimentFilter,
+    selectedCategories
+  ).toString()
+  const [prevUrlSnapshot, setPrevUrlSnapshot] = useState(urlSnapshot)
+  if (urlSnapshot !== prevUrlSnapshot) {
+    setPrevUrlSnapshot(urlSnapshot)
+    if (urlSnapshot !== stateSnapshot) {
+      setSearchText(searchParams.get('q') ?? '')
+      setSelectedSource(searchParams.get('source'))
+      setSentimentFilter(parseSentimentParam(searchParams.get('sentiment')))
+      setSelectedCategories(parseCategoriesParam(searchParams.get('category')))
+    }
+  }
+
   // Mirror the shareable filters to the URL (replace, not push, so the
   // browser back button isn't flooded by keystrokes). The legacy `all=1`
   // param is intentionally dropped: browse-all is now the default state.
   useEffect(() => {
-    const params = new URLSearchParams()
-    if (searchText) params.set('q', searchText)
-    if (selectedSource) params.set('source', selectedSource)
-    if (sentimentFilter !== 'all') params.set('sentiment', sentimentFilter)
-    if (selectedCategories.length > 0) params.set('category', selectedCategories.join(','))
+    const params = buildShareableParams(searchText, selectedSource, sentimentFilter, selectedCategories)
     setSearchParams(params, { replace: true })
   }, [searchText, selectedSource, sentimentFilter, selectedCategories, setSearchParams])
 

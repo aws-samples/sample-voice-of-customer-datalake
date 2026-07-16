@@ -291,4 +291,19 @@ describe('Categories', () => {
       })
     })
   })
+
+  describe('CSV export', () => {
+    it('revokes the blob object URL after triggering the download', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Export as CSV' })).toBeInTheDocument()
+      })
+
+      await user.click(screen.getByRole('button', { name: 'Export as CSV' }))
+
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
+    })
+  })
 })

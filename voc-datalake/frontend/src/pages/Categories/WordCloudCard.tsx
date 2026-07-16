@@ -10,6 +10,7 @@
  */
 
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import type { WordCloudItem } from './types'
 
 interface WordCloudCardProps {
@@ -20,11 +21,12 @@ interface WordCloudCardProps {
 }
 
 export function WordCloudCard({ wordCloudData, searchText, onSearchChange }: WordCloudCardProps) {
+  const { t } = useTranslation('categories')
   const maxCount = Math.max(...wordCloudData.map(w => w.count), 1)
 
   return (
     <div className="card">
-      <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Trending Keywords</h2>
+      <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('trendingKeywords')}</h2>
       <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center items-center min-h-[150px] sm:min-h-[200px]">
         {wordCloudData.map(({ word, count }) => {
           const size = 0.65 + (count / maxCount) * 0.6
@@ -40,14 +42,14 @@ export function WordCloudCard({ wordCloudData, searchText, onSearchChange }: Wor
                   : 'bg-blue-100 text-blue-800 hover:bg-blue-200 sm:hover:scale-105'
               )}
               style={{ fontSize: `${size}rem` }}
-              title={`${count} mentions - click to search`}
+              title={t('mentionsTooltip', { count })}
             >
               {word}
             </button>
           )
         })}
         {wordCloudData.length === 0 && (
-          <p className="text-gray-400 text-xs sm:text-sm">No keyword data available</p>
+          <p className="text-gray-400 text-xs sm:text-sm">{t('noKeywordData')}</p>
         )}
       </div>
     </div>

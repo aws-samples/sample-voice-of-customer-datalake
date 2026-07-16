@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import type { FeedbackItem } from '../../api/client'
 
 export type ViewMode = 'grid' | 'list'
@@ -27,9 +28,15 @@ export function matchesRatingFilter(rating: number | undefined, filter: RatingFi
   return filter.direction === 'up' ? rating >= filter.value : rating <= filter.value
 }
 
-/** Compact label for active-filter summaries, e.g. "3+ stars" / "≤3 stars". */
-export function ratingFilterLabel(filter: RatingFilter): string {
-  return filter.direction === 'up' ? `${filter.value}+ stars` : `≤${filter.value} stars`
+/**
+ * Compact localized label for active-filter summaries, e.g. "3+ stars" /
+ * "≤3 stars". Keys are namespace-prefixed so any `t` works as long as the
+ * `categories` namespace is loaded.
+ */
+export function ratingFilterLabel(filter: RatingFilter, t: TFunction): string {
+  return filter.direction === 'up'
+    ? t('categories:starsMin', { count: filter.value })
+    : t('categories:starsMaxShort', { count: filter.value })
 }
 
 export interface CategoryData {
