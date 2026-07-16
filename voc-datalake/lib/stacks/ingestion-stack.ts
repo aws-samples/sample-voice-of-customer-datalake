@@ -25,6 +25,7 @@ import { uniqueName } from '../utils/naming';
 import { NagSuppressions } from 'cdk-nag';
 import { apiSecretsSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns } from '../utils/model-allowlist';
+import { pythonLayerCode } from '../utils/python-layer-bundling';
 
 export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -330,16 +331,7 @@ export class VocIngestionStack extends cdk.Stack {
 
   private createDependenciesLayer(): lambda.LayerVersion {
     return new lambda.LayerVersion(this, 'IngestionDepsLayer', {
-      code: lambda.Code.fromAsset('lambda/layers/ingestion-deps', {
-        bundling: {
-          image: lambda.Runtime.PYTHON_3_14.bundlingImage,
-          platform: 'linux/arm64',
-          command: [
-            'bash', '-c',
-            'pip install -r requirements.txt -t /asset-output/python && cp -r . /asset-output/python/'
-          ],
-        },
-      }),
+      code: pythonLayerCode('lambda/layers/ingestion-deps'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
       description: 'Common dependencies for ingestion lambdas (ARM64/Graviton)',

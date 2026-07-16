@@ -20,6 +20,7 @@ import { uniqueName } from '../utils/naming';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns } from '../utils/model-allowlist';
+import { pythonLayerCode } from '../utils/python-layer-bundling';
 
 export interface VocApiStackProps extends cdk.StackProps {
   // Core stack resources
@@ -109,16 +110,7 @@ export class VocApiStack extends cdk.Stack {
 
     // Shared Lambda Layer
     const apiLayer = new lambda.LayerVersion(this, 'ApiDepsLayer', {
-      code: lambda.Code.fromAsset('lambda/layers/processing-deps', {
-        bundling: {
-          image: lambda.Runtime.PYTHON_3_14.bundlingImage,
-          platform: 'linux/arm64',
-          command: [
-            'bash', '-c',
-            'pip install -r requirements.txt -t /asset-output/python && cp -r . /asset-output/python/'
-          ],
-        },
-      }),
+      code: pythonLayerCode('lambda/layers/processing-deps'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
       description: 'Dependencies for API lambdas (ARM64/Graviton)',

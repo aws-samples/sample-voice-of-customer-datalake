@@ -25,6 +25,10 @@ PLATFORM="linux/arm64"
 
 # Install layer deps, then strip the AWS SDK.
 #
+# KEPT IN LOCKSTEP with lib/utils/python-layer-bundling.ts — the CDK stacks
+# re-bundle these same layers at synth time with the identical recipe. Change
+# one, change both.
+#
 # Lambda's Python runtime PROVIDES boto3/botocore as a matched pair, but
 # aws-lambda-powertools[tracer] -> aws-xray-sdk pulls botocore in
 # transitively. Shipping that botocore (without boto3) is harmful:
@@ -37,8 +41,8 @@ PLATFORM="linux/arm64"
 # dir's botocore, printing a scary-but-irrelevant "dependency resolver"
 # error on every build — a clean venv has nothing installed, so there is
 # nothing to conflict with. The remaining flags silence build-image noise
-# (root-user warning, self-update notice) that isn't actionable in a
-# throwaway container.
+# (root-user warning, unwritable-cache warning, self-update notice) that
+# isn't actionable in a throwaway container.
 install_layer_deps() {
   local layer_dir="$1"
   "$CONTAINER_CMD" run --rm --platform "$PLATFORM" \
@@ -46,7 +50,7 @@ install_layer_deps() {
     "$DOCKER_IMAGE" \
     sh -c "python -m venv /tmp/buildenv \
            && /tmp/buildenv/bin/pip install -r /var/task/requirements.txt -t /var/task/python \
-                --upgrade --quiet --root-user-action=ignore --disable-pip-version-check \
+                --upgrade --quiet --no-cache-dir --root-user-action=ignore --disable-pip-version-check \
            && rm -rf /var/task/python/boto3 /var/task/python/botocore \
                      /var/task/python/boto3-* /var/task/python/botocore-*"
 }
