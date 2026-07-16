@@ -178,7 +178,7 @@ The platform consists of 4 core stacks plus 2 optional ones:
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
 | `BedrockAccessStack` (optional) | Bedrock model access / Anthropic use case submission — created only when `anthropicUseCase` is set in `cdk.context.json` (see the conditional in `bin/voc-datalake.ts`) | None |
-| `VocWebSearchStack` (optional) | AgentCore Gateway for public web search — opt-in via `enableWebSearch: true`; always deploys to us-east-1 (the connector only exists there) | None |
+| `VocWebSearchStack` (default-on, opt-out) | AgentCore Gateway for public web search — deployed by default, opt out via `enableWebSearch: false`; always deploys to us-east-1 (the connector only exists there). **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
 
 ### Deploy All Stacks
 
@@ -218,23 +218,23 @@ Due to dependencies, stacks should be deployed in this order:
 
 The `cdk deploy --all` command handles this automatically.
 
-### Enabling Web Search (optional)
+### Web Search (on by default)
 
-Public web search in AI Chat and Research is opt-in and off by default —
-without it the UI hides the web-search toggle entirely (the deployment
-reports `WebSearchAvailable=false` and `config.json` ships
-`features.webSearch: false`).
+Public web search in AI Chat and Research deploys by default; individual
+searches stay opt-in per request (chat toggle, research wizard checkbox).
 
-To enable it:
+Requirement: the gateway only exists in us-east-1, so that region must be
+bootstrapped even when the app lives elsewhere (cross-region references):
 
 ```bash
-# One-time: the gateway only exists in us-east-1, so that region must be
-# bootstrapped even when the app lives elsewhere (cross-region references)
 cdk bootstrap aws://ACCOUNT_ID/us-east-1
-
-cdk deploy --all -c enableWebSearch=true
-npm run deploy:frontend   # regenerates config.json with webSearch: true
 ```
+
+To opt OUT (e.g. when a us-east-1 bootstrap isn't possible) set
+`"enableWebSearch": false` in `cdk.context.json` or deploy with
+`-c enableWebSearch=false` — the UI then hides the web-search surfaces
+entirely (the deployment reports `WebSearchAvailable=false` and
+`config.json` ships `features.webSearch: false`).
 
 Cost model (per `bin/voc-datalake.ts`): the gateway has no standing cost;
 searches bill per query ($7/1k at the time of writing — check AgentCore
@@ -370,11 +370,11 @@ entirely within AWS and are billed at $7 per 1,000 searches; the feature is
 opt-in per request in both UIs (chat toggle, research wizard checkbox).
 
 The connector only exists in **us-east-1**, so the stack always deploys
-there. Deployment is **explicitly opt-in** while the connector integration
-is new — enable it with `"enableWebSearch": true` in `cdk.context.json`:
+there. Deployment is **on by default** (opt out with
+`"enableWebSearch": false` in `cdk.context.json`):
 
-- App deployed to us-east-1: the flag is all that's needed.
-- App deployed to any other region: the flag plus a us-east-1 bootstrap
+- App deployed to us-east-1: nothing else needed.
+- App deployed to any other region: a us-east-1 bootstrap
   (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`); CDK cross-region references
   carry the gateway URL/ARN to the app region.
 

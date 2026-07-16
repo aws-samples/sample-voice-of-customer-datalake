@@ -17,7 +17,8 @@ import { uniqueName } from '../utils/naming';
  * HTTPS with SigV4, and the gateway URL/ARN flow to those stacks via CDK
  * cross-region references (SSM-backed when regions differ).
  *
- * Opt-in via `"enableWebSearch": true` in cdk.context.json. When the app
+ * Deployed BY DEFAULT; flag semantics live in
+ * lib/utils/web-search-default.ts (single source of truth). When the app
  * region is not us-east-1, the account must also be bootstrapped in
  * us-east-1 (`cdk bootstrap aws://ACCOUNT/us-east-1`).
  *
