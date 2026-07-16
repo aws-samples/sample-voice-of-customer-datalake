@@ -127,7 +127,8 @@ export class VocApiStack extends cdk.Stack {
     const createApiLambdaCode = (handlerFileName: string): lambda.Code => {
       return lambda.Code.fromAsset('lambda', {
         // Stages only api/ + shared/ — everything else is hash noise.
-        exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'aggregator', 'jobs', 'processor', 'research'],
+        exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/jobs/', '/processor/', '/research/'],
+        ignoreMode: cdk.IgnoreMode.GIT,
         bundling: {
           image: lambda.Runtime.PYTHON_3_14.bundlingImage,
           command: [
@@ -465,7 +466,8 @@ export class VocApiStack extends cdk.Stack {
     const createJobLambdaCode = (jobFolder: string): lambda.Code => {
       return lambda.Code.fromAsset('lambda', {
         // Stages only jobs/ + api/ (projects.py, product_context.py, prompts) + shared/.
-        exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'aggregator', 'processor', 'research'],
+        exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/processor/', '/research/'],
+        ignoreMode: cdk.IgnoreMode.GIT,
         bundling: {
           image: lambda.Runtime.PYTHON_3_14.bundlingImage,
           command: [

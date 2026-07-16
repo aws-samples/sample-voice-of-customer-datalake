@@ -8,91 +8,108 @@
  * and caches were hashed into every Python function asset, so unrelated
  * edits redeployed all ~25 functions with byte-identical code.
  *
- * PATTERN SEMANTICS (issue #203 — this bit us hard): CDK matches each
- * pattern with `minimatch(relativePath, pattern, { matchBase: true })`, and
- * `**` NEVER crosses a dot segment. Consequences:
- *   - `'dir/**'` excludes dir's plain children but NOT its dot-children —
- *     `'cdk.out/**'` left `cdk.out/.cache/*.zip` (CDK's own publishing
- *     cache!) in the fingerprint, so every deploy changed the next synth's
- *     ingestor asset hashes, forever.
- *   - Excluding the DIRECTORY ITSELF ('cdk.out', or path-qualified
- *     'lambda/layers') prunes the whole subtree via completelyIgnores —
- *     dot-children included. ALWAYS name directories; never append '/**'.
- *   - matchBase applies to slash-less patterns only: bare 'test' matches a
- *     dir named test at ANY depth; 'lambda/layers' matches exactly that
- *     path.
+ * WHY IgnoreMode.GIT (issue #203 — the default GLOB mode bit us hard):
+ * GLOB matches with `minimatch(relativePath, pattern, { matchBase: true })`
+ * where `**` never crosses a dot segment — so 'cdk.out/**' left
+ * cdk.out/.cache/*.zip (CDK's own publishing cache!) in the fingerprint,
+ * and every deploy changed the next synth's ingestor hashes, forever.
+ * GLOB also cannot express "top-level only" for a bare name (matchBase
+ * makes 'lib' match plugins/x/ingestor/lib too). Gitignore semantics give
+ * both properties at once:
+ *   - 'dir/' prunes the whole subtree, dot-children included;
+ *   - a leading '/' anchors to the staging root, so payload subtrees that
+ *     happen to share a name (a plugin's lib/ or scripts/) still stage.
  *
- * lib/utils/lambda-asset-excludes.test.ts enforces both the spread usage in
- * the stacks and the dot-child behavior with aws-cdk-lib's own
- * IgnoreStrategy.
+ * EVERY call site that uses these lists MUST pass
+ * `ignoreMode: IgnoreMode.GIT` — the patterns are written for it, and
+ * lib/utils/lambda-asset-excludes.test.ts enforces both the spread usage
+ * and the behavior with aws-cdk-lib's own IgnoreStrategy.git.
  */
 
 /**
  * For `Code.fromAsset('lambda', ...)` bundles (api, jobs, processor,
  * aggregator, research). Spread this into `exclude`, then add the sibling
- * handler dirs that particular bundle does not copy.
+ * handler dirs that particular bundle does not copy (anchored, e.g.
+ * '/aggregator/').
  */
 export const PY_LAMBDA_ASSET_EXCLUDES = [
-  '__pycache__',
+  '__pycache__/',
   '*.pyc',
   '.DS_Store',
   // pytest suites (api/test, shared/test, jobs/*/test) never ship
-  'test',
+  'test/',
   'test_*.py',
   'conftest.py',
   // inlined into stacks via readFileSync, never bundled
-  'custom_resources',
+  '/custom_resources/',
   // pip layer sources + local build output (see python-layer-bundling.ts)
-  'layers',
+  '/layers/',
   // Node.js streaming Lambda — bundled separately by NodejsFunction
-  'stream',
+  '/stream/',
 ];
 
 /**
- * For the plugin ingestor bundles, which must stage from the PROJECT ROOT
- * (they copy plugins/<id>/ingestor + plugins/_shared + lambda/shared). Only
- * those three trees may influence the asset hash — everything else here is
- * noise, and dot-children of excluded dirs must be pruned too (see module
- * doc). Bare names match at any depth by design (e.g. 'dist' also covers
- * lambda/stream/dist).
+ * Excludes for one plugin-ingestor bundle, which must stage from the
+ * PROJECT ROOT (it copies plugins/<id>/ingestor + plugins/_shared +
+ * lambda/shared). Only those three trees may influence the asset hash:
+ * sibling plugins are excluded per-id, so editing one plugin no longer
+ * redeploys all five ingestors.
  */
-export const ROOT_PLUGIN_ASSET_EXCLUDES = [
-  '__pycache__',
-  '*.pyc',
-  '.DS_Store',
-  'test',
-  'conftest.py',
-  'test_*.py',
-  'node_modules',
-  'cdk.out',
-  'frontend',
-  '*.ts',
-  '*.js',
-  '*.json',
-  '*.md',
-  'bin',
-  'lib',
-  'dist',
-  '.venv',
-  '.pytest_cache',
-  '.ruff_cache',
-  'coverage_html',
-  '.coverage',
-  '.coveragerc',
-  'ruff.toml',
-  'pytest.ini',
-  'requirements-dev.txt',
-  'chrome-extension',
-  'scripts',
-  'schemas',
-  'Workshop',
-  'plugins/_template',
-  'lambda/aggregator',
-  'lambda/api',
-  'lambda/custom_resources',
-  'lambda/jobs',
-  'lambda/layers',
-  'lambda/processor',
-  'lambda/research',
-  'lambda/stream',
-];
+export function rootPluginAssetExcludes(pluginId: string, allPluginIds: string[]): string[] {
+  return [
+    // Any-depth noise inside the staged trees.
+    '__pycache__/',
+    '*.pyc',
+    '.DS_Store',
+    'test/',
+    'conftest.py',
+    'test_*.py',
+    // Hash-noise files anywhere (nothing the bundles copy is ts/js/json/md;
+    // plugin manifest.json is a synth-time input read from the SOURCE tree,
+    // not from the staged asset).
+    '*.ts',
+    '*.js',
+    '*.json',
+    '*.md',
+    // Top-level-only (anchored): repo/tooling dirs that must never feed the
+    // hash — but whose NAMES a plugin payload may legitimately reuse.
+    '/.git/',
+    '/.vscode/',
+    '/.idea/',
+    '/.env*',
+    '/node_modules/',
+    '/cdk.out/',
+    '/frontend/',
+    '/bin/',
+    '/lib/',
+    '/dist/',
+    '/.venv/',
+    '/.pytest_cache/',
+    '/.ruff_cache/',
+    '/coverage_html/',
+    '/.coverage',
+    '/.coveragerc',
+    '/ruff.toml',
+    '/pytest.ini',
+    '/requirements-dev.txt',
+    '/chrome-extension/',
+    '/scripts/',
+    '/schemas/',
+    '/Workshop/',
+    '/plugins/_template/',
+    // lambda/: only shared/ ships in ingestor bundles.
+    '/lambda/aggregator/',
+    '/lambda/api/',
+    '/lambda/custom_resources/',
+    '/lambda/jobs/',
+    '/lambda/layers/',
+    '/lambda/processor/',
+    '/lambda/research/',
+    '/lambda/stream/',
+    // Sibling plugins: their edits must not churn THIS plugin's hash.
+    ...allPluginIds
+      .filter((id) => id !== pluginId)
+      .sort()
+      .map((id) => `/plugins/${id}/`),
+  ];
+}

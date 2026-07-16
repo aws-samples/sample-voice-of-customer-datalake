@@ -26,7 +26,7 @@ import { NagSuppressions } from 'cdk-nag';
 import { apiSecretsSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
-import { ROOT_PLUGIN_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
+import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
 
 export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -98,7 +98,10 @@ export class VocIngestionStack extends cdk.Stack {
     // Lambda Layer for common dependencies
     const dependenciesLayer = this.createDependenciesLayer();
 
-    // Create Lambda functions for each enabled plugin with ingestor
+    // Create Lambda functions for each enabled plugin with ingestor.
+    // allPluginIds feeds the per-plugin sibling excludes: every plugin dir
+    // on disk (enabled or not) is hash-noise for the OTHER ingestors.
+    const allPluginIds = allPlugins.map((p) => p.id);
     const ingestorPlugins = getPluginsWithIngestor(enabledPlugins);
     for (const plugin of ingestorPlugins) {
       this.createIngestorLambda(
@@ -106,7 +109,8 @@ export class VocIngestionStack extends cdk.Stack {
         ingestionRole,
         commonEnv,
         dependenciesLayer,
-        aggregatesTable
+        aggregatesTable,
+        allPluginIds
       );
     }
 
@@ -345,6 +349,7 @@ export class VocIngestionStack extends cdk.Stack {
     commonEnv: Record<string, string>,
     dependenciesLayer: lambda.LayerVersion,
     aggregatesTable: dynamodb.Table,
+    allPluginIds: string[],
   ): void {
     const infra = plugin.infrastructure.ingestor;
     if (!infra?.enabled) return;
@@ -360,7 +365,7 @@ export class VocIngestionStack extends cdk.Stack {
     lambdaEnv.AGGREGATES_TABLE = aggregatesTable.tableName;
 
     // Bundle plugin code from plugins/ directory
-    const ingestorCode = this.bundlePluginCode(plugin.id);
+    const ingestorCode = this.bundlePluginCode(plugin.id, allPluginIds);
 
     // Parse schedule from manifest
     const schedule = this.parseSchedule(infra.schedule);
@@ -399,13 +404,16 @@ export class VocIngestionStack extends cdk.Stack {
     this.ingestionLambdas.set(plugin.id, fn);
   }
 
-  private bundlePluginCode(pluginId: string): lambda.Code {
+  private bundlePluginCode(pluginId: string, allPluginIds: string[]): lambda.Code {
     // Root-based staging (this bundle spans plugins/ AND lambda/shared):
     // everything not excluded feeds the asset hash. The exclude list lives
-    // in lambda-asset-excludes.ts — see its doc for the dot-child pattern
-    // semantics that caused issue #203 (cdk.out/.cache churned every hash).
+    // in lambda-asset-excludes.ts — see its doc for why GIT ignore mode
+    // (issue #203: GLOB's 'dir/**' leaked dot-children like cdk.out/.cache,
+    // churning every ingestor hash on every deploy) and why sibling plugins
+    // are excluded per-id (their edits must not redeploy THIS ingestor).
     return lambda.Code.fromAsset('.', {
-      exclude: ROOT_PLUGIN_ASSET_EXCLUDES,
+      exclude: rootPluginAssetExcludes(pluginId, allPluginIds),
+      ignoreMode: cdk.IgnoreMode.GIT,
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: [
