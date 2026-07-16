@@ -93,4 +93,21 @@ describe('FilterBar', () => {
     await user.click(screen.getByText('Clear filters'))
     expect(onClearFilters).toHaveBeenCalled()
   })
+
+  it('renders trailing content in the bar when provided', () => {
+    render(
+      <FilterBar
+        {...defaultProps}
+        trailing={<button type="button">Export PDF</button>}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: 'Export PDF' })).toBeInTheDocument()
+  })
+
+  it('omits the trailing container when no trailing content is provided', () => {
+    const { container } = render(<FilterBar {...defaultProps} />)
+
+    expect(container.querySelector('.lg\\:ml-auto')).not.toBeInTheDocument()
+  })
 })
