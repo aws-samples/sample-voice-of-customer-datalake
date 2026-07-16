@@ -112,7 +112,7 @@ describe('buildProjectChatContext', () => {
     expect(ctx.systemPrompt).toContain('PERSONA MODE ACTIVE');
     expect(ctx.systemPrompt).toContain('Price-conscious shopper');
     expect(ctx.systemPrompt).toContain('Save money');
-    expect(ctx.metadata.selected_personas).toEqual(['Budget Buyer']);
+    expect(ctx.metadata.selected_personas).toStrictEqual(['Budget Buyer']);
   });
 
   it('activates personas mentioned with @ in message', async () => {
@@ -126,7 +126,7 @@ describe('buildProjectChatContext', () => {
     );
 
     expect(ctx.systemPrompt).toContain('Power User');
-    expect(ctx.metadata.mentioned_personas).toEqual(['Power User']);
+    expect(ctx.metadata.mentioned_personas).toStrictEqual(['Power User']);
   });
 
   it('includes selected document content in system prompt', async () => {
@@ -144,7 +144,7 @@ describe('buildProjectChatContext', () => {
     expect(ctx.systemPrompt).toContain('Product Requirements');
     expect(ctx.systemPrompt).toContain('PRD');
     expect(ctx.systemPrompt).toContain('update_document');
-    expect(ctx.metadata.referenced_documents).toEqual(['Product Requirements']);
+    expect(ctx.metadata.referenced_documents).toStrictEqual(['Product Requirements']);
   });
 
   it('lists unselected documents as available', async () => {
@@ -201,7 +201,7 @@ describe('buildProjectChatContext', () => {
 
     // Only 1 DynamoDB call (project query), no feedback query
     expect(docClient.send).toHaveBeenCalledTimes(1);
-    expect(ctx.metadata.context).toEqual(
+    expect(ctx.metadata.context).toStrictEqual(
       expect.objectContaining({ feedback_count: 0 }),
     );
   });
@@ -216,7 +216,7 @@ describe('buildProjectChatContext', () => {
       'hello',
     );
 
-    expect(ctx.metadata.context).toEqual({
+    expect(ctx.metadata.context).toStrictEqual({
       feedback_count: expect.any(Number),
       persona_count: 2,
       document_count: 1,
@@ -251,6 +251,6 @@ describe('buildProjectChatContext', () => {
     );
 
     expect(ctx.systemPrompt).toContain('No Avatar Persona');
-    expect(ctx.metadata.selected_personas).toEqual(['No Avatar Persona']);
+    expect(ctx.metadata.selected_personas).toStrictEqual(['No Avatar Persona']);
   });
 });

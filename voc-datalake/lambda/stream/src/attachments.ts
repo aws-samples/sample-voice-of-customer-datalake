@@ -5,17 +5,19 @@ import type { ContentBlock } from '@aws-sdk/client-bedrock-runtime';
 import type { Attachment } from './schema.js';
 import { ValidationError } from './lib/errors.js';
 
-const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+// 5MB
+const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
-const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+type ImageFormat = 'png' | 'jpeg' | 'gif' | 'webp';
 
-const FORMAT_MAP: Record<string, string> = {
+const IMAGE_FORMATS: Record<string, ImageFormat> = {
   'image/png': 'png',
   'image/jpeg': 'jpeg',
   'image/gif': 'gif',
   'image/webp': 'webp',
-  'application/pdf': 'pdf',
 };
+
+const PDF_TYPE = 'application/pdf';
 
 /**
  * Validate attachments and convert to Bedrock Converse API content blocks.
@@ -29,25 +31,24 @@ export function attachmentsToContentBlocks(attachments: Attachment[]): ContentBl
       );
     }
 
-    const format = FORMAT_MAP[att.media_type];
-    if (!format) {
-      throw new ValidationError(`Unsupported media type: ${att.media_type}`);
-    }
-
-    if (IMAGE_TYPES.has(att.media_type)) {
+    const imageFormat = IMAGE_FORMATS[att.media_type];
+    if (imageFormat) {
       return {
         image: {
-          format: format as 'png' | 'jpeg' | 'gif' | 'webp',
+          format: imageFormat,
           source: { bytes: decoded },
         },
       };
     }
 
-    // PDF document
+    if (att.media_type !== PDF_TYPE) {
+      throw new ValidationError(`Unsupported media type: ${att.media_type}`);
+    }
+
     const docName = att.name.includes('.') ? att.name.split('.').slice(0, -1).join('.') : att.name;
     return {
       document: {
-        format: format as 'pdf',
+        format: 'pdf',
         name: docName,
         source: { bytes: decoded },
       },

@@ -5,20 +5,28 @@
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { ConfigurationError, NotFoundError } from '../lib/errors.js';
+import { buildSinglePersonaPrompt, getLanguageInstruction } from './persona-prompt.js';
 
 // ── Avatar URL helpers ──
 
 const AVATARS_CDN_URL = process.env.AVATARS_CDN_URL ?? '';
 
 /** Convert an S3 URI (s3://bucket/avatars/file.png) to a CloudFront CDN URL. */
+function stripTrailingSlashes(value: string): string {
+  // Recursive instead of a trailing-slash regex: sonarjs flags /\/+$/ as
+  // backtracking-prone, and the input is a short constant env URL.
+  return value.endsWith('/') ? stripTrailingSlashes(value.slice(0, -1)) : value;
+}
+
 function resolveAvatarUrl(url: string | undefined): string | undefined {
   if (!url) return undefined;
-  if (!url.startsWith('s3://')) return url; // already a CDN URL
+  // Anything not an S3 URI is already a CDN URL.
+  if (!url.startsWith('s3://')) return url;
   if (!AVATARS_CDN_URL) return undefined;
   const parts = url.split('/');
   const filename = parts[parts.length - 1];
   if (!filename) return undefined;
-  return `${AVATARS_CDN_URL.replace(/\/+$/, '')}/${filename}`;
+  return `${stripTrailingSlashes(AVATARS_CDN_URL)}/${filename}`;
 }
 
 interface ProjectChatContext {
@@ -36,10 +44,14 @@ interface ProjectChatContext {
  * values to `undefined` before parsing so missing/empty attributes validate
  * cleanly. All downstream reads already default with `?? ...`.
  */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function nullsToUndefined(raw: unknown): unknown {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  if (!isPlainRecord(raw)) return raw;
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(raw)) {
     out[key] = value === null ? undefined : value;
   }
   return out;
@@ -90,17 +102,7 @@ const projectItemSchema = z.preprocess(nullsToUndefined, z.object({
   created_at: z.string().optional(),
 }).passthrough());
 
-type ProjectItem = z.infer<typeof projectItemSchema>;
-
-function getLanguageInstruction(lang?: string): string {
-  if (!lang || lang === 'en') return '';
-  const names: Record<string, string> = {
-    es: 'Spanish', fr: 'French', de: 'German', pt: 'Portuguese',
-    ja: 'Japanese', zh: 'Chinese', ko: 'Korean', it: 'Italian',
-  };
-  const name = names[lang] ?? lang;
-  return `IMPORTANT: You MUST respond entirely in ${name} (${lang}). All text, headings, labels, and explanations must be in ${name}.`;
-}
+export type ProjectItem = z.infer<typeof projectItemSchema>;
 
 // ── Item classification ──
 
@@ -397,65 +399,7 @@ export async function buildProjectChatContext(
 }
 
 
-// ── Roundtable: build a per-persona system prompt for each participant ──
-
-function buildSinglePersonaPrompt(
-  projectName: string,
-  persona: ProjectItem,
-  selectedContent: string,
-  otherDocsList: string[],
-  feedbackSection: string,
-  selectedDocumentIds: string[],
-  documents: ProjectItem[],
-  previousResponses: Array<{ name: string; response: string }>,
-  responseLanguage?: string,
-): string {
-  const parts: string[] = [
-    `You are "${persona.name}" — a customer persona in the project "${projectName}".\n`,
-    `Your tagline: "${persona.tagline ?? ''}"\n`,
-    `Your voice: "${persona.quote ?? ''}"\n\n`,
-  ];
-
-  const goals = (persona.goals ?? []).slice(0, 4).map((g) => `- ${g}`).join('\n');
-  const frustrations = (persona.frustrations ?? []).slice(0, 4).map((f) => `- ${f}`).join('\n');
-  const needs = (persona.needs ?? []).slice(0, 4).map((n) => `- ${n}`).join('\n');
-
-  parts.push(`**Your Goals:**\n${goals}\n\n`);
-  parts.push(`**Your Frustrations:**\n${frustrations}\n\n`);
-  parts.push(`**Your Needs:**\n${needs}\n\n`);
-
-  parts.push('Respond in first person AS this persona. Use "I think...", "As someone who...", etc. Be concise — keep your response to 2-4 paragraphs.\n');
-  parts.push('You are in a roundtable discussion with other customer personas. Speak naturally, share your honest opinion, and don\'t hold back. If you disagree with someone, say so directly.\n\n');
-
-  if (selectedContent) {
-    parts.push(`## REFERENCED DOCUMENTS\n${selectedContent}\n`);
-  }
-
-  if (feedbackSection) parts.push(feedbackSection);
-
-  if (previousResponses.length > 0) {
-    parts.push('## What other personas have said (you may agree, disagree, or build on their points)\n\n');
-    for (const prev of previousResponses) {
-      parts.push(`**${prev.name}:** ${prev.response}\n\n`);
-    }
-  }
-
-  if (otherDocsList.length > 0) {
-    parts.push(`## Other Available Documents\n${otherDocsList.slice(0, 5).join('\n')}\n\n`);
-  }
-
-  if (selectedDocumentIds.length > 0) {
-    const docTitles = documents.filter((d) => selectedDocumentIds.includes(d.document_id ?? '')).map((d) => d.title);
-    parts.push(`📄 The user has tagged: ${docTitles.join(', ')}. Use the document content above.\n\n`);
-  }
-
-  parts.push('Be specific, accurate, and stay in character.');
-
-  const langInstruction = getLanguageInstruction(responseLanguage);
-  if (langInstruction) parts.push(`\n\n${langInstruction}`);
-
-  return parts.join('');
-}
+// ── Roundtable ──
 
 export async function buildRoundtableContext(
   docClient: DynamoDBDocumentClient,

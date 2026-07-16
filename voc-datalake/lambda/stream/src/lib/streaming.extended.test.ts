@@ -7,7 +7,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // We need to set up the awslambda global before importing the module
-const mockStreamifyResponse = vi.fn((handler: Function) => {
+type WrappedHandler = (event: unknown, stream: unknown, context: unknown) => unknown;
+const mockStreamifyResponse = vi.fn((handler: WrappedHandler) => {
   return (event: unknown, context: unknown) => {
     const stream = { write: vi.fn(), end: vi.fn() };
     return handler(event, stream, context);

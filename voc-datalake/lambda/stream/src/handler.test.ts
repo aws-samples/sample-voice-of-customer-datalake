@@ -30,6 +30,9 @@ const {
   mockIsWebSearchConfigured: vi.fn(),
 }));
 
+/** The handler streams into a mock — invoke it with a test-friendly signature. */
+type StreamHandler = (event: unknown, stream: unknown) => Promise<void>;
+
 vi.mock('./context/voc-context.js', () => ({
   buildVocChatContext: mockBuildVocChatContext,
 }));
@@ -44,7 +47,7 @@ vi.mock('./bedrock/converse-stream.js', () => ({
 }));
 
 vi.mock('./lib/streaming.js', () => ({
-  streamifyResponse: mockStreamifyResponse.mockImplementation((handler: Function) => handler),
+  streamifyResponse: mockStreamifyResponse.mockImplementation((handler: unknown) => handler),
   wrapStreamWithHeaders: mockWrapStreamWithHeaders.mockImplementation(
     (stream: NodeJS.WritableStream) => stream,
   ),
@@ -141,7 +144,7 @@ describe('handler', () => {
   it('registers web_search in VoC chat when opted in and configured', async () => {
     mockIsWebSearchConfigured.mockReturnValue(true);
 
-    await (handler as Function)(makeEvent({ message: 'hello', use_web_search: true }), mockStream());
+    await (handler as StreamHandler)(makeEvent({ message: 'hello', use_web_search: true }), mockStream());
 
     expect(toolNamesPassedToConverse()).toContain('web_search');
   });
@@ -149,7 +152,7 @@ describe('handler', () => {
   it('omits web_search without the opt-in flag even when configured', async () => {
     mockIsWebSearchConfigured.mockReturnValue(true);
 
-    await (handler as Function)(makeEvent({ message: 'hello' }), mockStream());
+    await (handler as StreamHandler)(makeEvent({ message: 'hello' }), mockStream());
 
     expect(toolNamesPassedToConverse()).not.toContain('web_search');
   });
@@ -157,7 +160,7 @@ describe('handler', () => {
   it('omits web_search when opted in but the gateway is not deployed', async () => {
     mockIsWebSearchConfigured.mockReturnValue(false);
 
-    await (handler as Function)(makeEvent({ message: 'hello', use_web_search: true }), mockStream());
+    await (handler as StreamHandler)(makeEvent({ message: 'hello', use_web_search: true }), mockStream());
 
     expect(toolNamesPassedToConverse()).not.toContain('web_search');
   });
@@ -165,7 +168,7 @@ describe('handler', () => {
   it('registers web_search in project chat when opted in and configured', async () => {
     mockIsWebSearchConfigured.mockReturnValue(true);
 
-    await (handler as Function)(makeEvent({ message: 'hello', project_id: 'proj-1', use_web_search: true }), mockStream());
+    await (handler as StreamHandler)(makeEvent({ message: 'hello', project_id: 'proj-1', use_web_search: true }), mockStream());
 
     expect(toolNamesPassedToConverse()).toContain('web_search');
   });
@@ -174,7 +177,7 @@ describe('handler', () => {
     const stream = mockStream();
     const event = makeEvent({ message: 'hello' });
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     expect(mockBuildVocChatContext).toHaveBeenCalledOnce();
     expect(mockBuildProjectChatContext).not.toHaveBeenCalled();
@@ -184,7 +187,7 @@ describe('handler', () => {
     const stream = mockStream();
     const event = makeEvent({ message: 'hello', project_id: 'proj-1' });
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     expect(mockBuildProjectChatContext).toHaveBeenCalledOnce();
     expect(mockBuildVocChatContext).not.toHaveBeenCalled();
@@ -194,7 +197,7 @@ describe('handler', () => {
     const stream = mockStream();
     const event = makeEvent({ message: 'hello' }, '/projects/proj-1/chat');
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     expect(mockBuildProjectChatContext).toHaveBeenCalledOnce();
   });
@@ -203,7 +206,7 @@ describe('handler', () => {
     const stream = mockStream();
     const event = makeEvent({ message: '' });
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     expect(mockSendErrorAndClose).toHaveBeenCalledOnce();
     const [, message] = mockSendErrorAndClose.mock.calls[0];
@@ -214,7 +217,7 @@ describe('handler', () => {
     const stream = mockStream();
     const event = { body: '{}', rawPath: '/chat/stream', headers: {} };
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     expect(mockSendErrorAndClose).toHaveBeenCalledOnce();
   });
@@ -223,33 +226,32 @@ describe('handler', () => {
     const stream = mockStream();
     const event = makeEvent({ message: 'hello' });
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
-    expect(mockSendSSE).toHaveBeenCalled();
-    const metadataCall = mockSendSSE.mock.calls.find(
-      (c: unknown[]) => (c[1] as Record<string, unknown>).type === 'metadata',
+    expect(mockSendSSE).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ type: 'metadata' }),
     );
-    expect(metadataCall).toBeDefined();
   });
 
   it('sends done SSE event at end of VoC chat', async () => {
     const stream = mockStream();
     const event = makeEvent({ message: 'hello' });
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     const doneCall = mockSendSSE.mock.calls.find(
       (c: unknown[]) => (c[1] as Record<string, unknown>).type === 'done',
     );
     expect(doneCall).toBeDefined();
-    expect(stream.end).toHaveBeenCalled();
+    expect(stream.end).toHaveBeenCalledWith();
   });
 
   it('handles malformed JSON body gracefully', async () => {
     const stream = mockStream();
     const event = { body: 'not json', rawPath: '/chat/stream', headers: {} };
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     expect(mockSendErrorAndClose).toHaveBeenCalledOnce();
   });
@@ -259,7 +261,7 @@ describe('handler', () => {
     const stream = mockStream();
     const event = makeEvent({ message: 'hello' });
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     expect(mockSendErrorAndClose).toHaveBeenCalledOnce();
     const [, message] = mockSendErrorAndClose.mock.calls[0];
@@ -276,7 +278,7 @@ describe('handler', () => {
       ],
     });
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     expect(mockBuildProjectChatContext).toHaveBeenCalledOnce();
     // The handler should have processed without error
@@ -286,10 +288,10 @@ describe('handler', () => {
   it('handles missing event fields gracefully', async () => {
     const stream = mockStream();
     // Completely empty event
-    await (handler as Function)({}, stream);
+    await (handler as StreamHandler)({}, stream);
 
     // Should send error (missing message)
-    expect(mockSendErrorAndClose).toHaveBeenCalled();
+    expect(mockSendErrorAndClose).toHaveBeenCalledOnce();
   });
 
   // ── Roundtable (@all) regression: one clean turn per persona, no cross-echo ──
@@ -306,7 +308,7 @@ describe('handler', () => {
       roundtable: true,
     });
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     const personaTurns = mockSendSSE.mock.calls.filter(
       (c: unknown[]) => (c[1] as Record<string, unknown>).type === 'persona_turn',
@@ -328,7 +330,7 @@ describe('handler', () => {
       roundtable: true,
     });
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     const prompts = mockConverseStream.mock.calls
       .map((c: unknown[]) => (c[0] as { systemPrompt: string }).systemPrompt);
@@ -345,10 +347,18 @@ describe('handler', () => {
     mockConverseStream.mockImplementation(() => {
       callCount += 1;
       if (callCount === 2) {
-        // Second persona (Beta) throws
-        return (async function* () {
-          throw new Error('ThrottlingException: rate limit');
-        })();
+        // Second persona (Beta): iteration rejects before yielding anything.
+        // Hand-rolled iterable — a generator that only throws trips
+        // sonarjs/generator-without-yield.
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next(): Promise<IteratorResult<unknown>> {
+                return Promise.reject(new Error('ThrottlingException: rate limit'));
+              },
+            };
+          },
+        };
       }
       return (async function* () {
         yield { contentBlockDelta: { delta: { text: 'response' }, contentBlockIndex: 0 } };
@@ -363,7 +373,7 @@ describe('handler', () => {
       roundtable: true,
     });
 
-    await (handler as Function)(event, stream);
+    await (handler as StreamHandler)(event, stream);
 
     // All 3 personas attempted (not aborted after Beta's failure)
     const personaTurns = mockSendSSE.mock.calls.filter(

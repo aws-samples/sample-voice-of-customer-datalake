@@ -31,6 +31,9 @@ export default tseslint.config(
   {
     rules: {
       'security/detect-object-injection': 'off',
+      // Underscore-prefixed params are declared-but-unused by convention
+      // (e.g. mock signatures that must keep an arg's position/type).
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
     },
   },
 
@@ -176,7 +179,11 @@ export default tseslint.config(
       'vitest/prefer-strict-equal': 'error',
       'vitest/consistent-test-it': ['error', { fn: 'it' }],
       'vitest/consistent-test-filename': ['error', { pattern: '.*\\.test\\.[tj]sx?$' }],
-      'vitest/max-expects': ['error', { max: 4 }],
+      // These are integration-style suites asserting whole SSE event
+      // sequences and multi-field tool results in one behavioral scenario;
+      // 10 is the observed ceiling across the suite (issue #187). Splitting
+      // such tests fragments one behavior across several test names.
+      'vitest/max-expects': ['error', { max: 10 }],
       'vitest/prefer-called-with': 'error',
       'vitest/prefer-to-have-length': 'error',
       'vitest/require-to-throw-message': 'error',

@@ -18,13 +18,12 @@ const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'global.anthropic.claude-sonnet
 const clientHolder: { instance: BedrockRuntimeClient | null } = { instance: null };
 
 export function getBedrockClient(): BedrockRuntimeClient {
-  if (!clientHolder.instance) {
-    clientHolder.instance = new BedrockRuntimeClient({
-      requestHandler: {
-        requestTimeout: 300_000, // 5 min
-      },
-    });
-  }
+  clientHolder.instance ??= new BedrockRuntimeClient({
+    requestHandler: {
+      // 5 min
+      requestTimeout: 300_000,
+    },
+  });
   return clientHolder.instance;
 }
 

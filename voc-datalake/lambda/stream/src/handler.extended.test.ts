@@ -28,6 +28,9 @@ const {
   mockExecuteTool: vi.fn(),
 }));
 
+/** The handler streams into a mock — invoke it with a test-friendly signature. */
+type StreamHandler = (event: unknown, stream: unknown) => Promise<void>;
+
 vi.mock('./context/voc-context.js', () => ({
   buildVocChatContext: mockBuildVocChatContext,
 }));
@@ -41,7 +44,7 @@ vi.mock('./bedrock/converse-stream.js', () => ({
 }));
 
 vi.mock('./lib/streaming.js', () => ({
-  streamifyResponse: mockStreamifyResponse.mockImplementation((handler: Function) => handler),
+  streamifyResponse: mockStreamifyResponse.mockImplementation((handler: unknown) => handler),
   wrapStreamWithHeaders: mockWrapStreamWithHeaders.mockImplementation(
     (stream: NodeJS.WritableStream) => stream,
   ),
@@ -116,21 +119,21 @@ describe('handler - extended', () => {
         ],
       });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       expect(mockConverseStream).toHaveBeenCalledOnce();
       const callArgs = mockConverseStream.mock.calls[0][0];
       // History messages + current user message
       expect(callArgs.messages).toHaveLength(3);
-      expect(callArgs.messages[0]).toEqual({ role: 'user', content: [{ text: 'first question' }] });
-      expect(callArgs.messages[1]).toEqual({ role: 'assistant', content: [{ text: 'first answer' }] });
+      expect(callArgs.messages[0]).toStrictEqual({ role: 'user', content: [{ text: 'first question' }] });
+      expect(callArgs.messages[1]).toStrictEqual({ role: 'assistant', content: [{ text: 'first answer' }] });
     });
 
     it('works with empty history array', async () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'hello', history: [] });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       const callArgs = mockConverseStream.mock.calls[0][0];
       expect(callArgs.messages).toHaveLength(1);
@@ -140,7 +143,7 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'hello' });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       const callArgs = mockConverseStream.mock.calls[0][0];
       expect(callArgs.messages).toHaveLength(1);
@@ -181,7 +184,7 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'show delivery feedback' });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       expect(mockExecuteTool).toHaveBeenCalledOnce();
       expect(mockConverseStream).toHaveBeenCalledTimes(2);
@@ -211,7 +214,7 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'loop test' });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       // Should stop at MAX_TOOL_LOOPS (15) and send a warning
       expect(mockConverseStream).toHaveBeenCalledTimes(15);
@@ -263,7 +266,7 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'test dedup' });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       const doneCall = mockSendSSE.mock.calls.find(
         (c: unknown[]) => (c[1] as Record<string, unknown>).type === 'done',
@@ -273,7 +276,7 @@ describe('handler - extended', () => {
       const metadata = donePayload.metadata as Record<string, unknown>;
       const sources = metadata.sources as Record<string, unknown>[];
       expect(sources).toHaveLength(2);
-      expect(sources.map((s) => s.feedback_id)).toEqual(['f1', 'f2']);
+      expect(sources.map((s) => s.feedback_id)).toStrictEqual(['f1', 'f2']);
     });
   });
 
@@ -286,7 +289,7 @@ describe('handler - extended', () => {
         selected_documents: ['doc-1'],
       });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       expect(mockConverseStream).toHaveBeenCalledOnce();
       const callArgs = mockConverseStream.mock.calls[0][0];
@@ -304,7 +307,7 @@ describe('handler - extended', () => {
         project_id: 'proj-1',
       });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       const callArgs = mockConverseStream.mock.calls[0][0];
       expect(callArgs.tools).toHaveLength(3);
@@ -317,7 +320,7 @@ describe('handler - extended', () => {
         project_id: 'proj-1',
       });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       const doneCall = mockSendSSE.mock.calls.find(
         (c: unknown[]) => (c[1] as Record<string, unknown>).type === 'done',
@@ -337,7 +340,7 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'hello' });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       expect(mockSendErrorAndClose).toHaveBeenCalledWith(
         stream, 'Bad input', 'ValidationError', 400,
@@ -350,7 +353,7 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'hello' });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       expect(mockSendErrorAndClose).toHaveBeenCalledWith(
         stream, 'Internal error', 'ServiceError', 500,
@@ -366,9 +369,9 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'hello' });
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
-      expect(stream.end).toHaveBeenCalled();
+      expect(stream.end).toHaveBeenCalledWith();
     });
   });
 
@@ -377,7 +380,7 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'hello' }, '/projects/my-proj-123/chat');
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       expect(mockBuildProjectChatContext).toHaveBeenCalledWith(
         expect.anything(),
@@ -398,7 +401,7 @@ describe('handler - extended', () => {
         '/projects/url-proj/chat',
       );
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       expect(mockBuildProjectChatContext).toHaveBeenCalledWith(
         expect.anything(),
@@ -420,9 +423,9 @@ describe('handler - extended', () => {
         headers: {},
       };
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
-      expect(mockBuildProjectChatContext).toHaveBeenCalled();
+      expect(mockBuildProjectChatContext).toHaveBeenCalledOnce();
     });
 
     it('handles event with Origin header (capital O)', async () => {
@@ -433,7 +436,7 @@ describe('handler - extended', () => {
         headers: { Origin: 'https://example.com' },
       };
 
-      await (handler as Function)(event, stream);
+      await (handler as StreamHandler)(event, stream);
 
       expect(mockWrapStreamWithHeaders).toHaveBeenCalledWith(
         stream, 'https://example.com',

@@ -11,7 +11,7 @@ describe('getCreateProjectTool', () => {
 
   it('requires only name', () => {
     const schema = getCreateProjectTool().toolSpec?.inputSchema?.json as Record<string, unknown>;
-    expect(schema.required).toEqual(['name']);
+    expect(schema.required).toStrictEqual(['name']);
   });
 
   it('exposes product-context seed fields', () => {
@@ -49,14 +49,14 @@ describe('getSearchFeedbackTool', () => {
   it('has no required fields', () => {
     const tool = getSearchFeedbackTool();
     const schema = tool.toolSpec?.inputSchema?.json as Record<string, unknown>;
-    expect(schema.required).toEqual([]);
+    expect(schema.required).toStrictEqual([]);
   });
 
   it('defines sentiment enum values', () => {
     const tool = getSearchFeedbackTool();
     const schema = tool.toolSpec?.inputSchema?.json as Record<string, unknown>;
     const props = schema.properties as Record<string, Record<string, unknown>>;
-    expect(props.sentiment.enum).toEqual(['positive', 'negative', 'neutral', 'mixed']);
+    expect(props.sentiment.enum).toStrictEqual(['positive', 'negative', 'neutral', 'mixed']);
   });
 });
 
@@ -69,7 +69,7 @@ describe('getUpdateDocumentTool', () => {
   it('requires document_id, content, and summary', () => {
     const tool = getUpdateDocumentTool();
     const schema = tool.toolSpec?.inputSchema?.json as Record<string, unknown>;
-    expect(schema.required).toEqual(['document_id', 'content', 'summary']);
+    expect(schema.required).toStrictEqual(['document_id', 'content', 'summary']);
   });
 });
 
@@ -82,13 +82,13 @@ describe('getCreateDocumentTool', () => {
   it('requires title, content, and document_type', () => {
     const tool = getCreateDocumentTool();
     const schema = tool.toolSpec?.inputSchema?.json as Record<string, unknown>;
-    expect(schema.required).toEqual(['title', 'content', 'document_type']);
+    expect(schema.required).toStrictEqual(['title', 'content', 'document_type']);
   });
 
   it('defines document_type enum', () => {
     const tool = getCreateDocumentTool();
     const schema = tool.toolSpec?.inputSchema?.json as Record<string, unknown>;
     const props = schema.properties as Record<string, Record<string, unknown>>;
-    expect(props.document_type.enum).toEqual(['prd', 'prfaq', 'custom']);
+    expect(props.document_type.enum).toStrictEqual(['prd', 'prfaq', 'custom']);
   });
 });

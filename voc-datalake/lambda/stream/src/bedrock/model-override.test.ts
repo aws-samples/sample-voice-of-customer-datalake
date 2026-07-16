@@ -111,7 +111,7 @@ describe('resolveModelOverride', () => {
 
 describe('capability sets', () => {
   it('allowlist has exactly the four picker models', () => {
-    expect(ALLOWED_MODEL_IDS).toEqual(new Set([SONNET5, SONNET46, OPUS48, HAIKU45]));
+    expect(ALLOWED_MODEL_IDS).toStrictEqual(new Set([SONNET5, SONNET46, OPUS48, HAIKU45]));
   });
 
   it('Sonnet 5 and Opus 4.8 omit temperature', () => {

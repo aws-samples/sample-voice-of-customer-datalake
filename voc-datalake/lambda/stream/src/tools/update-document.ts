@@ -21,9 +21,6 @@ const createDocumentInputSchema = z.object({
   document_type: z.enum(['prd', 'prfaq', 'custom']),
 });
 
-type UpdateDocumentInput = z.infer<typeof updateDocumentInputSchema>;
-type CreateDocumentInput = z.infer<typeof createDocumentInputSchema>;
-
 // ── Result type ──
 
 export interface DocumentToolResult {
@@ -145,7 +142,7 @@ export async function executeCreateDocument(
 
   const { title, content, document_type: docType } = parsed.data;
   const now = new Date().toISOString();
-  const docId = `doc_${now.replace(/[-:T.Z]/g, '').slice(0, 14)}`;
+  const docId = `doc_${now.replaceAll(/[-:T.Z]/g, '').slice(0, 14)}`;
 
   await docClient.send(
     new PutCommand({

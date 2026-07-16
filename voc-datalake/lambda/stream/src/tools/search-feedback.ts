@@ -162,6 +162,38 @@ async function lookupByFeedbackId(
 // set without unbounded memory/time on a huge table.
 const MAX_CANDIDATES = 10000;
 
+/**
+ * Page through one day's GSI partition via LastEvaluatedKey (not just the
+ * first page), appending valid rows to `candidates`. Per-row safeParse: a
+ * single malformed item must not throw and discard the whole day's results.
+ * Recursion depth = pages per day, bounded by the MAX_CANDIDATES stop.
+ */
+async function fetchDayPages(
+  docClient: DynamoDBDocumentClient,
+  feedbackTable: string,
+  dateStr: string,
+  candidates: FeedbackItem[],
+  startKey?: Record<string, unknown>,
+): Promise<void> {
+  const resp = await docClient.send(
+    new QueryCommand({
+      TableName: feedbackTable,
+      IndexName: 'gsi1-by-date',
+      KeyConditionExpression: 'gsi1pk = :pk',
+      ExpressionAttributeValues: { ':pk': `DATE#${dateStr}` },
+      ScanIndexForward: false,
+      ExclusiveStartKey: startKey,
+    }),
+  );
+  for (const raw of resp.Items ?? []) {
+    const parsed = feedbackItemSchema.safeParse(raw);
+    if (parsed.success) candidates.push(parsed.data);
+  }
+  if (resp.LastEvaluatedKey && candidates.length < MAX_CANDIDATES) {
+    return fetchDayPages(docClient, feedbackTable, dateStr, candidates, resp.LastEvaluatedKey);
+  }
+}
+
 async function fetchCandidatesByDate(
   docClient: DynamoDBDocumentClient,
   feedbackTable: string,
@@ -174,28 +206,8 @@ async function fetchCandidatesByDate(
     const d = new Date(now);
     d.setUTCDate(d.getUTCDate() - i);
     const dateStr = d.toISOString().slice(0, 10);
-    let lastKey: Record<string, unknown> | undefined;
     try {
-      // Page through the whole day via LastEvaluatedKey, not just the first page.
-      do {
-        const resp = await docClient.send(
-          new QueryCommand({
-            TableName: feedbackTable,
-            IndexName: 'gsi1-by-date',
-            KeyConditionExpression: 'gsi1pk = :pk',
-            ExpressionAttributeValues: { ':pk': `DATE#${dateStr}` },
-            ScanIndexForward: false,
-            ExclusiveStartKey: lastKey,
-          }),
-        );
-        // Per-row safeParse: a single malformed item must not throw and discard
-        // the whole day's results (the outer catch would skip the entire date).
-        for (const raw of resp.Items ?? []) {
-          const parsed = feedbackItemSchema.safeParse(raw);
-          if (parsed.success) candidates.push(parsed.data);
-        }
-        lastKey = resp.LastEvaluatedKey;
-      } while (lastKey && candidates.length < MAX_CANDIDATES);
+      await fetchDayPages(docClient, feedbackTable, dateStr, candidates);
     } catch {
       // continue to the next day
     }
@@ -206,27 +218,41 @@ async function fetchCandidatesByDate(
 
 // ── Main export ──
 
+/** Resolve the effective search parameters from tool input + chat context. */
+function resolveSearchParams(toolInput: unknown, contextFilters: ContextFilters): {
+  input: SearchInput;
+  query: string;
+  mode: string;
+  limit: number;
+  days: number;
+  filters: { source?: string; category?: string; sentiment?: string; urgency?: string };
+} {
+  const parsed = searchInputSchema.safeParse(toolInput);
+  const input: SearchInput = parsed.success ? parsed.data : {};
+  return {
+    input,
+    query: input.query ?? '',
+    mode: input.mode ?? 'list',
+    // aggregate mode returns stats over the whole match set, so a small list
+    // cap there is fine (only used for the handful of examples we show).
+    limit: Math.min(input.limit ?? 15, 30),
+    days: contextFilters.days ?? 30,
+    filters: {
+      source: input.source ?? contextFilters.source,
+      category: input.category ?? contextFilters.category,
+      sentiment: input.sentiment ?? contextFilters.sentiment,
+      urgency: input.urgency,
+    },
+  };
+}
+
 export async function executeSearchFeedback(
   docClient: DynamoDBDocumentClient,
   feedbackTable: string,
   toolInput: unknown,
   contextFilters: ContextFilters,
 ): Promise<{ items: FeedbackItem[]; formatted: string }> {
-  const parsed = searchInputSchema.safeParse(toolInput);
-  const input: SearchInput = parsed.success ? parsed.data : {};
-  const query = input.query ?? '';
-  const mode = input.mode ?? 'list';
-  // aggregate mode returns stats over the whole match set, so a small list cap
-  // there is fine (only used for the handful of examples we show).
-  const limit = Math.min(input.limit ?? 15, 30);
-  const days = contextFilters.days ?? 30;
-
-  const filters = {
-    source: input.source ?? contextFilters.source,
-    category: input.category ?? contextFilters.category,
-    sentiment: input.sentiment ?? contextFilters.sentiment,
-    urgency: input.urgency,
-  };
+  const { input, query, mode, limit, days, filters } = resolveSearchParams(toolInput, contextFilters);
 
   if (!feedbackTable) throw new ConfigurationError('Feedback table not configured');
 
@@ -321,18 +347,22 @@ function formatAggregate(all: FeedbackItem[], examples: FeedbackItem[]): string 
     ? (ratings.reduce((s, r) => s + r, 0) / ratings.length).toFixed(2)
     : 'N/A';
 
-  let out = `Aggregate summary over ALL ${total} matching feedback items `;
-  out += `(this is the COMPLETE set, not a sample — base your answer on these numbers):\n\n`;
-  out += `**Total matches:** ${total}\n`;
-  out += `**Average rating:** ${avgRating}\n\n`;
-  out += formatDistribution('By urgency', countBy(all, 'urgency'), total);
-  out += formatDistribution('By sentiment', countBy(all, 'sentiment_label'), total);
-  out += formatDistribution('By category', countBy(all, 'category').slice(0, 10), total);
-  out += formatDistribution('By source', countBy(all, 'source_platform'), total);
+  const sections = [
+    `Aggregate summary over ALL ${total} matching feedback items `,
+    `(this is the COMPLETE set, not a sample — base your answer on these numbers):\n\n`,
+    `**Total matches:** ${total}\n`,
+    `**Average rating:** ${avgRating}\n\n`,
+    formatDistribution('By urgency', countBy(all, 'urgency'), total),
+    formatDistribution('By sentiment', countBy(all, 'sentiment_label'), total),
+    formatDistribution('By category', countBy(all, 'category').slice(0, 10), total),
+    formatDistribution('By source', countBy(all, 'source_platform'), total),
+  ];
 
   if (examples.length > 0) {
-    out += `**Top ${examples.length} examples (most urgent first):**\n\n`;
-    out += examples.map((item, i) => formatSingleItem(item, i)).join('');
+    sections.push(
+      `**Top ${examples.length} examples (most urgent first):**\n\n`,
+      examples.map((item, i) => formatSingleItem(item, i)).join(''),
+    );
   }
-  return out;
+  return sections.join('');
 }

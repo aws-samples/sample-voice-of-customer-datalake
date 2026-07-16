@@ -32,6 +32,15 @@ vi.mock('@aws-sdk/client-bedrock-runtime', () => {
 
 import { converseStream, getBedrockClient } from './converse-stream.js';
 
+/** Drain the stream, discarding events — these tests assert on the mocks, not the yields. */
+async function drainStream(stream: AsyncIterable<unknown>): Promise<void> {
+  const iterator = stream[Symbol.asyncIterator]();
+  let result = await iterator.next();
+  while (!result.done) {
+    result = await iterator.next();
+  }
+}
+
 describe('getBedrockClient', () => {
   it('returns a client with a send method', () => {
     const client = getBedrockClient();
@@ -72,8 +81,8 @@ describe('converseStream', () => {
     }
 
     expect(collected).toHaveLength(2);
-    expect(collected[0]).toEqual(events[0]);
-    expect(collected[1]).toEqual(events[1]);
+    expect(collected[0]).toStrictEqual(events[0]);
+    expect(collected[1]).toStrictEqual(events[1]);
   });
 
   it('yields nothing when stream is undefined', async () => {
@@ -95,13 +104,11 @@ describe('converseStream', () => {
 
     const tools = [{ toolSpec: { name: 'search_feedback', description: 'Search', inputSchema: { json: {} } } }];
 
-    for await (const _ of converseStream({
+    await drainStream(converseStream({
       messages: [{ role: 'user', content: [{ text: 'hi' }] }],
       systemPrompt: 'test',
       tools,
-    })) {
-      // no-op
-    }
+    }));
 
     expect(mockConverseStreamCommandCtor).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -113,13 +120,11 @@ describe('converseStream', () => {
   it('omits toolConfig when tools array is empty', async () => {
     mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
 
-    for await (const _ of converseStream({
+    await drainStream(converseStream({
       messages: [{ role: 'user', content: [{ text: 'hi' }] }],
       systemPrompt: 'test',
       tools: [],
-    })) {
-      // no-op
-    }
+    }));
 
     expect(mockConverseStreamCommandCtor).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -131,13 +136,11 @@ describe('converseStream', () => {
   it('uses default maxTokens and thinkingBudget (explicit-budget model)', async () => {
     mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
 
-    for await (const _ of converseStream({
+    await drainStream(converseStream({
       messages: [{ role: 'user', content: [{ text: 'hi' }] }],
       systemPrompt: 'test',
       modelId: 'global.anthropic.claude-sonnet-4-6',
-    })) {
-      // no-op
-    }
+    }));
 
     expect(mockConverseStreamCommandCtor).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -152,15 +155,13 @@ describe('converseStream', () => {
   it('uses custom maxTokens and thinkingBudget when provided', async () => {
     mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
 
-    for await (const _ of converseStream({
+    await drainStream(converseStream({
       messages: [{ role: 'user', content: [{ text: 'hi' }] }],
       systemPrompt: 'test',
       maxTokens: 4096,
       thinkingBudget: 2000,
       modelId: 'global.anthropic.claude-sonnet-4-6',
-    })) {
-      // no-op
-    }
+    }));
 
     expect(mockConverseStreamCommandCtor).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -179,19 +180,16 @@ describe('converseStream', () => {
     mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
     mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
 
-    for await (const _ of converseStream({
+    await drainStream(converseStream({
       messages: [{ role: 'user', content: [{ text: 'hi' }] }],
       systemPrompt: 'test',
       modelId: 'global.anthropic.claude-sonnet-5',
-    })) {
-      // no-op
-    }
-    for await (const _ of converseStream({
+    }));
+    // Env default is Sonnet 5.
+    await drainStream(converseStream({
       messages: [{ role: 'user', content: [{ text: 'hi' }] }],
       systemPrompt: 'test',
-    })) {
-      // no-op (env default is Sonnet 5)
-    }
+    }));
 
     for (const call of mockConverseStreamCommandCtor.mock.calls) {
       expect(call[0]).not.toHaveProperty('additionalModelRequestFields');
@@ -201,13 +199,11 @@ describe('converseStream', () => {
   it('passes the resolved model override as modelId', async () => {
     mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
 
-    for await (const _ of converseStream({
+    await drainStream(converseStream({
       messages: [{ role: 'user', content: [{ text: 'hi' }] }],
       systemPrompt: 'test',
       modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
-    })) {
-      // no-op
-    }
+    }));
 
     expect(mockConverseStreamCommandCtor).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -219,12 +215,10 @@ describe('converseStream', () => {
   it('passes system prompt as system content block', async () => {
     mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
 
-    for await (const _ of converseStream({
+    await drainStream(converseStream({
       messages: [{ role: 'user', content: [{ text: 'hi' }] }],
       systemPrompt: 'You are a VoC assistant',
-    })) {
-      // no-op
-    }
+    }));
 
     expect(mockConverseStreamCommandCtor).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -242,12 +236,10 @@ describe('converseStream', () => {
       { role: 'user' as const, content: [{ text: 'follow up' }] },
     ];
 
-    for await (const _ of converseStream({
+    await drainStream(converseStream({
       messages,
       systemPrompt: 'test',
-    })) {
-      // no-op
-    }
+    }));
 
     expect(mockConverseStreamCommandCtor).toHaveBeenCalledWith(
       expect.objectContaining({ messages }),

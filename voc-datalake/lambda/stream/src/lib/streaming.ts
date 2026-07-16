@@ -4,6 +4,7 @@
  * Uses the `awslambda` global injected by the Node.js 22 managed runtime
  * to wrap handlers with `streamifyResponse` and emit SSE events.
  */
+import { ConfigurationError } from './errors.js';
 
 /**
  * Type declarations for the Lambda streaming runtime global.
@@ -26,7 +27,7 @@ function getAwsLambda(): AwsLambdaRuntime {
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- globalThis requires assertion for runtime-injected properties
   const runtime = (globalThis as unknown as { awslambda?: AwsLambdaRuntime }).awslambda;
   if (!runtime) {
-    throw new Error('awslambda global not available — must run inside Lambda managed runtime');
+    throw new ConfigurationError('awslambda global not available — must run inside Lambda managed runtime');
   }
   return runtime;
 }
