@@ -185,7 +185,6 @@ export class VocCoreStack extends cdk.Stack {
       compress: true,
       cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
     });
-    cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
     this.avatarsCdnUrl = `https://${this.frontendDomainName}/avatars`;
 
     // Prototypes served from the same distribution under /prototypes/* with their
@@ -685,6 +684,17 @@ export class VocCoreStack extends cdk.Stack {
       value: initialAdminPassword, 
       description: 'Initial admin user password (username: admin)'
     });
+
+    // Acknowledged wildcard-key-policy warning (issue #189): the synthesized
+    // KMS condition is already scoped to THIS ACCOUNT's distributions
+    // (arn:...:cloudfront::ACCOUNT:distribution/*); scoping to the concrete
+    // distribution id would create exactly the circular dependency the
+    // warning describes, and the CDK README documents the wildcard as the
+    // supported shape. Kept as the LAST statement of the constructor:
+    // every withOriginAccessControl() call re-emits the warning, and
+    // acknowledgeWarning only strips messages added before it runs — an
+    // origin added below the ack would silently re-break warning-free synth.
+    cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
   }
 
   private getCustomMessageLambdaCode(signInUrl: string): string {
