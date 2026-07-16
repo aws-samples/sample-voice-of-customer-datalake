@@ -112,7 +112,7 @@ export function NavItemLink({
       <Icon size={20} className="flex-shrink-0" />
       {showLabel ? <>
         <span>{label}</span>
-        {item.to === '/feedback' && urgentCount > 0 && (
+        {item.to === '/categories' && urgentCount > 0 && (
           <span className="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
             {urgentCount}
           </span>

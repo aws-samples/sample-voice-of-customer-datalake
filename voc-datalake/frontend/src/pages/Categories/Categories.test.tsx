@@ -9,6 +9,8 @@ const mockGetCategories = vi.fn()
 const mockGetSentiment = vi.fn()
 const mockGetEntities = vi.fn()
 const mockGetFeedback = vi.fn()
+const mockSearchFeedback = vi.fn()
+const mockGetUrgentFeedback = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -16,6 +18,8 @@ vi.mock('../../api/client', () => ({
     getSentiment: (...args: unknown[]) => mockGetSentiment(...args),
     getEntities: (...args: unknown[]) => mockGetEntities(...args),
     getFeedback: (...args: unknown[]) => mockGetFeedback(...args),
+    searchFeedback: (...args: unknown[]) => mockSearchFeedback(...args),
+    getUrgentFeedback: (...args: unknown[]) => mockGetUrgentFeedback(...args),
   },
   getDaysFromRange: () => 7,
   getDateRangeParams: () => ({ days: 7 }),
@@ -39,13 +43,13 @@ vi.mock('recharts', () => ({
 
 import Categories from './Categories'
 
-function createWrapper() {
+function createWrapper(initialEntries = ['/categories']) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{children}</MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
     </QueryClientProvider>
   )
 }
@@ -107,6 +111,8 @@ describe('Categories', () => {
     mockGetSentiment.mockResolvedValue(mockSentimentData)
     mockGetEntities.mockResolvedValue(mockEntitiesData)
     mockGetFeedback.mockResolvedValue(mockFeedbackData)
+    mockSearchFeedback.mockResolvedValue(mockFeedbackData)
+    mockGetUrgentFeedback.mockResolvedValue(mockFeedbackData)
   })
 
   describe('loading states', () => {
@@ -121,15 +127,14 @@ describe('Categories', () => {
   })
 
   describe('data display', () => {
-    it('renders category data after loading', async () => {
+    it('renders the category distribution with counts and percentages', async () => {
       render(<Categories />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByText('Select Categories to Explore')).toBeInTheDocument()
+        expect(screen.getByText('Category Distribution')).toBeInTheDocument()
       })
-      // Categories are rendered in the selector
-      expect(screen.getByText('50')).toBeInTheDocument() // delivery count
-      expect(screen.getByText('30')).toBeInTheDocument() // customer_support count
+      expect(screen.getByText('50 (50.0%)')).toBeInTheDocument() // delivery
+      expect(screen.getByText('30 (30.0%)')).toBeInTheDocument() // customer_support
     })
 
     it('renders sentiment gauge with correct score', async () => {
@@ -141,15 +146,6 @@ describe('Categories', () => {
       })
     })
 
-    it('renders insights row with top and bottom categories', async () => {
-      render(<Categories />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Top Issue')).toBeInTheDocument()
-        expect(screen.getByText('Least Issues')).toBeInTheDocument()
-      })
-    })
-
     it('renders word cloud with keywords', async () => {
       render(<Categories />, { wrapper: createWrapper() })
 
@@ -158,101 +154,90 @@ describe('Categories', () => {
       })
     })
 
-    it('renders source filter with available sources', async () => {
+    it('does not render the removed duplicate sections (chips card + insights row)', async () => {
       render(<Categories />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByText('Filter by Source:')).toBeInTheDocument()
+        expect(screen.getByText('Category Distribution')).toBeInTheDocument()
       })
+      expect(screen.queryByText('Select Categories to Explore')).not.toBeInTheDocument()
+      expect(screen.queryByText('Top Issue')).not.toBeInTheDocument()
+      expect(screen.queryByText('Least Issues')).not.toBeInTheDocument()
     })
   })
 
-  describe('category selection', () => {
-    it('toggles category selection when clicked', async () => {
-      const user = userEvent.setup()
+  describe('default browse-all view (issue #198 UX rationalization)', () => {
+    it('shows the feedback list by default without any selection', async () => {
       render(<Categories />, { wrapper: createWrapper() })
 
-      await waitFor(() => {
-        expect(screen.getByText('Select Categories to Explore')).toBeInTheDocument()
-      })
-
-      // Click on a category button (by its count which is unique)
-      const categoryButtons = screen.getAllByRole('button')
-      const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
-      if (deliveryButton) {
-        await user.click(deliveryButton)
-      }
-
-      // After selecting, feedback results should appear
       await waitFor(() => {
         expect(screen.getByText('Feedback Results')).toBeInTheDocument()
       })
+      expect(mockGetFeedback).toHaveBeenCalled()
     })
+  })
 
-    it('fetches feedback when category selected', async () => {
+  describe('category selection via distribution rows', () => {
+    it('narrows the list when a distribution row is clicked and syncs the URL', async () => {
       const user = userEvent.setup()
       render(<Categories />, { wrapper: createWrapper() })
 
+      // 'delivery' also appears as a word-cloud keyword — target the row via
+      // its unique count label instead of the ambiguous category name.
       await waitFor(() => {
-        expect(screen.getByText('Select Categories to Explore')).toBeInTheDocument()
+        expect(screen.getByText('50 (50.0%)')).toBeInTheDocument()
       })
 
-      const categoryButtons = screen.getAllByRole('button')
-      const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
-      if (deliveryButton) {
-        await user.click(deliveryButton)
-      }
+      await user.click(screen.getByText('50 (50.0%)'))
 
       await waitFor(() => {
-        expect(mockGetFeedback).toHaveBeenCalled()
+        expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ category: 'delivery' }))
+      })
+      expect(screen.getByRole('button', { pressed: true })).toHaveTextContent('delivery')
+    })
+
+    it('pre-selects a category from a ?category= deep-link', async () => {
+      render(<Categories />, { wrapper: createWrapper(['/categories?category=delivery']) })
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { pressed: true })).toHaveTextContent('delivery')
+      })
+      await waitFor(() => {
+        expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ category: 'delivery' }))
       })
     })
   })
 
-  describe('filters', () => {
-    it('shows filters panel when filters button clicked', async () => {
+  describe('unified filter bar', () => {
+    it('uses server-side search when typing 2+ characters', async () => {
       const user = userEvent.setup()
       render(<Categories />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /filters/i })).toBeInTheDocument()
+        expect(screen.getByPlaceholderText('Search feedback...')).toBeInTheDocument()
       })
+      await user.type(screen.getByPlaceholderText('Search feedback...'), 'slow')
 
-      await user.click(screen.getByRole('button', { name: /filters/i }))
-
-      expect(screen.getByText('Min Rating')).toBeInTheDocument()
+      await waitFor(() => {
+        expect(mockSearchFeedback).toHaveBeenCalledWith(expect.objectContaining({ q: 'slow' }))
+      })
     })
 
-    it('clears all filters when clear button clicked', async () => {
+    it('uses the urgent endpoint when the urgent toggle is enabled', async () => {
       const user = userEvent.setup()
       render(<Categories />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByText('Select Categories to Explore')).toBeInTheDocument()
+        expect(screen.getByText('Urgent only')).toBeInTheDocument()
       })
-
-      // Select a category first by clicking on button with count 50
-      const categoryButtons = screen.getAllByRole('button')
-      const deliveryButton = categoryButtons.find(btn => btn.textContent?.includes('50'))
-      if (deliveryButton) {
-        await user.click(deliveryButton)
-      }
+      await user.click(screen.getByRole('checkbox'))
 
       await waitFor(() => {
-        expect(screen.getByText('Clear filters')).toBeInTheDocument()
-      })
-
-      await user.click(screen.getByText('Clear filters'))
-
-      // Feedback results should disappear
-      await waitFor(() => {
-        expect(screen.queryByText('Feedback Results')).not.toBeInTheDocument()
+        expect(mockGetUrgentFeedback).toHaveBeenCalled()
       })
     })
-  })
 
-  describe('source filter', () => {
-    it('filters by source when source selected', async () => {
+    it('filters analytics by source when a source is selected', async () => {
       const user = userEvent.setup()
       render(<Categories />, { wrapper: createWrapper() })
 
@@ -266,22 +251,59 @@ describe('Categories', () => {
         expect(mockGetCategories).toHaveBeenCalledWith({ days: 7 }, 'webscraper')
       })
     })
+
+    it('clears all filters back to browse-all', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper(['/categories?category=delivery']) })
+
+      await waitFor(() => {
+        expect(screen.getByText('Clear filters')).toBeInTheDocument()
+      })
+
+      await user.click(screen.getByText('Clear filters'))
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument()
+      })
+      // The list stays visible: browse-all is the default state
+      expect(screen.getByText('Feedback Results')).toBeInTheDocument()
+    })
   })
-})
 
-describe('Categories - no API endpoint', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  describe('keyword click populates search', () => {
+    it('runs a server-side search when a trending keyword is clicked', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Trending Keywords')).toBeInTheDocument()
+      })
+
+      // 'delivery' appears both as a distribution row and a keyword — pick the
+      // keyword button inside the word cloud via its tooltip title.
+      const keywordButton = screen.getAllByTitle(/mentions - click to search/)[0]
+      const keyword = keywordButton.textContent ?? ''
+      await user.click(keywordButton)
+
+      expect(screen.getByPlaceholderText('Search feedback...')).toHaveValue(keyword)
+      await waitFor(() => {
+        expect(mockSearchFeedback).toHaveBeenCalledWith(expect.objectContaining({ q: keyword }))
+      })
+    })
   })
 
-  it('shows configuration message when API not configured', () => {
-    vi.doMock('../../store/configStore', () => ({
-      useConfigStore: () => ({
-        timeRange: '7d',
-        config: { apiEndpoint: '' },
-      }),
-    }))
+  describe('CSV export', () => {
+    it('revokes the blob object URL after triggering the download', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Export as CSV' })).toBeInTheDocument()
+      })
 
-    // Re-import to get new mock - this is a limitation, test separately
+      await user.click(screen.getByRole('button', { name: 'Export as CSV' }))
+
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
+    })
   })
 })

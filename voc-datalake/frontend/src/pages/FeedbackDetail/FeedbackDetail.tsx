@@ -73,7 +73,7 @@ function FeedbackNotFound() {
   return (
     <div className="text-center py-12">
       <p className="text-gray-500">Feedback not found</p>
-      <Link to="/feedback" className="text-blue-600 hover:underline mt-2 inline-block">
+      <Link to="/categories" className="text-blue-600 hover:underline mt-2 inline-block">
         Back to feedback list
       </Link>
     </div>
@@ -430,13 +430,15 @@ export default function FeedbackDetail() {
     enabled: !!config.apiEndpoint && !!id && activeTab === 'similar',
   })
 
+  // Tag clicks deep-link into the consolidated Categories page (issue #198),
+  // which reads these params via useCategoryFilters.
   const handleTagClick = (type: string, value: string) => {
     if (type === 'category') {
-      navigate(`/feedback?category=${encodeURIComponent(value)}`)
+      navigate(`/categories?category=${encodeURIComponent(value)}`)
     } else if (type === 'keyword') {
-      navigate(`/feedback?q=${encodeURIComponent(value)}`)
+      navigate(`/categories?q=${encodeURIComponent(value)}`)
     } else if (type === 'source') {
-      navigate(`/feedback?source=${encodeURIComponent(value)}`)
+      navigate(`/categories?source=${encodeURIComponent(value)}`)
     }
   }
 
@@ -457,7 +459,7 @@ export default function FeedbackDetail() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6 px-1 sm:px-0">
-      <Link to="/feedback" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm sm:text-base">
+      <Link to="/categories" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm sm:text-base">
         <ArrowLeft size={18} />
         <span className="hidden xs:inline">Back to feedback</span>
         <span className="xs:hidden">Back</span>

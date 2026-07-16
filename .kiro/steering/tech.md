@@ -115,9 +115,8 @@ def lambda_handler(event, context):
 |------|-------|----------|
 | Login | `/login` | Cognito authentication |
 | Dashboard | `/` | Charts, metrics, social feed, urgent issues |
-| Feedback | `/feedback` | Filterable list, search, pagination |
 | Feedback Detail | `/feedback/:id` | Single item with similar feedback |
-| Categories | `/categories` | Category breakdown and management |
+| Categories | `/categories` | Category breakdown, feedback list (All/search/urgent), filters |
 | Problem Analysis | `/problems` | Problem analysis dashboard |
 | Prioritization | `/prioritization` | Issue prioritization |
 | AI Chat | `/chat` | Conversational data queries with streaming |

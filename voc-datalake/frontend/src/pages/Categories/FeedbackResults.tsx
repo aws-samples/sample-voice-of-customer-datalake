@@ -1,8 +1,10 @@
 import { Download, LayoutGrid, List } from 'lucide-react'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import type { FeedbackItem } from '../../api/client'
 import FeedbackCard from '../../components/FeedbackCard'
-import type { ViewMode, SentimentFilter } from './types'
+import { ratingFilterLabel } from './types'
+import type { ViewMode, SentimentFilter, RatingFilter } from './types'
 
 interface FeedbackResultsProps {
   readonly filteredFeedback: FeedbackItem[]
@@ -11,10 +13,63 @@ interface FeedbackResultsProps {
   readonly onViewModeChange: (mode: ViewMode) => void
   readonly selectedSource: string | null
   readonly selectedCategories: string[]
-  readonly selectedKeywords: string[]
   readonly sentimentFilter: SentimentFilter
-  readonly minRating: number
+  readonly ratingFilter: RatingFilter
+  /** CSV export of the currently filtered items. PDF export lives in the page-level filter bar. */
   readonly onExport: () => void
+  /** Candidate-window size reported by the backend ("N of TOTAL"). */
+  readonly totalCount: number
+  /** True when the backend truncated the candidate window ("N+"). */
+  readonly isPartialWindow: boolean
+  /** True when more pages can be loaded (list endpoint only). */
+  readonly hasMore: boolean
+  readonly onLoadMore: () => void
+  readonly isLoadingMore: boolean
+}
+
+/**
+ * "Showing N of TOTAL" line with the partial-window "N+" hint, ported from
+ * the removed Feedback page. When the backend truncated the candidate
+ * window, `totalCount` is a lower bound — show "N+" plus a narrow-filters
+ * hint, but only when there genuinely are more matches than displayed.
+ */
+function ResultsCountLine({
+  itemCount,
+  totalCount,
+  isPartialWindow,
+}: Readonly<{ itemCount: number; totalCount: number; isPartialWindow: boolean }>) {
+  const { t } = useTranslation('common')
+  const showPartial = isPartialWindow && totalCount > itemCount
+  const totalLabel = showPartial ? `${totalCount}+` : `${totalCount}`
+  return (
+    <p className="text-xs sm:text-sm text-gray-500">
+      {t('showingOf', { count: itemCount, total: totalLabel })}
+      {showPartial && <span className="ml-1 text-amber-600">({t('partialWindowHint')})</span>}
+    </p>
+  )
+}
+
+function ActiveFiltersLine({
+  selectedSource,
+  selectedCategories,
+  sentimentFilter,
+  ratingFilter,
+}: Readonly<{
+  selectedSource: string | null
+  selectedCategories: string[]
+  sentimentFilter: SentimentFilter
+  ratingFilter: RatingFilter
+}>) {
+  const { t } = useTranslation(['common', 'categories'])
+  const sentimentText = sentimentFilter !== 'all' ? t(`categories:${sentimentFilter}`) : null
+  return (
+    <p className="text-xs sm:text-sm text-gray-500 truncate">
+      {selectedSource && t('categories:sourceFilterLabel', { source: selectedSource })}
+      {selectedCategories.length > 0 && `${selectedSource ? ' • ' : ''}${selectedCategories.map(c => c.replace('_', ' ')).join(', ')}`}
+      {sentimentText && ` • ${sentimentText}`}
+      {ratingFilter.value > 0 && ` • ${ratingFilterLabel(ratingFilter, t)}`}
+    </p>
+  )
 }
 
 export function FeedbackResults({
@@ -24,56 +79,82 @@ export function FeedbackResults({
   onViewModeChange,
   selectedSource,
   selectedCategories,
-  selectedKeywords,
   sentimentFilter,
-  minRating,
+  ratingFilter,
   onExport,
+  totalCount,
+  isPartialWindow,
+  hasMore,
+  onLoadMore,
+  isLoadingMore,
 }: FeedbackResultsProps) {
+  const { t } = useTranslation(['common', 'categories'])
   return (
     <div className="card">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
         <div className="min-w-0">
           <h2 className="text-base sm:text-lg font-semibold">
-            Feedback Results
+            {t('categories:feedbackResults')}
             <span className="ml-2 text-sm font-normal text-gray-500">({filteredFeedback.length})</span>
           </h2>
-          <p className="text-xs sm:text-sm text-gray-500 truncate">
-            {selectedSource && `Source: ${selectedSource}`}
-            {selectedCategories.length > 0 && `${selectedSource ? ' • ' : ''}${selectedCategories.map(c => c.replace('_', ' ')).join(', ')}`}
-            {selectedKeywords.length > 0 && `${selectedSource || selectedCategories.length > 0 ? ' • ' : ''}${selectedKeywords.join(', ')}`}
-            {sentimentFilter !== 'all' && ` • ${sentimentFilter}`}
-            {minRating > 0 && ` • ${minRating}+ stars`}
-          </p>
+          <ResultsCountLine
+            itemCount={filteredFeedback.length}
+            totalCount={totalCount}
+            isPartialWindow={isPartialWindow}
+          />
+          <ActiveFiltersLine
+            selectedSource={selectedSource}
+            selectedCategories={selectedCategories}
+            sentimentFilter={sentimentFilter}
+            ratingFilter={ratingFilter}
+          />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="flex bg-gray-100 rounded-lg p-0.5 sm:p-1">
             <button
               onClick={() => onViewModeChange('grid')}
               className={clsx('p-1.5 rounded active:scale-95', viewMode === 'grid' ? 'bg-white shadow-sm' : 'hover:bg-gray-200')}
-              aria-label="Grid view"
+              aria-label={t('categories:gridView')}
             >
               <LayoutGrid size={14} className="sm:w-4 sm:h-4" />
             </button>
             <button
               onClick={() => onViewModeChange('list')}
               className={clsx('p-1.5 rounded active:scale-95', viewMode === 'list' ? 'bg-white shadow-sm' : 'hover:bg-gray-200')}
-              aria-label="List view"
+              aria-label={t('categories:listView')}
             >
               <List size={14} className="sm:w-4 sm:h-4" />
             </button>
           </div>
-          <button onClick={onExport} className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5">
+          <button
+            onClick={onExport}
+            title={t('exportCsvTooltip')}
+            aria-label={t('exportCsvTooltip')}
+            className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5"
+          >
             <Download size={14} className="sm:w-4 sm:h-4" />
-            <span className="hidden xs:inline">Export</span>
+            <span className="hidden xs:inline">{t('exportCsvShort')}</span>
           </button>
         </div>
       </div>
       <FeedbackContentDisplay isLoading={feedbackLoading} items={filteredFeedback} viewMode={viewMode} />
+      {hasMore && !feedbackLoading && (
+        <div className="flex justify-center mt-3 sm:mt-4">
+          <button
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className="btn btn-secondary text-xs sm:text-sm px-4 py-1.5 disabled:opacity-60"
+          >
+            {isLoadingMore ? t('loading') : t('loadMore')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
 
 function FeedbackContentDisplay({ isLoading, items, viewMode }: Readonly<{ isLoading: boolean; items: FeedbackItem[]; viewMode: ViewMode }>) {
+  const { t } = useTranslation(['common', 'categories'])
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8 sm:py-12">
@@ -82,7 +163,7 @@ function FeedbackContentDisplay({ isLoading, items, viewMode }: Readonly<{ isLoa
     )
   }
   if (items.length === 0) {
-    return <p className="text-gray-500 text-center py-8 sm:py-12 text-sm">No feedback found matching your filters</p>
+    return <p className="text-gray-500 text-center py-8 sm:py-12 text-sm">{t('categories:noFeedbackFound')}</p>
   }
   return (
     <div className={clsx(viewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4' : 'space-y-2 sm:space-y-3')}>

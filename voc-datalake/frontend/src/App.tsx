@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, Navigate, RouterProvider, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -15,7 +15,6 @@ import { configureAmplify } from './lib/amplify-config'
 // Lazy load pages for better code splitting
 const Home = lazy(() => import('./pages/Home'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
-const Feedback = lazy(() => import('./pages/Feedback'))
 const FeedbackDetail = lazy(() => import('./pages/FeedbackDetail'))
 const Categories = lazy(() => import('./pages/Categories'))
 const ProblemAnalysis = lazy(() => import('./pages/ProblemAnalysis'))
@@ -45,6 +44,17 @@ const page = (element: ReactNode) => ({
   errorElement: <RouteErrorBoundary />,
 })
 
+/**
+ * The standalone Feedback list page was consolidated into Categories
+ * (issue #198). Old links and breadcrumbs still point at `/feedback`, so
+ * redirect there with the query string preserved (`?category=`, `?q=`,
+ * `?source=` deep-links land pre-filtered on Categories).
+ */
+function FeedbackRedirect() {
+  const location = useLocation()
+  return <Navigate to={`/categories${location.search}`} replace />
+}
+
 const router = createBrowserRouter([
   {
     path: '/login',
@@ -64,7 +74,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, ...page(<Home />) },
       { path: 'dashboard', ...page(<Dashboard />) },
-      { path: 'feedback', ...page(<Feedback />) },
+      { path: 'feedback', element: <FeedbackRedirect />, errorElement: <RouteErrorBoundary /> },
       { path: 'feedback/:id', ...page(<FeedbackDetail />) },
       { path: 'categories', ...page(<Categories />) },
       { path: 'problems', ...page(<ProblemAnalysis />) },

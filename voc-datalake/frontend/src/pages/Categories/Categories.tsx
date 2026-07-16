@@ -1,248 +1,104 @@
 /**
- * @fileoverview Categories analysis page with breakdown and filtering.
+ * @fileoverview Categories analysis page: one unified filter bar, three
+ * interactive analytics cards (category distribution doubles as the category
+ * selector, sentiment gauge legend is the sentiment control, keyword clicks
+ * populate search), and the consolidated feedback list that replaced the
+ * standalone Feedback page (issue #198). The default view (nothing selected)
+ * browses all feedback.
  * @module pages/Categories
  */
 
-import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { FileDown } from 'lucide-react'
-import { api, getDateRangeParams } from '../../api/client'
+import { getDateRangeParams } from '../../api/client'
+import type { FeedbackItem } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
-import { categoryColors, getSentimentColor } from './types'
-import type { SentimentFilter, ViewMode, CategoryData, SentimentData, WordCloudItem } from './types'
-import { SourceFilter } from './SourceFilter'
-import { InsightsRow } from './InsightsRow'
+import { getTimeRangeLabel } from '../../utils/dateUtils'
+import type { ViewMode } from './types'
+import { FilterBar } from './FilterBar'
 import { SentimentGauge } from './SentimentGaugeCard'
 import { WordCloudCard } from './WordCloudCard'
-import { CategorySelector } from './CategorySelector'
 import { CategoryDistribution } from './CategoryDistribution'
 import { FeedbackResults } from './FeedbackResults'
 import { generateCategoriesPDF } from './categoriesPdfGenerator'
+import { useCategoryFilters } from './useCategoryFilters'
+import { useFeedbackListData } from './useFeedbackListData'
+import { useCategoryAnalytics } from './useCategoryAnalytics'
+import { csvField } from '../../utils/csv'
 import { useTranslation } from 'react-i18next'
 
-// Stop words for word cloud filtering
-const STOP_WORDS = new Set([
-  'with', 'that', 'this', 'from', 'have', 'been', 'were', 'they', 'their',
-  'about', 'would', 'could', 'should', 'very', 'more', 'some', 'than',
-  'when', 'what', 'which', 'there', 'other'
-])
-
-function isValidWord(word: string): boolean {
-  return word.length > 3 && !STOP_WORDS.has(word)
-}
-
-function extractWordsFromIssues(issuesData: Record<string, number>): Record<string, number> {
-  const wordCounts: Record<string, number> = {}
-  for (const [issue, count] of Object.entries(issuesData)) {
-    const words = issue.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(isValidWord)
-    const countNum = typeof count === 'number' ? count : 0
-    for (const word of words) {
-      wordCounts[word] = (wordCounts[word] ?? 0) + countNum
-    }
-  }
-  return wordCounts
-}
-
-function buildWordCloudData(entities: { issues?: Record<string, number>; categories?: Record<string, number> } | undefined): WordCloudItem[] {
-  if (!entities) return []
-  const wordCounts = extractWordsFromIssues(entities.issues ?? {})
-
-  for (const [cat, count] of Object.entries(entities.categories ?? {})) {
-    const word = cat.replace('_', ' ')
-    const countNum = typeof count === 'number' ? count : 0
-    wordCounts[word] = (wordCounts[word] ?? 0) + countNum
-  }
-
-  return Object.entries(wordCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 30)
-    .map(([word, count]) => ({ word, count }))
-}
-
-interface FilterState {
-  selectedCategories: string[]
-  selectedKeywords: string[]
-  selectedSource: string | null
-  sentimentFilter: SentimentFilter
-  minRating: number
-}
-
-function getPeriodDays(categories: { period_days: number } | undefined): number | undefined {
-  return categories?.period_days
-}
-
-function checkHasActiveFilters(filters: FilterState): boolean {
-  return (
-    filters.selectedCategories.length > 0 ||
-    filters.selectedKeywords.length > 0 ||
-    filters.selectedSource !== null ||
-    filters.sentimentFilter !== 'all' ||
-    filters.minRating > 0
-  )
-}
-
-export default function Categories() {
-  const { t } = useTranslation('common')
-  const { timeRange, customDays, dateBasis, config } = useConfigStore()
-  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
-
-  // State
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
-  const [selectedKeywords, setSelectedKeywords] = useState<string[]>([])
-  const [selectedSource, setSelectedSource] = useState<string | null>(null)
-  const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>('all')
-  const [minRating, setMinRating] = useState<number>(0)
-  const [viewMode, setViewMode] = useState<ViewMode>('grid')
-  const [showFilters, setShowFilters] = useState(false)
-
-  // Queries
-  const { data: categories, isLoading: categoriesLoading } = useQuery({
-    queryKey: ['categories', dateParams, selectedSource],
-    queryFn: () => api.getCategories(dateParams, selectedSource || undefined),
-    enabled: !!config.apiEndpoint,
-  })
-
-  const { data: sentiment, isLoading: sentimentLoading } = useQuery({
-    queryKey: ['sentiment', dateParams, selectedSource],
-    queryFn: () => api.getSentiment(dateParams, selectedSource || undefined),
-    enabled: !!config.apiEndpoint,
-  })
-
-  const { data: entities } = useQuery({
-    queryKey: ['entities', dateParams, selectedSource],
-    queryFn: () => api.getEntities({ ...dateParams, limit: 50, source: selectedSource || undefined }),
-    enabled: !!config.apiEndpoint,
-  })
-
-  const { data: allEntities } = useQuery({
-    queryKey: ['entities-all-sources', dateParams],
-    queryFn: () => api.getEntities({ ...dateParams, limit: 50 }),
-    enabled: !!config.apiEndpoint,
-  })
-
-  const shouldFetchFeedback = selectedCategories.length > 0 || selectedKeywords.length > 0
-
-  const { data: feedbackData, isLoading: feedbackLoading } = useQuery({
-    queryKey: ['feedback', dateParams, selectedCategories, sentimentFilter, selectedKeywords, selectedSource],
-    queryFn: () => api.getFeedback({
-      ...dateParams,
-      source: selectedSource || undefined,
-      category: selectedCategories.length === 1 ? selectedCategories[0] : undefined,
-      sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
-      limit: 100,
-    }),
-    enabled: !!config.apiEndpoint && shouldFetchFeedback,
-  })
-
-  // Computed data
-  const allSources = useMemo(() => {
-    if (!allEntities?.entities?.sources) return []
-    return Object.keys(allEntities.entities.sources).sort(
-      (a, b) => (allEntities.entities.sources[b] || 0) - (allEntities.entities.sources[a] || 0)
-    )
-  }, [allEntities])
-
-  const categoryData: CategoryData[] = useMemo(() => {
-    if (!categories) return []
-    return Object.entries(categories.categories)
-      .map(([name, value]) => ({ name, value, color: categoryColors[name] || categoryColors.other }))
-      .sort((a, b) => b.value - a.value)
-  }, [categories])
-
-  const totalIssues = categoryData.reduce((sum, c) => sum + c.value, 0)
-
-  const sentimentData: SentimentData[] = useMemo(() => {
-    if (!sentiment) return []
-    return Object.entries(sentiment.breakdown).map(([name, value]) => ({
-      name,
-      value,
-      color: getSentimentColor(name),
-      percentage: sentiment.percentages[name] ?? 0,
-    }))
-  }, [sentiment])
-
-  const wordCloudData: WordCloudItem[] = useMemo(
-    () => buildWordCloudData(entities?.entities),
-    [entities]
-  )
-
-  const filteredFeedback = useMemo(() => {
-    if (!feedbackData?.items) return []
-    return feedbackData.items.filter(item => {
-      const failsRatingFilter = minRating > 0 && (!item.rating || item.rating < minRating)
-      if (failsRatingFilter) return false
-      
-      const failsCategoryFilter = selectedCategories.length > 1 && !selectedCategories.includes(item.category)
-      if (failsCategoryFilter) return false
-      
-      const failsSourceFilter = selectedSource && item.brand_name !== selectedSource
-      if (failsSourceFilter) return false
-      
-      if (selectedKeywords.length > 0) {
-        const text = (item.original_text + ' ' + (item.problem_summary ?? '')).toLowerCase()
-        const hasKeyword = selectedKeywords.some(kw => text.includes(kw.toLowerCase()))
-        if (!hasKeyword) return false
-      }
-      return true
-    })
-  }, [feedbackData, minRating, selectedCategories, selectedKeywords, selectedSource])
-
-  // Handlers
-  const toggleCategory = (category: string) => {
-    setSelectedCategories(prev => prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category])
-  }
-
-  const toggleKeyword = (keyword: string) => {
-    setSelectedKeywords(prev => prev.includes(keyword) ? prev.filter(k => k !== keyword) : [...prev, keyword])
-  }
-
-  const clearFilters = () => {
-    setSelectedCategories([])
-    setSelectedKeywords([])
-    setSelectedSource(null)
-    setSentimentFilter('all')
-    setMinRating(0)
-  }
-
-  const hasActiveFilters = checkHasActiveFilters({
-    selectedCategories,
-    selectedKeywords,
-    selectedSource,
-    sentimentFilter,
-    minRating,
-  })
-
-  const exportData = () => {
-    const dataToExport = filteredFeedback.length > 0 ? filteredFeedback : feedbackData?.items || []
-    const csv = [
-      ['ID', 'Source', 'Category', 'Sentiment', 'Rating', 'Text', 'Date'].join(','),
-      ...dataToExport.map(item => [
-        item.feedback_id,
-        item.source_platform,
-        item.category,
-        item.sentiment_label,
-        item.rating || '',
-        `"${item.original_text.replace(/"/g, '""')}"`,
-        item.source_created_at,
-      ].join(',')),
-    ].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
+function exportFeedbackCsv(items: FeedbackItem[]): void {
+  const csv = [
+    ['ID', 'Source', 'Category', 'Sentiment', 'Rating', 'Text', 'Date'].map(csvField).join(','),
+    ...items.map(item => [
+      csvField(item.feedback_id),
+      csvField(item.source_platform),
+      csvField(item.category),
+      csvField(item.sentiment_label),
+      csvField(item.rating ?? ''),
+      csvField(item.original_text),
+      csvField(item.source_created_at),
+    ].join(',')),
+  ].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  try {
     const a = document.createElement('a')
     a.href = url
     a.download = `feedback-export-${new Date().toISOString().split('T')[0]}.csv`
     a.click()
+  } finally {
+    URL.revokeObjectURL(url)
   }
+}
+
+/**
+ * PDF generation is best-effort (e.g. popup blocked) — never crash the page.
+ * Only the error message is logged: the full error object could carry
+ * feedback content from the report payload.
+ */
+function safeGeneratePdf(generate: () => void): void {
+  try {
+    generate()
+  } catch (err) {
+    console.error('PDF export failed:', err instanceof Error ? err.message : String(err))
+  }
+}
+
+export default function Categories() {
+  const { t } = useTranslation(['common', 'categories'])
+  const { timeRange, customDays, dateBasis, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
+
+  const filters = useCategoryFilters()
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+
+  const analytics = useCategoryAnalytics(dateParams, filters.selectedSource, config.apiEndpoint)
+  const feedback = useFeedbackListData(dateParams, filters, config.apiEndpoint)
+
+  const exportCsv = () => exportFeedbackCsv(feedback.filteredFeedback)
+
+  // One report: analytics sections plus the currently filtered feedback items.
+  const exportPdf = () => safeGeneratePdf(() => generateCategoriesPDF({
+    categoryData: analytics.categoryData,
+    sentimentData: analytics.sentimentData,
+    wordCloudData: analytics.wordCloudData,
+    totalIssues: analytics.totalIssues,
+    avgSentiment: analytics.avgSentiment,
+    timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
+    selectedSource: filters.selectedSource,
+    items: feedback.filteredFeedback,
+  }))
 
   if (!config.apiEndpoint) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Please configure your API endpoint in Settings</p>
+        <p className="text-gray-500">{t('categories:configureApiEndpoint')}</p>
       </div>
     )
   }
 
-  if (categoriesLoading || sentimentLoading) {
+  if (analytics.isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -250,86 +106,70 @@ export default function Categories() {
     )
   }
 
-  const avgSentiment = sentiment ? (sentiment.percentages.positive || 0) - (sentiment.percentages.negative || 0) : 0
-
-  const exportPDF = () => {
-    try {
-      generateCategoriesPDF({
-        categoryData,
-        sentimentData,
-        wordCloudData,
-        totalIssues,
-        avgSentiment,
-        timeRange,
-        selectedSource,
-      })
-    } catch {
-      // PDF generation is best-effort (e.g. popup blocked)
-    }
-  }
-
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="flex justify-end">
-        <button
-          onClick={exportPDF}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
-          title={t('exportPdfTooltip')}
-        >
-          <FileDown size={14} />
-          {t('exportPdf')}
-        </button>
-      </div>
-      <SourceFilter selectedSource={selectedSource} onSourceChange={setSelectedSource} allSources={allSources} />
-      <InsightsRow categoryData={categoryData} totalIssues={totalIssues} />
-
-      <CategoryDistribution categoryData={categoryData} totalIssues={totalIssues} periodDays={getPeriodDays(categories)} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        <SentimentGauge
-          sentimentData={sentimentData}
-          avgSentiment={avgSentiment}
-          sentimentFilter={sentimentFilter}
-          onSentimentFilterChange={setSentimentFilter}
-          percentages={sentiment?.percentages || {}}
-        />
-        <WordCloudCard
-          wordCloudData={wordCloudData}
-          selectedKeywords={selectedKeywords}
-          onToggleKeyword={toggleKeyword}
-          onClearKeywords={() => setSelectedKeywords([])}
-        />
-      </div>
-
-      <CategorySelector
-        categoryData={categoryData}
-        totalIssues={totalIssues}
-        selectedCategories={selectedCategories}
-        onToggleCategory={toggleCategory}
-        hasActiveFilters={hasActiveFilters}
-        onClearFilters={clearFilters}
-        showFilters={showFilters}
-        onToggleFilters={() => setShowFilters(!showFilters)}
-        minRating={minRating}
-        onMinRatingChange={setMinRating}
-        sentimentFilter={sentimentFilter}
-        onSentimentFilterChange={setSentimentFilter}
+      <FilterBar
+        searchText={filters.searchText}
+        onSearchChange={filters.setSearchText}
+        selectedSource={filters.selectedSource}
+        onSourceChange={filters.setSelectedSource}
+        allSources={analytics.allSources}
+        showUrgentOnly={filters.showUrgentOnly}
+        onUrgentChange={filters.setShowUrgentOnly}
+        ratingFilter={filters.ratingFilter}
+        onRatingFilterChange={filters.setRatingFilter}
+        hasActiveFilters={filters.hasActiveFilters}
+        onClearFilters={filters.clearFilters}
+        trailing={
+          <button
+            onClick={exportPdf}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap"
+            title={t('exportPdfTooltip')}
+          >
+            <FileDown size={14} />
+            {t('exportPdf')}
+          </button>
+        }
       />
 
-      {shouldFetchFeedback && (
-        <FeedbackResults
-          filteredFeedback={filteredFeedback}
-          feedbackLoading={feedbackLoading}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          selectedSource={selectedSource}
-          selectedCategories={selectedCategories}
-          selectedKeywords={selectedKeywords}
-          sentimentFilter={sentimentFilter}
-          minRating={minRating}
-          onExport={exportData}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        <CategoryDistribution
+          categoryData={analytics.categoryData}
+          totalIssues={analytics.totalIssues}
+          periodDays={analytics.periodDays}
+          selectedCategories={filters.selectedCategories}
+          onToggleCategory={filters.toggleCategory}
         />
-      )}
+        <SentimentGauge
+          sentimentData={analytics.sentimentData}
+          avgSentiment={analytics.avgSentiment}
+          sentimentFilter={filters.sentimentFilter}
+          onSentimentFilterChange={filters.setSentimentFilter}
+          percentages={analytics.sentimentPercentages}
+        />
+        <WordCloudCard
+          wordCloudData={analytics.wordCloudData}
+          searchText={filters.searchText}
+          onSearchChange={filters.setSearchText}
+        />
+      </div>
+
+      <FeedbackResults
+        filteredFeedback={feedback.filteredFeedback}
+        feedbackLoading={feedback.isLoading}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        selectedSource={filters.selectedSource}
+        selectedCategories={filters.selectedCategories}
+        sentimentFilter={filters.sentimentFilter}
+        ratingFilter={filters.ratingFilter}
+        onExport={exportCsv}
+        totalCount={feedback.totalCount}
+        isPartialWindow={feedback.isPartialWindow}
+        hasMore={feedback.hasMore}
+        onLoadMore={feedback.loadMore}
+        isLoadingMore={feedback.isLoadingMore}
+      />
     </div>
   )
 }
