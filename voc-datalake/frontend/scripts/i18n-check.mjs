@@ -103,6 +103,7 @@ function collectSourceFiles(dir) {
  *   t('key', { ns: 'settings' })   → namespace = settings
  *   t('ns:key')                     → namespace = ns
  *   useTranslation('ns') … t('key') → namespace = ns
+ *   useTranslation('ns', { keyPrefix: 'p' }) … t('key') → ns:p.key
  */
 function extractKeysFromSource(files) {
   const usedKeys = new Set()  // Set of "ns:key"
@@ -110,10 +111,15 @@ function extractKeysFromSource(files) {
   for (const file of files) {
     const content = readFileSync(file, 'utf-8')
 
-    // Detect useTranslation('namespace') to know the file-level namespace
+    // Detect useTranslation('namespace') to know the file-level namespace.
+    // Also matches useTranslation('ns', { keyPrefix: '…' }) — the prefix is
+    // prepended to every unprefixed key used through that t.
     let fileNs = DEFAULT_NS
-    const nsMatch = content.match(/useTranslation\(\s*['"](\w+)['"]\s*\)/)
+    const nsMatch = content.match(/useTranslation\(\s*['"](\w+)['"]\s*[,)]/)
     if (nsMatch) fileNs = nsMatch[1]
+    let filePrefix = ''
+    const prefixMatch = content.match(/useTranslation\([^)]*keyPrefix:\s*['"]([\w.]+)['"]/)
+    if (prefixMatch) filePrefix = `${prefixMatch[1]}.`
 
     // Match t('...') and t("...")
     // Handles: t('key'), t('key', ...), t(`key`)
@@ -130,7 +136,7 @@ function extractKeysFromSource(files) {
         usedKeys.add(`${ns}:${key}`)
       } else {
         const ns = explicitNs || fileNs
-        usedKeys.add(`${ns}:${rawKey}`)
+        usedKeys.add(`${ns}:${filePrefix}${rawKey}`)
       }
     }
   }
