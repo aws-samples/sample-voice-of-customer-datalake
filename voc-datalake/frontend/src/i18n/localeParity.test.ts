@@ -99,8 +99,9 @@ describe('locale parity', () => {
       // small-count UIs never hit.
       const reference = collectKeys(readNamespace(REFERENCE_LOCALE, namespace))
       for (const locale of locales) {
-        const suffixed = suffixedKeysOf(readNamespace(locale, namespace))
-        const actual = collectKeys(readNamespace(locale, namespace))
+        const content = readNamespace(locale, namespace)
+        const suffixed = suffixedKeysOf(content)
+        const actual = collectKeys(content)
         const unrenderable = [...reference.pluralized]
           .filter((base) => !suffixed.has(`${base}_other`) && !actual.bare.has(base))
           .sort()
