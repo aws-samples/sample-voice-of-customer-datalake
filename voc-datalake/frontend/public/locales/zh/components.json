@@ -1,4 +1,25 @@
 {
+  "categoriesManager": {
+    "aiTitle": "AI 类别建议",
+    "aiDescription": "描述您的公司、行业或产品，AI 将为您的业务量身推荐类别。",
+    "aiPlaceholder": "例如：我们是一家提供国内和国际航班的航空公司。客户关心准点率、舒适度、行李处理、客户服务和机上体验……",
+    "generating": "生成中...",
+    "generateButton": "生成类别",
+    "generateError": "类别生成失败，请重试。",
+    "listTitle": "类别与子类别",
+    "categoryCount_other": "{{count}} 个类别",
+    "emptyTitle": "尚未配置任何类别。",
+    "emptyHint": "使用上方的 AI 生成，或在下方手动添加类别。",
+    "subCount_other": "{{count}} 个子类",
+    "addSubcategoryPlaceholder": "添加子类别...",
+    "addCategoryPlaceholder": "添加新类别...",
+    "addCategory": "添加类别",
+    "saving": "保存中...",
+    "saved": "类别保存成功",
+    "deleteTitle": "删除类别",
+    "deleteMessage": "确定要删除此类别及其所有子类别吗？此操作无法撤销。",
+    "deleteConfirm": "删除"
+  },
   "dataSourceWizard": {
     "allTime": "全部时间",
     "back": "返回",

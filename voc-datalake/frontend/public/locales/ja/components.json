@@ -1,4 +1,25 @@
 {
+  "categoriesManager": {
+    "aiTitle": "AIカテゴリ提案",
+    "aiDescription": "会社・業界・製品について説明すると、ビジネスに合わせたカテゴリをAIが提案します。",
+    "aiPlaceholder": "例: 私たちは国内線・国際線を運航する航空会社です。お客様は定時性、快適さ、手荷物の取り扱い、カスタマーサービス、機内体験を重視しています...",
+    "generating": "生成中...",
+    "generateButton": "カテゴリを生成",
+    "generateError": "カテゴリの生成に失敗しました。もう一度お試しください。",
+    "listTitle": "カテゴリとサブカテゴリ",
+    "categoryCount_other": "{{count}} 件のカテゴリ",
+    "emptyTitle": "カテゴリはまだ設定されていません。",
+    "emptyHint": "上のAI生成を使うか、下で手動でカテゴリを追加してください。",
+    "subCount_other": "サブ {{count}} 件",
+    "addSubcategoryPlaceholder": "サブカテゴリを追加...",
+    "addCategoryPlaceholder": "新しいカテゴリを追加...",
+    "addCategory": "カテゴリを追加",
+    "saving": "保存中...",
+    "saved": "カテゴリを保存しました",
+    "deleteTitle": "カテゴリを削除",
+    "deleteMessage": "このカテゴリとすべてのサブカテゴリを削除してもよろしいですか？この操作は元に戻せません。",
+    "deleteConfirm": "削除"
+  },
   "dataSourceWizard": {
     "allTime": "すべての期間",
     "back": "戻る",

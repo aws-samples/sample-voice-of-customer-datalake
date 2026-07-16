@@ -112,7 +112,7 @@ describe('CategoriesManager', () => {
       renderComponent()
       
       await waitFor(() => {
-        expect(screen.getByText('2 sub')).toBeInTheDocument()
+        expect(screen.getByText('2 subs')).toBeInTheDocument()
       })
     })
   })
@@ -1015,6 +1015,6 @@ describe('sparse legacy rows (issue #181)', () => {
     await waitFor(() => {
       expect(screen.getByText('App experience')).toBeInTheDocument()
     })
-    expect(screen.getByText('0 sub')).toBeInTheDocument()
+    expect(screen.getByText('0 subs')).toBeInTheDocument()
   })
 })
