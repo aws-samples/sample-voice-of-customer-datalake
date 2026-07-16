@@ -311,6 +311,12 @@ export class VocProcessingStack extends cdk.Stack {
         'web_context.$': '$.Payload.web_context',
         // Always returned ([] when web search is off/failed) — flows to the
         // save step for the report's web-search disclosure (#207).
+        // Update skew: the definition GetAtts the function (implicit CFN
+        // dependency), so the Lambda always updates BEFORE this definition
+        // and a new definition never runs against the old Lambda. In-flight
+        // executions keep the definition they started with; step_save's
+        // .get() defaults cover that opposite skew (old definition, new
+        // Lambda). Same rollout pattern as web_context (#157).
         'web_search_queries.$': '$.Payload.web_search_queries',
         // Always returned by step_initialize ('' when unused) — see #157.
         'documents_context.$': '$.Payload.documents_context',

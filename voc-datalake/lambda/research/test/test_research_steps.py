@@ -616,3 +616,13 @@ class TestStepSaveWebSearchNote:
         saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
         assert 'Web search: enabled (1 query)' in saved['content']
         assert '1. "real query"' in saved['content']
+
+    def test_multiline_query_is_flattened_in_disclosure(self, mock_tables, mock_job_status):
+        """Queries land verbatim in report markdown — embedded newlines must
+        not break the numbered-list layout."""
+        from research_step_handler import step_save
+
+        step_save(self._event(use_web_search=True, web_search_queries=['line one\nline   two']))
+
+        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        assert '1. "line one line two"' in saved['content']

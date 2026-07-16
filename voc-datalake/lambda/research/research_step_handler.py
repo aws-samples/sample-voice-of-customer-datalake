@@ -366,8 +366,11 @@ def step_save(event: dict) -> dict:
     # The executed queries flow from step_initialize through the state machine
     # ('' on old executions pinned to a pre-#207 definition — .get defaults).
     web_search_used = config.get('use_web_search') is True
+    # Queries land verbatim in the report markdown — collapse whitespace and
+    # newlines so a model-drafted query can't break the list layout.
     web_queries = [
-        q for q in (event.get('web_search_queries') or [])
+        ' '.join(q.split())
+        for q in (event.get('web_search_queries') or [])
         if isinstance(q, str) and q.strip()
     ] if web_search_used else []
     if web_search_used and web_queries:

@@ -69,11 +69,13 @@ function makeProps(researchConfig: Partial<ResearchToolConfig> = {}) {
   }
 }
 
-/** Click Next until the final (research question) step is visible. */
+/** Click Next until the final (research question) step is visible.
+ * Bounded so a broken wizard fails with an assertion, not a test timeout. */
 async function goToFinalStep(user: ReturnType<typeof userEvent.setup>) {
-  while (!screen.queryByText(/research question/i)) {
+  for (let i = 0; i < 5 && !screen.queryByText(/research question/i); i++) {
     await user.click(screen.getByRole('button', { name: /next/i }))
   }
+  expect(screen.getByText(/research question/i)).toBeInTheDocument()
 }
 
 describe('ResearchWizard web-search data source (#207)', () => {
