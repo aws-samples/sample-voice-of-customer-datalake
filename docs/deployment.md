@@ -236,9 +236,9 @@ cdk deploy --all -c enableWebSearch=true
 npm run deploy:frontend   # regenerates config.json with webSearch: true
 ```
 
-Cost model: the gateway has no standing cost; searches bill per query
-(see AgentCore pricing) and only run for requests where the user turned
-the toggle on.
+Cost model (per `bin/voc-datalake.ts`): the gateway has no standing cost;
+searches bill per query ($7/1k at the time of writing — check AgentCore
+pricing) and only run for requests where the user turned the toggle on.
 
 ## Frontend Deployment
 

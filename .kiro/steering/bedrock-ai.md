@@ -32,7 +32,12 @@ write and read back as Automatic if tampered.
 | Feedback enrichment (processor) | Claude Haiku 4.5 |
 | Utilities (category suggestions, selector detection) | Claude Sonnet 5 |
 
-### Allowlist (verify ids against `model_config.py`, not memory)
+### Allowlist
+
+Copied verbatim from `lambda/shared/model_config.py` (`ALLOWED_MODELS`,
+lines ~56-86) — that file and `lib/utils/model-allowlist.ts` are the
+source of truth (a lockstep test pins them to each other). Three ids are
+genuinely unsuffixed; only Haiku carries a dated suffix:
 
 ```
 global.anthropic.claude-sonnet-5
