@@ -66,7 +66,7 @@ npm run check        # lint + typecheck + test
 
 ## CDK Stacks
 
-The platform consists of 5 CDK stacks (consolidated architecture):
+The platform consists of 4 core stacks plus 2 optional ones:
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|

@@ -88,7 +88,7 @@ voc-datalake/
 │   ├── plugin-loader.ts              # Discovers and validates plugins
 │   └── stacks/
 │       ├── ingestion-stack.ts        # Uses plugin loader
-│       └── api-stack.ts        # Uses plugin loader for webhooks
+│       └── api-stack.ts              # Uses plugin loader for webhooks
 │
 └── frontend/src/
     ├── plugins/
@@ -650,7 +650,7 @@ export class VocIngestionStack extends cdk.Stack {
 // lib/stacks/api-stack.ts (key changes)
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook } from '../plugin-loader';
 
-export class VocAnalyticsStack extends cdk.Stack {
+export class VocApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocAnalyticsStackProps) {
     super(scope, id, props);
     

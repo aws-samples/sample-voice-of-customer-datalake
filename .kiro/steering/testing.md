@@ -332,7 +332,8 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-MODEL_ID = get_active_model_id(surface)  # shared/model_config.py — never hardcode ids
+from shared.model_config import get_active_model_id
+MODEL_ID = get_active_model_id(surface='utilities')  # never hardcode ids
 
 
 @pytest.fixture

@@ -163,7 +163,7 @@ Use least-privilege with specific actions:
 ```typescript
 // ✅ Good - specific actions with global inference profiles
 role.addToPolicy(new iam.PolicyStatement({
-  actions: ['bedrock:InvokeModel'],
+  actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
   resources: allowlistedModelArns(cdk.Aws.REGION, cdk.Aws.ACCOUNT_ID), // lib/utils/model-allowlist.ts — lockstep with model_config.py
 }));
 

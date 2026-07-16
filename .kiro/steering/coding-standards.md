@@ -702,7 +702,7 @@ TOKEN=$(aws cognito-idp initiate-auth \
   --output text)
 
 # Test streaming API — expect SSE events (metadata, text..., done)
-curl -N -X POST "${API_URL}chat/stream" \
+curl -N -X POST "${API_URL%/}/chat/stream" \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
   -H "Authorization: Bearer $TOKEN" \
