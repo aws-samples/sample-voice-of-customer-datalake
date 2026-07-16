@@ -1,25 +1,25 @@
 """
 Idempotent Cognito admin bootstrap (issue #196).
 
-CloudFormation custom resource handler (cr.Provider protocol). On Create,
-when the admin user does not exist: create it (email pre-verified,
-invitation mail suppressed), set a TEMPORARY random password generated here
-at runtime (Cognito forces a change on first login), add it to the admins
-group, and return the password so the stack can expose it via the
-InitialAdminPassword output — printing it on the very first deployment is
-how operators find their first login.
+Custom resource handler (cr.Provider protocol). Decision table on Create:
+  - admin missing: create it (email pre-verified, invite suppressed), set
+    a TEMPORARY runtime-generated password (first login forces a change),
+    add it to the admins group, and return the password so the stack
+    outputs it once — that is how operators find their first login.
+  - admin half-bootstrapped (an earlier run failed after create: never
+    logged in AND no groups): finish the job — fresh password + group.
+  - admin healthy, or Update/Delete: strict no-op. Redeploys never create
+    users or touch a live admin's password.
 
-On Create when the admin already exists (e.g. resource replacement), and on
-every Update/Delete: change NOTHING. Redeployments must never create users
-or touch a live admin's password.
-
-The stack inlines this file (Code.fromInline), so keep it under 4096 bytes.
+Dependency-free by design (no powertools): this file ships inlined via
+Code.fromInline, so only stdlib + boto3 exist. Keep it under 4096 bytes
+(CloudFormation ZipFile limit; a test enforces this).
 """
 import secrets
 
 import boto3
 
-# No ambiguous characters (0/O, 1/l/I) — operators retype this from a log.
+# No ambiguous characters (0/O, 1/l/I): operators retype this from a log.
 UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
 LOWER = 'abcdefghjkmnpqrstuvwxyz'
 DIGITS = '123456789'
@@ -40,54 +40,68 @@ def generate_password():
     return ''.join(chars)
 
 
-def admin_exists(user_pool_id, username):
+def get_admin(user_pool_id, username):
+    """The user record, or None. Anything but UserNotFound (e.g. throttling)
+    raises: fail loud and let CloudFormation retry/roll back."""
     try:
-        cognito.admin_get_user(UserPoolId=user_pool_id, Username=username)
-        return True
+        return cognito.admin_get_user(UserPoolId=user_pool_id, Username=username)
     except cognito.exceptions.UserNotFoundException:
+        return None
+
+
+def needs_repair(user, user_pool_id, username):
+    """True only for a half-bootstrapped admin: never logged in AND no
+    group memberships. A healthy admin (logged in, or in any group) is
+    never touched."""
+    if user['UserStatus'] != 'FORCE_CHANGE_PASSWORD':
         return False
+    groups = cognito.admin_list_groups_for_user(
+        UserPoolId=user_pool_id, Username=username,
+    )
+    return not groups['Groups']
+
+
+def finish_bootstrap(user_pool_id, username, group_name):
+    """Password + group steps, idempotent for an existing user."""
+    password = generate_password()
+    cognito.admin_set_user_password(
+        UserPoolId=user_pool_id, Username=username, Password=password,
+    )
+    cognito.admin_add_user_to_group(
+        UserPoolId=user_pool_id, Username=username, GroupName=group_name,
+    )
+    return password
 
 
 def handler(event, _context):
     props = event['ResourceProperties']
     user_pool_id = props['UserPoolId']
     physical_id = event.get('PhysicalResourceId') or f'admin-bootstrap-{user_pool_id}'
-    no_change = {
-        'PhysicalResourceId': physical_id,
-        'Data': {'Password': UNCHANGED, 'AdminCreated': 'false'},
-    }
+
+    def result(password, outcome):
+        return {'PhysicalResourceId': physical_id,
+                'Data': {'Password': password, 'Bootstrap': outcome}}
 
     if event['RequestType'] != 'Create':
-        return no_change
+        return result(UNCHANGED, 'skipped')
 
     username = props['Username']
-    if admin_exists(user_pool_id, username):
-        return no_change
+    user = get_admin(user_pool_id, username)
 
-    password = generate_password()
-    cognito.admin_create_user(
-        UserPoolId=user_pool_id,
-        Username=username,
-        UserAttributes=[
-            {'Name': 'email', 'Value': props['Email']},
-            {'Name': 'email_verified', 'Value': 'true'},
-            {'Name': 'name', 'Value': 'Admin'},
-        ],
-        MessageAction='SUPPRESS',
-    )
-    # Temporary on purpose: first login forces a change, so the printed
-    # password stops working the moment the operator uses it.
-    cognito.admin_set_user_password(
-        UserPoolId=user_pool_id,
-        Username=username,
-        Password=password,
-    )
-    cognito.admin_add_user_to_group(
-        UserPoolId=user_pool_id,
-        Username=username,
-        GroupName=props['GroupName'],
-    )
-    return {
-        'PhysicalResourceId': physical_id,
-        'Data': {'Password': password, 'AdminCreated': 'true'},
-    }
+    if user is None:
+        cognito.admin_create_user(
+            UserPoolId=user_pool_id,
+            Username=username,
+            UserAttributes=[
+                {'Name': 'email', 'Value': props['Email']},
+                {'Name': 'email_verified', 'Value': 'true'},
+                {'Name': 'name', 'Value': 'Admin'},
+            ],
+            MessageAction='SUPPRESS',
+        )
+        return result(finish_bootstrap(user_pool_id, username, props['GroupName']), 'created')
+
+    if needs_repair(user, user_pool_id, username):
+        return result(finish_bootstrap(user_pool_id, username, props['GroupName']), 'repaired')
+
+    return result(UNCHANGED, 'skipped')

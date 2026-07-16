@@ -522,12 +522,18 @@ export class VocCoreStack extends cdk.Stack {
         'cognito-idp:AdminCreateUser',
         'cognito-idp:AdminSetUserPassword',
         'cognito-idp:AdminAddUserToGroup',
+        'cognito-idp:AdminListGroupsForUser',
       ],
       resources: [this.userPool.userPoolArn],
     }));
 
     const adminBootstrapProvider = new cr.Provider(this, 'AdminBootstrapProvider', {
       onEventHandler: adminBootstrapLambda,
+      // MUST stay FATAL: at INFO the provider framework logs the full
+      // custom resource response — including Data.Password — to CloudWatch.
+      // FATAL is the aws-cdk-lib default today; pinning it guards against a
+      // default change and against anyone raising it while debugging.
+      frameworkLambdaLoggingLevel: lambda.ApplicationLogLevel.FATAL,
       logGroup: new logs.LogGroup(this, 'AdminBootstrapProviderLogs', {
         retention: logs.RetentionDays.ONE_WEEK,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
