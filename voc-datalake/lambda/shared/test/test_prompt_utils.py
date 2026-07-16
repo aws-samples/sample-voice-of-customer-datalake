@@ -25,7 +25,8 @@ class TestGetPromptsDir:
         from shared.prompts import get_prompts_dir
         prompts_dir = get_prompts_dir()
         assert prompts_dir.exists()
-        assert any(prompts_dir.glob('*.json'))
+        # Non-empty is the invariant; don't bake in the file format.
+        assert any(prompts_dir.iterdir())
 
     def test_raises_not_found(self, tmp_path):
         """get_prompts_dir raises FileNotFoundError when no dir exists."""

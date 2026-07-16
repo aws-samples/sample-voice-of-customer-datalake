@@ -249,6 +249,8 @@ class TestGetUrgentFeedback:
         
         assert response['statusCode'] == 200
         assert 'items' in body
+        # The limit must actually reach the query (no filters -> no over-fetch).
+        assert mock_fb_table.query.call_args.kwargs['Limit'] == 5
 
     @patch('metrics_handler.feedback_table')
     def test_filters_by_source(
