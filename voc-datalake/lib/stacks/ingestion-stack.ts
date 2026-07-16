@@ -410,8 +410,8 @@ export class VocIngestionStack extends cdk.Stack {
         'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**', '.ruff_cache/**', 'coverage_html/**',
         '.coverage', 'pytest.ini', 'requirements-dev.txt', 'chrome-extension/**', 'scripts/**', 'schemas/**',
         'Workshop/**',
-        'lambda/aggregator/**', 'lambda/api/**', 'lambda/jobs/**', 'lambda/layers/**',
-        'lambda/processor/**', 'lambda/research/**', 'lambda/stream/**',
+        'lambda/aggregator/**', 'lambda/api/**', 'lambda/custom_resources/**', 'lambda/jobs/**',
+        'lambda/layers/**', 'lambda/processor/**', 'lambda/research/**', 'lambda/stream/**',
       ],
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,

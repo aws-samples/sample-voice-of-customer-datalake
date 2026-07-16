@@ -77,7 +77,7 @@ After deployment, an initial admin user is created automatically:
 | Username | `admin` |
 | Password | Check CloudFormation stack outputs for `InitialAdminPassword` |
 
-The password is randomly generated during deployment and stored as a CloudFormation output. Retrieve it with:
+The password is generated when the admin user is first created and stored as a CloudFormation output. Retrieve it with:
 
 ```bash
 aws cloudformation describe-stacks \
@@ -87,6 +87,8 @@ aws cloudformation describe-stacks \
 ```
 
 > 🔒 **Note**: You will be prompted to change this password on your first login.
+> On redeployments the admin user is left untouched — no new user is created, the
+> password is never reset, and the output shows a placeholder instead of a password.
 
 ## ⚙️ Configuration
 
