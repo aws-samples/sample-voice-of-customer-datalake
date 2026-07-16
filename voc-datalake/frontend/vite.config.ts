@@ -1,24 +1,42 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { execSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { defineConfig } from 'vite'
 
 /**
  * Build id for cache-busting runtime-fetched locale JSONs (issue #191).
- * Derived from the git commit (plus a -dirty marker for uncommitted trees)
- * so identical source produces identical bundles — a content-neutral
- * redeploy keeps clients cache-warm. Post-#188 fetches revalidate via
- * no-cache headers regardless, so a same-sha deploy loses nothing.
- * Falls back to a timestamp where git isn't available (CI tarballs).
+ * Derived from the git HEAD commit so identical source produces identical
+ * bundles — a content-neutral redeploy keeps clients cache-warm, and
+ * post-#188 no-cache headers cover same-sha freshness regardless.
+ * Read straight from .git (no child process: sonarjs/no-os-command-from-path
+ * bans PATH-resolved commands, and fs is faster anyway). Falls back to a
+ * timestamp when .git is absent (CI tarballs) or the ref is packed.
  */
 function buildId(): string {
   try {
-    const sha = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim()
-    const dirty = execSync('git status --porcelain', { encoding: 'utf8' }).trim() !== ''
-    return dirty ? `${sha}-dirty` : sha
+    const gitDir = findUp('.git')
+    if (gitDir === null) return `${Date.now()}`
+    const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim()
+    if (!head.startsWith('ref: ')) return head.slice(0, 7) // detached HEAD
+    const refPath = join(gitDir, head.slice(5))
+    if (!existsSync(refPath)) return `${Date.now()}` // packed ref — punt
+    return readFileSync(refPath, 'utf8').trim().slice(0, 7)
   } catch {
     return `${Date.now()}`
   }
+}
+
+/** Walk up from cwd looking for a directory entry (monorepo: .git lives two levels up). */
+function findUp(name: string): string | null {
+  const step = (dir: string, depth: number): string | null => {
+    const candidate = join(dir, name)
+    if (existsSync(candidate)) return candidate
+    const parent = dirname(dir)
+    if (parent === dir || depth >= 6) return null
+    return step(parent, depth + 1)
+  }
+  return step(process.cwd(), 0)
 }
 
 export default defineConfig({
