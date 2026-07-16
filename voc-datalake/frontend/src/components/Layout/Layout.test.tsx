@@ -86,7 +86,7 @@ function createWrapper(initialEntries = ['/']) {
         <Routes>
           <Route element={children}>
             <Route path="/" element={<div>Dashboard Content</div>} />
-            <Route path="/feedback" element={<div>Feedback Content</div>} />
+            <Route path="/categories" element={<div>Categories Content</div>} />
             <Route path="/chat" element={<div>Chat Content</div>} />
             <Route path="/settings" element={<div>Settings Content</div>} />
           </Route>
@@ -129,13 +129,13 @@ describe('Layout', () => {
       })
     })
 
-    it('displays Feedback nav link', async () => {
+    it('does not display a Feedback nav link (consolidated into Categories, issue #198)', async () => {
       render(<Layout />, { wrapper: createWrapper() })
       
       await waitFor(() => {
-        // The link contains a span with "Feedback" text
-        expect(screen.getByText('Feedback')).toBeInTheDocument()
+        expect(screen.getByRole('link', { name: /categories/i })).toBeInTheDocument()
       })
+      expect(screen.queryByRole('link', { name: /^feedback$/i })).not.toBeInTheDocument()
     })
 
     it('displays AI Chat nav link', async () => {
@@ -248,11 +248,11 @@ describe('Layout', () => {
       })
     })
 
-    it('renders outlet content for feedback route', async () => {
-      render(<Layout />, { wrapper: createWrapper(['/feedback']) })
+    it('renders outlet content for categories route', async () => {
+      render(<Layout />, { wrapper: createWrapper(['/categories']) })
       
       await waitFor(() => {
-        expect(screen.getByText('Feedback Content')).toBeInTheDocument()
+        expect(screen.getByText('Categories Content')).toBeInTheDocument()
       })
     })
   })

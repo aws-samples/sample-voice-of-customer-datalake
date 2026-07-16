@@ -1,7 +1,6 @@
 {
   "home": true,
   "dashboard": true,
-  "feedback": true,
   "categories": true,
   "problems": true,
   "chat": true,

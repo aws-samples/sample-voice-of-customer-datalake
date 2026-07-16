@@ -15,6 +15,8 @@ const defaultProps = {
   totalIssues: 100,
   selectedCategories: [] as string[],
   onToggleCategory: vi.fn(),
+  showAll: false,
+  onToggleShowAll: vi.fn(),
   hasActiveFilters: false,
   onClearFilters: vi.fn(),
   showFilters: false,
@@ -47,6 +49,29 @@ describe('CategorySelector', () => {
 
     await user.click(screen.getByText('delivery'))
     expect(onToggle).toHaveBeenCalledWith('delivery')
+  })
+
+  describe('All chip (issue #198)', () => {
+    it('renders an All chip with the total count', () => {
+      render(<CategorySelector {...defaultProps} />)
+      expect(screen.getByText('All')).toBeInTheDocument()
+      expect(screen.getByText('100')).toBeInTheDocument()
+    })
+
+    it('calls onToggleShowAll when the All chip is clicked', async () => {
+      const user = userEvent.setup()
+      const onToggleShowAll = vi.fn()
+      render(<CategorySelector {...defaultProps} onToggleShowAll={onToggleShowAll} />)
+
+      await user.click(screen.getByText('All'))
+      expect(onToggleShowAll).toHaveBeenCalledOnce()
+    })
+
+    it('highlights the All chip when showAll is active', () => {
+      render(<CategorySelector {...defaultProps} showAll={true} />)
+      const allChip = screen.getByText('All').closest('button')
+      expect(allChip).toHaveClass('border-blue-500')
+    })
   })
 
   it('shows clear filters button when hasActiveFilters is true', () => {

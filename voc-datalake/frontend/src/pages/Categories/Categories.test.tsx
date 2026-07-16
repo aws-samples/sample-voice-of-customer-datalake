@@ -9,6 +9,8 @@ const mockGetCategories = vi.fn()
 const mockGetSentiment = vi.fn()
 const mockGetEntities = vi.fn()
 const mockGetFeedback = vi.fn()
+const mockSearchFeedback = vi.fn()
+const mockGetUrgentFeedback = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -16,6 +18,8 @@ vi.mock('../../api/client', () => ({
     getSentiment: (...args: unknown[]) => mockGetSentiment(...args),
     getEntities: (...args: unknown[]) => mockGetEntities(...args),
     getFeedback: (...args: unknown[]) => mockGetFeedback(...args),
+    searchFeedback: (...args: unknown[]) => mockSearchFeedback(...args),
+    getUrgentFeedback: (...args: unknown[]) => mockGetUrgentFeedback(...args),
   },
   getDaysFromRange: () => 7,
   getDateRangeParams: () => ({ days: 7 }),
@@ -107,6 +111,8 @@ describe('Categories', () => {
     mockGetSentiment.mockResolvedValue(mockSentimentData)
     mockGetEntities.mockResolvedValue(mockEntitiesData)
     mockGetFeedback.mockResolvedValue(mockFeedbackData)
+    mockSearchFeedback.mockResolvedValue(mockFeedbackData)
+    mockGetUrgentFeedback.mockResolvedValue(mockFeedbackData)
   })
 
   describe('loading states', () => {
@@ -186,6 +192,64 @@ describe('Categories', () => {
       // After selecting, feedback results should appear
       await waitFor(() => {
         expect(screen.getByText('Feedback Results')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('consolidated feedback list (ported from Feedback page, issue #198)', () => {
+    it('shows no feedback list by default', async () => {
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Select Categories to Explore')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('Feedback Results')).not.toBeInTheDocument()
+      expect(mockGetFeedback).not.toHaveBeenCalled()
+    })
+
+    it('shows all feedback when the All chip is clicked', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('All')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('All'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Feedback Results')).toBeInTheDocument()
+      })
+      expect(mockGetFeedback).toHaveBeenCalled()
+    })
+
+    it('uses server-side search when typing 2+ characters', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('Search feedback...')).toBeInTheDocument()
+      })
+      await user.type(screen.getByPlaceholderText('Search feedback...'), 'slow')
+
+      await waitFor(() => {
+        expect(mockSearchFeedback).toHaveBeenCalledWith(expect.objectContaining({ q: 'slow' }))
+      })
+      await waitFor(() => {
+        expect(screen.getByText('Feedback Results')).toBeInTheDocument()
+      })
+    })
+
+    it('uses the urgent endpoint when the urgent toggle is enabled', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Urgent only')).toBeInTheDocument()
+      })
+      await user.click(screen.getByRole('checkbox'))
+
+      await waitFor(() => {
+        expect(mockGetUrgentFeedback).toHaveBeenCalled()
       })
     })
 

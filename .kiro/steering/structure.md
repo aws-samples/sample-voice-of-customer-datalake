@@ -109,7 +109,6 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── Chat/             # AI chat interface
     │   │   │   ├── Dashboard/        # Overview with charts and social feed
     │   │   │   ├── DataExplorer/     # S3 raw data and DynamoDB browser
-    │   │   │   ├── Feedback/         # Filterable feedback list
     │   │   │   ├── FeedbackDetail/   # Single feedback item view
     │   │   │   ├── FeedbackForms/    # Feedback form management
     │   │   │   ├── Login/            # Cognito login page

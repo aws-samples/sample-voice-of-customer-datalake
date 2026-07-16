@@ -7,6 +7,8 @@ interface CategorySelectorProps {
   readonly totalIssues: number
   readonly selectedCategories: string[]
   readonly onToggleCategory: (category: string) => void
+  readonly showAll: boolean
+  readonly onToggleShowAll: () => void
   readonly hasActiveFilters: boolean
   readonly onClearFilters: () => void
   readonly showFilters: boolean
@@ -22,6 +24,8 @@ export function CategorySelector({
   totalIssues,
   selectedCategories,
   onToggleCategory,
+  showAll,
+  onToggleShowAll,
   hasActiveFilters,
   onClearFilters,
   showFilters,
@@ -67,6 +71,16 @@ export function CategorySelector({
       )}
 
       <div className="flex flex-wrap gap-1.5 sm:gap-2">
+        <button
+          onClick={onToggleShowAll}
+          className={clsx(
+            'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full border-2 transition-all text-xs sm:text-sm active:scale-95',
+            showAll ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+          )}
+        >
+          <span className="font-medium">All</span>
+          <span className="text-gray-500">{totalIssues}</span>
+        </button>
         {categoryData.map((category) => {
           const isSelected = selectedCategories.includes(category.name)
           const percentage = ((category.value / totalIssues) * 100).toFixed(1)

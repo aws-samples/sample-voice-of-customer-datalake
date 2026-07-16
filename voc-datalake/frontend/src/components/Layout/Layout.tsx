@@ -18,7 +18,6 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   Home,
   LayoutDashboard,
-  MessageSquare,
   FolderOpen,
   Settings,
   Bot,
@@ -62,7 +61,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard', menuKey: 'dashboard' },
   { to: '/scrapers', icon: Globe, labelKey: 'nav.scrapers', menuKey: 'scrapers', section: 'nav.section.sources' },
   { to: '/data-explorer', icon: Database, labelKey: 'nav.dataExplorer', menuKey: 'data-explorer', section: 'nav.section.sources' },
-  { to: '/feedback', icon: MessageSquare, labelKey: 'nav.feedback', menuKey: 'feedback', section: 'nav.section.signals' },
   { to: '/categories', icon: FolderOpen, labelKey: 'nav.categories', menuKey: 'categories', section: 'nav.section.signals' },
   { to: '/problems', icon: SearchX, labelKey: 'nav.problemAnalysis', menuKey: 'problems', section: 'nav.section.signals' },
   { to: '/chat', icon: Bot, labelKey: 'nav.aiChat', menuKey: 'chat', section: 'nav.section.ideation' },

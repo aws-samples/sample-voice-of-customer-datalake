@@ -66,6 +66,9 @@ const defaultProps = {
   sentimentFilter: 'all' as SentimentFilter,
   minRating: 0,
   onExport: vi.fn(),
+  onExportPdf: vi.fn(),
+  totalCount: 2,
+  isPartialWindow: false,
 }
 
 function renderWithRouter(ui: React.ReactElement) {
@@ -102,6 +105,36 @@ describe('FeedbackResults', () => {
     it('shows min rating in subtitle', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} minRating={4} />)
       expect(screen.getByText(/4\+ stars/)).toBeInTheDocument()
+    })
+  })
+
+  describe('results count line (ported from Feedback page, issue #198)', () => {
+    it('shows "Showing N of TOTAL" from the backend candidate window', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} totalCount={40} />)
+      expect(screen.getByText(/Showing 2 of 40 results/)).toBeInTheDocument()
+    })
+
+    it('shows "N+" with the narrow-filters hint when the window is partial', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} totalCount={100} isPartialWindow={true} />)
+      expect(screen.getByText(/Showing 2 of 100\+ results/)).toBeInTheDocument()
+      expect(screen.getByText(/narrow filters to see all/)).toBeInTheDocument()
+    })
+
+    it('does not show "N+" when the partial window has no extra matches', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} totalCount={2} isPartialWindow={true} />)
+      expect(screen.getByText(/Showing 2 of 2 results/)).toBeInTheDocument()
+      expect(screen.queryByText(/narrow filters to see all/)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('PDF export (ported from Feedback page, issue #198)', () => {
+    it('calls onExportPdf when the PDF button is clicked', async () => {
+      const user = userEvent.setup()
+      const onExportPdf = vi.fn()
+      renderWithRouter(<FeedbackResults {...defaultProps} onExportPdf={onExportPdf} />)
+
+      await user.click(screen.getByTitle('Export as PDF'))
+      expect(onExportPdf).toHaveBeenCalledOnce()
     })
   })
 

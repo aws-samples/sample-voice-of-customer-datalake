@@ -1,5 +1,6 @@
-import { Download, LayoutGrid, List } from 'lucide-react'
+import { Download, FileDown, LayoutGrid, List } from 'lucide-react'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import type { FeedbackItem } from '../../api/client'
 import FeedbackCard from '../../components/FeedbackCard'
 import type { ViewMode, SentimentFilter } from './types'
@@ -15,6 +16,57 @@ interface FeedbackResultsProps {
   readonly sentimentFilter: SentimentFilter
   readonly minRating: number
   readonly onExport: () => void
+  readonly onExportPdf: () => void
+  /** Candidate-window size reported by the backend ("N of TOTAL"). */
+  readonly totalCount: number
+  /** True when the backend truncated the candidate window ("N+"). */
+  readonly isPartialWindow: boolean
+}
+
+/**
+ * "Showing N of TOTAL" line with the partial-window "N+" hint, ported from
+ * the removed Feedback page. When the backend truncated the candidate
+ * window, `totalCount` is a lower bound — show "N+" plus a narrow-filters
+ * hint, but only when there genuinely are more matches than displayed.
+ */
+function ResultsCountLine({
+  itemCount,
+  totalCount,
+  isPartialWindow,
+}: Readonly<{ itemCount: number; totalCount: number; isPartialWindow: boolean }>) {
+  const { t } = useTranslation('common')
+  const showPartial = isPartialWindow && totalCount > itemCount
+  const totalLabel = showPartial ? `${totalCount}+` : `${totalCount}`
+  return (
+    <p className="text-xs sm:text-sm text-gray-500">
+      {t('showingOf', { count: itemCount, total: totalLabel })}
+      {showPartial && <span className="ml-1 text-amber-600">({t('partialWindowHint')})</span>}
+    </p>
+  )
+}
+
+function ActiveFiltersLine({
+  selectedSource,
+  selectedCategories,
+  selectedKeywords,
+  sentimentFilter,
+  minRating,
+}: Readonly<{
+  selectedSource: string | null
+  selectedCategories: string[]
+  selectedKeywords: string[]
+  sentimentFilter: SentimentFilter
+  minRating: number
+}>) {
+  return (
+    <p className="text-xs sm:text-sm text-gray-500 truncate">
+      {selectedSource && `Source: ${selectedSource}`}
+      {selectedCategories.length > 0 && `${selectedSource ? ' • ' : ''}${selectedCategories.map(c => c.replace('_', ' ')).join(', ')}`}
+      {selectedKeywords.length > 0 && `${selectedSource || selectedCategories.length > 0 ? ' • ' : ''}${selectedKeywords.join(', ')}`}
+      {sentimentFilter !== 'all' && ` • ${sentimentFilter}`}
+      {minRating > 0 && ` • ${minRating}+ stars`}
+    </p>
+  )
 }
 
 export function FeedbackResults({
@@ -28,7 +80,11 @@ export function FeedbackResults({
   sentimentFilter,
   minRating,
   onExport,
+  onExportPdf,
+  totalCount,
+  isPartialWindow,
 }: FeedbackResultsProps) {
+  const { t } = useTranslation('common')
   return (
     <div className="card">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
@@ -37,15 +93,28 @@ export function FeedbackResults({
             Feedback Results
             <span className="ml-2 text-sm font-normal text-gray-500">({filteredFeedback.length})</span>
           </h2>
-          <p className="text-xs sm:text-sm text-gray-500 truncate">
-            {selectedSource && `Source: ${selectedSource}`}
-            {selectedCategories.length > 0 && `${selectedSource ? ' • ' : ''}${selectedCategories.map(c => c.replace('_', ' ')).join(', ')}`}
-            {selectedKeywords.length > 0 && `${selectedSource || selectedCategories.length > 0 ? ' • ' : ''}${selectedKeywords.join(', ')}`}
-            {sentimentFilter !== 'all' && ` • ${sentimentFilter}`}
-            {minRating > 0 && ` • ${minRating}+ stars`}
-          </p>
+          <ResultsCountLine
+            itemCount={filteredFeedback.length}
+            totalCount={totalCount}
+            isPartialWindow={isPartialWindow}
+          />
+          <ActiveFiltersLine
+            selectedSource={selectedSource}
+            selectedCategories={selectedCategories}
+            selectedKeywords={selectedKeywords}
+            sentimentFilter={sentimentFilter}
+            minRating={minRating}
+          />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={onExportPdf}
+            className="flex items-center gap-1.5 text-xs sm:text-sm text-gray-500 hover:text-gray-700 px-1.5"
+            title={t('exportPdfTooltip')}
+          >
+            <FileDown size={14} />
+            <span className="hidden xs:inline">{t('exportPdfShort')}</span>
+          </button>
           <div className="flex bg-gray-100 rounded-lg p-0.5 sm:p-1">
             <button
               onClick={() => onViewModeChange('grid')}
