@@ -26,6 +26,7 @@ import { NagSuppressions } from 'cdk-nag';
 import { apiSecretsSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
+import { ROOT_PLUGIN_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 
 export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -399,20 +400,12 @@ export class VocIngestionStack extends cdk.Stack {
   }
 
   private bundlePluginCode(pluginId: string): lambda.Code {
-    // Root-based staging (this bundle spans plugins/ AND lambda/shared), so
-    // everything not excluded here feeds the asset hash and redeploys all
-    // ingestors on unrelated edits (issue #194 follow-up). Only
-    // plugins/<id>/ingestor, plugins/_shared and lambda/shared are copied.
+    // Root-based staging (this bundle spans plugins/ AND lambda/shared):
+    // everything not excluded feeds the asset hash. The exclude list lives
+    // in lambda-asset-excludes.ts — see its doc for the dot-child pattern
+    // semantics that caused issue #203 (cdk.out/.cache churned every hash).
     return lambda.Code.fromAsset('.', {
-      exclude: [
-        '**/__pycache__', '**/*.pyc', '**/.DS_Store', '**/test/**', '**/conftest.py', '**/test_*.py',
-        'plugins/_template/**', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md',
-        'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**', '.ruff_cache/**', 'coverage_html/**',
-        '.coverage', 'pytest.ini', 'requirements-dev.txt', 'chrome-extension/**', 'scripts/**', 'schemas/**',
-        'Workshop/**',
-        'lambda/aggregator/**', 'lambda/api/**', 'lambda/custom_resources/**', 'lambda/jobs/**',
-        'lambda/layers/**', 'lambda/processor/**', 'lambda/research/**', 'lambda/stream/**',
-      ],
+      exclude: ROOT_PLUGIN_ASSET_EXCLUDES,
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: [

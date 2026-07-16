@@ -110,7 +110,7 @@ export class VocProcessingStack extends cdk.Stack {
     // FEEDBACK PROCESSOR LAMBDA
     // ============================================
     const processorCode = lambda.Code.fromAsset('lambda', {
-      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'aggregator/**', 'api/**', 'jobs/**', 'research/**'],
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'aggregator', 'api', 'jobs', 'research'],
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/processor/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
@@ -159,7 +159,7 @@ export class VocProcessingStack extends cdk.Stack {
     // AGGREGATION LAMBDA
     // ============================================
     const aggregatorCode = lambda.Code.fromAsset('lambda', {
-      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'api/**', 'jobs/**', 'processor/**', 'research/**'],
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'api', 'jobs', 'processor', 'research'],
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/aggregator/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
@@ -224,7 +224,7 @@ export class VocProcessingStack extends cdk.Stack {
     // hashed the entire CDK project (scripts/, schemas/, coverage output...)
     // into this asset, redeploying it on every unrelated edit.
     const researchCode = lambda.Code.fromAsset('lambda', {
-      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'aggregator/**', 'api/**', 'jobs/**', 'processor/**'],
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'aggregator', 'api', 'jobs', 'processor'],
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/research/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
