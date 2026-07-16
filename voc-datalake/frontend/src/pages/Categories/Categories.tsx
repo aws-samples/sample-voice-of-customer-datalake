@@ -134,13 +134,12 @@ export default function Categories() {
       />
       <InsightsRow categoryData={analytics.categoryData} totalIssues={analytics.totalIssues} />
 
-      <CategoryDistribution
-        categoryData={analytics.categoryData}
-        totalIssues={analytics.totalIssues}
-        periodDays={analytics.periodDays}
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        <CategoryDistribution
+          categoryData={analytics.categoryData}
+          totalIssues={analytics.totalIssues}
+          periodDays={analytics.periodDays}
+        />
         <SentimentGauge
           sentimentData={analytics.sentimentData}
           avgSentiment={analytics.avgSentiment}
