@@ -8,6 +8,7 @@ import type { ProjectPersona, ProjectDocument } from '../../api/client'
 import clsx from 'clsx'
 import type { ContextConfig } from './types'
 import { DataSourcesStep, FeedbackFiltersStep, ItemSelectionStep } from './DataSourceSteps'
+import type { ExtraDataSource } from './DataSourceSteps'
 import { useWizardState } from './useWizardState'
 
 type AccentColor = 'purple' | 'amber' | 'blue' | 'green'
@@ -28,6 +29,8 @@ interface DataSourceWizardProps {
   readonly submitLabel: React.ReactNode
   readonly hideDataSources?: ReadonlyArray<'feedback' | 'personas' | 'documents' | 'research'>
   readonly combineDocuments?: boolean
+  /** Wizard-specific sources appended to the Data Sources step as peer cards. */
+  readonly extraDataSources?: ReadonlyArray<ExtraDataSource>
 }
 
 const colorClasses = {
@@ -53,6 +56,7 @@ export default function DataSourceWizard({
   submitLabel,
   hideDataSources = [],
   combineDocuments = false,
+  extraDataSources = [],
 }: DataSourceWizardProps) {
   const {
     step,
@@ -99,6 +103,7 @@ export default function DataSourceWizard({
               documentsCount={documents.length}
               otherDocsCount={otherDocs.length}
               researchDocsCount={researchDocs.length}
+              extraDataSources={extraDataSources}
             />
           )}
 

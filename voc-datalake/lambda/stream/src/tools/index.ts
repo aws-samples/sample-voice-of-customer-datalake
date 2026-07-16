@@ -181,8 +181,13 @@ export function getWebSearchTool(): Tool {
         'Search the public web for current, external information: competitor moves, industry ' +
         'news, product releases, market context, or anything not present in the customer ' +
         'feedback dataset. The user explicitly enabled web search for this conversation. ' +
+        'Work iteratively like a researcher: you can and should call this tool MULTIPLE ' +
+        'times in one turn \u2014 start with a focused query, review what came back, then ' +
+        'refine the keywords or search a different angle until you can answer confidently. ' +
+        'Prefer several specific queries over one broad one, and do not re-run a query ' +
+        'that already returned what you need. ' +
         'Use search_feedback (not this tool) for anything about the customers\u2019 own feedback. ' +
-        'Keep queries under 200 characters. ALWAYS cite the source URLs from the results ' +
+        'Keep each query under 200 characters. ALWAYS cite the source URLs from the results ' +
         'inline in your answer \u2014 uncited web claims are not acceptable.',
       inputSchema: {
         json: {

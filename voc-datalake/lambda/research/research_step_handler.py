@@ -23,12 +23,8 @@ from shared.feedback import (
 )
 from shared.tables import get_projects_table, get_feedback_table
 from shared.jobs import update_job_status
-from shared.web_search import (
-    WebSearchError,
-    format_web_results_for_llm,
-    is_web_search_configured,
-    search_web,
-)
+from shared.agentic_search import run_agentic_web_search
+from shared.web_search import is_web_search_configured
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -141,23 +137,34 @@ def step_initialize(event: dict) -> dict:
                 content = d.get('content', '')[:5000]  # Truncate long docs
                 documents_context += f"### {d.get('title', 'Untitled')} ({d.get('document_type', 'doc').upper()})\n\n{content}\n\n---\n\n"
     
-    # Optional: web search grounding (AgentCore Web Search Tool). Always an
-    # enrichment — a search failure must never fail the research job, and the
-    # 'web_context' key must ALWAYS be present in the return value because the
-    # Step Functions resultSelector references it unconditionally.
+    # Optional: web search grounding (AgentCore Web Search Tool) via a bounded
+    # agentic loop — the model plans several queries, reviews results, and
+    # refines until coverage is sufficient (shared.agentic_search). Always an
+    # enrichment — a search/planning failure must never fail the research job,
+    # and the 'web_context' key must ALWAYS be present in the return value
+    # because the Step Functions resultSelector references it unconditionally
+    # (as must 'web_search_queries', which flows to step_save for the report
+    # disclosure).
     # Strict boolean: the state machine can be started by other producers or
     # execution replays, where a string "false" must not enable a billed
     # feature (parity with projects_handler's normalization).
     web_context = ''
+    web_search_queries: list[str] = []
     if config.get('use_web_search') is True:
         if is_web_search_configured():
             update_job_status(project_id, job_id, 'running', 19, 'searching_web')
             question = config.get('question', '')
             try:
-                web_results = search_web(question)
-                web_context = format_web_results_for_llm(web_results)
-                logger.info(f"Web search grounding: {len(web_results)} results")
-            except WebSearchError as e:
+                outcome = run_agentic_web_search(question, context_hint=feedback_stats)
+                web_context = outcome.context
+                web_search_queries = outcome.queries
+                logger.info(
+                    f"Web search grounding: {len(outcome.queries)} queries, "
+                    f"{outcome.result_count} results"
+                )
+            except Exception as e:
+                # run_agentic_web_search degrades internally; this is the
+                # final belt so no web-search failure mode can kill the job.
                 logger.warning(f"Web search failed, continuing without web context: {e}")
         else:
             logger.warning("use_web_search requested but web search is not configured; skipping")
@@ -170,7 +177,8 @@ def step_initialize(event: dict) -> dict:
         'feedback_count': len(feedback_items),
         'personas_context': personas_context,
         'documents_context': documents_context,
-        'web_context': web_context
+        'web_context': web_context,
+        'web_search_queries': web_search_queries
     }
 @tracer.capture_method
 def step_analyze(event: dict) -> dict:
@@ -211,10 +219,11 @@ Be thorough, data-driven, and cite specific examples."""
         additional_context += f"""
 ## PUBLIC WEB SEARCH RESULTS
 
-The following results come from a public web search, NOT from customer
-feedback. Use them only to add market/industry context. When you draw on a
-web result, cite its source URL inline and clearly attribute the finding to
-"public web sources" rather than to customers.
+The following results come from public web searches (grouped by the search
+query that found them), NOT from customer feedback. Use them only to add
+market/industry context. When you draw on a web result, cite its source URL
+inline and clearly attribute the finding to "public web sources" rather than
+to customers.
 
 {web_context}
 """
@@ -354,7 +363,37 @@ def step_save(event: dict) -> dict:
     
     # Strict boolean for parity with step_initialize's gating: a foreign
     # "false" string skips the search, so it must not stamp the disclosure.
-    web_search_note = ' | Web search: enabled' if config.get('use_web_search') is True else ''
+    # The executed queries flow from step_initialize through the state machine
+    # ('' on old executions pinned to a pre-#207 definition — .get defaults).
+    web_search_used = config.get('use_web_search') is True
+    # Queries land verbatim in the report markdown — collapse whitespace and
+    # newlines so a model-drafted query can't break the list layout.
+    web_queries = [
+        ' '.join(q.split())
+        for q in (event.get('web_search_queries') or [])
+        if isinstance(q, str) and q.strip()
+    ] if web_search_used else []
+    if web_search_used and web_queries:
+        query_word = 'query' if len(web_queries) == 1 else 'queries'
+        web_search_note = f' | Web search: enabled ({len(web_queries)} {query_word})'
+    elif web_search_used:
+        web_search_note = ' | Web search: enabled'
+    else:
+        web_search_note = ''
+    # Acceptable-use disclosure: list the exact searches that grounded the
+    # report so readers can judge the web-sourced context.
+    web_searches_section = ''
+    if web_queries:
+        listed = '\n'.join(f'{i}. "{q}"' for i, q in enumerate(web_queries, 1))
+        web_searches_section = f"""
+---
+
+## Web Searches
+
+Public-web grounding for this report came from the following searches:
+
+{listed}
+"""
     # Build comprehensive report
     full_report = f"""# Research Report: {research_question}
 
@@ -379,7 +418,7 @@ def step_save(event: dict) -> dict:
 ## Validation & Confidence Assessment
 
 {validation}
-"""
+{web_searches_section}"""
     
     # Truncate if needed (DynamoDB 400KB limit)
     max_content_size = 350000
