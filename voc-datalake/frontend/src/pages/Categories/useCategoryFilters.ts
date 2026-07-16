@@ -16,7 +16,8 @@
 
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { SentimentFilter } from './types'
+import { ANY_RATING_FILTER } from './types'
+import type { RatingFilter, SentimentFilter } from './types'
 
 const SENTIMENT_VALUES: readonly SentimentFilter[] = ['all', 'positive', 'negative', 'neutral', 'mixed']
 
@@ -40,7 +41,7 @@ export interface CategoryFiltersState {
   selectedCategories: string[]
   selectedSource: string | null
   sentimentFilter: SentimentFilter
-  minRating: number
+  ratingFilter: RatingFilter
   showUrgentOnly: boolean
 }
 
@@ -50,7 +51,7 @@ export interface CategoryFiltersApi extends CategoryFiltersState {
   toggleCategory: (category: string) => void
   setSelectedSource: (value: string | null) => void
   setSentimentFilter: (value: SentimentFilter) => void
-  setMinRating: (value: number) => void
+  setRatingFilter: (value: RatingFilter) => void
   setShowUrgentOnly: (value: boolean) => void
   clearFilters: () => void
   hasActiveFilters: boolean
@@ -62,7 +63,7 @@ function computeHasActiveFilters(state: CategoryFiltersState): boolean {
     state.selectedCategories.length > 0 ||
     state.selectedSource !== null ||
     state.sentimentFilter !== 'all' ||
-    state.minRating > 0 ||
+    state.ratingFilter.value > 0 ||
     state.showUrgentOnly
   )
 }
@@ -78,7 +79,7 @@ export function useCategoryFilters(): CategoryFiltersApi {
   const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>(() =>
     parseSentimentParam(searchParams.get('sentiment'))
   )
-  const [minRating, setMinRating] = useState(0)
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>(ANY_RATING_FILTER)
   const [showUrgentOnly, setShowUrgentOnly] = useState(false)
 
   // Mirror the shareable filters to the URL (replace, not push, so the
@@ -104,7 +105,7 @@ export function useCategoryFilters(): CategoryFiltersApi {
     setSelectedCategories([])
     setSelectedSource(null)
     setSentimentFilter('all')
-    setMinRating(0)
+    setRatingFilter(ANY_RATING_FILTER)
     setShowUrgentOnly(false)
   }
 
@@ -113,7 +114,7 @@ export function useCategoryFilters(): CategoryFiltersApi {
     selectedCategories,
     selectedSource,
     sentimentFilter,
-    minRating,
+    ratingFilter,
     showUrgentOnly,
   }
 
@@ -123,7 +124,7 @@ export function useCategoryFilters(): CategoryFiltersApi {
     toggleCategory,
     setSelectedSource,
     setSentimentFilter,
-    setMinRating,
+    setRatingFilter,
     setShowUrgentOnly,
     clearFilters,
     hasActiveFilters: computeHasActiveFilters(state),

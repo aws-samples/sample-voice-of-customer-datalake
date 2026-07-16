@@ -13,6 +13,7 @@
 
 import { Search, Star, X } from 'lucide-react'
 import clsx from 'clsx'
+import type { RatingDirection, RatingFilter } from './types'
 
 interface FilterBarProps {
   readonly searchText: string
@@ -22,8 +23,8 @@ interface FilterBarProps {
   readonly allSources: string[]
   readonly showUrgentOnly: boolean
   readonly onUrgentChange: (value: boolean) => void
-  readonly minRating: number
-  readonly onMinRatingChange: (rating: number) => void
+  readonly ratingFilter: RatingFilter
+  readonly onRatingFilterChange: (filter: RatingFilter) => void
   readonly hasActiveFilters: boolean
   readonly onClearFilters: () => void
   /** Optional content pinned to the far right of the bar (e.g. Export PDF). */
@@ -38,8 +39,8 @@ export function FilterBar({
   allSources,
   showUrgentOnly,
   onUrgentChange,
-  minRating,
-  onMinRatingChange,
+  ratingFilter,
+  onRatingFilterChange,
   hasActiveFilters,
   onClearFilters,
   trailing,
@@ -69,7 +70,7 @@ export function FilterBar({
               <option key={source} value={source}>{source}</option>
             ))}
           </select>
-          <MinRatingPicker minRating={minRating} onMinRatingChange={onMinRatingChange} />
+          <RatingPicker ratingFilter={ratingFilter} onRatingFilterChange={onRatingFilterChange} />
           <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap">
             <input
               type="checkbox"
@@ -99,34 +100,90 @@ export function FilterBar({
   )
 }
 
-function MinRatingPicker({
-  minRating,
-  onMinRatingChange,
-}: Readonly<{ minRating: number; onMinRatingChange: (rating: number) => void }>) {
+function starTitle(rating: number, direction: RatingDirection): string {
+  if (rating === 0) return 'Any rating'
+  return direction === 'up' ? `${rating}+ stars` : `${rating} or fewer stars`
+}
+
+function RatingPicker({
+  ratingFilter,
+  onRatingFilterChange,
+}: Readonly<{ ratingFilter: RatingFilter; onRatingFilterChange: (filter: RatingFilter) => void }>) {
   return (
-    <div className="flex items-center gap-0.5 sm:gap-1" role="group" aria-label="Minimum rating">
-      {[0, 1, 2, 3, 4, 5].map(rating => (
-        <button
-          key={rating}
-          onClick={() => onMinRatingChange(rating)}
-          title={rating === 0 ? 'Any rating' : `${rating}+ stars`}
-          className={clsx(
-            'p-1 sm:p-1.5 rounded transition-colors active:scale-95',
-            minRating === rating ? 'bg-yellow-100' : 'hover:bg-gray-100'
-          )}
-        >
-          {rating === 0 ? (
-            <span className="text-xs text-gray-500 px-1">Any</span>
-          ) : (
-            <Star
-              size={14}
-              className="sm:w-4 sm:h-4"
-              fill={minRating >= rating ? '#eab308' : 'none'}
-              color={minRating >= rating ? '#eab308' : '#d1d5db'}
-            />
-          )}
-        </button>
-      ))}
+    <div className="flex items-center gap-1.5 sm:gap-2">
+      <div className="flex items-center gap-0.5 sm:gap-1" role="group" aria-label="Star rating">
+        {[0, 1, 2, 3, 4, 5].map(rating => (
+          <button
+            key={rating}
+            onClick={() => onRatingFilterChange({ ...ratingFilter, value: rating })}
+            title={starTitle(rating, ratingFilter.direction)}
+            className={clsx(
+              'p-1 sm:p-1.5 rounded transition-colors active:scale-95',
+              ratingFilter.value === rating ? 'bg-yellow-100' : 'hover:bg-gray-100'
+            )}
+          >
+            {rating === 0 ? (
+              <span className="text-xs text-gray-500 px-1">Any</span>
+            ) : (
+              <Star
+                size={14}
+                className="sm:w-4 sm:h-4"
+                fill={ratingFilter.value >= rating ? '#eab308' : 'none'}
+                color={ratingFilter.value >= rating ? '#eab308' : '#d1d5db'}
+              />
+            )}
+          </button>
+        ))}
+      </div>
+      <RatingDirectionToggle ratingFilter={ratingFilter} onRatingFilterChange={onRatingFilterChange} />
     </div>
+  )
+}
+
+function RatingDirectionToggle({
+  ratingFilter,
+  onRatingFilterChange,
+}: Readonly<{ ratingFilter: RatingFilter; onRatingFilterChange: (filter: RatingFilter) => void }>) {
+  return (
+    <div
+      className="flex items-center rounded-lg bg-gray-100 p-0.5 text-xs"
+      role="radiogroup"
+      aria-label="Rating direction"
+    >
+      <DirectionOption
+        label="& up"
+        title="Selected rating or more stars"
+        checked={ratingFilter.direction === 'up'}
+        onSelect={() => onRatingFilterChange({ ...ratingFilter, direction: 'up' })}
+      />
+      <DirectionOption
+        label="& below"
+        title="Selected rating or fewer stars"
+        checked={ratingFilter.direction === 'below'}
+        onSelect={() => onRatingFilterChange({ ...ratingFilter, direction: 'below' })}
+      />
+    </div>
+  )
+}
+
+function DirectionOption({
+  label,
+  title,
+  checked,
+  onSelect,
+}: Readonly<{ label: string; title: string; checked: boolean; onSelect: () => void }>) {
+  return (
+    <button
+      onClick={onSelect}
+      title={title}
+      role="radio"
+      aria-checked={checked}
+      className={clsx(
+        'px-1.5 py-0.5 rounded whitespace-nowrap transition-colors active:scale-95',
+        checked ? 'bg-white shadow-sm text-gray-700' : 'text-gray-500 hover:text-gray-700'
+      )}
+    >
+      {label}
+    </button>
   )
 }

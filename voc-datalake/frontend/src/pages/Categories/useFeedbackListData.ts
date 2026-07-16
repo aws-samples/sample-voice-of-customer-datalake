@@ -4,8 +4,8 @@
  * Chooses the right endpoint for the current filters — server-side search
  * (`/feedback/search`) when a query of 2+ chars is present, urgent-only
  * (`/feedback/urgent`) when the toggle is on, otherwise the regular list
- * (`/feedback`) — and applies the client-side refinements (min rating,
- * multi-category) the server doesn't support.
+ * (`/feedback`) — and applies the client-side refinements (star rating
+ * with direction, multi-category) the server doesn't support.
  *
  * The list is always fetched: the Categories default view browses all
  * feedback (issue #198 UX rationalization). Keyword filtering was folded
@@ -18,6 +18,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { DateRangeParams, FeedbackItem } from '../../api/client'
+import { matchesRatingFilter } from './types'
 import type { CategoryFiltersState } from './useCategoryFilters'
 
 const PAGE_LIMIT = 100
@@ -52,7 +53,7 @@ function buildCommonParams(dateParams: DateRangeParams, filters: CategoryFilters
 }
 
 function matchesClientFilters(item: FeedbackItem, filters: CategoryFiltersState): boolean {
-  if (filters.minRating > 0 && (!item.rating || item.rating < filters.minRating)) return false
+  if (!matchesRatingFilter(item.rating, filters.ratingFilter)) return false
   if (filters.selectedCategories.length > 1 && !filters.selectedCategories.includes(item.category)) return false
   return true
 }

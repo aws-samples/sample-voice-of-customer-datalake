@@ -118,8 +118,8 @@ export default function Categories() {
         allSources={analytics.allSources}
         showUrgentOnly={filters.showUrgentOnly}
         onUrgentChange={filters.setShowUrgentOnly}
-        minRating={filters.minRating}
-        onMinRatingChange={filters.setMinRating}
+        ratingFilter={filters.ratingFilter}
+        onRatingFilterChange={filters.setRatingFilter}
         hasActiveFilters={filters.hasActiveFilters}
         onClearFilters={filters.clearFilters}
         trailing={
@@ -164,7 +164,7 @@ export default function Categories() {
         selectedSource={filters.selectedSource}
         selectedCategories={filters.selectedCategories}
         sentimentFilter={filters.sentimentFilter}
-        minRating={filters.minRating}
+        ratingFilter={filters.ratingFilter}
         onExport={exportCsv}
         onExportPdf={exportFeedbackListPdf}
         totalCount={feedback.totalCount}

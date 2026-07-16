@@ -3,7 +3,8 @@ import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import type { FeedbackItem } from '../../api/client'
 import FeedbackCard from '../../components/FeedbackCard'
-import type { ViewMode, SentimentFilter } from './types'
+import { ratingFilterLabel } from './types'
+import type { ViewMode, SentimentFilter, RatingFilter } from './types'
 
 interface FeedbackResultsProps {
   readonly filteredFeedback: FeedbackItem[]
@@ -13,7 +14,7 @@ interface FeedbackResultsProps {
   readonly selectedSource: string | null
   readonly selectedCategories: string[]
   readonly sentimentFilter: SentimentFilter
-  readonly minRating: number
+  readonly ratingFilter: RatingFilter
   readonly onExport: () => void
   readonly onExportPdf: () => void
   /** Candidate-window size reported by the backend ("N of TOTAL"). */
@@ -48,19 +49,19 @@ function ActiveFiltersLine({
   selectedSource,
   selectedCategories,
   sentimentFilter,
-  minRating,
+  ratingFilter,
 }: Readonly<{
   selectedSource: string | null
   selectedCategories: string[]
   sentimentFilter: SentimentFilter
-  minRating: number
+  ratingFilter: RatingFilter
 }>) {
   return (
     <p className="text-xs sm:text-sm text-gray-500 truncate">
       {selectedSource && `Source: ${selectedSource}`}
       {selectedCategories.length > 0 && `${selectedSource ? ' • ' : ''}${selectedCategories.map(c => c.replace('_', ' ')).join(', ')}`}
       {sentimentFilter !== 'all' && ` • ${sentimentFilter}`}
-      {minRating > 0 && ` • ${minRating}+ stars`}
+      {ratingFilter.value > 0 && ` • ${ratingFilterLabel(ratingFilter)}`}
     </p>
   )
 }
@@ -73,7 +74,7 @@ export function FeedbackResults({
   selectedSource,
   selectedCategories,
   sentimentFilter,
-  minRating,
+  ratingFilter,
   onExport,
   onExportPdf,
   totalCount,
@@ -97,7 +98,7 @@ export function FeedbackResults({
             selectedSource={selectedSource}
             selectedCategories={selectedCategories}
             sentimentFilter={sentimentFilter}
-            minRating={minRating}
+            ratingFilter={ratingFilter}
           />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">

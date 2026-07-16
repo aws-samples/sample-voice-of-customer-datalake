@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { FeedbackResults } from './FeedbackResults'
 import type { FeedbackItem } from '../../api/client'
-import type { SentimentFilter, ViewMode } from './types'
+import type { RatingFilter, SentimentFilter, ViewMode } from './types'
 
 const mockFeedback: FeedbackItem[] = [
   {
@@ -63,7 +63,7 @@ const defaultProps = {
   selectedSource: null as string | null,
   selectedCategories: ['delivery'],
   sentimentFilter: 'all' as SentimentFilter,
-  minRating: 0,
+  ratingFilter: { value: 0, direction: 'up' } as RatingFilter,
   onExport: vi.fn(),
   onExportPdf: vi.fn(),
   totalCount: 2,
@@ -96,9 +96,14 @@ describe('FeedbackResults', () => {
       expect(screen.getByText(/positive/)).toBeInTheDocument()
     })
 
-    it('shows min rating in subtitle', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} minRating={4} />)
+    it('shows the & up rating filter in the subtitle', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} ratingFilter={{ value: 4, direction: 'up' }} />)
       expect(screen.getByText(/4\+ stars/)).toBeInTheDocument()
+    })
+
+    it('shows the & below rating filter in the subtitle', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} ratingFilter={{ value: 3, direction: 'below' }} />)
+      expect(screen.getByText(/≤3 stars/)).toBeInTheDocument()
     })
   })
 

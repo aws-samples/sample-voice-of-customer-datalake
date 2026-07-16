@@ -116,7 +116,7 @@ describe('useCategoryFilters', () => {
 
       act(() => {
         result.current.filters.setShowUrgentOnly(true)
-        result.current.filters.setMinRating(3)
+        result.current.filters.setRatingFilter({ value: 3, direction: 'below' })
       })
       act(() => {
         result.current.filters.clearFilters()
@@ -126,7 +126,7 @@ describe('useCategoryFilters', () => {
       expect(result.current.filters.selectedCategories).toEqual([])
       expect(result.current.filters.selectedSource).toBeNull()
       expect(result.current.filters.sentimentFilter).toBe('all')
-      expect(result.current.filters.minRating).toBe(0)
+      expect(result.current.filters.ratingFilter).toEqual({ value: 0, direction: 'up' })
       expect(result.current.filters.showUrgentOnly).toBe(false)
       expect([...result.current.searchParams.keys()]).toEqual([])
     })
@@ -149,6 +149,22 @@ describe('useCategoryFilters', () => {
     it('is true when a category is selected', () => {
       const { result } = renderFiltersWithUrl(['/categories?category=delivery'])
       expect(result.current.filters.hasActiveFilters).toBe(true)
+    })
+
+    it('is true when a rating threshold is set', () => {
+      const { result } = renderFiltersWithUrl()
+      act(() => {
+        result.current.filters.setRatingFilter({ value: 3, direction: 'below' })
+      })
+      expect(result.current.filters.hasActiveFilters).toBe(true)
+    })
+
+    it('stays false when only the rating direction changes (no threshold)', () => {
+      const { result } = renderFiltersWithUrl()
+      act(() => {
+        result.current.filters.setRatingFilter({ value: 0, direction: 'below' })
+      })
+      expect(result.current.filters.hasActiveFilters).toBe(false)
     })
   })
 })

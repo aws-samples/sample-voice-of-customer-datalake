@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FilterBar } from './FilterBar'
+import type { RatingFilter } from './types'
 
 const defaultProps = {
   searchText: '',
@@ -11,19 +12,20 @@ const defaultProps = {
   allSources: ['webscraper', 'manual_import'],
   showUrgentOnly: false,
   onUrgentChange: vi.fn(),
-  minRating: 0,
-  onMinRatingChange: vi.fn(),
+  ratingFilter: { value: 0, direction: 'up' } as RatingFilter,
+  onRatingFilterChange: vi.fn(),
   hasActiveFilters: false,
   onClearFilters: vi.fn(),
 }
 
 describe('FilterBar', () => {
-  it('renders search input, source select, min rating and urgent toggle in one bar', () => {
+  it('renders search input, source select, star rating and urgent toggle in one bar', () => {
     render(<FilterBar {...defaultProps} />)
 
     expect(screen.getByPlaceholderText('Search feedback...')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /filter by source/i })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: /minimum rating/i })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /star rating/i })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: /rating direction/i })).toBeInTheDocument()
     expect(screen.getByText('Urgent only')).toBeInTheDocument()
   })
 
@@ -64,22 +66,51 @@ describe('FilterBar', () => {
     expect(onUrgentChange).toHaveBeenCalledWith(true)
   })
 
-  it('sets the minimum rating from the star picker', async () => {
+  it('sets the rating threshold from the star picker, keeping the direction', async () => {
     const user = userEvent.setup()
-    const onMinRatingChange = vi.fn()
-    render(<FilterBar {...defaultProps} onMinRatingChange={onMinRatingChange} />)
+    const onRatingFilterChange = vi.fn()
+    render(<FilterBar {...defaultProps} onRatingFilterChange={onRatingFilterChange} />)
 
     await user.click(screen.getByTitle('4+ stars'))
-    expect(onMinRatingChange).toHaveBeenCalledWith(4)
+    expect(onRatingFilterChange).toHaveBeenCalledWith({ value: 4, direction: 'up' })
   })
 
-  it('resets the minimum rating via the Any button', async () => {
+  it('resets the rating threshold via the Any button', async () => {
     const user = userEvent.setup()
-    const onMinRatingChange = vi.fn()
-    render(<FilterBar {...defaultProps} minRating={3} onMinRatingChange={onMinRatingChange} />)
+    const onRatingFilterChange = vi.fn()
+    render(
+      <FilterBar
+        {...defaultProps}
+        ratingFilter={{ value: 3, direction: 'up' }}
+        onRatingFilterChange={onRatingFilterChange}
+      />
+    )
 
     await user.click(screen.getByTitle('Any rating'))
-    expect(onMinRatingChange).toHaveBeenCalledWith(0)
+    expect(onRatingFilterChange).toHaveBeenCalledWith({ value: 0, direction: 'up' })
+  })
+
+  it('switches the direction to & below, keeping the threshold', async () => {
+    const user = userEvent.setup()
+    const onRatingFilterChange = vi.fn()
+    render(
+      <FilterBar
+        {...defaultProps}
+        ratingFilter={{ value: 3, direction: 'up' }}
+        onRatingFilterChange={onRatingFilterChange}
+      />
+    )
+
+    await user.click(screen.getByRole('radio', { name: '& below' }))
+    expect(onRatingFilterChange).toHaveBeenCalledWith({ value: 3, direction: 'below' })
+  })
+
+  it('marks the active direction as checked and flips star tooltips', () => {
+    render(<FilterBar {...defaultProps} ratingFilter={{ value: 3, direction: 'below' }} />)
+
+    expect(screen.getByRole('radio', { name: '& below' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '& up' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByTitle('3 or fewer stars')).toBeInTheDocument()
   })
 
   it('shows the clear button only when filters are active and fires onClearFilters', async () => {

@@ -25,7 +25,7 @@ const baseFilters: CategoryFiltersState = {
   selectedCategories: [],
   selectedSource: null,
   sentimentFilter: 'all',
-  minRating: 0,
+  ratingFilter: { value: 0, direction: 'up' },
   showUrgentOnly: false,
 }
 
@@ -128,15 +128,41 @@ describe('useFeedbackListData', () => {
   })
 
   describe('client-side refinements', () => {
-    it('filters out items below the min rating', async () => {
+    it('filters out items below the rating threshold with the & up direction', async () => {
       mockGetFeedback.mockResolvedValue({
         count: 2,
         items: [makeItem({ feedback_id: 'hi', rating: 5 }), makeItem({ feedback_id: 'lo', rating: 2 })],
       })
-      const { result } = renderData({ ...baseFilters, minRating: 4 })
+      const { result } = renderData({ ...baseFilters, ratingFilter: { value: 4, direction: 'up' } })
 
       await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
       expect(result.current.filteredFeedback[0].feedback_id).toBe('hi')
+    })
+
+    it('filters out items above the rating threshold with the & below direction', async () => {
+      mockGetFeedback.mockResolvedValue({
+        count: 3,
+        items: [
+          makeItem({ feedback_id: 'hi', rating: 5 }),
+          makeItem({ feedback_id: 'mid', rating: 3 }),
+          makeItem({ feedback_id: 'lo', rating: 1 }),
+        ],
+      })
+      const { result } = renderData({ ...baseFilters, ratingFilter: { value: 3, direction: 'below' } })
+
+      await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(2))
+      expect(result.current.filteredFeedback.map((i) => i.feedback_id)).toEqual(['mid', 'lo'])
+    })
+
+    it('excludes unrated items in both rating directions', async () => {
+      mockGetFeedback.mockResolvedValue({
+        count: 2,
+        items: [makeItem({ feedback_id: 'rated', rating: 2 }), makeItem({ feedback_id: 'unrated', rating: undefined })],
+      })
+      const { result } = renderData({ ...baseFilters, ratingFilter: { value: 3, direction: 'below' } })
+
+      await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
+      expect(result.current.filteredFeedback[0].feedback_id).toBe('rated')
     })
 
     it('applies multi-category filtering client-side', async () => {

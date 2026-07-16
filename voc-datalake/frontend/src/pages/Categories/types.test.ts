@@ -5,6 +5,9 @@ import {
   getSentimentColor,
   categoryColors,
   sentimentColors,
+  matchesRatingFilter,
+  ratingFilterLabel,
+  ANY_RATING_FILTER,
 } from './types'
 
 describe('types utilities', () => {
@@ -77,6 +80,41 @@ describe('types utilities', () => {
       expect(sentimentColors.negative).toBe('#ef4444')
       expect(sentimentColors.neutral).toBe('#6b7280')
       expect(sentimentColors.mixed).toBe('#eab308')
+    })
+  })
+
+  describe('matchesRatingFilter', () => {
+    it('passes everything when the threshold is 0 (any rating)', () => {
+      expect(matchesRatingFilter(5, ANY_RATING_FILTER)).toBe(true)
+      expect(matchesRatingFilter(undefined, ANY_RATING_FILTER)).toBe(true)
+      expect(matchesRatingFilter(0, { value: 0, direction: 'below' })).toBe(true)
+    })
+
+    it('keeps ratings at or above the threshold with & up', () => {
+      expect(matchesRatingFilter(3, { value: 3, direction: 'up' })).toBe(true)
+      expect(matchesRatingFilter(5, { value: 3, direction: 'up' })).toBe(true)
+      expect(matchesRatingFilter(2, { value: 3, direction: 'up' })).toBe(false)
+    })
+
+    it('keeps ratings at or below the threshold with & below', () => {
+      expect(matchesRatingFilter(3, { value: 3, direction: 'below' })).toBe(true)
+      expect(matchesRatingFilter(1, { value: 3, direction: 'below' })).toBe(true)
+      expect(matchesRatingFilter(4, { value: 3, direction: 'below' })).toBe(false)
+    })
+
+    it('excludes unrated items in both directions once a threshold is set', () => {
+      expect(matchesRatingFilter(undefined, { value: 3, direction: 'up' })).toBe(false)
+      expect(matchesRatingFilter(undefined, { value: 3, direction: 'below' })).toBe(false)
+    })
+  })
+
+  describe('ratingFilterLabel', () => {
+    it('formats the & up direction as N+', () => {
+      expect(ratingFilterLabel({ value: 4, direction: 'up' })).toBe('4+ stars')
+    })
+
+    it('formats the & below direction as ≤N', () => {
+      expect(ratingFilterLabel({ value: 3, direction: 'below' })).toBe('≤3 stars')
     })
   })
 })
