@@ -25,6 +25,7 @@ import { uniqueName } from '../utils/naming';
 import { NagSuppressions } from 'cdk-nag';
 import { apiSecretsSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns } from '../utils/model-allowlist';
+import { pythonLayerCode } from '../utils/python-layer-bundling';
 
 export interface VocIngestionStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -330,16 +331,7 @@ export class VocIngestionStack extends cdk.Stack {
 
   private createDependenciesLayer(): lambda.LayerVersion {
     return new lambda.LayerVersion(this, 'IngestionDepsLayer', {
-      code: lambda.Code.fromAsset('lambda/layers/ingestion-deps', {
-        bundling: {
-          image: lambda.Runtime.PYTHON_3_14.bundlingImage,
-          platform: 'linux/arm64',
-          command: [
-            'bash', '-c',
-            'pip install -r requirements.txt -t /asset-output/python && cp -r . /asset-output/python/'
-          ],
-        },
-      }),
+      code: pythonLayerCode('lambda/layers/ingestion-deps'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
       description: 'Common dependencies for ingestion lambdas (ARM64/Graviton)',
@@ -407,8 +399,20 @@ export class VocIngestionStack extends cdk.Stack {
   }
 
   private bundlePluginCode(pluginId: string): lambda.Code {
+    // Root-based staging (this bundle spans plugins/ AND lambda/shared), so
+    // everything not excluded here feeds the asset hash and redeploys all
+    // ingestors on unrelated edits (issue #194 follow-up). Only
+    // plugins/<id>/ingestor, plugins/_shared and lambda/shared are copied.
     return lambda.Code.fromAsset('.', {
-      exclude: ['**/__pycache__', '*.pyc', 'plugins/_template/**', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md', 'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**'],
+      exclude: [
+        '**/__pycache__', '**/*.pyc', '**/.DS_Store', '**/test/**', '**/conftest.py', '**/test_*.py',
+        'plugins/_template/**', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md',
+        'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**', '.ruff_cache/**', 'coverage_html/**',
+        '.coverage', 'pytest.ini', 'requirements-dev.txt', 'chrome-extension/**', 'scripts/**', 'schemas/**',
+        'Workshop/**',
+        'lambda/aggregator/**', 'lambda/api/**', 'lambda/jobs/**', 'lambda/layers/**',
+        'lambda/processor/**', 'lambda/research/**', 'lambda/stream/**',
+      ],
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: [

@@ -49,6 +49,7 @@
     "aws-cdk-lib": "^2.261.0",
     "cdk-nag": "^2.37.55",
     "constructs": "^10.4.3",
+    "esbuild": "0.28.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"
