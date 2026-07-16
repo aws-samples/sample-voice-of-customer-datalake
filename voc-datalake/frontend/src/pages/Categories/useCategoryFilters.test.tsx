@@ -43,7 +43,7 @@ describe('useCategoryFilters', () => {
       expect(result.current.filters.sentimentFilter).toBe('all')
     })
 
-    it('initializes a single category from ?category= (deep-link selects one chip)', () => {
+    it('initializes a single category from ?category= (deep-link selects one row)', () => {
       const { result } = renderFiltersWithUrl(['/categories?category=delivery'])
       expect(result.current.filters.selectedCategories).toEqual(['delivery'])
     })
@@ -53,9 +53,10 @@ describe('useCategoryFilters', () => {
       expect(result.current.filters.selectedCategories).toEqual(['delivery', 'pricing'])
     })
 
-    it('initializes the All view from ?all=1', () => {
+    it('ignores the legacy ?all=1 param (browse-all is now the default state)', () => {
       const { result } = renderFiltersWithUrl(['/categories?all=1'])
-      expect(result.current.filters.showAll).toBe(true)
+      expect(result.current.filters.selectedCategories).toEqual([])
+      expect(result.current.searchParams.get('all')).toBeNull()
     })
   })
 
@@ -83,45 +84,35 @@ describe('useCategoryFilters', () => {
     })
   })
 
-  describe('All view interplay', () => {
-    it('toggling All on clears category and keyword selections', () => {
+  describe('category toggling', () => {
+    it('deselecting the last category returns to browse-all (empty selection)', () => {
       const { result } = renderFiltersWithUrl(['/categories?category=delivery'])
-
-      act(() => {
-        result.current.filters.toggleShowAll()
-      })
-
-      expect(result.current.filters.showAll).toBe(true)
-      expect(result.current.filters.selectedCategories).toEqual([])
-      expect(result.current.filters.selectedKeywords).toEqual([])
-    })
-
-    it('selecting a category switches All back off', () => {
-      const { result } = renderFiltersWithUrl(['/categories?all=1'])
 
       act(() => {
         result.current.filters.toggleCategory('delivery')
       })
 
-      expect(result.current.filters.showAll).toBe(false)
-      expect(result.current.filters.selectedCategories).toEqual(['delivery'])
+      expect(result.current.filters.selectedCategories).toEqual([])
+      expect(result.current.searchParams.get('category')).toBeNull()
     })
 
-    it('selecting a keyword switches All back off', () => {
-      const { result } = renderFiltersWithUrl(['/categories?all=1'])
+    it('supports multi-select', () => {
+      const { result } = renderFiltersWithUrl()
 
       act(() => {
-        result.current.filters.toggleKeyword('slow')
+        result.current.filters.toggleCategory('delivery')
+      })
+      act(() => {
+        result.current.filters.toggleCategory('pricing')
       })
 
-      expect(result.current.filters.showAll).toBe(false)
-      expect(result.current.filters.selectedKeywords).toEqual(['slow'])
+      expect(result.current.filters.selectedCategories).toEqual(['delivery', 'pricing'])
     })
   })
 
   describe('clearFilters', () => {
     it('resets every filter and empties the URL', () => {
-      const { result } = renderFiltersWithUrl(['/categories?q=x&source=s&sentiment=negative&category=a,b&all=1'])
+      const { result } = renderFiltersWithUrl(['/categories?q=x&source=s&sentiment=negative&category=a,b'])
 
       act(() => {
         result.current.filters.setShowUrgentOnly(true)
@@ -136,14 +127,13 @@ describe('useCategoryFilters', () => {
       expect(result.current.filters.selectedSource).toBeNull()
       expect(result.current.filters.sentimentFilter).toBe('all')
       expect(result.current.filters.minRating).toBe(0)
-      expect(result.current.filters.showAll).toBe(false)
       expect(result.current.filters.showUrgentOnly).toBe(false)
       expect([...result.current.searchParams.keys()]).toEqual([])
     })
   })
 
   describe('hasActiveFilters', () => {
-    it('is false with default state', () => {
+    it('is false with default state (browse-all)', () => {
       const { result } = renderFiltersWithUrl()
       expect(result.current.filters.hasActiveFilters).toBe(false)
     })
@@ -156,8 +146,8 @@ describe('useCategoryFilters', () => {
       expect(result.current.filters.hasActiveFilters).toBe(true)
     })
 
-    it('is true when All is active', () => {
-      const { result } = renderFiltersWithUrl(['/categories?all=1'])
+    it('is true when a category is selected', () => {
+      const { result } = renderFiltersWithUrl(['/categories?category=delivery'])
       expect(result.current.filters.hasActiveFilters).toBe(true)
     })
   })

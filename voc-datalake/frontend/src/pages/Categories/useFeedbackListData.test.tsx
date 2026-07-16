@@ -23,11 +23,9 @@ const DATE_PARAMS = { days: 7 }
 const baseFilters: CategoryFiltersState = {
   searchText: '',
   selectedCategories: [],
-  selectedKeywords: [],
   selectedSource: null,
   sentimentFilter: 'all',
   minRating: 0,
-  showAll: false,
   showUrgentOnly: false,
 }
 
@@ -55,36 +53,32 @@ function createWrapper() {
   )
 }
 
-function renderData(filters: CategoryFiltersState) {
-  return renderHook(() => useFeedbackListData(DATE_PARAMS, filters, API_ENDPOINT), {
+function renderData(filters: CategoryFiltersState, apiEndpoint = API_ENDPOINT) {
+  return renderHook(() => useFeedbackListData(DATE_PARAMS, filters, apiEndpoint), {
     wrapper: createWrapper(),
   })
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   mockGetFeedback.mockResolvedValue({ count: 1, items: [makeItem()] })
   mockSearchFeedback.mockResolvedValue({ count: 1, items: [makeItem()] })
   mockGetUrgentFeedback.mockResolvedValue({ count: 1, items: [makeItem()] })
 })
 
 describe('useFeedbackListData', () => {
-  describe('fetch gating (shouldFetchFeedback)', () => {
-    it('does not fetch with default filters', () => {
+  describe('default browse-all fetch (issue #198 UX rationalization)', () => {
+    it('fetches the list with default filters (nothing selected = show everything)', async () => {
       const { result } = renderData(baseFilters)
-      expect(result.current.shouldFetchFeedback).toBe(false)
+      await waitFor(() => expect(mockGetFeedback).toHaveBeenCalled())
+      await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
+    })
+
+    it('does not fetch without an API endpoint', () => {
+      renderData(baseFilters, '')
       expect(mockGetFeedback).not.toHaveBeenCalled()
-    })
-
-    it('fetches when a category is selected', async () => {
-      const { result } = renderData({ ...baseFilters, selectedCategories: ['delivery'] })
-      expect(result.current.shouldFetchFeedback).toBe(true)
-      await waitFor(() => expect(mockGetFeedback).toHaveBeenCalled())
-    })
-
-    it('fetches when the All view is active (issue #198)', async () => {
-      const { result } = renderData({ ...baseFilters, showAll: true })
-      expect(result.current.shouldFetchFeedback).toBe(true)
-      await waitFor(() => expect(mockGetFeedback).toHaveBeenCalled())
+      expect(mockSearchFeedback).not.toHaveBeenCalled()
+      expect(mockGetUrgentFeedback).not.toHaveBeenCalled()
     })
   })
 
@@ -97,10 +91,11 @@ describe('useFeedbackListData', () => {
       expect(mockGetUrgentFeedback).not.toHaveBeenCalled()
     })
 
-    it('does not search for a single character', () => {
+    it('does not search for a single character (falls back to the list)', async () => {
       const { result } = renderData({ ...baseFilters, searchText: 'a' })
       expect(result.current.isSearching).toBe(false)
       expect(mockSearchFeedback).not.toHaveBeenCalled()
+      await waitFor(() => expect(mockGetFeedback).toHaveBeenCalled())
     })
 
     it('uses the urgent endpoint when the urgent toggle is on', async () => {
@@ -138,7 +133,7 @@ describe('useFeedbackListData', () => {
         count: 2,
         items: [makeItem({ feedback_id: 'hi', rating: 5 }), makeItem({ feedback_id: 'lo', rating: 2 })],
       })
-      const { result } = renderData({ ...baseFilters, showAll: true, minRating: 4 })
+      const { result } = renderData({ ...baseFilters, minRating: 4 })
 
       await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
       expect(result.current.filteredFeedback[0].feedback_id).toBe('hi')
@@ -157,20 +152,6 @@ describe('useFeedbackListData', () => {
       await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
       expect(result.current.filteredFeedback[0].feedback_id).toBe('a')
     })
-
-    it('applies keyword matching against text and problem summary', async () => {
-      mockGetFeedback.mockResolvedValue({
-        count: 2,
-        items: [
-          makeItem({ feedback_id: 'match', original_text: 'The delivery was slow' }),
-          makeItem({ feedback_id: 'nomatch', original_text: 'Great product' }),
-        ],
-      })
-      const { result } = renderData({ ...baseFilters, selectedKeywords: ['slow'] })
-
-      await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
-      expect(result.current.filteredFeedback[0].feedback_id).toBe('match')
-    })
   })
 
   describe('results header totals', () => {
@@ -181,7 +162,7 @@ describe('useFeedbackListData', () => {
         is_partial_window: true,
         items: [makeItem()],
       })
-      const { result } = renderData({ ...baseFilters, showAll: true })
+      const { result } = renderData(baseFilters)
 
       await waitFor(() => expect(result.current.totalCount).toBe(250))
       expect(result.current.isPartialWindow).toBe(true)

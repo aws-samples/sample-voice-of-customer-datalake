@@ -1,14 +1,17 @@
 /**
- * @fileoverview Ranked category-distribution bar breakdown for the Categories page.
+ * @fileoverview Ranked category-distribution breakdown that doubles as the
+ * category selector for the Categories page (issue #198 UX rationalization).
  *
- * Moved here from the Data Explorer "Categories" sub-tab (now removed). Renders a
- * read-only, ranked horizontal bar chart of category counts + percentages using the
- * category data already derived on the Categories page.
+ * Each row is a toggle: clicking selects/deselects the category as a filter
+ * for the feedback list below (multi-select). Nothing selected = the list
+ * shows all feedback. This replaced the separate "Select Categories to
+ * Explore" chips card, which duplicated the same data.
  *
  * @module pages/Categories/CategoryDistribution
  */
 
 import { FolderOpen } from 'lucide-react'
+import clsx from 'clsx'
 import type { CategoryData } from './types'
 
 interface CategoryDistributionProps {
@@ -18,9 +21,19 @@ interface CategoryDistributionProps {
   readonly totalIssues: number
   /** Optional lookback window (days) shown in the header. */
   readonly periodDays?: number
+  /** Categories currently filtering the feedback list. */
+  readonly selectedCategories: string[]
+  /** Toggles a category in/out of the filter selection. */
+  readonly onToggleCategory: (category: string) => void
 }
 
-export function CategoryDistribution({ categoryData, totalIssues, periodDays }: CategoryDistributionProps) {
+export function CategoryDistribution({
+  categoryData,
+  totalIssues,
+  periodDays,
+  selectedCategories,
+  onToggleCategory,
+}: CategoryDistributionProps) {
   if (categoryData.length === 0) {
     return (
       <div className="card">
@@ -35,20 +48,32 @@ export function CategoryDistribution({ categoryData, totalIssues, periodDays }: 
 
   return (
     <div className="card">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3 sm:mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
         <h2 className="text-base sm:text-lg font-semibold">Category Distribution</h2>
         <p className="text-xs sm:text-sm text-gray-500">
           {categoryData.length} categories • {totalIssues} items
           {periodDays ? ` • Last ${periodDays} days` : ''}
         </p>
       </div>
+      <p className="text-xs text-gray-400 mb-2 sm:mb-3">Click a category to filter the results below</p>
       <div className="divide-y divide-gray-100">
         {categoryData.map((category) => {
           const percentage = totalIssues > 0 ? (category.value / totalIssues) * 100 : 0
+          const isSelected = selectedCategories.includes(category.name)
           return (
-            <div key={category.name} className="py-2.5 sm:py-3">
+            <button
+              key={category.name}
+              onClick={() => onToggleCategory(category.name)}
+              aria-pressed={isSelected}
+              className={clsx(
+                'block w-full text-left py-2.5 sm:py-3 px-2 -mx-2 rounded-lg transition-colors active:scale-[0.99]',
+                isSelected ? 'bg-blue-50 ring-1 ring-inset ring-blue-300' : 'hover:bg-gray-50'
+              )}
+            >
               <div className="flex items-center justify-between mb-1">
-                <span className="font-medium text-sm capitalize">{category.name.replace('_', ' ')}</span>
+                <span className={clsx('font-medium text-sm capitalize', isSelected && 'text-blue-800')}>
+                  {category.name.replace('_', ' ')}
+                </span>
                 <span className="text-sm text-gray-600">
                   {category.value} ({percentage.toFixed(1)}%)
                 </span>
@@ -59,7 +84,7 @@ export function CategoryDistribution({ categoryData, totalIssues, periodDays }: 
                   style={{ width: `${percentage}%`, backgroundColor: category.color }}
                 />
               </div>
-            </div>
+            </button>
           )
         })}
       </div>

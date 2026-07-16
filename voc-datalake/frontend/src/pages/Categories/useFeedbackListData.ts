@@ -5,7 +5,11 @@
  * (`/feedback/search`) when a query of 2+ chars is present, urgent-only
  * (`/feedback/urgent`) when the toggle is on, otherwise the regular list
  * (`/feedback`) — and applies the client-side refinements (min rating,
- * multi-category, keyword match) the server doesn't support.
+ * multi-category) the server doesn't support.
+ *
+ * The list is always fetched: the Categories default view browses all
+ * feedback (issue #198 UX rationalization). Keyword filtering was folded
+ * into server-side search — Trending Keyword clicks populate the search box.
  *
  * @module pages/Categories/useFeedbackListData
  */
@@ -34,7 +38,6 @@ export interface FeedbackListData {
   totalCount: number
   /** True when the backend truncated the candidate window ("N+"). */
   isPartialWindow: boolean
-  shouldFetchFeedback: boolean
 }
 
 function buildCommonParams(dateParams: DateRangeParams, filters: CategoryFiltersState) {
@@ -51,31 +54,16 @@ function buildCommonParams(dateParams: DateRangeParams, filters: CategoryFilters
 function matchesClientFilters(item: FeedbackItem, filters: CategoryFiltersState): boolean {
   if (filters.minRating > 0 && (!item.rating || item.rating < filters.minRating)) return false
   if (filters.selectedCategories.length > 1 && !filters.selectedCategories.includes(item.category)) return false
-  if (filters.selectedKeywords.length > 0) {
-    const text = `${item.original_text} ${item.problem_summary ?? ''}`.toLowerCase()
-    if (!filters.selectedKeywords.some((kw) => text.includes(kw.toLowerCase()))) return false
-  }
   return true
-}
-
-function computeShouldFetch(filters: CategoryFiltersState, isSearching: boolean): boolean {
-  return (
-    filters.selectedCategories.length > 0 ||
-    filters.selectedKeywords.length > 0 ||
-    filters.showAll ||
-    filters.showUrgentOnly ||
-    isSearching
-  )
 }
 
 /** Exactly one of the three queries is enabled for any given filter state. */
 function computeEnabledQueries(
   apiEndpoint: string,
-  shouldFetch: boolean,
   isSearching: boolean,
   showUrgentOnly: boolean
 ): { search: boolean; urgent: boolean; list: boolean } {
-  const anyEnabled = !!apiEndpoint && shouldFetch
+  const anyEnabled = !!apiEndpoint
   return {
     search: anyEnabled && isSearching,
     urgent: anyEnabled && !isSearching && showUrgentOnly,
@@ -100,8 +88,7 @@ export function useFeedbackListData(
   apiEndpoint: string
 ): FeedbackListData {
   const isSearching = filters.searchText.length >= SEARCH_MIN_CHARS
-  const shouldFetchFeedback = computeShouldFetch(filters, isSearching)
-  const enabled = computeEnabledQueries(apiEndpoint, shouldFetchFeedback, isSearching, filters.showUrgentOnly)
+  const enabled = computeEnabledQueries(apiEndpoint, isSearching, filters.showUrgentOnly)
   const commonParams = buildCommonParams(dateParams, filters)
 
   const searchQuery = useQuery({
@@ -134,7 +121,6 @@ export function useFeedbackListData(
     isLoading: active.isLoading,
     isSearching,
     ...extractTotals(active.data),
-    shouldFetchFeedback,
   }
 }
 

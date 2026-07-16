@@ -62,7 +62,6 @@ const defaultProps = {
   onViewModeChange: vi.fn(),
   selectedSource: null as string | null,
   selectedCategories: ['delivery'],
-  selectedKeywords: [] as string[],
   sentimentFilter: 'all' as SentimentFilter,
   minRating: 0,
   onExport: vi.fn(),
@@ -90,11 +89,6 @@ describe('FeedbackResults', () => {
     it('shows selected source in subtitle', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} selectedSource="webscraper" />)
       expect(screen.getByText(/Source: webscraper/)).toBeInTheDocument()
-    })
-
-    it('shows selected keywords in subtitle', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} selectedKeywords={['slow', 'broken']} />)
-      expect(screen.getByText(/slow, broken/)).toBeInTheDocument()
     })
 
     it('shows sentiment filter in subtitle', () => {

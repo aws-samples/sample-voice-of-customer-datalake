@@ -1,52 +1,46 @@
-import { X } from 'lucide-react'
+/**
+ * @fileoverview Trending keywords card for the Categories page.
+ *
+ * Clicking a keyword populates the search box (server-side search across the
+ * full corpus) instead of the former client-side filter, which silently
+ * matched only the loaded 100-item window (issue #198 UX rationalization).
+ * Clicking the active keyword again clears the search.
+ *
+ * @module pages/Categories/WordCloudCard
+ */
+
 import clsx from 'clsx'
 import type { WordCloudItem } from './types'
 
 interface WordCloudCardProps {
   readonly wordCloudData: WordCloudItem[]
-  readonly selectedKeywords: string[]
-  readonly onToggleKeyword: (keyword: string) => void
-  readonly onClearKeywords: () => void
+  /** Current search text — a keyword equal to it renders highlighted. */
+  readonly searchText: string
+  readonly onSearchChange: (value: string) => void
 }
 
-export function WordCloudCard({
-  wordCloudData,
-  selectedKeywords,
-  onToggleKeyword,
-  onClearKeywords,
-}: WordCloudCardProps) {
+export function WordCloudCard({ wordCloudData, searchText, onSearchChange }: WordCloudCardProps) {
   const maxCount = Math.max(...wordCloudData.map(w => w.count), 1)
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
-        <h2 className="text-base sm:text-lg font-semibold">Trending Keywords</h2>
-        {selectedKeywords.length > 0 && (
-          <button
-            onClick={onClearKeywords}
-            className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 whitespace-nowrap"
-          >
-            <X size={12} />
-            Clear ({selectedKeywords.length})
-          </button>
-        )}
-      </div>
+      <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Trending Keywords</h2>
       <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center items-center min-h-[150px] sm:min-h-[200px]">
         {wordCloudData.map(({ word, count }) => {
           const size = 0.65 + (count / maxCount) * 0.6
-          const isSelected = selectedKeywords.includes(word)
+          const isActive = searchText === word
           return (
             <button
               key={word}
-              onClick={() => onToggleKeyword(word)}
+              onClick={() => onSearchChange(isActive ? '' : word)}
               className={clsx(
                 'px-1.5 sm:px-2 py-0.5 sm:py-1 rounded transition-all cursor-pointer active:scale-95',
-                isSelected
+                isActive
                   ? 'bg-blue-600 text-white ring-2 ring-blue-300 shadow-md'
                   : 'bg-blue-100 text-blue-800 hover:bg-blue-200 sm:hover:scale-105'
               )}
               style={{ fontSize: `${size}rem` }}
-              title={`${count} mentions - click to filter`}
+              title={`${count} mentions - click to search`}
             >
               {word}
             </button>
@@ -56,11 +50,6 @@ export function WordCloudCard({
           <p className="text-gray-400 text-xs sm:text-sm">No keyword data available</p>
         )}
       </div>
-      {selectedKeywords.length > 0 && (
-        <p className="text-xs text-center text-gray-500 mt-2 sm:mt-3 line-clamp-2">
-          Filtering by: {selectedKeywords.join(', ')}
-        </p>
-      )}
     </div>
   )
 }

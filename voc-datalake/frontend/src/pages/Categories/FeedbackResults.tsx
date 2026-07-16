@@ -12,7 +12,6 @@ interface FeedbackResultsProps {
   readonly onViewModeChange: (mode: ViewMode) => void
   readonly selectedSource: string | null
   readonly selectedCategories: string[]
-  readonly selectedKeywords: string[]
   readonly sentimentFilter: SentimentFilter
   readonly minRating: number
   readonly onExport: () => void
@@ -48,13 +47,11 @@ function ResultsCountLine({
 function ActiveFiltersLine({
   selectedSource,
   selectedCategories,
-  selectedKeywords,
   sentimentFilter,
   minRating,
 }: Readonly<{
   selectedSource: string | null
   selectedCategories: string[]
-  selectedKeywords: string[]
   sentimentFilter: SentimentFilter
   minRating: number
 }>) {
@@ -62,7 +59,6 @@ function ActiveFiltersLine({
     <p className="text-xs sm:text-sm text-gray-500 truncate">
       {selectedSource && `Source: ${selectedSource}`}
       {selectedCategories.length > 0 && `${selectedSource ? ' • ' : ''}${selectedCategories.map(c => c.replace('_', ' ')).join(', ')}`}
-      {selectedKeywords.length > 0 && `${selectedSource || selectedCategories.length > 0 ? ' • ' : ''}${selectedKeywords.join(', ')}`}
       {sentimentFilter !== 'all' && ` • ${sentimentFilter}`}
       {minRating > 0 && ` • ${minRating}+ stars`}
     </p>
@@ -76,7 +72,6 @@ export function FeedbackResults({
   onViewModeChange,
   selectedSource,
   selectedCategories,
-  selectedKeywords,
   sentimentFilter,
   minRating,
   onExport,
@@ -101,7 +96,6 @@ export function FeedbackResults({
           <ActiveFiltersLine
             selectedSource={selectedSource}
             selectedCategories={selectedCategories}
-            selectedKeywords={selectedKeywords}
             sentimentFilter={sentimentFilter}
             minRating={minRating}
           />

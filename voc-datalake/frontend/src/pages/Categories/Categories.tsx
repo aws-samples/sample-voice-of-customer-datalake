@@ -1,7 +1,10 @@
 /**
- * @fileoverview Categories analysis page with breakdown, filtering, and the
- * consolidated feedback list (search, urgent-only, All view) that replaced
- * the standalone Feedback page (issue #198).
+ * @fileoverview Categories analysis page: one unified filter bar, three
+ * interactive analytics cards (category distribution doubles as the category
+ * selector, sentiment gauge legend is the sentiment control, keyword clicks
+ * populate search), and the consolidated feedback list that replaced the
+ * standalone Feedback page (issue #198). The default view (nothing selected)
+ * browses all feedback.
  * @module pages/Categories
  */
 
@@ -12,14 +15,11 @@ import type { FeedbackItem } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
 import type { ViewMode } from './types'
-import { SourceFilter } from './SourceFilter'
-import { InsightsRow } from './InsightsRow'
+import { FilterBar } from './FilterBar'
 import { SentimentGauge } from './SentimentGaugeCard'
 import { WordCloudCard } from './WordCloudCard'
-import { CategorySelector } from './CategorySelector'
 import { CategoryDistribution } from './CategoryDistribution'
 import { FeedbackResults } from './FeedbackResults'
-import { FeedbackSearchBar } from './FeedbackSearchBar'
 import { generateCategoriesPDF } from './categoriesPdfGenerator'
 import { generateFeedbackPDF } from './feedbackPdfGenerator'
 import { useCategoryFilters } from './useCategoryFilters'
@@ -64,7 +64,6 @@ export default function Categories() {
 
   const filters = useCategoryFilters()
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
-  const [showFilters, setShowFilters] = useState(false)
 
   const analytics = useCategoryAnalytics(dateParams, filters.selectedSource, config.apiEndpoint)
   const feedback = useFeedbackListData(dateParams, filters, config.apiEndpoint)
@@ -121,24 +120,27 @@ export default function Categories() {
           {t('exportPdf')}
         </button>
       </div>
-      <SourceFilter
+      <FilterBar
+        searchText={filters.searchText}
+        onSearchChange={filters.setSearchText}
         selectedSource={filters.selectedSource}
         onSourceChange={filters.setSelectedSource}
         allSources={analytics.allSources}
-      />
-      <FeedbackSearchBar
-        searchText={filters.searchText}
-        onSearchChange={filters.setSearchText}
         showUrgentOnly={filters.showUrgentOnly}
         onUrgentChange={filters.setShowUrgentOnly}
+        minRating={filters.minRating}
+        onMinRatingChange={filters.setMinRating}
+        hasActiveFilters={filters.hasActiveFilters}
+        onClearFilters={filters.clearFilters}
       />
-      <InsightsRow categoryData={analytics.categoryData} totalIssues={analytics.totalIssues} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <CategoryDistribution
           categoryData={analytics.categoryData}
           totalIssues={analytics.totalIssues}
           periodDays={analytics.periodDays}
+          selectedCategories={filters.selectedCategories}
+          onToggleCategory={filters.toggleCategory}
         />
         <SentimentGauge
           sentimentData={analytics.sentimentData}
@@ -149,46 +151,25 @@ export default function Categories() {
         />
         <WordCloudCard
           wordCloudData={analytics.wordCloudData}
-          selectedKeywords={filters.selectedKeywords}
-          onToggleKeyword={filters.toggleKeyword}
-          onClearKeywords={filters.clearKeywords}
+          searchText={filters.searchText}
+          onSearchChange={filters.setSearchText}
         />
       </div>
 
-      <CategorySelector
-        categoryData={analytics.categoryData}
-        totalIssues={analytics.totalIssues}
+      <FeedbackResults
+        filteredFeedback={feedback.filteredFeedback}
+        feedbackLoading={feedback.isLoading}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        selectedSource={filters.selectedSource}
         selectedCategories={filters.selectedCategories}
-        onToggleCategory={filters.toggleCategory}
-        showAll={filters.showAll}
-        onToggleShowAll={filters.toggleShowAll}
-        hasActiveFilters={filters.hasActiveFilters}
-        onClearFilters={filters.clearFilters}
-        showFilters={showFilters}
-        onToggleFilters={() => setShowFilters(!showFilters)}
-        minRating={filters.minRating}
-        onMinRatingChange={filters.setMinRating}
         sentimentFilter={filters.sentimentFilter}
-        onSentimentFilterChange={filters.setSentimentFilter}
+        minRating={filters.minRating}
+        onExport={exportCsv}
+        onExportPdf={exportFeedbackListPdf}
+        totalCount={feedback.totalCount}
+        isPartialWindow={feedback.isPartialWindow}
       />
-
-      {feedback.shouldFetchFeedback && (
-        <FeedbackResults
-          filteredFeedback={feedback.filteredFeedback}
-          feedbackLoading={feedback.isLoading}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          selectedSource={filters.selectedSource}
-          selectedCategories={filters.selectedCategories}
-          selectedKeywords={filters.selectedKeywords}
-          sentimentFilter={filters.sentimentFilter}
-          minRating={filters.minRating}
-          onExport={exportCsv}
-          onExportPdf={exportFeedbackListPdf}
-          totalCount={feedback.totalCount}
-          isPartialWindow={feedback.isPartialWindow}
-        />
-      )}
     </div>
   )
 }

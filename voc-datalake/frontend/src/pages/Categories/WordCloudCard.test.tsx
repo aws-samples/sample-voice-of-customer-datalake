@@ -12,9 +12,8 @@ const mockWords: WordCloudItem[] = [
 
 const defaultProps = {
   wordCloudData: mockWords,
-  selectedKeywords: [] as string[],
-  onToggleKeyword: vi.fn(),
-  onClearKeywords: vi.fn(),
+  searchText: '',
+  onSearchChange: vi.fn(),
 }
 
 describe('WordCloudCard', () => {
@@ -26,49 +25,41 @@ describe('WordCloudCard', () => {
     expect(screen.getByText('support')).toBeInTheDocument()
   })
 
-  it('calls onToggleKeyword when keyword clicked', async () => {
+  it('populates the search box when a keyword is clicked (issue #198 rationalization)', async () => {
     const user = userEvent.setup()
-    const onToggle = vi.fn()
-    render(<WordCloudCard {...defaultProps} onToggleKeyword={onToggle} />)
+    const onSearchChange = vi.fn()
+    render(<WordCloudCard {...defaultProps} onSearchChange={onSearchChange} />)
 
     await user.click(screen.getByText('delivery'))
-    expect(onToggle).toHaveBeenCalledWith('delivery')
+    expect(onSearchChange).toHaveBeenCalledWith('delivery')
   })
 
-  it('shows clear button when keywords selected', () => {
-    render(<WordCloudCard {...defaultProps} selectedKeywords={['delivery']} />)
-    expect(screen.getByText(/clear \(1\)/i)).toBeInTheDocument()
-  })
-
-  it('hides clear button when no keywords selected', () => {
-    render(<WordCloudCard {...defaultProps} selectedKeywords={[]} />)
-    expect(screen.queryByText(/clear/i)).not.toBeInTheDocument()
-  })
-
-  it('calls onClearKeywords when clear clicked', async () => {
+  it('clears the search when the active keyword is clicked again', async () => {
     const user = userEvent.setup()
-    const onClear = vi.fn()
-    render(<WordCloudCard {...defaultProps} selectedKeywords={['delivery']} onClearKeywords={onClear} />)
+    const onSearchChange = vi.fn()
+    render(<WordCloudCard {...defaultProps} searchText="delivery" onSearchChange={onSearchChange} />)
 
-    await user.click(screen.getByText(/clear \(1\)/i))
-    expect(onClear).toHaveBeenCalled()
+    await user.click(screen.getByText('delivery'))
+    expect(onSearchChange).toHaveBeenCalledWith('')
   })
 
-  it('shows filtering message when keywords selected', () => {
-    render(<WordCloudCard {...defaultProps} selectedKeywords={['delivery', 'shipping']} />)
-    expect(screen.getByText(/filtering by: delivery, shipping/i)).toBeInTheDocument()
+  it('highlights the keyword matching the current search text', () => {
+    render(<WordCloudCard {...defaultProps} searchText="delivery" />)
+
+    const deliveryButton = screen.getByText('delivery')
+    expect(deliveryButton).toHaveClass('bg-blue-600', 'text-white')
+  })
+
+  it('does not highlight keywords when the search text differs', () => {
+    render(<WordCloudCard {...defaultProps} searchText="something else" />)
+
+    const deliveryButton = screen.getByText('delivery')
+    expect(deliveryButton).not.toHaveClass('bg-blue-600')
   })
 
   it('shows empty state when no keywords', () => {
     render(<WordCloudCard {...defaultProps} wordCloudData={[]} />)
     expect(screen.getByText('No keyword data available')).toBeInTheDocument()
-  })
-
-  it('highlights selected keywords', () => {
-    render(<WordCloudCard {...defaultProps} selectedKeywords={['delivery']} />)
-
-    const deliveryButton = screen.getByText('delivery')
-    expect(deliveryButton).toHaveClass('bg-blue-600', 'text-white')
   })
 
   it('applies size based on count', () => {
