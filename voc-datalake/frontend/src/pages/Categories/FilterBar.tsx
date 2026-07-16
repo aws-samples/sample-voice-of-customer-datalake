@@ -26,6 +26,8 @@ interface FilterBarProps {
   readonly onMinRatingChange: (rating: number) => void
   readonly hasActiveFilters: boolean
   readonly onClearFilters: () => void
+  /** Optional content pinned to the far right of the bar (e.g. Export PDF). */
+  readonly trailing?: React.ReactNode
 }
 
 export function FilterBar({
@@ -40,6 +42,7 @@ export function FilterBar({
   onMinRatingChange,
   hasActiveFilters,
   onClearFilters,
+  trailing,
 }: FilterBarProps) {
   return (
     <div className="card !p-4 sm:!p-6">
@@ -86,6 +89,11 @@ export function FilterBar({
             </button>
           )}
         </div>
+        {trailing && (
+          <div className="flex items-center lg:ml-auto lg:border-l lg:border-gray-200 lg:pl-4">
+            {trailing}
+          </div>
+        )}
       </div>
     </div>
   )

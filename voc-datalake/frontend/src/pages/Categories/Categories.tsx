@@ -110,16 +110,6 @@ export default function Categories() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="flex justify-end">
-        <button
-          onClick={exportAnalyticsPdf}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
-          title={t('exportPdfTooltip')}
-        >
-          <FileDown size={14} />
-          {t('exportPdf')}
-        </button>
-      </div>
       <FilterBar
         searchText={filters.searchText}
         onSearchChange={filters.setSearchText}
@@ -132,6 +122,16 @@ export default function Categories() {
         onMinRatingChange={filters.setMinRating}
         hasActiveFilters={filters.hasActiveFilters}
         onClearFilters={filters.clearFilters}
+        trailing={
+          <button
+            onClick={exportAnalyticsPdf}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap"
+            title={t('exportPdfTooltip')}
+          >
+            <FileDown size={14} />
+            {t('exportPdf')}
+          </button>
+        }
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
