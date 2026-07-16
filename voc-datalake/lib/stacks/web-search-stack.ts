@@ -17,9 +17,10 @@ import { uniqueName } from '../utils/naming';
  * HTTPS with SigV4, and the gateway URL/ARN flow to those stacks via CDK
  * cross-region references (SSM-backed when regions differ).
  *
- * Opt-in via `"enableWebSearch": true` in cdk.context.json. When the app
- * region is not us-east-1, the account must also be bootstrapped in
- * us-east-1 (`cdk bootstrap aws://ACCOUNT/us-east-1`).
+ * Deployed BY DEFAULT (issue #205); opt out with `"enableWebSearch": false`
+ * in cdk.context.json. When the app region is not us-east-1, the account
+ * must also be bootstrapped in us-east-1
+ * (`cdk bootstrap aws://ACCOUNT/us-east-1`).
  *
  * Cost note: Web Search invocations are billed at $7 per 1,000 queries.
  * The feature is opt-in per request in both UIs.

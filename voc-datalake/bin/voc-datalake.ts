@@ -10,6 +10,7 @@ import { VocApiStack } from '../lib/stacks/api-stack';
 import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
 import { BedrockAccessStack, AnthropicUseCaseSchema } from '../lib/stacks/bedrock-access-stack';
 import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, comprehendSuppressions, translateSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
+import { shouldDeployWebSearch } from '../lib/utils/web-search-default';
 
 const app = new cdk.App();
 
@@ -41,21 +42,21 @@ const env = {
 };
 
 // ============================================
-// Stack 0a: VocWebSearchStack (Optional, opt-in)
+// Stack 0a: VocWebSearchStack (default-on, opt-out)
 // AgentCore Gateway for the AWS-managed web-search connector.
 // ============================================
-// Explicitly opt-in via `"enableWebSearch": true` in cdk.context.json (or
-// `-c enableWebSearch=true`). The gateway itself has no standing cost and
-// searches are opt-in per request ($7/1k queries), but the connector
-// integration is new — keep deployment a conscious choice until a real
-// gateway round-trip has been validated post-release, then consider
-// defaulting it on for us-east-1.
+// Deployed BY DEFAULT (issue #205): the gateway has no standing cost and
+// searches are opt-in per request in both UIs ($7/1k queries) — chat's
+// toggle and the research wizard's checkbox stay off until a user turns
+// them on. Opt out with `"enableWebSearch": false` in cdk.context.json (or
+// `-c enableWebSearch=false`) — needed e.g. when the us-east-1 bootstrap
+// required for cross-region references is unavailable.
 //
 // The connector only exists in us-east-1, so the stack always deploys
 // there. When the app itself lives in another region this additionally
 // requires a us-east-1 bootstrap and CDK cross-region references.
 const webSearchContextRaw = app.node.tryGetContext('enableWebSearch');
-const deployWebSearch = webSearchContextRaw === true || webSearchContextRaw === 'true';
+const deployWebSearch = shouldDeployWebSearch(webSearchContextRaw);
 const webSearchCrossRegion = deployWebSearch && env.region !== 'us-east-1';
 
 let webSearchStack: VocWebSearchStack | undefined;
