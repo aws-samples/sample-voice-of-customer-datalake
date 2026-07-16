@@ -177,7 +177,7 @@ The platform consists of 4 core stacks plus 2 optional ones:
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
-| `BedrockAccessStack` (optional) | Bedrock model access / Anthropic use case submission — created only when `anthropicUseCase` is set in `cdk.context.json` | None |
+| `BedrockAccessStack` (optional) | Bedrock model access / Anthropic use case submission — created only when `anthropicUseCase` is set in `cdk.context.json` (see the conditional in `bin/voc-datalake.ts`) | None |
 | `VocWebSearchStack` (optional) | AgentCore Gateway for public web search — opt-in via `enableWebSearch: true`; always deploys to us-east-1 (the connector only exists there) | None |
 
 ### Deploy All Stacks

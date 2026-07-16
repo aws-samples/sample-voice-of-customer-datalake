@@ -651,7 +651,7 @@ export class VocIngestionStack extends cdk.Stack {
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook } from '../plugin-loader';
 
 export class VocApiStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props: VocAnalyticsStackProps) {
+  constructor(scope: Construct, id: string, props: VocApiStackProps) {
     super(scope, id, props);
     
     // Load plugins
