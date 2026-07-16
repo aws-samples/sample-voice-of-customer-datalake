@@ -11,7 +11,9 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 - **Plugin architecture**: Modular data source connectors with manifest-based configuration and enable/disable via `cdk.context.json`
 - **Menu configuration**: Enable/disable dashboard menu items via `cdk.context.json`
 - **Webhook support**: Real-time ingestion via webhooks for plugins that support it
-- **LLM-powered analysis**: Amazon Bedrock (Claude Sonnet 4.5) for categorization, sentiment, persona inference, and root cause hypothesis
+- **LLM-powered analysis**: Amazon Bedrock (Claude; per-surface model picker, default Sonnet 5) for categorization, sentiment, persona inference, and root cause hypothesis
+- **Per-surface AI model picker**: admins choose the Claude model per AI surface in Settings (chat, documents, prototypes, enrichment, utilities) over a curated allowlist
+- **Opt-in public web search**: AgentCore Gateway connector for chat and research (deploy with `enableWebSearch: true`; UI hides the toggle when absent)
 - **Multi-language support**: Auto-detection via Comprehend, translation via Amazon Translate
 - **Real-time aggregation**: DynamoDB Streams trigger instant metric updates
 - **REST API**: Query feedback and analytics via API Gateway + Lambda

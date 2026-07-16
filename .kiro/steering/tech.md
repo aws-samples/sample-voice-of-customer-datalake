@@ -3,7 +3,7 @@
 ## Infrastructure (AWS CDK)
 
 - **Language**: TypeScript
-- **CDK Version**: ^2.229.0
+- **CDK Version**: ^2.261.0 per `voc-datalake/package.json` (CLI pinned as devDependency, assembly schema 54+)
 - **Runtime**: Node.js 18+
 - **Entry Point**: `bin/voc-datalake.ts`
 
@@ -21,7 +21,7 @@
 | **EventBridge** | Scheduled ingestion | Rate expressions (1-30 min) |
 | **Secrets Manager** | API credentials | Auto-rotation capable |
 | **KMS** | Encryption | Customer-managed key, key rotation |
-| **Bedrock** | LLM inference | Claude Sonnet 4.5 (global inference profile) |
+| **Bedrock** | LLM inference | Per-surface model picker (default Claude Sonnet 5; allowlist in `lib/utils/model-allowlist.ts`, resolution via `shared/model_config.py`) |
 | **Comprehend** | NLP | Sentiment, language detection, key phrases |
 | **Translate** | Multi-language | Auto language pair detection |
 | **Step Functions** | Long-running jobs | Research workflows, persona generation |
@@ -59,7 +59,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB (projects, jobs, feedback), Step Functions, Bedrock, S3 |
 | `voc-users-api` | `users_handler.py` | `/users/*` | Cognito admin |
 | `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*`, `/feedback-forms/*` | DynamoDB (aggregates), SQS |
-| `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
+| `voc-chat-stream` | `lambda/stream` (TypeScript, esbuild-bundled) | `/chat/stream` SSE via API Gateway | DynamoDB read, Bedrock streaming |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 | `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read |
 | `voc-manual-import-api` | `manual_import_handler.py` | `/manual-import/*` | DynamoDB, SQS, S3 |
@@ -180,6 +180,24 @@ npm run generate:manifests  # Generate plugin manifests only
 npm run generate:menu       # Generate menu config only
 ```
 
+### Mock-only local dev notes
+
+- Without Cognito configured, DEV builds treat the session as an admin
+  (mirrors the ProtectedRoute/AdminRoute bypass; production fails closed) —
+  Settings, Users tab, and the AI Models card are all reachable locally.
+- The mock serves stateful fixtures for the full app surface, including
+  project detail (`/projects/proj_1`), the Product tab (context, interview,
+  docs upload, report jobs), user admin, scrapers, and feedback forms.
+  Several fixtures are deliberately sparse (legacy-shaped records) so the
+  Zod boundary normalizers stay exercised in dev — don't "fix" them to be
+  complete.
+- Wire-shape rule: components never trust runtime data to match declared
+  types. Every list/query boundary normalizes through a lenient Zod schema
+  (`formSchema.ts`, `scrapersSchema.ts`, `categoriesSchema.ts` are the
+  precedents), and crash-prone render sites carry belt-and-braces guards.
+  Route-level errors are contained by `RouteErrorBoundary` (one bad page
+  never blanks the app).
+
 ## Secrets Manager Structure
 
 ```json
@@ -198,4 +216,4 @@ npm run generate:menu       # Generate menu config only
 - **DynamoDB**: On-demand billing, TTL for old data
 - **S3**: Raw data archival, partitioned for cost-effective querying
 - **Lambda**: ARM64 (Graviton), right-size memory, reserved concurrency
-- **Bedrock**: Use Claude Sonnet 4.5, batch when possible
+- **Bedrock**: resolve models via `shared/model_config.py` (never hardcode ids); batch when possible

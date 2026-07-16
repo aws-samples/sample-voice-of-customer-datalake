@@ -46,7 +46,6 @@ voice-of-customer-datalake/       # Root repository
     │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 15 handlers
     │   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
     │   │   ├── chat_handler.py           # /chat/* (conversations)
-    │   │   ├── chat_stream_handler.py    # Streaming chat (Lambda Function URL)
     │   │   ├── integrations_handler.py   # /integrations/*, /sources/* (credentials, schedules)
     │   │   ├── scrapers_handler.py       # /scrapers/* (web scraper management)
     │   │   ├── settings_handler.py       # /settings/* (brand, categories config)
@@ -65,6 +64,7 @@ voice-of-customer-datalake/       # Root repository
     │   │       ├── prd-generation.json
     │   │       ├── prfaq-generation.json
     │   │       └── research-analysis.json
+    │   ├── stream/                   # Streaming chat Lambda (TypeScript, esbuild) — SSE at /chat/stream via API Gateway
     │   └── layers/
     │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4
     │       └── processing-deps/      # Layer: aws-lambda-powertools
@@ -303,11 +303,13 @@ VocCoreStack (DynamoDB tables, S3 raw data bucket, KMS, Cognito, CloudFront)
        │
        ├──▶ VocIngestionStack (Plugin Lambdas, EventBridge, SQS, Secrets)
        │           │
-       │           └──▶ VocProcessingStackConsolidated (Processor, Aggregator, Step Functions, Bedrock)
+       │           └──▶ VocProcessingStack (Processor, Aggregator, Step Functions, Bedrock)
        │
        ├──▶ VocApiStack (API Gateway, API Lambdas, Webhooks, WAF)
        │           │
        │           └── Depends on: processingQueue, secretsArn, researchStateMachine, userPool
-       │
-       └──▶ VocBedrockAccessStack (Bedrock model access configuration)
+
+Optional stacks with NO dependency on the core chain:
+  BedrockAccessStack (Bedrock model access / Anthropic use case)
+  VocWebSearchStack (us-east-1: AgentCore web-search gateway, -c enableWebSearch=true)
 ```
