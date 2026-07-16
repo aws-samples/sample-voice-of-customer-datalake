@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, join } from 'node:path'
 import { defineConfig } from 'vite'
 
 /**
@@ -9,22 +9,57 @@ import { defineConfig } from 'vite'
  * Derived from the git HEAD commit so identical source produces identical
  * bundles — a content-neutral redeploy keeps clients cache-warm, and
  * post-#188 no-cache headers cover same-sha freshness regardless.
- * Read straight from .git (no child process: sonarjs/no-os-command-from-path
- * bans PATH-resolved commands, and fs is faster anyway). Falls back to a
- * timestamp when .git is absent (CI tarballs) or the ref is packed.
+ *
+ * Resolution order: CI-provided sha env vars, then .git (read via fs —
+ * sonarjs/no-os-command-from-path bans PATH-resolved commands, and fs is
+ * faster than spawning git), then a timestamp. Handles ref indirection,
+ * detached HEAD, packed refs (fresh clones pack refs, so CI would
+ * otherwise always hit the fallback), and worktree/submodule `.git`
+ * files (gitdir: indirection).
+ *
+ * Known trade-off: a dirty working tree stamps the clean HEAD sha
+ * (dirty detection needs `git status`, which the lint rule above bans).
+ * Deploys are expected to come from committed trees, and #188's
+ * no-cache headers keep same-sha fetches revalidating regardless.
  */
 function buildId(): string {
+  const ciSha = process.env.GITHUB_SHA ?? process.env.CODEBUILD_RESOLVED_SOURCE_VERSION
+  if (ciSha !== undefined && ciSha !== '') return ciSha.slice(0, 7)
   try {
-    const gitDir = findUp('.git')
+    const gitDir = resolveGitDir()
     if (gitDir === null) return `${Date.now()}`
     const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim()
     if (!head.startsWith('ref: ')) return head.slice(0, 7) // detached HEAD
-    const refPath = join(gitDir, head.slice(5))
-    if (!existsSync(refPath)) return `${Date.now()}` // packed ref — punt
-    return readFileSync(refPath, 'utf8').trim().slice(0, 7)
+    const sha = resolveRef(gitDir, head.slice(5))
+    return sha !== null ? sha.slice(0, 7) : `${Date.now()}`
   } catch {
     return `${Date.now()}`
   }
+}
+
+/** Locate the actual git directory: find-up for `.git`, following the
+ * `gitdir: <path>` indirection used by worktrees and submodules. */
+function resolveGitDir(): string | null {
+  const found = findUp('.git')
+  if (found === null) return null
+  if (statSync(found).isDirectory()) return found
+  const content = readFileSync(found, 'utf8').trim()
+  if (!content.startsWith('gitdir: ')) return null
+  const target = content.slice(8)
+  return isAbsolute(target) ? target : join(dirname(found), target)
+}
+
+/** Resolve a symbolic ref to a sha: loose ref file first, then packed-refs
+ * (fresh clones pack their refs — lines are `<sha> <ref>`). */
+function resolveRef(gitDir: string, ref: string): string | null {
+  const loose = join(gitDir, ref)
+  if (existsSync(loose)) return readFileSync(loose, 'utf8').trim()
+  const packedPath = join(gitDir, 'packed-refs')
+  if (!existsSync(packedPath)) return null
+  const line = readFileSync(packedPath, 'utf8')
+    .split('\n')
+    .find((entry) => !entry.startsWith('#') && !entry.startsWith('^') && entry.endsWith(` ${ref}`))
+  return line !== undefined ? line.split(' ')[0] : null
 }
 
 /** Walk up from cwd looking for a directory entry (monorepo: .git lives two levels up). */
