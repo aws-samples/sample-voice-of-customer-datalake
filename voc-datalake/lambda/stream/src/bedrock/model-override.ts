@@ -14,6 +14,9 @@
  * read this file and assert the allowlist matches.
  */
 import { GetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { z } from 'zod';
+
+const settingsRecordSchema = z.record(z.unknown());
 
 const MODEL_SETTINGS_PK = 'SETTINGS#model';
 const MODEL_SETTINGS_SK = 'config';
@@ -63,6 +66,23 @@ export function clearModelOverrideCache(): void {
   cache.expires = 0;
 }
 
+async function fetchSettings(
+  docClient: DynamoDBDocumentClient,
+  tableName: string,
+): Promise<{ item: Record<string, unknown>; ttl: number }> {
+  try {
+    const result = await docClient.send(new GetCommand({
+      TableName: tableName,
+      Key: { pk: MODEL_SETTINGS_PK, sk: MODEL_SETTINGS_SK },
+    }));
+    const parsed = settingsRecordSchema.safeParse(result.Item);
+    return { item: parsed.success ? parsed.data : {}, ttl: CACHE_TTL_MS };
+  } catch (error) {
+    console.warn('Model override lookup failed; using default:', error);
+    return { item: {}, ttl: ERROR_CACHE_TTL_MS };
+  }
+}
+
 async function loadSettings(
   docClient: DynamoDBDocumentClient,
   tableName: string,
@@ -71,20 +91,7 @@ async function loadSettings(
   if (cache.item !== null && now < cache.expires) {
     return cache.item;
   }
-  let item: Record<string, unknown> = {};
-  let ttl = CACHE_TTL_MS;
-  try {
-    const result = await docClient.send(new GetCommand({
-      TableName: tableName,
-      Key: { pk: MODEL_SETTINGS_PK, sk: MODEL_SETTINGS_SK },
-    }));
-    if (result.Item && typeof result.Item === 'object') {
-      item = result.Item as Record<string, unknown>;
-    }
-  } catch (error) {
-    console.warn('Model override lookup failed; using default:', error);
-    ttl = ERROR_CACHE_TTL_MS;
-  }
+  const { item, ttl } = await fetchSettings(docClient, tableName);
   cache.item = item;
   cache.expires = now + ttl;
   return item;
@@ -114,9 +121,9 @@ export async function resolveModelOverride(
 ): Promise<string | undefined> {
   if (!tableName) return undefined;
   const item = await loadSettings(docClient, tableName);
-  const surfaces = item.surfaces;
-  if (surfaces && typeof surfaces === 'object') {
-    const perSurface = allowlisted((surfaces as Record<string, unknown>)[surface]);
+  const surfaces = settingsRecordSchema.safeParse(item.surfaces);
+  if (surfaces.success) {
+    const perSurface = allowlisted(surfaces.data[surface]);
     if (perSurface) return perSurface;
   }
   const legacyGlobal = allowlisted(item.model_id);

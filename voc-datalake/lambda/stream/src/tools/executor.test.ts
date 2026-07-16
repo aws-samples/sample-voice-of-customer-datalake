@@ -103,7 +103,7 @@ describe('executeTool', () => {
       expect(mockExecuteUpdateDocument).toHaveBeenCalledWith(docClient, 'projects-table', 'proj-1', expect.any(Object));
       expect(result.content).toBe('Successfully updated "My PRD"');
       expect(result.documentChange?.action).toBe('updated');
-      expect(result.sources).toEqual([]);
+      expect(result.sources).toStrictEqual([]);
     });
 
     it('routes create_document to executeCreateDocument', async () => {
@@ -137,7 +137,7 @@ describe('executeTool', () => {
       expect(mockExecuteCreateProject).toHaveBeenCalledWith(docClient, 'projects-table', expect.any(Object));
       expect(result.projectChange?.action).toBe('created');
       expect(result.projectChange?.name).toBe('Booking fixes');
-      expect(result.sources).toEqual([]);
+      expect(result.sources).toStrictEqual([]);
       expect(result.documentChange).toBeUndefined();
     });
 
@@ -207,7 +207,7 @@ describe('executeTool', () => {
 
       const firstCall = mockSendSSE.mock.calls[0];
       expect(firstCall[0]).toBe(stream);
-      expect(firstCall[1]).toEqual({
+      expect(firstCall[1]).toStrictEqual({
         type: 'tool_use',
         toolName: 'search_feedback',
         toolInput: { query: 'delivery' },
@@ -262,7 +262,7 @@ describe('executeTool', () => {
         (call: unknown[]) => (call[1] as Record<string, unknown>).type === 'document_changed',
       );
       expect(docChangedCall).toBeDefined();
-      expect((docChangedCall?.[1] as Record<string, unknown>).documentChange).toEqual(docChange);
+      expect((docChangedCall?.[1] as Record<string, unknown>).documentChange).toStrictEqual(docChange);
     });
 
     it('does not send document_changed SSE event for search_feedback', async () => {
@@ -297,7 +297,7 @@ describe('executeTool', () => {
         (call: unknown[]) => (call[1] as Record<string, unknown>).type === 'project_changed',
       );
       expect(projectChangedCall).toBeDefined();
-      expect((projectChangedCall?.[1] as Record<string, unknown>).projectChange).toEqual(projectChange);
+      expect((projectChangedCall?.[1] as Record<string, unknown>).projectChange).toStrictEqual(projectChange);
     });
   });
 
@@ -363,7 +363,7 @@ describe('executeTool', () => {
         docClient, feedbackTable, {}, stream, 'projects-table', 'proj-1',
       );
 
-      expect(result.documentChange).toEqual(docChange);
+      expect(result.documentChange).toStrictEqual(docChange);
     });
 
     it('returns projectChange for create_project', async () => {
@@ -378,7 +378,7 @@ describe('executeTool', () => {
         docClient, feedbackTable, {}, stream, 'projects-table', undefined,
       );
 
-      expect(result.projectChange).toEqual(projectChange);
+      expect(result.projectChange).toStrictEqual(projectChange);
     });
   });
 
@@ -396,10 +396,10 @@ describe('executeTool', () => {
       );
 
       expect(mockExecuteWebSearch).toHaveBeenCalledWith({ query: 'competitor news' });
-      expect(result.webSources).toEqual(webSources);
+      expect(result.webSources).toStrictEqual(webSources);
       // Web results must NOT masquerade as feedback sources (the frontend
       // renders sources as feedback cards, web sources as cited links).
-      expect(result.sources).toEqual([]);
+      expect(result.sources).toStrictEqual([]);
       expect(result.content).toBe('Found 1 web results...');
     });
 

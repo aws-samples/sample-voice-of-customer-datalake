@@ -84,7 +84,7 @@ describe('attachmentsToContentBlocks', () => {
   });
 
   it('returns empty array for empty input', () => {
-    expect(attachmentsToContentBlocks([])).toEqual([]);
+    expect(attachmentsToContentBlocks([])).toStrictEqual([]);
   });
 
   it('throws ValidationError when attachment exceeds 5MB', () => {

@@ -35,15 +35,11 @@ describe('attachmentSchema', () => {
   });
 
   it('rejects unsupported media types', () => {
-    const result = attachmentSchema.safeParse({
+    expect(() => attachmentSchema.parse({
       name: 'file.txt',
       media_type: 'text/plain',
       data: 'abc',
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0].message).toContain('Unsupported file type');
-    }
+    })).toThrow(/Unsupported file type/);
   });
 
   it('rejects empty name', () => {
@@ -72,30 +68,26 @@ describe('attachmentSchema', () => {
 
 describe('chatRequestSchema', () => {
   it('accepts a minimal VoC chat request', () => {
-    const result = chatRequestSchema.safeParse({ message: 'hello' });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.message).toBe('hello');
-      expect(result.data.attachments).toBeUndefined();
-    }
+    // parse (not safeParse): an invalid payload throws and fails the test,
+    // so the data assertions below need no conditional guard.
+    const data = chatRequestSchema.parse({ message: 'hello' });
+    expect(data.message).toBe('hello');
+    expect(data.attachments).toBeUndefined();
   });
 
   it('accepts a full VoC chat request', () => {
-    const result = chatRequestSchema.safeParse({
+    const data = chatRequestSchema.parse({
       message: 'What do customers think?',
       context: 'Source: webscraper',
       days: 30,
       response_language: 'es',
     });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.days).toBe(30);
-      expect(result.data.response_language).toBe('es');
-    }
+    expect(data.days).toBe(30);
+    expect(data.response_language).toBe('es');
   });
 
   it('accepts a project chat request with attachments', () => {
-    const result = chatRequestSchema.safeParse({
+    const data = chatRequestSchema.parse({
       message: 'Analyze this screenshot',
       project_id: 'proj-123',
       selected_personas: ['persona-1'],
@@ -104,11 +96,8 @@ describe('chatRequestSchema', () => {
         { name: 'screen.png', media_type: 'image/png', data: 'iVBORw0KGgo=' },
       ],
     });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.attachments).toHaveLength(1);
-      expect(result.data.project_id).toBe('proj-123');
-    }
+    expect(data.attachments).toHaveLength(1);
+    expect(data.project_id).toBe('proj-123');
   });
 
   it('rejects empty message', () => {
@@ -179,9 +168,8 @@ describe('chatRequestSchema date_basis (issue #150)', () => {
   });
 
   it('defaults to absent without erroring', () => {
-    const result = chatRequestSchema.safeParse({ message: 'hi' });
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data.date_basis).toBeUndefined();
+    const data = chatRequestSchema.parse({ message: 'hi' });
+    expect(data.date_basis).toBeUndefined();
   });
 
   it('rejects values outside the allowlist', () => {

@@ -222,9 +222,9 @@ export async function buildVocChatContext(
   ]);
 
   const sentimentMap: Record<string, number> = {};
-  SENTIMENT_LABELS.forEach((label, i) => {
+  for (const [i, label] of SENTIMENT_LABELS.entries()) {
     sentimentMap[label] = sentimentCounts[i];
-  });
+  }
 
   const topCategories = await fetchCategoryCounts(docClient, aggregatesTable, days);
 

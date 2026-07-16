@@ -29,7 +29,7 @@ describe('executeCreateProject', () => {
     const { client, puts } = createMockDocClient();
     const r = await executeCreateProject(client, 'projects', {});
     expect(r.projectChange.summary).toContain('invalid input');
-    expect(puts.length).toBe(0); // nothing written
+    expect(puts).toHaveLength(0); // nothing written
   });
 
   it('creates a project META item with a proj_ id', async () => {

@@ -191,7 +191,7 @@ describe('executeSearchFeedback', () => {
       { days: 7 },
     );
 
-    expect(result.items.map((i) => i.urgency)).toEqual(['high', 'medium', 'low']);
+    expect(result.items.map((i) => i.urgency)).toStrictEqual(['high', 'medium', 'low']);
   });
 
   it('aggregate mode returns distribution over ALL matches, not a capped list', async () => {
@@ -248,7 +248,7 @@ describe('executeSearchFeedback', () => {
     );
 
     // Both pages collected (10 total), not just page 1's 5.
-    expect(result.items.length).toBe(10);
+    expect(result.items).toHaveLength(10);
   });
 
   it('parses items whose numerics are stored as DynamoDB strings (regression: every search returned 0)', async () => {
@@ -389,7 +389,7 @@ describe('date basis (issue #150)', () => {
       docClient, 'test-feedback-table', {}, { days: 7 },
     );
 
-    expect(result.items.map((i) => i.feedback_id)).toEqual([
+    expect(result.items.map((i) => i.feedback_id)).toStrictEqual([
       'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
     ]);
   });

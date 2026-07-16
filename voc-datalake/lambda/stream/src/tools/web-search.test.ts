@@ -89,7 +89,7 @@ describe('executeWebSearch', () => {
   it('skips empty queries without a network call', async () => {
     const result = await executeWebSearch({ query: '   ' });
     expect(result.content).toContain('empty query');
-    expect(result.webSources).toEqual([]);
+    expect(result.webSources).toStrictEqual([]);
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -108,9 +108,9 @@ describe('executeWebSearch', () => {
     const body = sentBody();
     expect(body.method).toBe('tools/call');
     expect(body.params.name).toBe(TOOL_NAME);
-    expect(body.params.arguments).toEqual({ query: 'python 3.13 release', maxResults: 5 });
+    expect(body.params.arguments).toStrictEqual({ query: 'python 3.13 release', maxResults: 5 });
 
-    expect(result.webSources).toEqual([
+    expect(result.webSources).toStrictEqual([
       {
         title: 'Python 3.13 Release Highlights',
         url: 'https://example.com/python/releases/3.13',
@@ -146,7 +146,7 @@ describe('executeWebSearch', () => {
   it('reports zero results without failing', async () => {
     mockFetch.mockResolvedValueOnce(jsonResponse(toolCallBody([])));
     const result = await executeWebSearch({ query: 'query' });
-    expect(result.webSources).toEqual([]);
+    expect(result.webSources).toStrictEqual([]);
     expect(result.content).toContain('No web results');
   });
 

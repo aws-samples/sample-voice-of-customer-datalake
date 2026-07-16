@@ -65,7 +65,7 @@ export async function executeCreateProject(
   const input = parsed.data;
   const now = new Date().toISOString();
   // Match projects.py id format: proj_YYYYMMDDHHMMSS
-  const projectId = `proj_${now.replace(/[-:T.Z]/g, '').slice(0, 14)}`;
+  const projectId = `proj_${now.replaceAll(/[-:T.Z]/g, '').slice(0, 14)}`;
 
   // 1) Project META — same shape as projects.py::create_project so it lists normally.
   await docClient.send(

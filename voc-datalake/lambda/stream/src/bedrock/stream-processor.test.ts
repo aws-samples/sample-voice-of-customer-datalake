@@ -12,7 +12,7 @@ function mockStream() {
 describe('createStreamState', () => {
   it('returns a fresh state with empty defaults', () => {
     const state = createStreamState();
-    expect(state).toEqual({
+    expect(state).toStrictEqual({
       stopReason: null,
       toolUseBlocks: [],
       currentToolUseId: null,
@@ -110,19 +110,19 @@ describe('processStreamEvent', () => {
         state,
         stream,
       );
-      expect(state.toolInputChunks).toEqual(['{"query":', '"delivery"}']);
+      expect(state.toolInputChunks).toStrictEqual(['{"query":', '"delivery"}']);
 
       // 3. Content block stop — finalizes tool use block
       processStreamEvent({ contentBlockStop: { contentBlockIndex: 0 } }, state, stream);
 
       expect(state.toolUseBlocks).toHaveLength(1);
-      expect(state.toolUseBlocks[0]).toEqual({
+      expect(state.toolUseBlocks[0]).toStrictEqual({
         toolUseId: 'tool-1',
         name: 'search_feedback',
         input: { query: 'delivery' },
       });
       expect(state.currentToolUseId).toBeNull();
-      expect(state.toolInputChunks).toEqual([]);
+      expect(state.toolInputChunks).toStrictEqual([]);
     });
 
     it('handles invalid JSON in tool input gracefully', () => {
@@ -146,7 +146,7 @@ describe('processStreamEvent', () => {
       );
       processStreamEvent({ contentBlockStop: { contentBlockIndex: 0 } }, state, stream);
 
-      expect(state.toolUseBlocks[0].input).toEqual({});
+      expect(state.toolUseBlocks[0].input).toStrictEqual({});
     });
 
     it('handles empty tool input', () => {
@@ -165,7 +165,7 @@ describe('processStreamEvent', () => {
       );
       processStreamEvent({ contentBlockStop: { contentBlockIndex: 0 } }, state, stream);
 
-      expect(state.toolUseBlocks[0].input).toEqual({});
+      expect(state.toolUseBlocks[0].input).toStrictEqual({});
     });
   });
 
