@@ -11,6 +11,7 @@ import i18n from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import HttpBackend from 'i18next-http-backend'
 import { initReactI18next } from 'react-i18next'
+import { LOCALE_LOAD_PATH } from './loadPath'
 
 export const supportedLanguages = ['en', 'es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko'] as const
 export type SupportedLanguage = (typeof supportedLanguages)[number]
@@ -49,7 +50,9 @@ void i18n
     defaultNS,
     ns: [...namespaces],
 
-    backend: { loadPath: '/locales/{{lng}}/{{ns}}.json' },
+    // Version-stamped path — see i18n/loadPath.ts for the cache-busting
+    // rationale (issue #191).
+    backend: { loadPath: LOCALE_LOAD_PATH },
 
     detection: {
       // 'navigator' is intentionally omitted so a non-English browser doesn't

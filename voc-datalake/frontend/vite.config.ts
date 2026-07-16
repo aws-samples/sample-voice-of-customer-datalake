@@ -4,7 +4,14 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  define: { global: 'globalThis' },
+  define: {
+    global: 'globalThis',
+    // Build id stamped into runtime-fetched URLs (/config.json, locale
+    // JSONs) so each new bundle requests URLs no stale browser-cache entry
+    // can match (issue #191). The JS bundle itself is hash-busted, so the
+    // stamp always travels with fresh code.
+    APP_VERSION: JSON.stringify(`${Date.now()}`),
+  },
   build: {
     rollupOptions: {
       output: {

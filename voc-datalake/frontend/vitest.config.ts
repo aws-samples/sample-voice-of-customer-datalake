@@ -4,6 +4,11 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    // Mirror vite.config.ts's build-id stamp (issue #191) — a stable value
+    // in tests so assertions on versioned URLs are deterministic.
+    APP_VERSION: JSON.stringify('test'),
+  },
   test: {
     globals: true,
     environment: 'jsdom',
