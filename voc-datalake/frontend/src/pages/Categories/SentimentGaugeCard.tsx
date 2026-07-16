@@ -20,10 +20,10 @@ export function SentimentGauge({
 }: SentimentGaugeProps) {
   return (
     <div className="card">
-      <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Overall Sentiment</h2>
+      <h2 className="text-base sm:text-lg font-semibold mb-2">Overall Sentiment</h2>
       <div className="flex items-center justify-center">
         <div className="relative w-full max-w-[280px]">
-          <ResponsiveContainer width="100%" height={160} minWidth={0} className="sm:!h-[200px]">
+          <ResponsiveContainer width="100%" height={105} minWidth={0}>
             <PieChart>
               <Pie
                 data={sentimentData.map(d => ({ ...d, fill: d.color }))}
@@ -31,8 +31,8 @@ export function SentimentGauge({
                 cy="100%"
                 startAngle={180}
                 endAngle={0}
-                innerRadius="55%"
-                outerRadius="85%"
+                innerRadius={56}
+                outerRadius={88}
                 paddingAngle={2}
                 dataKey="value"
               >
@@ -46,9 +46,9 @@ export function SentimentGauge({
               />
             </PieChart>
           </ResponsiveContainer>
-          <div className="absolute inset-0 flex items-end justify-center pb-2 sm:pb-4">
+          <div className="absolute inset-0 flex items-end justify-center pb-1">
             <div className="text-center">
-              <p className={clsx('text-2xl sm:text-3xl font-bold', getSentimentScoreColorClass(avgSentiment))}>
+              <p className={clsx('text-2xl font-bold leading-none', getSentimentScoreColorClass(avgSentiment))}>
                 {avgSentiment > 0 ? '+' : ''}{avgSentiment.toFixed(0)}
               </p>
               <p className="text-xs text-gray-500">Net Sentiment</p>
@@ -56,7 +56,7 @@ export function SentimentGauge({
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mt-3 sm:mt-4">
+      <div className="grid grid-cols-2 gap-1.5 mt-2 max-w-[280px] mx-auto">
         {sentimentData.map(s => {
           const filterValue = s.name === 'positive' || s.name === 'negative' || s.name === 'neutral' || s.name === 'mixed' ? s.name : 'all'
           return (
@@ -64,7 +64,7 @@ export function SentimentGauge({
               key={s.name}
               onClick={() => onSentimentFilterChange(sentimentFilter === s.name ? 'all' : filterValue)}
               className={clsx(
-                'flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm transition-all active:scale-95',
+                'flex items-center justify-center gap-1.5 px-2 py-1 rounded-full text-xs transition-all active:scale-95',
                 sentimentFilter === s.name ? 'bg-gray-900 text-white' : 'bg-gray-100 hover:bg-gray-200'
               )}
             >
