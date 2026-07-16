@@ -178,7 +178,7 @@ The platform consists of 4 core stacks plus 2 optional ones:
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
 | `BedrockAccessStack` (optional) | Bedrock model access / Anthropic use case submission — created only when `anthropicUseCase` is set in `cdk.context.json` (see the conditional in `bin/voc-datalake.ts`) | None |
-| `VocWebSearchStack` | AgentCore Gateway for public web search — deployed by default, opt out via `enableWebSearch: false`; always deploys to us-east-1 (the connector only exists there) | None |
+| `VocWebSearchStack` (default-on, opt-out) | AgentCore Gateway for public web search — deployed by default, opt out via `enableWebSearch: false`; always deploys to us-east-1 (the connector only exists there). **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
 
 ### Deploy All Stacks
 

@@ -45,12 +45,10 @@ const env = {
 // Stack 0a: VocWebSearchStack (default-on, opt-out)
 // AgentCore Gateway for the AWS-managed web-search connector.
 // ============================================
-// Deployed BY DEFAULT (issue #205): the gateway has no standing cost and
-// searches are opt-in per request in both UIs ($7/1k queries) — chat's
-// toggle and the research wizard's checkbox stay off until a user turns
-// them on. Opt out with `"enableWebSearch": false` in cdk.context.json (or
-// `-c enableWebSearch=false`) — needed e.g. when the us-east-1 bootstrap
-// required for cross-region references is unavailable.
+// Flag semantics live in lib/utils/web-search-default.ts (single source of
+// truth). Summary: deploys by default; `enableWebSearch: false` opts out;
+// unrecognized values throw. Per-request search stays opt-in in both UIs
+// ($7/1k queries; the gateway itself has no standing cost).
 //
 // The connector only exists in us-east-1, so the stack always deploys
 // there. When the app itself lives in another region this additionally
@@ -67,6 +65,16 @@ if (deployWebSearch) {
     description: 'VoC Data Lake - Web Search (AgentCore Gateway, web-search connector) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
   });
   tagStack(webSearchStack, 'WebSearch');
+  if (webSearchCrossRegion) {
+    // Upgrade hint (issue #205): web search now deploys by default, and a
+    // non-us-east-1 app needs a us-east-1 bootstrap for the cross-region
+    // references. Say so at synth, before `cdk bootstrap`'s error becomes
+    // the first (and cryptic) signal.
+    cdk.Annotations.of(webSearchStack).addInfo(
+      `Web search deploys by default and requires a us-east-1 bootstrap when the app region is ${env.region} ` +
+      '(cdk bootstrap aws://ACCOUNT/us-east-1). Opt out with -c enableWebSearch=false.',
+    );
+  }
 }
 
 // ============================================
