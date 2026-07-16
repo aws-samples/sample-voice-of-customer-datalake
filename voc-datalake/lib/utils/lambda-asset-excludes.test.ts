@@ -57,7 +57,7 @@ function forEachCallSite(needle: string, visit: (file: string, options: string) 
 
 describe('PY_LAMBDA_ASSET_EXCLUDES', () => {
   it('keeps the load-bearing noise patterns', () => {
-    for (const pattern of ['layers/**', 'stream/**', '**/test/**', '**/test_*.py', '**/conftest.py', '**/__pycache__']) {
+    for (const pattern of ['layers/**', 'stream/**', 'custom_resources/**', '**/test/**', '**/test_*.py', '**/conftest.py', '**/__pycache__']) {
       expect(PY_LAMBDA_ASSET_EXCLUDES).toContain(pattern);
     }
   });

@@ -9,7 +9,8 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { randomInt } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Construct } from 'constructs';
 import { uniqueName } from '../utils/naming';
 import { NagSuppressions } from 'cdk-nag';
@@ -489,85 +490,83 @@ export class VocCoreStack extends cdk.Stack {
     // ============================================
     // INITIAL ADMIN USER (for greenfield deployments)
     // ============================================
-    const initialAdminUsername = 'admin';
-    const initialAdminEmail = 'admin@local.host';
-    
-    // Generate random password with guaranteed uppercase, lowercase, digit, and special char
-    const r = (s: string) => s[randomInt(0, s.length)];
-    const required = [r('ABCDEFGHJKLMNPQRSTUVWXYZ'), r('abcdefghjkmnpqrstuvwxyz'), r('123456789'), r('!@#$%^&*')];
-    const pool = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789!@#$%^&*';
-    const rest = Array.from({ length: 12 }, () => r(pool));
-    const all = [...required, ...rest].sort(() => randomInt(0, 2) - 1);
-    const initialAdminPassword = all.join('');
+    // Idempotent bootstrap (issue #196). The handler generates the initial
+    // password AT RUNTIME, and only when it actually creates the admin:
+    //  - first deployment: create admin -> set temporary password -> add to
+    //    admins group -> the real password surfaces in InitialAdminPassword
+    //    (printing it is BY DESIGN: it is how operators find their first
+    //    login, and first use forces a change).
+    //  - any redeployment / admin already exists: strict no-op — no user
+    //    creation, no password reset, no fresh password minted. All resource
+    //    properties are deterministic, so the template no longer churns.
+    const adminBootstrapLambda = new lambda.Function(this, 'AdminBootstrapLambda', {
+      functionName: uniqueName('voc-admin-bootstrap'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'index.handler',
+      // Real, unit-tested file (lambda/custom_resources/test), inlined so a
+      // ~3KB handler needs no asset bundling.
+      code: lambda.Code.fromInline(
+        fs.readFileSync(path.join(__dirname, '../../lambda/custom_resources/admin_bootstrap.py'), 'utf8'),
+      ),
+      timeout: cdk.Duration.minutes(1),
+      description: 'Idempotent initial-admin bootstrap (create once, never reset)',
+      logGroup: new logs.LogGroup(this, 'AdminBootstrapLambdaLogs', {
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+    adminBootstrapLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'cognito-idp:AdminGetUser',
+        'cognito-idp:AdminCreateUser',
+        'cognito-idp:AdminSetUserPassword',
+        'cognito-idp:AdminAddUserToGroup',
+        'cognito-idp:AdminListGroupsForUser',
+      ],
+      resources: [this.userPool.userPoolArn],
+    }));
 
-    // Create the admin user
-    const createAdminUser = new cr.AwsCustomResource(this, 'CreateAdminUser', {
-      onCreate: {
-        service: 'CognitoIdentityServiceProvider',
-        action: 'adminCreateUser',
-        parameters: {
-          UserPoolId: this.userPool.userPoolId,
-          Username: initialAdminUsername,
-          UserAttributes: [
-            { Name: 'email', Value: initialAdminEmail },
-            { Name: 'email_verified', Value: 'true' },
-            { Name: 'name', Value: 'Admin' },
-          ],
-          MessageAction: 'SUPPRESS',
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-user')),
-      },
-      policy: cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: ['cognito-idp:AdminCreateUser'],
-          resources: [this.userPool.userPoolArn],
-        }),
-      ]),
+    const adminBootstrapProvider = new cr.Provider(this, 'AdminBootstrapProvider', {
+      onEventHandler: adminBootstrapLambda,
+      // MUST stay FATAL: at INFO the provider framework logs the full
+      // custom resource response — including Data.Password — to CloudWatch.
+      // FATAL is the aws-cdk-lib default today; pinning it guards against a
+      // default change and against anyone raising it while debugging.
+      frameworkLambdaLoggingLevel: lambda.ApplicationLogLevel.FATAL,
+      logGroup: new logs.LogGroup(this, 'AdminBootstrapProviderLogs', {
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
     });
 
-    // Set temporary password for admin user (must change on first login)
-    const setAdminPassword = new cr.AwsCustomResource(this, 'SetAdminPassword', {
-      onCreate: {
-        service: 'CognitoIdentityServiceProvider',
-        action: 'adminSetUserPassword',
-        parameters: {
-          UserPoolId: this.userPool.userPoolId,
-          Username: initialAdminUsername,
-          Password: initialAdminPassword,
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-password')),
+    const adminBootstrap = new cdk.CustomResource(this, 'AdminBootstrap', {
+      serviceToken: adminBootstrapProvider.serviceToken,
+      resourceType: 'Custom::AdminBootstrap',
+      properties: {
+        UserPoolId: this.userPool.userPoolId,
+        Username: 'admin',
+        Email: 'admin@local.host',
+        GroupName: 'admins',
       },
-      policy: cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: ['cognito-idp:AdminSetUserPassword'],
-          resources: [this.userPool.userPoolArn],
-        }),
-      ]),
     });
-    setAdminPassword.node.addDependency(createAdminUser);
+    adminBootstrap.node.addDependency(adminGroup);
 
-    // Add admin user to admins group
-    const addAdminToGroup = new cr.AwsCustomResource(this, 'AddAdminToGroup', {
-      onCreate: {
-        service: 'CognitoIdentityServiceProvider',
-        action: 'adminAddUserToGroup',
-        parameters: {
-          UserPoolId: this.userPool.userPoolId,
-          Username: initialAdminUsername,
-          GroupName: 'admins',
+    NagSuppressions.addResourceSuppressions(adminBootstrapLambda, lambdaBasicExecutionRoleSuppressions, true);
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/AdminBootstrapProvider/framework-onEvent`,
+      [
+        ...cdkCustomResourceSuppressions,
+        ...lambdaBasicExecutionRoleSuppressions,
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to AdminBootstrapLambda only (same pattern as ModelAgreementLambda).',
+          appliesTo: [{ regex: '/Resource::<.*AdminBootstrapLambda.*\\.Arn>:\\*/' }],
         },
-        physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-group')),
-      },
-      policy: cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: ['cognito-idp:AdminAddUserToGroup'],
-          resources: [this.userPool.userPoolArn],
-        }),
-      ]),
-    });
-    addAdminToGroup.node.addDependency(setAdminPassword);
-    addAdminToGroup.node.addDependency(adminGroup);
-    addAdminToGroup.node.addDependency(createAdminUser);
+      ],
+      true
+    );
 
     // ============================================
     // COGNITO IDENTITY POOL (for AWS IAM authentication)
@@ -681,8 +680,10 @@ export class VocCoreStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CognitoRegion', { value: this.region, description: 'AWS Region for Cognito' });
     new cdk.CfnOutput(this, 'IdentityPoolId', { value: this.identityPool.ref, description: 'Cognito Identity Pool ID for AWS IAM auth' });
     new cdk.CfnOutput(this, 'InitialAdminPassword', { 
-      value: initialAdminPassword, 
-      description: 'Initial admin user password (username: admin)'
+      value: adminBootstrap.getAttString('Password'), 
+      // ASCII only: CloudFormation mangles non-ASCII in output descriptions
+      // ('?'), which makes every subsequent cdk diff dirty.
+      description: 'Initial admin password (username: admin) - real only on the deployment that created the admin; forced to change at first login'
     });
 
     // Acknowledged wildcard-key-policy warning (issue #189): the synthesized

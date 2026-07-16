@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 import { VocCoreStack } from './core-stack';
 
 function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
@@ -22,6 +22,44 @@ function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
   });
   return Template.fromStack(stack);
 }
+
+describe('VocCoreStack admin bootstrap (issue #196)', () => {
+  it('synthesizes deterministically — no per-synth password churn', () => {
+    // The old code minted a random password at synth time, so every synth
+    // produced a different template (and every deploy no-op-updated the
+    // stack). Two independent synths must now be byte-identical.
+    expect(synthCoreTemplate().toJSON()).toEqual(synthCoreTemplate().toJSON());
+  });
+
+  it('embeds no password in the template — generation happens at runtime', () => {
+    const template = synthCoreTemplate();
+
+    const bootstraps = template.findResources('Custom::AdminBootstrap');
+    const props = Object.values(bootstraps).map((r) => r.Properties ?? {});
+    expect(props).toHaveLength(1);
+    expect(props[0]).toMatchObject({ Username: 'admin', GroupName: 'admins' });
+    expect(props[0]).not.toHaveProperty('Password');
+  });
+
+  it('wires InitialAdminPassword to the runtime attribute of the bootstrap resource', () => {
+    const template = synthCoreTemplate();
+    const output = template.findOutputs('InitialAdminPassword').InitialAdminPassword;
+    const bootstrapLogicalIds = Object.keys(template.findResources('Custom::AdminBootstrap'));
+
+    expect(output.Value).toEqual({ 'Fn::GetAtt': [bootstrapLogicalIds[0], 'Password'] });
+  });
+
+  it('keeps the provider framework logging at FATAL so Data.Password never reaches CloudWatch', () => {
+    // At INFO the CDK provider framework logs the full custom resource
+    // response — including the password. FATAL is today's aws-cdk-lib
+    // default, but this pins the guarantee against dependency bumps and
+    // debugging sessions alike.
+    synthCoreTemplate().hasResourceProperties('AWS::Lambda::Function', {
+      Description: Match.stringLikeRegexp('provider framework - onEvent .*AdminBootstrapProvider'),
+      LoggingConfig: Match.objectLike({ ApplicationLogLevel: 'FATAL' }),
+    });
+  });
+});
 
 describe('VocCoreStack UserPool UsernameConfiguration (issue #184)', () => {
   it('sets case-insensitive sign-in by default (greenfield)', () => {
