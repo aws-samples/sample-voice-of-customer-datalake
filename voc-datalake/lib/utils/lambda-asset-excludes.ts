@@ -36,6 +36,9 @@ export const PY_LAMBDA_ASSET_EXCLUDES = [
   '__pycache__/',
   '*.pyc',
   '.DS_Store',
+  // Never hash NOR ship dev secrets, at any depth (staging excludes also
+  // gate what the bundling container sees as /asset-input).
+  '.env*',
   // pytest suites (api/test, shared/test, jobs/*/test) never ship
   'test/',
   'test_*.py',
@@ -61,6 +64,8 @@ export function rootPluginAssetExcludes(pluginId: string, allPluginIds: string[]
     '__pycache__/',
     '*.pyc',
     '.DS_Store',
+    // Never hash NOR ship dev secrets, at any depth.
+    '.env*',
     'test/',
     'conftest.py',
     'test_*.py',
@@ -76,7 +81,6 @@ export function rootPluginAssetExcludes(pluginId: string, allPluginIds: string[]
     '/.git/',
     '/.vscode/',
     '/.idea/',
-    '/.env*',
     '/node_modules/',
     '/cdk.out/',
     '/frontend/',

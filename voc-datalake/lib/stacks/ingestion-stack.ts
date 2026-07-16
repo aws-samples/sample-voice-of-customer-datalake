@@ -10,6 +10,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as fs from 'fs';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import {
@@ -99,9 +100,12 @@ export class VocIngestionStack extends cdk.Stack {
     const dependenciesLayer = this.createDependenciesLayer();
 
     // Create Lambda functions for each enabled plugin with ingestor.
-    // allPluginIds feeds the per-plugin sibling excludes: every plugin dir
-    // on disk (enabled or not) is hash-noise for the OTHER ingestors.
-    const allPluginIds = allPlugins.map((p) => p.id);
+    // Sibling excludes derive from DISK, not the loader: a plugin dir the
+    // loader skips (malformed manifest, fresh scaffold) must still be
+    // excluded from every other ingestor's hash or it churns them all.
+    const allPluginIds = fs.readdirSync(pluginsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
+      .map((entry) => entry.name);
     const ingestorPlugins = getPluginsWithIngestor(enabledPlugins);
     for (const plugin of ingestorPlugins) {
       this.createIngestorLambda(

@@ -22,7 +22,12 @@ import { IgnoreStrategy } from 'aws-cdk-lib';
 import { PY_LAMBDA_ASSET_EXCLUDES, rootPluginAssetExcludes } from './lambda-asset-excludes';
 
 const stacksDir = path.join(process.cwd(), 'lib', 'stacks');
-const PLUGIN_IDS = ['app_reviews_android', 'app_reviews_ios', 's3_import', 'synthetic_reviews', 'webscraper'];
+// Derived from disk exactly as ingestion-stack derives its sibling excludes —
+// a hardcoded list would silently stop covering a sixth plugin.
+const PLUGIN_IDS = fs.readdirSync(path.join(process.cwd(), 'plugins'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
+  .map((entry) => entry.name)
+  .sort();
 
 function stackSources(): Array<{ file: string; source: string }> {
   return fs.readdirSync(stacksDir)
@@ -103,10 +108,25 @@ describe('asset staging sites use the shared lists in GIT ignore mode', () => {
 describe('root staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
   const ignores = ignoresWith(rootPluginAssetExcludes('webscraper', PLUGIN_IDS));
 
+  it('derives the plugin id set from disk (anti-vacuous)', () => {
+    // The known plugins must be present; a sixth is covered automatically.
+    for (const id of ['app_reviews_android', 'app_reviews_ios', 's3_import', 'synthetic_reviews', 'webscraper']) {
+      expect(PLUGIN_IDS).toContain(id);
+    }
+  });
+
   it('prunes cdk.out INCLUDING its dot-children — the issue #203 churn loop', () => {
     // The exact file class that fed every deploy's hash back into the next
     // synth: CDK's own asset-publishing cache.
     expect(ignores('cdk.out/.cache/0ce2e32d12eb43f7.zip')).toBe(true);
+  });
+
+  it('never hashes nor ships dev secrets, at any depth', () => {
+    // Staging excludes also gate the bundling container's /asset-input, so
+    // this keeps a stray .env out of the DEPLOYED bundle, not just the hash.
+    expect(ignores('.env.local')).toBe(true);
+    expect(ignores('plugins/webscraper/.env')).toBe(true);
+    expect(ignores('lambda/shared/.env.production')).toBe(true);
   });
 
   it('prunes repo metadata and tool dirs with their dot-children', () => {
@@ -162,7 +182,7 @@ describe('lambda staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
   it('prunes layer build output and the stream package, dot-children included', () => {
     expect(ignores('layers/processing-deps/python/pydantic/main.py')).toBe(true);
     expect(ignores('stream/node_modules/.bin/vitest')).toBe(true);
-    expect(ignores('stream/.env')).toBe(true);
+    expect(ignores('shared/.env')).toBe(true);
   });
 
   it('keeps handler payloads — including the prompt JSONs the bundles ship', () => {
