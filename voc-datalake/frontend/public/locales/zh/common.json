@@ -19,6 +19,8 @@
   "cancel": "取消",
   "configureBrand": "配置品牌",
   "dismiss": "关闭",
+  "exportCsvShort": "CSV",
+  "exportCsvTooltip": "导出为CSV",
   "exportPdf": "导出 PDF",
   "exportPdfShort": "PDF",
   "exportPdfTooltip": "导出为 PDF",

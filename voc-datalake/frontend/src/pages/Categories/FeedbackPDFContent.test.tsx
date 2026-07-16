@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import FeedbackPDFContent, { type FeedbackPDFProps } from './FeedbackPDFContent'
+import { FeedbackTableSection } from './FeedbackPDFContent'
 import type { FeedbackItem } from '../../api/types'
 
 function makeItem(overrides: Partial<FeedbackItem> = {}): FeedbackItem {
@@ -24,35 +24,44 @@ function makeItem(overrides: Partial<FeedbackItem> = {}): FeedbackItem {
   }
 }
 
-describe('FeedbackPDFContent', () => {
+describe('FeedbackTableSection', () => {
   it('renders the feedback original text', () => {
-    render(<FeedbackPDFContent items={[makeItem()]} timeRange="Last 7 days" />)
+    render(<FeedbackTableSection items={[makeItem()]} />)
     expect(screen.getByText('The checkout flow is broken')).toBeInTheDocument()
   })
 
+  it('renders nothing when there are no items', () => {
+    const { container } = render(<FeedbackTableSection items={[]} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('shows the item count in the section heading', () => {
+    render(<FeedbackTableSection items={[makeItem({ feedback_id: 'a' }), makeItem({ feedback_id: 'b' })]} />)
+    expect(screen.getByText(/Feedback Items \(2\)/)).toBeInTheDocument()
+  })
+
   it('humanizes the source platform (underscores to spaces)', () => {
-    render(<FeedbackPDFContent items={[makeItem({ source_platform: 'app_store' })]} timeRange="Last 7 days" />)
+    render(<FeedbackTableSection items={[makeItem({ source_platform: 'app_store' })]} />)
     expect(screen.getByText('app store')).toBeInTheDocument()
   })
 
   it('shows rating as N/5 when present', () => {
-    render(<FeedbackPDFContent items={[makeItem({ rating: 2 })]} timeRange="Last 7 days" />)
+    render(<FeedbackTableSection items={[makeItem({ rating: 2 })]} />)
     expect(screen.getByText('2/5')).toBeInTheDocument()
   })
 
   it('renders an em dash when rating is absent', () => {
-    render(<FeedbackPDFContent items={[makeItem({ rating: undefined })]} timeRange="Last 7 days" />)
+    render(<FeedbackTableSection items={[makeItem({ rating: undefined })]} />)
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
 
   it('renders multiple feedback rows', () => {
     render(
-      <FeedbackPDFContent
+      <FeedbackTableSection
         items={[
           makeItem({ feedback_id: 'a', original_text: 'First complaint' }),
           makeItem({ feedback_id: 'b', original_text: 'Second complaint' }),
         ]}
-        timeRange="Last 7 days"
       />
     )
     expect(screen.getByText('First complaint')).toBeInTheDocument()
@@ -69,7 +78,7 @@ describe('FeedbackPDFContent', () => {
       sentiment_score: '0.9' as unknown as number,
     })
     expect(() =>
-      render(<FeedbackPDFContent items={[stringScoreItem]} timeRange="Last 7 days" />)
+      render(<FeedbackTableSection items={[stringScoreItem]} />)
     ).not.toThrow()
     expect(screen.getByText('Manual import review')).toBeInTheDocument()
     // Coerced and formatted to 2 decimals rather than crashing.
@@ -82,7 +91,7 @@ describe('FeedbackPDFContent', () => {
       sentiment_score: 'not-a-number' as unknown as number,
     })
     expect(() =>
-      render(<FeedbackPDFContent items={[badScoreItem]} timeRange="Last 7 days" />)
+      render(<FeedbackTableSection items={[badScoreItem]} />)
     ).not.toThrow()
     expect(screen.getByText(/negative \(0\.00\)/)).toBeInTheDocument()
   })

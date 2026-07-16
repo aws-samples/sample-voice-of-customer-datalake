@@ -65,7 +65,6 @@ const defaultProps = {
   sentimentFilter: 'all' as SentimentFilter,
   ratingFilter: { value: 0, direction: 'up' } as RatingFilter,
   onExport: vi.fn(),
-  onExportPdf: vi.fn(),
   totalCount: 2,
   isPartialWindow: false,
   hasMore: false,
@@ -153,17 +152,6 @@ describe('FeedbackResults', () => {
     })
   })
 
-  describe('PDF export (ported from Feedback page, issue #198)', () => {
-    it('calls onExportPdf when the PDF button is clicked', async () => {
-      const user = userEvent.setup()
-      const onExportPdf = vi.fn()
-      renderWithRouter(<FeedbackResults {...defaultProps} onExportPdf={onExportPdf} />)
-
-      await user.click(screen.getByTitle('Export as PDF'))
-      expect(onExportPdf).toHaveBeenCalledOnce()
-    })
-  })
-
   describe('view mode toggle', () => {
     it('renders grid and list view buttons', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} />)
@@ -196,18 +184,24 @@ describe('FeedbackResults', () => {
     })
   })
 
-  describe('export button', () => {
-    it('renders export button', () => {
+  describe('CSV export button', () => {
+    it('has an accessible name even when the text label is hidden (icon-only on small screens)', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} />)
-      expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument()
+      const button = screen.getByRole('button', { name: 'Export as CSV' })
+      expect(button).toHaveAttribute('title', 'Export as CSV')
     })
 
-    it('calls onExport when export button clicked', async () => {
+    it('does not render a second PDF button (single PDF export lives in the filter bar)', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} />)
+      expect(screen.queryByTitle('Export as PDF')).not.toBeInTheDocument()
+    })
+
+    it('calls onExport when the CSV button is clicked', async () => {
       const user = userEvent.setup()
       const onExport = vi.fn()
       renderWithRouter(<FeedbackResults {...defaultProps} onExport={onExport} />)
 
-      await user.click(screen.getByRole('button', { name: /export/i }))
+      await user.click(screen.getByRole('button', { name: 'Export as CSV' }))
       expect(onExport).toHaveBeenCalled()
     })
   })

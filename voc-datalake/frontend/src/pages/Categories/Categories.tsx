@@ -21,7 +21,6 @@ import { WordCloudCard } from './WordCloudCard'
 import { CategoryDistribution } from './CategoryDistribution'
 import { FeedbackResults } from './FeedbackResults'
 import { generateCategoriesPDF } from './categoriesPdfGenerator'
-import { generateFeedbackPDF } from './feedbackPdfGenerator'
 import { useCategoryFilters } from './useCategoryFilters'
 import { useFeedbackListData } from './useFeedbackListData'
 import { useCategoryAnalytics } from './useCategoryAnalytics'
@@ -70,26 +69,16 @@ export default function Categories() {
 
   const exportCsv = () => exportFeedbackCsv(feedback.filteredFeedback)
 
-  const exportAnalyticsPdf = () => safeGeneratePdf(() => generateCategoriesPDF({
+  // One report: analytics sections plus the currently filtered feedback items.
+  const exportPdf = () => safeGeneratePdf(() => generateCategoriesPDF({
     categoryData: analytics.categoryData,
     sentimentData: analytics.sentimentData,
     wordCloudData: analytics.wordCloudData,
     totalIssues: analytics.totalIssues,
     avgSentiment: analytics.avgSentiment,
-    timeRange,
-    selectedSource: filters.selectedSource,
-  }))
-
-  const exportFeedbackListPdf = () => safeGeneratePdf(() => generateFeedbackPDF({
-    items: feedback.filteredFeedback,
     timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
-    filters: {
-      source: filters.selectedSource ?? 'all',
-      sentiment: filters.sentimentFilter,
-      category: filters.selectedCategories.join(', ') || 'all',
-      search: filters.searchText,
-      urgentOnly: filters.showUrgentOnly,
-    },
+    selectedSource: filters.selectedSource,
+    items: feedback.filteredFeedback,
   }))
 
   if (!config.apiEndpoint) {
@@ -124,7 +113,7 @@ export default function Categories() {
         onClearFilters={filters.clearFilters}
         trailing={
           <button
-            onClick={exportAnalyticsPdf}
+            onClick={exportPdf}
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap"
             title={t('exportPdfTooltip')}
           >
@@ -166,7 +155,6 @@ export default function Categories() {
         sentimentFilter={filters.sentimentFilter}
         ratingFilter={filters.ratingFilter}
         onExport={exportCsv}
-        onExportPdf={exportFeedbackListPdf}
         totalCount={feedback.totalCount}
         isPartialWindow={feedback.isPartialWindow}
         hasMore={feedback.hasMore}

@@ -19,6 +19,8 @@
   "cancel": "취소",
   "configureBrand": "브랜드 설정",
   "dismiss": "닫기",
+  "exportCsvShort": "CSV",
+  "exportCsvTooltip": "CSV로 내보내기",
   "exportPdf": "PDF 내보내기",
   "exportPdfShort": "PDF",
   "exportPdfTooltip": "PDF로 내보내기",

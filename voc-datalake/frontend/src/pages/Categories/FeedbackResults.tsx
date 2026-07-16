@@ -1,4 +1,4 @@
-import { Download, FileDown, LayoutGrid, List } from 'lucide-react'
+import { Download, LayoutGrid, List } from 'lucide-react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import type { FeedbackItem } from '../../api/client'
@@ -15,8 +15,8 @@ interface FeedbackResultsProps {
   readonly selectedCategories: string[]
   readonly sentimentFilter: SentimentFilter
   readonly ratingFilter: RatingFilter
+  /** CSV export of the currently filtered items. PDF export lives in the page-level filter bar. */
   readonly onExport: () => void
-  readonly onExportPdf: () => void
   /** Candidate-window size reported by the backend ("N of TOTAL"). */
   readonly totalCount: number
   /** True when the backend truncated the candidate window ("N+"). */
@@ -80,7 +80,6 @@ export function FeedbackResults({
   sentimentFilter,
   ratingFilter,
   onExport,
-  onExportPdf,
   totalCount,
   isPartialWindow,
   hasMore,
@@ -109,14 +108,6 @@ export function FeedbackResults({
           />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={onExportPdf}
-            className="flex items-center gap-1.5 text-xs sm:text-sm text-gray-500 hover:text-gray-700 px-1.5"
-            title={t('exportPdfTooltip')}
-          >
-            <FileDown size={14} />
-            <span className="hidden xs:inline">{t('exportPdfShort')}</span>
-          </button>
           <div className="flex bg-gray-100 rounded-lg p-0.5 sm:p-1">
             <button
               onClick={() => onViewModeChange('grid')}
@@ -133,9 +124,14 @@ export function FeedbackResults({
               <List size={14} className="sm:w-4 sm:h-4" />
             </button>
           </div>
-          <button onClick={onExport} className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5">
+          <button
+            onClick={onExport}
+            title={t('exportCsvTooltip')}
+            aria-label={t('exportCsvTooltip')}
+            className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5"
+          >
             <Download size={14} className="sm:w-4 sm:h-4" />
-            <span className="hidden xs:inline">Export</span>
+            <span className="hidden xs:inline">{t('exportCsvShort')}</span>
           </button>
         </div>
       </div>

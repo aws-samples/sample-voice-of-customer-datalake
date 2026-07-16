@@ -35,4 +35,39 @@ describe('CategoriesPDFContent', () => {
     render(<CategoriesPDFContent {...makeProps({ selectedSource: 'webscraper' })} />)
     expect(screen.getByText(/webscraper/)).toBeInTheDocument()
   })
+
+  it('appends the feedback items table when items are provided (merged report)', () => {
+    render(
+      <CategoriesPDFContent
+        {...makeProps({
+          items: [
+            {
+              feedback_id: 'f1',
+              source_id: 's1',
+              source_platform: 'webscraper',
+              source_channel: 'web',
+              brand_name: 'Acme',
+              source_created_at: '2026-06-01T00:00:00Z',
+              processed_at: '2026-06-01T01:00:00Z',
+              original_text: 'Slow delivery ruined my week',
+              original_language: 'en',
+              category: 'delivery',
+              journey_stage: 'post_purchase',
+              sentiment_label: 'negative',
+              sentiment_score: -0.7,
+              urgency: 'high',
+              impact_area: 'retention',
+            },
+          ],
+        })}
+      />
+    )
+    expect(screen.getByText(/Feedback Items \(1\)/)).toBeInTheDocument()
+    expect(screen.getByText('Slow delivery ruined my week')).toBeInTheDocument()
+  })
+
+  it('omits the feedback items section when no items are provided', () => {
+    render(<CategoriesPDFContent {...makeProps()} />)
+    expect(screen.queryByText(/Feedback Items/)).not.toBeInTheDocument()
+  })
 })

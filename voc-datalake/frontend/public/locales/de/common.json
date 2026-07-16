@@ -19,6 +19,8 @@
   "cancel": "Abbrechen",
   "configureBrand": "Marke konfigurieren",
   "dismiss": "Schließen",
+  "exportCsvShort": "CSV",
+  "exportCsvTooltip": "Als CSV exportieren",
   "exportPdf": "PDF exportieren",
   "exportPdfShort": "PDF",
   "exportPdfTooltip": "Als PDF exportieren",

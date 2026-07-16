@@ -5,6 +5,8 @@
  */
 
 import { useTranslation } from 'react-i18next'
+import type { FeedbackItem } from '../../api/types'
+import { FeedbackTableSection } from './FeedbackPDFContent'
 
 interface CategoryDataPDF {
   readonly name: string
@@ -32,6 +34,8 @@ export interface CategoriesPDFProps {
   readonly avgSentiment: number
   readonly timeRange: string
   readonly selectedSource?: string | null
+  /** Currently filtered feedback items, appended as a table after the analytics sections. */
+  readonly items?: readonly FeedbackItem[]
 }
 
 function getSentimentLabel(avgSentiment: number, t: (key: string) => string): string {
@@ -362,6 +366,7 @@ export default function CategoriesPDFContent(props: CategoriesPDFProps) {
       <CategoryBreakdownSection categoryData={props.categoryData} totalIssues={props.totalIssues} />
       <SentimentSection sentimentData={props.sentimentData} />
       <KeywordsSection wordCloudData={props.wordCloudData} />
+      <FeedbackTableSection items={props.items ?? []} />
       <div data-pdf-section>
         <hr style={{
           border: 'none',

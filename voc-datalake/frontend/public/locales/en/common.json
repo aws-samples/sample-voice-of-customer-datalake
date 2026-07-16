@@ -19,6 +19,8 @@
   "cancel": "Cancel",
   "configureBrand": "Configure brand",
   "dismiss": "Dismiss",
+  "exportCsvShort": "CSV",
+  "exportCsvTooltip": "Export as CSV",
   "exportPdf": "Export PDF",
   "exportPdfShort": "PDF",
   "exportPdfTooltip": "Export as PDF",
