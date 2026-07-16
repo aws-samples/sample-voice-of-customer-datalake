@@ -10,7 +10,7 @@
     "categoryCount_other": "{{count}} 件のカテゴリ",
     "emptyTitle": "カテゴリはまだ設定されていません。",
     "emptyHint": "上のAI生成を使うか、下で手動でカテゴリを追加してください。",
-    "subCount": "サブ {{count}} 件",
+    "subCount_other": "サブ {{count}} 件",
     "addSubcategoryPlaceholder": "サブカテゴリを追加...",
     "addCategoryPlaceholder": "新しいカテゴリを追加...",
     "addCategory": "カテゴリを追加",

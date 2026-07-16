@@ -10,7 +10,7 @@
     "categoryCount_other": "{{count}} 个类别",
     "emptyTitle": "尚未配置任何类别。",
     "emptyHint": "使用上方的 AI 生成，或在下方手动添加类别。",
-    "subCount": "{{count}} 个子类",
+    "subCount_other": "{{count}} 个子类",
     "addSubcategoryPlaceholder": "添加子类别...",
     "addCategoryPlaceholder": "添加新类别...",
     "addCategory": "添加类别",

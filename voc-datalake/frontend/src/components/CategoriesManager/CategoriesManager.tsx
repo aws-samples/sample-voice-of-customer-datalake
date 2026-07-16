@@ -21,9 +21,13 @@ import { api } from '../../api/client'
 import ConfirmModal from '../ConfirmModal'
 import { normalizeCategories } from './categoriesSchema'
 
-/** Unique-enough id for a new (sub)category, minted at interaction time. */
+/**
+ * Unique id for a new (sub)category, minted at interaction time.
+ * crypto.randomUUID over Date.now(): two adds in the same millisecond
+ * produced identical ids (same hazard as issue #160 in chatStore).
+ */
 function makeEntryId(prefix: string): string {
-  return `${prefix}_${Date.now()}`
+  return `${prefix}_${crypto.randomUUID()}`
 }
 
 export interface Category {

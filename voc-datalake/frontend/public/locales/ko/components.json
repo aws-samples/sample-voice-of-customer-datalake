@@ -10,7 +10,7 @@
     "categoryCount_other": "카테고리 {{count}}개",
     "emptyTitle": "아직 구성된 카테고리가 없습니다.",
     "emptyHint": "위의 AI 생성을 사용하거나 아래에서 직접 카테고리를 추가하세요.",
-    "subCount": "하위 {{count}}개",
+    "subCount_other": "하위 {{count}}개",
     "addSubcategoryPlaceholder": "하위 카테고리 추가...",
     "addCategoryPlaceholder": "새 카테고리 추가...",
     "addCategory": "카테고리 추가",
