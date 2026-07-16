@@ -50,16 +50,29 @@ function resolveGitDir(): string | null {
 }
 
 /** Resolve a symbolic ref to a sha: loose ref file first, then packed-refs
- * (fresh clones pack their refs — lines are `<sha> <ref>`). */
+ * (fresh clones pack their refs — lines are `<sha> <ref>`). Linked
+ * worktrees keep HEAD in their private gitdir but refs/packed-refs in the
+ * COMMON dir (the `commondir` file points there), so refs resolve against
+ * that base when present. */
 function resolveRef(gitDir: string, ref: string): string | null {
-  const loose = join(gitDir, ref)
+  const refsBase = refsBaseDir(gitDir)
+  const loose = join(refsBase, ref)
   if (existsSync(loose)) return readFileSync(loose, 'utf8').trim()
-  const packedPath = join(gitDir, 'packed-refs')
+  const packedPath = join(refsBase, 'packed-refs')
   if (!existsSync(packedPath)) return null
   const line = readFileSync(packedPath, 'utf8')
     .split('\n')
     .find((entry) => !entry.startsWith('#') && !entry.startsWith('^') && entry.endsWith(` ${ref}`))
   return line !== undefined ? line.split(' ')[0] : null
+}
+
+/** Base directory for refs: the worktree common dir when `commondir`
+ * exists, otherwise the gitdir itself. */
+function refsBaseDir(gitDir: string): string {
+  const commonDirFile = join(gitDir, 'commondir')
+  if (!existsSync(commonDirFile)) return gitDir
+  const target = readFileSync(commonDirFile, 'utf8').trim()
+  return isAbsolute(target) ? target : join(gitDir, target)
 }
 
 /** Walk up from cwd looking for a directory entry (monorepo: .git lives two levels up). */
