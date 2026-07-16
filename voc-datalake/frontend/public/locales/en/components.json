@@ -1,4 +1,26 @@
 {
+  "categoriesManager": {
+    "aiTitle": "AI Category Suggestions",
+    "aiDescription": "Describe your company, industry, or product to get AI-suggested categories tailored to your business.",
+    "aiPlaceholder": "e.g., We are an airline company offering domestic and international flights. Our customers care about punctuality, comfort, baggage handling, customer service, and in-flight experience...",
+    "generating": "Generating...",
+    "generateButton": "Generate Categories",
+    "generateError": "Failed to generate categories. Please try again.",
+    "listTitle": "Categories & Subcategories",
+    "categoryCount_one": "{{count}} category",
+    "categoryCount_other": "{{count}} categories",
+    "emptyTitle": "No categories configured yet.",
+    "emptyHint": "Use AI generation above or add categories manually below.",
+    "subCount": "{{count}} sub",
+    "addSubcategoryPlaceholder": "Add subcategory...",
+    "addCategoryPlaceholder": "Add new category...",
+    "addCategory": "Add Category",
+    "saving": "Saving...",
+    "saved": "Categories saved successfully",
+    "deleteTitle": "Delete Category",
+    "deleteMessage": "Are you sure you want to delete this category and all its subcategories? This action cannot be undone.",
+    "deleteConfirm": "Delete"
+  },
   "dataSourceWizard": {
     "allTime": "All time",
     "back": "Back",

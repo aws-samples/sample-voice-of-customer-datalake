@@ -1,4 +1,25 @@
 {
+  "categoriesManager": {
+    "aiTitle": "AI 카테고리 제안",
+    "aiDescription": "회사, 업계 또는 제품을 설명하면 비즈니스에 맞는 카테고리를 AI가 제안합니다.",
+    "aiPlaceholder": "예: 저희는 국내선과 국제선을 운항하는 항공사입니다. 고객은 정시성, 편안함, 수하물 처리, 고객 서비스, 기내 경험을 중요하게 생각합니다...",
+    "generating": "생성 중...",
+    "generateButton": "카테고리 생성",
+    "generateError": "카테고리 생성에 실패했습니다. 다시 시도해 주세요.",
+    "listTitle": "카테고리 및 하위 카테고리",
+    "categoryCount_other": "카테고리 {{count}}개",
+    "emptyTitle": "아직 구성된 카테고리가 없습니다.",
+    "emptyHint": "위의 AI 생성을 사용하거나 아래에서 직접 카테고리를 추가하세요.",
+    "subCount": "하위 {{count}}개",
+    "addSubcategoryPlaceholder": "하위 카테고리 추가...",
+    "addCategoryPlaceholder": "새 카테고리 추가...",
+    "addCategory": "카테고리 추가",
+    "saving": "저장 중...",
+    "saved": "카테고리가 저장되었습니다",
+    "deleteTitle": "카테고리 삭제",
+    "deleteMessage": "이 카테고리와 모든 하위 카테고리를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+    "deleteConfirm": "삭제"
+  },
   "dataSourceWizard": {
     "allTime": "전체 기간",
     "back": "뒤로",

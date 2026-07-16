@@ -1,4 +1,26 @@
 {
+  "categoriesManager": {
+    "aiTitle": "Sugestões de categorias por IA",
+    "aiDescription": "Descreva sua empresa, setor ou produto para receber categorias sugeridas por IA adaptadas ao seu negócio.",
+    "aiPlaceholder": "ex.: Somos uma companhia aérea que oferece voos domésticos e internacionais. Nossos clientes se importam com pontualidade, conforto, manuseio de bagagem, atendimento ao cliente e experiência a bordo...",
+    "generating": "Gerando...",
+    "generateButton": "Gerar categorias",
+    "generateError": "Falha ao gerar categorias. Tente novamente.",
+    "listTitle": "Categorias e subcategorias",
+    "categoryCount_one": "{{count}} categoria",
+    "categoryCount_other": "{{count}} categorias",
+    "emptyTitle": "Nenhuma categoria configurada ainda.",
+    "emptyHint": "Use a geração por IA acima ou adicione categorias manualmente abaixo.",
+    "subCount": "{{count}} sub",
+    "addSubcategoryPlaceholder": "Adicionar subcategoria...",
+    "addCategoryPlaceholder": "Adicionar nova categoria...",
+    "addCategory": "Adicionar categoria",
+    "saving": "Salvando...",
+    "saved": "Categorias salvas com sucesso",
+    "deleteTitle": "Excluir categoria",
+    "deleteMessage": "Tem certeza de que deseja excluir esta categoria e todas as suas subcategorias? Esta ação não pode ser desfeita.",
+    "deleteConfirm": "Excluir"
+  },
   "dataSourceWizard": {
     "allTime": "Todo o tempo",
     "back": "Voltar",

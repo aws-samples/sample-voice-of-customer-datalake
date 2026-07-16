@@ -1,4 +1,26 @@
 {
+  "categoriesManager": {
+    "aiTitle": "KI-Kategorievorschläge",
+    "aiDescription": "Beschreiben Sie Ihr Unternehmen, Ihre Branche oder Ihr Produkt, um KI-Vorschläge für Kategorien zu erhalten, die zu Ihrem Geschäft passen.",
+    "aiPlaceholder": "z. B.: Wir sind eine Fluggesellschaft mit Inlands- und Auslandsflügen. Unseren Kunden sind Pünktlichkeit, Komfort, Gepäckabwicklung, Kundenservice und das Bord-Erlebnis wichtig...",
+    "generating": "Wird generiert...",
+    "generateButton": "Kategorien generieren",
+    "generateError": "Kategorien konnten nicht generiert werden. Bitte erneut versuchen.",
+    "listTitle": "Kategorien & Unterkategorien",
+    "categoryCount_one": "{{count}} Kategorie",
+    "categoryCount_other": "{{count}} Kategorien",
+    "emptyTitle": "Noch keine Kategorien konfiguriert.",
+    "emptyHint": "Nutzen Sie die KI-Generierung oben oder fügen Sie unten manuell Kategorien hinzu.",
+    "subCount": "{{count}} Unterkat.",
+    "addSubcategoryPlaceholder": "Unterkategorie hinzufügen...",
+    "addCategoryPlaceholder": "Neue Kategorie hinzufügen...",
+    "addCategory": "Kategorie hinzufügen",
+    "saving": "Wird gespeichert...",
+    "saved": "Kategorien erfolgreich gespeichert",
+    "deleteTitle": "Kategorie löschen",
+    "deleteMessage": "Möchten Sie diese Kategorie und alle ihre Unterkategorien wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "deleteConfirm": "Löschen"
+  },
   "dataSourceWizard": {
     "allTime": "Gesamter Zeitraum",
     "back": "Zurück",
