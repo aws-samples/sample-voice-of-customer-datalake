@@ -65,6 +65,59 @@ describe('CategoryDistribution', () => {
     expect(screen.getByText('0 (0.0%)')).toBeInTheDocument()
   })
 
+  describe('collapsed to the top 5 rows by default', () => {
+    const manyCategories: CategoryData[] = [
+      { name: 'other', value: 40, color: '#6b7280' },
+      { name: 'app', value: 20, color: '#8b5cf6' },
+      { name: 'product_quality', value: 15, color: '#eab308' },
+      { name: 'pricing', value: 10, color: '#22c55e' },
+      { name: 'communication', value: 7, color: '#6366f1' },
+      { name: 'billing', value: 5, color: '#ec4899' },
+      { name: 'website', value: 3, color: '#3b82f6' },
+    ]
+
+    it('shows only the top 5 categories when there are more', () => {
+      render(<CategoryDistribution {...defaultProps} categoryData={manyCategories} totalIssues={100} />)
+
+      expect(screen.getByText('communication')).toBeInTheDocument() // rank 5
+      expect(screen.queryByText('billing')).not.toBeInTheDocument() // rank 6
+      expect(screen.queryByText('website')).not.toBeInTheDocument() // rank 7
+    })
+
+    it('reveals all categories via the show-all toggle and collapses back', async () => {
+      const user = userEvent.setup()
+      render(<CategoryDistribution {...defaultProps} categoryData={manyCategories} totalIssues={100} />)
+
+      await user.click(screen.getByText('Show all 7 categories'))
+      expect(screen.getByText('billing')).toBeInTheDocument()
+      expect(screen.getByText('website')).toBeInTheDocument()
+
+      await user.click(screen.getByText('Show top 5'))
+      expect(screen.queryByText('billing')).not.toBeInTheDocument()
+    })
+
+    it('keeps a selected below-the-fold category visible while collapsed (deep-link case)', () => {
+      render(
+        <CategoryDistribution
+          {...defaultProps}
+          categoryData={manyCategories}
+          totalIssues={100}
+          selectedCategories={['website']}
+        />
+      )
+
+      expect(screen.getByText('website')).toBeInTheDocument()
+      expect(screen.getByRole('button', { pressed: true })).toHaveTextContent('website')
+      expect(screen.queryByText('billing')).not.toBeInTheDocument() // unselected rank 6 stays hidden
+    })
+
+    it('hides the toggle when there are 5 or fewer categories', () => {
+      render(<CategoryDistribution {...defaultProps} />)
+
+      expect(screen.queryByText(/Show all/)).not.toBeInTheDocument()
+    })
+  })
+
   describe('rows double as the category selector (issue #198 rationalization)', () => {
     it('calls onToggleCategory with the category name when a row is clicked', async () => {
       const user = userEvent.setup()

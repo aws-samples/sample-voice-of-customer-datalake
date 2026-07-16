@@ -7,12 +7,21 @@
  * shows all feedback. This replaced the separate "Select Categories to
  * Explore" chips card, which duplicated the same data.
  *
+ * Only the top {@link MAX_COLLAPSED_ROWS} categories are shown by default to
+ * keep the card compact; a toggle reveals the rest. Selected categories
+ * outside the top rows stay visible while collapsed so deep-linked filters
+ * (?category=) are never hidden.
+ *
  * @module pages/Categories/CategoryDistribution
  */
 
-import { FolderOpen } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, ChevronUp, FolderOpen } from 'lucide-react'
 import clsx from 'clsx'
 import type { CategoryData } from './types'
+
+/** Rows shown while collapsed. */
+export const MAX_COLLAPSED_ROWS = 5
 
 interface CategoryDistributionProps {
   /** Categories sorted by value descending (as produced by the Categories page). */
@@ -27,6 +36,13 @@ interface CategoryDistributionProps {
   readonly onToggleCategory: (category: string) => void
 }
 
+/** Top rows plus any selected category ranked below the fold. */
+function visibleWhileCollapsed(categoryData: CategoryData[], selectedCategories: string[]): CategoryData[] {
+  return categoryData.filter(
+    (category, index) => index < MAX_COLLAPSED_ROWS || selectedCategories.includes(category.name)
+  )
+}
+
 export function CategoryDistribution({
   categoryData,
   totalIssues,
@@ -34,6 +50,7 @@ export function CategoryDistribution({
   selectedCategories,
   onToggleCategory,
 }: CategoryDistributionProps) {
+  const [expanded, setExpanded] = useState(false)
   if (categoryData.length === 0) {
     return (
       <div className="card">
@@ -57,7 +74,7 @@ export function CategoryDistribution({
       </div>
       <p className="text-xs text-gray-400 mb-2 sm:mb-3">Click a category to filter the results below</p>
       <div className="divide-y divide-gray-100">
-        {categoryData.map((category) => {
+        {(expanded ? categoryData : visibleWhileCollapsed(categoryData, selectedCategories)).map((category) => {
           const percentage = totalIssues > 0 ? (category.value / totalIssues) * 100 : 0
           const isSelected = selectedCategories.includes(category.name)
           return (
@@ -88,6 +105,24 @@ export function CategoryDistribution({
           )
         })}
       </div>
+      {categoryData.length > MAX_COLLAPSED_ROWS && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-2 flex items-center gap-1 text-xs sm:text-sm text-blue-600 hover:text-blue-800"
+        >
+          {expanded ? (
+            <>
+              <ChevronUp size={14} />
+              Show top {MAX_COLLAPSED_ROWS}
+            </>
+          ) : (
+            <>
+              <ChevronDown size={14} />
+              Show all {categoryData.length} categories
+            </>
+          )}
+        </button>
+      )}
     </div>
   )
 }
