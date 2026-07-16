@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 import { VocCoreStack } from './core-stack';
 
 function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
@@ -47,6 +47,17 @@ describe('VocCoreStack admin bootstrap (issue #196)', () => {
     const bootstrapLogicalIds = Object.keys(template.findResources('Custom::AdminBootstrap'));
 
     expect(output.Value).toEqual({ 'Fn::GetAtt': [bootstrapLogicalIds[0], 'Password'] });
+  });
+
+  it('keeps the provider framework logging at FATAL so Data.Password never reaches CloudWatch', () => {
+    // At INFO the CDK provider framework logs the full custom resource
+    // response — including the password. FATAL is today's aws-cdk-lib
+    // default, but this pins the guarantee against dependency bumps and
+    // debugging sessions alike.
+    synthCoreTemplate().hasResourceProperties('AWS::Lambda::Function', {
+      Description: Match.stringLikeRegexp('provider framework - onEvent .*AdminBootstrapProvider'),
+      LoggingConfig: Match.objectLike({ ApplicationLogLevel: 'FATAL' }),
+    });
   });
 });
 
