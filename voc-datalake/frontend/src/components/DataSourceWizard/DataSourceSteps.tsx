@@ -55,6 +55,19 @@ interface DataSourceCheckboxProps {
   readonly description: string
 }
 
+/**
+ * Wizard-specific data source card injected by the caller (e.g. the research
+ * wizard's public web search). Rendered with the exact same DataSourceCheckbox
+ * card as the built-in sources so it reads as a peer data source.
+ */
+export interface ExtraDataSource {
+  readonly key: string
+  readonly checked: boolean
+  readonly title: string
+  readonly description: string
+  readonly onChange: (checked: boolean) => void
+}
+
 function DataSourceCheckbox({ checked, onChange, title, description }: DataSourceCheckboxProps) {
   return (
     <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-gray-50">
@@ -139,6 +152,7 @@ interface DataSourcesStepProps {
   readonly documentsCount: number
   readonly otherDocsCount: number
   readonly researchDocsCount: number
+  readonly extraDataSources?: ReadonlyArray<ExtraDataSource>
 }
 
 export function DataSourcesStep({
@@ -153,6 +167,7 @@ export function DataSourcesStep({
   documentsCount,
   otherDocsCount,
   researchDocsCount,
+  extraDataSources = [],
 }: DataSourcesStepProps) {
   return (
     <div className="space-y-4">
@@ -222,6 +237,16 @@ export function DataSourcesStep({
               description="Include research findings"
             />
           )}
+
+          {extraDataSources.map(source => (
+            <DataSourceCheckbox
+              key={source.key}
+              checked={source.checked}
+              onChange={source.onChange}
+              title={source.title}
+              description={source.description}
+            />
+          ))}
         </div>
       </div>
     </div>

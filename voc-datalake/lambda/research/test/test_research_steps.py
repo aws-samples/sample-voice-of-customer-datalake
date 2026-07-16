@@ -394,12 +394,14 @@ class TestTableAccessors:
 
 
 class TestStepInitializeWebSearch:
-    """Web search grounding in step_initialize (issue #68 / AgentCore).
+    """Web search grounding in step_initialize (issue #68 / AgentCore; agentic
+    loop since #207).
 
-    Contract pinned here: 'web_context' is ALWAYS present in the return
-    value — the Step Functions resultSelector references it unconditionally,
-    so a missing key would fail the whole state, and a web search failure
-    must degrade to '' instead of failing the research job.
+    Contract pinned here: 'web_context' AND 'web_search_queries' are ALWAYS
+    present in the return value — the Step Functions resultSelector references
+    both unconditionally, so a missing key would fail the whole state, and a
+    web search failure must degrade to ''/[] instead of failing the research
+    job.
     """
 
     def _event(self, use_web_search):
@@ -416,59 +418,69 @@ class TestStepInitializeWebSearch:
     @patch('research_step_handler.get_feedback_context')
     @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
     @patch('research_step_handler.get_feedback_statistics', return_value='s')
-    def test_web_context_key_always_present_when_disabled(self, mock_stats, mock_format, mock_get_fb,
-                                                          mock_tables, mock_job_status, feedback_items):
+    def test_web_keys_always_present_when_disabled(self, mock_stats, mock_format, mock_get_fb,
+                                                   mock_tables, mock_job_status, feedback_items):
         from research_step_handler import step_initialize
         mock_get_fb.return_value = feedback_items
 
         result = step_initialize(self._event(use_web_search=False))
 
         assert result['web_context'] == ''
+        assert result['web_search_queries'] == []
 
-    @patch('research_step_handler.search_web')
+    @patch('research_step_handler.run_agentic_web_search')
     @patch('research_step_handler.is_web_search_configured', return_value=True)
     @patch('research_step_handler.get_feedback_context')
     @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
-    @patch('research_step_handler.get_feedback_statistics', return_value='s')
-    def test_searches_the_research_question_when_enabled(self, mock_stats, mock_format, mock_get_fb,
-                                                         mock_configured, mock_search,
-                                                         mock_tables, mock_job_status, feedback_items):
+    @patch('research_step_handler.get_feedback_statistics', return_value='stats-hint')
+    def test_runs_agentic_search_with_question_and_stats_hint(self, mock_stats, mock_format, mock_get_fb,
+                                                              mock_configured, mock_agentic,
+                                                              mock_tables, mock_job_status, feedback_items):
+        """The loop gets the research question plus the feedback stats as a
+        domain hint, and its outcome lands in web_context/web_search_queries."""
         from research_step_handler import step_initialize
+        from shared.agentic_search import AgenticSearchOutcome
         mock_get_fb.return_value = feedback_items
-        mock_search.return_value = [
-            {'title': 'T', 'url': 'https://t.example', 'text': 'Snippet', 'published_date': '2026-01-01'},
-        ]
+        mock_agentic.return_value = AgenticSearchOutcome(
+            context='### Search: "q1"\n\n1. T\n   Source: https://t.example\n   Snippet',
+            queries=['q1', 'q2'],
+            result_count=1,
+        )
 
         result = step_initialize(self._event(use_web_search=True))
 
-        mock_search.assert_called_once_with('What are pain points?')
+        mock_agentic.assert_called_once_with('What are pain points?', context_hint='stats-hint')
         assert 'https://t.example' in result['web_context']
+        assert result['web_search_queries'] == ['q1', 'q2']
 
-    @patch('research_step_handler.search_web')
+    @patch('research_step_handler.run_agentic_web_search')
     @patch('research_step_handler.is_web_search_configured', return_value=True)
     @patch('research_step_handler.get_feedback_context')
     @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
     @patch('research_step_handler.get_feedback_statistics', return_value='s')
     def test_search_failure_degrades_to_empty_context(self, mock_stats, mock_format, mock_get_fb,
-                                                      mock_configured, mock_search,
+                                                      mock_configured, mock_agentic,
                                                       mock_tables, mock_job_status, feedback_items):
+        """run_agentic_web_search degrades internally, but even if it raises
+        (any exception class — the loop spans Bedrock AND the gateway), the
+        job must proceed without web context."""
         from research_step_handler import step_initialize
-        from shared.web_search import WebSearchError
         mock_get_fb.return_value = feedback_items
-        mock_search.side_effect = WebSearchError('gateway down')
+        mock_agentic.side_effect = RuntimeError('planner and gateway both down')
 
         result = step_initialize(self._event(use_web_search=True))
 
         assert result['web_context'] == ''
+        assert result['web_search_queries'] == []
         assert result['feedback_count'] == 2  # research proceeded
 
-    @patch('research_step_handler.search_web')
+    @patch('research_step_handler.run_agentic_web_search')
     @patch('research_step_handler.is_web_search_configured', return_value=True)
     @patch('research_step_handler.get_feedback_context')
     @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
     @patch('research_step_handler.get_feedback_statistics', return_value='s')
     def test_non_boolean_truthy_values_do_not_enable_web_search(self, mock_stats, mock_format, mock_get_fb,
-                                                                mock_configured, mock_search,
+                                                                mock_configured, mock_agentic,
                                                                 mock_tables, mock_job_status, feedback_items):
         """Strict-boolean parity with projects_handler: replayed or foreign
         state-machine inputs carrying the STRING \"false\" (or \"true\") must
@@ -480,24 +492,26 @@ class TestStepInitializeWebSearch:
             event = self._event(use_web_search=value)
             result = step_initialize(event)
             assert result['web_context'] == ''
+            assert result['web_search_queries'] == []
 
-        mock_search.assert_not_called()
+        mock_agentic.assert_not_called()
 
-    @patch('research_step_handler.search_web')
+    @patch('research_step_handler.run_agentic_web_search')
     @patch('research_step_handler.is_web_search_configured', return_value=False)
     @patch('research_step_handler.get_feedback_context')
     @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
     @patch('research_step_handler.get_feedback_statistics', return_value='s')
     def test_requested_but_unconfigured_skips_without_calling(self, mock_stats, mock_format, mock_get_fb,
-                                                              mock_configured, mock_search,
+                                                              mock_configured, mock_agentic,
                                                               mock_tables, mock_job_status, feedback_items):
         from research_step_handler import step_initialize
         mock_get_fb.return_value = feedback_items
 
         result = step_initialize(self._event(use_web_search=True))
 
-        mock_search.assert_not_called()
+        mock_agentic.assert_not_called()
         assert result['web_context'] == ''
+        assert result['web_search_queries'] == []
 
 
 class TestStepAnalyzeWebContext:
@@ -531,22 +545,46 @@ class TestStepAnalyzeWebContext:
 
 
 class TestStepSaveWebSearchNote:
-    """The saved report header discloses that web search was used."""
+    """The saved report discloses that (and how) web search was used."""
 
-    def _event(self, use_web_search):
-        return {
+    def _event(self, use_web_search, web_search_queries=None):
+        event = {
             'project_id': 'p1', 'job_id': 'j1',
             'research_config': {'question': 'Q?', 'title': 'T', 'filters': {}, 'use_web_search': use_web_search},
             'feedback_count': 2, 'analysis': 'a', 'synthesis': 's', 'validation': 'v',
         }
+        if web_search_queries is not None:
+            event['web_search_queries'] = web_search_queries
+        return event
 
     def test_report_notes_web_search_when_enabled(self, mock_tables, mock_job_status):
+        """Executions pinned to a pre-#207 state-machine definition don't pass
+        web_search_queries — the header must still disclose 'enabled'."""
         from research_step_handler import step_save
 
         step_save(self._event(use_web_search=True))
 
         saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
         assert 'Web search: enabled' in saved['content']
+
+    def test_report_discloses_query_count_and_lists_searches(self, mock_tables, mock_job_status):
+        from research_step_handler import step_save
+
+        step_save(self._event(use_web_search=True, web_search_queries=['acme churn 2026', 'app redesign backlash']))
+
+        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        assert 'Web search: enabled (2 queries)' in saved['content']
+        assert '## Web Searches' in saved['content']
+        assert '1. "acme churn 2026"' in saved['content']
+        assert '2. "app redesign backlash"' in saved['content']
+
+    def test_single_query_disclosed_in_singular(self, mock_tables, mock_job_status):
+        from research_step_handler import step_save
+
+        step_save(self._event(use_web_search=True, web_search_queries=['acme churn 2026']))
+
+        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        assert 'Web search: enabled (1 query)' in saved['content']
 
     def test_report_silent_when_disabled(self, mock_tables, mock_job_status):
         from research_step_handler import step_save
@@ -559,10 +597,22 @@ class TestStepSaveWebSearchNote:
     def test_report_silent_for_string_false(self, mock_tables, mock_job_status):
         """Disclosure parity with the strict gating in step_initialize: a
         foreign \"false\" string skips the search, so the report must not
-        claim web search was used."""
+        claim web search was used — even if a queries list is present."""
         from research_step_handler import step_save
 
-        step_save(self._event(use_web_search='false'))
+        step_save(self._event(use_web_search='false', web_search_queries=['q']))
 
         saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
         assert 'Web search' not in saved['content']
+        assert '## Web Searches' not in saved['content']
+
+    def test_non_string_queries_are_ignored_in_disclosure(self, mock_tables, mock_job_status):
+        """State-machine input is an unvalidated boundary; junk entries must
+        not crash the save step or leak into the report."""
+        from research_step_handler import step_save
+
+        step_save(self._event(use_web_search=True, web_search_queries=[None, 42, '  ', 'real query']))
+
+        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        assert 'Web search: enabled (1 query)' in saved['content']
+        assert '1. "real query"' in saved['content']

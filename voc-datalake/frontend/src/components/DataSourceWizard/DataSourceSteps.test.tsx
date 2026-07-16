@@ -207,6 +207,50 @@ describe('DataSourcesStep', () => {
       expect(screen.queryByText(/Research Documents/)).not.toBeInTheDocument()
     })
   })
+
+  describe('extraDataSources (#207 — e.g. the research wizard\u2019s web search)', () => {
+    const webSearchSource = {
+      key: 'webSearch',
+      checked: false,
+      title: 'Public Web Search',
+      description: 'AI plans and runs multiple web searches',
+      onChange: vi.fn(),
+    }
+
+    it('renders nothing extra when the prop is omitted', () => {
+      render(<DataSourcesStep {...defaultProps} />)
+      expect(screen.queryByText('Public Web Search')).not.toBeInTheDocument()
+    })
+
+    it('renders extra sources as peer cards after the built-ins', () => {
+      render(<DataSourcesStep {...defaultProps} extraDataSources={[webSearchSource]} />)
+      expect(screen.getByText('Public Web Search')).toBeInTheDocument()
+      expect(screen.getByText('AI plans and runs multiple web searches')).toBeInTheDocument()
+    })
+
+    it('uses the exact same card markup as the built-in sources', () => {
+      render(<DataSourcesStep {...defaultProps} extraDataSources={[webSearchSource]} />)
+      const builtInCard = screen.getByText('Customer Feedback').closest('label')
+      const extraCard = screen.getByText('Public Web Search').closest('label')
+      expect(extraCard).not.toBeNull()
+      expect(extraCard?.className).toBe(builtInCard?.className)
+    })
+
+    it('forwards toggles to the extra source\u2019s onChange', async () => {
+      const user = userEvent.setup()
+      const onChange = vi.fn()
+      render(<DataSourcesStep {...defaultProps} extraDataSources={[{ ...webSearchSource, onChange }]} />)
+
+      await user.click(screen.getByRole('checkbox', { name: /public web search/i }))
+
+      expect(onChange).toHaveBeenCalledWith(true)
+    })
+
+    it('reflects the checked state', () => {
+      render(<DataSourcesStep {...defaultProps} extraDataSources={[{ ...webSearchSource, checked: true }]} />)
+      expect(screen.getByRole('checkbox', { name: /public web search/i })).toBeChecked()
+    })
+  })
 })
 
 describe('FeedbackFiltersStep', () => {

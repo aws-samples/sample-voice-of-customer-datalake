@@ -309,6 +309,9 @@ export class VocProcessingStack extends cdk.Stack {
         // step_initialize ALWAYS returns web_context (empty string when web
         // search is off) — an absent key here would fail the state outright.
         'web_context.$': '$.Payload.web_context',
+        // Always returned ([] when web search is off/failed) — flows to the
+        // save step for the report's web-search disclosure (#207).
+        'web_search_queries.$': '$.Payload.web_search_queries',
         // Always returned by step_initialize ('' when unused) — see #157.
         'documents_context.$': '$.Payload.documents_context',
       },
@@ -374,6 +377,8 @@ export class VocProcessingStack extends cdk.Stack {
         'project_id.$': '$.project_id',
         'research_config.$': '$.research_config',
         'feedback_count.$': '$.initialize_result.feedback_count',
+        // Executed web-search queries for the report disclosure (#207).
+        'web_search_queries.$': '$.initialize_result.web_search_queries',
         'analysis.$': '$.analysis_result.analysis',
         'synthesis.$': '$.synthesis_result.synthesis',
         'validation.$': '$.validate_result.validation',

@@ -101,4 +101,11 @@ describe('research state machine wiring (issue #157)', () => {
       expect(state.definition).toContain(`"${key}.$":"$.initialize_result.${key}"`);
     }
   });
+
+  it('flows the executed web-search queries to the save step (#207)', () => {
+    // step_initialize ALWAYS returns web_search_queries ([] when web search
+    // is off); step_save consumes it for the report's disclosure section.
+    expect(state.definition).toContain('"web_search_queries.$":"$.Payload.web_search_queries"');
+    expect(state.definition).toContain('"web_search_queries.$":"$.initialize_result.web_search_queries"');
+  });
 });
