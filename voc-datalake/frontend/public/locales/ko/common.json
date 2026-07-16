@@ -34,6 +34,7 @@
   "forQuery": "\"{{query}}\" 검색 결과",
   "goToSettings": "설정으로 이동",
   "loading": "로딩 중...",
+  "loadMore": "더 보기",
   "logs": {
     "daysAgo_one": "{{count}}일 전",
     "daysAgo_other": "{{count}}일 전",

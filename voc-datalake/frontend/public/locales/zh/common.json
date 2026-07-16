@@ -34,6 +34,7 @@
   "forQuery": "关于\"{{query}}\"",
   "goToSettings": "前往设置",
   "loading": "加载中...",
+  "loadMore": "加载更多",
   "logs": {
     "daysAgo_one": "{{count}}天前",
     "daysAgo_other": "{{count}}天前",

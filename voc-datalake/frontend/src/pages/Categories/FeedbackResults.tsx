@@ -21,6 +21,10 @@ interface FeedbackResultsProps {
   readonly totalCount: number
   /** True when the backend truncated the candidate window ("N+"). */
   readonly isPartialWindow: boolean
+  /** True when more pages can be loaded (list endpoint only). */
+  readonly hasMore: boolean
+  readonly onLoadMore: () => void
+  readonly isLoadingMore: boolean
 }
 
 /**
@@ -79,6 +83,9 @@ export function FeedbackResults({
   onExportPdf,
   totalCount,
   isPartialWindow,
+  hasMore,
+  onLoadMore,
+  isLoadingMore,
 }: FeedbackResultsProps) {
   const { t } = useTranslation('common')
   return (
@@ -133,6 +140,17 @@ export function FeedbackResults({
         </div>
       </div>
       <FeedbackContentDisplay isLoading={feedbackLoading} items={filteredFeedback} viewMode={viewMode} />
+      {hasMore && !feedbackLoading && (
+        <div className="flex justify-center mt-3 sm:mt-4">
+          <button
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className="btn btn-secondary text-xs sm:text-sm px-4 py-1.5 disabled:opacity-60"
+          >
+            {isLoadingMore ? t('loading') : t('loadMore')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

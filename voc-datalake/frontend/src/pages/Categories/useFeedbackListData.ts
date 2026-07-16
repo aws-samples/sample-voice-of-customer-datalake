@@ -7,6 +7,11 @@
  * (`/feedback`) — and applies the client-side refinements (star rating
  * with direction, multi-category) the server doesn't support.
  *
+ * The list endpoint paginates via offset/limit: pages accumulate through
+ * `loadMore` (infinite query) until the candidate window's `total` is
+ * loaded. Search and urgent endpoints don't paginate server-side, so
+ * `hasMore` is always false for them.
+ *
  * The list is always fetched: the Categories default view browses all
  * feedback (issue #198 UX rationalization). Keyword filtering was folded
  * into server-side search — Trending Keyword clicks populate the search box.
@@ -15,7 +20,7 @@
  */
 
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { DateRangeParams, FeedbackItem } from '../../api/client'
 import { matchesRatingFilter } from './types'
@@ -28,6 +33,7 @@ interface FeedbackResponse {
   items?: FeedbackItem[]
   count?: number
   total?: number
+  offset?: number
   is_partial_window?: boolean
 }
 
@@ -39,6 +45,11 @@ export interface FeedbackListData {
   totalCount: number
   /** True when the backend truncated the candidate window ("N+"). */
   isPartialWindow: boolean
+  /** True when the list endpoint has more pages to load. */
+  hasMore: boolean
+  /** Fetches the next page. Only the list endpoint paginates; search/urgent never have more. */
+  loadMore: () => void
+  isLoadingMore: boolean
 }
 
 function buildCommonParams(dateParams: DateRangeParams, filters: CategoryFiltersState) {
@@ -104,39 +115,108 @@ export function useFeedbackListData(
     enabled: enabled.urgent,
   })
 
-  const listQuery = useQuery({
+  const listQuery = useInfiniteQuery({
     queryKey: ['categories-feedback', commonParams],
-    queryFn: () => api.getFeedback(commonParams),
+    queryFn: ({ pageParam }) => api.getFeedback({ ...commonParams, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: nextPageOffset,
     enabled: enabled.list,
   })
 
-  const active = pickActiveQuery(isSearching, filters.showUrgentOnly, { searchQuery, urgentQuery, listQuery })
+  const active = pickActiveSource(isSearching, filters.showUrgentOnly, { searchQuery, urgentQuery, listQuery })
 
   const filteredFeedback = useMemo(() => {
-    const items = active.data?.items ?? []
-    return items.filter((item) => matchesClientFilters(item, filters))
-  }, [active.data, filters])
+    return active.items.filter((item) => matchesClientFilters(item, filters))
+  }, [active.items, filters])
 
   return {
     filteredFeedback,
     isLoading: active.isLoading,
     isSearching,
-    ...extractTotals(active.data),
+    totalCount: active.totalCount,
+    isPartialWindow: active.isPartialWindow,
+    hasMore: active.hasMore,
+    loadMore: active.loadMore,
+    isLoadingMore: active.isLoadingMore,
+  }
+}
+
+/**
+ * Offset of the next `/feedback` page, or undefined when the loaded rows
+ * cover the (windowed) total. `total` is the filtered candidate-window size,
+ * so `loaded < total` is the correct hasMore signal (not `count < limit`).
+ */
+function nextPageOffset(lastPage: FeedbackResponse): number | undefined {
+  const pageSize = lastPage.count ?? lastPage.items?.length ?? 0
+  const loaded = (lastPage.offset ?? 0) + pageSize
+  const total = lastPage.total ?? loaded
+  return pageSize > 0 && loaded < total ? loaded : undefined
+}
+
+/** The list source normalized so the hook body treats all three endpoints alike. */
+interface ActiveFeedbackSource {
+  items: FeedbackItem[]
+  isLoading: boolean
+  totalCount: number
+  isPartialWindow: boolean
+  hasMore: boolean
+  loadMore: () => void
+  isLoadingMore: boolean
+}
+
+interface SimpleQuery {
+  data: FeedbackResponse | undefined
+  isLoading: boolean
+}
+
+/** Structural subset of UseInfiniteQueryResult — keeps the generics out of the hook. */
+interface InfiniteListQuery {
+  data: { pages: FeedbackResponse[] } | undefined
+  isLoading: boolean
+  hasNextPage: boolean
+  isFetchingNextPage: boolean
+  fetchNextPage: () => Promise<unknown>
+}
+
+/** Search and urgent endpoints don't paginate server-side — never more to load. */
+function toSimpleSource(query: SimpleQuery): ActiveFeedbackSource {
+  return {
+    items: query.data?.items ?? [],
+    isLoading: query.isLoading,
+    ...extractTotals(query.data),
+    hasMore: false,
+    loadMore: () => undefined,
+    isLoadingMore: false,
+  }
+}
+
+function toListSource(query: InfiniteListQuery): ActiveFeedbackSource {
+  const pages = query.data?.pages ?? []
+  const lastPage = pages.length > 0 ? pages[pages.length - 1] : undefined
+  return {
+    items: pages.flatMap((page) => page.items ?? []),
+    isLoading: query.isLoading,
+    ...extractTotals(lastPage),
+    hasMore: query.hasNextPage,
+    loadMore: () => {
+      void query.fetchNextPage()
+    },
+    isLoadingMore: query.isFetchingNextPage,
   }
 }
 
 interface ActiveQueries {
-  searchQuery: { data: FeedbackResponse | undefined; isLoading: boolean }
-  urgentQuery: { data: FeedbackResponse | undefined; isLoading: boolean }
-  listQuery: { data: FeedbackResponse | undefined; isLoading: boolean }
+  searchQuery: SimpleQuery
+  urgentQuery: SimpleQuery
+  listQuery: InfiniteListQuery
 }
 
-function pickActiveQuery(
+function pickActiveSource(
   isSearching: boolean,
   showUrgentOnly: boolean,
   queries: ActiveQueries
-): { data: FeedbackResponse | undefined; isLoading: boolean } {
-  if (isSearching) return queries.searchQuery
-  if (showUrgentOnly) return queries.urgentQuery
-  return queries.listQuery
+): ActiveFeedbackSource {
+  if (isSearching) return toSimpleSource(queries.searchQuery)
+  if (showUrgentOnly) return toSimpleSource(queries.urgentQuery)
+  return toListSource(queries.listQuery)
 }

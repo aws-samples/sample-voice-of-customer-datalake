@@ -180,6 +180,65 @@ describe('useFeedbackListData', () => {
     })
   })
 
+  describe('pagination (list endpoint)', () => {
+    it('reports hasMore when the loaded rows are fewer than the windowed total', async () => {
+      mockGetFeedback.mockResolvedValue({
+        count: 2,
+        total: 5,
+        offset: 0,
+        items: [makeItem({ feedback_id: 'a' }), makeItem({ feedback_id: 'b' })],
+      })
+      const { result } = renderData(baseFilters)
+
+      await waitFor(() => expect(result.current.hasMore).toBe(true))
+      expect(result.current.isLoadingMore).toBe(false)
+    })
+
+    it('reports no more pages when the full total is loaded', async () => {
+      mockGetFeedback.mockResolvedValue({
+        count: 2,
+        total: 2,
+        offset: 0,
+        items: [makeItem({ feedback_id: 'a' }), makeItem({ feedback_id: 'b' })],
+      })
+      const { result } = renderData(baseFilters)
+
+      await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(2))
+      expect(result.current.hasMore).toBe(false)
+    })
+
+    it('loadMore fetches the next page with the offset and appends the items', async () => {
+      mockGetFeedback.mockImplementation((params: { offset?: number }) =>
+        Promise.resolve(
+          (params.offset ?? 0) === 0
+            ? { count: 2, total: 4, offset: 0, items: [makeItem({ feedback_id: 'a' }), makeItem({ feedback_id: 'b' })] }
+            : { count: 2, total: 4, offset: 2, items: [makeItem({ feedback_id: 'c' }), makeItem({ feedback_id: 'd' })] }
+        )
+      )
+      const { result } = renderData(baseFilters)
+      await waitFor(() => expect(result.current.hasMore).toBe(true))
+
+      result.current.loadMore()
+
+      await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(4))
+      expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ offset: 2 }))
+      expect(result.current.filteredFeedback.map((i) => i.feedback_id)).toEqual(['a', 'b', 'c', 'd'])
+      expect(result.current.hasMore).toBe(false)
+    })
+
+    it('never reports more pages for search results (no server pagination)', async () => {
+      mockSearchFeedback.mockResolvedValue({
+        count: 2,
+        total: 50,
+        items: [makeItem({ feedback_id: 'a' }), makeItem({ feedback_id: 'b' })],
+      })
+      const { result } = renderData({ ...baseFilters, searchText: 'slow' })
+
+      await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(2))
+      expect(result.current.hasMore).toBe(false)
+    })
+  })
+
   describe('results header totals', () => {
     it('prefers total over count and surfaces is_partial_window', async () => {
       mockGetFeedback.mockResolvedValue({

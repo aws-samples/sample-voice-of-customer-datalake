@@ -169,6 +169,9 @@ export default function Categories() {
         onExportPdf={exportFeedbackListPdf}
         totalCount={feedback.totalCount}
         isPartialWindow={feedback.isPartialWindow}
+        hasMore={feedback.hasMore}
+        onLoadMore={feedback.loadMore}
+        isLoadingMore={feedback.isLoadingMore}
       />
     </div>
   )

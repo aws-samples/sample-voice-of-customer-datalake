@@ -34,6 +34,7 @@
   "forQuery": "for \"{{query}}\"",
   "goToSettings": "Go to Settings",
   "loading": "Loading...",
+  "loadMore": "Load more",
   "logs": {
     "daysAgo_one": "{{count}} day ago",
     "daysAgo_other": "{{count}} days ago",

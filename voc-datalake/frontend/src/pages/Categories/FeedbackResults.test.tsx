@@ -68,6 +68,9 @@ const defaultProps = {
   onExportPdf: vi.fn(),
   totalCount: 2,
   isPartialWindow: false,
+  hasMore: false,
+  onLoadMore: vi.fn(),
+  isLoadingMore: false,
 }
 
 function renderWithRouter(ui: React.ReactElement) {
@@ -123,6 +126,30 @@ describe('FeedbackResults', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} totalCount={2} isPartialWindow={true} />)
       expect(screen.getByText(/Showing 2 of 2 results/)).toBeInTheDocument()
       expect(screen.queryByText(/narrow filters to see all/)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('pagination (Load more)', () => {
+    it('shows a Load more button when more pages exist and fires onLoadMore', async () => {
+      const user = userEvent.setup()
+      const onLoadMore = vi.fn()
+      renderWithRouter(<FeedbackResults {...defaultProps} hasMore onLoadMore={onLoadMore} />)
+
+      await user.click(screen.getByRole('button', { name: 'Load more' }))
+      expect(onLoadMore).toHaveBeenCalledOnce()
+    })
+
+    it('hides the Load more button when everything is loaded', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} hasMore={false} />)
+      expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
+    })
+
+    it('disables the button and shows the loading label while the next page loads', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} hasMore isLoadingMore />)
+
+      const button = screen.getByRole('button', { name: 'Loading...' })
+      expect(button).toBeDisabled()
+      expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
     })
   })
 

@@ -34,6 +34,7 @@
   "forQuery": "para \"{{query}}\"",
   "goToSettings": "Ir a Configuración",
   "loading": "Cargando...",
+  "loadMore": "Cargar más",
   "logs": {
     "daysAgo_one": "hace {{count}} día",
     "daysAgo_many": "hace {{count}} días",

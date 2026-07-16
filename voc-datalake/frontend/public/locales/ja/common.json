@@ -34,6 +34,7 @@
   "forQuery": "「{{query}}」の結果",
   "goToSettings": "設定へ移動",
   "loading": "読み込み中...",
+  "loadMore": "さらに読み込む",
   "logs": {
     "daysAgo_one": "{{count}}日前",
     "daysAgo_other": "{{count}}日前",
