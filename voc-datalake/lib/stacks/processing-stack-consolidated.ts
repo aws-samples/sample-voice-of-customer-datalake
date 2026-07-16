@@ -14,6 +14,7 @@ import { uniqueName } from '../utils/naming';
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
+import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 
 export interface VocProcessingStackProps extends cdk.StackProps {
   feedbackTable: dynamodb.Table;
@@ -109,7 +110,7 @@ export class VocProcessingStack extends cdk.Stack {
     // FEEDBACK PROCESSOR LAMBDA
     // ============================================
     const processorCode = lambda.Code.fromAsset('lambda', {
-      exclude: ['**/__pycache__', '*.pyc', 'api/**', 'ingestors/**', 'webhooks/**', 'research/**', 'layers/**', 'aggregator/**'],
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'aggregator/**', 'api/**', 'jobs/**', 'research/**'],
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/processor/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
@@ -158,7 +159,7 @@ export class VocProcessingStack extends cdk.Stack {
     // AGGREGATION LAMBDA
     // ============================================
     const aggregatorCode = lambda.Code.fromAsset('lambda', {
-      exclude: ['**/__pycache__', '*.pyc', 'api/**', 'ingestors/**', 'webhooks/**', 'research/**', 'layers/**', 'processor/**'],
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'api/**', 'jobs/**', 'processor/**', 'research/**'],
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/aggregator/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
@@ -219,11 +220,14 @@ export class VocProcessingStack extends cdk.Stack {
       resources: allowlistedModelArns(this.region, this.account),
     }));
 
-    const researchCode = lambda.Code.fromAsset('.', {
-      exclude: ['**/__pycache__', '*.pyc', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md', 'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**', 'plugins/**', 'lambda/api/**', 'lambda/processor/**', 'lambda/ingestors/**', 'lambda/aggregator/**', 'lambda/webhooks/**', 'lambda/layers/**'],
+    // Same lambda/-rooted staging as processor/aggregator: root-based staging
+    // hashed the entire CDK project (scripts/, schemas/, coverage output...)
+    // into this asset, redeploying it on every unrelated edit.
+    const researchCode = lambda.Code.fromAsset('lambda', {
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, 'aggregator/**', 'api/**', 'jobs/**', 'processor/**'],
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
-        command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/lambda/research/* /asset-output/ && cp -r /asset-input/lambda/shared /asset-output/'],
+        command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/research/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
         platform: 'linux/arm64',
       },
     });

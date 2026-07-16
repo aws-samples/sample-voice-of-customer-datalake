@@ -26,8 +26,8 @@ PLATFORM="linux/arm64"
 # Install layer deps, then strip the AWS SDK.
 #
 # KEPT IN LOCKSTEP with lib/utils/python-layer-bundling.ts — the CDK stacks
-# re-bundle these same layers at synth time with the identical recipe. Change
-# one, change both.
+# re-bundle these same layers at synth time with the identical recipe.
+# lib/utils/python-layer-bundling.test.ts fails if the two copies drift.
 #
 # Lambda's Python runtime PROVIDES boto3/botocore as a matched pair, but
 # aws-lambda-powertools[tracer] -> aws-xray-sdk pulls botocore in

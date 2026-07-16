@@ -399,8 +399,20 @@ export class VocIngestionStack extends cdk.Stack {
   }
 
   private bundlePluginCode(pluginId: string): lambda.Code {
+    // Root-based staging (this bundle spans plugins/ AND lambda/shared), so
+    // everything not excluded here feeds the asset hash and redeploys all
+    // ingestors on unrelated edits (issue #194 follow-up). Only
+    // plugins/<id>/ingestor, plugins/_shared and lambda/shared are copied.
     return lambda.Code.fromAsset('.', {
-      exclude: ['**/__pycache__', '*.pyc', 'plugins/_template/**', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md', 'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**'],
+      exclude: [
+        '**/__pycache__', '**/*.pyc', '**/.DS_Store', '**/test/**', '**/conftest.py', '**/test_*.py',
+        'plugins/_template/**', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md',
+        'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**', '.ruff_cache/**', 'coverage_html/**',
+        '.coverage', 'pytest.ini', 'requirements-dev.txt', 'chrome-extension/**', 'scripts/**', 'schemas/**',
+        'Workshop/**',
+        'lambda/aggregator/**', 'lambda/api/**', 'lambda/jobs/**', 'lambda/layers/**',
+        'lambda/processor/**', 'lambda/research/**', 'lambda/stream/**',
+      ],
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: [
