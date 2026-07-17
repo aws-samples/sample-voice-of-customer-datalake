@@ -300,6 +300,39 @@ class TestSaveFeedback:
         assert body['success'] is True
 
     @patch('data_explorer_handler.dynamodb')
+    def test_lookup_queries_the_real_gsi_name(
+        self, mock_dynamodb, api_gateway_event, lambda_context
+    ):
+        """Regression (#140): the feedback-id lookup must query the GSI that
+        actually exists on the table (gsi4-by-feedback-id, core-stack.ts) —
+        'feedback-id-index' does not exist and made every non-key edit 500."""
+        # Arrange — no pk/sk in data forces the GSI lookup path
+        mock_table = MagicMock()
+        mock_dynamodb.Table.return_value = mock_table
+        mock_table.query.return_value = {
+            'Items': [{'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#fb-123'}]
+        }
+        mock_table.update_item.return_value = {}
+
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/data-explorer/feedback',
+            body={
+                'feedback_id': 'fb-123',
+                'data': {'original_text': 'Updated via GSI lookup'}
+            }
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+
+        # Assert
+        assert response['statusCode'] == 200
+        mock_table.query.assert_called_once()
+        assert mock_table.query.call_args.kwargs['IndexName'] == 'gsi4-by-feedback-id'
+
+    @patch('data_explorer_handler.dynamodb')
     def test_returns_error_when_feedback_id_missing(
         self, mock_dynamodb, api_gateway_event, lambda_context
     ):
@@ -352,6 +385,36 @@ class TestDeleteFeedback:
         # Assert
         assert response['statusCode'] == 200
         assert body['success'] is True
+
+    @patch('data_explorer_handler.dynamodb')
+    def test_delete_queries_the_real_gsi_name(
+        self, mock_dynamodb, api_gateway_event, lambda_context
+    ):
+        """Regression (#140): delete's feedback-id lookup must use
+        gsi4-by-feedback-id — the nonexistent 'feedback-id-index' made every
+        Data Explorer record delete fail with a ValidationException."""
+        # Arrange
+        mock_table = MagicMock()
+        mock_dynamodb.Table.return_value = mock_table
+        mock_table.query.return_value = {
+            'Items': [{'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#fb-123'}]
+        }
+        mock_table.delete_item.return_value = {}
+
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(
+            method='DELETE',
+            path='/data-explorer/feedback',
+            query_params={'feedback_id': 'fb-123'}
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+
+        # Assert
+        assert response['statusCode'] == 200
+        mock_table.query.assert_called_once()
+        assert mock_table.query.call_args.kwargs['IndexName'] == 'gsi4-by-feedback-id'
 
     @patch('data_explorer_handler.dynamodb')
     def test_returns_error_when_feedback_not_found(
