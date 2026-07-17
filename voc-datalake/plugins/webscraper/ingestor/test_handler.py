@@ -148,6 +148,7 @@ class TestLambdaHandlerSecretCache:
         lambda_handler({}, lambda_context)
 
         mock_clear.assert_not_called()
+        MockIngestor.assert_called_once()
 
     @patch("shared.aws.clear_secret_cache")
     @patch("webscraper.ingestor.handler.WebScraperIngestor")
@@ -157,10 +158,16 @@ class TestLambdaHandlerSecretCache:
         """Order matters: clearing after the ingestor loads its config would
         be a no-op — the stale snapshot would already be in memory."""
         call_order = []
-        mock_clear.side_effect = lambda: call_order.append("clear")
-        MockIngestor.side_effect = lambda **kw: call_order.append("ingestor") or MagicMock(
-            run=MagicMock(return_value={"status": "success"})
-        )
+
+        def record_clear():
+            call_order.append("clear")
+
+        def record_ingestor(**_kwargs):
+            call_order.append("ingestor")
+            return MagicMock(run=MagicMock(return_value={"status": "success"}))
+
+        mock_clear.side_effect = record_clear
+        MockIngestor.side_effect = record_ingestor
 
         from webscraper.ingestor.handler import lambda_handler
         lambda_handler({"execution_id": "exec-1"}, lambda_context)
