@@ -425,7 +425,14 @@ def lambda_handler(event, context):
     """Lambda entry point."""
     execution_id = event.get('execution_id')
     scraper_id = event.get('scraper_id')
-    
+
+    # Clear secret cache on manual runs so a warm container picks up a config
+    # saved moments ago (Save-then-Run-now, issue #141). get_secret is
+    # lru_cached without TTL; same guard as the app-review ingestors.
+    if execution_id:
+        from shared.aws import clear_secret_cache
+        clear_secret_cache()
+
     ingestor = WebScraperIngestor(
         execution_id=execution_id,
         target_scraper_id=scraper_id
