@@ -35,6 +35,7 @@ from shared.avatar import (
 )
 
 from shared.tables import get_projects_table, get_feedback_table
+from shared.indexes import PROJECTS_BY_TYPE_INDEX
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -79,7 +80,7 @@ def list_projects() -> dict:
         return {'projects': []}
     
     response = projects_table.query(
-        IndexName='gsi1-by-type',
+        IndexName=PROJECTS_BY_TYPE_INDEX,
         KeyConditionExpression=Key('gsi1pk').eq('TYPE#PROJECT'),
         ScanIndexForward=False
     )

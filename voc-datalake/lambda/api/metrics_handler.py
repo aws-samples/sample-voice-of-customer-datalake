@@ -19,6 +19,7 @@ from shared.api import (
     get_configured_categories, api_handler, DEFAULT_CATEGORIES
 )
 from shared.feedback import basis_date, window_cutoff
+from shared.indexes import AGGREGATES_BY_METRIC_TYPE_INDEX, FEEDBACK_BY_CATEGORY_INDEX, FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_ID_INDEX, FEEDBACK_BY_URGENCY_INDEX
 
 # Pagination bounds for /feedback. The candidate window is a function of
 # offset+limit, capped to prevent unbounded DynamoDB scans. The cap also defines
@@ -144,7 +145,7 @@ def _scan_recent_items(
         date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
         remaining = soft_cap - len(items)
         day_items, day_has_more = _query_partition(
-            'gsi1-by-date',
+            FEEDBACK_BY_DATE_INDEX,
             Key('gsi1pk').eq(f'DATE#{date}'),
             max_matched=min(per_day_limit, remaining) if per_day_limit else remaining,
             source=source,
@@ -245,7 +246,7 @@ def list_feedback():
         # Category is the partition key here, so no source push-down needed;
         # paging still matters because one query returns at most one page.
         candidates, window_truncated = _query_partition(
-            'gsi2-by-category',
+            FEEDBACK_BY_CATEGORY_INDEX,
             Key('gsi2pk').eq(f'CATEGORY#{category}'),
             max_matched=candidate_cap,
         )
@@ -256,7 +257,7 @@ def list_feedback():
             # a day dominated by another source would otherwise fill the whole
             # page and starve the in-memory filter (issue #99).
             day_items, day_has_more = _query_partition(
-                'gsi1-by-date',
+                FEEDBACK_BY_DATE_INDEX,
                 Key('gsi1pk').eq(f'DATE#{date}'),
                 max_matched=candidate_cap - len(candidates),
                 source=source,
@@ -321,7 +322,7 @@ def get_urgent_feedback():
     fetch_limit = limit * 5 if has_filters else limit
     
     response = feedback_table.query(
-        IndexName='gsi3-by-urgency',
+        IndexName=FEEDBACK_BY_URGENCY_INDEX,
         KeyConditionExpression=Key('gsi3pk').eq('URGENCY#high'),
         Limit=fetch_limit,
         ScanIndexForward=False
@@ -417,7 +418,7 @@ def get_entities():
     
     # Get sources from aggregates
     source_response = aggregates_table.query(
-        IndexName='gsi1-by-metric-type',
+        IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
         KeyConditionExpression=Key('metric_type').eq('source')
     )
     source_totals = {}
@@ -429,7 +430,7 @@ def get_entities():
     
     # Get personas from aggregates
     persona_response = aggregates_table.query(
-        IndexName='gsi1-by-metric-type',
+        IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
         KeyConditionExpression=Key('metric_type').eq('persona')
     )
     persona_counts = {}
@@ -453,7 +454,7 @@ def get_entities():
     for i in range(min(days, 7)):
         date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
         response = feedback_table.query(
-            IndexName='gsi1-by-date',
+            IndexName=FEEDBACK_BY_DATE_INDEX,
             KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
             Limit=50,
             ScanIndexForward=False
@@ -556,7 +557,7 @@ def search_feedback():
 def get_feedback(feedback_id: str):
     """Get a single feedback item by ID."""
     response = feedback_table.query(
-        IndexName='gsi4-by-feedback-id',
+        IndexName=FEEDBACK_BY_ID_INDEX,
         KeyConditionExpression=Key('feedback_id').eq(feedback_id),
         Limit=1
     )
@@ -574,7 +575,7 @@ def get_similar_feedback(feedback_id: str):
     limit = validate_limit(params.get('limit'), default=8, max_val=50)
     
     response = feedback_table.query(
-        IndexName='gsi4-by-feedback-id',
+        IndexName=FEEDBACK_BY_ID_INDEX,
         KeyConditionExpression=Key('feedback_id').eq(feedback_id),
         Limit=1
     )
@@ -586,7 +587,7 @@ def get_similar_feedback(feedback_id: str):
     category = source_item.get('category', 'other')
     
     response = feedback_table.query(
-        IndexName='gsi2-by-category',
+        IndexName=FEEDBACK_BY_CATEGORY_INDEX,
         KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{category}'),
         Limit=limit + 10,
         ScanIndexForward=False
@@ -817,7 +818,7 @@ def get_source_metrics():
         }
     
     response = aggregates_table.query(
-        IndexName='gsi1-by-metric-type',
+        IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
         KeyConditionExpression=Key('metric_type').eq('source')
     )
     
@@ -859,7 +860,7 @@ def get_persona_metrics():
         }
     
     response = aggregates_table.query(
-        IndexName='gsi1-by-metric-type',
+        IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
         KeyConditionExpression=Key('metric_type').eq('persona')
     )
     

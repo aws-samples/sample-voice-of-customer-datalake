@@ -5,6 +5,7 @@
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { ConfigurationError } from '../lib/errors.js';
+import { FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_ID_INDEX } from '../indexes.js';
 
 const searchInputSchema = z.object({
   query: z.string().optional(),
@@ -138,7 +139,7 @@ async function lookupByFeedbackId(
     const resp = await docClient.send(
       new QueryCommand({
         TableName: feedbackTable,
-        IndexName: 'gsi4-by-feedback-id',
+        IndexName: FEEDBACK_BY_ID_INDEX,
         KeyConditionExpression: 'feedback_id = :fid',
         ExpressionAttributeValues: { ':fid': feedbackId.toLowerCase().trim() },
         Limit: 1,
@@ -180,7 +181,7 @@ async function fetchDayPages(
   const resp = await docClient.send(
     new QueryCommand({
       TableName: feedbackTable,
-      IndexName: 'gsi1-by-date',
+      IndexName: FEEDBACK_BY_DATE_INDEX,
       KeyConditionExpression: 'gsi1pk = :pk',
       ExpressionAttributeValues: { ':pk': `DATE#${dateStr}` },
       ScanIndexForward: false,

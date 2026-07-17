@@ -6,6 +6,7 @@ and job Lambdas (document generator, document merger).
 
 import logging
 import re
+from shared.indexes import FEEDBACK_BY_CATEGORY_INDEX, FEEDBACK_BY_DATE_INDEX
 from datetime import datetime, timezone, timedelta
 from boto3.dynamodb.conditions import Key
 
@@ -132,7 +133,7 @@ def _fetch_and_filter(
         for category in categories:
             items.extend(_query_all_pages(
                 feedback_table,
-                index_name='gsi2-by-category',
+                index_name=FEEDBACK_BY_CATEGORY_INDEX,
                 key_expr=Key('gsi2pk').eq(f'CATEGORY#{category}'),
                 max_items=page_cap,
             ))
@@ -143,7 +144,7 @@ def _fetch_and_filter(
             date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
             items.extend(_query_all_pages(
                 feedback_table,
-                index_name='gsi1-by-date',
+                index_name=FEEDBACK_BY_DATE_INDEX,
                 key_expr=Key('gsi1pk').eq(f'DATE#{date}'),
                 max_items=page_cap,
             ))
