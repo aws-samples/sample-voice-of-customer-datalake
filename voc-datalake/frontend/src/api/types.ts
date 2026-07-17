@@ -5,6 +5,8 @@ export interface FeedbackItem {
   source_id: string
   source_platform: string
   source_channel: string
+  /** Ingestion-path provenance, e.g. 'manual', 'csv_upload', 'json_upload'. Absent for sources that don't send it. */
+  ingestion_method?: string
   source_url?: string
   brand_name: string
   source_created_at: string
