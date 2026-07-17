@@ -17,6 +17,13 @@ from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_w
 import requests
 
 
+# Word-based star-rating classes, e.g. <p class="star-rating Three">. Used by
+# books.toscrape.com and similar review widgets that encode the star count as a
+# number word in the element's CSS class rather than a digit or an attribute.
+# Keys MUST be lowercase — lookups normalize the class token via .lower().
+WORD_STAR_RATINGS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}
+
+
 class WebScraperIngestor(BaseIngestor):
     """Configurable web scraper for extracting feedback from websites."""
 
@@ -107,6 +114,12 @@ class WebScraperIngestor(BaseIngestor):
                 rating = int(match.group(1))
                 if 1 <= rating <= 5:
                     return rating
+            # Only consulted on the element the config's rating_selector
+            # resolves to, so a bare 'one'/'two' grid-column class elsewhere
+            # in the DOM can't leak in as a rating.
+            word_rating = WORD_STAR_RATINGS.get(cls.lower())
+            if word_rating is not None:
+                return word_rating
         
         text = element.get_text(strip=True)
         match = re.search(r'(\d+(?:\.\d+)?)\s*(?:/\s*5|stars?|★)', text, re.I)
