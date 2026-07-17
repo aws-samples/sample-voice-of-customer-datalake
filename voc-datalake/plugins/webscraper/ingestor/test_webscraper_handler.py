@@ -117,16 +117,16 @@ def lambda_context():
 class TestLambdaHandlerSecretCache:
     """Save-then-Run-now must not serve a pre-save secret snapshot (#141).
 
-    get_secret is lru_cached without TTL, so a warm container invoked right
-    after a config save would otherwise read the stale secret and fail with
-    'No scraper configuration found'. Manual runs (execution_id present)
-    must clear the cache first — the same guard the app-review ingestors use.
+    The cache-clear itself is centralized in BaseIngestor.__init__ (#215) and
+    covered by plugins/_shared/test/test_base_ingestor.py — the handler's
+    remaining contract is passing execution_id INTO the constructor, which is
+    what triggers the guard. These tests fail if that pass-through is removed
+    (which would silently reintroduce #141).
     """
 
-    @patch("shared.aws.clear_secret_cache")
     @patch("webscraper.ingestor.handler.WebScraperIngestor")
-    def test_manual_run_clears_secret_cache(
-        self, MockIngestor, mock_clear, lambda_context
+    def test_manual_run_passes_execution_id_to_constructor(
+        self, MockIngestor, lambda_context
     ):
         from webscraper.ingestor.handler import lambda_handler
         MockIngestor.return_value.run.return_value = {"status": "success"}
@@ -135,41 +135,45 @@ class TestLambdaHandlerSecretCache:
             {"execution_id": "exec-1", "scraper_id": "s1"}, lambda_context
         )
 
-        mock_clear.assert_called_once()
+        MockIngestor.assert_called_once_with(
+            execution_id="exec-1", target_scraper_id="s1"
+        )
 
-    @patch("shared.aws.clear_secret_cache")
     @patch("webscraper.ingestor.handler.WebScraperIngestor")
-    def test_scheduled_run_keeps_warm_cache(
-        self, MockIngestor, mock_clear, lambda_context
+    def test_scheduled_run_passes_no_execution_id(
+        self, MockIngestor, lambda_context
     ):
         from webscraper.ingestor.handler import lambda_handler
         MockIngestor.return_value.run.return_value = {"status": "success"}
 
         lambda_handler({}, lambda_context)
 
-        mock_clear.assert_not_called()
-        MockIngestor.assert_called_once()
+        MockIngestor.assert_called_once_with(
+            execution_id=None, target_scraper_id=None
+        )
 
-    @patch("shared.aws.clear_secret_cache")
-    @patch("webscraper.ingestor.handler.WebScraperIngestor")
-    def test_manual_run_constructs_ingestor_after_clearing(
-        self, MockIngestor, mock_clear, lambda_context
+    @patch("_shared.base_ingestor.get_dynamodb_resource")
+    @patch("_shared.base_ingestor.get_s3_client")
+    @patch("_shared.base_ingestor.get_sqs_client")
+    @patch("_shared.base_ingestor.get_secret")
+    @patch("_shared.base_ingestor.clear_secret_cache")
+    def test_manual_construction_clears_cache_before_config_read(
+        self, mock_clear, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
     ):
-        """Order matters: clearing after the ingestor loads its config would
-        be a no-op — the stale snapshot would already be in memory."""
+        """End-to-end through the REAL WebScraperIngestor: constructing with
+        an execution_id clears the cache before the secret/config is read."""
         call_order = []
+        mock_clear.side_effect = lambda: call_order.append("clear")
 
-        def record_clear():
-            call_order.append("clear")
+        def record_get_secret(_arn):
+            call_order.append("get_secret")
+            return {"configs": "[]"}
 
-        def record_ingestor(**_kwargs):
-            call_order.append("ingestor")
-            return MagicMock(run=MagicMock(return_value={"status": "success"}))
+        mock_get_secret.side_effect = record_get_secret
+        mock_dynamo.return_value.Table.return_value = MagicMock()
 
-        mock_clear.side_effect = record_clear
-        MockIngestor.side_effect = record_ingestor
+        from webscraper.ingestor.handler import WebScraperIngestor
+        ingestor = WebScraperIngestor(execution_id="exec-1", target_scraper_id="s1")
 
-        from webscraper.ingestor.handler import lambda_handler
-        lambda_handler({"execution_id": "exec-1"}, lambda_context)
-
-        assert call_order == ["clear", "ingestor"]
+        assert call_order == ["clear", "get_secret"]
+        assert ingestor.execution_id == "exec-1"

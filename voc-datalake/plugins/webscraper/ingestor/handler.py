@@ -27,9 +27,9 @@ WORD_STAR_RATINGS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}
 class WebScraperIngestor(BaseIngestor):
     """Configurable web scraper for extracting feedback from websites."""
 
-    def __init__(self, execution_id: str = None, target_scraper_id: str = None):
-        super().__init__()
-        self.execution_id = execution_id
+    def __init__(self, execution_id: str | None = None, target_scraper_id: str | None = None):
+        # execution_id → BaseIngestor manual-run cache clear (#141/#215).
+        super().__init__(execution_id=execution_id)
         self.target_scraper_id = target_scraper_id
         self.scraper_configs = self._load_scraper_configs()
         self.headers = {
@@ -426,13 +426,8 @@ def lambda_handler(event, context):
     execution_id = event.get('execution_id')
     scraper_id = event.get('scraper_id')
 
-    # Clear secret cache on manual runs so a warm container picks up a config
-    # saved moments ago (Save-then-Run-now, issue #141). get_secret is
-    # lru_cached without TTL; same guard as the app-review ingestors.
-    if execution_id:
-        from shared.aws import clear_secret_cache
-        clear_secret_cache()
-
+    # Manual-run secret-cache clearing (issue #141) is centralized in
+    # BaseIngestor.__init__ — passing execution_id below triggers it.
     ingestor = WebScraperIngestor(
         execution_id=execution_id,
         target_scraper_id=scraper_id

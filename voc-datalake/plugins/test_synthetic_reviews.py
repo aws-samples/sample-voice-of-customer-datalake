@@ -230,7 +230,10 @@ class TestFetchNewItems:
 class TestLambdaHandler:
     """lambda_handler wires execution_id and runs the ingestor."""
 
-    def test_sets_execution_id_from_event(self):
+    def test_passes_execution_id_to_the_constructor(self):
+        """execution_id must flow INTO the constructor (not be assigned
+        post-construction) so BaseIngestor's manual-run secret-cache clear
+        runs before the generator config is read (#141/#215)."""
         import types
         ctx = types.SimpleNamespace(
             function_name='voc-ingestor-synthetic_reviews',
@@ -241,8 +244,10 @@ class TestLambdaHandler:
         )
         with _make_ingestor(_configured_secrets()) as ingestor:
             from synthetic_reviews.ingestor import handler as handler_mod
-            with patch.object(handler_mod, 'SyntheticReviewsIngestor', return_value=ingestor):
-                ingestor.run = MagicMock(return_value={'status': 'success'})
+            ingestor.run = MagicMock(return_value={'status': 'success'})
+            with patch.object(
+                handler_mod, 'SyntheticReviewsIngestor', return_value=ingestor
+            ) as MockIngestor:
                 result = handler_mod.lambda_handler({'execution_id': 'run-123'}, ctx)
-        assert ingestor.execution_id == 'run-123'
+        MockIngestor.assert_called_once_with(execution_id='run-123')
         assert result == {'status': 'success'}

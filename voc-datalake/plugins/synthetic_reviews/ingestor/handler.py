@@ -61,8 +61,11 @@ SYSTEM_PROMPT = (
 class SyntheticReviewsIngestor(BaseIngestor):
     """Generates synthetic customer reviews via Bedrock and ingests them as synthetic data."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, execution_id: str | None = None):
+        # execution_id → BaseIngestor manual-run cache clear (#141/#215).
+        # This plugin previously LACKED the guard while its modal saves
+        # config then runs back-to-back — the worst case for a stale read.
+        super().__init__(execution_id=execution_id)
         self.company_name = (self.secrets.get("company_name") or "").strip()
         self.product_name = (self.secrets.get("product_name") or "").strip()
         self.product_description = (self.secrets.get("product_description") or "").strip()
@@ -244,7 +247,8 @@ class SyntheticReviewsIngestor(BaseIngestor):
 @metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event, context):
     """Lambda entry point. Honors execution_id from the manual-run payload for status tracking."""
-    ingestor = SyntheticReviewsIngestor()
-    if isinstance(event, dict) and event.get("execution_id"):
-        ingestor.execution_id = event["execution_id"]
+    # Manual-run secret-cache clearing (issue #141) is centralized in
+    # BaseIngestor.__init__ — passing execution_id below triggers it.
+    execution_id = event.get("execution_id") if isinstance(event, dict) else None
+    ingestor = SyntheticReviewsIngestor(execution_id=execution_id)
     return ingestor.run()

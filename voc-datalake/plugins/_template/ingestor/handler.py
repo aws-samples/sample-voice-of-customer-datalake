@@ -17,8 +17,12 @@ from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
 class MySourceIngestor(BaseIngestor):
     """Ingestor for My Source API."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, execution_id: str | None = None):
+        # Pass execution_id through — BaseIngestor clears the shared secret
+        # cache on manual runs BEFORE secrets are read (issues #141/#215).
+        # Never assign ingestor.execution_id after construction; that would
+        # skip the guard (enforced by plugins/test_manual_run_guard.py).
+        super().__init__(execution_id=execution_id)
         # Access your secrets (prefixed keys are stripped automatically)
         self.api_key = self.secrets.get("api_key", "")
 
@@ -86,5 +90,6 @@ class MySourceIngestor(BaseIngestor):
 @metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event, context):
     """Lambda entry point."""
-    ingestor = MySourceIngestor()
+    execution_id = event.get("execution_id") if isinstance(event, dict) else None
+    ingestor = MySourceIngestor(execution_id=execution_id)
     return ingestor.run()
