@@ -62,11 +62,9 @@ class SyntheticReviewsIngestor(BaseIngestor):
     """Generates synthetic customer reviews via Bedrock and ingests them as synthetic data."""
 
     def __init__(self, execution_id: str | None = None):
-        # execution_id flows to BaseIngestor, which clears the shared secret
-        # cache on manual runs BEFORE the generator config is read below
-        # (issues #141/#215). This plugin previously LACKED the guard, and its
-        # modal saves config then runs back-to-back — the worst case for a
-        # stale warm-container secret snapshot.
+        # execution_id → BaseIngestor manual-run cache clear (#141/#215).
+        # This plugin previously LACKED the guard while its modal saves
+        # config then runs back-to-back — the worst case for a stale read.
         super().__init__(execution_id=execution_id)
         self.company_name = (self.secrets.get("company_name") or "").strip()
         self.product_name = (self.secrets.get("product_name") or "").strip()

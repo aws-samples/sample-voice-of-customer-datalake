@@ -20,22 +20,24 @@ PLUGINS_DIR = Path(__file__).parent
 
 # Matches `<anything>.execution_id = ...` EXCEPT `self.execution_id = ...`
 # (the base class owns the attribute; plugins must pass it via __init__).
+# `(?!=)` keeps comparisons (`== `) out. Heuristic by design: it won't catch
+# setattr(...) or attribute chains (`a.b.execution_id =`) — acceptable, since
+# the guarded pattern is the one that has actually shipped.
 POST_CONSTRUCTION_ASSIGNMENT = re.compile(
-    r'^\s*(?!self\b)[A-Za-z_][A-Za-z0-9_]*\.execution_id\s*=', re.MULTILINE
+    r'^\s*(?!self\b)[A-Za-z_][A-Za-z0-9_]*\.execution_id\s*=(?!=)', re.MULTILINE
 )
 
 
 def _plugin_handler_files():
-    return sorted(
-        p for p in PLUGINS_DIR.glob('*/ingestor/handler.py')
-        if '_template' not in p.parts
-    )
+    # _template is included deliberately: it's what new plugins are copied
+    # from, so it must demonstrate the compliant pattern too.
+    return sorted(PLUGINS_DIR.glob('*/ingestor/handler.py'))
 
 
 def test_plugin_handlers_exist():
     """Sanity: the glob matches the real plugin layout (guard isn't vacuous)."""
     files = _plugin_handler_files()
-    assert len(files) >= 4, f'expected >=4 plugin handlers, found {[str(f) for f in files]}'
+    assert len(files) >= 5, f'expected >=5 plugin handlers, found {[str(f) for f in files]}'
 
 
 def test_no_plugin_assigns_execution_id_after_construction():

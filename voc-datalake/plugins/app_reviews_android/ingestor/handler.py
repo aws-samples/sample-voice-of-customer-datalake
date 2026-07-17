@@ -21,8 +21,7 @@ class AndroidAppReviewsIngestor(BaseIngestor):
     """Ingestor for Google Play Store reviews."""
 
     def __init__(self, execution_id: str | None = None):
-        # execution_id flows to BaseIngestor, which clears the shared secret
-        # cache on manual runs BEFORE app configs are read (issues #141/#215).
+        # execution_id → BaseIngestor manual-run cache clear (#141/#215).
         super().__init__(execution_id=execution_id)
         self.app_configs = self._load_app_configs()
         self.sort_by = self.secrets.get("sort_by", "newest")

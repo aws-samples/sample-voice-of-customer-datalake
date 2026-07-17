@@ -175,5 +175,5 @@ class TestLambdaHandlerSecretCache:
         from webscraper.ingestor.handler import WebScraperIngestor
         ingestor = WebScraperIngestor(execution_id="exec-1", target_scraper_id="s1")
 
-        assert call_order[:2] == ["clear", "get_secret"]
+        assert call_order == ["clear", "get_secret"]
         assert ingestor.execution_id == "exec-1"

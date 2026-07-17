@@ -27,9 +27,8 @@ WORD_STAR_RATINGS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}
 class WebScraperIngestor(BaseIngestor):
     """Configurable web scraper for extracting feedback from websites."""
 
-    def __init__(self, execution_id: str = None, target_scraper_id: str = None):
-        # execution_id flows to BaseIngestor, which clears the shared secret
-        # cache on manual runs BEFORE reading config (issues #141/#215).
+    def __init__(self, execution_id: str | None = None, target_scraper_id: str | None = None):
+        # execution_id → BaseIngestor manual-run cache clear (#141/#215).
         super().__init__(execution_id=execution_id)
         self.target_scraper_id = target_scraper_id
         self.scraper_configs = self._load_scraper_configs()
