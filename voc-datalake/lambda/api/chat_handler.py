@@ -19,6 +19,7 @@ from shared.api import (
 )
 from shared.feedback import basis_date, window_cutoff
 from shared.exceptions import ConfigurationError, NotFoundError as AppNotFoundError
+from shared.indexes import FEEDBACK_BY_DATE_INDEX
 
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Key
@@ -104,7 +105,7 @@ def chat():
     for i in range(min(days, 7)):
         date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
         response = feedback_table.query(
-            IndexName='gsi1-by-date',
+            IndexName=FEEDBACK_BY_DATE_INDEX,
             KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
             Limit=10,
             ScanIndexForward=False

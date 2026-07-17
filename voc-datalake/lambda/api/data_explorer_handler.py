@@ -22,6 +22,7 @@ from shared.logging import logger, tracer
 from shared.aws import get_s3_client, get_dynamodb_resource, get_sqs_client
 from shared.api import create_api_resolver, api_handler, DecimalEncoder
 from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
+from shared.indexes import FEEDBACK_BY_ID_INDEX
 
 s3_client = get_s3_client()
 dynamodb = get_dynamodb_resource()
@@ -29,9 +30,6 @@ sqs_client = get_sqs_client()
 
 RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
 FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
-# Feedback-id lookup GSI — must match core-stack.ts (gsi4-by-feedback-id).
-# Regression-tested in test_data_explorer_handler.py (#140).
-FEEDBACK_ID_INDEX = 'gsi4-by-feedback-id'
 PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 
 # Available buckets for browsing
@@ -352,7 +350,7 @@ def save_feedback():
         else:
             # Need to find the item first
             response = table.query(
-                IndexName=FEEDBACK_ID_INDEX,
+                IndexName=FEEDBACK_BY_ID_INDEX,
                 KeyConditionExpression='feedback_id = :fid',
                 ExpressionAttributeValues={':fid': feedback_id},
                 Limit=1
@@ -415,7 +413,7 @@ def delete_feedback():
         
         # Find the item first using GSI
         response = table.query(
-            IndexName=FEEDBACK_ID_INDEX,
+            IndexName=FEEDBACK_BY_ID_INDEX,
             KeyConditionExpression='feedback_id = :fid',
             ExpressionAttributeValues={':fid': feedback_id},
             Limit=1

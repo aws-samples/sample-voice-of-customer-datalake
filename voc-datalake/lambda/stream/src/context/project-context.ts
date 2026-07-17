@@ -5,6 +5,7 @@
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { ConfigurationError, NotFoundError } from '../lib/errors.js';
+import { FEEDBACK_BY_DATE_INDEX } from '../indexes.js';
 import { buildSinglePersonaPrompt, getLanguageInstruction } from './persona-prompt.js';
 
 // ── Avatar URL helpers ──
@@ -224,7 +225,7 @@ async function fetchRecentFeedback(
     const resp = await docClient.send(
       new QueryCommand({
         TableName: feedbackTable,
-        IndexName: 'gsi1-by-date',
+        IndexName: FEEDBACK_BY_DATE_INDEX,
         KeyConditionExpression: 'gsi1pk = :pk',
         ExpressionAttributeValues: { ':pk': 'DATE' },
         ScanIndexForward: false,

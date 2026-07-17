@@ -22,6 +22,7 @@ from shared.api import DecimalEncoder, validate_date_basis
 from shared.feedback import query_feedback_by_date
 from shared.tokens import hash_token
 from shared.tables import get_projects_table, get_feedback_table, get_aggregates_table
+from shared.indexes import FEEDBACK_BY_ID_INDEX
 from projects import autoseed_project
 
 logger = Logger()
@@ -442,7 +443,7 @@ def _tool_get_feedback_detail(args: dict, _token_info: dict) -> list[dict]:
         return [{"type": "text", "text": "Feedback table not configured"}]
 
     response = feedback_table.query(
-        IndexName='gsi4-by-feedback-id',
+        IndexName=FEEDBACK_BY_ID_INDEX,
         KeyConditionExpression=Key('feedback_id').eq(feedback_id),
         Limit=1,
     )
