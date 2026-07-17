@@ -62,6 +62,18 @@ describe('normalizeFeedbackItem', () => {
     const item = normalizeFeedbackItem(rawItem({ sentiment_score: -0.75 }))
     expect(item.sentiment_score).toBe(-0.75)
   })
+
+  it('preserves ingestion_method through normalization (#145)', () => {
+    // Regression: the schema strips unknown keys, so a field missing from it
+    // would be silently dropped at the API boundary even if persisted.
+    const item = normalizeFeedbackItem(rawItem({ ingestion_method: 'csv_upload' }))
+    expect(item.ingestion_method).toBe('csv_upload')
+  })
+
+  it('leaves ingestion_method undefined when the record does not carry it', () => {
+    const item = normalizeFeedbackItem(rawItem())
+    expect(item.ingestion_method).toBeUndefined()
+  })
 })
 
 describe('normalizeFeedbackItems', () => {
