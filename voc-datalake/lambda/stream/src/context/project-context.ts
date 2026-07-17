@@ -5,7 +5,7 @@
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { ConfigurationError, NotFoundError } from '../lib/errors.js';
-import { FEEDBACK_BY_DATE_INDEX } from '../indexes.js';
+import { fetchRecentFeedback } from './recent-feedback.js';
 import { buildSinglePersonaPrompt, getLanguageInstruction } from './persona-prompt.js';
 
 // ── Avatar URL helpers ──
@@ -204,50 +204,9 @@ function buildDocumentsContext(
 }
 
 // ── Feedback fetching ──
-
-interface FeedbackSummary {
-  count: number;
-  promptSection: string;
-}
-
-const feedbackItemSchema = z.object({
-  source_platform: z.string().optional(),
-  sentiment_label: z.string().optional(),
-  category: z.string().optional(),
-  original_text: z.string().optional(),
-}).passthrough();
-
-async function fetchRecentFeedback(
-  docClient: DynamoDBDocumentClient,
-  feedbackTable: string,
-): Promise<FeedbackSummary> {
-  try {
-    const resp = await docClient.send(
-      new QueryCommand({
-        TableName: feedbackTable,
-        IndexName: FEEDBACK_BY_DATE_INDEX,
-        KeyConditionExpression: 'gsi1pk = :pk',
-        ExpressionAttributeValues: { ':pk': 'DATE' },
-        ScanIndexForward: false,
-        Limit: 30,
-      }),
-    );
-    const rawItems = resp.Items ?? [];
-    if (rawItems.length === 0) return { count: 0, promptSection: '' };
-
-    const lines = rawItems.slice(0, 15).map((raw) => {
-      const item = feedbackItemSchema.parse(raw);
-      const src = item.source_platform ?? 'unknown';
-      const sent = item.sentiment_label ?? 'unknown';
-      const cat = item.category ?? 'unknown';
-      const text = (item.original_text ?? '').slice(0, 300);
-      return `[${src}|${sent}|${cat}] ${text}`;
-    });
-    return { count: rawItems.length, promptSection: `## Recent Customer Feedback\n${lines.join('\n\n')}\n\n` };
-  } catch {
-    return { count: 0, promptSection: '' };
-  }
-}
+// Extracted to recent-feedback.ts (issue #220): the per-day partition walk,
+// batching, and failure-visibility logic live there. Covered end-to-end via
+// buildProjectChatContext in project-context.test.ts.
 
 // ── System prompt assembly ──
 

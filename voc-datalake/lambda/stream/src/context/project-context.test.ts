@@ -1,15 +1,22 @@
 /**
  * Tests for Project Chat context builder.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildProjectChatContext } from './project-context.js';
 
-function createMockDocClient(responses: Record<string, unknown>[][] = []) {
+function createMockDocClient(
+  responses: Record<string, unknown>[][] = [],
+  rejectAt?: { index: number; error: Error },
+) {
   let callIndex = 0;
   return {
     send: vi.fn().mockImplementation(() => {
-      const items = callIndex < responses.length ? responses[callIndex] : [];
+      const current = callIndex;
       callIndex++;
+      if (rejectAt && current === rejectAt.index) {
+        return Promise.reject(rejectAt.error);
+      }
+      const items = current < responses.length ? responses[current] : [];
       return Promise.resolve({ Items: items });
     }),
   } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
@@ -252,5 +259,172 @@ describe('buildProjectChatContext', () => {
 
     expect(ctx.systemPrompt).toContain('No Avatar Persona');
     expect(ctx.metadata.selected_personas).toStrictEqual(['No Avatar Persona']);
+  });
+});
+
+describe('fetchRecentFeedback via buildProjectChatContext (regression #220)', () => {
+  // Pin the clock so the DATE#YYYY-MM-DD assertions can't flake across a
+  // UTC-midnight boundary during a test run.
+  const FIXED_NOW = new Date('2026-07-17T12:00:00Z');
+  const todayUtc = '2026-07-17';
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_NOW);
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    warnSpy.mockRestore();
+  });
+
+  // One parallel batch of day queries (mirrors DAY_QUERY_BATCH_SIZE in
+  // recent-feedback.ts); +1 for the initial project query.
+  const BATCH = 7;
+
+  function makeFeedback(overrides: Record<string, unknown> = {}) {
+    return {
+      source_platform: 'webscraper',
+      sentiment_label: 'negative',
+      category: 'delivery',
+      original_text: 'Package arrived late',
+      ...overrides,
+    };
+  }
+
+  /** Extract the gsi1pk value from a recorded QueryCommand call. */
+  function pkOfCall(call: unknown[]): string {
+    const cmd = call[0] as { input: { ExpressionAttributeValues?: Record<string, unknown> } };
+    const pk = cmd.input.ExpressionAttributeValues?.[':pk'];
+    return typeof pk === 'string' ? pk : '';
+  }
+
+  it('queries per-day DATE#YYYY-MM-DD partitions, never the bare DATE literal', async () => {
+    const docClient = createMockDocClient([
+      [projectMeta],
+      [makeFeedback()],
+    ]);
+
+    await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    const sendMock = (docClient.send as ReturnType<typeof vi.fn>);
+    const feedbackCalls = sendMock.mock.calls.slice(1); // call 0 = project query
+    expect(feedbackCalls.length).toBeGreaterThan(0);
+    for (const call of feedbackCalls) {
+      const pk = pkOfCall(call);
+      expect(pk).toMatch(/^DATE#\d{4}-\d{2}-\d{2}$/);
+      expect(pk).not.toBe('DATE');
+    }
+    // The walk starts at today's UTC partition.
+    expect(pkOfCall(feedbackCalls[0])).toBe(`DATE#${todayUtc}`);
+  });
+
+  it('includes the recent-feedback section when a recent day has items', async () => {
+    const docClient = createMockDocClient([
+      [projectMeta],
+      [makeFeedback(), makeFeedback({ original_text: 'Love the new feature' })],
+    ]);
+
+    const ctx = await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    expect(ctx.systemPrompt).toContain('Recent Customer Feedback');
+    expect(ctx.systemPrompt).toContain('Package arrived late');
+    expect(ctx.metadata.context).toStrictEqual(
+      expect.objectContaining({ feedback_count: 2 }),
+    );
+  });
+
+  it('collects across days newest-first and stops batching once the target is met', async () => {
+    const day0 = Array.from({ length: 20 }, (_, i) => makeFeedback({ original_text: `day0 item ${i}` }));
+    const day1 = Array.from({ length: 20 }, (_, i) => makeFeedback({ original_text: `day1 item ${i}` }));
+    const docClient = createMockDocClient([
+      [projectMeta],
+      day0,
+      day1,
+    ]);
+
+    const ctx = await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    // 20 from day 0 top up to the 30-item target from day 1; newest day's
+    // items keep priority in the prompt, and no second batch is issued.
+    expect(ctx.metadata.context).toStrictEqual(
+      expect.objectContaining({ feedback_count: 30 }),
+    );
+    expect(ctx.systemPrompt).toContain('day0 item 0');
+    const sendMock = (docClient.send as ReturnType<typeof vi.fn>);
+    expect(sendMock.mock.calls).toHaveLength(1 + BATCH);
+    expect(pkOfCall(sendMock.mock.calls[1])).toBe(`DATE#${todayUtc}`);
+    expect(pkOfCall(sendMock.mock.calls[2])).toBe('DATE#2026-07-16');
+  });
+
+  it('keeps collecting when one day query fails transiently, and warns', async () => {
+    // Call 1 (today's partition) rejects; call 2 (yesterday) has an item.
+    const responses: Record<string, unknown>[][] = [[projectMeta]];
+    responses[2] = [makeFeedback()];
+    const docClient = createMockDocClient(responses, {
+      index: 1,
+      error: new Error('throttled'),
+    });
+
+    const ctx = await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    expect(ctx.metadata.context).toStrictEqual(
+      expect.objectContaining({ feedback_count: 1 }),
+    );
+    expect(ctx.systemPrompt).toContain('Recent Customer Feedback');
+    // The original bug's worst property was silence — failures must be logged.
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(`day query failed for ${todayUtc}`),
+    );
+  });
+
+  it('stops the lookback on a persistent error instead of repeating it for 30 days', async () => {
+    const denied = new Error('not authorized');
+    denied.name = 'AccessDeniedException';
+    const docClient = createMockDocClient([[projectMeta]], { index: 1, error: denied });
+
+    const ctx = await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    expect(ctx.metadata.context).toStrictEqual(
+      expect.objectContaining({ feedback_count: 0 }),
+    );
+    const sendMock = (docClient.send as ReturnType<typeof vi.fn>);
+    // Only the first batch runs — no pointless retries across the window.
+    expect(sendMock.mock.calls).toHaveLength(1 + BATCH);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('AccessDeniedException'),
+    );
+  });
+
+  it('skips a malformed row without discarding the rest of the day', async () => {
+    const docClient = createMockDocClient([
+      [projectMeta],
+      [
+        { ...makeFeedback(), original_text: 12345 }, // wrong type → safeParse fails
+        makeFeedback({ original_text: 'valid row survives' }),
+      ],
+    ]);
+
+    const ctx = await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    expect(ctx.metadata.context).toStrictEqual(
+      expect.objectContaining({ feedback_count: 1 }),
+    );
+    expect(ctx.systemPrompt).toContain('valid row survives');
   });
 });
