@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { changeLanguage, isSupportedLanguage, languageNames, supportedLanguages } from '../../i18n/languages'
 import { authService } from '../../services/auth'
 import { useAuthStore } from '../../store/authStore'
 
@@ -111,6 +112,36 @@ function GroupsDisplay({ groups }: Readonly<{ groups: string[] }>) {
   )
 }
 
+// Language picker — exposes the shipped locales (issue #147). The selected
+// value persists to localStorage('voc-language') via the i18n detector cache.
+function LanguageField() {
+  const { t, i18n } = useTranslation('components')
+  const resolved = i18n.resolvedLanguage ?? ''
+  const current = isSupportedLanguage(resolved) ? resolved : 'en'
+  return (
+    <InfoField label={t('userProfile.language')}>
+      <select
+        aria-label={t('userProfile.language')}
+        value={current}
+        onChange={(e) => {
+          changeLanguage(e.target.value).catch((err: unknown) => {
+            // Locale bundle fetch can fail (offline / HTTP backend error);
+            // log instead of surfacing an unhandled rejection.
+            console.error('Language change failed:', err)
+          })
+        }}
+        className="input"
+      >
+        {supportedLanguages.map((lang) => (
+          <option key={lang} value={lang}>
+            {languageNames[lang]}
+          </option>
+        ))}
+      </select>
+    </InfoField>
+  )
+}
+
 // Profile tab content
 function ProfileTab({
   user, isAdmin,
@@ -141,6 +172,7 @@ function ProfileTab({
           <RoleDisplay isAdmin={isAdmin} />
         </InfoField>
         <GroupsDisplay groups={user.groups ?? []} />
+        <LanguageField />
       </div>
     </div>
   )

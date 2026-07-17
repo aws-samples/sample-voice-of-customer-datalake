@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import UserProfileModal from './UserProfileModal'
+import { changeLanguage, languageNames, supportedLanguages } from '../../i18n/languages'
 import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
 
@@ -19,6 +20,16 @@ vi.mock('../../services/auth', () => ({
     changePassword: vi.fn(),
   },
 }))
+
+// Mock only the change helper — keep the real language constants so the
+// picker options assert against the shipped locale list.
+vi.mock('../../i18n/languages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../i18n/languages')>()
+  return {
+    ...actual,
+    changeLanguage: vi.fn().mockResolvedValue(undefined),
+  }
+})
 
 describe('UserProfileModal', () => {
   const mockOnClose = vi.fn()
@@ -104,6 +115,36 @@ describe('UserProfileModal', () => {
       // eslint-disable-next-line testing-library/no-node-access
       const avatar = document.querySelector('.rounded-full')
       expect(avatar).toHaveTextContent('T')
+    })
+  })
+
+  describe('language picker (issue #147)', () => {
+    it('renders a Language select on the profile tab', () => {
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+      expect(screen.getByRole('combobox', { name: 'Language' })).toBeInTheDocument()
+    })
+
+    it('lists all shipped locales as options with native names', () => {
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+      const options = screen.getAllByRole('option')
+      expect(options).toHaveLength(supportedLanguages.length)
+      for (const lang of supportedLanguages) {
+        expect(screen.getByRole('option', { name: languageNames[lang] })).toBeInTheDocument()
+      }
+    })
+
+    it('defaults to the active language (English in tests)', () => {
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+      expect(screen.getByRole('combobox', { name: 'Language' })).toHaveValue('en')
+    })
+
+    it('calls changeLanguage when a different locale is selected', async () => {
+      const user = userEvent.setup()
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Language' }), 'de')
+
+      expect(changeLanguage).toHaveBeenCalledWith('de')
     })
   })
 

@@ -12,41 +12,30 @@ import LanguageDetector from 'i18next-browser-languagedetector'
 import HttpBackend from 'i18next-http-backend'
 import { initReactI18next } from 'react-i18next'
 import { LOCALE_LOAD_PATH } from './loadPath'
+import { supportedLanguages } from './languages'
 
-export const supportedLanguages = ['en', 'es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko'] as const
-export type SupportedLanguage = (typeof supportedLanguages)[number]
-
-export const languageNames: Record<SupportedLanguage, string> = {
-  en: 'English',
-  es: 'Español',
-  fr: 'Français',
-  de: 'Deutsch',
-  pt: 'Português',
-  ja: '日本語',
-  zh: '中文',
-  ko: '한국어',
-}
+// Language constants and the change helper live in ./languages (side-effect
+// free) so UI components can import them without triggering this module's
+// i18n.init(). Re-exported here for backward compatibility.
+export { supportedLanguages, languageNames, changeLanguage } from './languages'
+export type { SupportedLanguage } from './languages'
 
 const defaultNS = 'common'
 const namespaces = ['common', 'dashboard', 'dataExplorer', 'feedback', 'feedbackDetail', 'chat', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail'] as const
-
-function isSupportedLanguage(lang: string): lang is SupportedLanguage {
-  return new Set<string>(supportedLanguages).has(lang)
-}
 
 void i18n
   .use(HttpBackend)
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    // Pin the UI to English until a real language switcher ships. This wins
-    // over any value the detector would resolve (including a stale
-    // 'voc-language' that earlier builds cached from the browser language),
-    // and — combined with caches:['localStorage'] below — rewrites that cache
-    // to 'en', so returning browsers self-heal. Remove this `lng` line in the
-    // PR that adds the switcher so localStorage('voc-language') drives it.
-    lng: 'en',
+    // No `lng` pin: the language switcher (UserProfileModal) now drives the
+    // active language via localStorage('voc-language'), read by the detector
+    // below. First visit (no cached choice) falls back to English.
     fallbackLng: 'en',
+    // Reject unsupported cached values (e.g. a stale regional variant) so a
+    // bad localStorage entry can't select a locale we don't ship.
+    supportedLngs: [...supportedLanguages],
+    nonExplicitSupportedLngs: false,
     defaultNS,
     ns: [...namespaces],
 
@@ -55,9 +44,10 @@ void i18n
     backend: { loadPath: LOCALE_LOAD_PATH },
 
     detection: {
-      // 'navigator' is intentionally omitted so a non-English browser doesn't
-      // render the partially-migrated UI in a mix of languages. Kept for the
-      // future switcher, which will set localStorage('voc-language').
+      // 'navigator' is intentionally omitted: the user's explicit choice
+      // (persisted to localStorage by the switcher via caches below) is the
+      // only signal, so a non-English browser still gets English until the
+      // user opts in to another language.
       order: ['localStorage'],
       lookupLocalStorage: 'voc-language',
       caches: ['localStorage'],
@@ -68,17 +58,15 @@ void i18n
 
     react: { useSuspense: true },
   })
-
-/**
- * Change the active language and persist to localStorage.
- */
-export function changeLanguage(lang: string): Promise<void> {
-  if (!isSupportedLanguage(lang)) {
-    return Promise.resolve()
-  }
-  return i18n.changeLanguage(lang).then(() => {
-    return
+  .then(() => {
+    // Initial sync once detection has resolved (index.html defaults to "en").
+    document.documentElement.lang = i18n.resolvedLanguage ?? 'en'
   })
-}
+
+// Keep <html lang> in sync for screen readers and hyphenation. Prefer
+// resolvedLanguage so both sync paths agree if a regional variant slips in.
+i18n.on('languageChanged', (lng) => {
+  document.documentElement.lang = i18n.resolvedLanguage ?? lng
+})
 
 export default i18n
