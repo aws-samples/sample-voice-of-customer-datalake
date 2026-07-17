@@ -5,7 +5,7 @@
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { ConfigurationError, NotFoundError } from '../lib/errors.js';
-import { FEEDBACK_BY_DATE_INDEX } from '../indexes.js';
+import { fetchRecentFeedback } from './recent-feedback.js';
 import { buildSinglePersonaPrompt, getLanguageInstruction } from './persona-prompt.js';
 
 // ── Avatar URL helpers ──
@@ -204,84 +204,8 @@ function buildDocumentsContext(
 }
 
 // ── Feedback fetching ──
-
-interface FeedbackSummary {
-  count: number;
-  promptSection: string;
-}
-
-const feedbackItemSchema = z.object({
-  source_platform: z.string().optional(),
-  sentiment_label: z.string().optional(),
-  category: z.string().optional(),
-  original_text: z.string().optional(),
-}).passthrough();
-
-type RecentFeedbackItem = z.infer<typeof feedbackItemSchema>;
-
-// How many items the recent-feedback prompt section collects, and how far
-// back to look for them. The processor writes per-day partitions
-// (gsi1pk = 'DATE#YYYY-MM-DD'), so "most recent" means walking backward day
-// by day until enough items are collected — the same pattern as
-// tools/search-feedback.ts. A bare 'DATE' equality query matches nothing
-// (issue #220), which silently emptied this prompt section.
-const RECENT_FEEDBACK_TARGET = 30;
-const RECENT_FEEDBACK_LOOKBACK_DAYS = 30;
-const RECENT_FEEDBACK_PROMPT_LINES = 15;
-
-/** Parse and append one page of rows, capped at the collection target.
- * Per-row safeParse: one malformed item must not discard the rest. */
-function collectFeedbackRows(
-  rawItems: Record<string, unknown>[] | undefined,
-  items: RecentFeedbackItem[],
-): void {
-  for (const raw of rawItems ?? []) {
-    if (items.length >= RECENT_FEEDBACK_TARGET) break;
-    const parsed = feedbackItemSchema.safeParse(raw);
-    if (parsed.success) items.push(parsed.data);
-  }
-}
-
-async function fetchRecentFeedback(
-  docClient: DynamoDBDocumentClient,
-  feedbackTable: string,
-): Promise<FeedbackSummary> {
-  const items: RecentFeedbackItem[] = [];
-  const now = new Date();
-
-  for (const dayOffset of Array.from({ length: RECENT_FEEDBACK_LOOKBACK_DAYS }, (_, idx) => idx)) {
-    if (items.length >= RECENT_FEEDBACK_TARGET) break;
-    const d = new Date(now);
-    d.setUTCDate(d.getUTCDate() - dayOffset);
-    const dateStr = d.toISOString().slice(0, 10);
-    try {
-      const resp = await docClient.send(
-        new QueryCommand({
-          TableName: feedbackTable,
-          IndexName: FEEDBACK_BY_DATE_INDEX,
-          KeyConditionExpression: 'gsi1pk = :pk',
-          ExpressionAttributeValues: { ':pk': `DATE#${dateStr}` },
-          ScanIndexForward: false,
-          Limit: RECENT_FEEDBACK_TARGET - items.length,
-        }),
-      );
-      collectFeedbackRows(resp.Items, items);
-    } catch {
-      // Transient per-day failure: keep what we have, try the previous day.
-    }
-  }
-
-  if (items.length === 0) return { count: 0, promptSection: '' };
-
-  const lines = items.slice(0, RECENT_FEEDBACK_PROMPT_LINES).map((item) => {
-    const src = item.source_platform ?? 'unknown';
-    const sent = item.sentiment_label ?? 'unknown';
-    const cat = item.category ?? 'unknown';
-    const text = (item.original_text ?? '').slice(0, 300);
-    return `[${src}|${sent}|${cat}] ${text}`;
-  });
-  return { count: items.length, promptSection: `## Recent Customer Feedback\n${lines.join('\n\n')}\n\n` };
-}
+// Extracted to recent-feedback.ts (issue #220): the per-day partition walk,
+// batching, and failure-visibility logic live there with their own tests.
 
 // ── System prompt assembly ──
 
