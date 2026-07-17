@@ -54,7 +54,7 @@ describe('changeLanguage', () => {
     expect(spy).not.toHaveBeenCalled()
   })
 
-  it('rejects a regional variant not in the shipped list', async () => {
+  it('ignores a regional variant not in the shipped list (resolves without switching)', async () => {
     const spy = vi.spyOn(i18n, 'changeLanguage').mockResolvedValue(dummyT)
 
     await changeLanguage('en-US')
