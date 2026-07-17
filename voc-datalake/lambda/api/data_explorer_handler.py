@@ -349,7 +349,7 @@ def save_feedback():
         else:
             # Need to find the item first
             response = table.query(
-                IndexName='feedback-id-index',
+                IndexName='gsi4-by-feedback-id',
                 KeyConditionExpression='feedback_id = :fid',
                 ExpressionAttributeValues={':fid': feedback_id},
                 Limit=1
@@ -412,7 +412,7 @@ def delete_feedback():
         
         # Find the item first using GSI
         response = table.query(
-            IndexName='feedback-id-index',
+            IndexName='gsi4-by-feedback-id',
             KeyConditionExpression='feedback_id = :fid',
             ExpressionAttributeValues={':fid': feedback_id},
             Limit=1
