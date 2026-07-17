@@ -205,7 +205,8 @@ function buildDocumentsContext(
 
 // ── Feedback fetching ──
 // Extracted to recent-feedback.ts (issue #220): the per-day partition walk,
-// batching, and failure-visibility logic live there with their own tests.
+// batching, and failure-visibility logic live there. Covered end-to-end via
+// buildProjectChatContext in project-context.test.ts.
 
 // ── System prompt assembly ──
 

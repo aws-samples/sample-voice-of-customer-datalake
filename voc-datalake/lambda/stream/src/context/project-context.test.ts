@@ -282,7 +282,7 @@ describe('fetchRecentFeedback via buildProjectChatContext (regression #220)', ()
   });
 
   // One parallel batch of day queries (mirrors DAY_QUERY_BATCH_SIZE in
-  // project-context.ts); +1 for the initial project query.
+  // recent-feedback.ts); +1 for the initial project query.
   const BATCH = 7;
 
   function makeFeedback(overrides: Record<string, unknown> = {}) {

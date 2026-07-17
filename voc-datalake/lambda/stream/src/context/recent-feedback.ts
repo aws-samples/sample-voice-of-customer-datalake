@@ -33,7 +33,11 @@ const RECENT_FEEDBACK_PROMPT_LINES = 15;
 // This runs on every project chat/roundtable request (not just explicit tool
 // calls), so day queries are issued in parallel batches: a sparse or empty
 // table costs at most LOOKBACK/BATCH sequential rounds (~5), not 30 serial
-// round-trips, and the common case (today has data) stays a single round.
+// round-trips. Deliberate trade-off: even when today's partition alone could
+// fill the target, one batch still issues 7 parallel queries with
+// Limit: TARGET each (up to 7×30 items evaluated to keep 30) — we pay a
+// little read amplification to bound latency. Don't "optimize" this back to
+// sequential-with-early-exit without re-reading the round-trip math above.
 const DAY_QUERY_BATCH_SIZE = 7;
 
 // Error names that will fail identically for every partition of the same
