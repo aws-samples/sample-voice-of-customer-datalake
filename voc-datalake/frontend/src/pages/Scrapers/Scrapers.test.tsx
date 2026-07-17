@@ -256,6 +256,33 @@ describe('Scrapers', () => {
       })
       expect(screen.queryByRole('heading', { name: 'Synthetic Data' })).not.toBeInTheDocument()
     })
+
+    it('refreshes the card when the generator modal closes (a just-finished run shows immediately)', async () => {
+      mockSyntheticPlugins.push(syntheticPlugin)
+      // Card mounts with no run history…
+      mockGetSourceRunStatus.mockResolvedValue({ source: 'synthetic_reviews', status: 'never_run' })
+      const user = userEvent.setup()
+
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      expect(await screen.findByText(/not run yet/i)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: /generate/i }))
+
+      // …a run completes while the modal is open…
+      mockGetSourceRunStatus.mockResolvedValue({
+        source: 'synthetic_reviews',
+        status: 'completed',
+        completed_at: '2026-07-17T09:00:00Z',
+        items_found: 3,
+        errors: [],
+      })
+
+      // …and closing the modal invalidates ['source-run-status'] → refetch.
+      await user.click(screen.getByRole('button', { name: /^close$/i }))
+
+      expect(await screen.findByText(/3 items generated/i)).toBeInTheDocument()
+      expect(screen.queryByText(/not run yet/i)).not.toBeInTheDocument()
+    })
   })
 
   describe('template selector', () => {
