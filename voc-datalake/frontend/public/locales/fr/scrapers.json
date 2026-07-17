@@ -201,6 +201,12 @@
     "running": "En cours..."
   },
   "subtitle": "Configurez les web scrapers et les sources d'avis d'applications pour collecter les retours",
+  "syntheticCard": {
+    "generate": "Générer",
+    "lastSummary": "Dernière exécution : {{items}} éléments générés le {{date}}",
+    "neverRun": "Pas encore exécuté — cliquez sur Générer pour créer des avis synthétiques.",
+    "sectionTitle": "Données Synthétiques"
+  },
   "templateSelector": {
     "appReviewSources": "Sources d'avis d'applications",
     "autoDiscovered": "Auto-découvert",

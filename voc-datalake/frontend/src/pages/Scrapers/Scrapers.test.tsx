@@ -11,12 +11,15 @@ const mockDeleteScraper = vi.fn()
 const mockRunScraper = vi.fn()
 const mockGetScraperStatus = vi.fn()
 const mockGetAppConfigs = vi.fn()
+const mockGetSourceRunStatus = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
     getAppConfigs: (source: string) => mockGetAppConfigs(source),
     deleteAppConfig: vi.fn().mockResolvedValue({ success: true }),
     runSource: vi.fn().mockResolvedValue({ success: true }),
+    getSourceRunStatus: (source: string) => mockGetSourceRunStatus(source),
+    getIntegrationCredentials: vi.fn().mockResolvedValue({}),
   },
 }))
 
@@ -48,8 +51,26 @@ const mockPluginManifests = [
   { id: 'app_reviews_android', name: 'Android App Reviews', icon: '🤖', config: [], hasIngestor: true, hasWebhook: false, hasS3Trigger: false, enabled: true },
 ]
 
+// Mutable per-test list of synthetic plugins; default empty so pre-existing
+// tests keep their behavior. Reset in beforeEach.
+const mockSyntheticPlugins: Array<Record<string, unknown>> = []
+
+const syntheticPlugin = {
+  id: 'synthetic_reviews',
+  name: 'Synthetic Data Review Generator',
+  icon: '🧪',
+  description: 'Generate realistic synthetic customer reviews with AI.',
+  category: 'synthetic',
+  config: [],
+  hasIngestor: true,
+  hasWebhook: false,
+  hasS3Trigger: false,
+  enabled: true,
+}
+
 vi.mock('../../plugins', () => ({
   getPluginManifests: () => mockPluginManifests,
+  getSyntheticPlugins: () => mockSyntheticPlugins,
 }))
 
 // Mock subcomponents
@@ -112,12 +133,14 @@ const mockScrapers = [
 describe('Scrapers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSyntheticPlugins.length = 0
     mockGetScrapers.mockResolvedValue({ scrapers: mockScrapers })
     mockGetScraperStatus.mockResolvedValue({ status: 'never_run' })
     mockSaveScraper.mockResolvedValue({ success: true })
     mockDeleteScraper.mockResolvedValue({ success: true })
     mockRunScraper.mockResolvedValue({ success: true })
     mockGetAppConfigs.mockResolvedValue({ apps: [] })
+    mockGetSourceRunStatus.mockResolvedValue({ source: 'synthetic_reviews', status: 'never_run' })
   })
 
   describe('rendering', () => {
@@ -183,6 +206,55 @@ describe('Scrapers', () => {
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /create scraper/i })).toBeInTheDocument()
       })
+    })
+
+    it('suppresses the empty state when a synthetic source exists (#146)', async () => {
+      mockGetScrapers.mockResolvedValue({ scrapers: [] })
+      mockSyntheticPlugins.push(syntheticPlugin)
+
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Synthetic Data Review Generator')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('No scrapers configured')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('synthetic data section (#146)', () => {
+    it('renders a card per synthetic plugin with the section title', async () => {
+      mockSyntheticPlugins.push(syntheticPlugin)
+
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Synthetic Data' })).toBeInTheDocument()
+        expect(screen.getByText('Synthetic Data Review Generator')).toBeInTheDocument()
+      })
+    })
+
+    it('opens the generator modal from the card Generate button', async () => {
+      mockSyntheticPlugins.push(syntheticPlugin)
+      const user = userEvent.setup()
+
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Synthetic Data Review Generator')).toBeInTheDocument()
+      })
+      await user.click(screen.getByRole('button', { name: /generate/i }))
+
+      // GeneratorConfigModal renders the plugin name in its header too.
+      expect(screen.getAllByText('Synthetic Data Review Generator').length).toBeGreaterThan(1)
+    })
+
+    it('does not render the section when no synthetic plugins exist', async () => {
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Scraper')).toBeInTheDocument()
+      })
+      expect(screen.queryByRole('heading', { name: 'Synthetic Data' })).not.toBeInTheDocument()
     })
   })
 

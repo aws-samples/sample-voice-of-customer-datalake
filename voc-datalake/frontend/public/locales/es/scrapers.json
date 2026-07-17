@@ -201,6 +201,12 @@
     "running": "Ejecutando..."
   },
   "subtitle": "Configure web scrapers y fuentes de reseñas de apps para recopilar feedback",
+  "syntheticCard": {
+    "generate": "Generar",
+    "lastSummary": "Última ejecución: {{items}} elementos generados el {{date}}",
+    "neverRun": "Aún sin ejecutar — haz clic en Generar para crear reseñas sintéticas.",
+    "sectionTitle": "Datos Sintéticos"
+  },
   "templateSelector": {
     "appReviewSources": "Fuentes de reseñas de apps",
     "autoDiscovered": "Auto-descubierto",

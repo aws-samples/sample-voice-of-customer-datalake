@@ -189,6 +189,12 @@
     "running": "Läuft..."
   },
   "subtitle": "Konfigurieren Sie Web-Scraper und App-Review-Quellen zur Feedback-Erfassung",
+  "syntheticCard": {
+    "generate": "Generieren",
+    "lastSummary": "Letzter Lauf: {{items}} Elemente generiert am {{date}}",
+    "neverRun": "Noch nicht ausgeführt — klicken Sie auf Generieren, um synthetische Bewertungen zu erstellen.",
+    "sectionTitle": "Synthetische Daten"
+  },
   "templateSelector": {
     "appReviewSources": "App-Bewertungsquellen",
     "autoDiscovered": "Automatisch erkannt",
