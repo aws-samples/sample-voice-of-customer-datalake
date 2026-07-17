@@ -7,13 +7,14 @@
  * stricter full-set mirror test in lambda/shared/test/test_indexes.py.
  */
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_ID_INDEX } from './indexes.js'
 
 function stackIndexNames(): Set<string> {
   // lambda/stream/src -> voc-datalake/lib/stacks/core-stack.ts
-  const stackPath = resolve(__dirname, '../../../lib/stacks/core-stack.ts')
+  // import.meta.url (not __dirname): this package is ESM/NodeNext.
+  const stackPath = fileURLToPath(new URL('../../../lib/stacks/core-stack.ts', import.meta.url))
   const source = readFileSync(stackPath, 'utf-8')
   return new Set([...source.matchAll(/indexName:\s*'([^']+)'/g)].map((m) => m[1]))
 }

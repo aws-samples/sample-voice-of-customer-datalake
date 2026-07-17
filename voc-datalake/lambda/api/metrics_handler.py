@@ -19,7 +19,13 @@ from shared.api import (
     get_configured_categories, api_handler, DEFAULT_CATEGORIES
 )
 from shared.feedback import basis_date, window_cutoff
-from shared.indexes import AGGREGATES_BY_METRIC_TYPE_INDEX, FEEDBACK_BY_CATEGORY_INDEX, FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_ID_INDEX, FEEDBACK_BY_URGENCY_INDEX
+from shared.indexes import (
+    AGGREGATES_BY_METRIC_TYPE_INDEX,
+    FEEDBACK_BY_CATEGORY_INDEX,
+    FEEDBACK_BY_DATE_INDEX,
+    FEEDBACK_BY_ID_INDEX,
+    FEEDBACK_BY_URGENCY_INDEX,
+)
 
 # Pagination bounds for /feedback. The candidate window is a function of
 # offset+limit, capped to prevent unbounded DynamoDB scans. The cap also defines

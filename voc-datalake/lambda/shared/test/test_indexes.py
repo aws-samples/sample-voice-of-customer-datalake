@@ -21,6 +21,9 @@ def _repo_root() -> Path:
 
 
 def _stack_index_names() -> set[str]:
+    # Assumes every GSI lives in core-stack.ts (true today — all seven tables
+    # are defined there). If an index is ever added in another stack file,
+    # widen this to glob lib/stacks/*.ts.
     source = (_repo_root() / 'lib' / 'stacks' / 'core-stack.ts').read_text()
     return set(re.findall(r"indexName:\s*'([^']+)'", source))
 
@@ -47,9 +50,17 @@ class TestIndexMirror:
         missing = stream_names - _stack_index_names()
         assert not missing, f'stream declares indexes the stack does not define: {missing}'
 
+    # Two literal shapes to catch:
+    # 1. Names following the stack's gsiN-by-* convention, wherever they appear.
+    # 2. ANY string literal passed straight to an IndexName=/index_name= kwarg —
+    #    the actual #140 failure was IndexName='feedback-id-index', a name that
+    #    matches no convention at all, so a convention-only scan misses it.
+    _GSI_CONVENTION = re.compile(r"['\"](gsi\d+-by-[a-z-]+)['\"]")
+    _INDEX_KWARG_LITERAL = re.compile(r"(?:IndexName|index_name)\s*=\s*['\"]([^'\"]+)['\"]")
+
     def test_no_new_hardcoded_index_literals_in_python(self):
-        """Handlers must use shared.indexes — a fresh 'gsi*-by-*' string
-        literal outside indexes.py reintroduces the drift this issue killed."""
+        """Handlers must use shared.indexes — a fresh GSI-name string literal
+        outside indexes.py reintroduces the drift this issue killed."""
         lambda_dir = _repo_root() / 'lambda'
         offenders = []
         for py in lambda_dir.rglob('*.py'):
@@ -61,9 +72,11 @@ class TestIndexMirror:
                 continue
             if '__pycache__' in parts or 'layers' in parts:
                 continue
-            for m in re.finditer(r"['\"](gsi\d+-by-[a-z-]+)['\"]", py.read_text()):
-                line = py.read_text()[: m.start()].count('\n') + 1
-                offenders.append(f'{rel.as_posix()}:{line} ({m.group(1)})')
+            source = py.read_text()
+            for pattern in (self._GSI_CONVENTION, self._INDEX_KWARG_LITERAL):
+                for m in pattern.finditer(source):
+                    line = source[: m.start()].count('\n') + 1
+                    offenders.append(f'{rel.as_posix()}:{line} ({m.group(1)})')
         assert not offenders, (
             'Hardcoded GSI-name literal(s) found — import from shared.indexes '
             f'instead (#213): {offenders}'

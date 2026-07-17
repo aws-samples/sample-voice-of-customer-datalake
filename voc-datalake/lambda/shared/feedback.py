@@ -6,9 +6,11 @@ and job Lambdas (document generator, document merger).
 
 import logging
 import re
-from shared.indexes import FEEDBACK_BY_CATEGORY_INDEX, FEEDBACK_BY_DATE_INDEX
 from datetime import datetime, timezone, timedelta
+
 from boto3.dynamodb.conditions import Key
+
+from shared.indexes import FEEDBACK_BY_CATEGORY_INDEX, FEEDBACK_BY_DATE_INDEX
 
 logger = logging.getLogger(__name__)
 
