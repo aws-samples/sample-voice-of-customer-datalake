@@ -20,8 +20,10 @@ from models import IOSAppConfig
 class IOSAppReviewsIngestor(BaseIngestor):
     """Ingestor for Apple App Store reviews."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, execution_id: str | None = None):
+        # execution_id flows to BaseIngestor, which clears the shared secret
+        # cache on manual runs BEFORE app configs are read (issues #141/#215).
+        super().__init__(execution_id=execution_id)
         self.app_configs = self._load_app_configs()
         self.sort_by = self.secrets.get("sort_by", "most_recent")
         # iOS App Store returns different reviews per country storefront (500 cap each).
@@ -183,16 +185,12 @@ class IOSAppReviewsIngestor(BaseIngestor):
 @metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event, context):
     """Lambda entry point. Optionally filters to a single app via event['app_id']."""
-    # Clear secret cache on manual runs to pick up newly added app configs
-    if isinstance(event, dict) and event.get("execution_id"):
-        from shared.aws import clear_secret_cache
-        clear_secret_cache()
-
-    ingestor = IOSAppReviewsIngestor()
+    # Manual-run secret-cache clearing (issue #141) is centralized in
+    # BaseIngestor.__init__ — passing execution_id below triggers it.
+    execution_id = event.get("execution_id") if isinstance(event, dict) else None
+    ingestor = IOSAppReviewsIngestor(execution_id=execution_id)
     if isinstance(event, dict):
         app_id = event.get("app_id")
         if app_id:
             ingestor.app_configs = [c for c in ingestor.app_configs if c.app_id == app_id]
-        if event.get("execution_id"):
-            ingestor.execution_id = event["execution_id"]
     return ingestor.run()

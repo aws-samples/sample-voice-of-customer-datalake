@@ -491,3 +491,65 @@ class TestBaseIngestorGenerateDeterministicId:
         id2 = ingestor._generate_deterministic_id(item)
         
         assert id1 == id2
+
+
+class TestManualRunSecretCacheClear:
+    """Centralized Save-then-Run-now guard (issues #141/#215).
+
+    get_secret is lru_cached without TTL and BaseIngestor reads the secret at
+    init, so manual runs (execution_id present) must clear the shared cache
+    BEFORE that read — otherwise a warm container serves the pre-save secret
+    snapshot. Previously three per-plugin copies of this guard existed (and
+    synthetic_reviews had none); it now lives here so every current and future
+    manual-run ingestor gets it for free.
+    """
+
+    def _make_ingestor(self, execution_id=None):
+        from _shared.base_ingestor import BaseIngestor
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield from []
+
+        return TestIngestor(execution_id=execution_id)
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.clear_secret_cache')
+    def test_manual_run_clears_cache_before_reading_the_secret(
+        self, mock_clear, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """Order matters: clearing after the read would be a no-op — the
+        stale snapshot would already be loaded."""
+        call_order = []
+        mock_clear.side_effect = lambda: call_order.append('clear')
+
+        def record_get_secret(_arn):
+            call_order.append('get_secret')
+            return {}
+
+        mock_get_secret.side_effect = record_get_secret
+        mock_dynamo.return_value.Table.return_value = MagicMock()
+
+        ingestor = self._make_ingestor(execution_id='exec-1')
+
+        assert call_order == ['clear', 'get_secret']
+        assert ingestor.execution_id == 'exec-1'
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.clear_secret_cache')
+    def test_scheduled_run_keeps_the_warm_cache(
+        self, mock_clear, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        mock_get_secret.return_value = {}
+        mock_dynamo.return_value.Table.return_value = MagicMock()
+
+        ingestor = self._make_ingestor()
+
+        mock_clear.assert_not_called()
+        assert ingestor.execution_id is None

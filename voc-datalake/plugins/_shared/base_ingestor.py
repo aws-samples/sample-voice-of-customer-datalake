@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer, metrics
 from shared.http_utils import fetch_with_retry
 from shared.aws import (
+    clear_secret_cache,
     get_dynamodb_resource,
     get_s3_client,
     get_sqs_client,
@@ -44,7 +45,19 @@ AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
 class BaseIngestor(ABC):
     """Base class for all data source ingestors."""
 
-    def __init__(self):
+    def __init__(self, execution_id: str | None = None):
+        """
+        Args:
+            execution_id: Present on manual ("Run now") invocations. Passing it
+                here — rather than assigning the attribute post-construction —
+                matters: manual runs clear the shared secret cache BEFORE the
+                secret is read below, so a warm container picks up credentials
+                saved moments ago (Save-then-Run-now, issues #141/#215).
+                Scheduled runs keep the warm cache.
+        """
+        self.execution_id: str | None = execution_id
+        if execution_id:
+            clear_secret_cache()
         self.source_platform = SOURCE_PLATFORM
         self.brand_name = BRAND_NAME
         self.brand_handles = BRAND_HANDLES
@@ -54,7 +67,6 @@ class BaseIngestor(ABC):
         self._sqs = get_sqs_client()
         self.circuit_breaker = CircuitBreaker(self.source_platform)
         self.aggregates_table = get_dynamodb_resource().Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
-        self.execution_id: str | None = None
 
     def _load_secrets(self) -> dict:
         """
