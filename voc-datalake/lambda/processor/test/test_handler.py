@@ -498,6 +498,55 @@ class TestProcessFeedback:
     @patch('processor.handler.translate_text')
     @patch('processor.handler.detect_language')
     @patch('processor.handler.check_duplicate')
+    def test_persists_ingestion_method_when_sent(
+        self, mock_check_dup, mock_detect, mock_translate, mock_sentiment, mock_llm,
+        sample_sqs_record, sample_llm_insights
+    ):
+        """Carries ingestion_method provenance to the persisted item (#145)."""
+        from processor.handler import process_feedback
+
+        mock_check_dup.return_value = False
+        mock_detect.return_value = 'en'
+        mock_translate.return_value = sample_sqs_record['text']
+        mock_sentiment.return_value = {'label': 'positive', 'score': 0.8}
+        mock_llm.return_value = {'insights': sample_llm_insights, 'metadata': {}}
+
+        sample_sqs_record['ingestion_method'] = 'csv_upload'
+
+        result = process_feedback(sample_sqs_record)
+
+        assert result['ingestion_method'] == 'csv_upload'
+
+    @patch('processor.handler.invoke_bedrock_llm')
+    @patch('processor.handler.get_comprehend_sentiment')
+    @patch('processor.handler.translate_text')
+    @patch('processor.handler.detect_language')
+    @patch('processor.handler.check_duplicate')
+    def test_omits_ingestion_method_when_not_sent(
+        self, mock_check_dup, mock_detect, mock_translate, mock_sentiment, mock_llm,
+        sample_sqs_record, sample_llm_insights
+    ):
+        """Sources that don't send ingestion_method must not gain a spurious
+        or empty field (None-stripping keeps the record shape unchanged)."""
+        from processor.handler import process_feedback
+
+        mock_check_dup.return_value = False
+        mock_detect.return_value = 'en'
+        mock_translate.return_value = sample_sqs_record['text']
+        mock_sentiment.return_value = {'label': 'positive', 'score': 0.8}
+        mock_llm.return_value = {'insights': sample_llm_insights, 'metadata': {}}
+
+        assert 'ingestion_method' not in sample_sqs_record
+
+        result = process_feedback(sample_sqs_record)
+
+        assert 'ingestion_method' not in result
+
+    @patch('processor.handler.invoke_bedrock_llm')
+    @patch('processor.handler.get_comprehend_sentiment')
+    @patch('processor.handler.translate_text')
+    @patch('processor.handler.detect_language')
+    @patch('processor.handler.check_duplicate')
     def test_uses_preset_category_when_provided(
         self, mock_check_dup, mock_detect, mock_translate, mock_sentiment, mock_llm, 
         sample_sqs_record, sample_llm_insights

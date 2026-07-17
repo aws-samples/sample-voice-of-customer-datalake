@@ -49,6 +49,7 @@ export const FeedbackItemSchema = z.object({
   source_id: lenientString,
   source_platform: lenientString,
   source_channel: lenientString,
+  ingestion_method: z.string().optional(),
   source_url: z.string().optional(),
   brand_name: lenientString,
   source_created_at: lenientString,

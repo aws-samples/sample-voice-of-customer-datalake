@@ -528,6 +528,9 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
         'source_id': raw_record.get('id', ''),
         'source_platform': source_platform,
         'source_channel': raw_record.get('source_channel', 'unknown'),
+        # Ingestion-path provenance (e.g. 'manual', 'csv_upload', 'json_upload').
+        # Optional: sources that don't send it omit the field via None-stripping.
+        'ingestion_method': raw_record.get('ingestion_method'),
         'source_url': raw_record.get('url'),
         'brand_name': source_display,
         'source_created_at': raw_record.get('created_at'),
