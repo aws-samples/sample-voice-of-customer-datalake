@@ -254,3 +254,131 @@ describe('buildProjectChatContext', () => {
     expect(ctx.metadata.selected_personas).toStrictEqual(['No Avatar Persona']);
   });
 });
+
+describe('fetchRecentFeedback via buildProjectChatContext (regression #220)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const todayUtc = new Date().toISOString().slice(0, 10);
+
+  function makeFeedback(overrides: Record<string, unknown> = {}) {
+    return {
+      source_platform: 'webscraper',
+      sentiment_label: 'negative',
+      category: 'delivery',
+      original_text: 'Package arrived late',
+      ...overrides,
+    };
+  }
+
+  /** Extract the gsi1pk value from a recorded QueryCommand call. */
+  function pkOfCall(call: unknown[]): string {
+    const cmd = call[0] as { input: { ExpressionAttributeValues?: Record<string, unknown> } };
+    const pk = cmd.input.ExpressionAttributeValues?.[':pk'];
+    return typeof pk === 'string' ? pk : '';
+  }
+
+  it('queries per-day DATE#YYYY-MM-DD partitions, never the bare DATE literal', async () => {
+    const docClient = createMockDocClient([
+      [projectMeta],
+      [makeFeedback()],
+    ]);
+
+    await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    const sendMock = (docClient.send as ReturnType<typeof vi.fn>);
+    const feedbackCalls = sendMock.mock.calls.slice(1); // call 0 = project query
+    expect(feedbackCalls.length).toBeGreaterThan(0);
+    for (const call of feedbackCalls) {
+      const pk = pkOfCall(call);
+      expect(pk).toMatch(/^DATE#\d{4}-\d{2}-\d{2}$/);
+      expect(pk).not.toBe('DATE');
+    }
+    // The walk starts at today's UTC partition.
+    expect(pkOfCall(feedbackCalls[0])).toBe(`DATE#${todayUtc}`);
+  });
+
+  it('includes the recent-feedback section when a recent day has items', async () => {
+    const docClient = createMockDocClient([
+      [projectMeta],
+      [makeFeedback(), makeFeedback({ original_text: 'Love the new feature' })],
+    ]);
+
+    const ctx = await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    expect(ctx.systemPrompt).toContain('Recent Customer Feedback');
+    expect(ctx.systemPrompt).toContain('Package arrived late');
+    expect(ctx.metadata.context).toStrictEqual(
+      expect.objectContaining({ feedback_count: 2 }),
+    );
+  });
+
+  it('walks backward across days and stops once the target is collected', async () => {
+    const day0 = Array.from({ length: 20 }, (_, i) => makeFeedback({ original_text: `day0 item ${i}` }));
+    const day1 = Array.from({ length: 20 }, (_, i) => makeFeedback({ original_text: `day1 item ${i}` }));
+    const docClient = createMockDocClient([
+      [projectMeta],
+      day0,
+      day1,
+    ]);
+
+    const ctx = await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    // 20 from day 0 + 10 from day 1 = the 30-item target; the walk stops there
+    // (1 project call + 2 day calls, not the full 30-day lookback).
+    expect(ctx.metadata.context).toStrictEqual(
+      expect.objectContaining({ feedback_count: 30 }),
+    );
+    const sendMock = (docClient.send as ReturnType<typeof vi.fn>);
+    expect(sendMock.mock.calls).toHaveLength(3);
+    expect(pkOfCall(sendMock.mock.calls[1])).toBe(`DATE#${todayUtc}`);
+    expect(pkOfCall(sendMock.mock.calls[2])).toMatch(/^DATE#\d{4}-\d{2}-\d{2}$/);
+    expect(pkOfCall(sendMock.mock.calls[2])).not.toBe(pkOfCall(sendMock.mock.calls[1]));
+  });
+
+  it('continues to the previous day when one day query fails', async () => {
+    let callIndex = 0;
+    const docClient = {
+      send: vi.fn().mockImplementation(() => {
+        callIndex++;
+        if (callIndex === 1) return Promise.resolve({ Items: [projectMeta] });
+        if (callIndex === 2) return Promise.reject(new Error('throttled'));
+        if (callIndex === 3) return Promise.resolve({ Items: [makeFeedback()] });
+        return Promise.resolve({ Items: [] });
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    const ctx = await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    expect(ctx.metadata.context).toStrictEqual(
+      expect.objectContaining({ feedback_count: 1 }),
+    );
+    expect(ctx.systemPrompt).toContain('Recent Customer Feedback');
+  });
+
+  it('skips a malformed row without discarding the rest of the day', async () => {
+    const docClient = createMockDocClient([
+      [projectMeta],
+      [
+        { ...makeFeedback(), original_text: 12345 }, // wrong type → safeParse fails
+        makeFeedback({ original_text: 'valid row survives' }),
+      ],
+    ]);
+
+    const ctx = await buildProjectChatContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1', 'hello',
+    );
+
+    expect(ctx.metadata.context).toStrictEqual(
+      expect.objectContaining({ feedback_count: 1 }),
+    );
+    expect(ctx.systemPrompt).toContain('valid row survives');
+  });
+});
