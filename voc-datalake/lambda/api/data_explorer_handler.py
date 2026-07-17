@@ -29,6 +29,9 @@ sqs_client = get_sqs_client()
 
 RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
 FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
+# Feedback-id lookup GSI — must match core-stack.ts (gsi4-by-feedback-id).
+# Regression-tested in test_data_explorer_handler.py (#140).
+FEEDBACK_ID_INDEX = 'gsi4-by-feedback-id'
 PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 
 # Available buckets for browsing
@@ -349,7 +352,7 @@ def save_feedback():
         else:
             # Need to find the item first
             response = table.query(
-                IndexName='gsi4-by-feedback-id',
+                IndexName=FEEDBACK_ID_INDEX,
                 KeyConditionExpression='feedback_id = :fid',
                 ExpressionAttributeValues={':fid': feedback_id},
                 Limit=1
@@ -412,7 +415,7 @@ def delete_feedback():
         
         # Find the item first using GSI
         response = table.query(
-            IndexName='gsi4-by-feedback-id',
+            IndexName=FEEDBACK_ID_INDEX,
             KeyConditionExpression='feedback_id = :fid',
             ExpressionAttributeValues={':fid': feedback_id},
             Limit=1

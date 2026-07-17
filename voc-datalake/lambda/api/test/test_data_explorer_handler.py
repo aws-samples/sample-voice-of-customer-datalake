@@ -329,6 +329,7 @@ class TestSaveFeedback:
 
         # Assert
         assert response['statusCode'] == 200
+        mock_table.query.assert_called_once()
         assert mock_table.query.call_args.kwargs['IndexName'] == 'gsi4-by-feedback-id'
 
     @patch('data_explorer_handler.dynamodb')
@@ -412,6 +413,7 @@ class TestDeleteFeedback:
 
         # Assert
         assert response['statusCode'] == 200
+        mock_table.query.assert_called_once()
         assert mock_table.query.call_args.kwargs['IndexName'] == 'gsi4-by-feedback-id'
 
     @patch('data_explorer_handler.dynamodb')
