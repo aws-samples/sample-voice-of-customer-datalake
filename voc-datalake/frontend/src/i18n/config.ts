@@ -63,9 +63,10 @@ void i18n
     document.documentElement.lang = i18n.resolvedLanguage ?? 'en'
   })
 
-// Keep <html lang> in sync for screen readers and hyphenation.
+// Keep <html lang> in sync for screen readers and hyphenation. Prefer
+// resolvedLanguage so both sync paths agree if a regional variant slips in.
 i18n.on('languageChanged', (lng) => {
-  document.documentElement.lang = lng
+  document.documentElement.lang = i18n.resolvedLanguage ?? lng
 })
 
 export default i18n

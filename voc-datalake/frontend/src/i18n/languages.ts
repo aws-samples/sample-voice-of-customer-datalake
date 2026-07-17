@@ -28,8 +28,10 @@ export const languageNames: Record<SupportedLanguage, string> = {
   ko: '한국어',
 }
 
+const supportedLanguageSet: ReadonlySet<string> = new Set(supportedLanguages)
+
 export function isSupportedLanguage(lang: string): lang is SupportedLanguage {
-  return new Set<string>(supportedLanguages).has(lang)
+  return supportedLanguageSet.has(lang)
 }
 
 /**
