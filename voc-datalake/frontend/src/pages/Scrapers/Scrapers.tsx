@@ -218,13 +218,12 @@ function useScraperMutations() {
 }
 
 function ScrapersContent({
-  scrapers, isLoading, appConfigPlugins, syntheticPlugins, generatorRefreshToken, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate,
+  scrapers, isLoading, appConfigPlugins, syntheticPlugins, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate,
 }: {
   readonly scrapers: ScraperConfig[]
   readonly isLoading: boolean
   readonly appConfigPlugins: PluginManifest[]
   readonly syntheticPlugins: PluginManifest[]
-  readonly generatorRefreshToken: number
   readonly onRefresh: () => void
   readonly onShowTemplates: () => void
   readonly onEdit: (s: ScraperConfig) => void
@@ -266,7 +265,7 @@ function ScrapersContent({
               <h2 className="text-sm font-semibold text-gray-700 mb-2">{t('syntheticCard.sectionTitle')}</h2>
               <div className="grid gap-4">
                 {syntheticPlugins.map((plugin) => (
-                  <SyntheticSourceCard key={plugin.id} plugin={plugin} refreshToken={generatorRefreshToken} onGenerate={() => onGenerate(plugin)} />
+                  <SyntheticSourceCard key={plugin.id} plugin={plugin} onGenerate={() => onGenerate(plugin)} />
                 ))}
               </div>
             </section>
@@ -298,8 +297,6 @@ export default function Scrapers() {
 
   const appConfigPlugins = getAppConfigPlugins()
   const syntheticPlugins = getSyntheticPlugins()
-  // Bumped when the generator modal closes so synthetic cards re-fetch status.
-  const [generatorRefreshToken, setGeneratorRefreshToken] = useState(0)
 
   const {
     data, isLoading, refetch,
@@ -381,7 +378,6 @@ export default function Scrapers() {
         isLoading={isLoading}
         appConfigPlugins={appConfigPlugins}
         syntheticPlugins={syntheticPlugins}
-        generatorRefreshToken={generatorRefreshToken}
         onRefresh={() => void refetch()}
         onShowTemplates={() => setShowTemplates(true)}
         onEdit={setEditingScraper}
@@ -420,7 +416,7 @@ export default function Scrapers() {
         onClose={() => {
           setSelectedGenerator(null)
           // Refresh synthetic cards so a just-finished run shows immediately.
-          setGeneratorRefreshToken((n) => n + 1)
+          void queryClient.invalidateQueries({ queryKey: ['source-run-status'] })
         }}
       />}
 

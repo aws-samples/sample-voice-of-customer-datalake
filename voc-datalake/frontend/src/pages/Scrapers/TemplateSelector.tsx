@@ -113,8 +113,6 @@ function getDiscoverablePlugins(): PluginManifest[] {
   )
 }
 
-
-
 /**
  * Merge API templates with built-in fallbacks.
  * API templates take precedence (by id) over built-ins.

@@ -2,25 +2,22 @@
  * @fileoverview Persistent Data Sources card for synthetic generator plugins
  * (issue #146). Shows the persisted last run (status badge, items generated,
  * date) via api.getSourceRunStatus and opens GeneratorConfigModal to run.
+ *
+ * Data flow follows the repo patterns: TanStack Query for fetching (the page
+ * invalidates ['source-run-status'] when the generator modal closes) and a
+ * lenient Zod schema at the wire boundary (./sourceRunStatus).
+ *
  * @module pages/Scrapers/SyntheticSourceCard
  */
 
+import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Sparkles } from 'lucide-react'
-import {
-  useCallback, useEffect, useState,
-} from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
+import { parseRunRecord } from './sourceRunStatus'
+import type { SourceRunStatus } from './sourceRunStatus'
 import type { PluginManifest } from '../../plugins/types'
-
-export interface SourceRunStatus {
-  status: string
-  started_at?: string
-  completed_at?: string
-  items_found?: number
-  errors?: string[]
-}
 
 function getLastRunBadge(status: SourceRunStatus): {
   className: string;
@@ -64,36 +61,21 @@ function LastRunSummary({ lastRun }: { readonly lastRun: SourceRunStatus }) {
 /**
  * One card per synthetic generator plugin. The Generate button delegates to
  * the page, which opens the existing GeneratorConfigModal (no duplicated run
- * flow); `refreshToken` changes when that modal closes so the card re-fetches.
+ * flow) and invalidates the ['source-run-status'] queries when it closes.
  */
 export default function SyntheticSourceCard({
-  plugin, onGenerate, refreshToken = 0,
+  plugin, onGenerate,
 }: {
   readonly plugin: PluginManifest
   readonly onGenerate: () => void
-  readonly refreshToken?: number
 }) {
   const { t } = useTranslation('scrapers')
-  const [lastRun, setLastRun] = useState<SourceRunStatus | null>(null)
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const result = await api.getSourceRunStatus(plugin.id)
-      // Wire-shape guard: only trust a real run record (string status that
-      // isn't the never_run sentinel). Anything else renders the never-run
-      // hint instead of a junk "0 items on Never" summary.
-      if (typeof result.status === 'string' && result.status !== '' && result.status !== 'never_run') {
-        setLastRun(result)
-      }
-    } catch {
-      /* status is decorative — never break the card */
-    }
-  }, [plugin.id])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount + modal close
-    void fetchStatus()
-  }, [fetchStatus, refreshToken])
+  const { data } = useQuery({
+    queryKey: ['source-run-status', plugin.id],
+    queryFn: () => api.getSourceRunStatus(plugin.id),
+  })
+  const lastRun = data === undefined ? null : parseRunRecord(data)
 
   return (
     <div className="card border-2 border-indigo-200 bg-indigo-50/30 transition-all">

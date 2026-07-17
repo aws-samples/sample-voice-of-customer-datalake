@@ -42,7 +42,9 @@ export function getEnabledPlugins(): PluginManifest[] {
  * plugin config. Shared by TemplateSelector and the Data Sources page.
  */
 export function getSyntheticPlugins(): PluginManifest[] {
-  return manifests.filter((m) => m.category === 'synthetic')
+  // enabled-only: a disabled generator has no deployed Lambda, so neither the
+  // New Source tile nor the Data Sources card should offer a broken Generate.
+  return manifests.filter((m) => m.enabled && m.category === 'synthetic')
 }
 
 // Types are available directly from './types'
