@@ -189,6 +189,12 @@
     "running": "Running..."
   },
   "subtitle": "Configure web scrapers and app review sources to collect feedback",
+  "syntheticCard": {
+    "generate": "Generate",
+    "lastSummary": "Last run: {{items}} items generated on {{date}}",
+    "neverRun": "Not run yet — click Generate to create synthetic reviews.",
+    "sectionTitle": "Synthetic Data"
+  },
   "templateSelector": {
     "appReviewSources": "App Review Sources",
     "autoDiscovered": "Auto-discovered",

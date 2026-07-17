@@ -121,6 +121,21 @@ const mockSourcesStatus = {
   ]
 };
 
+// Per-source persisted last-run records (?run_status=<source> variant of
+// GET /sources/status — the aggregates-table SOURCE_RUN# shape). Used by the
+// Synthetic Data source card (#146) and GeneratorConfigModal polling.
+const mockSourceRunStatuses = {
+  synthetic_reviews: {
+    source: 'synthetic_reviews',
+    execution_id: 'mock-exec-1',
+    status: 'completed',
+    started_at: '2026-07-15T09:00:00Z',
+    completed_at: '2026-07-15T09:01:30Z',
+    items_found: 5,
+    errors: [],
+  },
+};
+
 // Mock categories config
 // Problem resolution state (issue #66) — mutable so the toggle round-trips.
 const mockResolvedProblems = {};
@@ -335,8 +350,16 @@ const handlers = {
   // Feedback Forms list
   'GET /feedback-forms': () => ({ forms: mockFeedbackForms }),
 
-  // Sources status
-  'GET /sources/status': () => mockSourcesStatus,
+  // Sources status. With ?run_status=<source> returns the persisted last-run
+  // record for that source (backend _get_source_run_status shape) — used by
+  // GeneratorConfigModal polling and SyntheticSourceCard (#146).
+  'GET /sources/status': (body, query) => {
+    const source = query instanceof URLSearchParams ? query.get('run_status') : null;
+    if (typeof source === 'string' && source !== '') {
+      return mockSourceRunStatuses[source] ?? { source, status: 'never_run' };
+    }
+    return mockSourcesStatus;
+  },
 
   // User administration (issue #177) — stateful list; mutations live in the
   // parameterized /users/:username dispatch block.

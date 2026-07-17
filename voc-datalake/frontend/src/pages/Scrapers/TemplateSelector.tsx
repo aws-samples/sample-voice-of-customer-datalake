@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
-import { getPluginManifests } from '../../plugins'
+import { getPluginManifests, getSyntheticPlugins } from '../../plugins'
 import { useConfigStore } from '../../store/configStore'
 import type { ScraperTemplate } from '../../api/types'
 import type { PluginManifest } from '../../plugins/types'
@@ -111,14 +111,6 @@ function getDiscoverablePlugins(): PluginManifest[] {
   return getPluginManifests().filter(
     (p) => p.id !== 'webscraper' && p.category !== 'synthetic' && p.hasIngestor,
   )
-}
-
-/**
- * Get synthetic data generator plugins (category 'synthetic'). These are on-demand
- * generators configured via a dedicated modal rather than the multi-app plugin config.
- */
-function getSyntheticPlugins(): PluginManifest[] {
-  return getPluginManifests().filter((p) => p.category === 'synthetic')
 }
 
 /**

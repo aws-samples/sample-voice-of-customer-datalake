@@ -189,6 +189,12 @@
     "running": "実行中..."
   },
   "subtitle": "Webスクレイパーとアプリレビューソースを設定してフィードバックを収集",
+  "syntheticCard": {
+    "generate": "生成",
+    "lastSummary": "前回の実行: {{date}} に {{items}} 件生成",
+    "neverRun": "未実行 — 「生成」をクリックして合成レビューを作成します。",
+    "sectionTitle": "合成データ"
+  },
   "templateSelector": {
     "appReviewSources": "アプリレビューソース",
     "autoDiscovered": "自動検出",

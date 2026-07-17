@@ -189,6 +189,12 @@
     "running": "실행 중..."
   },
   "subtitle": "웹 스크레이퍼와 앱 리뷰 소스를 구성하여 피드백 수집",
+  "syntheticCard": {
+    "generate": "생성",
+    "lastSummary": "마지막 실행: {{date}}에 {{items}}개 생성",
+    "neverRun": "아직 실행되지 않음 — 생성을 클릭하여 합성 리뷰를 만드세요.",
+    "sectionTitle": "합성 데이터"
+  },
   "templateSelector": {
     "appReviewSources": "앱 리뷰 소스",
     "autoDiscovered": "자동 발견",

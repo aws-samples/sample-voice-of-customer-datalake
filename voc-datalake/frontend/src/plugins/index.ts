@@ -36,4 +36,15 @@ export function getEnabledPlugins(): PluginManifest[] {
   return manifests.filter((m) => m.enabled)
 }
 
+/**
+ * Get synthetic data generator plugins (category 'synthetic'). On-demand
+ * generators configured via GeneratorConfigModal rather than the multi-app
+ * plugin config. Shared by TemplateSelector and the Data Sources page.
+ */
+export function getSyntheticPlugins(): PluginManifest[] {
+  // enabled-only: a disabled generator has no deployed Lambda, so neither the
+  // New Source tile nor the Data Sources card should offer a broken Generate.
+  return manifests.filter((m) => m.enabled && m.category === 'synthetic')
+}
+
 // Types are available directly from './types'

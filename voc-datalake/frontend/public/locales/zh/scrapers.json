@@ -189,6 +189,12 @@
     "running": "运行中..."
   },
   "subtitle": "配置网页抓取器和应用评论源以收集反馈",
+  "syntheticCard": {
+    "generate": "生成",
+    "lastSummary": "上次运行：{{date}} 生成了 {{items}} 条",
+    "neverRun": "尚未运行 — 点击\"生成\"以创建合成评论。",
+    "sectionTitle": "合成数据"
+  },
   "templateSelector": {
     "appReviewSources": "应用评论源",
     "autoDiscovered": "自动发现",

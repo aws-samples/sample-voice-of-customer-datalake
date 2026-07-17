@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import { scrapersApi } from '../../api/scrapersApi'
 import ConfirmModal from '../../components/ConfirmModal'
-import { getPluginManifests } from '../../plugins'
+import { getPluginManifests, getSyntheticPlugins } from '../../plugins'
 import { useConfigStore } from '../../store/configStore'
 import { useManualImportStore } from '../../store/manualImportStore'
 import { AppConfigCard } from './AppConfigComponents'
@@ -28,6 +28,7 @@ import PluginConfigModal from './PluginConfigModal'
 import { getAppIdentifier } from './scraper-helpers'
 import ScraperCard from './ScraperCard'
 import ScraperEditor from './ScraperEditor'
+import SyntheticSourceCard from './SyntheticSourceCard'
 import TemplateSelector from './TemplateSelector'
 import type { RunStatusInfo } from './AppConfigComponents'
 import type {
@@ -217,11 +218,12 @@ function useScraperMutations() {
 }
 
 function ScrapersContent({
-  scrapers, isLoading, appConfigPlugins, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp,
+  scrapers, isLoading, appConfigPlugins, syntheticPlugins, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate,
 }: {
   readonly scrapers: ScraperConfig[]
   readonly isLoading: boolean
   readonly appConfigPlugins: PluginManifest[]
+  readonly syntheticPlugins: PluginManifest[]
   readonly onRefresh: () => void
   readonly onShowTemplates: () => void
   readonly onEdit: (s: ScraperConfig) => void
@@ -230,6 +232,7 @@ function ScrapersContent({
   readonly onEditPlugin: (p: PluginManifest) => void
   readonly onDeleteApp: (pluginId: string, appId: string) => void
   readonly onRunApp: (pluginId: string, appIdentifier: string) => void
+  readonly onGenerate: (p: PluginManifest) => void
 }) {
   const { t } = useTranslation('scrapers')
 
@@ -257,9 +260,19 @@ function ScrapersContent({
           {scrapers.map((scraper) => (
             <ScraperCard key={scraper.id} scraper={scraper} onEdit={() => onEdit(scraper)} onDelete={() => onDelete(scraper.id)} onRun={() => onRun(scraper.id)} />
           ))}
+          {syntheticPlugins.length > 0 ? (
+            <section aria-label={t('syntheticCard.sectionTitle')}>
+              <h2 className="text-sm font-semibold text-gray-700 mb-2">{t('syntheticCard.sectionTitle')}</h2>
+              <div className="grid gap-4">
+                {syntheticPlugins.map((plugin) => (
+                  <SyntheticSourceCard key={plugin.id} plugin={plugin} onGenerate={() => onGenerate(plugin)} />
+                ))}
+              </div>
+            </section>
+          ) : null}
         </div>
       )}
-      {!isLoading && scrapers.length === 0 && <EmptyState onCreateClick={onShowTemplates} />}
+      {!isLoading && scrapers.length === 0 && syntheticPlugins.length === 0 && <EmptyState onCreateClick={onShowTemplates} />}
     </div>
   )
 }
@@ -283,6 +296,7 @@ export default function Scrapers() {
   } | null>(null)
 
   const appConfigPlugins = getAppConfigPlugins()
+  const syntheticPlugins = getSyntheticPlugins()
 
   const {
     data, isLoading, refetch,
@@ -363,6 +377,7 @@ export default function Scrapers() {
         scrapers={scrapers}
         isLoading={isLoading}
         appConfigPlugins={appConfigPlugins}
+        syntheticPlugins={syntheticPlugins}
         onRefresh={() => void refetch()}
         onShowTemplates={() => setShowTemplates(true)}
         onEdit={setEditingScraper}
@@ -374,6 +389,7 @@ export default function Scrapers() {
           appId,
         })}
         onRunApp={(pluginId, appIdentifier) => void api.runSource(pluginId, appIdentifier)}
+        onGenerate={(plugin) => setSelectedGenerator(plugin)}
       />
 
       <ManualImportModal />
@@ -397,7 +413,11 @@ export default function Scrapers() {
 
       {selectedGenerator == null ? null : <GeneratorConfigModal
         plugin={selectedGenerator}
-        onClose={() => setSelectedGenerator(null)}
+        onClose={() => {
+          setSelectedGenerator(null)
+          // Refresh synthetic cards so a just-finished run shows immediately.
+          void queryClient.invalidateQueries({ queryKey: ['source-run-status'] })
+        }}
       />}
 
       {(isCreating || editingScraper != null) ? <ScraperEditor scraper={editingScraper} template={selectedTemplate} onSave={handleSaveScraper} onClose={handleCloseEditor} /> : null}
