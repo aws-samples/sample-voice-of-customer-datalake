@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
+import { z } from 'zod';
 import { VocCoreStack } from './core-stack';
 
 function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
@@ -90,5 +91,64 @@ describe('VocCoreStack UserPool UsernameConfiguration (issue #184)', () => {
     // assertion below to mean anything.
     expect(poolProps).toHaveLength(1);
     expect(poolProps[0]).not.toHaveProperty('UsernameConfiguration');
+  });
+});
+
+describe('VocCoreStack raw-data bucket CORS', () => {
+  /**
+   * The raw-data bucket is the presigned-upload target for project product
+   * docs. The browser PUTs straight to S3, so S3's own CORS rule — not API
+   * Gateway's — is what has to allow the method. Shipping GET-only made every
+   * upload fail in the browser with an opaque CORS error while the presigned
+   * URL itself was perfectly valid, which is a slow thing to diagnose.
+   *
+   * Identified by bucket name rather than logical id: the stack has three
+   * buckets and only this one is meant to carry a CORS rule at all.
+   */
+  const CorsRuleSchema = z.object({
+    AllowedMethods: z.array(z.string()),
+    AllowedOrigins: z.array(z.string()),
+  });
+  const RawBucketSchema = z.object({
+    CorsConfiguration: z.object({ CorsRules: z.array(CorsRuleSchema) }),
+  });
+
+  /**
+   * CORS rules on the raw-data bucket, validated rather than assumed. Parsing
+   * the synthesized shape means a CDK property rename surfaces as a schema
+   * error instead of an `undefined` that quietly passes every assertion below.
+   *
+   * Matched on logical id, not BucketName: `uniqueName()` builds names from
+   * `Aws.ACCOUNT_ID`/`Aws.REGION` pseudo-parameters, so BucketName synthesizes
+   * to an Fn::Join object rather than a comparable string.
+   */
+  function rawDataBucketCors(): z.infer<typeof CorsRuleSchema>[] {
+    const buckets = Object.entries(synthCoreTemplate().findResources('AWS::S3::Bucket'));
+    const raw = buckets
+      .filter(([logicalId]) => logicalId.startsWith('RawDataBucket'))
+      .map(([, bucket]) => RawBucketSchema.parse(bucket.Properties));
+    expect(raw, 'expected exactly one RawDataBucket carrying CORS rules').toHaveLength(1);
+    return raw[0].CorsConfiguration.CorsRules;
+  }
+
+  it('allows browser presigned PUT as well as GET', () => {
+    const rules = rawDataBucketCors();
+
+    expect(rules).toHaveLength(1);
+    expect(rules[0].AllowedMethods).toEqual(expect.arrayContaining(['GET', 'PUT']));
+  });
+
+  it('keeps the localhost dev origins alongside the deployed origin', () => {
+    // Dropping these silently breaks the upload flow under `npm run dev`.
+    expect(rawDataBucketCors()[0].AllowedOrigins).toEqual(
+      expect.arrayContaining(['http://localhost:5173', 'http://localhost:3000']),
+    );
+  });
+
+  it('grants no method beyond GET and PUT', () => {
+    // Presigned URLs are the auth gate, but the origin list includes a
+    // *.cloudfront.net wildcard — so the method list must stay minimal.
+    // DELETE/POST here would widen that wildcard into a real concern.
+    expect(rawDataBucketCors()[0].AllowedMethods.sort()).toEqual(['GET', 'PUT']);
   });
 });
