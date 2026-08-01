@@ -102,8 +102,13 @@ export class VocCoreStack extends cdk.Stack {
       serverAccessLogsBucket: this.accessLogsBucket,
       serverAccessLogsPrefix: 'raw-data-bucket/',
       cors: [{
-        allowedMethods: [s3.HttpMethods.GET],
-        allowedOrigins: corsAllowedOriginsBase,
+        // PUT is required for browser-side presigned uploads (project product docs).
+        // The CloudFront domain is not known at bucket-creation time (the frontend
+        // distribution references this bucket in its behaviors, so using its domain
+        // token here would create a circular dependency) — a *.cloudfront.net
+        // wildcard is safe because presigned URLs remain the actual auth gate.
+        allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT],
+        allowedOrigins: [...corsAllowedOriginsBase, 'https://*.cloudfront.net'],
         allowedHeaders: ['*'],
         maxAge: 3600,
       }],
