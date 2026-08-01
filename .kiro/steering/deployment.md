@@ -190,9 +190,21 @@ npm run deploy:frontend   # Deploy updated frontend
 The frontend fetches configuration from CloudFormation outputs:
 
 - `VITE_API_ENDPOINT` - API Gateway URL
-- `VITE_USER_POOL_ID` - Cognito User Pool ID
-- `VITE_USER_POOL_CLIENT_ID` - Cognito Client ID
+- `VITE_COGNITO_USER_POOL_ID` - Cognito User Pool ID
+- `VITE_COGNITO_CLIENT_ID` - Cognito Client ID
 - `VITE_COGNITO_REGION` - AWS Region
+- `VITE_IDENTITY_POOL_ID` - Cognito Identity Pool ID
+
+> These names must match `frontend/src/runtimeConfig.ts` exactly. All five are
+> **required**: `RuntimeConfigSchema` rejects an empty `identityPoolId`, and the
+> fallback then blanks every Cognito value — the login screen shows
+> "Cognito not configured" even when the user pool and client id resolved fine.
+
+**Local dev cannot use the deployed API.** `ALLOWED_ORIGIN` on the deployed API
+Lambdas is `https://<frontendDomain>` (`allowedOrigin = isDev ? '*' : ...` in
+api-stack.ts), so a dev server on `localhost:5173` is refused by CORS. For local
+work run `npm run mock` (localhost:3001) and accept that it exercises the UI
+only; real UI-plus-API integration is testable only against the deployed site.
 
 These are automatically set by `scripts/update-env.sh`.
 
