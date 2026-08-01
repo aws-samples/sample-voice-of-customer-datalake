@@ -38,6 +38,11 @@ DEFAULT_MAX_DELAY = 30.0  # seconds
 # thinking counts against maxTokens. See TestStrictJsonTokenHeadroom for the
 # enforced per-site floors.
 DEFAULT_MAX_CONTINUATIONS = 8
+# When an adaptive-thinking model spends the whole maxTokens budget on thinking
+# (zero visible text), retry the single-turn request with a doubled ceiling
+# instead of continuing (an empty assistant replay is rejected by Converse).
+_MAX_EMPTY_BUDGET_RAISES = 2
+_EMPTY_RAISE_CEILING = 16384
 
 # Nudge sent as the user turn when resuming a truncated response. Kept terse and
 # explicit so the model picks up exactly where it stopped without re-emitting text.
@@ -171,7 +176,37 @@ def converse(
         # so the model picks up exactly where it stopped. Without this, a long
         # PRD/PR-FAQ is saved half-written (the document-cutoff bug).
         continuations = 0
+        empty_budget_raises = 0
         while allow_continuation and stop_reason == 'max_tokens' and continuations < max_continuations:
+            if not result:
+                # Adaptive-thinking models can burn the entire maxTokens budget on
+                # thinking and return zero visible text. Replaying an empty
+                # assistant turn is rejected by Converse ("text content blocks
+                # must be non-empty"), so continuation can't help — instead,
+                # re-run the original single-turn request with a raised ceiling
+                # so the model has headroom for both thinking and output.
+                if empty_budget_raises >= _MAX_EMPTY_BUDGET_RAISES:
+                    logger.warning(
+                        f"[BEDROCK] Step '{step_name}' still produced no visible text after "
+                        f"{empty_budget_raises} maxTokens raise(s); giving up on continuation"
+                    )
+                    break
+                empty_budget_raises += 1
+                raised = min(kwargs['inferenceConfig']['maxTokens'] * 2, _EMPTY_RAISE_CEILING)
+                kwargs = {**kwargs, 'inferenceConfig': {**kwargs['inferenceConfig'], 'maxTokens': raised}}
+                logger.warning(
+                    f"[BEDROCK] Step '{step_name}' hit maxTokens with no visible text "
+                    f"(budget likely consumed by thinking); retrying with maxTokens={raised} "
+                    f"({empty_budget_raises}/{_MAX_EMPTY_BUDGET_RAISES})"
+                )
+                result, stop_reason = _invoke_with_retry(
+                    client=client,
+                    kwargs=kwargs,
+                    max_retries=max_retries,
+                    raise_on_throttle=raise_on_throttle,
+                    step_name=f"{step_name}_raise{empty_budget_raises}",
+                )
+                continue
             continuations += 1
             logger.warning(
                 f"[BEDROCK] Step '{step_name}' hit maxTokens — auto-continuing "

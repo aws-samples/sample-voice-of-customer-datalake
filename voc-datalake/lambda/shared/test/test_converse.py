@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from botocore.exceptions import ClientError
 
+
 class TestConverse:
     """Tests for converse function."""
 
@@ -159,6 +160,7 @@ class TestConverse:
         assert 'temperature' not in cfg
         assert cfg['maxTokens']  # other config still present
 
+
 class TestConverseRetry:
     """Tests for converse retry functionality."""
 
@@ -260,6 +262,7 @@ class TestConverseRetry:
         assert result == 'Success'
         assert mock_client.converse.call_count == 2
 
+
 class TestConverseChain:
     """Tests for converse_chain function."""
 
@@ -334,6 +337,7 @@ class TestConverseChain:
         call_args = mock_converse.call_args
         assert call_args.kwargs['thinking_budget'] == 3000
 
+
 class TestExtractText:
     """Tests for _extract_text helper function."""
 
@@ -375,6 +379,7 @@ class TestExtractText:
         content = [{'toolUse': {'name': 'search'}}]
         assert _extract_text(content) == ''
 
+
 class TestCalculateBackoff:
     """Tests for _calculate_backoff helper function."""
 
@@ -405,6 +410,7 @@ class TestCalculateBackoff:
         # Very high attempt number
         delay = _calculate_backoff(100)
         assert delay <= DEFAULT_MAX_DELAY + 1  # +1 for jitter
+
 
 class TestConverseEdgeCases:
     """Tests for edge cases in converse function."""
@@ -508,6 +514,7 @@ class TestConverseEdgeCases:
         assert result == 'Success'
         assert mock_client.converse.call_count == 2
 
+
 class TestConverseChainEdgeCases:
     """Tests for edge cases in converse_chain function."""
 
@@ -562,6 +569,7 @@ class TestConverseChainEdgeCases:
 
         call_args = mock_converse.call_args
         assert call_args.kwargs['max_retries'] == 10
+
 
 class TestConverseAutoContinuation:
     """Tests for auto-continuation when the model hits the maxTokens ceiling."""
@@ -650,6 +658,49 @@ class TestConverseAutoContinuation:
 
         assert result == 'partial'
         mock_client.converse.assert_called_once()
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_result_retries_with_raised_ceiling(self, mock_get_client):
+        """Adaptive-thinking models can burn the whole maxTokens budget on
+        thinking and return zero visible text. Instead of replaying an empty
+        assistant turn (rejected by Converse: 'text content blocks must be
+        non-empty'), the request is re-run single-turn with a doubled ceiling."""
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = [
+            self._resp('', stop_reason='max_tokens'),
+            self._resp('Full answer.', stop_reason='end_turn'),
+        ]
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Analyze this', step_name='research_analyze', max_tokens=3000)
+
+        assert result == 'Full answer.'
+        assert mock_client.converse.call_count == 2
+        # Retry is single-turn (no assistant replay) with a doubled budget.
+        retry_kwargs = mock_client.converse.call_args_list[1].kwargs
+        assert [m['role'] for m in retry_kwargs['messages']] == ['user']
+        assert retry_kwargs['inferenceConfig']['maxTokens'] == 6000
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_result_gives_up_after_max_raises(self, mock_get_client):
+        """If the model keeps returning empty text at the ceiling, stop after
+        the raise limit instead of looping — returns empty rather than crashing."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = self._resp('', stop_reason='max_tokens')
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Analyze this', step_name='research_analyze', max_tokens=3000)
+
+        # 1 initial + _MAX_EMPTY_BUDGET_RAISES retries, no ValidationException.
+        from shared.converse import _MAX_EMPTY_BUDGET_RAISES
+        assert mock_client.converse.call_count == 1 + _MAX_EMPTY_BUDGET_RAISES
+        assert result == ''
+
+
+
+
 
 class TestConverseSurfaceRouting:
     """converse() resolves its model through the per-surface picker (issue #96)."""
