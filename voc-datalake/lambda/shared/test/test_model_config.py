@@ -261,6 +261,40 @@ class TestAllowlistLockstep:
         """
         assert 'global.anthropic.claude-opus-4-8' in ALLOWED_MODEL_IDS
 
+    def test_mock_server_models_match_python(self):
+        """The local mock's /settings/model fixture is a THIRD mirror of this
+        allowlist, and it silently drifted: after the Opus 5 swap it still served
+        the old 4-model list with prototype defaulting to Opus 4.8, so local dev
+        showed a picker that no longer matched production.
+
+        Unlike the TS mirrors it had no lockstep test — hence this one.
+        """
+        import re
+        mock_source = (
+            self._repo_root() / 'frontend' / 'mock-server.js'
+        ).read_text()
+
+        block = mock_source.split('mockAvailableModels')[1].split('];')[0]
+        mock_ids = set(re.findall(r"id: '(global\.anthropic\.[^']+)'", block))
+        assert mock_ids == ALLOWED_MODEL_IDS, (
+            f'mock-server.js drifted from model_config.py: '
+            f'only-in-mock={mock_ids - ALLOWED_MODEL_IDS}, '
+            f'missing-from-mock={ALLOWED_MODEL_IDS - mock_ids}'
+        )
+
+        # Surface defaults matter too: a stale default is what made the local
+        # picker claim the prototype builder still ran on Opus 4.8.
+        defaults_block = mock_source.split('mockSurfaceDefaults')[1].split('};')[0]
+        # PICKER_SURFACES only — the internal "default" bucket isn't exposed.
+        for surface in PICKER_SURFACES:
+            expected = SURFACE_DEFAULTS[surface]
+            found = re.search(rf"{surface}: '([^']+)'", defaults_block)
+            assert found, f'mock-server.js has no default for surface {surface!r}'
+            assert found.group(1) == expected, (
+                f'mock default for {surface!r} is {found.group(1)!r}, '
+                f'model_config.py says {expected!r}'
+            )
+
     def test_nag_suppressions_are_derived_not_hardcoded(self):
         """cdk-nag suppressions must DERIVE their foundation-model ARNs from
         model-allowlist.ts, never re-hardcode them.
