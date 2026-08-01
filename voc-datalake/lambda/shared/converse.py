@@ -65,6 +65,23 @@ class BedrockThrottlingError(Exception):
     pass
 
 
+def _raised_empty_budget(current_max: int) -> int | None:
+    """Next maxTokens to try after a model returned zero visible text.
+
+    Doubles the budget, capped at `_EMPTY_RAISE_CEILING`, and returns None when
+    there is no headroom left to retry.
+
+    The clamp is UPWARD ONLY. A bare `min(current * 2, CEILING)` would LOWER the
+    budget for any caller already above the ceiling — `build_prototype` asks for
+    32000 on the adaptive-thinking 'prototype' surface, i.e. precisely the caller
+    most likely to land here — which makes the empty-text outcome strictly MORE
+    likely. And a caller sitting exactly at the ceiling would get a byte-identical
+    retry: two Bedrock calls for one answer. Both cases return None instead.
+    """
+    raised = min(current_max * 2, _EMPTY_RAISE_CEILING)
+    return raised if raised > current_max else None
+
+
 def converse(
     prompt: str,
     system_prompt: str = "",
@@ -191,8 +208,16 @@ def converse(
                         f"{empty_budget_raises} maxTokens raise(s); giving up on continuation"
                     )
                     break
+                current_max = kwargs['inferenceConfig']['maxTokens']
+                raised = _raised_empty_budget(current_max)
+                if raised is None:
+                    logger.warning(
+                        f"[BEDROCK] Step '{step_name}' produced no visible text at "
+                        f"maxTokens={current_max}, which is already at/above the raise "
+                        f"ceiling ({_EMPTY_RAISE_CEILING}); no headroom to retry"
+                    )
+                    break
                 empty_budget_raises += 1
-                raised = min(kwargs['inferenceConfig']['maxTokens'] * 2, _EMPTY_RAISE_CEILING)
                 kwargs = {**kwargs, 'inferenceConfig': {**kwargs['inferenceConfig'], 'maxTokens': raised}}
                 logger.warning(
                     f"[BEDROCK] Step '{step_name}' hit maxTokens with no visible text "
