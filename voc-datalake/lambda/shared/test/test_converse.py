@@ -700,18 +700,25 @@ class TestConverseAutoContinuation:
         from shared.converse import _raised_empty_budget
         assert _raised_empty_budget(current_max) == expected
 
-    def test_raise_ceiling_clears_every_caller_budget_in_the_repo(self):
-        """The ceiling must sit ABOVE the largest real caller, or the retry is
+    def test_raise_ceiling_clears_the_largest_known_caller_budget(self):
+        """The ceiling must sit ABOVE the largest known caller, or the retry is
         inert precisely where it is needed most.
 
         `build_prototype` asks for 32000 on the 'prototype' surface, whose default
         is Opus 5 — adaptive thinking, i.e. the likeliest caller to spend the whole
         budget on thinking and land in the empty-text branch. A ceiling at or below
-        32000 means that caller can never be retried."""
+        32000 means that caller can never be retried.
+
+        Scope is deliberately "known", not "every": the budget below is
+        hand-maintained rather than grepped out of the callers, because `shared/`
+        is bundled into many Lambdas and sibling handler paths are not reliably
+        present when these tests run. A NEW caller above the ceiling would not
+        trip this — it is caught instead by the ValidationException fallback,
+        which degrades to the empty result rather than crashing."""
         from shared.converse import _EMPTY_RAISE_CEILING, _raised_empty_budget
-        largest_caller_budget = 32000  # jobs/document_generator/handler.py
-        assert _EMPTY_RAISE_CEILING > largest_caller_budget
-        assert _raised_empty_budget(largest_caller_budget) is not None
+        largest_known_caller_budget = 32000  # jobs/document_generator/handler.py
+        assert _EMPTY_RAISE_CEILING > largest_known_caller_budget
+        assert _raised_empty_budget(largest_known_caller_budget) is not None
 
     @patch('shared.converse.get_bedrock_client')
     def test_empty_max_tokens_result_retries_the_prototype_budget(self, mock_get_client):
@@ -749,44 +756,85 @@ class TestConverseAutoContinuation:
         sent = mock_client.converse.call_args.kwargs['inferenceConfig']['maxTokens']
         assert sent == over_ceiling
 
-    @pytest.mark.parametrize('elapsed, past', [
-        (0.0, False),
-        (419.0, False),
-        (421.0, True),
-        (900.0, True),
+    @pytest.mark.parametrize('elapsed, deadline, past', [
+        (0.0, 420.0, False),
+        (419.0, 420.0, False),
+        (421.0, 420.0, True),
+        # A short-timeout caller can pass its own, smaller deadline.
+        (20.0, 15.0, True),
+        (10.0, 15.0, False),
     ])
-    def test_empty_raise_deadline_predicate(self, elapsed, past):
+    def test_empty_raise_deadline_predicate(self, elapsed, deadline, past):
         """The deadline is a pure decision, so it is tested as one.
 
         NOT tested by patching `shared.converse.time.time`: that module attribute
         IS the global `time` module, so patching it monkeypatches `time.time`
         process-wide and botocore's TLS clock breaks (SystemTimeWarning, SSL
         verification failures)."""
-        from shared.converse import _empty_raise_past_deadline, _EMPTY_RAISE_DEADLINE_SECONDS
-        assert _EMPTY_RAISE_DEADLINE_SECONDS == 420, 'fixtures straddle this value'
-        assert _empty_raise_past_deadline(elapsed) is past
+        from shared.converse import _empty_raise_past_deadline
+        assert _empty_raise_past_deadline(elapsed, deadline) is past
 
     @patch('shared.converse.get_bedrock_client')
-    def test_empty_max_tokens_result_skips_the_raise_past_the_deadline(
-        self, mock_get_client, monkeypatch,
-    ):
+    def test_empty_max_tokens_result_skips_the_raise_past_the_deadline(self, mock_get_client):
         """Headroom alone is not enough to retry — the invocation must also have
-        time left. The prototype caller runs on a 15-minute Lambda, and a timeout
-        mid-retry returns nothing at all, which is worse than returning ''.
+        time left. A timeout mid-retry returns nothing at all, which is worse
+        than returning ''.
 
-        Forced by moving the deadline, not the clock, so the global `time` module
-        stays untouched."""
+        Forced via the caller-facing `empty_raise_deadline_seconds` argument, so
+        no module state or clock is patched."""
         mock_client = MagicMock()
         mock_client.converse.return_value = self._resp('', stop_reason='max_tokens')
         mock_get_client.return_value = mock_client
-        import shared.converse as converse_mod
-        monkeypatch.setattr(converse_mod, '_EMPTY_RAISE_DEADLINE_SECONDS', -1)
+        from shared.converse import converse, _raised_empty_budget
         # Headroom DOES exist at this budget (32000 -> 64000), so only the
         # deadline can be what stops the retry.
-        assert converse_mod._raised_empty_budget(32000) == 64000
-        result = converse_mod.converse('Build this', step_name='build_prototype', max_tokens=32000)
+        assert _raised_empty_budget(32000) == 64000
+        result = converse('Build this', step_name='build_prototype', max_tokens=32000,
+                          empty_raise_deadline_seconds=-1)
         assert result == ''
         mock_client.converse.assert_called_once()
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_raise_rejected_by_model_returns_empty(self, mock_get_client):
+        """If the resolved model caps output below the raised budget, Bedrock
+        400s the retry — degrade to the pre-retry outcome rather than crashing.
+
+        _EMPTY_RAISE_CEILING is sized against Opus 5's 128K output limit, but this
+        branch is reachable for ANY resolved model, including an arbitrary
+        `model_id=` override outside the allowlist. Turning a harmless empty
+        result into a ValidationException would be worse than the failure the
+        retry was trying to fix."""
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = [
+            self._resp('', stop_reason='max_tokens'),
+            ClientError(
+                {'Error': {'Code': 'ValidationException',
+                           'Message': 'max_tokens: 64000 > 32000, the maximum for this model'}},
+                'Converse',
+            ),
+        ]
+        mock_get_client.return_value = mock_client
+        from shared.converse import converse
+        result = converse('Build this', step_name='build_prototype', max_tokens=32000)
+        assert result == ''
+        assert mock_client.converse.call_count == 2
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_raise_still_propagates_other_client_errors(self, mock_get_client):
+        """Only ValidationException is absorbed. An AccessDenied on the retry is a
+        real misconfiguration and must not be masked as an empty result."""
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = [
+            self._resp('', stop_reason='max_tokens'),
+            ClientError(
+                {'Error': {'Code': 'AccessDeniedException', 'Message': 'no model access'}},
+                'Converse',
+            ),
+        ]
+        mock_get_client.return_value = mock_client
+        from shared.converse import converse
+        with pytest.raises(ClientError):
+            converse('Build this', step_name='build_prototype', max_tokens=32000)
 
     @patch('shared.converse.get_bedrock_client')
     def test_empty_max_tokens_result_stops_once_the_raise_hits_the_ceiling(self, mock_get_client):

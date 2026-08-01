@@ -52,9 +52,16 @@ _MAX_EMPTY_BUDGET_RAISES = 2
 _EMPTY_RAISE_CEILING = 64000
 # A raise doubles the budget, so the retry can run substantially longer than the
 # call that just failed. Skip it once the invocation has already spent this long:
-# the 32000-token prototype caller runs on a 15-minute Lambda
-# (`DocumentGeneratorJob`), and being killed mid-retry returns NOTHING, which is
-# strictly worse than returning the empty result and letting the caller decide.
+# being killed mid-retry returns NOTHING, which is strictly worse than returning
+# the empty result and letting the caller decide.
+#
+# DEFAULT ONLY — calibrated for the long-budget job Lambdas, where this guard can
+# actually bind: `DocumentGeneratorJob` runs 15 minutes and is the 32000-token
+# caller. Short-timeout callers (API handlers, 1500-4096 tokens) can never reach
+# 420s, but their doubled retry is correspondingly cheap, so an inert guard there
+# is harmless rather than wrong. Any caller that needs the guard to bind sooner
+# passes `empty_raise_deadline_seconds=` — ideally derived from its own
+# `context.get_remaining_time_in_millis()`, which converse() does not receive.
 # Same guard shape as repo-review's CONTINUATION_DEADLINE_SECONDS.
 _EMPTY_RAISE_DEADLINE_SECONDS = 420
 
@@ -100,14 +107,14 @@ def _raised_empty_budget(current_max: int) -> int | None:
     return raised if raised > current_max else None
 
 
-def _empty_raise_past_deadline(elapsed_seconds: float) -> bool:
+def _empty_raise_past_deadline(elapsed_seconds: float, deadline_seconds: float) -> bool:
     """Whether too much of the invocation is gone to risk a doubled-budget retry.
 
-    See `_EMPTY_RAISE_DEADLINE_SECONDS`: the retry asks for twice the budget, so a
-    slow first call leaves less time to do more work. Returning the empty result
-    lets the caller fail cleanly; a Lambda timeout mid-retry returns nothing.
+    The retry asks for twice the budget, so a slow first call leaves less time to
+    do more work. Returning the empty result lets the caller fail cleanly; a
+    Lambda timeout mid-retry returns nothing at all.
     """
-    return elapsed_seconds > _EMPTY_RAISE_DEADLINE_SECONDS
+    return elapsed_seconds > deadline_seconds
 
 
 def converse(
@@ -122,6 +129,7 @@ def converse(
     raise_on_throttle: bool = True,
     step_name: str = "unknown",
     max_continuations: int = DEFAULT_MAX_CONTINUATIONS,
+    empty_raise_deadline_seconds: float = _EMPTY_RAISE_DEADLINE_SECONDS,
 ) -> str:
     """
     Simple text completion using Bedrock Converse API with retry support.
@@ -148,6 +156,11 @@ def converse(
             silently truncated. Set to 0 to disable. Ignored when extended
             thinking is enabled (multi-turn replay of thinking blocks is
             unsupported here).
+        empty_raise_deadline_seconds: Stop retrying an all-thinking (zero visible
+            text) response once this much of the invocation is spent. The default
+            suits the 15-minute job Lambdas; pass a smaller value on a
+            short-timeout function, ideally derived from that handler's own
+            `context.get_remaining_time_in_millis()`.
 
     Returns:
         Model response text (concatenated across any continuations)
@@ -246,7 +259,7 @@ def converse(
                     )
                     break
                 elapsed = time.time() - start_time
-                if _empty_raise_past_deadline(elapsed):
+                if _empty_raise_past_deadline(elapsed, empty_raise_deadline_seconds):
                     # The retry would ask for double the budget with less time to
                     # spend it. Returning the empty result lets the caller fail
                     # cleanly; a Lambda timeout mid-retry returns nothing at all.
@@ -264,13 +277,34 @@ def converse(
                     f"(budget likely consumed by thinking); retrying with maxTokens={raised} "
                     f"({empty_budget_raises}/{_MAX_EMPTY_BUDGET_RAISES})"
                 )
-                result, stop_reason = _invoke_with_retry(
-                    client=client,
-                    kwargs=kwargs,
-                    max_retries=max_retries,
-                    raise_on_throttle=raise_on_throttle,
-                    step_name=f"{step_name}_raise{empty_budget_raises}",
-                )
+                try:
+                    result, stop_reason = _invoke_with_retry(
+                        client=client,
+                        kwargs=kwargs,
+                        max_retries=max_retries,
+                        raise_on_throttle=raise_on_throttle,
+                        step_name=f"{step_name}_raise{empty_budget_raises}",
+                    )
+                except ClientError as e:
+                    if e.response.get('Error', {}).get('Code') != 'ValidationException':
+                        raise
+                    # The raised budget exceeds the RESOLVED model's own
+                    # max-output limit. `_EMPTY_RAISE_CEILING` is sized against
+                    # Opus 5 (128K), but this branch is reachable for any model
+                    # the picker resolves — and for an arbitrary `model_id=`
+                    # override or a legacy BEDROCK_MODEL_ID outside the
+                    # allowlist, so no per-model cap table could cover it.
+                    #
+                    # Degrade to the pre-retry outcome instead of propagating:
+                    # this path exists to recover an empty result, and turning
+                    # that harmless empty into a crash is strictly worse than
+                    # the failure it was trying to fix.
+                    logger.warning(
+                        f"[BEDROCK] Step '{step_name}' rejected maxTokens={raised} "
+                        f"(model {used_model} caps output below the raise ceiling): {e}; "
+                        f"returning the empty result instead of raising"
+                    )
+                    break
                 continue
             continuations += 1
             logger.warning(
