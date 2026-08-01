@@ -18,6 +18,7 @@ from shared.aws import BEDROCK_MODEL_ID  # noqa: E402
 
 SONNET5 = "global.anthropic.claude-sonnet-5"
 SONNET46 = "global.anthropic.claude-sonnet-4-6"
+OPUS5 = "global.anthropic.claude-opus-5"
 OPUS48 = "global.anthropic.claude-opus-4-8"
 HAIKU45 = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 
@@ -41,8 +42,8 @@ class TestAllowlist:
     def test_default_model_is_allowlisted(self):
         assert BEDROCK_MODEL_ID in ALLOWED_MODEL_IDS
 
-    def test_allowlist_has_all_four_models(self):
-        assert ALLOWED_MODEL_IDS == {SONNET5, SONNET46, OPUS48, HAIKU45}
+    def test_allowlist_has_all_five_models(self):
+        assert ALLOWED_MODEL_IDS == {SONNET5, SONNET46, OPUS5, OPUS48, HAIKU45}
 
     def test_every_surface_default_is_allowlisted(self):
         """A surface whose Automatic default isn't invocable would break that
@@ -56,29 +57,44 @@ class TestAllowlist:
 
     def test_model_entries_carry_stable_keys(self):
         keys = [m['key'] for m in ALLOWED_MODELS]
-        assert keys == ['sonnet5', 'sonnet46', 'opus48', 'haiku45']
+        assert keys == ['sonnet5', 'sonnet46', 'opus5', 'opus48', 'haiku45']
+
+    def test_every_model_declares_both_capability_flags(self):
+        """Both flags are data on the row so a new model can't land in one
+        capability set and be forgotten in the other — which is exactly how
+        Opus 4.8 ended up mis-classified before."""
+        for model in ALLOWED_MODELS:
+            assert isinstance(model['omit_temperature'], bool), model['key']
+            assert isinstance(model['adaptive_thinking'], bool), model['key']
 
 
 class TestCapabilityFlags:
-    def test_sonnet5_and_opus48_omit_temperature(self):
-        """Sonnet 5 (adaptive thinking always-on) and Opus 4.8 (deprecated
-        param) reject `temperature`; sending it would 400 every call."""
+    def test_adaptive_models_omit_temperature(self):
+        """Sonnet 5 and both Opus generations run adaptive thinking always-on,
+        which rules out sampling controls; sending `temperature` would 400."""
         assert omits_temperature(SONNET5)
+        assert omits_temperature(OPUS5)
         assert omits_temperature(OPUS48)
 
     def test_sonnet46_and_haiku_accept_temperature(self):
         assert not omits_temperature(SONNET46)
         assert not omits_temperature(HAIKU45)
 
-    def test_only_sonnet5_uses_adaptive_thinking(self):
+    def test_adaptive_thinking_covers_sonnet5_and_both_opus(self):
+        """Opus 4.7 and later reject a manual `thinking.budget_tokens` with a
+        400, so converse() must skip the field for BOTH Opus generations as it
+        does for Sonnet 5. Opus 4.8 being selectable makes this load-bearing:
+        it was previously in the omit-temperature set only."""
         assert uses_adaptive_thinking(SONNET5)
-        for model_id in (SONNET46, OPUS48, HAIKU45):
+        assert uses_adaptive_thinking(OPUS5)
+        assert uses_adaptive_thinking(OPUS48)
+        for model_id in (SONNET46, HAIKU45):
             assert not uses_adaptive_thinking(model_id)
 
 
 class TestSurfaceDefaults:
     def test_prototype_defaults_to_opus(self):
-        assert surface_default('prototype') == OPUS48
+        assert surface_default('prototype') == OPUS5
 
     def test_enrichment_defaults_to_haiku(self):
         """The high-volume enrichment path must stay on the cheap model by
@@ -96,7 +112,7 @@ class TestSurfaceDefaults:
 class TestGetActiveModelId:
     def test_returns_surface_default_without_table_env(self, monkeypatch):
         monkeypatch.delenv('AGGREGATES_TABLE', raising=False)
-        assert get_active_model_id('prototype') == OPUS48
+        assert get_active_model_id('prototype') == OPUS5
         assert get_active_model_id('enrichment') == HAIKU45
         assert get_active_model_id() == BEDROCK_MODEL_ID
 
@@ -113,7 +129,7 @@ class TestGetActiveModelId:
         with patch('shared.model_config.get_dynamodb_resource', return_value=resource):
             assert get_active_model_id('chat') == HAIKU45
             assert get_active_model_id('documents') == SONNET5
-            assert get_active_model_id('prototype') == OPUS48
+            assert get_active_model_id('prototype') == OPUS5
             assert get_active_model_id('enrichment') == HAIKU45
 
     def test_legacy_global_override_applies_to_unpinned_surfaces(self, monkeypatch):
@@ -122,12 +138,12 @@ class TestGetActiveModelId:
         monkeypatch.setenv('AGGREGATES_TABLE', 'agg')
         resource, _ = _table_returning({
             'model_id': SONNET46,
-            'surfaces': {'prototype': OPUS48},
+            'surfaces': {'prototype': OPUS5},
         })
         with patch('shared.model_config.get_dynamodb_resource', return_value=resource):
             assert get_active_model_id('chat') == SONNET46          # global fallback
             assert get_active_model_id('enrichment') == SONNET46    # global fallback
-            assert get_active_model_id('prototype') == OPUS48       # per-surface wins
+            assert get_active_model_id('prototype') == OPUS5       # per-surface wins
 
     def test_rejects_surface_value_outside_allowlist(self, monkeypatch):
         """A tampered or stale DB value must not reach Bedrock."""
@@ -154,7 +170,7 @@ class TestGetActiveModelId:
         resource.Table.return_value.get_item.side_effect = Exception('AccessDenied')
         with patch('shared.model_config.get_dynamodb_resource', return_value=resource):
             assert get_active_model_id('chat') == SONNET5
-            assert get_active_model_id('prototype') == OPUS48
+            assert get_active_model_id('prototype') == OPUS5
 
     def test_caches_lookup_within_ttl(self, monkeypatch):
         """One DynamoDB read serves every surface within the TTL."""
@@ -212,6 +228,19 @@ class TestAllowlistLockstep:
         py_omit = {m['id'] for m in ALLOWED_MODELS if m['omit_temperature']}
         assert ts_omit == py_omit
 
+    def test_ts_adaptive_thinking_set_matches_python(self):
+        """The adaptive-thinking set gates whether an explicit `thinking` budget
+        is sent. If the streaming mirror drifts from Python, one path 400s while
+        the other works — so pin them to each other like the allowlist."""
+        import re
+        ts_source = (
+            self._repo_root() / 'lambda' / 'stream' / 'src' / 'bedrock' / 'model-override.ts'
+        ).read_text()
+        adaptive_block = ts_source.split('ADAPTIVE_THINKING_IDS')[1].split(']);')[0]
+        ts_adaptive = set(re.findall(r"'(global\.anthropic\.[^']+)'", adaptive_block))
+        py_adaptive = {m['id'] for m in ALLOWED_MODELS if uses_adaptive_thinking(m['id'])}
+        assert ts_adaptive == py_adaptive
+
     def test_cdk_allowlist_matches_python(self):
         import re
         cdk_source = (
@@ -221,15 +250,35 @@ class TestAllowlistLockstep:
         cdk_ids = set(re.findall(r"'(global\.anthropic\.[^']+)'", allowlist_block))
         assert cdk_ids == ALLOWED_MODEL_IDS
 
-    def test_nag_suppressions_cover_every_foundation_model(self):
-        """cdk-nag suppressions enumerate the foundation-model ARNs by string;
-        a missing one fails synth with an unsuppressed IAM5 finding."""
-        import re
+    def test_opus_fallback_target_is_invocable(self):
+        """Opus 5's safety classifiers RE-RUN a declined request on Opus 4.8, so
+        4.8 must be in the allowlist (and therefore granted + agreed) or the
+        fallback turns into an AccessDenied mid-request.
+
+        In this app 4.8 is also a normal picker option, so one list covers both
+        roles. repo-review takes the opposite stance and grants it for fallback
+        only — see its lib/config.ts.
+        """
+        assert 'global.anthropic.claude-opus-4-8' in ALLOWED_MODEL_IDS
+
+    def test_nag_suppressions_are_derived_not_hardcoded(self):
+        """cdk-nag suppressions must DERIVE their foundation-model ARNs from
+        model-allowlist.ts, never re-hardcode them.
+
+        This replaces an older string-scrape assertion. A hand-listed set drifts
+        silently: add a model, forget the suppression, and synth fails with an
+        unsuppressed IAM5 finding at deploy time. The per-model value coverage
+        now lives in lib/utils/model-allowlist.test.ts, which checks the
+        suppression targets against the ARNs the policy actually emits.
+        """
         nag_source = (
             self._repo_root() / 'lib' / 'utils' / 'nag-suppressions.ts'
         ).read_text()
-        suppressed = set(re.findall(
-            r"foundation-model/(anthropic\.[^']+)'", nag_source
-        ))
-        expected = {m['id'].replace('global.', '') for m in ALLOWED_MODELS}
-        assert expected <= suppressed
+        assert 'bedrockFoundationModelSuppressionTargets' in nag_source, (
+            'bedrockModelSuppressions must call '
+            'bedrockFoundationModelSuppressionTargets() from model-allowlist.ts'
+        )
+        # Guard the regression this replaces: no literal model ARNs.
+        assert 'foundation-model/anthropic.' not in nag_source, (
+            'foundation-model ARNs are hardcoded again — derive them instead'
+        )

@@ -6,7 +6,6 @@ import pytest
 from unittest.mock import patch, MagicMock
 from botocore.exceptions import ClientError
 
-
 class TestConverse:
     """Tests for converse function."""
 
@@ -65,8 +64,14 @@ class TestConverse:
 
     @patch('shared.converse.get_bedrock_client')
     def test_skips_explicit_thinking_for_adaptive_models(self, mock_get_client):
-        """Sonnet 5 runs adaptive thinking always-on and rejects an explicit
-        budget — the field must be omitted so the call can't 400."""
+        """Sonnet 5 and Opus 5 run adaptive thinking always-on and reject an
+        explicit budget (a manual `thinking.budget_tokens` is a 400 on Opus 4.7
+        and later) — the field must be omitted so the call can't 400.
+
+        Covers EVERY model in the capability set rather than a single id:
+        Opus 5 is the prototype-surface default, so dropping it out of
+        _ADAPTIVE_THINKING_IDS would 400 every prototype build.
+        """
         mock_client = MagicMock()
         mock_client.converse.return_value = {
             'output': {'message': {'content': [{'text': 'Thoughtful response'}]}}
@@ -74,11 +79,19 @@ class TestConverse:
         mock_get_client.return_value = mock_client
 
         from shared.converse import converse
-        converse('Complex question', thinking_budget=5000,
-                 model_id='global.anthropic.claude-sonnet-5')
+        from shared.model_config import ALLOWED_MODELS, uses_adaptive_thinking
 
-        call_args = mock_client.converse.call_args
-        assert 'additionalModelRequestFields' not in call_args.kwargs
+        adaptive_ids = {m['id'] for m in ALLOWED_MODELS
+                        if uses_adaptive_thinking(m['id'])}
+        # Guards against the set silently shrinking to one entry.
+        assert {'global.anthropic.claude-sonnet-5',
+                'global.anthropic.claude-opus-5'} <= adaptive_ids
+
+        for model_id in sorted(adaptive_ids):
+            mock_client.converse.reset_mock()
+            converse('Complex question', thinking_budget=5000, model_id=model_id)
+            call_args = mock_client.converse.call_args
+            assert 'additionalModelRequestFields' not in call_args.kwargs, model_id
 
     @patch('shared.converse.get_bedrock_client')
     def test_no_thinking_when_budget_zero(self, mock_get_client):
@@ -113,7 +126,7 @@ class TestConverse:
 
     @patch('shared.converse.get_bedrock_client')
     def test_auto_omits_temperature_for_restricted_models(self, mock_get_client):
-        """Sonnet 5 / Opus 4.8 reject `temperature` — converse() drops it
+        """Sonnet 5 / Opus 5 reject `temperature` — converse() drops it
         automatically so any surface can be pointed at them via the picker
         without every caller special-casing the param."""
         mock_client = MagicMock()
@@ -124,7 +137,7 @@ class TestConverse:
 
         from shared.converse import converse
         for model in ('global.anthropic.claude-sonnet-5',
-                      'global.anthropic.claude-opus-4-8'):
+                      'global.anthropic.claude-opus-5'):
             converse('Hi', temperature=0.4, model_id=model)
             cfg = mock_client.converse.call_args.kwargs['inferenceConfig']
             assert 'temperature' not in cfg, model
@@ -132,7 +145,7 @@ class TestConverse:
 
     @patch('shared.converse.get_bedrock_client')
     def test_omits_temperature_when_none(self, mock_get_client):
-        """temperature=None omits the param entirely (e.g. for Opus 4.8)."""
+        """temperature=None omits the param entirely (e.g. for Opus 5)."""
         mock_client = MagicMock()
         mock_client.converse.return_value = {
             'output': {'message': {'content': [{'text': 'R'}]}}
@@ -145,7 +158,6 @@ class TestConverse:
         cfg = mock_client.converse.call_args.kwargs['inferenceConfig']
         assert 'temperature' not in cfg
         assert cfg['maxTokens']  # other config still present
-
 
 class TestConverseRetry:
     """Tests for converse retry functionality."""
@@ -248,7 +260,6 @@ class TestConverseRetry:
         assert result == 'Success'
         assert mock_client.converse.call_count == 2
 
-
 class TestConverseChain:
     """Tests for converse_chain function."""
 
@@ -323,7 +334,6 @@ class TestConverseChain:
         call_args = mock_converse.call_args
         assert call_args.kwargs['thinking_budget'] == 3000
 
-
 class TestExtractText:
     """Tests for _extract_text helper function."""
 
@@ -365,7 +375,6 @@ class TestExtractText:
         content = [{'toolUse': {'name': 'search'}}]
         assert _extract_text(content) == ''
 
-
 class TestCalculateBackoff:
     """Tests for _calculate_backoff helper function."""
 
@@ -396,7 +405,6 @@ class TestCalculateBackoff:
         # Very high attempt number
         delay = _calculate_backoff(100)
         assert delay <= DEFAULT_MAX_DELAY + 1  # +1 for jitter
-
 
 class TestConverseEdgeCases:
     """Tests for edge cases in converse function."""
@@ -500,7 +508,6 @@ class TestConverseEdgeCases:
         assert result == 'Success'
         assert mock_client.converse.call_count == 2
 
-
 class TestConverseChainEdgeCases:
     """Tests for edge cases in converse_chain function."""
 
@@ -555,7 +562,6 @@ class TestConverseChainEdgeCases:
 
         call_args = mock_converse.call_args
         assert call_args.kwargs['max_retries'] == 10
-
 
 class TestConverseAutoContinuation:
     """Tests for auto-continuation when the model hits the maxTokens ceiling."""
@@ -645,10 +651,6 @@ class TestConverseAutoContinuation:
         assert result == 'partial'
         mock_client.converse.assert_called_once()
 
-
-
-
-
 class TestConverseSurfaceRouting:
     """converse() resolves its model through the per-surface picker (issue #96)."""
 
@@ -680,11 +682,11 @@ class TestConverseSurfaceRouting:
         mock_get_client.return_value = self._client()
 
         from shared.converse import converse
-        converse('Hi', surface='chat', model_id='global.anthropic.claude-opus-4-8')
+        converse('Hi', surface='chat', model_id='global.anthropic.claude-opus-5')
 
         mock_resolve.assert_not_called()
         call = mock_get_client.return_value.converse.call_args
-        assert call.kwargs['modelId'] == 'global.anthropic.claude-opus-4-8'
+        assert call.kwargs['modelId'] == 'global.anthropic.claude-opus-5'
 
     @patch('shared.converse.get_active_model_id')
     @patch('shared.converse.get_bedrock_client')

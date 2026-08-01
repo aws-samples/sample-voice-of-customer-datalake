@@ -303,7 +303,7 @@ class TestExtractHtml:
 
 
 class TestBuildPrototype:
-    """Tests for the HTML prototype build path (Opus 4.8, iframe-rendered)."""
+    """Tests for the HTML prototype build path (Opus 5, iframe-rendered)."""
 
     HTML = '<!DOCTYPE html><html><head><style>:root{--primary:#FF540F}</style></head><body><h1>Demo</h1></body></html>'
 
@@ -359,7 +359,7 @@ class TestBuildPrototype:
         self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
         """The prototype build resolves its model through the 'prototype'
-        surface of the AI-model picker (whose default is Opus 4.8) instead of
+        surface of the AI-model picker (whose default is Opus 5) instead of
         hard-pinning a model id — admins can repoint it (issue #96)."""
         self._wire_tables(mock_dynamodb)
         mock_converse.return_value = self.HTML
@@ -370,8 +370,8 @@ class TestBuildPrototype:
 
         assert mock_converse.call_args.kwargs['surface'] == 'prototype'
         assert 'model_id' not in mock_converse.call_args.kwargs
-        # The surface's Automatic default remains Opus 4.8.
-        assert surface_default('prototype') == 'global.anthropic.claude-opus-4-8'
+        # The surface's Automatic default remains the flagship Opus — now Opus 5.
+        assert surface_default('prototype') == 'global.anthropic.claude-opus-5'
 
     def test_build_prototype_passes_brand_and_language(
         self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context

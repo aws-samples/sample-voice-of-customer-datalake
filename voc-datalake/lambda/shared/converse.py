@@ -81,7 +81,7 @@ def converse(
         system_prompt: Optional system prompt
         max_tokens: Maximum tokens in response (default: 2048)
         temperature: Model temperature (default: 0.1). Pass None to omit it
-            entirely — required for models like Opus 4.8 that reject/deprecate
+            entirely — required for models like Opus 5 that reject/deprecate
             the `temperature` inference parameter.
         thinking_budget: If > 0, enables extended thinking with this token budget
         model_id: Explicit model ID override. When None, the model is resolved
@@ -122,8 +122,8 @@ def converse(
     system = [{'text': system_prompt}] if system_prompt else None
     
     inference_config = {'maxTokens': max_tokens}
-    # Some models reject `temperature` as deprecated (Opus 4.8) or run adaptive
-    # thinking always-on (Sonnet 5). Omit it for those automatically — so any
+    # Some models run adaptive thinking always-on and reject `temperature` as
+    # deprecated (Sonnet 5, Opus 5). Omit it for those automatically — so any
     # surface can be pointed at them via the picker without a 400 — and also
     # when the caller explicitly passes temperature=None.
     if temperature is not None and not omits_temperature(used_model):

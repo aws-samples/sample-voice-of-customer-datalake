@@ -343,7 +343,7 @@ def interview_turn(project_id: str, body: dict) -> dict:
     client = get_bedrock_client()
     # Product-interview chat surface. Raw client call (tool use isn't wrapped by
     # the shared converse helper), so resolve the model and omit temperature for
-    # models that reject it (Sonnet 5 / Opus 4.8) exactly as converse() does.
+    # models that reject it (Sonnet 5 / Opus 5) exactly as converse() does.
     model = get_active_model_id('chat')
     inference_config: dict = {'maxTokens': 1024}
     if not omits_temperature(model):

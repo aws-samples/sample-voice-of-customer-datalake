@@ -541,7 +541,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(documentGeneratorRole);
     documentGeneratorRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      // Opus 4.8 (the prototype-builder default) is now part of the allowlist,
+      // Opus 5 (the prototype-builder default) is now part of the allowlist,
       // so claudeModelResources already covers it — no separate grant needed.
       resources: claudeModelResources,
     }));

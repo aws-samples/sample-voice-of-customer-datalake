@@ -108,7 +108,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
 Never hardcode model ids — resolution goes through
 `shared/model_config.py` (the admin model picker's per-surface overrides
 apply automatically), and `shared/converse.py` shapes requests per model
-capability (Sonnet 5 / Opus 4.8 reject `temperature`; Sonnet 5 rejects an
+capability (Sonnet 5 / both Opus generations reject `temperature`; they also reject an
 explicit thinking budget). Pass a `surface` and let the helper resolve:
 
 ```python

@@ -52,8 +52,10 @@ export type AnthropicUseCaseConfig = z.infer<typeof AnthropicUseCaseSchema>;
 /**
  * Models that require agreement acceptance for the VoC platform. Sourced from
  * the shared allowlist so every model the per-surface picker can select
- * (issue #96) has its agreement created — Sonnet 5, Sonnet 4.6, Opus 4.8,
- * and Haiku 4.5. Kept in lockstep with lambda/shared/model_config.py.
+ * (issue #96) has its agreement created — Sonnet 5, Sonnet 4.6, Opus 5, Opus
+ * 4.8 and Haiku 4.5. Opus 4.8 needs its agreement both as a picker option and
+ * because Opus 5 automatically falls back to it. Kept in lockstep with
+ * lambda/shared/model_config.py.
  */
 const REQUIRED_MODELS = [...ALLOWED_FOUNDATION_MODEL_IDS];
 

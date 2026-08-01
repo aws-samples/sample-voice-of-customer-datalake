@@ -5,7 +5,7 @@
  * documents, prototypes, feedback enrichment, utilities), or leave a surface
  * on Automatic to use its tuned default. This is the per-surface alternative
  * to a single global model toggle: enrichment can stay on cheap Haiku while
- * chat runs on Sonnet 5 and prototypes on Opus 4.8.
+ * chat runs on Sonnet 5 and prototypes on Opus 5.
  *
  * Free-form model IDs are rejected server-side, and the PUT is admin-gated
  * server-side too (not just hidden in the UI).

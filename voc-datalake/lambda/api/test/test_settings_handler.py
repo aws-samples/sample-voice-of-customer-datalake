@@ -779,13 +779,14 @@ class TestGetModelSettings:
         assert model_ids == {
             'global.anthropic.claude-sonnet-5',
             'global.anthropic.claude-sonnet-4-6',
+            'global.anthropic.claude-opus-5',
             'global.anthropic.claude-opus-4-8',
             'global.anthropic.claude-haiku-4-5-20251001-v1:0',
         }
         surfaces = {s['key']: s for s in body['surfaces']}
         assert set(surfaces) == {'chat', 'documents', 'prototype', 'enrichment', 'utility'}
         assert all(s['selected'] is None for s in body['surfaces'])
-        assert surfaces['prototype']['default_id'] == 'global.anthropic.claude-opus-4-8'
+        assert surfaces['prototype']['default_id'] == 'global.anthropic.claude-opus-5'
         assert surfaces['enrichment']['default_id'] == 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
         assert body['model_id'] is None
 
@@ -884,7 +885,7 @@ class TestSaveModelSettings:
                 'pk': 'SETTINGS#model', 'sk': 'config',
                 'surfaces': {
                     'chat': self.HAIKU,
-                    'prototype': 'global.anthropic.claude-opus-4-8',
+                    'prototype': 'global.anthropic.claude-opus-5',
                 },
             }
         }
@@ -898,7 +899,7 @@ class TestSaveModelSettings:
 
         assert response['statusCode'] == 200
         item = mock_table.put_item.call_args.kwargs['Item']
-        assert item['surfaces'] == {'prototype': 'global.anthropic.claude-opus-4-8'}
+        assert item['surfaces'] == {'prototype': 'global.anthropic.claude-opus-5'}
 
     @patch('settings_handler.aggregates_table')
     def test_global_override_without_surface_is_legacy_path(

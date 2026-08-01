@@ -235,7 +235,7 @@ def _generate_prfaq(ctx: JobContext, feature_idea: str, feedback_context: str,
 #   ]
 # }
 
-# ── HTML prototype builder (Opus 4.8) ─────────────────────────────────────────
+# ── HTML prototype builder (Opus 5) ───────────────────────────────────────────
 #
 # Newer path: instead of a constrained JSON spec, ask the model for a single,
 # self-contained, offline-first HTML file (inline CSS + minimal vanilla JS, no
@@ -381,7 +381,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     Build a self-contained, offline-first HTML prototype from the latest PRD and
     PR/FAQ for this project, save it as a ProjectDocument of type 'prototype' with
     prototype_format='html'. The frontend renders the HTML in a sandboxed
-    <iframe srcdoc> so inline CSS/JS run in isolation. Opus 4.8 builds the HTML.
+    <iframe srcdoc> so inline CSS/JS run in isolation. Opus 5 builds the HTML.
     """
     from shared.converse import converse
 
@@ -458,10 +458,10 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     ) + feedback_section
 
     ctx.update_progress(40, 'invoking_bedrock')
-    # The 'prototype' surface defaults to Opus 4.8 — stronger frontend/design
+    # The 'prototype' surface defaults to Opus 5 — stronger frontend/design
     # instincts than the chat model — but admins can repoint it via the picker.
     # converse() drops `temperature` automatically for models that reject it
-    # (Opus 4.8 / Sonnet 5), so we no longer hard-pin the model or temperature.
+    # (Opus 5 / Sonnet 5), so we no longer hard-pin the model or temperature.
     raw = converse(
         prompt=user_prompt,
         system_prompt=system_prompt,

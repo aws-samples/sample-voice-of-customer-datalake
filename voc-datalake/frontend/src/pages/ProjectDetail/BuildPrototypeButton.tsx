@@ -1,5 +1,5 @@
 /**
- * BuildPrototypeButton — kicks off an Opus 4.8 HTML prototype build for the
+ * BuildPrototypeButton — kicks off an Opus 5 HTML prototype build for the
  * whole project, then polls the job to completion.
  *
  * The backend references the project's latest PRD *and* PR-FAQ: if both exist
