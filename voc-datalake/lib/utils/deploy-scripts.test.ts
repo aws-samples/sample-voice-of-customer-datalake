@@ -82,9 +82,15 @@ describe('frontend/scripts/update-env.sh', () => {
     // failure branch then BLANKS all four cognito values — so omitting one var
     // makes the login screen claim "Cognito not configured" even when the user
     // pool and client id resolved fine. Any var read there must be written here.
-    const required = [...readFileSync(RUNTIME_CONFIG_TS, 'utf8')
-      .matchAll(/getEnvString\('(VITE_[A-Z_]+)'/g)]
-      .map((m) => m[1])
+    const runtimeConfig = readFileSync(RUNTIME_CONFIG_TS, 'utf8');
+    // Two patterns, deliberately: today every var goes through the getEnvString
+    // helper, but a future direct `import.meta.env.VITE_X` read would otherwise
+    // be silently exempt from this guard — the check would still pass while the
+    // var went unwritten, which is the exact failure it exists to prevent.
+    const required = [
+      ...[...runtimeConfig.matchAll(/getEnvString\('(VITE_[A-Z_]+)'/g)].map((m) => m[1]),
+      ...[...runtimeConfig.matchAll(/import\.meta\.env\.(VITE_[A-Z_]+)/g)].map((m) => m[1]),
+    ]
       // Local-only escape hatches have no CloudFormation output to read from.
       .filter((name) => name !== 'VITE_ENABLE_WEB_SEARCH');
     expect(required.length, 'expected runtimeConfig.ts to read VITE_ vars').toBeGreaterThan(0);

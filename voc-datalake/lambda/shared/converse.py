@@ -42,7 +42,21 @@ DEFAULT_MAX_CONTINUATIONS = 8
 # (zero visible text), retry the single-turn request with a doubled ceiling
 # instead of continuing (an empty assistant replay is rejected by Converse).
 _MAX_EMPTY_BUDGET_RAISES = 2
-_EMPTY_RAISE_CEILING = 16384
+# Must sit ABOVE the largest caller budget or the retry is inert exactly where it
+# is needed most: `build_prototype` asks for 32000 on the 'prototype' surface,
+# whose default is Opus 5 — adaptive thinking, i.e. the likeliest caller to spend
+# everything on thinking. At the previous 16384 that caller got zero retries (and
+# before the upward-only clamp, a HALVED budget). 64000 lets 32000 double once,
+# and is well inside Opus 5's 128K output limit; the binding constraint is
+# wall-clock, not the model, hence the deadline below rather than a lower cap.
+_EMPTY_RAISE_CEILING = 64000
+# A raise doubles the budget, so the retry can run substantially longer than the
+# call that just failed. Skip it once the invocation has already spent this long:
+# the 32000-token prototype caller runs on a 15-minute Lambda
+# (`DocumentGeneratorJob`), and being killed mid-retry returns NOTHING, which is
+# strictly worse than returning the empty result and letting the caller decide.
+# Same guard shape as repo-review's CONTINUATION_DEADLINE_SECONDS.
+_EMPTY_RAISE_DEADLINE_SECONDS = 420
 
 # Nudge sent as the user turn when resuming a truncated response. Kept terse and
 # explicit so the model picks up exactly where it stopped without re-emitting text.
@@ -71,15 +85,29 @@ def _raised_empty_budget(current_max: int) -> int | None:
     Doubles the budget, capped at `_EMPTY_RAISE_CEILING`, and returns None when
     there is no headroom left to retry.
 
-    The clamp is UPWARD ONLY. A bare `min(current * 2, CEILING)` would LOWER the
-    budget for any caller already above the ceiling — `build_prototype` asks for
-    32000 on the adaptive-thinking 'prototype' surface, i.e. precisely the caller
-    most likely to land here — which makes the empty-text outcome strictly MORE
-    likely. And a caller sitting exactly at the ceiling would get a byte-identical
-    retry: two Bedrock calls for one answer. Both cases return None instead.
+    The clamp is UPWARD ONLY. A bare `min(current * 2, CEILING)` LOWERS the budget
+    for a caller already above the ceiling, which makes the empty-text outcome
+    strictly MORE likely — the opposite of the retry's purpose. A caller sitting
+    exactly at the ceiling would instead get a byte-identical retry: two Bedrock
+    calls for one answer. Both cases return None so the caller stops rather than
+    spending a call that cannot help.
+
+    `_EMPTY_RAISE_CEILING` is kept above every in-repo caller budget so that
+    returning None means "genuinely out of headroom", not "this caller was always
+    excluded". See that constant for why 64000.
     """
     raised = min(current_max * 2, _EMPTY_RAISE_CEILING)
     return raised if raised > current_max else None
+
+
+def _empty_raise_past_deadline(elapsed_seconds: float) -> bool:
+    """Whether too much of the invocation is gone to risk a doubled-budget retry.
+
+    See `_EMPTY_RAISE_DEADLINE_SECONDS`: the retry asks for twice the budget, so a
+    slow first call leaves less time to do more work. Returning the empty result
+    lets the caller fail cleanly; a Lambda timeout mid-retry returns nothing.
+    """
+    return elapsed_seconds > _EMPTY_RAISE_DEADLINE_SECONDS
 
 
 def converse(
@@ -215,6 +243,18 @@ def converse(
                         f"[BEDROCK] Step '{step_name}' produced no visible text at "
                         f"maxTokens={current_max}, which is already at/above the raise "
                         f"ceiling ({_EMPTY_RAISE_CEILING}); no headroom to retry"
+                    )
+                    break
+                elapsed = time.time() - start_time
+                if _empty_raise_past_deadline(elapsed):
+                    # The retry would ask for double the budget with less time to
+                    # spend it. Returning the empty result lets the caller fail
+                    # cleanly; a Lambda timeout mid-retry returns nothing at all.
+                    logger.warning(
+                        f"[BEDROCK] Step '{step_name}' produced no visible text but "
+                        f"{elapsed:.0f}s of the invocation is already spent "
+                        f"(deadline {_EMPTY_RAISE_DEADLINE_SECONDS}s); "
+                        f"skipping the maxTokens raise to avoid a timeout"
                     )
                     break
                 empty_budget_raises += 1

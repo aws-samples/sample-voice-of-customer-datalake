@@ -101,9 +101,6 @@ describe('VocCoreStack raw-data bucket CORS', () => {
    * Gateway's — is what has to allow the method. Shipping GET-only made every
    * upload fail in the browser with an opaque CORS error while the presigned
    * URL itself was perfectly valid, which is a slow thing to diagnose.
-   *
-   * Identified by bucket name rather than logical id: the stack has three
-   * buckets and only this one is meant to carry a CORS rule at all.
    */
   const CorsRuleSchema = z.object({
     AllowedMethods: z.array(z.string()),
@@ -124,11 +121,13 @@ describe('VocCoreStack raw-data bucket CORS', () => {
    */
   function rawDataBucketCors(): z.infer<typeof CorsRuleSchema>[] {
     const buckets = Object.entries(synthCoreTemplate().findResources('AWS::S3::Bucket'));
-    const raw = buckets
-      .filter(([logicalId]) => logicalId.startsWith('RawDataBucket'))
-      .map(([, bucket]) => RawBucketSchema.parse(bucket.Properties));
-    expect(raw, 'expected exactly one RawDataBucket carrying CORS rules').toHaveLength(1);
-    return raw[0].CorsConfiguration.CorsRules;
+    const raw = buckets.filter(([logicalId]) => logicalId.startsWith('RawDataBucket'));
+    // Count FIRST, parse second. Parsing inside the filter would report a
+    // bucket that exists but lost its CORS block as a raw ZodError, hiding
+    // which of the two distinct problems actually occurred.
+    expect(raw, 'expected exactly one RawDataBucket in the template').toHaveLength(1);
+    const [, bucket] = raw[0];
+    return RawBucketSchema.parse(bucket.Properties).CorsConfiguration.CorsRules;
   }
 
   it('allows browser presigned PUT as well as GET', () => {
