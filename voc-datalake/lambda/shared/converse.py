@@ -266,7 +266,7 @@ def converse(
                     logger.warning(
                         f"[BEDROCK] Step '{step_name}' produced no visible text but "
                         f"{elapsed:.0f}s of the invocation is already spent "
-                        f"(deadline {_EMPTY_RAISE_DEADLINE_SECONDS}s); "
+                        f"(deadline {empty_raise_deadline_seconds}s); "
                         f"skipping the maxTokens raise to avoid a timeout"
                     )
                     break
