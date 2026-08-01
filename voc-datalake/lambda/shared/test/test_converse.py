@@ -719,6 +719,23 @@ class TestConverseAutoContinuation:
         assert sent > _EMPTY_RAISE_CEILING, 'fixture must exceed the ceiling to be meaningful'
 
     @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_result_stops_once_the_raise_hits_the_ceiling(self, mock_get_client):
+        """A caller BELOW the ceiling raises until it reaches the ceiling, then
+        stops — it does not spend its remaining allowance on identical requests.
+        8192 doubles onto the ceiling exactly, so the second raise has nowhere to
+        go: 2 calls, not the 3 that _MAX_EMPTY_BUDGET_RAISES would otherwise
+        allow."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = self._resp('', stop_reason='max_tokens')
+        mock_get_client.return_value = mock_client
+        from shared.converse import converse, _EMPTY_RAISE_CEILING
+        result = converse('Analyze this', step_name='research_analyze', max_tokens=8192)
+        assert result == ''
+        budgets = [c.kwargs['inferenceConfig']['maxTokens']
+                   for c in mock_client.converse.call_args_list]
+        assert budgets == [8192, _EMPTY_RAISE_CEILING]
+
+    @patch('shared.converse.get_bedrock_client')
     def test_empty_max_tokens_result_gives_up_after_max_raises(self, mock_get_client):
         """If the model keeps returning empty text at the ceiling, stop after
         the raise limit instead of looping — returns empty rather than crashing."""
