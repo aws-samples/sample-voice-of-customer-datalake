@@ -52,8 +52,8 @@ Each plugin is self-contained with a `manifest.json` that defines infrastructure
 
 ```bash
 # Clone and install
-git clone xxxxxx (repo url)
-cd voice-of-customer-datalake
+git clone https://github.com/aws-samples/sample-voice-of-customer-datalake.git
+cd sample-voice-of-customer-datalake
 npm run install:all
 
 # Build Lambda layers (requires Docker)

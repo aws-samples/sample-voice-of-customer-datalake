@@ -17,6 +17,7 @@ import {
 
 const SONNET5 = 'global.anthropic.claude-sonnet-5';
 const SONNET46 = 'global.anthropic.claude-sonnet-4-6';
+const OPUS5 = 'global.anthropic.claude-opus-5';
 const OPUS48 = 'global.anthropic.claude-opus-4-8';
 const HAIKU45 = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
 
@@ -63,7 +64,7 @@ describe('resolveModelOverride', () => {
   });
 
   it('ignores overrides pinned to other surfaces', async () => {
-    const client = docClientReturning({ surfaces: { documents: OPUS48 } });
+    const client = docClientReturning({ surfaces: { documents: OPUS5 } });
     expect(await resolveModelOverride(client, 'agg', 'chat')).toBeUndefined();
   });
 
@@ -111,20 +112,26 @@ describe('resolveModelOverride', () => {
 
 describe('capability sets', () => {
   it('allowlist has exactly the four picker models', () => {
-    expect(ALLOWED_MODEL_IDS).toStrictEqual(new Set([SONNET5, SONNET46, OPUS48, HAIKU45]));
+    expect(ALLOWED_MODEL_IDS).toStrictEqual(
+      new Set([SONNET5, SONNET46, OPUS5, OPUS48, HAIKU45]),
+    );
   });
 
-  it('Sonnet 5 and Opus 4.8 omit temperature', () => {
+  it('both Opus generations and Sonnet 5 omit temperature', () => {
     expect(omitsTemperature(SONNET5)).toBe(true);
+    expect(omitsTemperature(OPUS5)).toBe(true);
     expect(omitsTemperature(OPUS48)).toBe(true);
     expect(omitsTemperature(SONNET46)).toBe(false);
     expect(omitsTemperature(HAIKU45)).toBe(false);
   });
 
-  it('only Sonnet 5 uses always-on adaptive thinking', () => {
+  // Opus 4.7 and later reject a manual `thinking.budget_tokens` with a 400, so
+  // BOTH Opus generations join Sonnet 5 in the always-on adaptive-thinking set.
+  it('both Opus generations and Sonnet 5 use always-on adaptive thinking', () => {
     expect(usesAdaptiveThinking(SONNET5)).toBe(true);
+    expect(usesAdaptiveThinking(OPUS5)).toBe(true);
+    expect(usesAdaptiveThinking(OPUS48)).toBe(true);
     expect(usesAdaptiveThinking(SONNET46)).toBe(false);
-    expect(usesAdaptiveThinking(OPUS48)).toBe(false);
     expect(usesAdaptiveThinking(HAIKU45)).toBe(false);
   });
 });

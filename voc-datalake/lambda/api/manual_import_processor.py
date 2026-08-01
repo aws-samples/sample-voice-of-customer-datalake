@@ -125,11 +125,11 @@ def process_job(job_id: str) -> None:
         # Call Bedrock with extended thinking. Parsing pasted reviews is a
         # utility workload, so it follows the utility-surface model pick.
         #
-        # Capability-aware body: adaptive-thinking models (Sonnet 5) reject an
-        # explicit `thinking` budget, and temperature is omitted everywhere —
-        # it defaults to 1, which is also the only accepted value with thinking
-        # enabled, while temperature-restricted models (Sonnet 5, Opus 4.8)
-        # reject the parameter outright when sent explicitly.
+        # Capability-aware body: adaptive-thinking models (Sonnet 5, Opus 5)
+        # reject an explicit `thinking` budget, and temperature is omitted
+        # everywhere — it defaults to 1, which is also the only accepted value
+        # with thinking enabled, while temperature-restricted models (Sonnet 5,
+        # Opus 5) reject the parameter outright when sent explicitly.
         #
         # This raw invoke_model path bypasses converse() and has NO
         # auto-continuation, so the strict-JSON doctrine (shared/converse.py)

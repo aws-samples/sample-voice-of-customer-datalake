@@ -16,7 +16,7 @@ Resolution order for a surface ``S``::
 
 The per-surface design replaces the single global toggle: an admin can, for
 example, keep enrichment on cheap Haiku while running chat on Sonnet 5 and
-prototypes on Opus 4.8. The legacy global ``model_id`` is still honoured as a
+prototypes on Opus 5. The legacy global ``model_id`` is still honoured as a
 fallback so a value written by the older single-model picker keeps working.
 
 The allowlist is deliberately narrow: prompt templates in this project are
@@ -49,10 +49,17 @@ MODEL_SETTINGS_SK = "config"
 #   key               — stable id the frontend translates labels under.
 #   id                — global cross-region inference profile ID (verified
 #                       against the Bedrock model cards).
-#   omit_temperature  — the model rejects the `temperature` inference param
-#                       (Sonnet 5 runs adaptive thinking always-on; Opus 4.8
-#                       deprecates temperature). converse() drops temperature
-#                       automatically for these so any surface can point at them.
+#   omit_temperature  — the model rejects the `temperature` inference param.
+#                       converse() drops temperature automatically for these so
+#                       any surface can point at them.
+#   adaptive_thinking — the model runs adaptive thinking always-on and rejects
+#                       an explicit `thinking.budget_tokens` with a 400 (true
+#                       for Sonnet 5 and for Opus 4.7 and later). converse()
+#                       and the streaming client skip the `thinking` field for
+#                       these. Declared per-model rather than hand-listed in a
+#                       separate set below: keeping both capability flags as
+#                       data on the same row is what stops a newly added model
+#                       from landing in one set and not the other.
 ALLOWED_MODELS = [
     {
         "key": "sonnet5",
@@ -60,6 +67,7 @@ ALLOWED_MODELS = [
         "label": "Claude Sonnet 5",
         "description": "Latest, highest-quality Sonnet — best for analysis and generation",
         "omit_temperature": True,
+        "adaptive_thinking": True,
     },
     {
         "key": "sonnet46",
@@ -67,13 +75,25 @@ ALLOWED_MODELS = [
         "label": "Claude Sonnet 4.6",
         "description": "Previous-generation Sonnet — strong quality, accepts temperature tuning",
         "omit_temperature": False,
+        # Manual extended thinking is deprecated here but still accepted; only
+        # Opus 4.7+ and Sonnet 5 hard-reject it.
+        "adaptive_thinking": False,
+    },
+    {
+        "key": "opus5",
+        "id": "global.anthropic.claude-opus-5",
+        "label": "Claude Opus 5",
+        "description": "Deepest reasoning — best for prototypes and complex documents",
+        "omit_temperature": True,
+        "adaptive_thinking": True,
     },
     {
         "key": "opus48",
         "id": "global.anthropic.claude-opus-4-8",
         "label": "Claude Opus 4.8",
-        "description": "Deepest reasoning — best for prototypes and complex documents",
+        "description": "Previous-generation Opus — also the automatic fallback when Opus 5 declines a request",
         "omit_temperature": True,
+        "adaptive_thinking": True,
     },
     {
         "key": "haiku45",
@@ -81,20 +101,20 @@ ALLOWED_MODELS = [
         "label": "Claude Haiku 4.5",
         "description": "Fastest and cheapest — good for high-volume enrichment",
         "omit_temperature": False,
+        "adaptive_thinking": False,
     },
 ]
 ALLOWED_MODEL_IDS = {m["id"] for m in ALLOWED_MODELS}
+
+# Both capability sets derive from the rows above so a model can never be added
+# to one and forgotten in the other.
 _OMIT_TEMPERATURE_IDS = {m["id"] for m in ALLOWED_MODELS if m["omit_temperature"]}
+_ADAPTIVE_THINKING_IDS = {m["id"] for m in ALLOWED_MODELS if m["adaptive_thinking"]}
 
 # Short aliases for the surface-default table below.
 _SONNET5 = "global.anthropic.claude-sonnet-5"
-_OPUS48 = "global.anthropic.claude-opus-4-8"
+_OPUS5 = "global.anthropic.claude-opus-5"
 _HAIKU45 = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
-
-# Models that run adaptive thinking always-on: they don't accept an explicit
-# extended-thinking budget (Sonnet 5). converse() and the streaming client skip
-# the `thinking` request field for these so pointing a surface at them can't 400.
-_ADAPTIVE_THINKING_IDS = {_SONNET5}
 
 # --- Surfaces ----------------------------------------------------------------
 # Every independently selectable AI surface with its built-in default (the
@@ -108,7 +128,7 @@ SURFACE_DEFAULTS = {
     "default": _SONNET5,
     "chat": _SONNET5,
     "documents": _SONNET5,
-    "prototype": _OPUS48,
+    "prototype": _OPUS5,
     "enrichment": _HAIKU45,
     "utility": _SONNET5,
 }

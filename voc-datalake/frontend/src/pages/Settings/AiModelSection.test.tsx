@@ -19,20 +19,20 @@ vi.mock('../../api/client', () => ({
 }))
 
 const SONNET5 = 'global.anthropic.claude-sonnet-5'
-const OPUS48 = 'global.anthropic.claude-opus-4-8'
+const OPUS5 = 'global.anthropic.claude-opus-5'
 const HAIKU45 = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
 
 const modelSettingsFixture = {
   available_models: [
     { key: 'sonnet5', id: SONNET5, label: 'Claude Sonnet 5', description: 'Latest Sonnet' },
     { key: 'sonnet46', id: 'global.anthropic.claude-sonnet-4-6', label: 'Claude Sonnet 4.6', description: 'Previous Sonnet' },
-    { key: 'opus48', id: OPUS48, label: 'Claude Opus 4.8', description: 'Deepest reasoning' },
+    { key: 'opus5', id: OPUS5, label: 'Claude Opus 5', description: 'Deepest reasoning' },
     { key: 'haiku45', id: HAIKU45, label: 'Claude Haiku 4.5', description: 'Fastest' },
   ],
   surfaces: [
     { key: 'chat', default_id: SONNET5, selected: null },
     { key: 'documents', default_id: SONNET5, selected: null },
-    { key: 'prototype', default_id: OPUS48, selected: null },
+    { key: 'prototype', default_id: OPUS5, selected: null },
     { key: 'enrichment', default_id: HAIKU45, selected: null },
     { key: 'utility', default_id: SONNET5, selected: null },
   ],
@@ -91,7 +91,7 @@ describe('AiModelSection', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Prototype Builder')).toBeInTheDocument())
     const prototypeSelect = screen.getByLabelText('Prototype Builder')
-    expect(within(prototypeSelect).getByText('Automatic — Claude Opus 4.8')).toBeInTheDocument()
+    expect(within(prototypeSelect).getByText('Automatic — Claude Opus 5')).toBeInTheDocument()
     const enrichmentSelect = screen.getByLabelText('Feedback Enrichment')
     expect(within(enrichmentSelect).getByText('Automatic — Claude Haiku 4.5')).toBeInTheDocument()
   })

@@ -26,21 +26,27 @@ const MODEL_SETTINGS_SK = 'config';
 export const ALLOWED_MODEL_IDS = new Set<string>([
   'global.anthropic.claude-sonnet-5',
   'global.anthropic.claude-sonnet-4-6',
+  'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
   'global.anthropic.claude-haiku-4-5-20251001-v1:0',
 ]);
 
-// Models that reject the `temperature` inference param (Sonnet 5 runs adaptive
-// thinking; Opus 4.8 deprecates temperature). Mirrors model_config.py.
+// Models that reject the `temperature` inference param — they run adaptive
+// thinking always-on, which rules out sampling controls. Mirrors
+// model_config.py (`omit_temperature`).
 export const OMIT_TEMPERATURE_IDS = new Set<string>([
   'global.anthropic.claude-sonnet-5',
+  'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
 ]);
 
 // Models with always-on adaptive thinking that reject an explicit thinking
-// budget — skip the `thinking` request field for these. Mirrors model_config.py.
+// budget with a 400 (Sonnet 5, and Opus 4.7 and later) — skip the `thinking`
+// request field for these. Mirrors model_config.py (`adaptive_thinking`).
 export const ADAPTIVE_THINKING_IDS = new Set<string>([
   'global.anthropic.claude-sonnet-5',
+  'global.anthropic.claude-opus-5',
+  'global.anthropic.claude-opus-4-8',
 ]);
 
 /** True when the model rejects the `temperature` inference parameter. */

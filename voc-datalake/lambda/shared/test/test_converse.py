@@ -65,8 +65,14 @@ class TestConverse:
 
     @patch('shared.converse.get_bedrock_client')
     def test_skips_explicit_thinking_for_adaptive_models(self, mock_get_client):
-        """Sonnet 5 runs adaptive thinking always-on and rejects an explicit
-        budget — the field must be omitted so the call can't 400."""
+        """Sonnet 5 and Opus 5 run adaptive thinking always-on and reject an
+        explicit budget (a manual `thinking.budget_tokens` is a 400 on Opus 4.7
+        and later) — the field must be omitted so the call can't 400.
+
+        Covers EVERY model in the capability set rather than a single id:
+        Opus 5 is the prototype-surface default, so dropping it out of
+        _ADAPTIVE_THINKING_IDS would 400 every prototype build.
+        """
         mock_client = MagicMock()
         mock_client.converse.return_value = {
             'output': {'message': {'content': [{'text': 'Thoughtful response'}]}}
@@ -74,11 +80,19 @@ class TestConverse:
         mock_get_client.return_value = mock_client
 
         from shared.converse import converse
-        converse('Complex question', thinking_budget=5000,
-                 model_id='global.anthropic.claude-sonnet-5')
+        from shared.model_config import ALLOWED_MODELS, uses_adaptive_thinking
 
-        call_args = mock_client.converse.call_args
-        assert 'additionalModelRequestFields' not in call_args.kwargs
+        adaptive_ids = {m['id'] for m in ALLOWED_MODELS
+                        if uses_adaptive_thinking(m['id'])}
+        # Guards against the set silently shrinking to one entry.
+        assert {'global.anthropic.claude-sonnet-5',
+                'global.anthropic.claude-opus-5'} <= adaptive_ids
+
+        for model_id in sorted(adaptive_ids):
+            mock_client.converse.reset_mock()
+            converse('Complex question', thinking_budget=5000, model_id=model_id)
+            call_args = mock_client.converse.call_args
+            assert 'additionalModelRequestFields' not in call_args.kwargs, model_id
 
     @patch('shared.converse.get_bedrock_client')
     def test_no_thinking_when_budget_zero(self, mock_get_client):
@@ -113,7 +127,7 @@ class TestConverse:
 
     @patch('shared.converse.get_bedrock_client')
     def test_auto_omits_temperature_for_restricted_models(self, mock_get_client):
-        """Sonnet 5 / Opus 4.8 reject `temperature` — converse() drops it
+        """Sonnet 5 / Opus 5 reject `temperature` — converse() drops it
         automatically so any surface can be pointed at them via the picker
         without every caller special-casing the param."""
         mock_client = MagicMock()
@@ -124,7 +138,7 @@ class TestConverse:
 
         from shared.converse import converse
         for model in ('global.anthropic.claude-sonnet-5',
-                      'global.anthropic.claude-opus-4-8'):
+                      'global.anthropic.claude-opus-5'):
             converse('Hi', temperature=0.4, model_id=model)
             cfg = mock_client.converse.call_args.kwargs['inferenceConfig']
             assert 'temperature' not in cfg, model
@@ -132,7 +146,7 @@ class TestConverse:
 
     @patch('shared.converse.get_bedrock_client')
     def test_omits_temperature_when_none(self, mock_get_client):
-        """temperature=None omits the param entirely (e.g. for Opus 4.8)."""
+        """temperature=None omits the param entirely (e.g. for Opus 5)."""
         mock_client = MagicMock()
         mock_client.converse.return_value = {
             'output': {'message': {'content': [{'text': 'R'}]}}
@@ -645,6 +659,219 @@ class TestConverseAutoContinuation:
         assert result == 'partial'
         mock_client.converse.assert_called_once()
 
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_result_retries_with_raised_ceiling(self, mock_get_client):
+        """Adaptive-thinking models can burn the whole maxTokens budget on
+        thinking and return zero visible text. Instead of replaying an empty
+        assistant turn (rejected by Converse: 'text content blocks must be
+        non-empty'), the request is re-run single-turn with a doubled ceiling."""
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = [
+            self._resp('', stop_reason='max_tokens'),
+            self._resp('Full answer.', stop_reason='end_turn'),
+        ]
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Analyze this', step_name='research_analyze', max_tokens=3000)
+
+        assert result == 'Full answer.'
+        assert mock_client.converse.call_count == 2
+        # Retry is single-turn (no assistant replay) with a doubled budget.
+        retry_kwargs = mock_client.converse.call_args_list[1].kwargs
+        assert [m['role'] for m in retry_kwargs['messages']] == ['user']
+        assert retry_kwargs['inferenceConfig']['maxTokens'] == 6000
+
+    @pytest.mark.parametrize('current_max, expected', [
+        (3000, 6000),        # room to double
+        (32000, 64000),      # the build_prototype budget doubles onto the ceiling
+        (40000, 64000),      # doubling overshoots — capped, but still a raise
+        (64000, None),       # AT the ceiling: a retry would be byte-identical
+        (100000, None),      # ABOVE it: a cap would LOWER the budget
+    ])
+    def test_raised_empty_budget_never_lowers_the_ceiling(self, current_max, expected):
+        """The empty-text retry must clamp UPWARD ONLY.
+
+        A bare min(current * 2, CEILING) reduces any above-ceiling budget, which
+        makes the empty-text outcome strictly MORE likely — the opposite of the
+        retry's purpose. A caller sitting exactly at the ceiling would instead get
+        a byte-identical retry. Both must decline (None) rather than shrink or
+        duplicate."""
+        from shared.converse import _raised_empty_budget
+        assert _raised_empty_budget(current_max) == expected
+
+    def test_raise_ceiling_clears_the_largest_known_caller_budget(self):
+        """The ceiling must sit ABOVE the largest known caller, or the retry is
+        inert precisely where it is needed most.
+
+        `build_prototype` asks for 32000 on the 'prototype' surface, whose default
+        is Opus 5 — adaptive thinking, i.e. the likeliest caller to spend the whole
+        budget on thinking and land in the empty-text branch. A ceiling at or below
+        32000 means that caller can never be retried.
+
+        Scope is deliberately "known", not "every": the budget below is
+        hand-maintained rather than grepped out of the callers, because `shared/`
+        is bundled into many Lambdas and sibling handler paths are not reliably
+        present when these tests run. A NEW caller above the ceiling would not
+        trip this — it is caught instead by the ValidationException fallback,
+        which degrades to the empty result rather than crashing."""
+        from shared.converse import _EMPTY_RAISE_CEILING, _raised_empty_budget
+        largest_known_caller_budget = 32000  # jobs/document_generator/handler.py
+        assert _EMPTY_RAISE_CEILING > largest_known_caller_budget
+        assert _raised_empty_budget(largest_known_caller_budget) is not None
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_result_retries_the_prototype_budget(self, mock_get_client):
+        """The 32000-token prototype caller DOES get a raise (to 64000).
+
+        This is the surface the whole branch exists for; an earlier ceiling of
+        16384 left it with no retry at all."""
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = [
+            self._resp('', stop_reason='max_tokens'),
+            self._resp('<html>...</html>', stop_reason='end_turn'),
+        ]
+        mock_get_client.return_value = mock_client
+        from shared.converse import converse
+        result = converse('Build this', step_name='build_prototype', max_tokens=32000)
+        assert result == '<html>...</html>'
+        budgets = [c.kwargs['inferenceConfig']['maxTokens']
+                   for c in mock_client.converse.call_args_list]
+        assert budgets == [32000, 64000]
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_result_does_not_retry_without_headroom(self, mock_get_client):
+        """A caller at/above the ceiling gets no retry — one Bedrock call, no
+        wasted duplicate, and crucially no shrunken budget. The
+        empty-assistant-replay crash is still avoided (returns '')."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = self._resp('', stop_reason='max_tokens')
+        mock_get_client.return_value = mock_client
+        from shared.converse import converse, _EMPTY_RAISE_CEILING
+        over_ceiling = _EMPTY_RAISE_CEILING + 1000
+        result = converse('Build this', step_name='huge', max_tokens=over_ceiling)
+        assert result == ''
+        mock_client.converse.assert_called_once()
+        # And the single call kept the caller's own, larger budget.
+        sent = mock_client.converse.call_args.kwargs['inferenceConfig']['maxTokens']
+        assert sent == over_ceiling
+
+    @pytest.mark.parametrize('elapsed, deadline, past', [
+        (0.0, 420.0, False),
+        (419.0, 420.0, False),
+        (421.0, 420.0, True),
+        # A short-timeout caller can pass its own, smaller deadline.
+        (20.0, 15.0, True),
+        (10.0, 15.0, False),
+    ])
+    def test_empty_raise_deadline_predicate(self, elapsed, deadline, past):
+        """The deadline is a pure decision, so it is tested as one.
+
+        NOT tested by patching `shared.converse.time.time`: that module attribute
+        IS the global `time` module, so patching it monkeypatches `time.time`
+        process-wide and botocore's TLS clock breaks (SystemTimeWarning, SSL
+        verification failures)."""
+        from shared.converse import _empty_raise_past_deadline
+        assert _empty_raise_past_deadline(elapsed, deadline) is past
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_result_skips_the_raise_past_the_deadline(self, mock_get_client):
+        """Headroom alone is not enough to retry — the invocation must also have
+        time left. A timeout mid-retry returns nothing at all, which is worse
+        than returning ''.
+
+        Forced via the caller-facing `empty_raise_deadline_seconds` argument, so
+        no module state or clock is patched."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = self._resp('', stop_reason='max_tokens')
+        mock_get_client.return_value = mock_client
+        from shared.converse import converse, _raised_empty_budget
+        # Headroom DOES exist at this budget (32000 -> 64000), so only the
+        # deadline can be what stops the retry.
+        assert _raised_empty_budget(32000) == 64000
+        result = converse('Build this', step_name='build_prototype', max_tokens=32000,
+                          empty_raise_deadline_seconds=-1)
+        assert result == ''
+        mock_client.converse.assert_called_once()
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_raise_rejected_by_model_returns_empty(self, mock_get_client):
+        """If the resolved model caps output below the raised budget, Bedrock
+        400s the retry — degrade to the pre-retry outcome rather than crashing.
+
+        _EMPTY_RAISE_CEILING is sized against Opus 5's 128K output limit, but this
+        branch is reachable for ANY resolved model, including an arbitrary
+        `model_id=` override outside the allowlist. Turning a harmless empty
+        result into a ValidationException would be worse than the failure the
+        retry was trying to fix."""
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = [
+            self._resp('', stop_reason='max_tokens'),
+            ClientError(
+                {'Error': {'Code': 'ValidationException',
+                           'Message': 'max_tokens: 64000 > 32000, the maximum for this model'}},
+                'Converse',
+            ),
+        ]
+        mock_get_client.return_value = mock_client
+        from shared.converse import converse
+        result = converse('Build this', step_name='build_prototype', max_tokens=32000)
+        assert result == ''
+        assert mock_client.converse.call_count == 2
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_raise_still_propagates_other_client_errors(self, mock_get_client):
+        """Only ValidationException is absorbed. An AccessDenied on the retry is a
+        real misconfiguration and must not be masked as an empty result."""
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = [
+            self._resp('', stop_reason='max_tokens'),
+            ClientError(
+                {'Error': {'Code': 'AccessDeniedException', 'Message': 'no model access'}},
+                'Converse',
+            ),
+        ]
+        mock_get_client.return_value = mock_client
+        from shared.converse import converse
+        with pytest.raises(ClientError):
+            converse('Build this', step_name='build_prototype', max_tokens=32000)
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_result_stops_once_the_raise_hits_the_ceiling(self, mock_get_client):
+        """A caller BELOW the ceiling raises until it reaches the ceiling, then
+        stops — it does not spend its remaining allowance on identical requests.
+
+        Half the ceiling doubles onto it exactly, so the second raise has nowhere
+        to go: 2 calls, not the 3 that _MAX_EMPTY_BUDGET_RAISES would allow. The
+        start budget is derived from the ceiling so this cannot rot when the
+        ceiling moves (it already did, 16384 -> 64000)."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = self._resp('', stop_reason='max_tokens')
+        mock_get_client.return_value = mock_client
+        from shared.converse import converse, _EMPTY_RAISE_CEILING
+        half_ceiling = _EMPTY_RAISE_CEILING // 2
+        result = converse('Analyze this', step_name='research_analyze', max_tokens=half_ceiling)
+        assert result == ''
+        budgets = [c.kwargs['inferenceConfig']['maxTokens']
+                   for c in mock_client.converse.call_args_list]
+        assert budgets == [half_ceiling, _EMPTY_RAISE_CEILING]
+
+    @patch('shared.converse.get_bedrock_client')
+    def test_empty_max_tokens_result_gives_up_after_max_raises(self, mock_get_client):
+        """If the model keeps returning empty text at the ceiling, stop after
+        the raise limit instead of looping — returns empty rather than crashing."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = self._resp('', stop_reason='max_tokens')
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Analyze this', step_name='research_analyze', max_tokens=3000)
+
+        # 1 initial + _MAX_EMPTY_BUDGET_RAISES retries, no ValidationException.
+        from shared.converse import _MAX_EMPTY_BUDGET_RAISES
+        assert mock_client.converse.call_count == 1 + _MAX_EMPTY_BUDGET_RAISES
+        assert result == ''
+
 
 
 
@@ -680,11 +907,11 @@ class TestConverseSurfaceRouting:
         mock_get_client.return_value = self._client()
 
         from shared.converse import converse
-        converse('Hi', surface='chat', model_id='global.anthropic.claude-opus-4-8')
+        converse('Hi', surface='chat', model_id='global.anthropic.claude-opus-5')
 
         mock_resolve.assert_not_called()
         call = mock_get_client.return_value.converse.call_args
-        assert call.kwargs['modelId'] == 'global.anthropic.claude-opus-4-8'
+        assert call.kwargs['modelId'] == 'global.anthropic.claude-opus-5'
 
     @patch('shared.converse.get_active_model_id')
     @patch('shared.converse.get_bedrock_client')

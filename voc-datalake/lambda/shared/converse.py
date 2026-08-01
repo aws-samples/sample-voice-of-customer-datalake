@@ -38,6 +38,32 @@ DEFAULT_MAX_DELAY = 30.0  # seconds
 # thinking counts against maxTokens. See TestStrictJsonTokenHeadroom for the
 # enforced per-site floors.
 DEFAULT_MAX_CONTINUATIONS = 8
+# When an adaptive-thinking model spends the whole maxTokens budget on thinking
+# (zero visible text), retry the single-turn request with a doubled ceiling
+# instead of continuing (an empty assistant replay is rejected by Converse).
+_MAX_EMPTY_BUDGET_RAISES = 2
+# Must sit ABOVE the largest caller budget or the retry is inert exactly where it
+# is needed most: `build_prototype` asks for 32000 on the 'prototype' surface,
+# whose default is Opus 5 — adaptive thinking, i.e. the likeliest caller to spend
+# everything on thinking. At the previous 16384 that caller got zero retries (and
+# before the upward-only clamp, a HALVED budget). 64000 lets 32000 double once,
+# and is well inside Opus 5's 128K output limit; the binding constraint is
+# wall-clock, not the model, hence the deadline below rather than a lower cap.
+_EMPTY_RAISE_CEILING = 64000
+# A raise doubles the budget, so the retry can run substantially longer than the
+# call that just failed. Skip it once the invocation has already spent this long:
+# being killed mid-retry returns NOTHING, which is strictly worse than returning
+# the empty result and letting the caller decide.
+#
+# DEFAULT ONLY — calibrated for the long-budget job Lambdas, where this guard can
+# actually bind: `DocumentGeneratorJob` runs 15 minutes and is the 32000-token
+# caller. Short-timeout callers (API handlers, 1500-4096 tokens) can never reach
+# 420s, but their doubled retry is correspondingly cheap, so an inert guard there
+# is harmless rather than wrong. Any caller that needs the guard to bind sooner
+# passes `empty_raise_deadline_seconds=` — ideally derived from its own
+# `context.get_remaining_time_in_millis()`, which converse() does not receive.
+# Same guard shape as repo-review's CONTINUATION_DEADLINE_SECONDS.
+_EMPTY_RAISE_DEADLINE_SECONDS = 420
 
 # Nudge sent as the user turn when resuming a truncated response. Kept terse and
 # explicit so the model picks up exactly where it stopped without re-emitting text.
@@ -60,6 +86,37 @@ class BedrockThrottlingError(Exception):
     pass
 
 
+def _raised_empty_budget(current_max: int) -> int | None:
+    """Next maxTokens to try after a model returned zero visible text.
+
+    Doubles the budget, capped at `_EMPTY_RAISE_CEILING`, and returns None when
+    there is no headroom left to retry.
+
+    The clamp is UPWARD ONLY. A bare `min(current * 2, CEILING)` LOWERS the budget
+    for a caller already above the ceiling, which makes the empty-text outcome
+    strictly MORE likely — the opposite of the retry's purpose. A caller sitting
+    exactly at the ceiling would instead get a byte-identical retry: two Bedrock
+    calls for one answer. Both cases return None so the caller stops rather than
+    spending a call that cannot help.
+
+    `_EMPTY_RAISE_CEILING` is kept above every in-repo caller budget so that
+    returning None means "genuinely out of headroom", not "this caller was always
+    excluded". See that constant for why 64000.
+    """
+    raised = min(current_max * 2, _EMPTY_RAISE_CEILING)
+    return raised if raised > current_max else None
+
+
+def _empty_raise_past_deadline(elapsed_seconds: float, deadline_seconds: float) -> bool:
+    """Whether too much of the invocation is gone to risk a doubled-budget retry.
+
+    The retry asks for twice the budget, so a slow first call leaves less time to
+    do more work. Returning the empty result lets the caller fail cleanly; a
+    Lambda timeout mid-retry returns nothing at all.
+    """
+    return elapsed_seconds > deadline_seconds
+
+
 def converse(
     prompt: str,
     system_prompt: str = "",
@@ -72,6 +129,7 @@ def converse(
     raise_on_throttle: bool = True,
     step_name: str = "unknown",
     max_continuations: int = DEFAULT_MAX_CONTINUATIONS,
+    empty_raise_deadline_seconds: float = _EMPTY_RAISE_DEADLINE_SECONDS,
 ) -> str:
     """
     Simple text completion using Bedrock Converse API with retry support.
@@ -81,7 +139,7 @@ def converse(
         system_prompt: Optional system prompt
         max_tokens: Maximum tokens in response (default: 2048)
         temperature: Model temperature (default: 0.1). Pass None to omit it
-            entirely — required for models like Opus 4.8 that reject/deprecate
+            entirely — required for models like Opus 5 that reject/deprecate
             the `temperature` inference parameter.
         thinking_budget: If > 0, enables extended thinking with this token budget
         model_id: Explicit model ID override. When None, the model is resolved
@@ -98,6 +156,11 @@ def converse(
             silently truncated. Set to 0 to disable. Ignored when extended
             thinking is enabled (multi-turn replay of thinking blocks is
             unsupported here).
+        empty_raise_deadline_seconds: Stop retrying an all-thinking (zero visible
+            text) response once this much of the invocation is spent. The default
+            suits the 15-minute job Lambdas; pass a smaller value on a
+            short-timeout function, ideally derived from that handler's own
+            `context.get_remaining_time_in_millis()`.
 
     Returns:
         Model response text (concatenated across any continuations)
@@ -122,8 +185,8 @@ def converse(
     system = [{'text': system_prompt}] if system_prompt else None
     
     inference_config = {'maxTokens': max_tokens}
-    # Some models reject `temperature` as deprecated (Opus 4.8) or run adaptive
-    # thinking always-on (Sonnet 5). Omit it for those automatically — so any
+    # Some models run adaptive thinking always-on and reject `temperature` as
+    # deprecated (Sonnet 5, Opus 5). Omit it for those automatically — so any
     # surface can be pointed at them via the picker without a 400 — and also
     # when the caller explicitly passes temperature=None.
     if temperature is not None and not omits_temperature(used_model):
@@ -171,7 +234,78 @@ def converse(
         # so the model picks up exactly where it stopped. Without this, a long
         # PRD/PR-FAQ is saved half-written (the document-cutoff bug).
         continuations = 0
+        empty_budget_raises = 0
         while allow_continuation and stop_reason == 'max_tokens' and continuations < max_continuations:
+            if not result:
+                # Adaptive-thinking models can burn the entire maxTokens budget on
+                # thinking and return zero visible text. Replaying an empty
+                # assistant turn is rejected by Converse ("text content blocks
+                # must be non-empty"), so continuation can't help — instead,
+                # re-run the original single-turn request with a raised ceiling
+                # so the model has headroom for both thinking and output.
+                if empty_budget_raises >= _MAX_EMPTY_BUDGET_RAISES:
+                    logger.warning(
+                        f"[BEDROCK] Step '{step_name}' still produced no visible text after "
+                        f"{empty_budget_raises} maxTokens raise(s); giving up on continuation"
+                    )
+                    break
+                current_max = kwargs['inferenceConfig']['maxTokens']
+                raised = _raised_empty_budget(current_max)
+                if raised is None:
+                    logger.warning(
+                        f"[BEDROCK] Step '{step_name}' produced no visible text at "
+                        f"maxTokens={current_max}, which is already at/above the raise "
+                        f"ceiling ({_EMPTY_RAISE_CEILING}); no headroom to retry"
+                    )
+                    break
+                elapsed = time.time() - start_time
+                if _empty_raise_past_deadline(elapsed, empty_raise_deadline_seconds):
+                    # The retry would ask for double the budget with less time to
+                    # spend it. Returning the empty result lets the caller fail
+                    # cleanly; a Lambda timeout mid-retry returns nothing at all.
+                    logger.warning(
+                        f"[BEDROCK] Step '{step_name}' produced no visible text but "
+                        f"{elapsed:.0f}s of the invocation is already spent "
+                        f"(deadline {empty_raise_deadline_seconds}s); "
+                        f"skipping the maxTokens raise to avoid a timeout"
+                    )
+                    break
+                empty_budget_raises += 1
+                kwargs = {**kwargs, 'inferenceConfig': {**kwargs['inferenceConfig'], 'maxTokens': raised}}
+                logger.warning(
+                    f"[BEDROCK] Step '{step_name}' hit maxTokens with no visible text "
+                    f"(budget likely consumed by thinking); retrying with maxTokens={raised} "
+                    f"({empty_budget_raises}/{_MAX_EMPTY_BUDGET_RAISES})"
+                )
+                try:
+                    result, stop_reason = _invoke_with_retry(
+                        client=client,
+                        kwargs=kwargs,
+                        max_retries=max_retries,
+                        raise_on_throttle=raise_on_throttle,
+                        step_name=f"{step_name}_raise{empty_budget_raises}",
+                    )
+                except ClientError as e:
+                    if e.response.get('Error', {}).get('Code') != 'ValidationException':
+                        raise
+                    # The raised budget exceeds the RESOLVED model's own
+                    # max-output limit. `_EMPTY_RAISE_CEILING` is sized against
+                    # Opus 5 (128K), but this branch is reachable for any model
+                    # the picker resolves — and for an arbitrary `model_id=`
+                    # override or a legacy BEDROCK_MODEL_ID outside the
+                    # allowlist, so no per-model cap table could cover it.
+                    #
+                    # Degrade to the pre-retry outcome instead of propagating:
+                    # this path exists to recover an empty result, and turning
+                    # that harmless empty into a crash is strictly worse than
+                    # the failure it was trying to fix.
+                    logger.warning(
+                        f"[BEDROCK] Step '{step_name}' rejected maxTokens={raised} "
+                        f"(model {used_model} caps output below the raise ceiling): {e}; "
+                        f"returning the empty result instead of raising"
+                    )
+                    break
+                continue
             continuations += 1
             logger.warning(
                 f"[BEDROCK] Step '{step_name}' hit maxTokens — auto-continuing "
