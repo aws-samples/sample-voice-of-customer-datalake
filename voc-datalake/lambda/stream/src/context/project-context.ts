@@ -12,7 +12,7 @@ import { buildSinglePersonaPrompt, getLanguageInstruction } from './persona-prom
 
 const AVATARS_CDN_URL = process.env.AVATARS_CDN_URL ?? '';
 
-/** Convert an S3 URI (s3://bucket/avatars/file.png) to a CloudFront CDN URL. */
+/** Convert an S3 URI (s3://bucket/avatars/file.<ext>) to a CloudFront CDN URL. */
 function stripTrailingSlashes(value: string): string {
   // Recursive instead of a trailing-slash regex: sonarjs flags /\/+$/ as
   // backtracking-prone, and the input is a short constant env URL.

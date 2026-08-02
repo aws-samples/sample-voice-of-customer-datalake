@@ -8,6 +8,9 @@
  * the analysis prompt. These tests fail if either half of the wiring is
  * removed again (e.g. in a conflict resolution on the selector block).
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
@@ -107,5 +110,93 @@ describe('research state machine wiring (issue #157)', () => {
     // is off); step_save consumes it for the report's disclosure section.
     expect(state.definition).toContain('"web_search_queries.$":"$.Payload.web_search_queries"');
     expect(state.definition).toContain('"web_search_queries.$":"$.initialize_result.web_search_queries"');
+  });
+});
+
+/** Narrow a CloudFormation resource to its Properties without a bare cast. */
+function propsOf(resource: unknown): Record<string, unknown> {
+  if (typeof resource === 'object' && resource !== null && 'Properties' in resource) {
+    const props = (resource as { Properties: unknown }).Properties;
+    if (typeof props === 'object' && props !== null) {
+      return props as Record<string, unknown>;
+    }
+  }
+  return {};
+}
+
+/**
+ * Budgets are config-driven now, so they can be raised by editing a JSON file
+ * while a mid-generation timeout discards the step. The function already runs at
+ * Lambda's 15-minute hard maximum, so the only thing to guard is that nobody
+ * lowers it. Memory matters too: Lambda scales CPU with it.
+ */
+describe('research Lambda keeps the maximum timeout its budgets assume', () => {
+  const MAX_LAMBDA_TIMEOUT_SECONDS = 900;
+  let researchFns: Record<string, unknown>[];
+
+  beforeAll(() => {
+    // Matched on the handler, not the construct id: a rename should not silently
+    // skip these assertions. EVERY match is checked, so a second research
+    // function cannot appear under the ceiling unnoticed.
+    const fns = synthProcessingTemplate().findResources('AWS::Lambda::Function');
+    researchFns = Object.values(fns)
+      .map(propsOf)
+      .filter((p) => typeof p.Handler === 'string' && p.Handler.includes('research_step_handler'));
+    expect(researchFns.length, 'no Lambda with the research_step_handler handler')
+      .toBeGreaterThan(0);
+  });
+
+  it('runs at the maximum Lambda timeout', () => {
+    for (const fn of researchFns) {
+      expect(fn.Timeout).toBe(MAX_LAMBDA_TIMEOUT_SECONDS);
+    }
+  });
+
+  it('has enough memory that generation is not CPU-starved', () => {
+    // Lambda scales CPU with memory; a small function makes long generations
+    // slower and therefore likelier to hit the ceiling above.
+    for (const fn of researchFns) {
+      expect(fn.MemorySize).toBeGreaterThanOrEqual(1024);
+    }
+  });
+});
+
+/**
+ * research_step_handler reads its prompts and budgets from
+ * api/prompts/research-analysis.json at RUNTIME. The first deploy of that change
+ * shipped a bundle with no prompts/ at all — a FileNotFoundError the unit suite
+ * could not see, because get_prompts_dir() resolves the repo layout locally
+ * whether or not the bundle stages anything.
+ *
+ * Source assertions are a weak form (they break on reformatting and cannot prove
+ * staging), used because bundling inputs appear in neither the template nor the
+ * assets manifest. The behavioural half lives in
+ * lambda/research/test/test_research_step_budgets.py.
+ */
+describe('research Lambda bundle stages its prompt config', () => {
+  const source = readFileSync(join(__dirname, 'processing-stack-consolidated.ts'), 'utf-8');
+  const researchAsset = source.split('const researchCode')[1]?.split('});')[0] ?? '';
+
+  it('copies the prompts to the bundle root where get_prompts_dir looks first', () => {
+    // THIS is the assertion that maps to the actual bug: a bundled asset mounts
+    // the source dir as /asset-input, so the copy — not the exclude — is what puts
+    // the config in the bundle. Verified empirically by reverting each half.
+    expect(researchAsset).toContain('/asset-input/api/prompts /asset-output/prompts');
+  });
+
+  it('keeps api/prompts inside the asset fingerprint', () => {
+    // Excluding api/ wholesale still bundles the prompts (the copy handles that),
+    // but drops them from the hash — so editing research-analysis.json would not
+    // redeploy the function and it would keep running the old budgets.
+    expect(researchAsset).toContain("'!/api/prompts'");
+    expect(researchAsset).not.toContain("'/api/',");
+  });
+
+  it('still excludes the sibling handler trees it does not ship', () => {
+    // Re-including prompts must not become "stage everything", which would
+    // redeploy this function on unrelated edits.
+    for (const excluded of ["'/aggregator/'", "'/jobs/'", "'/processor/'"]) {
+      expect(researchAsset).toContain(excluded);
+    }
   });
 });

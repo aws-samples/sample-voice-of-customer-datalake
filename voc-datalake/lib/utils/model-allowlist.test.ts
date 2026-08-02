@@ -12,6 +12,9 @@ import {
   ALLOWED_MODEL_IDS,
   allowlistedModelArns,
   bedrockFoundationModelSuppressionTargets,
+  IMAGE_MODEL_ID,
+  IMAGE_MODEL_REGION,
+  imageModelArn,
 } from './model-allowlist';
 
 const OPUS5 = 'global.anthropic.claude-opus-5';
@@ -81,6 +84,32 @@ describe('allowlistedModelArns', () => {
     const arns = allowlistedModelArns(REGION, ACCOUNT);
     for (const arn of arns.filter((a) => a.includes('foundation-model/'))) {
       expect(arn).not.toContain('foundation-model/global.');
+    }
+  });
+});
+
+describe('avatar image model', () => {
+  it('stays out of the text picker allowlist', () => {
+    // ALLOWED_MODEL_IDS drives the per-surface picker. An image model in there
+    // would become selectable for chat/documents and fail on the first call.
+    expect(ALLOWED_MODEL_IDS).not.toContain(IMAGE_MODEL_ID);
+    expect(ALLOWED_FOUNDATION_MODEL_IDS).not.toContain(IMAGE_MODEL_ID);
+  });
+
+  it('pins the ARN to a single region rather than wildcarding it', () => {
+    // A region-pinned ARN needs no cdk-nag suppression, unlike the cross-region
+    // text-model ARNs.
+    expect(imageModelArn()).toBe(
+      `arn:aws:bedrock:${IMAGE_MODEL_REGION}::foundation-model/${IMAGE_MODEL_ID}`,
+    );
+    expect(imageModelArn()).not.toContain(':*:');
+  });
+
+  it('is excluded from the cdk-nag wildcard suppressions', () => {
+    // Those targets exist only for wildcard-region ARNs; adding the pinned
+    // image model would be a suppression with nothing to suppress.
+    for (const target of bedrockFoundationModelSuppressionTargets()) {
+      expect(target).not.toContain(IMAGE_MODEL_ID);
     }
   });
 });

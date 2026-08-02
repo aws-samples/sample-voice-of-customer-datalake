@@ -19,7 +19,7 @@ import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type
 import { uniqueName } from '../utils/naming';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
-import { allowlistedModelArns } from '../utils/model-allowlist';
+import { allowlistedModelArns, imageModelArn } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
 import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 
@@ -428,8 +428,9 @@ export class VocApiStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
         ...allowlistedModelArns(this.region, this.account),
-        // Nova Canvas powers persona avatar image generation.
-        'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0',
+        // Persona avatar image generation. Single-sourced in model-allowlist.ts
+        // so the grant tracks the model through its EOL migration.
+        imageModelArn(),
       ],
     }));
 
@@ -493,7 +494,8 @@ export class VocApiStack extends cdk.Stack {
     // via the picker. Single source of truth kept in lockstep with
     // lambda/shared/model_config.py and lambda/stream/src/bedrock/model-override.ts.
     const claudeModelResources = allowlistedModelArns(this.region, this.account);
-    const novaCanvasResource = 'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0';
+    // Persona avatar image model — see model-allowlist.ts for its EOL deadline.
+    const avatarImageModelResource = imageModelArn();
 
     // Persona Generator Job Lambda
     const personaGeneratorRole = this.createLambdaRole('PersonaGeneratorRole');
@@ -504,7 +506,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(personaGeneratorRole);
     personaGeneratorRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-      resources: [...claudeModelResources, novaCanvasResource],
+      resources: [...claudeModelResources, avatarImageModelResource],
     }));
     rawDataBucket.grantReadWrite(personaGeneratorRole, 'avatars/*');
 
@@ -618,7 +620,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(personaImporterRole);
     personaImporterRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [...claudeModelResources, novaCanvasResource],
+      resources: [...claudeModelResources, avatarImageModelResource],
     }));
     rawDataBucket.grantReadWrite(personaImporterRole, 'avatars/*');
 

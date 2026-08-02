@@ -74,3 +74,51 @@ export function bedrockFoundationModelSuppressionTargets(): string[] {
     (id) => `Resource::arn:aws:bedrock:*::foundation-model/${id}`,
   );
 }
+
+/**
+ * ── Persona avatar image model ────────────────────────────────────────────────
+ *
+ * Deliberately NOT part of ALLOWED_MODEL_IDS: that list is the per-surface text
+ * picker, and anything added there becomes selectable for chat/documents/etc.
+ * This is a fixed image model with its own request shape, region and IAM grant.
+ * It lives here anyway so one file still answers "which Bedrock models can this
+ * platform reach", and so the ARN is derived rather than pasted into each role.
+ *
+ * WHY NOT amazon.nova-canvas-v1:0 (the previous model): it went LEGACY on
+ * 2026-03-30 with EOL 2026-09-30, and a legacy model also drops access for
+ * accounts idle 15+ days — which had already caused a silent avatar outage here
+ * (generation degrades to avatar_url=null, so nothing visibly breaks).
+ *
+ * WHY us-west-2 rather than the platform's us-east-1: as of 2026-08-02 there is
+ * NO active text-to-image model in us-east-1 — Nova Canvas is the only generator
+ * offered there and it is legacy. Every other image model in us-east-1 is a
+ * Stability EDITING primitive (inpaint/upscale/remove-background) that requires
+ * an input image. us-west-2 carries the three active generators, verified
+ * invocable from this account. avatar.py builds its own regional client, so the
+ * cross-region call needs no extra plumbing.
+ *
+ * Alternatives if quality matters more than cost/latency:
+ * stability.stable-image-ultra-v1:1 (best quality) or stability.sd3-5-large-v1:0.
+ * All three share one request/response shape, so switching is just this constant.
+ *
+ * To re-check the landscape:
+ *   aws bedrock list-foundation-models --region us-west-2 \
+ *     --by-output-modality IMAGE \
+ *     --query 'modelSummaries[].[modelId,modelLifecycle.status]' --output table
+ * A model from a different VENDOR will need a new payload builder in
+ * lambda/shared/avatar.py — the body shapes are not interchangeable.
+ */
+export const IMAGE_MODEL_ID = 'stability.stable-image-core-v1:1';
+
+/** Image generators are region-limited; the avatar client pins this one. */
+export const IMAGE_MODEL_REGION = 'us-west-2';
+
+/**
+ * IAM resource ARN for the avatar image model. Region-pinned (unlike the
+ * cross-region text models) because the model is only invoked in
+ * IMAGE_MODEL_REGION, which keeps the grant narrow enough to need no cdk-nag
+ * suppression.
+ */
+export function imageModelArn(): string {
+  return `arn:aws:bedrock:${IMAGE_MODEL_REGION}::foundation-model/${IMAGE_MODEL_ID}`;
+}

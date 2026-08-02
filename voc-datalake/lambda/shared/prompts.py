@@ -9,6 +9,20 @@ from functools import lru_cache
 
 from shared.logging import logger
 
+# Fallback token budget for a chain step whose config omits max_tokens. Kept as a
+# named constant because two readers apply it (the chain builder and the
+# inference-config accessor) and they must not drift.
+DEFAULT_STEP_MAX_TOKENS = 4096
+
+# Prompt config filenames. Named so a file referenced from more than one place
+# (research: the sync chain builder AND the async step accessor; avatar: the
+# prompt config AND the image-model block) can't drift by typo.
+PERSONA_GENERATION_PROMPTS = 'persona-generation.json'
+PRD_GENERATION_PROMPTS = 'prd-generation.json'
+PRFAQ_GENERATION_PROMPTS = 'prfaq-generation.json'
+RESEARCH_ANALYSIS_PROMPTS = 'research-analysis.json'
+AVATAR_GENERATION_PROMPTS = 'avatar-generation.json'
+
 
 def get_prompts_dir() -> Path:
     """Get the prompts directory path."""
@@ -84,6 +98,52 @@ def format_prompt(template: str, **kwargs) -> str:
         return result
 
 
+def _get_step(filename: str, step_name: str) -> dict:
+    """Fetch one step's raw config block, with a clear error if it's absent."""
+    steps_config = load_prompt_file(filename).get('steps', {})
+    if step_name not in steps_config:
+        raise KeyError(f"Step '{step_name}' not found in {filename}")
+    return steps_config[step_name]
+
+
+def _inference_from_step(step: dict, step_name: str) -> dict:
+    """Pull the inference settings out of a raw step config block.
+
+    Single home for the per-field defaults so the chain builder and the public
+    accessor below cannot drift apart — including 'step_name', which both paths
+    report to Bedrock logging and which must therefore resolve identically.
+    """
+    return {
+        'system_prompt': step.get('system_prompt', ''),
+        'max_tokens': step.get('max_tokens', DEFAULT_STEP_MAX_TOKENS),
+        'thinking_budget': step.get('thinking_budget', 0),
+        'step_name': step.get('name', step_name),
+    }
+
+
+def get_step_inference_config(filename: str, step_name: str) -> dict:
+    """
+    System prompt and token budgets for one chain step, WITHOUT building the
+    user prompt.
+
+    For callers that assemble their own user prompt but must still share the
+    chain config — specifically the async Step Functions research path, whose
+    prompt carries extra context (personas, documents, web search) that the
+    templated sync path does not. Before this existed, that path hardcoded its
+    own budgets and duplicated the system prompts, so editing the JSON silently
+    did nothing for it (the config looked authoritative but was never read).
+
+    Args:
+        filename: Name of the prompt file
+        step_name: Step key within the file's "steps" object
+
+    Returns:
+        Dict with 'system_prompt', 'max_tokens', 'thinking_budget' and
+        'step_name' (the config's 'name', falling back to the step key)
+    """
+    return _inference_from_step(_get_step(filename, step_name), step_name)
+
+
 def build_chain_steps(filename: str, step_names: list[str], context: dict) -> list[dict]:
     """
     Build a list of LLM chain steps from a prompt file.
@@ -96,26 +156,22 @@ def build_chain_steps(filename: str, step_names: list[str], context: dict) -> li
     Returns:
         List of step dicts ready for invoke_bedrock_chain()
     """
-    config = load_prompt_file(filename)
-    steps_config = config.get('steps', {})
     response_language = context.pop('response_language', None)
     language_instruction = get_response_language_instruction(response_language)
     
     chain_steps = []
     for step_name in step_names:
-        if step_name not in steps_config:
-            raise KeyError(f"Step '{step_name}' not found in {filename}")
-        
-        step = steps_config[step_name]
-        system = step.get('system_prompt', '')
+        step = _get_step(filename, step_name)
+        inference = _inference_from_step(step, step_name)
+        system = inference['system_prompt']
         if language_instruction:
             system = f"{system}\n\n{language_instruction}"
         chain_steps.append({
             'system': system,
             'user': format_prompt(step.get('user_prompt_template', ''), **context),
-            'max_tokens': step.get('max_tokens', 4096),
-            'thinking_budget': step.get('thinking_budget', 0),
-            'step_name': step.get('name', step_name),
+            'max_tokens': inference['max_tokens'],
+            'thinking_budget': inference['thinking_budget'],
+            'step_name': inference['step_name'],
         })
     
     return chain_steps
@@ -177,7 +233,7 @@ def get_persona_generation_steps(
     }
     
     return build_chain_steps(
-        'persona-generation.json',
+        PERSONA_GENERATION_PROMPTS,
         ['research_analysis', 'persona_synthesis', 'validation'],
         context
     )
@@ -201,7 +257,7 @@ def get_prd_generation_steps(
     }
     
     return build_chain_steps(
-        'prd-generation.json',
+        PRD_GENERATION_PROMPTS,
         ['problem_analysis', 'solution_design', 'prd_document'],
         context
     )
@@ -237,7 +293,7 @@ def get_prfaq_generation_steps(
     }
 
     return build_chain_steps(
-        'prfaq-generation.json',
+        PRFAQ_GENERATION_PROMPTS,
         ['customer_thinking', 'press_release', 'customer_faq', 'internal_faq'],
         context
     )
@@ -261,15 +317,26 @@ def get_research_analysis_steps(
     }
     
     return build_chain_steps(
-        'research-analysis.json',
+        RESEARCH_ANALYSIS_PROMPTS,
         ['data_analysis', 'synthesis', 'validation'],
         context
     )
 
 
+def get_research_step_config(step_name: str) -> dict:
+    """Inference config for one research step.
+
+    Used by the async Step Functions research handler so both research paths
+    share one set of system prompts and token budgets. See
+    get_step_inference_config for why the async path can't use the chain
+    builder directly.
+    """
+    return get_step_inference_config(RESEARCH_ANALYSIS_PROMPTS, step_name)
+
+
 def get_avatar_prompt_config() -> dict:
     """Get avatar generation prompt configuration."""
-    return load_prompt_file('avatar-generation.json')
+    return load_prompt_file(AVATAR_GENERATION_PROMPTS)
 
 
 

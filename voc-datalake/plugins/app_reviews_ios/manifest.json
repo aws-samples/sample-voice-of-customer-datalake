@@ -10,8 +10,8 @@
     "ingestor": {
       "enabled": true,
       "schedule": "rate(30 minutes)",
-      "timeout": 300,
-      "memory": 512
+      "timeout": 900,
+      "memory": 1024
     }
   },
 
