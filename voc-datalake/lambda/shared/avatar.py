@@ -1,6 +1,7 @@
 """
 Shared avatar generation utilities for persona avatars.
-Uses Claude to generate image prompts and Nova Canvas to create images.
+Uses Claude to generate image prompts, then the Bedrock image model configured
+in avatar-generation.json ("image_model") to create the images.
 """
 
 import json
@@ -11,9 +12,36 @@ from shared.logging import logger, tracer
 from shared.prompts import get_avatar_prompt_config, format_prompt
 
 
-# Nova Canvas is only available in us-east-1
-NOVA_CANVAS_REGION = 'us-east-1'
-NOVA_CANVAS_MODEL_ID = 'amazon.nova-canvas-v1:0'
+# Image-model defaults, used only if avatar-generation.json omits the field.
+# The authoritative values live in that config's "image_model" block, kept in
+# lockstep with lib/utils/model-allowlist.ts (which builds the IAM grant) by
+# test_avatar_image_model_lockstep.py.
+#
+# ⚠️ amazon.nova-canvas-v1:0 is LEGACY since 2026-03-30 and reaches EOL on
+# 2026-09-30; a legacy model also drops access for accounts idle 15+ days,
+# surfacing as ResourceNotFoundException. Avatar failures degrade silently
+# (avatar_url stays null), so this expiring by surprise is easy to miss.
+# See model-allowlist.ts for the migration steps.
+DEFAULT_IMAGE_MODEL_REGION = 'us-east-1'
+DEFAULT_IMAGE_MODEL_ID = 'amazon.nova-canvas-v1:0'
+DEFAULT_IMAGE_SIZE = 1024
+
+
+def get_image_model_config() -> dict:
+    """Resolve the avatar image model settings from the prompt config.
+
+    Reads the "image_model" block of avatar-generation.json. That block existed
+    for a long time while this module ignored it in favour of hardcoded
+    constants, so editing the config had no effect — the same decoy-config trap
+    the research prompts had. Defaults above apply only to absent keys.
+    """
+    image_model = get_avatar_prompt_config().get('image_model', {})
+    return {
+        'model_id': image_model.get('model_id', DEFAULT_IMAGE_MODEL_ID),
+        'region': image_model.get('region', DEFAULT_IMAGE_MODEL_REGION),
+        'width': image_model.get('width', DEFAULT_IMAGE_SIZE),
+        'height': image_model.get('height', DEFAULT_IMAGE_SIZE),
+    }
 
 
 def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
@@ -116,13 +144,17 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
     avatar_prompt = generate_avatar_prompt_with_llm(persona_data, bedrock_client)
     logger.info(f"[PERSONA_AVATAR] Generated prompt: {avatar_prompt}")
     
+    image_model = get_image_model_config()
+    model_id = image_model['model_id']
+    model_region = image_model['region']
+
     try:
-        # Nova Canvas is only available in us-east-1
-        # IAM policy must include: arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0
-        logger.info(f"[PERSONA_AVATAR] Creating Bedrock client for {NOVA_CANVAS_REGION} (Nova Canvas region)")
-        bedrock_runtime = boto3.client('bedrock-runtime', region_name=NOVA_CANVAS_REGION)
+        # The image model is region-pinned; the IAM grant is built from the same
+        # values via imageModelArn() in lib/utils/model-allowlist.ts.
+        logger.info(f"[PERSONA_AVATAR] Creating Bedrock client for {model_region} (image model region)")
+        bedrock_runtime = boto3.client('bedrock-runtime', region_name=model_region)
         
-        # Nova Canvas request format - must use 1024x1024 dimensions
+        # Nova Canvas request format.
         # Do NOT include 'quality' or 'cfgScale' params - they cause ValidationException
         request_body = {
             "taskType": "TEXT_IMAGE",
@@ -131,16 +163,16 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
             },
             "imageGenerationConfig": {
                 "numberOfImages": 1,
-                "width": 1024,
-                "height": 1024,
+                "width": image_model['width'],
+                "height": image_model['height'],
                 "seed": hash(persona_id) % 2147483647  # Consistent seed per persona
             }
         }
         
-        logger.info(f"[PERSONA_AVATAR] Invoking Nova Canvas model: {NOVA_CANVAS_MODEL_ID}")
+        logger.info(f"[PERSONA_AVATAR] Invoking image model: {model_id}")
         
         response = bedrock_runtime.invoke_model(
-            modelId=NOVA_CANVAS_MODEL_ID,
+            modelId=model_id,
             body=json.dumps(request_body)
         )
         
@@ -176,9 +208,27 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
     except Exception as e:
         error_type = type(e).__name__
         if 'AccessDenied' in error_type or 'AccessDenied' in str(e):
-            logger.error(f"[PERSONA_AVATAR] ACCESS DENIED - Check IAM policy includes arn:aws:bedrock:{NOVA_CANVAS_REGION}::foundation-model/{NOVA_CANVAS_MODEL_ID}", extra={"error": str(e)})
+            logger.error(f"[PERSONA_AVATAR] ACCESS DENIED - Check IAM policy includes arn:aws:bedrock:{model_region}::foundation-model/{model_id}", extra={"error": str(e)})
+        elif 'ResourceNotFound' in error_type or 'ResourceNotFound' in str(e):
+            # A legacy model reports itself as "not found" once the account loses
+            # access (15+ days idle during the legacy window, or past EOL). Name
+            # the cause explicitly: the generic branch below made a past outage
+            # look like a transient error for far too long.
+            logger.error(
+                f"[PERSONA_AVATAR] MODEL NOT AVAILABLE - {model_id} was not found in "
+                f"{model_region}. A LEGACY model returns this once the account loses "
+                "access (idle 15+ days) or after its EOL date. Check its lifecycle "
+                "state and migrate: aws bedrock list-foundation-models "
+                "--by-output-modality IMAGE",
+                extra={"error": str(e), "model_id": model_id, "region": model_region},
+            )
         elif 'ValidationException' in error_type or 'ValidationException' in str(e):
-            logger.error("[PERSONA_AVATAR] VALIDATION ERROR - Check Nova Canvas request format (must use 1024x1024, no quality/cfgScale params)", extra={"error": str(e)})
+            logger.error(
+                f"[PERSONA_AVATAR] VALIDATION ERROR - Check the request format for {model_id} "
+                "(Nova Canvas wants square dimensions and rejects quality/cfgScale; "
+                "a replacement model may need a different body shape entirely)",
+                extra={"error": str(e)},
+            )
         else:
             logger.error(f"[PERSONA_AVATAR] FAILED - Avatar generation error: {error_type}: {e}", extra={
                 "persona_id": persona_id,

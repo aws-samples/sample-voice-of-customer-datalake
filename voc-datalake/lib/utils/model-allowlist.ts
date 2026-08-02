@@ -74,3 +74,44 @@ export function bedrockFoundationModelSuppressionTargets(): string[] {
     (id) => `Resource::arn:aws:bedrock:*::foundation-model/${id}`,
   );
 }
+
+/**
+ * ── Persona avatar image model ────────────────────────────────────────────────
+ *
+ * Deliberately NOT part of ALLOWED_MODEL_IDS: that list is the per-surface text
+ * picker, and anything added there becomes selectable for chat/documents/etc.
+ * This is a fixed image model with its own request shape, region and IAM grant.
+ * It lives here anyway so one file still answers "which Bedrock models can this
+ * platform reach", and so the ARN is derived rather than pasted into each role.
+ *
+ * ⚠️ LIFECYCLE — ACTION REQUIRED BEFORE 2026-09-30
+ * Per the AWS Bedrock model-lifecycle table, amazon.nova-canvas-v1:0 entered
+ * LEGACY on 2026-03-30 with EOL on 2026-09-30, after which requests fail in
+ * every region. During the legacy window an account that does not invoke the
+ * model for 15+ days can ALSO lose access early, surfacing as
+ * ResourceNotFoundException ("marked as Legacy… upgrade to an active model") —
+ * which is exactly the outage previously seen on this codebase, where avatars
+ * silently stopped generating while persona creation carried on.
+ *
+ * Migrating is a one-line change here plus the same value in
+ * lambda/api/prompts/avatar-generation.json (a Python lockstep test pins the
+ * two together). Confirm the replacement against the account before switching:
+ *   aws bedrock list-foundation-models --by-output-modality IMAGE \
+ *     --query 'modelSummaries[].[modelId,modelLifecycle.status]' --output table
+ * Note the successor may need a different request body than Nova Canvas's
+ * TEXT_IMAGE/textToImageParams shape in lambda/shared/avatar.py.
+ */
+export const IMAGE_MODEL_ID = 'amazon.nova-canvas-v1:0';
+
+/** Nova Canvas is not offered in every region; the avatar client pins this one. */
+export const IMAGE_MODEL_REGION = 'us-east-1';
+
+/**
+ * IAM resource ARN for the avatar image model. Region-pinned (unlike the
+ * cross-region text models) because the model is only invoked in
+ * IMAGE_MODEL_REGION, which keeps the grant narrow enough to need no cdk-nag
+ * suppression.
+ */
+export function imageModelArn(): string {
+  return `arn:aws:bedrock:${IMAGE_MODEL_REGION}::foundation-model/${IMAGE_MODEL_ID}`;
+}
