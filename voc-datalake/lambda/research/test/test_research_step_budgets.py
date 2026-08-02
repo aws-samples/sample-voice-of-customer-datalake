@@ -98,34 +98,27 @@ class TestBudgetsComeFromConfig:
         step_validate(_validate_event())
         assert mock_converse.call_args.kwargs['max_tokens'] == _step('validation')['max_tokens']
 
-    def test_each_step_identifies_itself_in_bedrock_logs(self, mock_tables, mock_job_status, mock_converse):
-        """converse() logs step_name; all three research steps used to log
-        'unknown', so live logs could not tell which step made a call.
-        (Raised in review of PR #228.)"""
+    def test_each_step_reports_the_name_the_config_declares(self, mock_tables, mock_job_status, mock_converse):
+        """converse() logs step_name; all three steps used to log 'unknown', so
+        live logs could not tell which step made a call.
+
+        Expectations are DERIVED from the config, matching how the sync path
+        resolves them (build_chain_steps uses the 'name' field, falling back to
+        the key). An earlier version of this test hardcoded the three keys, which
+        only passed because name == key in this config today — adding a
+        human-readable name would have made it contradict the parity it is
+        supposed to protect. (Raised in review of PR #228.)
+        """
         from research_step_handler import step_analyze, step_synthesize, step_validate
 
-        step_analyze(_analyze_event())
-        assert mock_converse.call_args.kwargs['step_name'] == 'data_analysis'
-
-        step_synthesize(_synthesize_event())
-        assert mock_converse.call_args.kwargs['step_name'] == 'synthesis'
-
-        step_validate(_validate_event())
-        assert mock_converse.call_args.kwargs['step_name'] == 'validation'
-
-    def test_step_name_matches_the_sync_chain_for_the_same_step(self, mock_tables, mock_job_status, mock_converse):
-        """Both research paths must report the SAME step name to Bedrock.
-
-        The sync path resolves it from the config's 'name' field; this path used
-        the raw dict key, so a config where the two differ would emit different
-        labels for the same step and defeat the purpose. (Raised in review of
-        PR #228.)
-        """
-        from research_step_handler import step_analyze
-
-        step_analyze(_analyze_event())
-        emitted = mock_converse.call_args.kwargs['step_name']
-        assert emitted == _step('data_analysis').get('name', 'data_analysis')
+        for step_fn, event, key in (
+            (step_analyze, _analyze_event(), 'data_analysis'),
+            (step_synthesize, _synthesize_event(), 'synthesis'),
+            (step_validate, _validate_event(), 'validation'),
+        ):
+            step_fn(event)
+            expected = _step(key).get('name', key)
+            assert mock_converse.call_args.kwargs['step_name'] == expected
 
     def test_configured_thinking_budget_reaches_bedrock(self, mock_tables, mock_job_status, mock_converse):
         """data_analysis declares a thinking budget; it must be forwarded.

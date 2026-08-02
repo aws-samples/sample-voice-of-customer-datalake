@@ -138,7 +138,8 @@ def get_step_inference_config(filename: str, step_name: str) -> dict:
         step_name: Step key within the file's "steps" object
 
     Returns:
-        Dict with 'system_prompt', 'max_tokens' and 'thinking_budget'
+        Dict with 'system_prompt', 'max_tokens', 'thinking_budget' and
+        'step_name' (the config's 'name', falling back to the step key)
     """
     return _inference_from_step(_get_step(filename, step_name), step_name)
 

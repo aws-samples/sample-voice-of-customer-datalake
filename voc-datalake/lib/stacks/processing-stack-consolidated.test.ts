@@ -132,27 +132,32 @@ function propsOf(resource: unknown): Record<string, unknown> {
  */
 describe('research Lambda keeps the maximum timeout its budgets assume', () => {
   const MAX_LAMBDA_TIMEOUT_SECONDS = 900;
-  let researchFn: Record<string, unknown>;
+  let researchFns: Record<string, unknown>[];
 
   beforeAll(() => {
     // Matched on the handler, not the construct id: a rename should not silently
-    // skip these assertions.
+    // skip these assertions. EVERY match is checked, so a second research
+    // function cannot appear under the ceiling unnoticed.
     const fns = synthProcessingTemplate().findResources('AWS::Lambda::Function');
-    const found = Object.values(fns)
+    researchFns = Object.values(fns)
       .map(propsOf)
-      .find((p) => typeof p.Handler === 'string' && p.Handler.includes('research_step_handler'));
-    expect(found, 'no Lambda with the research_step_handler handler').toBeDefined();
-    researchFn = found ?? {};
+      .filter((p) => typeof p.Handler === 'string' && p.Handler.includes('research_step_handler'));
+    expect(researchFns.length, 'no Lambda with the research_step_handler handler')
+      .toBeGreaterThan(0);
   });
 
   it('runs at the maximum Lambda timeout', () => {
-    expect(researchFn.Timeout).toBe(MAX_LAMBDA_TIMEOUT_SECONDS);
+    for (const fn of researchFns) {
+      expect(fn.Timeout).toBe(MAX_LAMBDA_TIMEOUT_SECONDS);
+    }
   });
 
   it('has enough memory that generation is not CPU-starved', () => {
     // Lambda scales CPU with memory; a small function makes long generations
     // slower and therefore likelier to hit the ceiling above.
-    expect(researchFn.MemorySize as number).toBeGreaterThanOrEqual(1024);
+    for (const fn of researchFns) {
+      expect(fn.MemorySize).toBeGreaterThanOrEqual(1024);
+    }
   });
 });
 
