@@ -84,27 +84,34 @@ export function bedrockFoundationModelSuppressionTargets(): string[] {
  * It lives here anyway so one file still answers "which Bedrock models can this
  * platform reach", and so the ARN is derived rather than pasted into each role.
  *
- * ⚠️ LIFECYCLE — ACTION REQUIRED BEFORE 2026-09-30
- * Per the AWS Bedrock model-lifecycle table, amazon.nova-canvas-v1:0 entered
- * LEGACY on 2026-03-30 with EOL on 2026-09-30, after which requests fail in
- * every region. During the legacy window an account that does not invoke the
- * model for 15+ days can ALSO lose access early, surfacing as
- * ResourceNotFoundException ("marked as Legacy… upgrade to an active model") —
- * which is exactly the outage previously seen on this codebase, where avatars
- * silently stopped generating while persona creation carried on.
+ * WHY NOT amazon.nova-canvas-v1:0 (the previous model): it went LEGACY on
+ * 2026-03-30 with EOL 2026-09-30, and a legacy model also drops access for
+ * accounts idle 15+ days — which had already caused a silent avatar outage here
+ * (generation degrades to avatar_url=null, so nothing visibly breaks).
  *
- * Migrating is a one-line change here plus the same value in
- * lambda/api/prompts/avatar-generation.json (a Python lockstep test pins the
- * two together). Confirm the replacement against the account before switching:
- *   aws bedrock list-foundation-models --by-output-modality IMAGE \
+ * WHY us-west-2 rather than the platform's us-east-1: as of 2026-08-02 there is
+ * NO active text-to-image model in us-east-1 — Nova Canvas is the only generator
+ * offered there and it is legacy. Every other image model in us-east-1 is a
+ * Stability EDITING primitive (inpaint/upscale/remove-background) that requires
+ * an input image. us-west-2 carries the three active generators, verified
+ * invocable from this account. avatar.py builds its own regional client, so the
+ * cross-region call needs no extra plumbing.
+ *
+ * Alternatives if quality matters more than cost/latency:
+ * stability.stable-image-ultra-v1:1 (best quality) or stability.sd3-5-large-v1:0.
+ * All three share one request/response shape, so switching is just this constant.
+ *
+ * To re-check the landscape:
+ *   aws bedrock list-foundation-models --region us-west-2 \
+ *     --by-output-modality IMAGE \
  *     --query 'modelSummaries[].[modelId,modelLifecycle.status]' --output table
- * Note the successor may need a different request body than Nova Canvas's
- * TEXT_IMAGE/textToImageParams shape in lambda/shared/avatar.py.
+ * A model from a different VENDOR will need a new payload builder in
+ * lambda/shared/avatar.py — the body shapes are not interchangeable.
  */
-export const IMAGE_MODEL_ID = 'amazon.nova-canvas-v1:0';
+export const IMAGE_MODEL_ID = 'stability.stable-image-core-v1:1';
 
-/** Nova Canvas is not offered in every region; the avatar client pins this one. */
-export const IMAGE_MODEL_REGION = 'us-east-1';
+/** Image generators are region-limited; the avatar client pins this one. */
+export const IMAGE_MODEL_REGION = 'us-west-2';
 
 /**
  * IAM resource ARN for the avatar image model. Region-pinned (unlike the

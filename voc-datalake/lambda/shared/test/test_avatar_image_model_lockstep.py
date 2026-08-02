@@ -10,8 +10,9 @@ Two problems motivated these tests:
    one that is granted but not invoked wastes the grant.
 
 So the Python config and the CDK source must agree, and the runtime must use
-what the config says. amazon.nova-canvas-v1:0 reaches EOL on 2026-09-30, so the
-migration these tests protect is a matter of when, not if.
+what the config says. The model was migrated off amazon.nova-canvas-v1:0 (EOL
+2026-09-30) to an active Stability generator in a DIFFERENT region, so these
+tests also pin the region that the IAM grant is built from.
 """
 import json
 import re
@@ -69,6 +70,7 @@ class TestImageModelLockstep:
         api_stack = (_repo_root() / 'lib' / 'stacks' / 'api-stack.ts').read_text(encoding='utf-8')
         assert 'imageModelArn()' in api_stack
         assert 'foundation-model/amazon.nova-canvas' not in api_stack
+        assert 'foundation-model/stability' not in api_stack
 
 
 class TestImageModelConfigIsHonoured:
@@ -115,14 +117,15 @@ class TestImageModelConfigIsHonoured:
     def test_invokes_the_model_id_from_config(self):
         bedrock, _, result = self._run_with_config({
             'model_id': 'vendor.some-future-image-model-v9:0',
-            'region': 'us-east-1', 'width': 1024, 'height': 1024,
+            'region': 'us-west-2', 'aspect_ratio': '1:1', 'output_format': 'png',
         })
         assert result['avatar_url'] == 's3://b/avatars/p1.png'
         assert bedrock.invoke_model.call_args.kwargs['modelId'] == 'vendor.some-future-image-model-v9:0'
 
     def test_creates_the_bedrock_client_in_the_configured_region(self):
         _, boto3_mock, _ = self._run_with_config({
-            'model_id': 'm', 'region': 'eu-west-1', 'width': 1024, 'height': 1024,
+            'model_id': 'm', 'region': 'eu-west-1', 'aspect_ratio': '1:1',
+            'output_format': 'png',
         })
         bedrock_calls = [
             c for c in boto3_mock.client.call_args_list if c.args and c.args[0] == 'bedrock-runtime'
@@ -130,30 +133,67 @@ class TestImageModelConfigIsHonoured:
         assert bedrock_calls, 'no bedrock-runtime client was created'
         assert bedrock_calls[0].kwargs['region_name'] == 'eu-west-1'
 
-    def test_uses_the_configured_dimensions(self):
+    def test_uses_the_configured_aspect_ratio_and_format(self):
         bedrock, _, _ = self._run_with_config({
-            'model_id': 'm', 'region': 'us-east-1', 'width': 512, 'height': 768,
+            'model_id': 'm', 'region': 'us-west-2',
+            'aspect_ratio': '3:2', 'output_format': 'jpeg',
         })
         body = json.loads(bedrock.invoke_model.call_args.kwargs['body'])
-        assert body['imageGenerationConfig']['width'] == 512
-        assert body['imageGenerationConfig']['height'] == 768
+        assert body['aspect_ratio'] == '3:2'
+        assert body['output_format'] == 'jpeg'
+        assert body['mode'] == 'text-to-image'
 
     def test_falls_back_to_defaults_when_the_block_is_missing(self):
         """Older/partial configs must still work rather than KeyError."""
         from shared.avatar import (
+            DEFAULT_ASPECT_RATIO,
             DEFAULT_IMAGE_MODEL_ID,
             DEFAULT_IMAGE_MODEL_REGION,
-            DEFAULT_IMAGE_SIZE,
         )
 
         bedrock, boto3_mock, _ = self._run_with_config(None)
         assert bedrock.invoke_model.call_args.kwargs['modelId'] == DEFAULT_IMAGE_MODEL_ID
         body = json.loads(bedrock.invoke_model.call_args.kwargs['body'])
-        assert body['imageGenerationConfig']['width'] == DEFAULT_IMAGE_SIZE
+        assert body['aspect_ratio'] == DEFAULT_ASPECT_RATIO
         bedrock_calls = [
             c for c in boto3_mock.client.call_args_list if c.args and c.args[0] == 'bedrock-runtime'
         ]
         assert bedrock_calls[0].kwargs['region_name'] == DEFAULT_IMAGE_MODEL_REGION
+
+
+class TestSeedIsActuallyDeterministic:
+    """The code claims "consistent seed per persona" so regenerating a persona
+    reproduces its avatar. It used hash(persona_id), and Python RANDOMISES str
+    hashing per process, so the seed differed on every cold start — the comment
+    was aspirational. Now sha256-derived."""
+
+    def test_same_persona_always_yields_the_same_seed(self):
+        from shared.avatar import _stable_seed
+
+        assert _stable_seed('persona_abc') == _stable_seed('persona_abc')
+
+    def test_seed_derives_from_a_process_independent_digest(self):
+        """Recomputed independently here: a fresh interpreter with a different
+        PYTHONHASHSEED must reach the same value, which hash() cannot guarantee."""
+        import hashlib
+
+        from shared.avatar import _stable_seed
+
+        expected = int(hashlib.sha256(b'persona_abc').hexdigest()[:8], 16) % 4294967294
+        assert _stable_seed('persona_abc') == expected
+
+    def test_different_personas_get_different_seeds(self):
+        from shared.avatar import _stable_seed
+
+        assert _stable_seed('persona_a') != _stable_seed('persona_b')
+
+    def test_seed_stays_inside_the_accepted_range(self):
+        from shared.avatar import _stable_seed
+
+        for pid in ('a', 'persona_20260802_0', 'ünïcodé-persona', 'x' * 200):
+            seed = _stable_seed(pid)
+            assert 0 <= seed < 4294967294
+
 
 
 class TestLifecycleFailuresAreDiagnosable:
@@ -167,8 +207,8 @@ class TestLifecycleFailuresAreDiagnosable:
         config = {
             'system_prompt': 'S', 'user_prompt_template': '{name}', 'max_tokens': 200,
             'fallback_prompt_template': 'H',
-            'image_model': {'model_id': 'test.image-model', 'region': 'us-east-1',
-                            'width': 1024, 'height': 1024},
+            'image_model': {'model_id': 'test.image-model', 'region': 'us-west-2',
+                            'aspect_ratio': '1:1', 'output_format': 'png'},
         }
         mock_bedrock_runtime = MagicMock()
         mock_bedrock_runtime.invoke_model.side_effect = exc
@@ -204,7 +244,7 @@ class TestLifecycleFailuresAreDiagnosable:
         result, errors = self._fail_with(AccessDeniedException('denied'))
         assert result['avatar_url'] is None
         assert 'test.image-model' in errors
-        assert 'us-east-1' in errors
+        assert 'us-west-2' in errors
 
     def test_validation_error_names_the_model(self):
         class ValidationException(Exception):

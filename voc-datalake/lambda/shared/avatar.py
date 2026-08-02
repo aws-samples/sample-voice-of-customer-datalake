@@ -4,6 +4,7 @@ Uses Claude to generate image prompts, then the Bedrock image model configured
 in avatar-generation.json ("image_model") to create the images.
 """
 
+import hashlib
 import json
 import os
 import boto3
@@ -17,14 +18,16 @@ from shared.prompts import get_avatar_prompt_config, format_prompt
 # lockstep with lib/utils/model-allowlist.ts (which builds the IAM grant) by
 # test_avatar_image_model_lockstep.py.
 #
-# ⚠️ amazon.nova-canvas-v1:0 is LEGACY since 2026-03-30 and reaches EOL on
-# 2026-09-30; a legacy model also drops access for accounts idle 15+ days,
-# surfacing as ResourceNotFoundException. Avatar failures degrade silently
-# (avatar_url stays null), so this expiring by surprise is easy to miss.
-# See model-allowlist.ts for the migration steps.
-DEFAULT_IMAGE_MODEL_REGION = 'us-east-1'
-DEFAULT_IMAGE_MODEL_ID = 'amazon.nova-canvas-v1:0'
-DEFAULT_IMAGE_SIZE = 1024
+# The region is deliberately NOT the platform's us-east-1: no active
+# text-to-image model is offered there (Nova Canvas was the only one and went
+# legacy), so this calls us-west-2 cross-region. See model-allowlist.ts.
+DEFAULT_IMAGE_MODEL_REGION = 'us-west-2'
+DEFAULT_IMAGE_MODEL_ID = 'stability.stable-image-core-v1:1'
+DEFAULT_ASPECT_RATIO = '1:1'
+DEFAULT_OUTPUT_FORMAT = 'png'
+
+# Stability's seed field is a 32-bit unsigned range.
+_MAX_SEED = 4294967294
 
 
 def get_image_model_config() -> dict:
@@ -39,9 +42,20 @@ def get_image_model_config() -> dict:
     return {
         'model_id': image_model.get('model_id', DEFAULT_IMAGE_MODEL_ID),
         'region': image_model.get('region', DEFAULT_IMAGE_MODEL_REGION),
-        'width': image_model.get('width', DEFAULT_IMAGE_SIZE),
-        'height': image_model.get('height', DEFAULT_IMAGE_SIZE),
+        'aspect_ratio': image_model.get('aspect_ratio', DEFAULT_ASPECT_RATIO),
+        'output_format': image_model.get('output_format', DEFAULT_OUTPUT_FORMAT),
     }
+
+
+def _stable_seed(persona_id: str) -> int:
+    """Deterministic seed so regenerating one persona reproduces its avatar.
+
+    Uses sha256 rather than hash(): Python randomises str hashing per process
+    unless PYTHONHASHSEED is fixed, so the previous hash(persona_id) gave a
+    DIFFERENT seed on every cold start despite the code claiming consistency.
+    """
+    digest = hashlib.sha256(persona_id.encode('utf-8')).hexdigest()
+    return int(digest[:8], 16) % _MAX_SEED
 
 
 def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
@@ -113,7 +127,7 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
     Generate an AI avatar image for a persona.
     
     Uses Claude to create an intelligent image prompt from persona data (name, bio, occupation),
-    then Nova Canvas to generate the actual image.
+    then the configured image model to generate the actual image.
     
     Args:
         persona_data: Dict with name, tagline, identity (bio, age_range, occupation, location), persona_id
@@ -154,19 +168,16 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
         logger.info(f"[PERSONA_AVATAR] Creating Bedrock client for {model_region} (image model region)")
         bedrock_runtime = boto3.client('bedrock-runtime', region_name=model_region)
         
-        # Nova Canvas request format.
-        # Do NOT include 'quality' or 'cfgScale' params - they cause ValidationException
+        # Stability text-to-image request format (shared by stable-image-core,
+        # stable-image-ultra and sd3-5-large). Note this is NOT interchangeable
+        # with the Nova Canvas taskType/textToImageParams body it replaced — a
+        # model from another vendor needs its own builder here.
         request_body = {
-            "taskType": "TEXT_IMAGE",
-            "textToImageParams": {
-                "text": avatar_prompt,
-            },
-            "imageGenerationConfig": {
-                "numberOfImages": 1,
-                "width": image_model['width'],
-                "height": image_model['height'],
-                "seed": hash(persona_id) % 2147483647  # Consistent seed per persona
-            }
+            "prompt": avatar_prompt,
+            "mode": "text-to-image",
+            "aspect_ratio": image_model['aspect_ratio'],
+            "output_format": image_model['output_format'],
+            "seed": _stable_seed(persona_id),
         }
         
         logger.info(f"[PERSONA_AVATAR] Invoking image model: {model_id}")
@@ -180,14 +191,21 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
         images = result.get('images', [])
         
         if not images:
-            logger.warning("[PERSONA_AVATAR] Nova Canvas returned empty images array")
+            # finish_reasons explains a content-filtered or failed generation,
+            # which returns 200 with no image rather than raising.
+            logger.warning(
+                f"[PERSONA_AVATAR] {model_id} returned no images "
+                f"(finish_reasons={result.get('finish_reasons')})"
+            )
             return {'avatar_url': None, 'avatar_prompt': avatar_prompt}
         
-        logger.info(f"[PERSONA_AVATAR] Nova Canvas generated {len(images)} image(s)")
+        logger.info(f"[PERSONA_AVATAR] {model_id} generated {len(images)} image(s)")
         
-        # Decode base64 image and upload to S3
+        # Decode base64 image and upload to S3. Extension and content type follow
+        # the configured output_format so they cannot disagree with the bytes.
         image_data = base64.b64decode(images[0])
-        s3_key = f"avatars/{persona_id}.png"
+        image_format = image_model['output_format']
+        s3_key = f"avatars/{persona_id}.{image_format}"
         
         logger.info(f"[PERSONA_AVATAR] Uploading avatar to S3: s3://{s3_bucket}/{s3_key}")
         
@@ -196,7 +214,7 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
             Bucket=s3_bucket,
             Key=s3_key,
             Body=image_data,
-            ContentType='image/png',
+            ContentType=f"image/{'jpeg' if image_format == 'jpg' else image_format}",
             CacheControl='public, max-age=31536000, immutable',
         )
         
@@ -224,9 +242,9 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
             )
         elif 'ValidationException' in error_type or 'ValidationException' in str(e):
             logger.error(
-                f"[PERSONA_AVATAR] VALIDATION ERROR - Check the request format for {model_id} "
-                "(Nova Canvas wants square dimensions and rejects quality/cfgScale; "
-                "a replacement model may need a different body shape entirely)",
+                f"[PERSONA_AVATAR] VALIDATION ERROR - Check the request format for {model_id}. "
+                "Stability models take prompt/mode/aspect_ratio/output_format; a model "
+                "from another vendor needs its own request body, not this one",
                 extra={"error": str(e)},
             )
         else:
