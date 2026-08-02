@@ -226,11 +226,26 @@ export class VocProcessingStack extends cdk.Stack {
     // hashed the entire CDK project (scripts/, schemas/, coverage output...)
     // into this asset, redeploying it on every unrelated edit.
     const researchCode = lambda.Code.fromAsset('lambda', {
-      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/api/', '/jobs/', '/processor/'],
+      // api/ is excluded per-entry rather than as a subtree so api/prompts can be
+      // re-included: research_step_handler resolves its system prompts and token
+      // budgets from api/prompts/research-analysis.json at RUNTIME. A pruned
+      // '/api/' subtree cannot be re-entered under gitignore semantics, and
+      // without the config the handler raises FileNotFoundError on every job.
+      exclude: [
+        ...PY_LAMBDA_ASSET_EXCLUDES,
+        '/aggregator/',
+        '/api/*',
+        '!/api/prompts',
+        '/jobs/',
+        '/processor/',
+      ],
       ignoreMode: cdk.IgnoreMode.GIT,
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
-        command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/research/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
+        // INVARIANT: prompts land at the bundle ROOT (/var/task/prompts) —
+        // shared/prompts.py::get_prompts_dir resolves that path first. Same
+        // staging contract as the api-stack bundles.
+        command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/research/* /asset-output/ && cp -r /asset-input/shared /asset-output/ && cp -r /asset-input/api/prompts /asset-output/prompts'],
         platform: 'linux/arm64',
       },
     });

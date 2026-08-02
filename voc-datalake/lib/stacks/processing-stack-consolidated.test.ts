@@ -8,6 +8,9 @@
  * the analysis prompt. These tests fail if either half of the wiring is
  * removed again (e.g. in a conflict resolution on the selector block).
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
@@ -107,5 +110,43 @@ describe('research state machine wiring (issue #157)', () => {
     // is off); step_save consumes it for the report's disclosure section.
     expect(state.definition).toContain('"web_search_queries.$":"$.Payload.web_search_queries"');
     expect(state.definition).toContain('"web_search_queries.$":"$.initialize_result.web_search_queries"');
+  });
+});
+
+/**
+ * The research Lambda gained a RUNTIME file dependency: research_step_handler
+ * resolves its system prompts and token budgets from
+ * api/prompts/research-analysis.json instead of hardcoding them. Staging is not
+ * something unit tests of the handler can see — locally the repo layout resolves
+ * the path either way, so a missing bundle entry only surfaces as a
+ * FileNotFoundError on a deployed research job. It did: the first deploy of that
+ * change shipped a bundle with no prompts/ at all.
+ *
+ * Asserted against the source because asset staging appears in neither the
+ * synthesized template nor the assets manifest.
+ */
+describe('research Lambda bundle stages its prompt config', () => {
+  const source = readFileSync(join(__dirname, 'processing-stack-consolidated.ts'), 'utf-8');
+  const researchAsset = source.split('const researchCode')[1]?.split('});')[0] ?? '';
+
+  it('re-includes api/prompts rather than pruning the whole api subtree', () => {
+    // '/api/' with a trailing slash prunes the subtree, and gitignore semantics
+    // cannot re-enter a pruned directory — so the exclude must be per-entry.
+    expect(researchAsset).toContain("'/api/*'");
+    expect(researchAsset).toContain("'!/api/prompts'");
+    expect(researchAsset).not.toContain("'/api/',");
+  });
+
+  it('copies the prompts to the bundle root where get_prompts_dir looks first', () => {
+    // shared/prompts.py::get_prompts_dir checks /var/task/prompts first.
+    expect(researchAsset).toContain('/asset-input/api/prompts /asset-output/prompts');
+  });
+
+  it('still excludes the sibling handler trees it does not ship', () => {
+    // Guards the asset-hash discipline: re-including prompts must not turn into
+    // "stage everything", which would redeploy this function on unrelated edits.
+    for (const excluded of ["'/aggregator/'", "'/jobs/'", "'/processor/'"]) {
+      expect(researchAsset).toContain(excluded);
+    }
   });
 });
