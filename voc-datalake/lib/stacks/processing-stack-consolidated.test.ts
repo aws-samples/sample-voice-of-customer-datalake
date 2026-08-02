@@ -114,37 +114,76 @@ describe('research state machine wiring (issue #157)', () => {
 });
 
 /**
- * The research Lambda gained a RUNTIME file dependency: research_step_handler
- * resolves its system prompts and token budgets from
- * api/prompts/research-analysis.json instead of hardcoding them. Staging is not
- * something unit tests of the handler can see — locally the repo layout resolves
- * the path either way, so a missing bundle entry only surfaces as a
- * FileNotFoundError on a deployed research job. It did: the first deploy of that
- * change shipped a bundle with no prompts/ at all.
+ * research_step_handler resolves its system prompts and token budgets from
+ * api/prompts/research-analysis.json at RUNTIME, so that file must be copied into
+ * the bundle AND be part of the asset fingerprint. The first deploy of that change
+ * shipped a bundle with no prompts/ at all — a FileNotFoundError on every research
+ * job that the whole unit suite missed, because get_prompts_dir() resolves the repo
+ * layout locally whether or not the bundle stages anything.
  *
- * Asserted against the source because asset staging appears in neither the
- * synthesized template nor the assets manifest.
+ * These are source assertions, which is a weak form: they cannot prove staging, and
+ * they break on reformatting. Kept only because bundling inputs appear in neither
+ * the synthesized template nor the assets manifest, so the alternative is a
+ * finch-dependent synth in unit tests. The behavioural half of this guard lives in
+ * lambda/research/test/test_research_step_budgets.py, which fails if a step stops
+ * reading the config at all.
  */
+/**
+ * Raised in review of PR #228: moving the research budgets to config (9000 +
+ * a 5000 thinking budget, up from 4000/0) increases per-step generation time, and
+ * a mid-generation timeout throws the step away — the same failure the ingestor
+ * sizing change fixes.
+ *
+ * The function already runs at Lambda's 15-minute HARD MAXIMUM, so there is no
+ * headroom left to add: the only thing worth guarding is that nobody lowers it
+ * while budgets are config-driven and can be raised by editing a JSON file.
+ */
+describe('research Lambda keeps the maximum timeout its budgets assume', () => {
+  const MAX_LAMBDA_TIMEOUT_SECONDS = 900;
+  let researchFn: Record<string, unknown>;
+
+  beforeAll(() => {
+    const fns = synthProcessingTemplate().findResources('AWS::Lambda::Function');
+    const entry = Object.entries(fns).find(
+      ([id]) => id.startsWith('ResearchStepLambda'),
+    );
+    expect(entry, 'ResearchStepLambda not found in the template').toBeDefined();
+    researchFn = (entry![1] as { Properties: Record<string, unknown> }).Properties;
+  });
+
+  it('runs at the maximum Lambda timeout', () => {
+    expect(researchFn.Timeout).toBe(MAX_LAMBDA_TIMEOUT_SECONDS);
+  });
+
+  it('has enough memory that generation is not CPU-starved', () => {
+    // Lambda scales CPU with memory; a small function makes long generations
+    // slower and therefore likelier to hit the ceiling above.
+    expect(researchFn.MemorySize as number).toBeGreaterThanOrEqual(1024);
+  });
+});
+
 describe('research Lambda bundle stages its prompt config', () => {
   const source = readFileSync(join(__dirname, 'processing-stack-consolidated.ts'), 'utf-8');
   const researchAsset = source.split('const researchCode')[1]?.split('});')[0] ?? '';
 
-  it('re-includes api/prompts rather than pruning the whole api subtree', () => {
-    // '/api/' with a trailing slash prunes the subtree, and gitignore semantics
-    // cannot re-enter a pruned directory — so the exclude must be per-entry.
-    expect(researchAsset).toContain("'/api/*'");
+  it('copies the prompts to the bundle root where get_prompts_dir looks first', () => {
+    // THIS is the assertion that maps to the actual bug: a bundled asset mounts
+    // the source dir as /asset-input, so the copy — not the exclude — is what puts
+    // the config in the bundle. Verified empirically by reverting each half.
+    expect(researchAsset).toContain('/asset-input/api/prompts /asset-output/prompts');
+  });
+
+  it('keeps api/prompts inside the asset fingerprint', () => {
+    // Excluding api/ wholesale still bundles the prompts (the copy handles that),
+    // but drops them from the hash — so editing research-analysis.json would not
+    // redeploy the function and it would keep running the old budgets.
     expect(researchAsset).toContain("'!/api/prompts'");
     expect(researchAsset).not.toContain("'/api/',");
   });
 
-  it('copies the prompts to the bundle root where get_prompts_dir looks first', () => {
-    // shared/prompts.py::get_prompts_dir checks /var/task/prompts first.
-    expect(researchAsset).toContain('/asset-input/api/prompts /asset-output/prompts');
-  });
-
   it('still excludes the sibling handler trees it does not ship', () => {
-    // Guards the asset-hash discipline: re-including prompts must not turn into
-    // "stage everything", which would redeploy this function on unrelated edits.
+    // Re-including prompts must not become "stage everything", which would
+    // redeploy this function on unrelated edits.
     for (const excluded of ["'/aggregator/'", "'/jobs/'", "'/processor/'"]) {
       expect(researchAsset).toContain(excluded);
     }

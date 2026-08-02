@@ -61,6 +61,7 @@ def invoke_bedrock_with_retry(
     max_tokens: int = 4096,
     max_retries: int = 3,
     thinking_budget: int = 0,
+    step_name: str = 'unknown',
 ) -> str:
     """Invoke Bedrock with retry support using shared converse module."""
     return converse(
@@ -71,6 +72,7 @@ def invoke_bedrock_with_retry(
         surface='documents',
         max_retries=max_retries,
         raise_on_throttle=True,
+        step_name=step_name,
     )
 
 
@@ -97,6 +99,9 @@ def _step_inference(step_name: str, config: dict) -> dict:
         'system_prompt': system_prompt,
         'max_tokens': step_config['max_tokens'],
         'thinking_budget': step_config['thinking_budget'],
+        # Carried through to converse() so [BEDROCK] log lines identify which
+        # research step they belong to; all three logged as 'unknown' before.
+        'step_name': step_name,
     }
 # Wrapper function to pass module-level table reference to shared function
 def get_feedback_context(filters: dict, limit: int = 100) -> list[dict]:
@@ -283,6 +288,7 @@ IMPORTANT: Base ALL findings on the actual feedback data provided. Do not make a
         user_prompt,
         max_tokens=inference['max_tokens'],
         thinking_budget=inference['thinking_budget'],
+        step_name=inference['step_name'],
     )
     
     update_job_status(project_id, job_id, 'running', 45, 'analysis_complete')
@@ -319,6 +325,7 @@ Provide:
         user_prompt,
         max_tokens=inference['max_tokens'],
         thinking_budget=inference['thinking_budget'],
+        step_name=inference['step_name'],
     )
     
     update_job_status(project_id, job_id, 'running', 70, 'synthesis_complete')
@@ -360,6 +367,7 @@ Provide a final validated research report."""
         user_prompt,
         max_tokens=inference['max_tokens'],
         thinking_budget=inference['thinking_budget'],
+        step_name=inference['step_name'],
     )
     
     update_job_status(project_id, job_id, 'running', 90, 'validation_complete')

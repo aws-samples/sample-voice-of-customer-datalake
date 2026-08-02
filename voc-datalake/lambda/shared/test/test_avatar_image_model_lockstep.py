@@ -49,6 +49,20 @@ class TestImageModelLockstep:
     def test_config_region_matches_cdk_source(self):
         assert _avatar_config()['image_model']['region'] == _ts_const('IMAGE_MODEL_REGION')
 
+    def test_runtime_fallback_defaults_match_cdk_source(self):
+        """The defaults are a third copy of the id, so pin them too.
+
+        avatar.py falls back to DEFAULT_IMAGE_MODEL_* when the config's
+        image_model block is absent. If those drift from the CDK constants, that
+        fallback invokes a model the IAM grant does not cover — an AccessDenied
+        on a path that already degrades silently to avatar_url=None, so nobody
+        would notice. (Raised in review of PR #228.)
+        """
+        from shared.avatar import DEFAULT_IMAGE_MODEL_ID, DEFAULT_IMAGE_MODEL_REGION
+
+        assert DEFAULT_IMAGE_MODEL_ID == _ts_const('IMAGE_MODEL_ID')
+        assert DEFAULT_IMAGE_MODEL_REGION == _ts_const('IMAGE_MODEL_REGION')
+
     def test_api_stack_derives_the_arn_instead_of_hardcoding_it(self):
         """Three roles used to embed the ARN as a literal, so a model swap had to
         be repeated in three places or it silently AccessDenied."""
