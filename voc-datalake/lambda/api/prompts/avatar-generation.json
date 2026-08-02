@@ -9,6 +9,6 @@
     "model_id": "stability.stable-image-core-v1:1",
     "region": "us-west-2",
     "aspect_ratio": "1:1",
-    "output_format": "png"
+    "output_format": "jpeg"
   }
 }

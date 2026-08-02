@@ -161,6 +161,56 @@ class TestImageModelConfigIsHonoured:
         assert bedrock_calls[0].kwargs['region_name'] == DEFAULT_IMAGE_MODEL_REGION
 
 
+class TestAvatarsAreNotShippedAsPng:
+    """The model emits 1536x1536 while avatars render at 32-128 CSS px, so the
+    encoding choice dominates payload size. Measured on one seed/prompt: PNG
+    2,677,833 bytes vs JPEG 401,603 — 6.7x. A revert to PNG is a silent 6x
+    regression in page weight, hence an explicit guard."""
+
+    def test_default_format_is_lossy(self):
+        from shared.avatar import DEFAULT_OUTPUT_FORMAT
+
+        assert DEFAULT_OUTPUT_FORMAT != 'png'
+        assert DEFAULT_OUTPUT_FORMAT in {'jpeg', 'jpg'}
+
+    def test_shipped_config_agrees_with_the_default(self):
+        assert _avatar_config()['image_model']['output_format'] != 'png'
+
+    def test_content_type_matches_the_configured_format(self):
+        """The S3 ContentType is derived, so a format change must not leave it
+        claiming image/png for JPEG bytes."""
+        cfg = {
+            'system_prompt': 'S', 'user_prompt_template': '{name}', 'max_tokens': 200,
+            'fallback_prompt_template': 'H',
+            'image_model': {'model_id': 'm', 'region': 'us-west-2',
+                            'aspect_ratio': '1:1', 'output_format': 'jpeg'},
+        }
+        mock_bedrock = MagicMock()
+        mock_s3 = MagicMock()
+        import base64
+        mock_bedrock.invoke_model.return_value = {
+            'body': MagicMock(read=MagicMock(return_value=json.dumps(
+                {'images': [base64.b64encode(b'jpegbytes').decode()]}).encode()))
+        }
+
+        def client_factory(service, **kwargs):
+            return mock_bedrock if service == 'bedrock-runtime' else mock_s3
+
+        with patch('shared.avatar.get_avatar_prompt_config', return_value=cfg), \
+             patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+             patch('shared.avatar.boto3') as mock_boto3:
+            mock_boto3.client.side_effect = client_factory
+            from shared.avatar import generate_persona_avatar
+            result = generate_persona_avatar(
+                {'persona_id': 'p1', 'name': 'N', 'identity': {}}, MagicMock(), s3_bucket='b'
+            )
+
+        put = mock_s3.put_object.call_args.kwargs
+        assert put['ContentType'] == 'image/jpeg'
+        assert put['Key'] == 'avatars/p1.jpeg'
+        assert result['avatar_url'] == 's3://b/avatars/p1.jpeg'
+
+
 class TestSeedIsActuallyDeterministic:
     """The code claims "consistent seed per persona" so regenerating a persona
     reproduces its avatar. It used hash(persona_id), and Python RANDOMISES str

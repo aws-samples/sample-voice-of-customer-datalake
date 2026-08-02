@@ -24,7 +24,13 @@ from shared.prompts import get_avatar_prompt_config, format_prompt
 DEFAULT_IMAGE_MODEL_REGION = 'us-west-2'
 DEFAULT_IMAGE_MODEL_ID = 'stability.stable-image-core-v1:1'
 DEFAULT_ASPECT_RATIO = '1:1'
-DEFAULT_OUTPUT_FORMAT = 'png'
+# JPEG, not PNG: the model emits 1536x1536 and these render at 32-128 CSS px
+# (w-8 in chat bubbles, up to max-w-[128px] for the large variant, 80px in the
+# PDF export). Measured on the same seed/prompt: PNG 2,677,833 bytes vs JPEG
+# 401,603 — 6.7x smaller for photographic content that is downscaled anyway.
+# Lossless compression of a photo is the wrong trade here. ('webp' is rejected
+# by the model as an invalid output_format.)
+DEFAULT_OUTPUT_FORMAT = 'jpeg'
 
 # Stability's seed field is a 32-bit unsigned range.
 _MAX_SEED = 4294967294
