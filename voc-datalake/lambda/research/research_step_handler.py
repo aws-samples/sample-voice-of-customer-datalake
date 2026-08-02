@@ -15,6 +15,10 @@ from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
 from shared.api import api_handler
 from shared.converse import converse, BedrockThrottlingError
+from shared.prompts import (
+    get_research_step_config,
+    get_response_language_instruction,
+)
 from shared.feedback import (
     get_feedback_context as _get_feedback_context,
     format_feedback_for_llm,
@@ -51,16 +55,49 @@ def _get_projects_table():
     return projects_table
 # Alias for backward compatibility with Step Functions error handling
 BedrockThrottlingException = BedrockThrottlingError
-def invoke_bedrock_with_retry(system_prompt: str, user_message: str, max_tokens: int = 4096, max_retries: int = 3) -> str:
+def invoke_bedrock_with_retry(
+    system_prompt: str,
+    user_message: str,
+    max_tokens: int = 4096,
+    max_retries: int = 3,
+    thinking_budget: int = 0,
+) -> str:
     """Invoke Bedrock with retry support using shared converse module."""
     return converse(
         prompt=user_message,
         system_prompt=system_prompt,
         max_tokens=max_tokens,
+        thinking_budget=thinking_budget,
         surface='documents',
         max_retries=max_retries,
         raise_on_throttle=True,
     )
+
+
+def _step_inference(step_name: str, config: dict) -> dict:
+    """Resolve a research step's system prompt and token budgets.
+
+    Both research paths read the SAME config (lambda/api/prompts/
+    research-analysis.json): the sync path via build_chain_steps, this async
+    Step Functions path via here. Previously this module hardcoded its own
+    budgets and duplicated the system prompts, so edits to that JSON silently
+    had no effect on the async path — it looked authoritative but was never
+    read. Keep it that way: budgets belong in the JSON, not inline.
+
+    The user prompt stays inline per step, because this path adds context the
+    templated sync path has no placeholders for (personas, uploaded documents,
+    public web-search results).
+    """
+    step_config = get_research_step_config(step_name)
+    system_prompt = step_config['system_prompt']
+    lang_instruction = get_response_language_instruction(config.get('response_language'))
+    if lang_instruction:
+        system_prompt = f"{system_prompt}\n\n{lang_instruction}"
+    return {
+        'system_prompt': system_prompt,
+        'max_tokens': step_config['max_tokens'],
+        'thinking_budget': step_config['thinking_budget'],
+    }
 # Wrapper function to pass module-level table reference to shared function
 def get_feedback_context(filters: dict, limit: int = 100) -> list[dict]:
     """Get feedback items based on filters for LLM context."""
@@ -197,18 +234,8 @@ def step_analyze(event: dict) -> dict:
     logger.info(f"Starting analysis for job {job_id}")
     update_job_status(project_id, job_id, 'running', 25, 'preparing_analysis')
     
-    system_prompt = """You are a senior user researcher conducting rigorous analysis of REAL customer feedback data.
-Your analysis must be grounded in the actual feedback provided - cite specific reviews, quote customers directly, and identify patterns from the data.
-Be thorough, data-driven, and cite specific examples."""
+    inference = _step_inference('data_analysis', config)
 
-    # Inject language instruction if non-English
-    response_language = config.get('response_language')
-    if response_language:
-        from shared.prompts import get_response_language_instruction
-        lang_instruction = get_response_language_instruction(response_language)
-        if lang_instruction:
-            system_prompt += f"\n\n{lang_instruction}"
-    
     # Build additional context sections
     additional_context = ""
     if personas_context:
@@ -251,7 +278,12 @@ Based on the ACTUAL FEEDBACK DATA above{' and the provided context' if additiona
 IMPORTANT: Base ALL findings on the actual feedback data provided. Do not make assumptions beyond what the data shows."""
 
     update_job_status(project_id, job_id, 'running', 30, 'calling_ai')
-    analysis = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=4000)
+    analysis = invoke_bedrock_with_retry(
+        inference['system_prompt'],
+        user_prompt,
+        max_tokens=inference['max_tokens'],
+        thinking_budget=inference['thinking_budget'],
+    )
     
     update_job_status(project_id, job_id, 'running', 45, 'analysis_complete')
     
@@ -267,17 +299,8 @@ def step_synthesize(event: dict) -> dict:
     logger.info(f"Synthesizing findings for job {job_id}")
     update_job_status(project_id, job_id, 'running', 50, 'preparing_synthesis')
     
-    system_prompt = """You are synthesizing research findings into actionable insights.
-Focus on clarity, prioritization, and recommendations."""
+    inference = _step_inference('synthesis', config)
 
-    # Inject language instruction if non-English
-    response_language = config.get('response_language')
-    if response_language:
-        from shared.prompts import get_response_language_instruction
-        lang_instruction = get_response_language_instruction(response_language)
-        if lang_instruction:
-            system_prompt += f"\n\n{lang_instruction}"
-    
     user_prompt = f"""Synthesize the analysis into clear findings.
 
 Previous analysis:
@@ -291,7 +314,12 @@ Provide:
 5. **Areas for Further Research**"""
 
     update_job_status(project_id, job_id, 'running', 55, 'calling_ai')
-    synthesis = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=3000)
+    synthesis = invoke_bedrock_with_retry(
+        inference['system_prompt'],
+        user_prompt,
+        max_tokens=inference['max_tokens'],
+        thinking_budget=inference['thinking_budget'],
+    )
     
     update_job_status(project_id, job_id, 'running', 70, 'synthesis_complete')
     
@@ -308,17 +336,8 @@ def step_validate(event: dict) -> dict:
     logger.info(f"Validating research for job {job_id}")
     update_job_status(project_id, job_id, 'running', 75, 'preparing_validation')
     
-    system_prompt = """You are a critical reviewer ensuring research quality.
-Challenge assumptions and verify conclusions."""
+    inference = _step_inference('validation', config)
 
-    # Inject language instruction if non-English
-    response_language = config.get('response_language')
-    if response_language:
-        from shared.prompts import get_response_language_instruction
-        lang_instruction = get_response_language_instruction(response_language)
-        if lang_instruction:
-            system_prompt += f"\n\n{lang_instruction}"
-    
     user_prompt = f"""Review and validate the research findings.
 
 Analysis:
@@ -336,7 +355,12 @@ Check:
 Provide a final validated research report."""
 
     update_job_status(project_id, job_id, 'running', 80, 'calling_ai')
-    validation = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=3000)
+    validation = invoke_bedrock_with_retry(
+        inference['system_prompt'],
+        user_prompt,
+        max_tokens=inference['max_tokens'],
+        thinking_budget=inference['thinking_budget'],
+    )
     
     update_job_status(project_id, job_id, 'running', 90, 'validation_complete')
     
