@@ -113,42 +113,36 @@ describe('research state machine wiring (issue #157)', () => {
   });
 });
 
+/** Narrow a CloudFormation resource to its Properties without a bare cast. */
+function propsOf(resource: unknown): Record<string, unknown> {
+  if (typeof resource === 'object' && resource !== null && 'Properties' in resource) {
+    const props = (resource as { Properties: unknown }).Properties;
+    if (typeof props === 'object' && props !== null) {
+      return props as Record<string, unknown>;
+    }
+  }
+  return {};
+}
+
 /**
- * research_step_handler resolves its system prompts and token budgets from
- * api/prompts/research-analysis.json at RUNTIME, so that file must be copied into
- * the bundle AND be part of the asset fingerprint. The first deploy of that change
- * shipped a bundle with no prompts/ at all — a FileNotFoundError on every research
- * job that the whole unit suite missed, because get_prompts_dir() resolves the repo
- * layout locally whether or not the bundle stages anything.
- *
- * These are source assertions, which is a weak form: they cannot prove staging, and
- * they break on reformatting. Kept only because bundling inputs appear in neither
- * the synthesized template nor the assets manifest, so the alternative is a
- * finch-dependent synth in unit tests. The behavioural half of this guard lives in
- * lambda/research/test/test_research_step_budgets.py, which fails if a step stops
- * reading the config at all.
- */
-/**
- * Raised in review of PR #228: moving the research budgets to config (9000 +
- * a 5000 thinking budget, up from 4000/0) increases per-step generation time, and
- * a mid-generation timeout throws the step away — the same failure the ingestor
- * sizing change fixes.
- *
- * The function already runs at Lambda's 15-minute HARD MAXIMUM, so there is no
- * headroom left to add: the only thing worth guarding is that nobody lowers it
- * while budgets are config-driven and can be raised by editing a JSON file.
+ * Budgets are config-driven now, so they can be raised by editing a JSON file
+ * while a mid-generation timeout discards the step. The function already runs at
+ * Lambda's 15-minute hard maximum, so the only thing to guard is that nobody
+ * lowers it. Memory matters too: Lambda scales CPU with it.
  */
 describe('research Lambda keeps the maximum timeout its budgets assume', () => {
   const MAX_LAMBDA_TIMEOUT_SECONDS = 900;
   let researchFn: Record<string, unknown>;
 
   beforeAll(() => {
+    // Matched on the handler, not the construct id: a rename should not silently
+    // skip these assertions.
     const fns = synthProcessingTemplate().findResources('AWS::Lambda::Function');
-    const entry = Object.entries(fns).find(
-      ([id]) => id.startsWith('ResearchStepLambda'),
-    );
-    expect(entry, 'ResearchStepLambda not found in the template').toBeDefined();
-    researchFn = (entry![1] as { Properties: Record<string, unknown> }).Properties;
+    const found = Object.values(fns)
+      .map(propsOf)
+      .find((p) => typeof p.Handler === 'string' && p.Handler.includes('research_step_handler'));
+    expect(found, 'no Lambda with the research_step_handler handler').toBeDefined();
+    researchFn = found ?? {};
   });
 
   it('runs at the maximum Lambda timeout', () => {
@@ -162,6 +156,18 @@ describe('research Lambda keeps the maximum timeout its budgets assume', () => {
   });
 });
 
+/**
+ * research_step_handler reads its prompts and budgets from
+ * api/prompts/research-analysis.json at RUNTIME. The first deploy of that change
+ * shipped a bundle with no prompts/ at all — a FileNotFoundError the unit suite
+ * could not see, because get_prompts_dir() resolves the repo layout locally
+ * whether or not the bundle stages anything.
+ *
+ * Source assertions are a weak form (they break on reformatting and cannot prove
+ * staging), used because bundling inputs appear in neither the template nor the
+ * assets manifest. The behavioural half lives in
+ * lambda/research/test/test_research_step_budgets.py.
+ */
 describe('research Lambda bundle stages its prompt config', () => {
   const source = readFileSync(join(__dirname, 'processing-stack-consolidated.ts'), 'utf-8');
   const researchAsset = source.split('const researchCode')[1]?.split('});')[0] ?? '';

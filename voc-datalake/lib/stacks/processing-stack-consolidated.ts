@@ -226,17 +226,11 @@ export class VocProcessingStack extends cdk.Stack {
     // hashed the entire CDK project (scripts/, schemas/, coverage output...)
     // into this asset, redeploying it on every unrelated edit.
     const researchCode = lambda.Code.fromAsset('lambda', {
-      // research_step_handler resolves its system prompts and token budgets from
-      // api/prompts/research-analysis.json at RUNTIME, so that file must both be
-      // COPIED into the bundle (see the command below — that is what fixes the
-      // FileNotFoundError) and be part of this asset's FINGERPRINT.
-      //
-      // The fingerprint is why api/ is excluded per-entry instead of as a pruned
-      // '/api/' subtree: a bundled asset mounts the source dir as /asset-input, so
-      // the copy works either way, but with api/ excluded from the fingerprint an
-      // edit to research-analysis.json would not change the asset hash and the
-      // Lambda would keep running the OLD prompts and budgets. Only prompts are
-      // re-included, so api/*.py edits still cannot churn this function's hash.
+      // research_step_handler reads api/prompts/research-analysis.json at RUNTIME,
+      // so the prompts must be BOTH copied into the bundle (the cp below) and kept
+      // in the asset FINGERPRINT (this per-entry exclude) — otherwise editing the
+      // config would not change the hash and the Lambda would keep the old budgets.
+      // Only prompts are re-included, so api/*.py edits can't churn this hash.
       exclude: [
         ...PY_LAMBDA_ASSET_EXCLUDES,
         '/aggregator/',

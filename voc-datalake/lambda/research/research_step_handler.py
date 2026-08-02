@@ -99,9 +99,9 @@ def _step_inference(step_name: str, config: dict) -> dict:
         'system_prompt': system_prompt,
         'max_tokens': step_config['max_tokens'],
         'thinking_budget': step_config['thinking_budget'],
-        # Carried through to converse() so [BEDROCK] log lines identify which
-        # research step they belong to; all three logged as 'unknown' before.
-        'step_name': step_name,
+        # Resolved by shared.prompts from the config's 'name', so [BEDROCK] log
+        # lines match between this path and the sync chain.
+        'step_name': step_config['step_name'],
     }
 # Wrapper function to pass module-level table reference to shared function
 def get_feedback_context(filters: dict, limit: int = 100) -> list[dict]:

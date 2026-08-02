@@ -106,16 +106,18 @@ def _get_step(filename: str, step_name: str) -> dict:
     return steps_config[step_name]
 
 
-def _inference_from_step(step: dict) -> dict:
+def _inference_from_step(step: dict, step_name: str) -> dict:
     """Pull the inference settings out of a raw step config block.
 
     Single home for the per-field defaults so the chain builder and the public
-    accessor below cannot drift apart.
+    accessor below cannot drift apart — including 'step_name', which both paths
+    report to Bedrock logging and which must therefore resolve identically.
     """
     return {
         'system_prompt': step.get('system_prompt', ''),
         'max_tokens': step.get('max_tokens', DEFAULT_STEP_MAX_TOKENS),
         'thinking_budget': step.get('thinking_budget', 0),
+        'step_name': step.get('name', step_name),
     }
 
 
@@ -138,7 +140,7 @@ def get_step_inference_config(filename: str, step_name: str) -> dict:
     Returns:
         Dict with 'system_prompt', 'max_tokens' and 'thinking_budget'
     """
-    return _inference_from_step(_get_step(filename, step_name))
+    return _inference_from_step(_get_step(filename, step_name), step_name)
 
 
 def build_chain_steps(filename: str, step_names: list[str], context: dict) -> list[dict]:
@@ -159,7 +161,7 @@ def build_chain_steps(filename: str, step_names: list[str], context: dict) -> li
     chain_steps = []
     for step_name in step_names:
         step = _get_step(filename, step_name)
-        inference = _inference_from_step(step)
+        inference = _inference_from_step(step, step_name)
         system = inference['system_prompt']
         if language_instruction:
             system = f"{system}\n\n{language_instruction}"
@@ -168,7 +170,7 @@ def build_chain_steps(filename: str, step_names: list[str], context: dict) -> li
             'user': format_prompt(step.get('user_prompt_template', ''), **context),
             'max_tokens': inference['max_tokens'],
             'thinking_budget': inference['thinking_budget'],
-            'step_name': step.get('name', step_name),
+            'step_name': inference['step_name'],
         })
     
     return chain_steps

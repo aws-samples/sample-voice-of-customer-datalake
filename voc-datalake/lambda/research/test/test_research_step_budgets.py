@@ -113,6 +113,20 @@ class TestBudgetsComeFromConfig:
         step_validate(_validate_event())
         assert mock_converse.call_args.kwargs['step_name'] == 'validation'
 
+    def test_step_name_matches_the_sync_chain_for_the_same_step(self, mock_tables, mock_job_status, mock_converse):
+        """Both research paths must report the SAME step name to Bedrock.
+
+        The sync path resolves it from the config's 'name' field; this path used
+        the raw dict key, so a config where the two differ would emit different
+        labels for the same step and defeat the purpose. (Raised in review of
+        PR #228.)
+        """
+        from research_step_handler import step_analyze
+
+        step_analyze(_analyze_event())
+        emitted = mock_converse.call_args.kwargs['step_name']
+        assert emitted == _step('data_analysis').get('name', 'data_analysis')
+
     def test_configured_thinking_budget_reaches_bedrock(self, mock_tables, mock_job_status, mock_converse):
         """data_analysis declares a thinking budget; it must be forwarded.
 
