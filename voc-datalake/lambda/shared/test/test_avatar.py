@@ -140,12 +140,10 @@ class TestGeneratePersonaAvatar:
 
         result = generate_persona_avatar(persona, MagicMock(), s3_bucket='test-bucket')
 
-        # Extension derives from the configured output_format, so this asserts
-        # against the config rather than a literal that breaks on a format change.
-        from shared.avatar import get_image_model_config
-
-        extension = get_image_model_config()['output_format']
-        assert result['avatar_url'] == f's3://test-bucket/avatars/p123.{extension}'
+        # Deliberately a LITERAL. Deriving the extension from
+        # get_image_model_config() would take the expectation from the same
+        # production code under test, so a wrong extension could never fail this.
+        assert result['avatar_url'] == 's3://test-bucket/avatars/p123.jpeg'
         assert result['avatar_prompt'] == 'A portrait prompt'
 
     @patch('shared.avatar.generate_avatar_prompt_with_llm')

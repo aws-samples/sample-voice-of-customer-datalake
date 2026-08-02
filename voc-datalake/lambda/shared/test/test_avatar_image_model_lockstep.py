@@ -168,10 +168,22 @@ class TestAvatarsAreNotShippedAsPng:
     regression in page weight, hence an explicit guard."""
 
     def test_default_format_is_lossy(self):
-        from shared.avatar import DEFAULT_OUTPUT_FORMAT
+        """'jpeg' specifically — the model rejects 'jpg' and 'webp', so accepting
+        them here would green-light a value that fails Bedrock validation."""
+        from shared.avatar import DEFAULT_OUTPUT_FORMAT, _SUPPORTED_OUTPUT_FORMATS
 
-        assert DEFAULT_OUTPUT_FORMAT != 'png'
-        assert DEFAULT_OUTPUT_FORMAT in {'jpeg', 'jpg'}
+        assert DEFAULT_OUTPUT_FORMAT == 'jpeg'
+        assert _SUPPORTED_OUTPUT_FORMATS == {'png', 'jpeg'}
+
+    def test_unsupported_format_falls_back_instead_of_failing_at_invoke(self):
+        """An unusable format must not reach Bedrock: it also names the S3 object,
+        so a bad value would produce a misleading key and ContentType."""
+        cfg = {'image_model': {'model_id': 'm', 'region': 'us-west-2',
+                               'aspect_ratio': '1:1', 'output_format': 'webp'}}
+        with patch('shared.avatar.get_avatar_prompt_config', return_value=cfg):
+            from shared.avatar import DEFAULT_OUTPUT_FORMAT, get_image_model_config
+
+            assert get_image_model_config()['output_format'] == DEFAULT_OUTPUT_FORMAT
 
     def test_shipped_config_agrees_with_the_default(self):
         assert _avatar_config()['image_model']['output_format'] != 'png'
@@ -211,6 +223,86 @@ class TestAvatarsAreNotShippedAsPng:
         assert result['avatar_url'] == 's3://b/avatars/p1.jpeg'
 
 
+class TestFormatChangeDoesNotOrphanOldAvatars:
+    """The S3 key embeds the image format, so regenerating a persona after an
+    output_format change writes avatars/x.jpeg and would leave avatars/x.png behind
+    with nothing referencing it — and there is no other avatar cleanup path in the
+    codebase. Raised as a blocker in review of PR #228 once the configured value
+    stopped being 'png'."""
+
+    @staticmethod
+    def _generate(output_format: str):
+        cfg = {
+            'system_prompt': 'S', 'user_prompt_template': '{name}', 'max_tokens': 200,
+            'fallback_prompt_template': 'H',
+            'image_model': {'model_id': 'm', 'region': 'us-west-2',
+                            'aspect_ratio': '1:1', 'output_format': output_format},
+        }
+        import base64
+        mock_bedrock = MagicMock()
+        mock_bedrock.invoke_model.return_value = {
+            'body': MagicMock(read=MagicMock(return_value=json.dumps(
+                {'images': [base64.b64encode(b'bytes').decode()]}).encode()))
+        }
+        mock_s3 = MagicMock()
+
+        def client_factory(service, **kwargs):
+            return mock_bedrock if service == 'bedrock-runtime' else mock_s3
+
+        with patch('shared.avatar.get_avatar_prompt_config', return_value=cfg), \
+             patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+             patch('shared.avatar.boto3') as mock_boto3:
+            mock_boto3.client.side_effect = client_factory
+            from shared.avatar import generate_persona_avatar
+            generate_persona_avatar(
+                {'persona_id': 'p1', 'name': 'N', 'identity': {}}, MagicMock(), s3_bucket='b'
+            )
+        return mock_s3
+
+    def test_deletes_the_previous_extension_after_writing(self):
+        s3 = self._generate('jpeg')
+        deleted = {c.kwargs['Key'] for c in s3.delete_object.call_args_list}
+        assert 'avatars/p1.png' in deleted
+
+    def test_does_not_delete_the_object_it_just_wrote(self):
+        s3 = self._generate('jpeg')
+        written = s3.put_object.call_args.kwargs['Key']
+        deleted = {c.kwargs['Key'] for c in s3.delete_object.call_args_list}
+        assert written == 'avatars/p1.jpeg'
+        assert written not in deleted
+
+    def test_cleanup_failure_does_not_fail_generation(self):
+        """Cleanup is best-effort; losing an orphan is better than losing the avatar."""
+        cfg = {
+            'system_prompt': 'S', 'user_prompt_template': '{name}', 'max_tokens': 200,
+            'fallback_prompt_template': 'H',
+            'image_model': {'model_id': 'm', 'region': 'us-west-2',
+                            'aspect_ratio': '1:1', 'output_format': 'jpeg'},
+        }
+        import base64
+        mock_bedrock = MagicMock()
+        mock_bedrock.invoke_model.return_value = {
+            'body': MagicMock(read=MagicMock(return_value=json.dumps(
+                {'images': [base64.b64encode(b'bytes').decode()]}).encode()))
+        }
+        mock_s3 = MagicMock()
+        mock_s3.delete_object.side_effect = RuntimeError('AccessDenied')
+
+        def client_factory(service, **kwargs):
+            return mock_bedrock if service == 'bedrock-runtime' else mock_s3
+
+        with patch('shared.avatar.get_avatar_prompt_config', return_value=cfg), \
+             patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+             patch('shared.avatar.boto3') as mock_boto3:
+            mock_boto3.client.side_effect = client_factory
+            from shared.avatar import generate_persona_avatar
+            result = generate_persona_avatar(
+                {'persona_id': 'p1', 'name': 'N', 'identity': {}}, MagicMock(), s3_bucket='b'
+            )
+
+        assert result['avatar_url'] == 's3://b/avatars/p1.jpeg'
+
+
 class TestSeedIsActuallyDeterministic:
     """The code claims "consistent seed per persona" so regenerating a persona
     reproduces its avatar. It used hash(persona_id), and Python RANDOMISES str
@@ -227,10 +319,18 @@ class TestSeedIsActuallyDeterministic:
         PYTHONHASHSEED must reach the same value, which hash() cannot guarantee."""
         import hashlib
 
+        from shared.avatar import _MAX_SEED, _stable_seed
+
+        digest = int(hashlib.sha256(b'persona_abc').hexdigest()[:8], 16)
+        assert _stable_seed('persona_abc') == 1 + digest % (_MAX_SEED - 1)
+
+    def test_seed_is_never_zero(self):
+        """Stability reads seed 0 as "choose randomly", so a digest landing on 0
+        would silently lose determinism for that one bucket. (Raised in review of
+        PR #228.) Scanned over many ids rather than asserting the offset alone."""
         from shared.avatar import _stable_seed
 
-        expected = int(hashlib.sha256(b'persona_abc').hexdigest()[:8], 16) % 4294967294
-        assert _stable_seed('persona_abc') == expected
+        assert all(_stable_seed(f'persona_{i}') != 0 for i in range(2000))
 
     def test_different_personas_get_different_seeds(self):
         from shared.avatar import _stable_seed

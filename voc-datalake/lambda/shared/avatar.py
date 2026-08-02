@@ -32,8 +32,20 @@ DEFAULT_ASPECT_RATIO = '1:1'
 # by the model as an invalid output_format.)
 DEFAULT_OUTPUT_FORMAT = 'jpeg'
 
-# Stability's seed field is a 32-bit unsigned range.
+# Stability's seed field is a 32-bit unsigned range, and it treats 0 as "pick a
+# random seed" — so a derived seed must never land on 0 or that one hash bucket
+# silently loses determinism.
 _MAX_SEED = 4294967294
+
+# Formats the model accepts for output_format. 'webp' is rejected by Bedrock
+# ("not a valid"), so an unknown value is coerced to the default rather than
+# failing generation at invoke time.
+_SUPPORTED_OUTPUT_FORMATS = frozenset({'png', 'jpeg'})
+
+# Extensions a persona's avatar may have been written under previously. The key
+# embeds the format, so changing output_format would otherwise leave the old
+# object orphaned forever.
+_HISTORICAL_EXTENSIONS = ('png', 'jpeg', 'jpg', 'webp')
 
 
 def get_image_model_config() -> dict:
@@ -45,12 +57,43 @@ def get_image_model_config() -> dict:
     the research prompts had. Defaults above apply only to absent keys.
     """
     image_model = get_avatar_prompt_config().get('image_model', {})
+    output_format = image_model.get('output_format', DEFAULT_OUTPUT_FORMAT)
+    if output_format not in _SUPPORTED_OUTPUT_FORMATS:
+        # Validate here rather than discovering it as a Bedrock ValidationException
+        # mid-generation: the format also names the S3 object, so a bad value would
+        # produce a misleading key and ContentType before the call even failed.
+        logger.warning(
+            f"[PERSONA_AVATAR] Unsupported output_format {output_format!r}; "
+            f"falling back to {DEFAULT_OUTPUT_FORMAT!r} "
+            f"(supported: {sorted(_SUPPORTED_OUTPUT_FORMATS)})"
+        )
+        output_format = DEFAULT_OUTPUT_FORMAT
     return {
         'model_id': image_model.get('model_id', DEFAULT_IMAGE_MODEL_ID),
         'region': image_model.get('region', DEFAULT_IMAGE_MODEL_REGION),
         'aspect_ratio': image_model.get('aspect_ratio', DEFAULT_ASPECT_RATIO),
-        'output_format': image_model.get('output_format', DEFAULT_OUTPUT_FORMAT),
+        'output_format': output_format,
     }
+
+
+def _delete_superseded_avatars(s3_client, bucket: str, persona_id: str, keep: str) -> None:
+    """Remove this persona's avatar stored under a different extension.
+
+    The S3 key embeds the image format, so regenerating a persona after an
+    output_format change writes a NEW object (avatars/x.jpeg) and leaves the old
+    one (avatars/x.png) behind with nothing referencing it. Best-effort: a failure
+    here must never fail avatar generation, and deleting an absent key is a no-op
+    in S3, so this costs nothing when there is nothing to clean.
+    """
+    for extension in _HISTORICAL_EXTENSIONS:
+        if extension == keep:
+            continue
+        try:
+            s3_client.delete_object(Bucket=bucket, Key=f"avatars/{persona_id}.{extension}")
+        except Exception as e:  # noqa: BLE001 - cleanup must not break generation
+            logger.warning(
+                f"[PERSONA_AVATAR] Could not remove superseded avatars/{persona_id}.{extension}: {e}"
+            )
 
 
 def _stable_seed(persona_id: str) -> int:
@@ -61,7 +104,9 @@ def _stable_seed(persona_id: str) -> int:
     DIFFERENT seed on every cold start despite the code claiming consistency.
     """
     digest = hashlib.sha256(persona_id.encode('utf-8')).hexdigest()
-    return int(digest[:8], 16) % _MAX_SEED
+    # Offset by 1: seed 0 means "choose randomly" to Stability, so a digest that
+    # happened to land on 0 would silently lose determinism for that one bucket.
+    return 1 + int(digest[:8], 16) % (_MAX_SEED - 1)
 
 
 def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
@@ -220,9 +265,14 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
             Bucket=s3_bucket,
             Key=s3_key,
             Body=image_data,
-            ContentType=f"image/{'jpeg' if image_format == 'jpg' else image_format}",
+            # No jpg/jpeg special case needed: get_image_model_config() has already
+            # constrained the format to _SUPPORTED_OUTPUT_FORMATS.
+            ContentType=f"image/{image_format}",
             CacheControl='public, max-age=31536000, immutable',
         )
+        # The key embeds the format, so a format change would otherwise leave the
+        # persona's previous avatar orphaned in the bucket.
+        _delete_superseded_avatars(s3_client, s3_bucket, persona_id, image_format)
         
         avatar_url = f"s3://{s3_bucket}/{s3_key}"
         logger.info(f"[PERSONA_AVATAR] SUCCESS - Avatar generated for {persona_name}: {avatar_url}")
@@ -265,8 +315,10 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
 def get_avatar_cdn_url(s3_uri: str, cdn_url: str = None) -> str | None:
     """Convert S3 URI to CloudFront CDN URL for avatar images.
     
-    S3 URI format: s3://bucket/avatars/{persona_id}.png
-    CDN URL format: https://{cdn_domain}/{persona_id}.png
+    S3 URI format: s3://bucket/avatars/{persona_id}.{ext}
+    CDN URL format: https://{cdn_domain}/{persona_id}.{ext}
+    The extension follows the configured output_format; parsing below is
+    extension-agnostic (it takes the trailing path segment).
     
     Args:
         s3_uri: S3 URI of the avatar image
@@ -284,12 +336,12 @@ def get_avatar_cdn_url(s3_uri: str, cdn_url: str = None) -> str | None:
         return None
     
     try:
-        # Extract filename from s3://bucket/avatars/{persona_id}.png
+        # Extract filename from s3://bucket/avatars/{persona_id}.{ext}
         # The CloudFront distribution has originPath='/avatars' so we just need the filename
         parts = s3_uri.split('/')
         if len(parts) < 2:
             return None
-        filename = parts[-1]  # e.g., persona_20241128123456_0.png
+        filename = parts[-1]  # e.g., persona_20241128123456_0.jpeg
         
         return f"{avatars_cdn_url.rstrip('/')}/{filename}"
     except Exception as e:
