@@ -63,3 +63,12 @@ secrets.json
 voc-datalake/Workshop/*
 
 .tmp/
+
+# Agent memory — local-only working context, NEVER commit.
+# This repo is public and these notes contain AWS account ids, live CloudFront
+# domains and details of not-yet-fixed issues. The sibling .kiro/ dirs
+# (steering, agents, hooks, prompts, settings) ARE tracked on purpose, so a
+# `git add .kiro/` would otherwise publish memory along with them.
+.kiro/memory/
+.kiro/sessions/
+.kiro/NEW_SESSION_PROMPT.md
