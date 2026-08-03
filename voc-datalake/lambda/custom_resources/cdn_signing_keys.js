@@ -20,9 +20,12 @@
  * their create/update/delete ordering — this handler owns nothing but the key
  * material.
  *
- * Node, not Python: `crypto.generateKeyPairSync` is stdlib, so the handler
- * inlines with zero dependencies. The Python runtime has no RSA keygen without
- * `cryptography`, which would have meant bundling a layer into CoreStack.
+ * Node, not Python: `crypto.generateKeyPairSync` is stdlib, so this needs no
+ * layer and no bundling. The Python runtime has no RSA keygen without
+ * `cryptography`, which would have meant Docker bundling in CoreStack.
+ *
+ * Plain CommonJS because core-stack.ts ships this directory as an asset, which
+ * copies files verbatim — nothing transpiles or bundles this file.
  *
  * IDEMPOTENT BY CONSTRUCTION. Rotating the key would invalidate every URL
  * already handed to a browser, and CloudFormation calls this on every stack

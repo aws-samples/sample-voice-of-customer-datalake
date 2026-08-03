@@ -1,10 +1,15 @@
 /**
  * Types for cdn_signing_keys.js.
  *
- * The handler itself must stay plain CommonJS JavaScript: core-stack.ts inlines
- * it with `lambda.Code.fromInline`, and inline Lambda code is neither bundled
- * nor ESM. This declaration file exists so the CDK project's tests can import
- * it with real types instead of an `any`.
+ * The handler stays plain CommonJS JavaScript because nothing transpiles it:
+ * core-stack.ts ships this directory to Lambda as an asset (`Code.fromAsset`),
+ * which copies files verbatim. This declaration file exists so the CDK project's
+ * tests can import it with real types instead of an `any`.
+ *
+ * Making the handler TypeScript would need a `NodejsFunction` (esbuild), and
+ * would retire both this file and the `.gitignore` negation that keeps it
+ * tracked. Deliberately not done: that is more build machinery than a ~150-line
+ * custom resource warrants.
  */
 
 export interface CdnSigningKeyPair {

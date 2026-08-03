@@ -294,10 +294,14 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     // The whole reason a custom resource mints the keypair at deploy time: the
     // private key must not reach the template, `cdk diff`, or stack events.
     //
-    // Asserted on the PEM header specifically. A looser search for
-    // "PRIVATE KEY" matches the inlined handler's OWN SOURCE (it tests incoming
-    // secrets with `.includes('PRIVATE KEY')`), so it would fail while the
-    // template was perfectly clean.
+    // Asserted on the PEM HEADER specifically, not on the looser phrase
+    // "PRIVATE KEY". The handler tests incoming secrets with
+    // `.includes('PRIVATE KEY')`, so that phrase appears in its source; while
+    // the handler was inlined into the template as a ZipFile, the loose search
+    // matched its own source and failed against a perfectly clean template. The
+    // handler is an asset now so the source is no longer in the template, but
+    // the precise assertion is the right one regardless — and it keeps this test
+    // honest if anyone moves back to inline code.
     const rendered = JSON.stringify(synthCoreTemplate().toJSON());
 
     expect(rendered).not.toContain('-----BEGIN PRIVATE KEY-----');

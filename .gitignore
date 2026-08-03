@@ -5,9 +5,11 @@ node_modules/
 dist/
 *.d.ts
 # ...but this one is hand-written SOURCE, not tsc output. It types the plain-JS
-# custom-resource handler that core-stack.ts inlines (the handler cannot be
-# TypeScript: inline Lambda code is never bundled). Without it tracked,
-# `npm run typecheck:cdk` fails on a fresh clone.
+# custom-resource handler in that directory so the CDK tests can import it with
+# real types; without it tracked, `npm run typecheck:cdk` fails on a fresh clone.
+# (The handler stays plain JS because nothing transpiles it — the function ships
+# the directory as an asset. Moving it to TypeScript would mean a NodejsFunction
+# with esbuild, which would retire this file and this negation.)
 !voc-datalake/lambda/custom_resources/*.d.ts
 
 # CDK

@@ -9,9 +9,9 @@
  * has no key yet.
  */
 import { describe, it, expect, vi } from 'vitest';
-// Plain CommonJS JavaScript, typed by a hand-written .d.ts sitting beside it.
-// It cannot be TypeScript: core-stack.ts inlines it via Code.fromInline, and
-// inline Lambda code is never bundled or transpiled.
+// Plain CommonJS JavaScript, typed by a hand-written .d.ts sitting beside it:
+// core-stack.ts ships that directory as a Lambda asset, which copies files
+// verbatim, so nothing transpiles this handler.
 import {
   handler,
   onEvent,

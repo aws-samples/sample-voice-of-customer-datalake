@@ -280,6 +280,12 @@ export class VocCoreStack extends cdk.Stack {
         // Ship only the Node handler. The directory also holds the Python
         // admin-bootstrap handler and its pytest suite, which would otherwise
         // be packaged into this function's zip.
+        //
+        // These patterns match AT ANY DEPTH, not just the top level: the default
+        // IgnoreMode.GLOB uses .gitignore semantics, where a pattern containing
+        // no slash matches by basename anywhere in the tree. Verified by staging
+        // a nested `.py` and confirming it was excluded, so `**/*.py` is not
+        // needed. The deployed zip contains exactly one file.
         exclude: ['*.py', '*.d.ts', 'test', '__pycache__'],
       }),
       timeout: cdk.Duration.minutes(1),

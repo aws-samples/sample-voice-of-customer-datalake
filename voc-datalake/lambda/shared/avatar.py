@@ -9,9 +9,15 @@ import json
 import os
 import boto3
 
-from shared.cloudfront_signing import sign_url
 from shared.logging import logger, tracer
 from shared.prompts import get_avatar_prompt_config, format_prompt
+
+# `shared.cloudfront_signing` (and through it `cryptography`) is imported LAZILY
+# inside get_avatar_cdn_url — the only function here that signs. The rest of this
+# module is the avatar WRITER path (generate_persona_avatar), used by the
+# persona-generator and persona-importer jobs, which never mint a URL. Keeping
+# the import here would make those jobs fail at cold start over a dependency they
+# do not use. Same reasoning as shared/prototypes.py.
 
 
 # Image-model defaults, used only if avatar-generation.json omits the field.
@@ -355,6 +361,9 @@ def get_avatar_cdn_url(s3_uri: str, cdn_url: str = None) -> str | None:
         if len(parts) < 2:
             return None
         filename = parts[-1]  # e.g., persona_20241128123456_0.jpeg
+        
+        # Lazy on purpose — see the note beside the imports at the top.
+        from shared.cloudfront_signing import sign_url
         
         return sign_url(f"{avatars_cdn_url.rstrip('/')}/{filename}")
     except Exception as e:
