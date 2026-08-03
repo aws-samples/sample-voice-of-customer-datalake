@@ -283,3 +283,21 @@ class TestGetAvatarCdnUrl:
         from shared.avatar import get_avatar_cdn_url
         result = get_avatar_cdn_url('s3://bucket/avatars/test.png')
         assert result.startswith('https://env-cdn.example.com/test.png?')
+
+
+class TestNoCryptoDependencyForWriters:
+    """`shared.avatar` must not pull in `cryptography` at import time.
+
+    Only `get_avatar_cdn_url` signs. The rest of the module is the avatar WRITER
+    path (`generate_persona_avatar`), used by the persona-generator and
+    persona-importer jobs, which never mint a URL — so a module-scope
+    `from shared.cloudfront_signing import sign_url` made those jobs fail at cold
+    start over a dependency they do not use. This mirrors the guard in
+    test_prototypes.py and is what stops someone hoisting the import back up.
+    """
+
+    def test_importing_the_module_does_not_pull_in_cryptography(self, imports_cryptography):
+        assert not imports_cryptography('shared.avatar'), (
+            'Importing shared.avatar pulled in cryptography. Keep the '
+            'shared.cloudfront_signing import inside get_avatar_cdn_url.'
+        )

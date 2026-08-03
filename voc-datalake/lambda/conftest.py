@@ -102,3 +102,36 @@ def cdn_signing_configured(cdn_signing_keypair):
 
     shared_aws.clear_secret_cache()
     cloudfront_signing.clear_signer_cache()
+
+
+@pytest.fixture(scope='session')
+def imports_cryptography():
+    """Return a predicate: does importing `module_name` pull in `cryptography`?
+
+    Shared by the guards in test_avatar.py and test_prototypes.py. Both modules
+    keep their `shared.cloudfront_signing` import inside the one function that
+    signs, so the avatar/prototype WRITER paths (used by jobs that never mint a
+    URL) do not depend on `cryptography` at cold start.
+
+    Runs in a SUBPROCESS deliberately: `cryptography` is already in sys.modules
+    for most of this suite — the signing tests and the cdn_signing_keypair
+    fixture both use it — so an in-process `'cryptography' in sys.modules` check
+    would pass no matter what the import graph looks like.
+    """
+    import subprocess
+    import sys
+
+    # Anchored on this file, never on the caller's cwd: a hardcoded relative cwd
+    # made an earlier version of this check fail with FileNotFoundError instead
+    # of on the property under test, depending on where pytest was invoked from.
+    lambda_dir = os.path.dirname(os.path.abspath(__file__))
+
+    def _check(module_name: str) -> bool:
+        code = f"import sys; import {module_name}; print('cryptography' in sys.modules)"
+        result = subprocess.run(
+            [sys.executable, '-c', code],
+            capture_output=True, text=True, check=True, cwd=lambda_dir,
+        )
+        return result.stdout.strip() == 'True'
+
+    return _check

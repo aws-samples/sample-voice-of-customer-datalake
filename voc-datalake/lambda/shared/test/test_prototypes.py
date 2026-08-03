@@ -6,7 +6,6 @@ object) and the projects API (which mints the URL). If those two ever disagree,
 prototypes 404 — so the format is asserted literally here rather than derived,
 so a change has to be deliberate.
 """
-import pathlib
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -86,29 +85,8 @@ class TestNoCryptoDependencyForWriters:
     is what stops someone hoisting it back to the top of the file.
     """
 
-    def test_importing_the_module_does_not_pull_in_cryptography(self):
-        import subprocess
-        import sys
-
-        # A subprocess, because `cryptography` is almost certainly already in
-        # this test session's sys.modules (the signing tests and the
-        # cdn_signing_keypair fixture both use it), so an in-process check would
-        # pass no matter what the import graph looks like.
-        code = (
-            'import sys; import shared.prototypes; '
-            "print('cryptography' in sys.modules)"
-        )
-        # Anchor on this file, not on the caller's cwd. A hardcoded cwd='lambda'
-        # only worked when pytest happened to be invoked from voc-datalake/, and
-        # failed with FileNotFoundError — not on the property under test — from
-        # anywhere else. Same anchoring test_cloudfront_signing_fixture.py uses.
-        lambda_dir = pathlib.Path(__file__).resolve().parents[2]
-        result = subprocess.run(
-            [sys.executable, '-c', code],
-            capture_output=True, text=True, check=True, cwd=lambda_dir,
-        )
-
-        assert result.stdout.strip() == 'False', (
+    def test_importing_the_module_does_not_pull_in_cryptography(self, imports_cryptography):
+        assert not imports_cryptography('shared.prototypes'), (
             'Importing shared.prototypes pulled in cryptography. Keep the '
             'shared.cloudfront_signing import inside prototype_signed_url.'
         )
