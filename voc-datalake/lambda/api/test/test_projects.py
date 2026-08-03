@@ -188,14 +188,15 @@ class TestDeleteProject:
 class TestGetAvatarCdnUrl:
     """Tests for get_avatar_cdn_url function."""
 
-    def test_converts_s3_uri_to_cdn_url(self):
-        """Converts S3 URI to CloudFront CDN URL."""
+    def test_converts_s3_uri_to_signed_cdn_url(self, cdn_signing_configured):
+        """Converts S3 URI to a SIGNED CloudFront CDN URL (issue #229)."""
         from shared.avatar import get_avatar_cdn_url
         
         s3_uri = 's3://bucket/avatars/persona_123.png'
         result = get_avatar_cdn_url(s3_uri, cdn_url='https://cdn.example.com')
         
-        assert result == 'https://cdn.example.com/persona_123.png'
+        assert result.startswith('https://cdn.example.com/persona_123.png?')
+        assert 'Signature=' in result and 'Expires=' in result
 
     def test_returns_none_when_cdn_not_configured(self):
         """Returns None when CDN URL not configured."""

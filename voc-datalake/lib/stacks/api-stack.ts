@@ -10,6 +10,7 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as path from 'path';
@@ -34,6 +35,11 @@ export interface VocApiStackProps extends cdk.StackProps {
   rawDataBucket: s3.Bucket;
   avatarsCdnUrl: string;
   prototypesCdnUrl: string;
+  // CloudFront URL-signing material for the private /avatars/* and
+  // /prototypes/* behaviors (issue #229). Only the Lambdas that hand asset
+  // URLs to a browser get read access to the secret.
+  cdnSigningSecret: secretsmanager.Secret;
+  cdnSigningKeyPairId: string;
   websiteBucket: s3.Bucket;
   frontendDistribution: cloudfront.Distribution;
   frontendDomainName: string;
@@ -80,7 +86,8 @@ export class VocApiStack extends cdk.Stack {
 
     const {
       feedbackTable, aggregatesTable, projectsTable, jobsTable, conversationsTable,
-      kmsKey, rawDataBucket, avatarsCdnUrl, prototypesCdnUrl, websiteBucket, frontendDistribution,
+      kmsKey, rawDataBucket, avatarsCdnUrl, prototypesCdnUrl,
+      cdnSigningSecret, cdnSigningKeyPairId, websiteBucket, frontendDistribution,
       frontendDomainName, userPool, userPoolClient, identityPool, processingQueueUrl, processingQueueArn,
       secretsArn, s3ImportBucket, researchStateMachine, brandName,
       webSearchGatewayUrl, webSearchGatewayArn, webSearchToolName
@@ -437,6 +444,8 @@ export class VocApiStack extends cdk.Stack {
     rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
     // Product context: projects API needs to issue presigned PUT URLs, read extracted text, delete docs.
     rawDataBucket.grantReadWrite(projectsRole, 'projects/*/product_docs/*');
+    // Signs the avatar and prototype URLs returned by GET /projects/{id}.
+    cdnSigningSecret.grantRead(projectsRole);
 
     const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
       functionName: uniqueName('voc-projects-api'),
@@ -455,6 +464,9 @@ export class VocApiStack extends cdk.Stack {
         RESEARCH_STATE_MACHINE_ARN: researchStateMachine.stateMachineArn,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
         AVATARS_CDN_URL: avatarsCdnUrl,
+        PROTOTYPES_CDN_URL: prototypesCdnUrl,
+        CDN_SIGNING_SECRET_ARN: cdnSigningSecret.secretArn,
+        CDN_SIGNING_KEY_PAIR_ID: cdnSigningKeyPairId,
         ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-projects-api',
         LOG_LEVEL: 'INFO',
@@ -569,7 +581,9 @@ export class VocApiStack extends cdk.Stack {
         AGGREGATES_TABLE: aggregatesTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
-        PROTOTYPES_CDN_URL: prototypesCdnUrl,
+        // No PROTOTYPES_CDN_URL: this job writes prototype HTML to S3 but no
+        // longer builds its URL. That moved to the projects API, which signs it
+        // per request (issue #229).
         POWERTOOLS_SERVICE_NAME: 'voc-job-document-generator',
         LOG_LEVEL: 'INFO',
       },
@@ -689,6 +703,10 @@ export class VocApiStack extends cdk.Stack {
         // override this at runtime via model-override.ts.
         BEDROCK_MODEL_ID: 'global.anthropic.claude-sonnet-5',
         AVATARS_CDN_URL: avatarsCdnUrl,
+        // This Lambda emits persona avatar URLs in the persona_turn SSE event,
+        // which the SPA renders directly, so it has to sign them too (issue #229).
+        CDN_SIGNING_SECRET_ARN: cdnSigningSecret.secretArn,
+        CDN_SIGNING_KEY_PAIR_ID: cdnSigningKeyPairId,
         ALLOWED_ORIGIN: allowedOrigin,
       },
       bundling: {
@@ -706,6 +724,10 @@ export class VocApiStack extends cdk.Stack {
           '@aws-sdk/credential-provider-node',
           '@smithy/protocol-http',
           '@smithy/signature-v4',
+          // Reads the CloudFront URL-signing key. Pinned here for the same
+          // reason as the three above: `externalModules: ['@aws-sdk/*']` would
+          // otherwise leave it to whatever the managed runtime hoists.
+          '@aws-sdk/client-secrets-manager',
         ],
       },
       logGroup: this.createLogGroup('ChatStreamLogs', uniqueName('voc-chat-stream')),
@@ -722,6 +744,8 @@ export class VocApiStack extends cdk.Stack {
       actions: ['aws-marketplace:ViewSubscriptions', 'aws-marketplace:Subscribe'],
       resources: ['*'],
     }));
+    // Signs the persona avatar URLs emitted in the persona_turn SSE event.
+    cdnSigningSecret.grantRead(chatStreamLambda);
     NagSuppressions.addResourceSuppressions(chatStreamLambda, marketplaceSuppressions, true);
 
     // DynamoDB permissions

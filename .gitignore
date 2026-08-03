@@ -4,6 +4,11 @@ node_modules/
 # Build output
 dist/
 *.d.ts
+# ...but this one is hand-written SOURCE, not tsc output. It types the plain-JS
+# custom-resource handler that core-stack.ts inlines (the handler cannot be
+# TypeScript: inline Lambda code is never bundled). Without it tracked,
+# `npm run typecheck:cdk` fails on a fresh clone.
+!voc-datalake/lambda/custom_resources/*.d.ts
 
 # CDK
 cdk.out/
