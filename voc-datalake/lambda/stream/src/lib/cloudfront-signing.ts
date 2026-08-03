@@ -106,12 +106,25 @@ async function loadPrivateKeyPem(secretArn: string): Promise<string | undefined>
   if (cached !== undefined) return cached;
   try {
     const out = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretArn }));
-    if (!out.SecretString) return undefined;
+    if (!out.SecretString) {
+      console.warn('cloudfront-signing: signing secret has no SecretString; avatars will be omitted');
+      return undefined;
+    }
     const pem = extractPrivateKeyPem(out.SecretString);
-    if (pem === undefined) return undefined;
+    if (pem === undefined) {
+      console.warn('cloudfront-signing: signing secret holds no usable privateKeyPem; avatars will be omitted');
+      return undefined;
+    }
     privateKeyPemCache.set(secretArn, pem);
     return pem;
-  } catch {
+  } catch (error) {
+    // Failing closed is correct, but silence is not: an IAM denial or a missing
+    // secret otherwise shows up only as avatars quietly vanishing from
+    // persona_turn, with nothing to grep for. Name is enough — never log the
+    // secret payload.
+    console.warn(
+      `cloudfront-signing: could not read the signing secret (${error instanceof Error ? error.name : 'unknown'}); avatars will be omitted`,
+    );
     return undefined;
   }
 }
@@ -134,7 +147,14 @@ function ttlSeconds(): number {
 export async function signCloudFrontUrl(url: string): Promise<string | undefined> {
   const secretArn = process.env.CDN_SIGNING_SECRET_ARN ?? '';
   const keyPairId = process.env.CDN_SIGNING_KEY_PAIR_ID ?? '';
-  if (!url || !secretArn || !keyPairId) return undefined;
+  if (!url) return undefined;
+  if (!secretArn || !keyPairId) {
+    console.warn(
+      'cloudfront-signing: CDN_SIGNING_SECRET_ARN/CDN_SIGNING_KEY_PAIR_ID not set; '
+      + 'refusing to emit an unsigned URL for a private CDN path',
+    );
+    return undefined;
+  }
 
   const privateKeyPem = await loadPrivateKeyPem(secretArn);
   if (!privateKeyPem) return undefined;
@@ -142,7 +162,11 @@ export async function signCloudFrontUrl(url: string): Promise<string | undefined
   const expires = Math.floor(Date.now() / 1000) + ttlSeconds();
   try {
     return signUrlWithKey(url, privateKeyPem, keyPairId, expires);
-  } catch {
+  } catch (error) {
+    // A malformed PEM lands here. Same reasoning as above: fail closed, but say so.
+    console.warn(
+      `cloudfront-signing: signing failed (${error instanceof Error ? error.name : 'unknown'}); avatar will be omitted`,
+    );
     return undefined;
   }
 }

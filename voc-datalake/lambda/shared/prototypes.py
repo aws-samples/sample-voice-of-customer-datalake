@@ -11,7 +11,13 @@ a convention repeated in two files.
 """
 import os
 
-from shared.cloudfront_signing import sign_url
+# `shared.cloudfront_signing` is imported LAZILY inside prototype_signed_url,
+# not here. It pulls in `cryptography`, and the document-generator job imports
+# this module only for `prototype_s3_key` — a writer that never signs anything.
+# A module-scope import would make that job fail at COLD START if the layer
+# carrying `cryptography` were ever detached, taking prototype generation down
+# for a dependency it does not use. (Verified 2026-08-03 that every current
+# importer does have the layer; this keeps that from being load-bearing.)
 
 
 def prototype_s3_key(project_id: str, doc_id: str) -> str:
@@ -33,6 +39,10 @@ def prototype_signed_url(project_id: str, doc_id: str, cdn_url: str | None = Non
     prototypes_cdn_url = cdn_url or os.environ.get('PROTOTYPES_CDN_URL', '')
     if not prototypes_cdn_url or not project_id or not doc_id:
         return None
+
+    # Lazy on purpose — see the module docstring note about `cryptography`.
+    from shared.cloudfront_signing import sign_url
+
     # PROTOTYPES_CDN_URL already ends in /prototypes; the cache behavior's path
     # prefix maps 1:1 onto the S3 key prefix.
     return sign_url(f"{prototypes_cdn_url.rstrip('/')}/{project_id}/{doc_id}.html")

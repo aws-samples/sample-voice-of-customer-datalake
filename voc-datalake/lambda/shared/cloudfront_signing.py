@@ -27,6 +27,19 @@ FAILS CLOSED. With signing unconfigured or broken, callers get None and the
 frontend degrades (avatars fall back to a gradient). Returning an UNSIGNED URL
 instead would silently restore the very hole this closes, so it is never done —
 including in local/mock development, which has no CloudFront at all.
+
+TWO COUPLINGS WORTH KNOWING
+- A signed URL is a bearer credential for its TTL, and the distribution runs with
+  `enableLogging: true`, so `Signature`/`Key-Pair-Id` land in the access-logs
+  bucket's `cs-uri-query` field. That bucket is private (OAC, all four
+  public-access blocks) and the exposure is bounded by the TTL, but anyone with
+  read access to those logs can replay a URL until it expires. Shortening
+  CDN_SIGNED_URL_TTL_SECONDS shrinks that window.
+- The frontend never refreshes a URL on expiry. It does not need to today only
+  because the global TanStack `staleTime` is 30s (frontend/src/App.tsx) against a
+  1h TTL, and refetch-on-window-focus is on. If either the TTL drops below the
+  staleTime or that default changes, stale 403s become reachable — and the old
+  403->200 laundering that used to hide them is deliberately gone.
 """
 import os
 from datetime import datetime, timedelta, timezone
@@ -118,7 +131,8 @@ def sign_url(url: str, ttl_seconds: int | None = None) -> str | None:
     Args:
         url: Absolute https URL on the distribution, e.g.
             https://d111.cloudfront.net/avatars/persona_1.jpeg
-        ttl_seconds: Validity window; defaults to DEFAULT_TTL_SECONDS.
+        ttl_seconds: Validity window; defaults to CDN_SIGNED_URL_TTL_SECONDS,
+            falling back to FALLBACK_TTL_SECONDS.
 
     Returns:
         Signed URL, or None if it could not be signed.

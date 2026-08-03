@@ -29,9 +29,10 @@ function stripTrailingSlashes(value: string): string {
  * a bare URL would just be a broken image AND would mean we had handed out an
  * unauthenticated link.
  *
- * A value that is already an https URL is passed through unsigned only if it
- * cannot be signed — see the `s3://` branch; stored persona rows always hold
- * the `s3://` form, and the https case exists for legacy rows.
+ * Stored persona rows hold the `s3://` form. The non-`s3://` branch exists for
+ * legacy rows that already carry a CDN URL; those are signed as-is, since they
+ * point at the same restricted behavior. Nothing is ever passed through
+ * unsigned — an unsignable value yields undefined.
  */
 async function resolveAvatarUrl(url: string | undefined): Promise<string | undefined> {
   if (!url) return undefined;

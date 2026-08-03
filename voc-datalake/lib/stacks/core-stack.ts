@@ -264,14 +264,24 @@ export class VocCoreStack extends cdk.Stack {
       functionName: uniqueName('voc-cdn-signing-keys'),
       runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64,
-      handler: 'index.handler',
+      handler: 'cdn_signing_keys.handler',
       // Node rather than Python: crypto.generateKeyPairSync is stdlib, so this
-      // inlines with no dependencies. Python would need `cryptography`, i.e. a
-      // bundled layer in CoreStack. Real, unit-tested file (see
-      // lib/stacks/cdn-signing-keys.test.ts).
-      code: lambda.Code.fromInline(
-        fs.readFileSync(path.join(__dirname, '../../lambda/custom_resources/cdn_signing_keys.js'), 'utf8'),
-      ),
+      // needs no layer. Python would need `cryptography`, i.e. Docker bundling
+      // in CoreStack. Real, unit-tested file (lib/stacks/cdn-signing-keys.test.ts).
+      //
+      // fromAsset, NOT fromInline: at ~7KB this handler is comfortably past the
+      // widely-cited 4096-character ceiling for an inline `Code.ZipFile`. In
+      // practice CloudFormation accepted it and aws-cdk-lib 2.261.0 does not
+      // check the limit at all, so the inline version deployed fine — but that
+      // is undocumented tolerance, and this is a sample repo other people deploy
+      // into their own accounts. An asset removes the question, and removes the
+      // trap where adding a comment to the handler breaks a deploy.
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/custom_resources'), {
+        // Ship only the Node handler. The directory also holds the Python
+        // admin-bootstrap handler and its pytest suite, which would otherwise
+        // be packaged into this function's zip.
+        exclude: ['*.py', '*.d.ts', 'test', '__pycache__'],
+      }),
       timeout: cdk.Duration.minutes(1),
       description: 'Generates the CloudFront URL-signing keypair once, then reuses it',
       logGroup: new logs.LogGroup(this, 'CdnSigningKeysLambdaLogs', {
