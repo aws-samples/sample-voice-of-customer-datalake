@@ -21,6 +21,7 @@ from shared.converse import converse_chain
 from shared.feedback import query_feedback_by_date
 from shared.api import validate_date_basis
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
+from shared.prototypes import prototype_s3_key
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -30,13 +31,13 @@ FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 # 30-90KB each, accumulated across 3-4 steps) blow past it. So intermediate
 # step text lives in S3 and only the small S3 keys travel through SF state.
 # This is also the bucket that hosts generated HTML prototypes (see
-# _prototype_s3_key/_prototype_url below) — same bucket, different prefixes
+# shared.prototypes.prototype_s3_key) — same bucket, different prefixes
 # ("scratch/document_jobs/*" vs "prototypes/*").
+#
+# This job no longer builds the prototype's CloudFront URL. `/prototypes/*` is
+# restricted by a trusted key group (issue #229), so the URL needs a signature
+# with a short expiry and is minted per-request by the projects API instead.
 SCRATCH_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
-# Public-ish CloudFront URL for the /prototypes/* cache behavior (see
-# core-stack.ts) that serves prototype HTML with its own permissive CSP,
-# isolated from the main SPA's strict CSP. e.g. https://<domain>/prototypes
-PROTOTYPES_CDN_URL = os.environ.get('PROTOTYPES_CDN_URL', '').rstrip('/')
 
 
 def _gather_context(
@@ -325,14 +326,6 @@ def _extract_html(raw: str) -> str:
     return s[start:end + len('</html>')].strip()
 
 
-def _prototype_s3_key(project_id: str, doc_id: str) -> str:
-    return f"prototypes/{project_id}/{doc_id}.html"
-
-
-def _prototype_url(project_id: str, doc_id: str) -> str:
-    return f"{PROTOTYPES_CDN_URL}/{project_id}/{doc_id}.html"
-
-
 def _put_prototype_html(project_id: str, doc_id: str, html: str) -> None:
     """Write generated prototype HTML to S3 under the /prototypes/* prefix that
     the frontendDistribution's second cache behavior serves (core-stack.ts).
@@ -342,7 +335,7 @@ def _put_prototype_html(project_id: str, doc_id: str, html: str) -> None:
     """
     _s3().put_object(
         Bucket=SCRATCH_BUCKET,
-        Key=_prototype_s3_key(project_id, doc_id),
+        Key=prototype_s3_key(project_id, doc_id),
         Body=html.encode('utf-8'),
         ContentType='text/html; charset=utf-8',
     )
@@ -353,7 +346,7 @@ def _get_prototype_html(project_id: str, doc_id: str) -> str:
     feedback-driven regeneration, which needs the prior prototype's content to
     revise rather than start from scratch.
     """
-    obj = _s3().get_object(Bucket=SCRATCH_BUCKET, Key=_prototype_s3_key(project_id, doc_id))
+    obj = _s3().get_object(Bucket=SCRATCH_BUCKET, Key=prototype_s3_key(project_id, doc_id))
     return obj['Body'].read().decode('utf-8')
 
 
@@ -486,7 +479,6 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     # and "Download .html" never need the raw HTML in memory — they're all URL
     # consumers now (no more Blob/createObjectURL indirection).
     _put_prototype_html(project_id, doc_id, html)
-    prototype_url = _prototype_url(project_id, doc_id)
 
     ctx.update_progress(90, 'saving_document')
 
@@ -498,7 +490,11 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         'document_id': doc_id,
         'document_type': 'prototype',
         'title': title,
-        'prototype_url': prototype_url,
+        # NO prototype_url here. `/prototypes/*` is restricted by a CloudFront
+        # trusted key group (issue #229), so a usable URL carries a signature
+        # and an expiry — persisting one would bake in an expiry that outlives
+        # its own validity. The projects API mints a fresh signed URL at read
+        # time from the derivable key (prototypes/{project_id}/{doc_id}.html).
         # 'html' → frontend renders via <iframe src=prototype_url>.
         # Older prototypes have no prototype_format and are JSON specs (legacy).
         'prototype_format': 'html',

@@ -34,6 +34,16 @@ export interface VocApiStackProps extends cdk.StackProps {
   rawDataBucket: s3.Bucket;
   avatarsCdnUrl: string;
   prototypesCdnUrl: string;
+  // CloudFront URL-signing material for the private /avatars/* and
+  // /prototypes/* behaviors (issue #229). Only the Lambdas that hand asset
+  // URLs to a browser get read access to the secret.
+  //
+  // An ARN string, not the Secret construct: `secret.grantRead()` would add a
+  // KMS key-policy statement naming these roles, and the key lives in CoreStack
+  // — that makes CoreStack depend on ApiStack, which is a cycle. Same reason the
+  // ingestion `secretsArn` above is a string.
+  cdnSigningSecretArn: string;
+  cdnSigningKeyPairId: string;
   websiteBucket: s3.Bucket;
   frontendDistribution: cloudfront.Distribution;
   frontendDomainName: string;
@@ -80,7 +90,8 @@ export class VocApiStack extends cdk.Stack {
 
     const {
       feedbackTable, aggregatesTable, projectsTable, jobsTable, conversationsTable,
-      kmsKey, rawDataBucket, avatarsCdnUrl, prototypesCdnUrl, websiteBucket, frontendDistribution,
+      kmsKey, rawDataBucket, avatarsCdnUrl, prototypesCdnUrl,
+      cdnSigningSecretArn, cdnSigningKeyPairId, websiteBucket, frontendDistribution,
       frontendDomainName, userPool, userPoolClient, identityPool, processingQueueUrl, processingQueueArn,
       secretsArn, s3ImportBucket, researchStateMachine, brandName,
       webSearchGatewayUrl, webSearchGatewayArn, webSearchToolName
@@ -437,6 +448,15 @@ export class VocApiStack extends cdk.Stack {
     rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
     // Product context: projects API needs to issue presigned PUT URLs, read extracted text, delete docs.
     rawDataBucket.grantReadWrite(projectsRole, 'projects/*/product_docs/*');
+    // Signs the avatar and prototype URLs returned by GET /projects/{id}.
+    // Explicit statement rather than secret.grantRead(): that adds a KMS
+    // key-policy entry naming this role, and the key lives in CoreStack, so it
+    // would create a CoreStack -> ApiStack cycle. KMS access already comes from
+    // kmsKey.grantEncryptDecrypt(projectsRole) above.
+    projectsRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['secretsmanager:GetSecretValue'],
+      resources: [cdnSigningSecretArn],
+    }));
 
     const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
       functionName: uniqueName('voc-projects-api'),
@@ -455,6 +475,9 @@ export class VocApiStack extends cdk.Stack {
         RESEARCH_STATE_MACHINE_ARN: researchStateMachine.stateMachineArn,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
         AVATARS_CDN_URL: avatarsCdnUrl,
+        PROTOTYPES_CDN_URL: prototypesCdnUrl,
+        CDN_SIGNING_SECRET_ARN: cdnSigningSecretArn,
+        CDN_SIGNING_KEY_PAIR_ID: cdnSigningKeyPairId,
         ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-projects-api',
         LOG_LEVEL: 'INFO',
@@ -569,7 +592,9 @@ export class VocApiStack extends cdk.Stack {
         AGGREGATES_TABLE: aggregatesTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
-        PROTOTYPES_CDN_URL: prototypesCdnUrl,
+        // No PROTOTYPES_CDN_URL: this job writes prototype HTML to S3 but no
+        // longer builds its URL. That moved to the projects API, which signs it
+        // per request (issue #229).
         POWERTOOLS_SERVICE_NAME: 'voc-job-document-generator',
         LOG_LEVEL: 'INFO',
       },
@@ -689,6 +714,10 @@ export class VocApiStack extends cdk.Stack {
         // override this at runtime via model-override.ts.
         BEDROCK_MODEL_ID: 'global.anthropic.claude-sonnet-5',
         AVATARS_CDN_URL: avatarsCdnUrl,
+        // This Lambda emits persona avatar URLs in the persona_turn SSE event,
+        // which the SPA renders directly, so it has to sign them too (issue #229).
+        CDN_SIGNING_SECRET_ARN: cdnSigningSecretArn,
+        CDN_SIGNING_KEY_PAIR_ID: cdnSigningKeyPairId,
         ALLOWED_ORIGIN: allowedOrigin,
       },
       bundling: {
@@ -706,6 +735,10 @@ export class VocApiStack extends cdk.Stack {
           '@aws-sdk/credential-provider-node',
           '@smithy/protocol-http',
           '@smithy/signature-v4',
+          // Reads the CloudFront URL-signing key. Pinned here for the same
+          // reason as the three above: `externalModules: ['@aws-sdk/*']` would
+          // otherwise leave it to whatever the managed runtime hoists.
+          '@aws-sdk/client-secrets-manager',
         ],
       },
       logGroup: this.createLogGroup('ChatStreamLogs', uniqueName('voc-chat-stream')),
@@ -721,6 +754,13 @@ export class VocApiStack extends cdk.Stack {
     chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
       actions: ['aws-marketplace:ViewSubscriptions', 'aws-marketplace:Subscribe'],
       resources: ['*'],
+    }));
+    // Signs the persona avatar URLs emitted in the persona_turn SSE event.
+    // Explicit statement, not secret.grantRead() — same cycle reason as the
+    // projects role. kmsKey.grantDecrypt(chatStreamLambda) covers the CMK.
+    chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['secretsmanager:GetSecretValue'],
+      resources: [cdnSigningSecretArn],
     }));
     NagSuppressions.addResourceSuppressions(chatStreamLambda, marketplaceSuppressions, true);
 

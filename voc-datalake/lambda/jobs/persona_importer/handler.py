@@ -17,7 +17,7 @@ from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
 from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.model_config import get_active_model_id
-from api.projects import generate_persona_avatar, get_avatar_cdn_url
+from api.projects import generate_persona_avatar
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -144,8 +144,11 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
     )
     
     persona_name = item.get('name', 'Imported Persona')
-    if item.get('avatar_url') and item['avatar_url'].startswith('s3://'):
-        item['avatar_url'] = get_avatar_cdn_url(item['avatar_url'])
+    # No CDN-URL conversion here: `item` is not part of the return value below,
+    # so the old conversion was dead. It also could not work now that avatar
+    # URLs must be signed (issue #229) — this Lambda has no signing key. The
+    # projects API signs at read time, which is the only place a browser gets
+    # an avatar URL from.
     
     logger.info(f"[IMPORT_PERSONA_JOB] Successfully imported persona: {persona_name}")
     return {'persona_id': persona_id, 'title': f'Imported: {persona_name}'}

@@ -4,6 +4,7 @@
  */
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
+import { signCloudFrontUrl } from '../lib/cloudfront-signing.js';
 import { ConfigurationError, NotFoundError } from '../lib/errors.js';
 import { fetchRecentFeedback } from './recent-feedback.js';
 import { buildSinglePersonaPrompt, getLanguageInstruction } from './persona-prompt.js';
@@ -19,15 +20,30 @@ function stripTrailingSlashes(value: string): string {
   return value.endsWith('/') ? stripTrailingSlashes(value.slice(0, -1)) : value;
 }
 
-function resolveAvatarUrl(url: string | undefined): string | undefined {
+/**
+ * Turn the stored `s3://` URI into a SIGNED CloudFront URL (issue #229).
+ *
+ * `/avatars/*` is restricted by a CloudFront trusted key group, so an unsigned
+ * URL would 403 in the browser. Returning undefined when signing is
+ * unavailable is deliberate — the SPA falls back to a gradient avatar, whereas
+ * a bare URL would just be a broken image AND would mean we had handed out an
+ * unauthenticated link.
+ *
+ * Stored persona rows hold the `s3://` form. The non-`s3://` branch exists for
+ * legacy rows that already carry a CDN URL; those are signed as-is, since they
+ * point at the same restricted behavior. Nothing is ever passed through
+ * unsigned — an unsignable value yields undefined.
+ */
+async function resolveAvatarUrl(url: string | undefined): Promise<string | undefined> {
   if (!url) return undefined;
-  // Anything not an S3 URI is already a CDN URL.
-  if (!url.startsWith('s3://')) return url;
+  // Legacy rows may already hold a CDN URL. Sign it as-is; it points at the
+  // same restricted behavior.
+  if (!url.startsWith('s3://')) return signCloudFrontUrl(url);
   if (!AVATARS_CDN_URL) return undefined;
   const parts = url.split('/');
   const filename = parts[parts.length - 1];
   if (!filename) return undefined;
-  return `${stripTrailingSlashes(AVATARS_CDN_URL)}/${filename}`;
+  return signCloudFrontUrl(`${stripTrailingSlashes(AVATARS_CDN_URL)}/${filename}`);
 }
 
 interface ProjectChatContext {
@@ -403,16 +419,21 @@ export async function buildRoundtableContext(
 
   const projectName = project.name ?? 'Project';
 
-  // Build per-persona prompts (initial — no previous responses yet)
-  const roundtablePersonas: RoundtablePersona[] = activePersonas.map((p) => ({
-    persona_id: p.persona_id ?? '',
-    name: p.name ?? 'Unknown',
-    avatar_url: resolveAvatarUrl(p.avatar_url),
-    systemPrompt: buildSinglePersonaPrompt(
-      projectName, p, selectedContent, otherDocsList,
-      feedback.promptSection, selectedDocumentIds, documents, [], responseLanguage,
-    ),
-  }));
+  // Build per-persona prompts (initial — no previous responses yet).
+  // Avatar signing is a per-persona async call, so map concurrently rather than
+  // serially awaiting inside a loop: the signing key is cached after the first
+  // one, but the first call still fetches the secret.
+  const roundtablePersonas: RoundtablePersona[] = await Promise.all(
+    activePersonas.map(async (p) => ({
+      persona_id: p.persona_id ?? '',
+      name: p.name ?? 'Unknown',
+      avatar_url: await resolveAvatarUrl(p.avatar_url),
+      systemPrompt: buildSinglePersonaPrompt(
+        projectName, p, selectedContent, otherDocsList,
+        feedback.promptSection, selectedDocumentIds, documents, [], responseLanguage,
+      ),
+    })),
+  );
 
   const metadata = {
     roundtable: true,

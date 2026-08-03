@@ -335,9 +335,13 @@ class TestBuildPrototype:
         assert put_item['document_type'] == 'prototype'
         assert put_item['prototype_format'] == 'html'
         # S3-only storage (2026-07-10 fix): no `content` field on new prototype
-        # items — the HTML lives in S3, only the CDN URL is in DynamoDB.
+        # items — the HTML lives in S3.
         assert 'content' not in put_item
-        assert put_item['prototype_url'].endswith(f"/{result['document_id']}.html")
+        # And NO prototype_url either (issue #229). `/prototypes/*` needs a
+        # signed URL with a short expiry, so persisting one would store a link
+        # that is expired for most of its life. The projects API mints it per
+        # request from prototypes/{project_id}/{document_id}.html.
+        assert 'prototype_url' not in put_item
 
     def test_build_prototype_writes_html_to_s3(
         self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context

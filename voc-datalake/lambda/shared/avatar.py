@@ -12,6 +12,13 @@ import boto3
 from shared.logging import logger, tracer
 from shared.prompts import get_avatar_prompt_config, format_prompt
 
+# `shared.cloudfront_signing` (and through it `cryptography`) is imported LAZILY
+# inside get_avatar_cdn_url — the only function here that signs. The rest of this
+# module is the avatar WRITER path (generate_persona_avatar), used by the
+# persona-generator and persona-importer jobs, which never mint a URL. Keeping
+# the import here would make those jobs fail at cold start over a dependency they
+# do not use. Same reasoning as shared/prototypes.py.
+
 
 # Image-model defaults, used only if avatar-generation.json omits the field.
 # The authoritative values live in that config's "image_model" block, kept in
@@ -313,19 +320,30 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
 
 
 def get_avatar_cdn_url(s3_uri: str, cdn_url: str = None) -> str | None:
-    """Convert S3 URI to CloudFront CDN URL for avatar images.
-    
+    """Convert S3 URI to a SIGNED CloudFront CDN URL for avatar images.
+
     S3 URI format: s3://bucket/avatars/{persona_id}.{ext}
-    CDN URL format: https://{cdn_domain}/{persona_id}.{ext}
+    CDN URL format: https://{cdn_domain}/avatars/{persona_id}.{ext}?Expires=...
     The extension follows the configured output_format; parsing below is
     extension-agnostic (it takes the trailing path segment).
-    
+
+    The `/avatars/*` cache behavior is restricted by a CloudFront trusted key
+    group (issue #229), so the URL is only useful to a browser once signed.
+    Signing happens HERE, at read time, rather than where the avatar is
+    generated: the stored value stays a plain `s3://` URI, so a URL is never
+    persisted with a baked-in expiry.
+
+    Returns None rather than an unsigned URL when signing is unavailable — an
+    unsigned URL would 403 anyway, and returning one would mean handing out an
+    unauthenticated link the moment the key group were ever removed. Callers
+    already treat None as "no avatar" (the SPA renders a gradient fallback).
+
     Args:
         s3_uri: S3 URI of the avatar image
         cdn_url: Optional CDN URL override, defaults to AVATARS_CDN_URL env var
-        
+
     Returns:
-        CloudFront CDN URL or None if conversion fails
+        Signed CloudFront CDN URL, or None if it cannot be produced
     """
     if not s3_uri or not s3_uri.startswith('s3://'):
         return None
@@ -337,13 +355,17 @@ def get_avatar_cdn_url(s3_uri: str, cdn_url: str = None) -> str | None:
     
     try:
         # Extract filename from s3://bucket/avatars/{persona_id}.{ext}
-        # The CloudFront distribution has originPath='/avatars' so we just need the filename
+        # AVATARS_CDN_URL already ends in /avatars (the cache behavior's path
+        # prefix maps 1:1 to the S3 key prefix), so only the filename is needed.
         parts = s3_uri.split('/')
         if len(parts) < 2:
             return None
         filename = parts[-1]  # e.g., persona_20241128123456_0.jpeg
         
-        return f"{avatars_cdn_url.rstrip('/')}/{filename}"
+        # Lazy on purpose — see the note beside the imports at the top.
+        from shared.cloudfront_signing import sign_url
+
+        return sign_url(f"{avatars_cdn_url.rstrip('/')}/{filename}")
     except Exception as e:
         logger.warning(f"Failed to generate CDN URL for {s3_uri}: {e}")
         return None

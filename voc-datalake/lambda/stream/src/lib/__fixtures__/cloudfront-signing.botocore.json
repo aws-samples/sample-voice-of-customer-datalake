@@ -1,0 +1,9 @@
+{
+  "_comment": "Canned-policy bytes from botocore CloudFrontSigner.build_policy. Pins the TypeScript signer to the same wire format as the Python one. Regenerated/validated by lambda/shared/test/test_cloudfront_signing_fixture.py \u2014 that test fails if this file and botocore disagree. Contains NO key material by design.",
+  "keyPairId": "K2EXAMPLEKEYPAIR",
+  "url": "https://d111111abcdef8.cloudfront.net/avatars/persona_20260101120000_0.jpeg",
+  "expiresEpochSeconds": 1893456000,
+  "expectedCannedPolicy": "{\"Statement\":[{\"Resource\":\"https://d111111abcdef8.cloudfront.net/avatars/persona_20260101120000_0.jpeg\",\"Condition\":{\"DateLessThan\":{\"AWS:EpochTime\":1893456000}}}]}",
+  "urlWithQuery": "https://d111111abcdef8.cloudfront.net/prototypes/proj_1/p_1.html?v=2",
+  "expectedCannedPolicyForUrlWithQuery": "{\"Statement\":[{\"Resource\":\"https://d111111abcdef8.cloudfront.net/prototypes/proj_1/p_1.html?v=2\",\"Condition\":{\"DateLessThan\":{\"AWS:EpochTime\":1893456000}}}]}"
+}

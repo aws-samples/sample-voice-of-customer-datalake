@@ -180,6 +180,8 @@ const apiStack = new VocApiStack(app, 'VocApiStack', {
   rawDataBucket: coreStack.rawDataBucket,
   avatarsCdnUrl: coreStack.avatarsCdnUrl,
   prototypesCdnUrl: coreStack.prototypesCdnUrl,
+  cdnSigningSecretArn: coreStack.cdnSigningSecretArn,
+  cdnSigningKeyPairId: coreStack.cdnSigningKeyPairId,
   websiteBucket: coreStack.websiteBucket,
   frontendDistribution: coreStack.frontendDistribution,
   frontendDomainName: coreStack.frontendDomainName,

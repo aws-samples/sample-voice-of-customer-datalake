@@ -239,10 +239,24 @@ class TestGeneratePersonaAvatar:
 class TestGetAvatarCdnUrl:
     """Tests for get_avatar_cdn_url function."""
 
-    def test_converts_s3_uri_to_cdn_url(self):
+    def test_converts_s3_uri_to_signed_cdn_url(self, cdn_signing_configured):
         from shared.avatar import get_avatar_cdn_url
         result = get_avatar_cdn_url('s3://bucket/avatars/persona_123.png', cdn_url='https://cdn.example.com')
-        assert result == 'https://cdn.example.com/persona_123.png'
+        assert result.startswith('https://cdn.example.com/persona_123.png?')
+        assert 'Signature=' in result
+        assert 'Key-Pair-Id=K2TESTKEYPAIRID' in result
+
+    def test_returns_none_when_signing_unavailable(self):
+        """Fail closed (issue #229).
+
+        `/avatars/*` requires a signature, so an unsigned URL is useless to the
+        browser — but more importantly, returning one would mean the code path
+        still hands out unauthenticated links if the key group is ever removed.
+        None makes the SPA draw its gradient fallback instead.
+        """
+        from shared.avatar import get_avatar_cdn_url
+        result = get_avatar_cdn_url('s3://bucket/avatars/persona_123.png', cdn_url='https://cdn.example.com')
+        assert result is None
 
     def test_returns_none_for_empty_uri(self):
         from shared.avatar import get_avatar_cdn_url
@@ -259,13 +273,31 @@ class TestGetAvatarCdnUrl:
             result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='')
         assert result is None
 
-    def test_strips_trailing_slash_from_cdn_url(self):
+    def test_strips_trailing_slash_from_cdn_url(self, cdn_signing_configured):
         from shared.avatar import get_avatar_cdn_url
         result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='https://cdn.example.com/')
-        assert result == 'https://cdn.example.com/test.png'
+        assert result.startswith('https://cdn.example.com/test.png?')
 
     @patch.dict('os.environ', {'AVATARS_CDN_URL': 'https://env-cdn.example.com'})
-    def test_uses_env_var_when_no_cdn_url_param(self):
+    def test_uses_env_var_when_no_cdn_url_param(self, cdn_signing_configured):
         from shared.avatar import get_avatar_cdn_url
         result = get_avatar_cdn_url('s3://bucket/avatars/test.png')
-        assert result == 'https://env-cdn.example.com/test.png'
+        assert result.startswith('https://env-cdn.example.com/test.png?')
+
+
+class TestNoCryptoDependencyForWriters:
+    """`shared.avatar` must not pull in `cryptography` at import time.
+
+    Only `get_avatar_cdn_url` signs. The rest of the module is the avatar WRITER
+    path (`generate_persona_avatar`), used by the persona-generator and
+    persona-importer jobs, which never mint a URL — so a module-scope
+    `from shared.cloudfront_signing import sign_url` made those jobs fail at cold
+    start over a dependency they do not use. This mirrors the guard in
+    test_prototypes.py and is what stops someone hoisting the import back up.
+    """
+
+    def test_importing_the_module_does_not_pull_in_cryptography(self, imports_cryptography):
+        assert not imports_cryptography('shared.avatar'), (
+            'Importing shared.avatar pulled in cryptography. Keep the '
+            'shared.cloudfront_signing import inside get_avatar_cdn_url.'
+        )

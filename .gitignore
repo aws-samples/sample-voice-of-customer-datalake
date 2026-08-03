@@ -4,6 +4,13 @@ node_modules/
 # Build output
 dist/
 *.d.ts
+# ...but this one is hand-written SOURCE, not tsc output. It types the plain-JS
+# custom-resource handler in that directory so the CDK tests can import it with
+# real types; without it tracked, `npm run typecheck:cdk` fails on a fresh clone.
+# (The handler stays plain JS because nothing transpiles it — the function ships
+# the directory as an asset. Moving it to TypeScript would mean a NodejsFunction
+# with esbuild, which would retire this file and this negation.)
+!voc-datalake/lambda/custom_resources/*.d.ts
 
 # CDK
 cdk.out/
@@ -63,3 +70,12 @@ secrets.json
 voc-datalake/Workshop/*
 
 .tmp/
+
+# Agent memory — local-only working context, NEVER commit.
+# This repo is public and these notes contain AWS account ids, live CloudFront
+# domains and details of not-yet-fixed issues. The sibling .kiro/ dirs
+# (steering, agents, hooks, prompts, settings) ARE tracked on purpose, so a
+# `git add .kiro/` would otherwise publish memory along with them.
+.kiro/memory/
+.kiro/sessions/
+.kiro/NEW_SESSION_PROMPT.md

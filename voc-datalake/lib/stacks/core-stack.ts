@@ -7,6 +7,7 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as fs from 'fs';
@@ -14,7 +15,7 @@ import * as path from 'path';
 import { Construct } from 'constructs';
 import { uniqueName } from '../utils/naming';
 import { NagSuppressions } from 'cdk-nag';
-import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
+import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions } from '../utils/nag-suppressions';
 
 export interface VocCoreStackProps extends cdk.StackProps {
   brandName: string;
@@ -46,6 +47,21 @@ export class VocCoreStack extends cdk.Stack {
   public readonly accessLogsBucket: s3.Bucket;
   public readonly avatarsCdnUrl: string;
   public readonly prototypesCdnUrl: string;
+
+  // CloudFront URL-signing material for the private /avatars/* and
+  // /prototypes/* paths. Consumed by the API stack, whose Lambdas mint signed
+  // URLs for the browser (issue #229).
+  //
+  // The ARN is exported as a STRING, not the Secret construct, and deliberately:
+  // `secret.grantRead(role)` on a CMK-encrypted secret adds a KMS KEY-POLICY
+  // statement naming the grantee, and since the key lives here while the roles
+  // live in the API stack, that makes CoreStack reference ApiStack and
+  // CloudFormation rejects the cycle. Consumers add an explicit
+  // `secretsmanager:GetSecretValue` statement instead — the same pattern the
+  // ingestion `secretsArn` already uses — and get KMS access from the
+  // kmsKey.grantEncryptDecrypt/grantDecrypt calls they already have.
+  public readonly cdnSigningSecretArn: string;
+  public readonly cdnSigningKeyPairId: string;
 
   // Frontend infrastructure exports
   public readonly frontendDistribution: cloudfront.Distribution;
@@ -170,9 +186,22 @@ export class VocCoreStack extends cdk.Stack {
         responseHeadersPolicy: securityHeadersPolicy,
       },
       defaultRootObject: 'index.html',
+      // SPA deep-link routing: an unknown path is not a real 404, it is a
+      // client-side route, so it has to return index.html.
+      //
+      // 403 IS DELIBERATELY NOT MAPPED HERE (issue #229). Custom error
+      // responses are distribution-WIDE — CloudFront gives no way to scope
+      // them per behavior — so a 403 rule laundered EVERY denial on this
+      // distribution into a 200 carrying index.html. That is precisely why
+      // unauthenticated access to /avatars/* and /prototypes/* went unnoticed,
+      // and with trustedKeyGroups in place it would be actively harmful: a
+      // rejected prototype request would render the entire SPA inside the
+      // prototype iframe instead of failing, and no test could tell allow from
+      // deny. Deep links keep working through the 404 rule because the
+      // s3:ListBucket grant below makes S3 answer 404 (not 403) for a missing
+      // key.
       errorResponses: [
         { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.minutes(5) },
-        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.minutes(5) },
       ],
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       enableLogging: true,
@@ -182,6 +211,149 @@ export class VocCoreStack extends cdk.Stack {
     NagSuppressions.addResourceSuppressions(this.frontendDistribution, cloudfrontDefaultCertSuppressions);
     this.frontendDomainName = this.frontendDistribution.distributionDomainName;
 
+    // Let CloudFront distinguish "missing object" from "not allowed" on the SPA
+    // bucket. Without s3:ListBucket, S3 answers 403 for a key that does not
+    // exist (it will not confirm absence to a caller that cannot list), which
+    // forced the 403 -> index.html mapping removed above and with it the
+    // laundering of every genuine denial into a 200 (issue #229). With the
+    // grant, an unknown SPA route is a clean 404 and the 404 rule serves the
+    // app shell.
+    //
+    // Scoped to this distribution and to the SPA bucket ONLY. The raw-data
+    // bucket deliberately does NOT get it: there, 403-for-missing-key is the
+    // desired answer, since confirming whether a given avatar or prototype key
+    // exists is itself information we do not owe an unauthenticated viewer.
+    this.websiteBucket.addToResourcePolicy(new iam.PolicyStatement({
+      actions: ['s3:ListBucket'],
+      principals: [new iam.ServicePrincipal('cloudfront.amazonaws.com')],
+      resources: [this.websiteBucket.bucketArn],
+      conditions: {
+        StringEquals: {
+          'AWS:SourceArn': cdk.Stack.of(this).formatArn({
+            service: 'cloudfront',
+            region: '',
+            resource: 'distribution',
+            resourceName: this.frontendDistribution.distributionId,
+          }),
+        },
+      },
+    }));
+
+    // ── Signed-URL trust for the private CDN paths (issue #229) ──────────────
+    // /avatars/* and /prototypes/* used to be world-readable: Cognito is
+    // enforced at API Gateway, never at the CDN, and both were plain cache
+    // behaviors on the distribution that must stay public to serve the login
+    // page. They are now restricted to a trusted key group, so a viewer needs
+    // a signature the already-authenticated API mints per request.
+    //
+    // The keypair is generated at DEPLOY time by a custom resource which writes
+    // the private half straight to Secrets Manager and returns only the public
+    // half. Generating at SYNTH time would break the deterministic-synth
+    // guarantee that core-stack.test.ts asserts, and a KMS asymmetric key
+    // cannot stand in — kms:Sign has no SHA-1 option and CloudFront requires
+    // RSA-SHA1. CloudFormation still owns the PublicKey and KeyGroup below, so
+    // their create/update/delete ordering is not hand-rolled.
+    const cdnSigningSecret = new secretsmanager.Secret(this, 'CdnSigningKeySecret', {
+      secretName: uniqueName('voc-cdn-signing-key'),
+      description: 'RSA private key that signs CloudFront URLs for /avatars/* and /prototypes/*',
+      encryptionKey: this.kmsKey,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const cdnSigningKeysLambda = new lambda.Function(this, 'CdnSigningKeysLambda', {
+      functionName: uniqueName('voc-cdn-signing-keys'),
+      runtime: lambda.Runtime.NODEJS_24_X,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'cdn_signing_keys.handler',
+      // Node rather than Python: crypto.generateKeyPairSync is stdlib, so this
+      // needs no layer. Python would need `cryptography`, i.e. Docker bundling
+      // in CoreStack. Real, unit-tested file (lib/stacks/cdn-signing-keys.test.ts).
+      //
+      // fromAsset, NOT fromInline: at ~7KB this handler is comfortably past the
+      // widely-cited 4096-character ceiling for an inline `Code.ZipFile`. In
+      // practice CloudFormation accepted it and aws-cdk-lib 2.261.0 does not
+      // check the limit at all, so the inline version deployed fine — but that
+      // is undocumented tolerance, and this is a sample repo other people deploy
+      // into their own accounts. An asset removes the question, and removes the
+      // trap where adding a comment to the handler breaks a deploy.
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/custom_resources'), {
+        // Ship only the Node handler. The directory also holds the Python
+        // admin-bootstrap handler and its pytest suite, which would otherwise
+        // be packaged into this function's zip.
+        //
+        // These patterns match AT ANY DEPTH, not just the top level: the default
+        // IgnoreMode.GLOB uses .gitignore semantics, where a pattern containing
+        // no slash matches by basename anywhere in the tree. Verified by staging
+        // a nested `.py` and confirming it was excluded, so `**/*.py` is not
+        // needed. The deployed zip contains exactly one file.
+        exclude: ['*.py', '*.d.ts', 'test', '__pycache__'],
+      }),
+      timeout: cdk.Duration.minutes(1),
+      description: 'Generates the CloudFront URL-signing keypair once, then reuses it',
+      logGroup: new logs.LogGroup(this, 'CdnSigningKeysLambdaLogs', {
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+    // GetSecretValue is what makes the handler idempotent (reuse over rotate);
+    // PutSecretValue writes the generated key.
+    // Safe to use the L2 grants here: this Lambda is in THIS stack, so the
+    // KMS key-policy statement they add names a same-stack role and creates no
+    // cross-stack cycle (unlike the API stack's roles — see cdnSigningSecretArn).
+    cdnSigningSecret.grantRead(cdnSigningKeysLambda);
+    cdnSigningSecret.grantWrite(cdnSigningKeysLambda);
+    this.cdnSigningSecretArn = cdnSigningSecret.secretArn;
+
+    const cdnSigningKeysProvider = new cr.Provider(this, 'CdnSigningKeysProvider', {
+      onEventHandler: cdnSigningKeysLambda,
+      // Same reasoning as AdminBootstrapProvider: at INFO the provider
+      // framework logs the whole custom-resource response to CloudWatch. The
+      // response carries only the PUBLIC key, but keeping this at FATAL means a
+      // future field added to Data cannot leak by default.
+      frameworkLambdaLoggingLevel: lambda.ApplicationLogLevel.FATAL,
+      logGroup: new logs.LogGroup(this, 'CdnSigningKeysProviderLogs', {
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+
+    const cdnSigningKeys = new cdk.CustomResource(this, 'CdnSigningKeys', {
+      serviceToken: cdnSigningKeysProvider.serviceToken,
+      resourceType: 'Custom::CdnSigningKeys',
+      properties: {
+        SecretId: cdnSigningSecret.secretArn,
+      },
+    });
+
+    NagSuppressions.addResourceSuppressions(cdnSigningSecret, cdnSigningKeySuppressions);
+    NagSuppressions.addResourceSuppressions(cdnSigningKeysLambda, lambdaBasicExecutionRoleSuppressions, true);
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/CdnSigningKeysProvider/framework-onEvent`,
+      [
+        ...cdkCustomResourceSuppressions,
+        ...lambdaBasicExecutionRoleSuppressions,
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to CdnSigningKeysLambda only (same pattern as AdminBootstrapLambda).',
+          appliesTo: [{ regex: '/Resource::<.*CdnSigningKeysLambda.*\\.Arn>:\\*/' }],
+        },
+      ],
+      true
+    );
+
+    // The L2 PublicKey validates the PEM prefix only for resolved strings, so
+    // an unresolved custom-resource attribute is accepted here by design.
+    const cdnSigningPublicKey = new cloudfront.PublicKey(this, 'CdnSigningPublicKey', {
+      encodedKey: cdnSigningKeys.getAttString('PublicKeyPem'),
+      comment: 'Signs /avatars/* and /prototypes/* URLs',
+    });
+    const cdnSigningKeyGroup = new cloudfront.KeyGroup(this, 'CdnSigningKeyGroup', {
+      items: [cdnSigningPublicKey],
+      comment: 'Viewers must present a signature for the private CDN paths',
+    });
+    this.cdnSigningKeyPairId = cdnSigningPublicKey.publicKeyId;
+
     // Avatars served from the same distribution under /avatars/* path
     // This avoids CSP issues (same-origin) and eliminates the need for a separate distribution
     this.frontendDistribution.addBehavior('/avatars/*', origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket), {
@@ -189,7 +361,11 @@ export class VocCoreStack extends cdk.Stack {
       allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
       cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
       compress: true,
+      // CACHING_OPTIMIZED forwards no query strings, so the signature is NOT
+      // part of the cache key — signed URLs stay shareable across viewers at
+      // the edge instead of fragmenting the cache per user.
       cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+      trustedKeyGroups: [cdnSigningKeyGroup],
     });
     this.avatarsCdnUrl = `https://${this.frontendDomainName}/avatars`;
 
@@ -201,10 +377,20 @@ export class VocCoreStack extends cdk.Stack {
     // dedicated policy scoped ONLY to this path, applied via a second cache
     // behavior (not a second distribution: cheaper, no extra propagation lag,
     // mirrors the /avatars/* pattern). This is same-origin/same-domain as the
-    // main app, not a genuinely separate origin — the isolation that matters
-    // (the model's JS can't reach the parent app's DOM/storage/cookies) comes
-    // from the frontend loading this via a cross-document <iframe src=...>, not
-    // from the domain differing.
+    // main app, not a genuinely separate origin — the SCRIPT isolation that
+    // matters (the model's JS can't reach the parent app's DOM/storage/cookies)
+    // comes from the frontend loading this via a cross-document <iframe src=...>,
+    // not from the domain differing.
+    //
+    // TWO THINGS THIS POLICY IS, WHICH ARE EASY TO CONFLATE (issue #229):
+    //  1. It is NOT access control. Script isolation says nothing about who may
+    //     fetch the URL; that is the trustedKeyGroups line below.
+    //  2. It IS the EGRESS control on model-authored JS. `default-src 'none'`
+    //     with no `connect-src` is what stops inline script in a prototype —
+    //     running in a document holding PRD/PR-FAQ-derived content — from
+    //     making outbound requests. Serving prototypes from anywhere that
+    //     cannot set response headers (S3 directly, for instance) silently
+    //     drops that, so this policy has to travel with the path.
     const prototypeHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'PrototypeHeadersPolicy', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
@@ -221,6 +407,7 @@ export class VocCoreStack extends cdk.Stack {
       compress: true,
       cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED, // prototypes are immutable per doc_id
       responseHeadersPolicy: prototypeHeadersPolicy,
+      trustedKeyGroups: [cdnSigningKeyGroup],
     });
     this.prototypesCdnUrl = `https://${this.frontendDomainName}/prototypes`;
 
@@ -669,8 +856,9 @@ export class VocCoreStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'RawDataBucketName', { value: this.rawDataBucket.bucketName });
     new cdk.CfnOutput(this, 'RawDataBucketArn', { value: this.rawDataBucket.bucketArn });
     new cdk.CfnOutput(this, 'AccessLogsBucketName', { value: this.accessLogsBucket.bucketName });
-    new cdk.CfnOutput(this, 'AvatarsCdnUrl', { value: this.avatarsCdnUrl, description: 'CloudFront URL for persona avatar images' });
-    new cdk.CfnOutput(this, 'PrototypesCdnUrl', { value: this.prototypesCdnUrl, description: 'CloudFront URL for generated HTML prototypes' });
+    new cdk.CfnOutput(this, 'AvatarsCdnUrl', { value: this.avatarsCdnUrl, description: 'CloudFront URL for persona avatar images (signature required)' });
+    new cdk.CfnOutput(this, 'PrototypesCdnUrl', { value: this.prototypesCdnUrl, description: 'CloudFront URL for generated HTML prototypes (signature required)' });
+    new cdk.CfnOutput(this, 'CdnSigningKeyPairId', { value: this.cdnSigningKeyPairId, description: 'CloudFront public key id used to sign /avatars/* and /prototypes/* URLs' });
 
     // Frontend outputs
     new cdk.CfnOutput(this, 'WebsiteURL', { value: `https://${this.frontendDomainName}`, description: 'CloudFront Distribution URL' });

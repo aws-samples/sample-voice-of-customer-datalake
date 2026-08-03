@@ -2,7 +2,7 @@
  * Tests for Project Chat context builder.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { buildProjectChatContext } from './project-context.js';
+import { buildProjectChatContext, buildRoundtableContext } from './project-context.js';
 
 function createMockDocClient(
   responses: Record<string, unknown>[][] = [],
@@ -228,6 +228,33 @@ describe('buildProjectChatContext', () => {
       persona_count: 2,
       document_count: 1,
     });
+  });
+
+  it('never emits an UNSIGNED avatar url when signing is unavailable (issue #229)', async () => {
+    // /avatars/* is restricted by a CloudFront trusted key group, so this
+    // Lambda must sign the URLs it puts in the persona_turn SSE event. With no
+    // signing key configured (as here), the avatar has to be omitted — leaking
+    // the bare CDN URL is the exact hole this closed, and it would 403 anyway.
+    const personaWithAvatar = {
+      pk: 'PROJECT#proj-1',
+      sk: 'PERSONA#p9',
+      persona_id: 'p9',
+      name: 'Avatar Persona',
+      avatar_url: 's3://raw-bucket/avatars/persona_20260101120000_0.jpeg',
+    } as unknown as Record<string, unknown>;
+
+    const docClient = createMockDocClient([[projectMeta, personaWithAvatar]]);
+
+    // buildRoundtableContext, not buildProjectChatContext: this is the one that
+    // returns per-persona records, and its avatar_url is what handler.ts puts on
+    // the wire in the persona_turn SSE event.
+    const ctx = await buildRoundtableContext(
+      docClient, 'projects-table', 'feedback-table', 'proj-1',
+      'hello', ['p9'],
+    );
+
+    expect(ctx.personas).toHaveLength(1);
+    expect(ctx.personas[0].avatar_url).toBeUndefined();
   });
 
   it('does not throw when a persona has a null avatar_url (regression)', async () => {

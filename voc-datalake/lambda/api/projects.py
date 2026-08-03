@@ -34,6 +34,7 @@ from shared.avatar import (
     get_avatar_cdn_url,
 )
 
+from shared.prototypes import prototype_signed_url
 from shared.tables import get_projects_table, get_feedback_table
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
 
@@ -149,6 +150,44 @@ def create_project(body: dict) -> dict:
     return {'success': True, 'project': item}
 
 
+def _with_signed_prototype_url(item: dict, project_id: str) -> dict:
+    """Attach a freshly signed `prototype_url` to a prototype document.
+
+    Only HTML prototypes have one; PRDs, PR-FAQs and legacy JSON-spec
+    prototypes are returned untouched.
+
+    Any persisted `prototype_url` is OVERWRITTEN, never trusted. Prototypes
+    generated before issue #229 stored an unsigned absolute URL, which now 403s
+    against the restricted `/prototypes/*` behavior — passing it through would
+    render a broken iframe. The key is derivable from the ids, so the stored
+    string is not needed at all.
+
+    Only S3-BACKED prototypes get a URL. The oldest ones stored their HTML
+    inline in `content` and have no S3 object at all, so a URL for them would
+    resolve to nothing; worse, the frontend prefers `prototype_url` over
+    `content`, so inventing one would swap a working inline render for a broken
+    iframe. Presence of `content` is the discriminator (S3-only storage stopped
+    writing it), NOT `prototype_format`, which is 'html' in both cases.
+    """
+    if item.get('document_type') != 'prototype':
+        return item
+    doc_id = item.get('document_id')
+    if not doc_id:
+        return item
+    if item.get('content'):
+        # Legacy inline prototype: leave it for the frontend's `srcDoc` path.
+        item.pop('prototype_url', None)
+        return item
+    signed = prototype_signed_url(project_id, doc_id)
+    if signed:
+        item['prototype_url'] = signed
+    else:
+        # Drop rather than leave a stale unsigned URL: the frontend treats a
+        # missing prototype_url as "fall back to legacy inline content".
+        item.pop('prototype_url', None)
+    return item
+
+
 @tracer.capture_method
 def get_project(project_id: str) -> dict:
     """Get a project with all its data."""
@@ -173,12 +212,12 @@ def get_project(project_id: str) -> dict:
         if sk == 'META':
             project = item
         elif sk.startswith('PERSONA#'):
-            # Convert S3 URI to CloudFront CDN URL for avatar
+            # Convert S3 URI to a signed CloudFront CDN URL for the avatar
             if item.get('avatar_url') and item['avatar_url'].startswith('s3://'):
                 item['avatar_url'] = get_avatar_cdn_url(item['avatar_url'])
             personas.append(item)
         elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('DOC#') or sk.startswith('PRODUCT_REPORT#') or sk.startswith('PROTOTYPE#'):
-            documents.append(item)
+            documents.append(_with_signed_prototype_url(item, project_id))
     
     if not project:
         raise NotFoundError('Project metadata not found')
