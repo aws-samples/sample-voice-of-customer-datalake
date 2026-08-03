@@ -128,10 +128,19 @@ def imports_cryptography():
 
     def _check(module_name: str) -> bool:
         code = f"import sys; import {module_name}; print('cryptography' in sys.modules)"
+        # check=False on purpose: with check=True, a module that fails to import
+        # at all surfaces as an opaque CalledProcessError instead of anything
+        # readable, which is the same "fails for the wrong-looking reason" trap
+        # the hardcoded cwd used to cause. Surface the child's stderr instead.
         result = subprocess.run(
             [sys.executable, '-c', code],
-            capture_output=True, text=True, check=True, cwd=lambda_dir,
+            capture_output=True, text=True, check=False, cwd=lambda_dir,
         )
+        if result.returncode != 0:
+            raise AssertionError(
+                f'could not import {module_name} in a subprocess '
+                f'(exit {result.returncode}):\n{result.stderr.strip()}'
+            )
         return result.stdout.strip() == 'True'
 
     return _check

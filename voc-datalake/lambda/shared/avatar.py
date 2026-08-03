@@ -364,7 +364,7 @@ def get_avatar_cdn_url(s3_uri: str, cdn_url: str = None) -> str | None:
         
         # Lazy on purpose — see the note beside the imports at the top.
         from shared.cloudfront_signing import sign_url
-        
+
         return sign_url(f"{avatars_cdn_url.rstrip('/')}/{filename}")
     except Exception as e:
         logger.warning(f"Failed to generate CDN URL for {s3_uri}: {e}")
