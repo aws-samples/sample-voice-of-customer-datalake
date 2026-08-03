@@ -15,7 +15,7 @@ import * as path from 'path';
 import { Construct } from 'constructs';
 import { uniqueName } from '../utils/naming';
 import { NagSuppressions } from 'cdk-nag';
-import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
+import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions } from '../utils/nag-suppressions';
 
 export interface VocCoreStackProps extends cdk.StackProps {
   brandName: string;
@@ -51,7 +51,16 @@ export class VocCoreStack extends cdk.Stack {
   // CloudFront URL-signing material for the private /avatars/* and
   // /prototypes/* paths. Consumed by the API stack, whose Lambdas mint signed
   // URLs for the browser (issue #229).
-  public readonly cdnSigningSecret: secretsmanager.Secret;
+  //
+  // The ARN is exported as a STRING, not the Secret construct, and deliberately:
+  // `secret.grantRead(role)` on a CMK-encrypted secret adds a KMS KEY-POLICY
+  // statement naming the grantee, and since the key lives here while the roles
+  // live in the API stack, that makes CoreStack reference ApiStack and
+  // CloudFormation rejects the cycle. Consumers add an explicit
+  // `secretsmanager:GetSecretValue` statement instead — the same pattern the
+  // ingestion `secretsArn` already uses — and get KMS access from the
+  // kmsKey.grantEncryptDecrypt/grantDecrypt calls they already have.
+  public readonly cdnSigningSecretArn: string;
   public readonly cdnSigningKeyPairId: string;
 
   // Frontend infrastructure exports
@@ -244,7 +253,7 @@ export class VocCoreStack extends cdk.Stack {
     // cannot stand in — kms:Sign has no SHA-1 option and CloudFront requires
     // RSA-SHA1. CloudFormation still owns the PublicKey and KeyGroup below, so
     // their create/update/delete ordering is not hand-rolled.
-    this.cdnSigningSecret = new secretsmanager.Secret(this, 'CdnSigningKeySecret', {
+    const cdnSigningSecret = new secretsmanager.Secret(this, 'CdnSigningKeySecret', {
       secretName: uniqueName('voc-cdn-signing-key'),
       description: 'RSA private key that signs CloudFront URLs for /avatars/* and /prototypes/*',
       encryptionKey: this.kmsKey,
@@ -253,7 +262,7 @@ export class VocCoreStack extends cdk.Stack {
 
     const cdnSigningKeysLambda = new lambda.Function(this, 'CdnSigningKeysLambda', {
       functionName: uniqueName('voc-cdn-signing-keys'),
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64,
       handler: 'index.handler',
       // Node rather than Python: crypto.generateKeyPairSync is stdlib, so this
@@ -272,8 +281,12 @@ export class VocCoreStack extends cdk.Stack {
     });
     // GetSecretValue is what makes the handler idempotent (reuse over rotate);
     // PutSecretValue writes the generated key.
-    this.cdnSigningSecret.grantRead(cdnSigningKeysLambda);
-    this.cdnSigningSecret.grantWrite(cdnSigningKeysLambda);
+    // Safe to use the L2 grants here: this Lambda is in THIS stack, so the
+    // KMS key-policy statement they add names a same-stack role and creates no
+    // cross-stack cycle (unlike the API stack's roles — see cdnSigningSecretArn).
+    cdnSigningSecret.grantRead(cdnSigningKeysLambda);
+    cdnSigningSecret.grantWrite(cdnSigningKeysLambda);
+    this.cdnSigningSecretArn = cdnSigningSecret.secretArn;
 
     const cdnSigningKeysProvider = new cr.Provider(this, 'CdnSigningKeysProvider', {
       onEventHandler: cdnSigningKeysLambda,
@@ -292,10 +305,11 @@ export class VocCoreStack extends cdk.Stack {
       serviceToken: cdnSigningKeysProvider.serviceToken,
       resourceType: 'Custom::CdnSigningKeys',
       properties: {
-        SecretId: this.cdnSigningSecret.secretArn,
+        SecretId: cdnSigningSecret.secretArn,
       },
     });
 
+    NagSuppressions.addResourceSuppressions(cdnSigningSecret, cdnSigningKeySuppressions);
     NagSuppressions.addResourceSuppressions(cdnSigningKeysLambda, lambdaBasicExecutionRoleSuppressions, true);
     NagSuppressions.addResourceSuppressionsByPath(
       this,

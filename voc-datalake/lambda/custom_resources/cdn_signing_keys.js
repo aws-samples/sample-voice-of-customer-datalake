@@ -103,11 +103,20 @@ function defaultSecretsClient() {
 }
 
 /**
+ * The actual logic, with its collaborators injected so tests need no AWS SDK.
+ *
+ * Kept SEPARATE from `exports.handler` because of a sharp edge in the Node 24
+ * Lambda runtime: it infers the handler style from the function's ARITY, so a
+ * three-parameter handler is taken for the legacy `(event, context, callback)`
+ * signature — support for which Node 24 removed. An exported handler that took
+ * `deps` as a third parameter therefore failed at runtime init with
+ * "AWS Lambda has removed support for callback-based function handlers",
+ * before any of this code ran.
+ *
  * @param {object} event CloudFormation custom resource event.
- * @param {object} _context Unused Lambda context.
  * @param {object} [deps] Injection seam for tests.
  */
-exports.handler = async (event, _context, deps) => {
+async function onEvent(event, deps) {
   const requestType = event.RequestType;
   const secretId = event.ResourceProperties?.SecretId;
 
@@ -141,8 +150,15 @@ exports.handler = async (event, _context, deps) => {
     PhysicalResourceId: PHYSICAL_RESOURCE_ID,
     Data: { PublicKeyPem: created.publicKeyPem },
   };
-};
+}
 
+/**
+ * CloudFormation entry point. ONE parameter on purpose — see onEvent above for
+ * why arity matters on the Node 24 runtime.
+ */
+exports.handler = async (event) => onEvent(event);
+
+exports.onEvent = onEvent;
 exports.generateKeyPair = generateKeyPair;
 exports.readKeyMaterial = readKeyMaterial;
 exports.PHYSICAL_RESOURCE_ID = PHYSICAL_RESOURCE_ID;

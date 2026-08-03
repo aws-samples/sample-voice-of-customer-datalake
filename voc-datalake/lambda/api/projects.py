@@ -161,11 +161,22 @@ def _with_signed_prototype_url(item: dict, project_id: str) -> dict:
     against the restricted `/prototypes/*` behavior — passing it through would
     render a broken iframe. The key is derivable from the ids, so the stored
     string is not needed at all.
+
+    Only S3-BACKED prototypes get a URL. The oldest ones stored their HTML
+    inline in `content` and have no S3 object at all, so a URL for them would
+    resolve to nothing; worse, the frontend prefers `prototype_url` over
+    `content`, so inventing one would swap a working inline render for a broken
+    iframe. Presence of `content` is the discriminator (S3-only storage stopped
+    writing it), NOT `prototype_format`, which is 'html' in both cases.
     """
     if item.get('document_type') != 'prototype':
         return item
     doc_id = item.get('document_id')
     if not doc_id:
+        return item
+    if item.get('content'):
+        # Legacy inline prototype: leave it for the frontend's `srcDoc` path.
+        item.pop('prototype_url', None)
         return item
     signed = prototype_signed_url(project_id, doc_id)
     if signed:

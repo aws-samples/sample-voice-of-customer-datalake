@@ -85,6 +85,21 @@ export const apiSecretsSuppressions: NagPackSuppression[] = [
   },
 ];
 
+// CloudFront URL-signing key (issue #229)
+export const cdnSigningKeySuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-SMG4',
+    reason:
+      'Automatic rotation would be actively harmful here. This secret holds the RSA private key '
+      + 'that signs /avatars/* and /prototypes/* URLs; rotating it invalidates every signed URL '
+      + 'already delivered to a browser, and the matching CloudFront PublicKey and KeyGroup would '
+      + 'have to be replaced in the same instant to stay consistent. Rotation is therefore a '
+      + 'deliberate, coordinated operation: delete the secret value and redeploy, which makes the '
+      + 'bootstrap custom resource mint a fresh keypair. Exposure is bounded instead by the '
+      + 'short signed-URL TTL (CDN_SIGNED_URL_TTL_SECONDS, 1h by default).',
+  },
+];
+
 // DynamoDB Global Secondary Index access
 export const dynamoDbGsiSuppressions: NagPackSuppression[] = [
   {

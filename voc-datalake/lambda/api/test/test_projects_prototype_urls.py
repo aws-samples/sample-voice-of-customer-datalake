@@ -72,6 +72,41 @@ class TestWithSignedPrototypeUrl:
 
         assert 'prototype_url' not in item
 
+    def test_mints_no_url_for_a_legacy_INLINE_prototype(self, prototypes_cdn_configured):
+        """Regression caught on the deployed stack.
+
+        The oldest prototypes kept their HTML in `content` and never wrote an S3
+        object, so a signed URL for them resolves to nothing (S3 returns 403 for
+        the missing key even though the signature is valid). The frontend prefers
+        `prototype_url` over `content`, so minting one swapped a working inline
+        render for a broken iframe. `prototype_format` is 'html' for these too,
+        so it cannot be the discriminator — presence of `content` is.
+        """
+        from api.projects import _with_signed_prototype_url
+
+        item = _with_signed_prototype_url(
+            {
+                'document_type': 'prototype',
+                'document_id': 'prototype_legacy',
+                'prototype_format': 'html',
+                'content': '<!DOCTYPE html><html><body>inline</body></html>',
+            },
+            'proj_1',
+        )
+
+        assert 'prototype_url' not in item
+        assert item['content'].startswith('<!DOCTYPE html>')
+
+    def test_still_mints_for_an_s3_backed_prototype_with_no_content(self, prototypes_cdn_configured):
+        from api.projects import _with_signed_prototype_url
+
+        item = _with_signed_prototype_url(
+            {'document_type': 'prototype', 'document_id': 'prototype_9', 'prototype_format': 'html'},
+            'proj_9',
+        )
+
+        assert 'Signature=' in item['prototype_url']
+
     def test_leaves_non_prototype_documents_untouched(self, prototypes_cdn_configured):
         from api.projects import _with_signed_prototype_url
 

@@ -27,12 +27,20 @@ export interface CdnSigningKeysResponse {
   Data?: { PublicKeyPem: string };
 }
 
-export declare function handler(
-  event: {
-    RequestType?: string;
-    ResourceProperties?: { SecretId?: string };
-  },
-  context?: unknown,
+export interface CdnSigningKeysEvent {
+  RequestType?: string;
+  ResourceProperties?: { SecretId?: string };
+}
+
+/**
+ * CloudFormation entry point. Single-parameter BY DESIGN: the Node 24 Lambda
+ * runtime treats a 3-arity handler as the removed callback style and refuses to
+ * start. Tests should call `onEvent` instead.
+ */
+export declare function handler(event: CdnSigningKeysEvent): Promise<CdnSigningKeysResponse>;
+
+export declare function onEvent(
+  event: CdnSigningKeysEvent,
   deps?: CdnSigningKeysDeps,
 ): Promise<CdnSigningKeysResponse>;
 

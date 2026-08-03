@@ -14,6 +14,7 @@ import { describe, it, expect, vi } from 'vitest';
 // inline Lambda code is never bundled or transpiled.
 import {
   handler,
+  onEvent,
   generateKeyPair,
   readKeyMaterial,
   PHYSICAL_RESOURCE_ID,
@@ -86,11 +87,27 @@ describe('readKeyMaterial', () => {
   });
 });
 
+describe('handler arity (Node 24 runtime contract)', () => {
+  it('exposes at most two parameters, or the Node 24 runtime refuses to start', () => {
+    // REGRESSION GUARD. The exported handler originally took `deps` as a third
+    // parameter for test injection. The Node 24 Lambda runtime infers the
+    // handler style from arity, read 3 as the removed `(event, context,
+    // callback)` signature, and failed at init with "AWS Lambda has removed
+    // support for callback-based function handlers" — before a single line of
+    // this handler ran. Nothing short of a real deploy caught it, hence this.
+    expect(handler.length).toBeLessThanOrEqual(2);
+  });
+
+  it('keeps the injectable seam on onEvent, off the entry point', () => {
+    expect(typeof onEvent).toBe('function');
+  });
+});
+
 describe('handler', () => {
   it('generates and stores a keypair on first create', async () => {
     const secrets = fakeSecrets();
 
-    const result = await handler(createEvent('Create'), {}, { secrets });
+    const result = await onEvent(createEvent('Create'), { secrets });
 
     expect(secrets.put).toHaveBeenCalledOnce();
     const stored = JSON.parse(secrets.store.value ?? '{}');
@@ -104,7 +121,7 @@ describe('handler', () => {
     const existing = generateKeyPair();
     const secrets = fakeSecrets(JSON.stringify(existing));
 
-    const result = await handler(createEvent('Update'), {}, { secrets });
+    const result = await onEvent(createEvent('Update'), { secrets });
 
     expect(secrets.put).not.toHaveBeenCalled();
     expect(result.Data?.PublicKeyPem).toBe(existing.publicKeyPem);
@@ -114,9 +131,9 @@ describe('handler', () => {
     // A changing PublicKeyPem would replace the CloudFront PublicKey resource
     // on every deploy and break URLs already in flight.
     const secrets = fakeSecrets();
-    const first = await handler(createEvent('Create'), {}, { secrets });
-    const second = await handler(createEvent('Update'), {}, { secrets });
-    const third = await handler(createEvent('Update'), {}, { secrets });
+    const first = await onEvent(createEvent('Create'), { secrets });
+    const second = await onEvent(createEvent('Update'), { secrets });
+    const third = await onEvent(createEvent('Update'), { secrets });
 
     expect(second.Data?.PublicKeyPem).toBe(first.Data?.PublicKeyPem);
     expect(third.Data?.PublicKeyPem).toBe(first.Data?.PublicKeyPem);
@@ -125,7 +142,7 @@ describe('handler', () => {
   it('regenerates when the secret exists but holds no key', async () => {
     const secrets = fakeSecrets('seeded-random-password');
 
-    const result = await handler(createEvent('Update'), {}, { secrets });
+    const result = await onEvent(createEvent('Update'), { secrets });
 
     expect(secrets.put).toHaveBeenCalledOnce();
     expect(result.Data?.PublicKeyPem).toMatch(/^-----BEGIN PUBLIC KEY-----/);
@@ -136,7 +153,7 @@ describe('handler', () => {
     const secrets = fakeSecrets(JSON.stringify(generateKeyPair()));
 
     for (const requestType of ['Create', 'Update', 'Delete']) {
-      const result = await handler(createEvent(requestType), {}, { secrets });
+      const result = await onEvent(createEvent(requestType), { secrets });
       expect(result.PhysicalResourceId).toBe(PHYSICAL_RESOURCE_ID);
     }
   });
@@ -145,7 +162,7 @@ describe('handler', () => {
     // The secret and both CloudFront resources are CloudFormation-owned.
     const secrets = fakeSecrets(JSON.stringify(generateKeyPair()));
 
-    await handler(createEvent('Delete'), {}, { secrets });
+    await onEvent(createEvent('Delete'), { secrets });
 
     expect(secrets.get).not.toHaveBeenCalled();
     expect(secrets.put).not.toHaveBeenCalled();
@@ -155,7 +172,7 @@ describe('handler', () => {
     const secrets = fakeSecrets();
 
     await expect(
-      handler({ RequestType: 'Create', ResourceProperties: {} }, {}, { secrets }),
+      onEvent({ RequestType: 'Create', ResourceProperties: {} }, { secrets }),
     ).rejects.toThrow(/SecretId/);
   });
 
@@ -167,7 +184,7 @@ describe('handler', () => {
       put: vi.fn(async () => undefined),
     };
 
-    await expect(handler(createEvent('Update'), {}, { secrets })).rejects.toThrow(/AccessDenied/);
+    await expect(onEvent(createEvent('Update'), { secrets })).rejects.toThrow(/AccessDenied/);
     expect(secrets.put).not.toHaveBeenCalled();
   });
 });
