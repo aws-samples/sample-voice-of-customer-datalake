@@ -255,6 +255,23 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     expect(serialized).not.toContain('s3:ListBucket');
   });
 
+  it('packages the signing-key handler as an asset, not inline code', () => {
+    // The inline form DID deploy at ~6.9KB — CloudFormation accepted it and
+    // aws-cdk-lib has no 4096-character check — but that is undocumented
+    // tolerance, and inline code would put a size cliff one comment away. An
+    // asset also keeps the sibling Python handler and its pytest suite out of
+    // this function's zip.
+    const functions = Object.values(synthCoreTemplate().findResources('AWS::Lambda::Function'));
+    const signingKeyFns = functions.filter(
+      (f) => typeof f.Properties?.Handler === 'string'
+        && f.Properties.Handler.startsWith('cdn_signing_keys.'),
+    );
+    expect(signingKeyFns).toHaveLength(1);
+
+    expect(signingKeyFns[0].Properties.Code).not.toHaveProperty('ZipFile');
+    expect(signingKeyFns[0].Properties.Code).toHaveProperty('S3Bucket');
+  });
+
   it('keeps the prototype CSP on the prototypes behavior', () => {
     // That response-headers policy is the EGRESS control on model-generated
     // inline JS (default-src 'none', no connect-src). It is easy to lose by

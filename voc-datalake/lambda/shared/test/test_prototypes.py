@@ -72,3 +72,43 @@ class TestPrototypeSignedUrl:
         from shared.prototypes import prototype_signed_url
         assert prototype_signed_url('', 'd', cdn_url=self.CDN) is None
         assert prototype_signed_url('p', '', cdn_url=self.CDN) is None
+
+
+class TestNoCryptoDependencyForWriters:
+    """The document-generator job imports this module only for
+    `prototype_s3_key` — it writes prototype HTML and never signs anything.
+
+    A module-scope `from shared.cloudfront_signing import sign_url` made that
+    writer depend on `cryptography` at COLD START, so detaching the layer that
+    carries it would have taken prototype generation down for a dependency the
+    job does not use. The import is now inside `prototype_signed_url`; this test
+    is what stops someone hoisting it back to the top of the file.
+    """
+
+    def test_importing_the_module_does_not_pull_in_cryptography(self):
+        import subprocess
+        import sys
+
+        # A subprocess, because `cryptography` is almost certainly already in
+        # this test session's sys.modules (the signing tests and the
+        # cdn_signing_keypair fixture both use it), so an in-process check would
+        # pass no matter what the import graph looks like.
+        code = (
+            'import sys; import shared.prototypes; '
+            "print('cryptography' in sys.modules)"
+        )
+        result = subprocess.run(
+            [sys.executable, '-c', code],
+            capture_output=True, text=True, check=True, cwd='lambda',
+        )
+
+        assert result.stdout.strip() == 'False', (
+            'Importing shared.prototypes pulled in cryptography. Keep the '
+            'shared.cloudfront_signing import inside prototype_signed_url.'
+        )
+
+    def test_prototype_s3_key_works_without_touching_the_signer(self):
+        """The writer-only entry point stays usable with no signing config."""
+        from shared.prototypes import prototype_s3_key
+
+        assert prototype_s3_key('p', 'd') == 'prototypes/p/d.html'
