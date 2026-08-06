@@ -321,9 +321,18 @@ export class BedrockAccessStack extends cdk.Stack {
 import boto3
 import json
 import logging
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Agreement failures that are a property of the ACCOUNT, not a bug in this
+# stack, and must not fail the deployment. Workshop Studio accounts sit behind
+# an AWS Private Marketplace that refuses CreateFoundationModelAgreement for
+# the newest models, which would otherwise take the whole stack (and, when it
+# is not last in the deploy order, everything after it) down over a model the
+# deployment may not even use.
+NON_FATAL_ERROR_CODES = ('AccessDeniedException',)
 
 def handler(event, context):
     """
@@ -403,7 +412,30 @@ def handler(event, context):
             'PhysicalResourceId': f'model-agreement-{model_id}',
             'Data': {'status': 'ALREADY_EXISTS', 'modelId': model_id}
         }
-        
+
+    except ClientError as e:
+        # MUST stay below the ConflictException handler: that exception is also
+        # a ClientError, so ordering it first would swallow the already-exists
+        # case. Only the codes in NON_FATAL_ERROR_CODES are absorbed; every
+        # other ClientError still raises and fails the stack.
+        code = e.response.get('Error', {}).get('Code', '')
+        if code not in NON_FATAL_ERROR_CODES:
+            logger.error(f"Error creating agreement for {model_id}: {str(e)}")
+            raise
+        # The account is not allowed to accept this model's agreement (e.g. a
+        # Private Marketplace restriction). Report it instead of failing: the
+        # models whose agreements DID succeed remain usable, and a model that
+        # is unavailable here would only surface as an AccessDenied at
+        # inference time anyway.
+        logger.warning(
+            f"Agreement unavailable for {model_id} ({code}): {str(e)}. "
+            "Continuing — this model will not be invocable in this account."
+        )
+        return {
+            'PhysicalResourceId': f'model-agreement-{model_id}',
+            'Data': {'status': 'UNAVAILABLE', 'modelId': model_id, 'errorCode': code}
+        }
+
     except Exception as e:
         logger.error(f"Error creating agreement for {model_id}: {str(e)}")
         raise
