@@ -225,9 +225,23 @@ describe('web-search wiring is skipped cleanly when the gateway is absent', () =
     expect(webSearchVars).toEqual([]);
   });
 
-  it('grants no bedrock-agentcore permissions and leaks no "undefined" ARN', () => {
-    const rendered = JSON.stringify(template.toJSON());
-    expect(rendered).not.toContain('bedrock-agentcore');
-    expect(rendered).not.toContain('undefined');
+  it('grants no bedrock-agentcore permissions', () => {
+    // Scoped to IAM policy actions rather than a whole-template string match:
+    // a blanket search would also fire on an unrelated future mention and give
+    // a failure with no pointer to the guard it protects.
+    const actions = Object.values(template.findResources('AWS::IAM::Policy'))
+      .flatMap((policy) => policy.Properties?.PolicyDocument?.Statement ?? [])
+      .flatMap((statement: { Action?: string | string[] }) =>
+        typeof statement.Action === 'string' ? [statement.Action] : statement.Action ?? []);
+    expect(actions.filter((a) => a.startsWith('bedrock-agentcore'))).toEqual([]);
+  });
+
+  it('leaks no "undefined" into any Lambda environment value', () => {
+    // The concrete failure mode if the guard were dropped: an absent gateway
+    // URL/tool name stringified into an env var.
+    const values = Object.values(template.findResources('AWS::Lambda::Function'))
+      .flatMap((fn) => Object.values(fn.Properties?.Environment?.Variables ?? {}))
+      .filter((v): v is string => typeof v === 'string');
+    expect(values.filter((v) => v.includes('undefined'))).toEqual([]);
   });
 });

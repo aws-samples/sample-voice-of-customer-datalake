@@ -63,9 +63,14 @@ export interface VocWebSearchStackProps extends cdk.StackProps {
 
   /**
    * Region the model agreements are created in — normally the app's region, not
-   * this stack's. Required rather than defaulted; see BedrockModelAccessProps.
+   * this stack's.
+   *
+   * Optional here but **required whenever `anthropicUseCase` is set**, and
+   * validated as such: a gateway-only caller has no model agreements, so
+   * forcing it to invent a value it never reads would be noise. There is
+   * deliberately no default — see BedrockModelAccessProps.
    */
-  modelRegion: string;
+  modelRegion?: string;
 
   /** @default false */
   skipUseCaseSubmission?: boolean;
@@ -94,6 +99,13 @@ export class VocWebSearchStack extends cdk.Stack {
     }
 
     if (props.anthropicUseCase) {
+      if (!props.modelRegion) {
+        throw new Error(
+          `${id}: modelRegion is required when anthropicUseCase is set — it decides where the ` +
+          'model agreements are created, and this stack is pinned to us-east-1 regardless of ' +
+          'where the app runs. Pass the app region.',
+        );
+      }
       new BedrockModelAccess(this, 'BedrockModelAccess', {
         anthropicUseCase: props.anthropicUseCase,
         modelRegion: props.modelRegion,
