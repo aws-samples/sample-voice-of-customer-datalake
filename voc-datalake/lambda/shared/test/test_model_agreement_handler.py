@@ -48,8 +48,19 @@ class _FakeClientError(Exception):
         self.response = {'Error': {'Code': code, 'Message': message}}
 
 
-class _FakeConflict(Exception):
-    pass
+class _FakeConflict(_FakeClientError):
+    """Stand-in for bedrock's ConflictException.
+
+    MUST subclass _FakeClientError: botocore's ConflictException *is* a
+    ClientError subclass, so the handler's inner `except ClientError` sees it
+    first and re-raises it (code not in NON_FATAL_ERROR_CODES) to the outer
+    ConflictException handler. A sibling class would skip that inner branch
+    entirely and the "ClientError branch does not shadow ConflictException"
+    assertion below would prove nothing. (Review nit on PR #269.)
+    """
+
+    def __init__(self, message: str = 'already exists'):
+        super().__init__('ConflictException', message)
 
 
 def _load_handler(*, create_raises: Exception | None = None,
