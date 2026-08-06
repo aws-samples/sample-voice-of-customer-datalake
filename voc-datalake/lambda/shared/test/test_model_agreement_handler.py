@@ -52,7 +52,9 @@ class _FakeConflict(Exception):
     pass
 
 
-def _load_handler(*, create_raises: Exception | None = None):
+def _load_handler(*, create_raises: Exception | None = None,
+                  availability_raises: Exception | None = None,
+                  offers_raises: Exception | None = None):
     """exec the extracted handler with boto3/botocore stubbed out."""
     calls: dict[str, int] = {'create': 0}
 
@@ -62,9 +64,13 @@ def _load_handler(*, create_raises: Exception | None = None):
             AccessDeniedException = _FakeClientError
 
         def get_foundation_model_availability(self, modelId):  # noqa: N803
+            if availability_raises is not None:
+                raise availability_raises
             return {'agreementAvailability': {'status': 'NOT_AVAILABLE'}}
 
         def list_foundation_model_agreement_offers(self, modelId):  # noqa: N803
+            if offers_raises is not None:
+                raise offers_raises
             return {'offers': [{'offerToken': 'tok'}]}
 
         def create_foundation_model_agreement(self, modelId, offerToken):  # noqa: N803
@@ -117,6 +123,36 @@ def test_access_denied_is_non_fatal_and_reported():
     assert result['Data']['status'] == 'UNAVAILABLE'
     assert result['Data']['modelId'] == 'anthropic.claude-sonnet-5'
     assert result['Data']['errorCode'] == 'AccessDeniedException'
+
+
+def test_access_denied_from_the_availability_call_STILL_RAISES():
+    """The absorption is scoped to create_foundation_model_agreement only.
+
+    An AccessDenied from get_foundation_model_availability means this stack's
+    own role lacks a permission — a real bug — so it must fail the deployment
+    instead of being reported as an unavailable model. (Caught in review of
+    PR #269: the first version wrapped the whole try block.)
+    """
+    handler, calls = _load_handler(
+        availability_raises=_FakeClientError('AccessDeniedException', 'no bedrock:GetFoundationModelAvailability')
+    )
+
+    with pytest.raises(_FakeClientError):
+        handler(_event(), None)
+
+    assert calls['create'] == 0, 'must fail before attempting the agreement'
+
+
+def test_access_denied_from_the_offers_call_STILL_RAISES():
+    """Same reasoning for list_foundation_model_agreement_offers."""
+    handler, calls = _load_handler(
+        offers_raises=_FakeClientError('AccessDeniedException', 'no bedrock:ListFoundationModelAgreementOffers')
+    )
+
+    with pytest.raises(_FakeClientError):
+        handler(_event(), None)
+
+    assert calls['create'] == 0
 
 
 def test_other_client_errors_still_fail_the_stack():

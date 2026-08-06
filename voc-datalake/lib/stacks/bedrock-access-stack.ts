@@ -391,12 +391,37 @@ def handler(event, context):
             raise Exception(f"Offer token not found for {model_id}")
         
         logger.info(f"Creating agreement for {model_id}")
-        
-        # Create the agreement (accepts EULA)
-        bedrock.create_foundation_model_agreement(
-            modelId=model_id,
-            offerToken=offer_token
-        )
+
+        # Create the agreement (accepts EULA).
+        # The non-fatal absorption below is scoped to THIS call only. An
+        # AccessDeniedException from get_foundation_model_availability or
+        # list_foundation_model_agreement_offers above means this stack's own
+        # role is missing a permission — a real bug — and must still fail the
+        # deployment rather than be reported as an unavailable model.
+        try:
+            bedrock.create_foundation_model_agreement(
+                modelId=model_id,
+                offerToken=offer_token
+            )
+        except ClientError as e:
+            code = e.response.get('Error', {}).get('Code', '')
+            if code not in NON_FATAL_ERROR_CODES:
+                # Includes ConflictException, which the outer handler below
+                # turns into ALREADY_EXISTS.
+                raise
+            # The account is not allowed to accept this model's agreement (e.g.
+            # a Private Marketplace restriction). Report it instead of failing:
+            # the models whose agreements DID succeed remain usable, and a
+            # model that is unavailable here would only surface as an
+            # AccessDenied at inference time anyway.
+            logger.warning(
+                f"Agreement unavailable for {model_id} ({code}): {str(e)}. "
+                "Continuing — this model will not be invocable in this account."
+            )
+            return {
+                'PhysicalResourceId': f'model-agreement-{model_id}',
+                'Data': {'status': 'UNAVAILABLE', 'modelId': model_id, 'errorCode': code}
+            }
         
         logger.info(f"Successfully created agreement for {model_id}")
         
@@ -411,29 +436,6 @@ def handler(event, context):
         return {
             'PhysicalResourceId': f'model-agreement-{model_id}',
             'Data': {'status': 'ALREADY_EXISTS', 'modelId': model_id}
-        }
-
-    except ClientError as e:
-        # MUST stay below the ConflictException handler: that exception is also
-        # a ClientError, so ordering it first would swallow the already-exists
-        # case. Only the codes in NON_FATAL_ERROR_CODES are absorbed; every
-        # other ClientError still raises and fails the stack.
-        code = e.response.get('Error', {}).get('Code', '')
-        if code not in NON_FATAL_ERROR_CODES:
-            logger.error(f"Error creating agreement for {model_id}: {str(e)}")
-            raise
-        # The account is not allowed to accept this model's agreement (e.g. a
-        # Private Marketplace restriction). Report it instead of failing: the
-        # models whose agreements DID succeed remain usable, and a model that
-        # is unavailable here would only surface as an AccessDenied at
-        # inference time anyway.
-        logger.warning(
-            f"Agreement unavailable for {model_id} ({code}): {str(e)}. "
-            "Continuing — this model will not be invocable in this account."
-        )
-        return {
-            'PhysicalResourceId': f'model-agreement-{model_id}',
-            'Data': {'status': 'UNAVAILABLE', 'modelId': model_id, 'errorCode': code}
         }
 
     except Exception as e:
