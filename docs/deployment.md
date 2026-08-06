@@ -92,7 +92,9 @@ Anthropic requires first-time customers to submit use case details before invoki
 
 ### Automatic Setup via CDK
 
-The `BedrockAccessStack` automates this process. To enable it:
+The model-access half of `VocWebSearchStack` automates this process (it was its
+own `BedrockAccessStack` before the two us-east-1 stacks were merged). To enable
+it:
 
 1. Copy the example config:
    ```bash
@@ -169,7 +171,22 @@ Access is granted immediately after successful submission.
 
 ## CDK Stacks
 
-The platform consists of 4 core stacks plus 2 optional ones:
+The platform consists of 4 core stacks plus 1 AI-enablement stack.
+
+> The web-search gateway and Bedrock model access used to be two separate
+> stacks (`VocWebSearchStack` and `BedrockAccessStack`). They were merged:
+> both must live in us-east-1, both are one-shot account enablement, and
+> neither depends on the core chain — and keeping them apart put the app at
+> six CloudFormation templates, one over the ceiling Workshop Studio allows.
+> The merged stack keeps the id `VocWebSearchStack` because that id determines
+> the export names `VocProcessingStack` and `VocApiStack` import.
+>
+> **Migrating an existing deployment:** run `cdk deploy --all` (the agreements
+> are recreated in `VocWebSearchStack` and re-run idempotently — Bedrock
+> agreements persist per account, so nothing is lost), then delete the old
+> stack with `cdk destroy BedrockAccessStack`. CDK does not remove a stack that
+> has been dropped from the app, so that second step is manual. No gateway is
+> recreated and there is no feature downtime.
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
@@ -177,8 +194,7 @@ The platform consists of 4 core stacks plus 2 optional ones:
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
-| `BedrockAccessStack` (optional) | Bedrock model access / Anthropic use case submission — created only when `anthropicUseCase` is set in `cdk.context.json` (see the conditional in `bin/voc-datalake.ts`) | None |
-| `VocWebSearchStack` (default-on, opt-out) | AgentCore Gateway for public web search — deployed by default, opt out via `enableWebSearch: false`; always deploys to us-east-1 (the connector only exists there). **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
+| `VocWebSearchStack` (AI enablement) | **Two independently switchable halves in one us-east-1 stack:** (a) the AgentCore Gateway for public web search — on by default, opt out via `enableWebSearch: false`; (b) Bedrock model access / Anthropic use-case submission — created only when `anthropicUseCase` is set in `cdk.context.json`. The stack is not created at all when both are off. Always deploys to us-east-1: the web-search connector exists only there, and `PutUseCaseForModelAccess` works only there. **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
 
 ### Deploy All Stacks
 
@@ -211,10 +227,12 @@ warning as a regression to investigate rather than noise to ignore.
 
 Due to dependencies, stacks should be deployed in this order:
 
-1. `VocCoreStack` (+ optional `BedrockAccessStack` / `VocWebSearchStack`, no dependencies)
-2. `VocIngestionStack`
-3. `VocProcessingStack`
-4. `VocApiStack`
+1. `VocWebSearchStack` (no dependencies — but it must come **before** Processing
+   and Api, which import its gateway exports when web search is enabled)
+2. `VocCoreStack` (no dependencies)
+3. `VocIngestionStack`
+4. `VocProcessingStack`
+5. `VocApiStack`
 
 The `cdk deploy --all` command handles this automatically.
 

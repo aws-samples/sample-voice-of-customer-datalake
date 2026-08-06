@@ -1,3 +1,14 @@
+/**
+ * NOTE ON THIS FILE'S NAME: it exports a Construct (BedrockModelAccess), not a
+ * stack, despite living in lib/stacks/ and being called *-stack.ts. This used
+ * to be BedrockAccessStack; it was folded into VocWebSearchStack to stay within
+ * Workshop Studio's five-template ceiling.
+ *
+ * The path was kept deliberately: lambda/shared/test/test_model_agreement_handler.py
+ * reads THIS path and regexes `getModelAgreementLambdaCode()` out of it to test
+ * the inline Python handler. Moving or renaming either silently breaks that
+ * suite. Rename both together if the inconsistency is worth fixing.
+ */
 import * as cdk from 'aws-cdk-lib';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -59,20 +70,28 @@ export type AnthropicUseCaseConfig = z.infer<typeof AnthropicUseCaseSchema>;
  */
 const REQUIRED_MODELS = [...ALLOWED_FOUNDATION_MODEL_IDS];
 
-export interface BedrockAccessStackProps extends cdk.StackProps {
+export interface BedrockModelAccessProps {
   /**
    * Anthropic use case configuration for first-time model access.
-   * If not provided, the stack will skip the use case submission.
+   *
+   * Required: the caller decides whether this half is deployed at all by
+   * choosing whether to construct it. See VocWebSearchStack.
    */
-  anthropicUseCase?: AnthropicUseCaseConfig;
-  
+  anthropicUseCase: AnthropicUseCaseConfig;
+
   /**
    * AWS region where the models will be used.
    * Model agreements are created in this region.
+   *
+   * This is a custom-resource *property*, not a placement decision — the
+   * handler does `boto3.client('bedrock', region_name=region)` — so the
+   * agreements land in the app's region even though this construct is hosted
+   * by a stack pinned to us-east-1.
+   *
    * Defaults to us-west-2.
    */
   modelRegion?: string;
-  
+
   /**
    * Skip the use case submission step.
    * @default false
@@ -81,43 +100,29 @@ export interface BedrockAccessStackProps extends cdk.StackProps {
 }
 
 /**
- * Stack that handles Anthropic model access for Amazon Bedrock.
- * 
- * This stack performs two operations:
+ * Bedrock model access for Anthropic models.
+ *
+ * Performs two operations:
  * 1. Submits the Anthropic use case form (required once per account, us-east-1 only)
  * 2. Creates model agreements for required Claude models (accepts EULA)
- * 
- * IMPORTANT: The PutUseCaseForModelAccess API ONLY works in us-east-1 region.
- * Model agreements can be created in any region where the models are available.
+ *
+ * IMPORTANT: The PutUseCaseForModelAccess API ONLY works in us-east-1, so the
+ * hosting stack must be pinned there. Model agreements can be created in any
+ * region where the models are available (see `modelRegion`).
+ *
+ * This is a Construct rather than a Stack: it is hosted by VocWebSearchStack,
+ * which is already pinned to us-east-1 for the same reason. The two used to be
+ * separate stacks, which put the app one template over Workshop Studio's
+ * five-template ceiling. Nothing else imports from this half — it publishes no
+ * consumed exports — so folding it in cost no cross-stack wiring.
  */
-export class BedrockAccessStack extends cdk.Stack {
-  public readonly accessGranted: boolean;
+export class BedrockModelAccess extends Construct {
+  constructor(scope: Construct, id: string, props: BedrockModelAccessProps) {
+    super(scope, id);
 
-  constructor(scope: Construct, id: string, props?: BedrockAccessStackProps) {
-    // CRITICAL: Force us-east-1 region - PutUseCaseForModelAccess only works there
-    super(scope, id, {
-      ...props,
-      env: {
-        ...props?.env,
-        region: 'us-east-1',
-      },
-      crossRegionReferences: true,
-    });
-
-    const anthropicUseCase = props?.anthropicUseCase;
-    const modelRegion = props?.modelRegion || props?.env?.region || 'us-west-2';
-
-    // Skip if no config provided
-    if (!anthropicUseCase) {
-      console.log('No Anthropic use case config provided. Skipping model access request.');
-      this.accessGranted = false;
-      
-      new cdk.CfnOutput(this, 'BedrockAccessStatus', {
-        value: 'SKIPPED - No anthropicUseCase config provided',
-        description: 'Status of Anthropic model access request',
-      });
-      return;
-    }
+    const stack = cdk.Stack.of(this);
+    const anthropicUseCase = props.anthropicUseCase;
+    const modelRegion = props.modelRegion || 'us-west-2';
 
     // Validate and transform config at runtime
     const parseResult = AnthropicUseCaseSchema.safeParse(anthropicUseCase);
@@ -152,7 +157,7 @@ export class BedrockAccessStack extends cdk.Stack {
     // Step 1: Submit Anthropic Use Case (us-east-1 only)
     // Skip for internal accounts
     // ============================================
-    const skipUseCaseSubmission = props?.skipUseCaseSubmission ?? false;
+    const skipUseCaseSubmission = props.skipUseCaseSubmission ?? false;
     let submitUseCase: cr.AwsCustomResource | undefined;
     
     if (!skipUseCaseSubmission) {
@@ -185,28 +190,33 @@ export class BedrockAccessStack extends cdk.Stack {
         installLatestAwsSdk: true,
       });
       
-      // Suppress CDK custom resource Lambda runtime warnings for AwsCustomResource
-      NagSuppressions.addResourceSuppressionsByPath(
-        this,
-        `${this.stackName}/SubmitAnthropicUseCase/CustomResourcePolicy/Resource`,
-        [...cdkCustomResourceSuppressions, ...bedrockAgreementSuppressions]
+      // Suppress CDK custom resource Lambda runtime warnings for AwsCustomResource.
+      // Object-based rather than path-based: this is now a Construct, so a
+      // hardcoded `<stackName>/SubmitAnthropicUseCase/...` path would no longer
+      // resolve (the real path gains this construct's id as a segment).
+      NagSuppressions.addResourceSuppressions(
+        submitUseCase,
+        [...cdkCustomResourceSuppressions, ...bedrockAgreementSuppressions],
+        true
       );
-      
-      // The AwsCustomResource construct creates a singleton Lambda with a deterministic UUID
+
+      // The AwsCustomResource construct creates a singleton Lambda with a
+      // deterministic UUID. It is scoped to the STACK, not to this construct,
+      // so these paths stay stack-relative.
       const customResourceId = `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
       const customResourceSuppressPaths = new Set([
-        `/${this.stackName}/${customResourceId}/ServiceRole/Resource`,
-        `/${this.stackName}/${customResourceId}/Resource`,
+        `/${stack.stackName}/${customResourceId}/ServiceRole/Resource`,
+        `/${stack.stackName}/${customResourceId}/Resource`,
       ]);
-      
+
       const allExistingPaths = new Set(
-        this.node.findAll().map((node) => `/${node.node.path}`)
+        stack.node.findAll().map((node) => `/${node.node.path}`)
       );
-      
+
       for (const path of customResourceSuppressPaths) {
         if (allExistingPaths.has(path)) {
           NagSuppressions.addResourceSuppressionsByPath(
-            this,
+            stack,
             path,
             [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
             true
@@ -258,9 +268,8 @@ export class BedrockAccessStack extends cdk.Stack {
     });
     
     // Suppress CDK custom resource Lambda runtime warnings for Provider
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      `${this.stackName}/ModelAgreementProvider/framework-onEvent`,
+    NagSuppressions.addResourceSuppressions(
+      modelAgreementProvider,
       [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions, ...pluginSystemSuppressions],
       true
     );
@@ -288,9 +297,8 @@ export class BedrockAccessStack extends cdk.Stack {
       }
     });
 
-    this.accessGranted = true;
-
-    // Outputs
+    // Outputs. Informational only — nothing imports these, which is precisely
+    // why this half could be folded into another stack without rewiring.
     new cdk.CfnOutput(this, 'BedrockAccessStatus', {
       value: 'SUBMITTED',
       description: 'Status of Anthropic model access request',
