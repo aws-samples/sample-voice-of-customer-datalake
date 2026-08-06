@@ -8,9 +8,10 @@ import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
 import { VocApiStack } from '../lib/stacks/api-stack';
 import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
-import { BedrockAccessStack, AnthropicUseCaseSchema } from '../lib/stacks/bedrock-access-stack';
+import { AnthropicUseCaseSchema, AnthropicUseCaseConfig } from '../lib/stacks/bedrock-access-stack';
 import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, comprehendSuppressions, translateSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
 import { shouldDeployWebSearch } from '../lib/utils/web-search-default';
+import { shouldDeployAiEnablement } from '../lib/utils/ai-enablement-default';
 
 const app = new cdk.App();
 
@@ -42,29 +43,65 @@ const env = {
 };
 
 // ============================================
-// Stack 0a: VocWebSearchStack (default-on, opt-out)
-// AgentCore Gateway for the AWS-managed web-search connector.
+// Stack 0: VocWebSearchStack — the us-east-1 AI-enablement stack
 // ============================================
-// Flag semantics live in lib/utils/web-search-default.ts (single source of
-// truth). Summary: deploys by default; `enableWebSearch: false` opts out;
-// unrecognized values throw. Per-request search stays opt-in in both UIs
-// ($7/1k queries; the gateway itself has no standing cost).
+// Two independently switchable halves in ONE stack, because they are one
+// deployment unit: both must live in us-east-1 (the web-search connector
+// exists only there; PutUseCaseForModelAccess works only there), both are
+// one-shot account enablement, and neither depends on the core stack chain.
+// They used to be two stacks, which put the app at six CloudFormation
+// templates — one over Workshop Studio's ceiling of five.
 //
-// The connector only exists in us-east-1, so the stack always deploys
-// there. When the app itself lives in another region this additionally
-// requires a us-east-1 bootstrap and CDK cross-region references.
+//   half 1: AgentCore Gateway for the AWS-managed web-search connector.
+//           Deploys by default; `enableWebSearch: false` opts out;
+//           unrecognized values throw. Flag semantics live in
+//           lib/utils/web-search-default.ts (single source of truth).
+//           Per-request search stays opt-in in both UIs ($7/1k queries; the
+//           gateway itself has no standing cost).
+//   half 2: Bedrock model access — Anthropic use-case submission plus the
+//           model agreements. Skipped entirely when `anthropicUseCase` is
+//           absent, e.g. for an account that already has access.
+//
+// The stack id stays `VocWebSearchStack` deliberately: it determines the
+// CloudFormation export names VocProcessingStack and VocApiStack import.
 const webSearchContextRaw = app.node.tryGetContext('enableWebSearch');
 const deployWebSearch = shouldDeployWebSearch(webSearchContextRaw);
 const webSearchCrossRegion = deployWebSearch && env.region !== 'us-east-1';
 
+// Accept either boolean true (from cdk.context.json) or string "true"
+// (from `--context skipUseCaseSubmission=true` on the CLI, which CDK always
+// parses as a string).
+const skipRaw = app.node.tryGetContext('skipUseCaseSubmission');
+const skipUseCaseSubmission = skipRaw === true || skipRaw === 'true';
+
+const anthropicUseCaseRaw = app.node.tryGetContext('anthropicUseCase');
+let anthropicUseCase: AnthropicUseCaseConfig | undefined;
+if (anthropicUseCaseRaw) {
+  const parseResult = AnthropicUseCaseSchema.safeParse(anthropicUseCaseRaw);
+  if (parseResult.success) {
+    anthropicUseCase = parseResult.data;
+  } else {
+    console.warn('⚠️  Invalid anthropicUseCase config in cdk.context.json:');
+    console.warn(parseResult.error.format());
+    console.warn('Skipping Bedrock model access. See cdk.context.example.json for the required format.');
+  }
+}
+
 let webSearchStack: VocWebSearchStack | undefined;
-if (deployWebSearch) {
+if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
   webSearchStack = new VocWebSearchStack(app, 'VocWebSearchStack', {
     env: { account: env.account, region: 'us-east-1' },
-    crossRegionReferences: webSearchCrossRegion,
-    description: 'VoC Data Lake - Web Search (AgentCore Gateway, web-search connector) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
+    // Unconditionally true, matching what the model-access half required when
+    // it was its own us-east-1 stack. CDK only emits the SSM cross-region
+    // machinery when the regions actually differ, so this only *permits* it.
+    crossRegionReferences: true,
+    description: 'VoC Data Lake - AI Enablement (web search gateway, Bedrock model access) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
+    deployWebSearch,
+    anthropicUseCase,
+    modelRegion: env.region, // Create model agreements in the same region as other stacks
+    skipUseCaseSubmission,
   });
-  tagStack(webSearchStack, 'WebSearch');
+  tagStack(webSearchStack, 'AiEnablement');
   if (webSearchCrossRegion) {
     // Upgrade hint (issue #205): web search now deploys by default, and a
     // non-us-east-1 app needs a us-east-1 bootstrap for the cross-region
@@ -74,38 +111,6 @@ if (deployWebSearch) {
       `Web search deploys by default and requires a us-east-1 bootstrap when the app region is ${env.region} ` +
       '(cdk bootstrap aws://ACCOUNT/us-east-1). Opt out with -c enableWebSearch=false.',
     );
-  }
-}
-
-// ============================================
-// Stack 0: BedrockAccessStack (Optional)
-// Submits Anthropic use case for first-time access
-// ============================================
-const anthropicUseCaseRaw = app.node.tryGetContext('anthropicUseCase');
-let bedrockAccessStack: BedrockAccessStack | undefined;
-
-if (anthropicUseCaseRaw) {
-  // Validate the config using Zod schema
-  const parseResult = AnthropicUseCaseSchema.safeParse(anthropicUseCaseRaw);
-  // Accept either boolean true (from cdk.context.json) or string "true"
-  // (from `--context skipUseCaseSubmission=true` on the CLI, which CDK always
-  // parses as a string).
-  const skipRaw = app.node.tryGetContext('skipUseCaseSubmission');
-  const skipUseCaseSubmission = skipRaw === true || skipRaw === 'true';
-  
-  if (parseResult.success) {
-    bedrockAccessStack = new BedrockAccessStack(app, 'BedrockAccessStack', {
-      env,
-      description: 'VoC Data Lake - Bedrock Access (Anthropic Use Case & Model Agreements) (uksb-0q2jyqfvlm)(tag:BedrockAccessStack)',
-      anthropicUseCase: parseResult.data,
-      modelRegion: env.region, // Create model agreements in the same region as other stacks
-      skipUseCaseSubmission,
-    });
-    tagStack(bedrockAccessStack, 'BedrockAccess');
-  } else {
-    console.warn('⚠️  Invalid anthropicUseCase config in cdk.context.json:');
-    console.warn(parseResult.error.format());
-    console.warn('Skipping BedrockAccessStack. See cdk.context.example.json for the required format.');
   }
 }
 
@@ -208,10 +213,14 @@ tagStack(apiStack, 'Api');
 // Apply cdk-nag checks
 Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
 
-// Global suppressions
-if (bedrockAccessStack) {
-  NagSuppressions.addStackSuppressions(bedrockAccessStack, [...pluginSystemSuppressions, ...comprehendSuppressions, ...translateSuppressions], true);
-}
+// Global suppressions.
+// VocWebSearchStack deliberately gets NONE: the gateway half has always passed
+// cdk-nag unsuppressed (its IAM is scoped to the concrete gateway ARN), and the
+// model-access half carries its own resource-scoped suppressions inside
+// BedrockModelAccess. The plugin/Comprehend/Translate sets that used to be
+// applied to BedrockAccessStack at stack level were copy-paste — that stack
+// calls neither service — so they are dropped rather than inherited by the
+// gateway resources.
 NagSuppressions.addStackSuppressions(coreStack, [...lambdaBasicExecutionRoleSuppressions, ...cdkAssetsSuppressions], true);
 // Apply stack-level suppressions
 NagSuppressions.addStackSuppressions(ingestionStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions], true);

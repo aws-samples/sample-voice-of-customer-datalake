@@ -48,22 +48,34 @@ Always run quality checks before deploying:
 
 ```bash
 # From project root
-npm run lint         # ESLint code quality
-npm run typecheck    # TypeScript type checking
-npm run test         # Run test suite
+npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins/
+npm run typecheck    # frontend TypeScript only
+npm run test         # frontend Vitest only
 
 # Or run all at once
-npm run check        # lint + typecheck + test
+npm run check        # lint + typecheck:all + test + test:cdk + test:stream + test:backend
 ```
 
 ### What Each Check Does
 
-| Command | Description |
-|---------|-------------|
-| `npm run lint` | Runs ESLint to catch code quality issues |
-| `npm run typecheck` | Runs TypeScript compiler to verify types |
-| `npm run test` | Runs Vitest test suite (frontend + CDK) |
-| `npm run test:coverage` | Runs tests with coverage report |
+| Command | Covers |
+|---------|--------|
+| `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`) |
+| `npm run typecheck` | Frontend only — use `typecheck:all` for frontend + CDK + stream |
+| `npm run test` | Frontend Vitest only |
+| `npm run test:cdk` | CDK Vitest (`voc-datalake`) |
+| `npm run test:stream` | Streaming chat Lambda Vitest |
+| `npm run test:backend` | Python pytest via `.venv/bin/python` |
+| `npm run check` | All of the above, chained with `&&` |
+| `npm run test:coverage` | Frontend tests with coverage report |
+
+Two things to know about the gate:
+
+- **`check` chains with `&&`, so the first failure hides every later step.** If
+  `lint:python` fails you never find out whether the CDK or backend tests pass.
+  When triaging, run the individual scripts rather than inferring from `check`.
+- **There is no ESLint leg for the CDK TypeScript.** `bin/` and `lib/` are covered
+  only by `typecheck:cdk`, so "lint is clean" says nothing about the CDK app.
 
 ### Python Lambda Tests
 
@@ -92,7 +104,9 @@ Anthropic requires first-time customers to submit use case details before invoki
 
 ### Automatic Setup via CDK
 
-The `BedrockAccessStack` automates this process. To enable it:
+The model-access half of `VocWebSearchStack` automates this process (it was its
+own `BedrockAccessStack` before the two us-east-1 stacks were merged). To enable
+it:
 
 1. Copy the example config:
    ```bash
@@ -169,7 +183,27 @@ Access is granted immediately after successful submission.
 
 ## CDK Stacks
 
-The platform consists of 4 core stacks plus 2 optional ones:
+The platform consists of 4 core stacks plus 1 AI-enablement stack.
+
+> The web-search gateway and Bedrock model access used to be two separate
+> stacks (`VocWebSearchStack` and `BedrockAccessStack`). They were merged
+> because they are the same deployment unit: both must live in us-east-1, both
+> are one-shot account enablement built from custom resources, and neither
+> depends on the core chain. The merged stack keeps the id `VocWebSearchStack`
+> because that id determines the export names `VocProcessingStack` and
+> `VocApiStack` import.
+>
+> **Adding a stack is not a free action.** A downstream packaging consumer of
+> this repo caps the template count at five, so a sixth stack breaks it — and
+> the failure appears only at packaging time, never at `cdk synth`. Prefer
+> folding new infrastructure into an existing stack.
+>
+> **Migrating an existing deployment:** run `cdk deploy --all` (the agreements
+> are recreated in `VocWebSearchStack` and re-run idempotently — Bedrock
+> agreements persist per account, so nothing is lost), then delete the old
+> stack with `cdk destroy BedrockAccessStack`. CDK does not remove a stack that
+> has been dropped from the app, so that second step is manual. No gateway is
+> recreated and there is no feature downtime.
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
@@ -177,8 +211,7 @@ The platform consists of 4 core stacks plus 2 optional ones:
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
-| `BedrockAccessStack` (optional) | Bedrock model access / Anthropic use case submission — created only when `anthropicUseCase` is set in `cdk.context.json` (see the conditional in `bin/voc-datalake.ts`) | None |
-| `VocWebSearchStack` (default-on, opt-out) | AgentCore Gateway for public web search — deployed by default, opt out via `enableWebSearch: false`; always deploys to us-east-1 (the connector only exists there). **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
+| `VocWebSearchStack` (AI enablement) | **Two independently switchable halves in one us-east-1 stack:** (a) the AgentCore Gateway for public web search — on by default, opt out via `enableWebSearch: false`; (b) Bedrock model access / Anthropic use-case submission — created only when `anthropicUseCase` is set in `cdk.context.json`. The stack is not created at all when both are off. Always deploys to us-east-1: the web-search connector exists only there, and `PutUseCaseForModelAccess` works only there. **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
 
 ### Deploy All Stacks
 
@@ -211,10 +244,12 @@ warning as a regression to investigate rather than noise to ignore.
 
 Due to dependencies, stacks should be deployed in this order:
 
-1. `VocCoreStack` (+ optional `BedrockAccessStack` / `VocWebSearchStack`, no dependencies)
-2. `VocIngestionStack`
-3. `VocProcessingStack`
-4. `VocApiStack`
+1. `VocWebSearchStack` (no dependencies — but it must come **before** Processing
+   and Api, which import its gateway exports when web search is enabled)
+2. `VocCoreStack` (no dependencies)
+3. `VocIngestionStack`
+4. `VocProcessingStack`
+5. `VocApiStack`
 
 The `cdk deploy --all` command handles this automatically.
 
@@ -378,6 +413,16 @@ there. Deployment is **on by default** (opt out with
   (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`); CDK cross-region references
   carry the gateway URL/ARN to the app region.
 
+> **Setting the app region:** `bin/voc-datalake.ts` reads
+> `process.env.CDK_DEFAULT_REGION`, but **the CDK CLI overwrites that variable**
+> for the app subprocess from the resolved AWS environment — exporting it
+> yourself has no effect. Use `AWS_REGION` / `AWS_DEFAULT_REGION`, or
+> `--profile`. (Observed with the CDK CLI pinned in `voc-datalake/package.json`;
+> re-check if that behaviour ever changes, since the guidance below depends on
+> it.) This matters here because `VocWebSearchStack` is the only
+> region-pinned stack, so it is the only one whose region can differ from the
+> app's, and that difference is what triggers the cross-region wiring above.
+
 **Data residency note:** search queries are processed by the connector in
 us-east-1 regardless of where the app is deployed. Queries are derived from
 user input — the research question is sent as-is, and in chat the model
@@ -388,6 +433,44 @@ The frontend discovers availability through the `features.webSearch` flag in
 `config.json` (set by CDK and by `scripts/deploy.sh` from the
 `WebSearchAvailable` stack output). For local development against the mock,
 set `VITE_ENABLE_WEB_SEARCH=true`.
+
+### Pinning All AI Surfaces to One Model
+
+Each AI surface (chat, documents, prototypes, enrichment, utilities) has its own
+default model, and some accounts cannot invoke all of them — Bedrock model access
+is granted per account, and organizations behind an AWS Private Marketplace are
+commonly restricted to a subset. When a surface's default is unavailable, that
+feature fails at inference time with `AccessDeniedException`.
+
+To pin every surface to one known-available model at deploy time:
+
+```bash
+cdk deploy --all -c defaultModelId=global.anthropic.claude-sonnet-4-6
+```
+
+This creates a `Custom::ModelPin` resource in `VocCoreStack` that writes
+`model_id` to the `SETTINGS#model` configuration item. Behaviour worth knowing:
+
+- **Write-once.** The value is only set if absent, so an administrator's later
+  choice in Settings is never clobbered by a redeploy. It is a floor, not a lock —
+  per-surface overrides still take precedence.
+- **Validated at synth.** The id must be in `ALLOWED_MODEL_IDS`
+  (`lib/utils/model-allowlist.ts`); an unrecognized value fails the synth rather
+  than being silently discarded at read time and falling back to the very
+  defaults the flag exists to bypass.
+- **Absent flag creates nothing** — no Lambda, no custom resource, no log group.
+  Deployments that don't need it are unaffected.
+
+To check which models an account can actually invoke, call Converse — agreement
+and availability APIs can report a model as available when inference still
+returns `AccessDeniedException`:
+
+```bash
+aws bedrock-runtime converse --region us-east-1 \
+  --model-id global.anthropic.claude-sonnet-4-6 \
+  --messages '[{"role":"user","content":[{"text":"say ok"}]}]' \
+  --inference-config '{"maxTokens":5}'
+```
 
 After changing configuration:
 

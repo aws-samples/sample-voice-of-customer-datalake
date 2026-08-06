@@ -46,27 +46,48 @@ npm run deploy:all   # Deploys all CDK stacks + frontend
 Always run quality checks before deploying:
 
 ```bash
-# From project root
-npm run lint         # ESLint code quality
-npm run typecheck    # TypeScript type checking
-npm run test         # Run test suite
+# From project root ONLY — voc-datalake/package.json has no `lint` script
+npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins/
+npm run typecheck    # frontend ONLY (use typecheck:all for frontend + CDK + stream)
+npm run test         # frontend ONLY
 
-# Or run all at once
-npm run check        # lint + typecheck + test
+npm run check        # lint && typecheck:all && test && test:cdk && test:stream && test:backend
 ```
 
 ### What Each Check Does
 
-| Command | Description |
-|---------|-------------|
-| `npm run lint` | Runs ESLint to catch code quality issues |
-| `npm run typecheck` | Runs TypeScript compiler to verify types |
-| `npm run test` | Runs Vitest test suite |
-| `npm run test:coverage` | Runs tests with coverage report |
+| Command | Covers |
+|---------|--------|
+| `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`) |
+| `npm run typecheck` | Frontend only |
+| `npm run typecheck:all` | Frontend + CDK (`typecheck:cdk`) + stream |
+| `npm run test` | Frontend Vitest |
+| `npm run test:cdk` / `test:stream` / `test:backend` | CDK Vitest / stream Vitest / pytest via `.venv/bin/python` |
+| `npm run check` | All of the above, chained with `&&` |
+
+**Two traps when using `check` as a gate:**
+
+- **It chains with `&&`, so the first failure hides every later step.** A
+  `lint:python` failure means you never learn whether the CDK or backend tests
+  pass. When triaging, run the individual scripts.
+- **There is no ESLint leg for the CDK TypeScript.** `bin/` and `lib/` are covered
+  only by `typecheck:cdk` — "lint is clean" says nothing about the CDK app.
 
 ## CDK Stacks
 
-The platform consists of 4 core stacks plus 2 optional ones:
+The platform consists of 4 core stacks plus 1 AI-enablement stack.
+
+> ### ⚠️ The stack count is capped at 5 — adding a stack is not a free action
+>
+> A downstream packaging consumer of this repo accepts at most **five**
+> CloudFormation templates, and the app is at exactly five. A sixth breaks
+> packaging, and the failure appears only there — never at `cdk synth`. Fold new
+> infrastructure into an existing stack, or drop one first.
+>
+> This is why the web-search gateway and Bedrock model access share
+> `VocWebSearchStack`. Nested stacks are not an escape hatch: `NestedStackProps`
+> has no `env`, so a nested stack inherits the parent region, and that stack must
+> be pinned to us-east-1.
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
@@ -74,8 +95,7 @@ The platform consists of 4 core stacks plus 2 optional ones:
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
-| `BedrockAccessStack` (optional) | Bedrock model access / Anthropic use case | None |
-| `VocWebSearchStack` (optional) | AgentCore web-search gateway — `-c enableWebSearch=true`, always us-east-1 | None |
+| `VocWebSearchStack` (AI enablement, always us-east-1) | Two independently switchable halves: AgentCore web-search gateway (default-on, `-c enableWebSearch=false` opts out) + Bedrock model access / Anthropic use case (only when `anthropicUseCase` is set). Not created when both are off | None |
 
 ### Deploy All Stacks
 
@@ -104,10 +124,12 @@ cdk deploy --all --require-approval never
 
 Due to dependencies, stacks should be deployed in this order:
 
-1. `VocCoreStack` (+ optional `BedrockAccessStack` / `VocWebSearchStack`, no dependencies)
-2. `VocIngestionStack`
-3. `VocProcessingStack`
-4. `VocApiStack`
+1. `VocWebSearchStack` (no dependencies, but must precede Processing/Api, which
+   import its gateway exports when web search is enabled)
+2. `VocCoreStack`
+3. `VocIngestionStack`
+4. `VocProcessingStack`
+5. `VocApiStack`
 
 The `cdk deploy --all` command handles this automatically.
 

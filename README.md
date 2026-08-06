@@ -11,7 +11,7 @@ A fully serverless AWS platform for ingesting, processing, and analyzing custome
 - **Plugin-Based Architecture**: Extensible data source plugins, easily create your own
 - **AI-Powered Analysis**: Amazon Bedrock (Claude) for sentiment, categorization, and insights
 - **Per-Surface Model Picker**: admins choose the Claude model per AI feature (chat, documents, prototypes, enrichment) over a curated allowlist
-- **Opt-In Web Search**: AgentCore Gateway connector for chat and research (`enableWebSearch: true`)
+- **Web Search**: AgentCore Gateway connector for chat and research — deployed by default, searches stay opt-in per request (opt out with `enableWebSearch: false`)
 - **Real-Time Processing**: Event-driven with SQS and DynamoDB Streams
 - **Multi-Language Support**: Auto-detection and translation
 - **React Dashboard**: Metrics, charts, AI chat, and project management

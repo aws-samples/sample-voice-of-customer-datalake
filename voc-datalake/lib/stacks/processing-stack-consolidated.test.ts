@@ -200,3 +200,48 @@ describe('research Lambda bundle stages its prompt config', () => {
     }
   });
 });
+
+describe('web-search wiring is skipped cleanly when the gateway is absent', () => {
+  /**
+   * Reachable combination since the AI-enablement stacks were merged: the stack
+   * exists (for the Bedrock model-access half) while `deployWebSearch` is false,
+   * so `webSearchGatewayUrl`/`Arn`/`ToolName` are undefined. This is also the
+   * shape every `-c enableWebSearch=false` deployment produces.
+   *
+   * The guard at processing-stack-consolidated.ts:290 is what keeps that from
+   * synthesizing an env var or an IAM statement containing the string
+   * "undefined". These assertions fail if that guard is dropped or inverted.
+   */
+  const template = synthProcessingTemplate(); // helper omits the web-search props
+
+  it('sets no WEB_SEARCH environment variables on the research Lambda', () => {
+    const functions = Object.values(template.findResources('AWS::Lambda::Function'));
+    const webSearchVars = functions.flatMap((fn) => {
+      const vars: unknown = fn.Properties?.Environment?.Variables;
+      return vars && typeof vars === 'object'
+        ? Object.keys(vars).filter((k) => k.startsWith('WEB_SEARCH'))
+        : [];
+    });
+    expect(webSearchVars).toEqual([]);
+  });
+
+  it('grants no bedrock-agentcore permissions', () => {
+    // Scoped to IAM policy actions rather than a whole-template string match:
+    // a blanket search would also fire on an unrelated future mention and give
+    // a failure with no pointer to the guard it protects.
+    const actions = Object.values(template.findResources('AWS::IAM::Policy'))
+      .flatMap((policy) => policy.Properties?.PolicyDocument?.Statement ?? [])
+      .flatMap((statement: { Action?: string | string[] }) =>
+        typeof statement.Action === 'string' ? [statement.Action] : statement.Action ?? []);
+    expect(actions.filter((a) => a.startsWith('bedrock-agentcore'))).toEqual([]);
+  });
+
+  it('leaks no "undefined" into any Lambda environment value', () => {
+    // The concrete failure mode if the guard were dropped: an absent gateway
+    // URL/tool name stringified into an env var.
+    const values = Object.values(template.findResources('AWS::Lambda::Function'))
+      .flatMap((fn) => Object.values(fn.Properties?.Environment?.Variables ?? {}))
+      .filter((v): v is string => typeof v === 'string');
+    expect(values.filter((v) => v.includes('undefined'))).toEqual([]);
+  });
+});

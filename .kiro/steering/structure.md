@@ -308,7 +308,9 @@ VocCoreStack (DynamoDB tables, S3 raw data bucket, KMS, Cognito, CloudFront)
        │           │
        │           └── Depends on: processingQueue, secretsArn, researchStateMachine, userPool
 
-Optional stacks with NO dependency on the core chain:
-  BedrockAccessStack (Bedrock model access / Anthropic use case)
-  VocWebSearchStack (us-east-1: AgentCore web-search gateway, -c enableWebSearch=true)
+AI-enablement stack, NO dependency on the core chain (but Processing/Api import
+its gateway exports, so it deploys first):
+  VocWebSearchStack (always us-east-1) = web-search gateway (default-on, opt out
+    with -c enableWebSearch=false) + Bedrock model access / Anthropic use case
+    (only when anthropicUseCase is set). Not created when both halves are off.
 ```

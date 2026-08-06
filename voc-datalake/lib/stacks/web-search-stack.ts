@@ -3,17 +3,39 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as bedrockagentcore from 'aws-cdk-lib/aws-bedrockagentcore';
 import { Construct } from 'constructs';
 import { uniqueName } from '../utils/naming';
+import { BedrockModelAccess, AnthropicUseCaseConfig } from './bedrock-access-stack';
 
 /**
- * VocWebSearchStack — AgentCore Gateway exposing the AWS-managed
- * `web-search` connector as an MCP tool.
+ * VocWebSearchStack — the us-east-1 AI-enablement stack. Two independent
+ * halves, each switched on or off by the caller:
  *
- * Used by AI Chat and Projects research for opt-in public-web grounding.
- * Queries are served entirely within AWS (no third-party search engine).
+ *   1. an AgentCore Gateway exposing the AWS-managed `web-search` connector
+ *      as an MCP tool (`deployWebSearch`);
+ *   2. Bedrock model access — the Anthropic use-case submission and the model
+ *      agreements (`anthropicUseCase`).
  *
- * This stack is ALWAYS deployed to us-east-1: the web-search connector is
- * only available there. The rest of the app can live in any region — the
- * chat-stream and research Lambdas call the gateway URL cross-region over
+ * They live together because they are the same deployment unit: both must sit
+ * in us-east-1 (the web-search connector exists only there; the
+ * PutUseCaseForModelAccess API works only there), both are one-shot account
+ * enablement built from custom resources, and neither depends on the core
+ * stack chain. Keeping them apart put the app at six CloudFormation templates,
+ * one over Workshop Studio's ceiling of five.
+ *
+ * ⚠️ The stack is named for the web-search half only, for a deliberate reason:
+ * the CDK id determines the CloudFormation export names that VocProcessingStack
+ * and VocApiStack import. Renaming it would recreate the gateway (whose
+ * physical name is deterministic, so the new one would collide with the live
+ * one) and churn both consumer templates. The name is inherited debt, not a
+ * description — rename it only as part of a planned migration.
+ *
+ * Callers must not construct this stack with BOTH halves off: the result has no
+ * resources, and the workshop template converter strips CDKMetadata, so it
+ * would emit an invalid `Resources: {}`. Use shouldDeployAiEnablement().
+ *
+ * Web-search half: used by AI Chat and Projects research for opt-in
+ * public-web grounding. Queries are served entirely within AWS (no
+ * third-party search engine). The rest of the app can live in any region —
+ * the chat-stream and research Lambdas call the gateway URL cross-region over
  * HTTPS with SigV4, and the gateway URL/ARN flow to those stacks via CDK
  * cross-region references (SSM-backed when regions differ).
  *
@@ -25,13 +47,77 @@ import { uniqueName } from '../utils/naming';
  * Cost note: Web Search invocations are billed at $7 per 1,000 queries.
  * The feature is opt-in per request in both UIs.
  */
-export class VocWebSearchStack extends cdk.Stack {
-  public readonly gatewayUrl: string;
-  public readonly gatewayArn: string;
-  public readonly toolName: string;
+export interface VocWebSearchStackProps extends cdk.StackProps {
+  /**
+   * Create the AgentCore Gateway half. When false, the gateway, its role and
+   * its target are not synthesized at all and the `gateway*` properties are
+   * undefined — consumers already treat them as optional and skip the wiring.
+   */
+  deployWebSearch: boolean;
 
-  constructor(scope: Construct, id: string, props: cdk.StackProps) {
+  /**
+   * Create the Bedrock model-access half. Omit for accounts that already have
+   * Anthropic access; the agreements are then neither created nor needed.
+   */
+  anthropicUseCase?: AnthropicUseCaseConfig;
+
+  /**
+   * Region the model agreements are created in — normally the app's region, not
+   * this stack's.
+   *
+   * Optional here but **required whenever `anthropicUseCase` is set**, and
+   * validated as such: a gateway-only caller has no model agreements, so
+   * forcing it to invent a value it never reads would be noise. There is
+   * deliberately no default — see BedrockModelAccessProps.
+   */
+  modelRegion?: string;
+
+  /** @default false */
+  skipUseCaseSubmission?: boolean;
+}
+
+export class VocWebSearchStack extends cdk.Stack {
+  /** Undefined when `deployWebSearch` is false. */
+  public readonly gatewayUrl?: string;
+  public readonly gatewayArn?: string;
+  public readonly toolName?: string;
+
+  constructor(scope: Construct, id: string, props: VocWebSearchStackProps) {
     super(scope, id, props);
+
+    // Enforce the invariant here rather than trusting the caller: with both
+    // halves off this stack has no resources, and scripts/convert-template.mjs
+    // strips CDKMetadata, so the workshop artifact would be an invalid
+    // `Resources: {}`. shouldDeployAiEnablement() decides whether to construct
+    // it at all; this makes skipping that decision impossible.
+    if (!props.deployWebSearch && !props.anthropicUseCase) {
+      throw new Error(
+        `${id}: both halves are disabled (deployWebSearch=false and no anthropicUseCase), ` +
+        'which would synthesize a stack with no resources. Use shouldDeployAiEnablement() ' +
+        'to decide whether to construct this stack.',
+      );
+    }
+
+    if (props.anthropicUseCase) {
+      if (!props.modelRegion) {
+        throw new Error(
+          `${id}: modelRegion is required when anthropicUseCase is set — it decides where the ` +
+          'model agreements are created, and this stack is pinned to us-east-1 regardless of ' +
+          'where the app runs. Pass the app region.',
+        );
+      }
+      new BedrockModelAccess(this, 'BedrockModelAccess', {
+        anthropicUseCase: props.anthropicUseCase,
+        modelRegion: props.modelRegion,
+        skipUseCaseSubmission: props.skipUseCaseSubmission,
+      });
+    }
+
+    if (!props.deployWebSearch) {
+      // Gateway half off. The stack still holds the model-access half — the
+      // caller is responsible for not constructing it with both halves off.
+      return;
+    }
 
     // Service role the Gateway assumes to reach the AWS-owned connector.
     // Trust is scoped to this account so another account's gateway cannot
