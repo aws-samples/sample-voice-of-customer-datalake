@@ -14,8 +14,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { uniqueName } from '../utils/naming';
+import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
 import { NagSuppressions } from 'cdk-nag';
-import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions } from '../utils/nag-suppressions';
+import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions } from '../utils/nag-suppressions';
 
 export interface VocCoreStackProps extends cdk.StackProps {
   brandName: string;
@@ -759,6 +760,96 @@ export class VocCoreStack extends cdk.Stack {
       ],
       true
     );
+
+    // ============================================
+    // GLOBAL MODEL PIN (opt-in, for accounts that cannot use the newest models)
+    // ============================================
+    // `-c defaultModelId=<allowlisted id>` seeds settings.model_id, the legacy
+    // global override that outranks SURFACE_DEFAULTS in both resolvers
+    // (shared/model_config.py and lambda/stream/src/bedrock/model-override.ts).
+    // One attribute therefore repoints every AI surface without touching the
+    // built-in defaults, so deployments that CAN use the newer models are
+    // unaffected.
+    //
+    // Motivating case: Workshop Studio events sit behind a Private Marketplace
+    // that refuses the model agreements for Sonnet 5 / Opus 5, and they are
+    // fully automated — there is no human to pick a model per participant
+    // account. Without the flag nothing below is created at all.
+    const defaultModelIdRaw = this.node.tryGetContext('defaultModelId');
+    if (defaultModelIdRaw !== undefined && defaultModelIdRaw !== null && defaultModelIdRaw !== '') {
+      const defaultModelId = String(defaultModelIdRaw);
+      // Fail at synth rather than writing a value the app would ignore:
+      // _allowlisted() drops non-allowlisted ids at read time, which would
+      // silently fall back to the defaults this flag exists to avoid.
+      if (!ALLOWED_MODEL_IDS.includes(defaultModelId)) {
+        throw new Error(
+          `defaultModelId '${defaultModelId}' is not in the model allowlist. ` +
+          `Allowed: ${ALLOWED_MODEL_IDS.join(', ')}`,
+        );
+      }
+
+      const modelPinLambda = new lambda.Function(this, 'ModelPinLambda', {
+        functionName: uniqueName('voc-model-pin'),
+        runtime: lambda.Runtime.PYTHON_3_14,
+        architecture: lambda.Architecture.ARM_64,
+        handler: 'index.handler',
+        // Real, unit-tested file (lambda/custom_resources/test), inlined so a
+        // small handler needs no asset bundling — same pattern as
+        // AdminBootstrapLambda.
+        code: lambda.Code.fromInline(
+          fs.readFileSync(path.join(__dirname, '../../lambda/custom_resources/model_pin.py'), 'utf8'),
+        ),
+        timeout: cdk.Duration.minutes(1),
+        description: 'Seeds the global Bedrock model pin (create once, never reset)',
+        logGroup: new logs.LogGroup(this, 'ModelPinLambdaLogs', {
+          retention: logs.RetentionDays.TWO_WEEKS,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
+      });
+      this.aggregatesTable.grantWriteData(modelPinLambda);
+
+      const modelPinProvider = new cr.Provider(this, 'ModelPinProvider', {
+        onEventHandler: modelPinLambda,
+        logGroup: new logs.LogGroup(this, 'ModelPinProviderLogs', {
+          retention: logs.RetentionDays.ONE_WEEK,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
+      });
+
+      new cdk.CustomResource(this, 'ModelPin', {
+        serviceToken: modelPinProvider.serviceToken,
+        resourceType: 'Custom::ModelPin',
+        properties: {
+          TableName: this.aggregatesTable.tableName,
+          ModelId: defaultModelId,
+        },
+      });
+
+      new cdk.CfnOutput(this, 'DefaultModelPin', { value: defaultModelId });
+
+      // grantWriteData() emits the standard GSI (<TableArn>/index/*) and KMS
+      // (GenerateDataKey*/ReEncrypt*) wildcards, so reuse the shared
+      // suppressions rather than restating the same evidence.
+      NagSuppressions.addResourceSuppressions(
+        modelPinLambda,
+        [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions],
+        true,
+      );
+      NagSuppressions.addResourceSuppressionsByPath(
+        this,
+        `${this.stackName}/ModelPinProvider/framework-onEvent`,
+        [
+          ...cdkCustomResourceSuppressions,
+          ...lambdaBasicExecutionRoleSuppressions,
+          {
+            id: 'AwsSolutions-IAM5',
+            reason: 'The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to ModelPinLambda only (same pattern as AdminBootstrapLambda).',
+            appliesTo: [{ regex: '/Resource::<.*ModelPinLambda.*\\.Arn>:\\*/' }],
+          },
+        ],
+        true
+      );
+    }
 
     // ============================================
     // COGNITO IDENTITY POOL (for AWS IAM authentication)
