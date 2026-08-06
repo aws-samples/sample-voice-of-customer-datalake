@@ -47,12 +47,13 @@ const ANTHROPIC_USE_CASE = {
   otherIndustryOption: '',
 };
 
-function synth(props: Omit<VocWebSearchStackProps, 'env'>): Template {
+function synth(props: Omit<VocWebSearchStackProps, 'env' | 'modelRegion'> & { modelRegion?: string }): Template {
   // Skip asset bundling — template assertions only need structure.
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
   const stack = new VocWebSearchStack(app, 'VocWebSearchStack', {
     env: { account: '111111111111', region: 'us-east-1' },
     crossRegionReferences: true,
+    modelRegion: 'us-east-1',
     ...props,
   });
   return Template.fromStack(stack);
@@ -104,6 +105,7 @@ describe('VocWebSearchStack — the cross-stack contract with Processing and Api
     const producer = new VocWebSearchStack(app, 'VocWebSearchStack', {
       env,
       crossRegionReferences: true,
+      modelRegion: 'us-east-1',
       deployWebSearch: true,
       anthropicUseCase: ANTHROPIC_USE_CASE,
     });
@@ -124,6 +126,7 @@ describe('VocWebSearchStack — the cross-stack contract with Processing and Api
     const stack = new VocWebSearchStack(app, 'VocWebSearchStack', {
       env: { account: '111111111111', region: 'us-east-1' },
       crossRegionReferences: true,
+      modelRegion: 'us-east-1',
       deployWebSearch: false,
       anthropicUseCase: ANTHROPIC_USE_CASE,
     });
@@ -178,6 +181,21 @@ describe('VocWebSearchStack — model agreements target the app region, not the 
       region: 'eu-central-1',
       modelId: ALLOWED_FOUNDATION_MODEL_IDS[0],
     });
+  });
+});
+
+describe('VocWebSearchStack — the both-halves-off invariant is enforced, not just documented', () => {
+  it('throws rather than synthesizing a resource-less stack', () => {
+    // An empty stack becomes an invalid `Resources: {}` once
+    // convert-template.mjs strips CDKMetadata, so this must be impossible to
+    // reach even if a caller skips shouldDeployAiEnablement().
+    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
+    expect(() => new VocWebSearchStack(app, 'VocWebSearchStack', {
+      env: { account: '111111111111', region: 'us-east-1' },
+      crossRegionReferences: true,
+      modelRegion: 'us-east-1',
+      deployWebSearch: false,
+    })).toThrow(/both halves are disabled/);
   });
 });
 

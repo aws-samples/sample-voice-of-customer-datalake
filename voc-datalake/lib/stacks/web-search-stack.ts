@@ -61,8 +61,11 @@ export interface VocWebSearchStackProps extends cdk.StackProps {
    */
   anthropicUseCase?: AnthropicUseCaseConfig;
 
-  /** Region the model agreements are created in. See BedrockModelAccessProps. */
-  modelRegion?: string;
+  /**
+   * Region the model agreements are created in — normally the app's region, not
+   * this stack's. Required rather than defaulted; see BedrockModelAccessProps.
+   */
+  modelRegion: string;
 
   /** @default false */
   skipUseCaseSubmission?: boolean;
@@ -76,6 +79,19 @@ export class VocWebSearchStack extends cdk.Stack {
 
   constructor(scope: Construct, id: string, props: VocWebSearchStackProps) {
     super(scope, id, props);
+
+    // Enforce the invariant here rather than trusting the caller: with both
+    // halves off this stack has no resources, and scripts/convert-template.mjs
+    // strips CDKMetadata, so the workshop artifact would be an invalid
+    // `Resources: {}`. shouldDeployAiEnablement() decides whether to construct
+    // it at all; this makes skipping that decision impossible.
+    if (!props.deployWebSearch && !props.anthropicUseCase) {
+      throw new Error(
+        `${id}: both halves are disabled (deployWebSearch=false and no anthropicUseCase), ` +
+        'which would synthesize a stack with no resources. Use shouldDeployAiEnablement() ' +
+        'to decide whether to construct this stack.',
+      );
+    }
 
     if (props.anthropicUseCase) {
       new BedrockModelAccess(this, 'BedrockModelAccess', {

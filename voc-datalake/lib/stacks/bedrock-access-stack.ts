@@ -88,9 +88,11 @@ export interface BedrockModelAccessProps {
    * agreements land in the app's region even though this construct is hosted
    * by a stack pinned to us-east-1.
    *
-   * Defaults to us-west-2.
+   * Required deliberately: a default here would be a silently-wrong region for
+   * every caller that forgot to pass one, and the agreements would be created
+   * somewhere the app never calls Bedrock.
    */
-  modelRegion?: string;
+  modelRegion: string;
 
   /**
    * Skip the use case submission step.
@@ -122,7 +124,7 @@ export class BedrockModelAccess extends Construct {
 
     const stack = cdk.Stack.of(this);
     const anthropicUseCase = props.anthropicUseCase;
-    const modelRegion = props.modelRegion || 'us-west-2';
+    const modelRegion = props.modelRegion;
 
     // Validate and transform config at runtime
     const parseResult = AnthropicUseCaseSchema.safeParse(anthropicUseCase);
@@ -203,10 +205,16 @@ export class BedrockModelAccess extends Construct {
       // The AwsCustomResource construct creates a singleton Lambda with a
       // deterministic UUID. It is scoped to the STACK, not to this construct,
       // so these paths stay stack-relative.
+      //
+      // Built from the stack's CONSTRUCT ID, not `stack.stackName`: these are
+      // matched against `node.path`, which uses construct ids. The two only
+      // coincide while no explicit `stackName` is set, so using stackName here
+      // would silently stop matching — and therefore silently drop the
+      // suppressions — the day someone overrides it.
       const customResourceId = `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
       const customResourceSuppressPaths = new Set([
-        `/${stack.stackName}/${customResourceId}/ServiceRole/Resource`,
-        `/${stack.stackName}/${customResourceId}/Resource`,
+        `/${stack.node.id}/${customResourceId}/ServiceRole/Resource`,
+        `/${stack.node.id}/${customResourceId}/Resource`,
       ]);
 
       const allExistingPaths = new Set(

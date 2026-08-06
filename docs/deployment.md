@@ -77,9 +77,6 @@ Two things to know about the gate:
 - **There is no ESLint leg for the CDK TypeScript.** `bin/` and `lib/` are covered
   only by `typecheck:cdk`, so "lint is clean" says nothing about the CDK app.
 
-Note that `npm run lint` is only available from the **repo root** —
-`voc-datalake/package.json` has no `lint` script.
-
 ### Python Lambda Tests
 
 Lambda handlers have their own test suite using pytest:
@@ -420,7 +417,9 @@ there. Deployment is **on by default** (opt out with
 > `process.env.CDK_DEFAULT_REGION`, but **the CDK CLI overwrites that variable**
 > for the app subprocess from the resolved AWS environment — exporting it
 > yourself has no effect. Use `AWS_REGION` / `AWS_DEFAULT_REGION`, or
-> `--profile`. This matters here because `VocWebSearchStack` is the only
+> `--profile`. (Observed with the CDK CLI pinned in `voc-datalake/package.json`;
+> re-check if that behaviour ever changes, since the guidance below depends on
+> it.) This matters here because `VocWebSearchStack` is the only
 > region-pinned stack, so it is the only one whose region can differ from the
 > app's, and that difference is what triggers the cross-region wiring above.
 

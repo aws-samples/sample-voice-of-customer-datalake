@@ -1,3 +1,5 @@
+import type { AnthropicUseCaseConfig } from '../stacks/bedrock-access-stack';
+
 /**
  * Guard for the us-east-1 AI-enablement stack (VocWebSearchStack), which hosts
  * two independently switchable halves: the web-search AgentCore Gateway and
@@ -16,7 +18,7 @@
  */
 export function shouldDeployAiEnablement(
   deployWebSearch: boolean,
-  anthropicUseCase: unknown,
+  anthropicUseCase: AnthropicUseCaseConfig | undefined,
 ): boolean {
   return deployWebSearch || anthropicUseCase !== undefined;
 }
