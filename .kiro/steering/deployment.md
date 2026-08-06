@@ -46,27 +46,48 @@ npm run deploy:all   # Deploys all CDK stacks + frontend
 Always run quality checks before deploying:
 
 ```bash
-# From project root
-npm run lint         # ESLint code quality
-npm run typecheck    # TypeScript type checking
-npm run test         # Run test suite
+# From project root ONLY — voc-datalake/package.json has no `lint` script
+npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins/
+npm run typecheck    # frontend ONLY (use typecheck:all for frontend + CDK + stream)
+npm run test         # frontend ONLY
 
-# Or run all at once
-npm run check        # lint + typecheck + test
+npm run check        # lint && typecheck:all && test && test:cdk && test:stream && test:backend
 ```
 
 ### What Each Check Does
 
-| Command | Description |
-|---------|-------------|
-| `npm run lint` | Runs ESLint to catch code quality issues |
-| `npm run typecheck` | Runs TypeScript compiler to verify types |
-| `npm run test` | Runs Vitest test suite |
-| `npm run test:coverage` | Runs tests with coverage report |
+| Command | Covers |
+|---------|--------|
+| `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`) |
+| `npm run typecheck` | Frontend only |
+| `npm run typecheck:all` | Frontend + CDK (`typecheck:cdk`) + stream |
+| `npm run test` | Frontend Vitest |
+| `npm run test:cdk` / `test:stream` / `test:backend` | CDK Vitest / stream Vitest / pytest via `.venv/bin/python` |
+| `npm run check` | All of the above, chained with `&&` |
+
+**Two traps when using `check` as a gate:**
+
+- **It chains with `&&`, so the first failure hides every later step.** A
+  `lint:python` failure means you never learn whether the CDK or backend tests
+  pass. When triaging, run the individual scripts.
+- **There is no ESLint leg for the CDK TypeScript.** `bin/` and `lib/` are covered
+  only by `typecheck:cdk` — "lint is clean" says nothing about the CDK app.
 
 ## CDK Stacks
 
-The platform consists of 4 core stacks plus 2 optional ones:
+The platform consists of 4 core stacks plus 1 AI-enablement stack.
+
+> ### ⚠️ The stack count is capped at 5 — adding a stack is not a free action
+>
+> A downstream packaging consumer of this repo accepts at most **five**
+> CloudFormation templates, and the app is at exactly five. A sixth breaks
+> packaging, and the failure appears only there — never at `cdk synth`. Fold new
+> infrastructure into an existing stack, or drop one first.
+>
+> This is why the web-search gateway and Bedrock model access share
+> `VocWebSearchStack`. Nested stacks are not an escape hatch: `NestedStackProps`
+> has no `env`, so a nested stack inherits the parent region, and that stack must
+> be pinned to us-east-1.
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
