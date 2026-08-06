@@ -24,7 +24,7 @@
     "generate:menu": "ts-node scripts/generate-menu-config.ts",
     "generate:config": "npm run generate:manifests && npm run generate:menu",
     "generate:integrity": "ts-node scripts/generate-integrity.ts",
-    "generate:workshop-artifacts": "rm -rf cdk.out && rm -rf Workshop && npx cdk synth --all -c enableWebSearch=false && node scripts/convert-template.mjs VocCoreStack VocIngestionStack VocProcessingStack VocApiStack BedrockAccessStack",
+    "generate:workshop-artifacts": "rm -rf cdk.out && rm -rf Workshop && npx cdk synth --all -c enableWebSearch=false -c defaultModelId=global.anthropic.claude-sonnet-4-6 && node scripts/convert-template.mjs VocCoreStack VocIngestionStack VocProcessingStack VocApiStack BedrockAccessStack",
     "validate:plugins": "ts-node scripts/validate-plugins.ts",
     "prebuild:frontend": "npm run generate:config"
   },
