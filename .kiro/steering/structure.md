@@ -258,6 +258,13 @@ embeddable widget calls from the customer's own site.
 > `api-stack.test.ts` asserts the handler and stack stay in step, and that only
 > the three public routes are unauthenticated.
 
+> ⚠️ **"Cognito" above means authenticated, NOT authorized.** These routes check
+> that the caller has a valid token; they do not check *which* forms the caller
+> owns. `feedback_form_handler.py` imports no auth helper, so **any authenticated
+> user can read, update or delete any form and read any form's submissions**.
+> That residual gap is tracked separately (same class as the missing per-user
+> scoping on projects) — do not read this table as "fully protected".
+
 ### Projects (projects_handler.py)
 | Method | Path | Description |
 |--------|------|-------------|

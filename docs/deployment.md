@@ -634,26 +634,35 @@ the pair. The stack rolls back cleanly and the API keeps serving.
 
 **Fresh deployments are unaffected** — there is no proxy to remove.
 
-Upgrade an existing environment in two deploys. First remove the old proxy on
-its own, by temporarily commenting out the `feedbackFormItem` block in
-`lib/stacks/api-stack.ts` (everything from `addResource('{form_id}')` through
-the `publicFeedbackFormMethods` loop):
+Upgrade an existing environment in two deploys, using the transitional flag —
+no source edits are involved:
 
 ```bash
+# 1. Retire the old {proxy+}. The per-form routes are not created yet.
+cdk deploy VocApiStack --exclusively -c skipFeedbackFormItemRoutes=true
+
+# 2. Create the explicit per-form routes.
 cdk deploy VocApiStack --exclusively
 ```
 
-Then restore the file and deploy again to create the explicit routes:
+`skipFeedbackFormItemRoutes` is a no-op when absent, so the second command is
+just a normal deploy and fresh deployments never need the flag. Step 1 prints a
+warning naming itself as the first of two deploys. **Never leave the flag set** —
+while it is on, `/feedback-forms/{form_id}/*` does not exist.
 
-```bash
-git checkout -- lib/stacks/api-stack.ts
-cdk deploy VocApiStack --exclusively
-```
+Between the two deploys the per-form routes are unavailable, so the embeddable
+widget stops working until the second deploy finishes. They fail closed (no data
+is served, and nothing is left unauthenticated), and the window is one deploy
+long. Schedule it accordingly if forms are live.
 
-Between the two deploys the per-form routes are unavailable, so the
-embeddable widget stops working until the second deploy finishes. They fail
-closed (no data is served), and the window is one deploy long. Schedule it
-accordingly if forms are live.
+### The embeddable widget served from the frontend bucket is stale
+
+`frontend/public/feedback-widget.js` is published to the CDN but is **not** the
+widget the application uses. The live one is `lambda/api/static/feedback-widget.js`,
+served by the feedback-form Lambda. The frontend copy still calls the retired
+`/feedback-form/*` (singular) routes, so it has been broken independently of the
+authorization change above — do not debug it as a symptom of that change. It has
+no callers in the codebase; it is pending deletion or a repoint.
 
 ### CloudFront Cache
 

@@ -1057,21 +1057,43 @@ export class VocApiStack extends cdk.Stack {
     feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);
     feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions);
 
-    const feedbackFormItem = feedbackFormsResource.addResource('{form_id}');
-    feedbackFormItem.addMethod('GET', feedbackFormIntegration, authMethodOptions);
-    feedbackFormItem.addMethod('PUT', feedbackFormIntegration, authMethodOptions);
-    feedbackFormItem.addMethod('DELETE', feedbackFormIntegration, authMethodOptions);
-    feedbackFormItem.addResource('submissions').addMethod('GET', feedbackFormIntegration, authMethodOptions);
-    feedbackFormItem.addResource('stats').addMethod('GET', feedbackFormIntegration, authMethodOptions);
+    // One-shot flag for upgrading an environment that still has the old
+    // /feedback-forms/{proxy+}. CloudFormation creates new resources before
+    // deleting old ones inside a single update, so {form_id} and {proxy+} would
+    // exist together and API Gateway rejects two variable path parts at one
+    // level. Deploy once with -c skipFeedbackFormItemRoutes=true to retire the
+    // proxy, then deploy again without it to create these routes.
+    //
+    // Absent (the default, and always for fresh deployments) this is a no-op —
+    // the synthesized template is identical either way. Never leave it set:
+    // while it is on, the per-form routes do not exist and the embeddable widget
+    // is down. See docs/deployment.md.
+    const skipFeedbackFormItemRoutes =
+      this.node.tryGetContext('skipFeedbackFormItemRoutes') === true
+      || this.node.tryGetContext('skipFeedbackFormItemRoutes') === 'true';
 
-    // Intentionally unauthenticated: the widget runs on the customer's own site.
-    const publicFeedbackFormMethods = [
-      feedbackFormItem.addResource('config').addMethod('GET', feedbackFormIntegration),
-      feedbackFormItem.addResource('submit').addMethod('POST', feedbackFormIntegration),
-      feedbackFormItem.addResource('iframe').addMethod('GET', feedbackFormIntegration),
-    ];
-    for (const publicMethod of publicFeedbackFormMethods) {
-      NagSuppressions.addResourceSuppressions(publicMethod, publicFeedbackEndpointSuppressions);
+    if (skipFeedbackFormItemRoutes) {
+      cdk.Annotations.of(this).addWarning(
+        'skipFeedbackFormItemRoutes is set: /feedback-forms/{form_id}/* is NOT being deployed. '
+        + 'This is the first of two upgrade deploys — re-deploy without the flag to restore the routes.',
+      );
+    } else {
+      const feedbackFormItem = feedbackFormsResource.addResource('{form_id}');
+      feedbackFormItem.addMethod('GET', feedbackFormIntegration, authMethodOptions);
+      feedbackFormItem.addMethod('PUT', feedbackFormIntegration, authMethodOptions);
+      feedbackFormItem.addMethod('DELETE', feedbackFormIntegration, authMethodOptions);
+      feedbackFormItem.addResource('submissions').addMethod('GET', feedbackFormIntegration, authMethodOptions);
+      feedbackFormItem.addResource('stats').addMethod('GET', feedbackFormIntegration, authMethodOptions);
+
+      // Intentionally unauthenticated: the widget runs on the customer's own site.
+      const publicFeedbackFormMethods = [
+        feedbackFormItem.addResource('config').addMethod('GET', feedbackFormIntegration),
+        feedbackFormItem.addResource('submit').addMethod('POST', feedbackFormIntegration),
+        feedbackFormItem.addResource('iframe').addMethod('GET', feedbackFormIntegration),
+      ];
+      for (const publicMethod of publicFeedbackFormMethods) {
+        NagSuppressions.addResourceSuppressions(publicMethod, publicFeedbackEndpointSuppressions);
+      }
     }
 
     // /projects/*
