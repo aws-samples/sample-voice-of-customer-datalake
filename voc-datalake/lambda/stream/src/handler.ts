@@ -313,6 +313,11 @@ async function handleRoundtableChat(
     ? attachmentsToContentBlocks(body.attachments)
     : [];
   const historyMessages = historyToBedrockMessages(body.history);
+  // Roundtable turns are the "chat" surface too — resolve the admin-configured
+  // model ONCE (loop-invariant, like the hoists above). Without this every
+  // persona turn silently falls back to the BEDROCK_MODEL_ID env default,
+  // ignoring the Settings picker entirely.
+  const modelId = await resolveModelOverride(docClient, AGGREGATES_TABLE, 'chat');
 
   const responses: string[] = [];
 
@@ -344,6 +349,7 @@ Share your own perspective on the user's message in your own voice. Be direct an
         systemPrompt,
         maxTokens: ROUNDTABLE_MAX_TOKENS,
         thinkingBudget: ROUNDTABLE_THINKING_BUDGET,
+        modelId,
       });
 
       for await (const event of events) {
