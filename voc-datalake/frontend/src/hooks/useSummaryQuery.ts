@@ -27,12 +27,16 @@ export const summaryQueryKey = (dateParams: DateRangeParams) =>
  * Fetch the metrics summary for `dateParams`.
  *
  * @param dateParams window descriptor from `getDateRangeParams`
- * @param apiEndpoint configured endpoint; the query is disabled while empty
+ * @param apiEndpoint configured endpoint; the query stays disabled while unset.
+ *   Typed as optional and tested for truthiness rather than length, because the
+ *   store is rehydrated from persisted localStorage: an older persisted shape can
+ *   deliver `undefined` here regardless of the declared type, and `.length` on
+ *   that would throw.
  */
-export function useSummaryQuery(dateParams: DateRangeParams, apiEndpoint: string) {
+export function useSummaryQuery(dateParams: DateRangeParams, apiEndpoint: string | undefined) {
   return useQuery({
     queryKey: summaryQueryKey(dateParams),
     queryFn: () => api.getSummary(dateParams),
-    enabled: apiEndpoint.length > 0,
+    enabled: !!apiEndpoint,
   })
 }

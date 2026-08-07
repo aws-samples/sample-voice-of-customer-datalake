@@ -337,6 +337,8 @@ export default function Dashboard() {
 
   // Shared with the sidebar urgent badge via useSummaryQuery so the two cannot
   // resolve to different cache entries (see that module).
+  // Takes the endpoint rather than `isConfigured`: the hook owns both the query
+  // key and its enabling condition, so callers cannot make them disagree.
   const { data: summary, isLoading: summaryLoading } = useSummaryQuery(dateParams, config.apiEndpoint)
 
   const { data: sentiment } = useQuery({

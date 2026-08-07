@@ -140,24 +140,41 @@ function extractKeysFromSource(files) {
       }
     }
 
-    // Match namespace-qualified keys held in DATA rather than passed straight to
-    // t(), e.g. the nav/phase tables:
-    //   { to: '/x', labelKey: 'common:nav.categories' }
-    // These reach t() indirectly (t(item.labelKey)), so the t() regex above
-    // cannot see them and a deleted key stays invisible to this gate. That is
-    // how `common:nav.feedback` survived here long after the key was removed —
-    // the landing page rendered the literal text "nav.feedback" in all locales
-    // while the gate reported everything in sync.
-    //
-    // Only `ns:dotted.path` literals are collected: the explicit namespace makes
-    // them unambiguous, so this cannot mistake an arbitrary string for a key.
-    const dataKeyRegex = /\b\w*[Kk]ey:\s*['"](\w+):([\w.]+)['"]/g
-    while ((match = dataKeyRegex.exec(content)) !== null) {
-      usedKeys.add(`${match[1]}:${match[2]}`)
-    }
+    for (const dataKey of extractDataHeldKeys(content)) usedKeys.add(dataKey)
   }
 
   return usedKeys
+}
+
+/**
+ * Collect namespace-qualified keys held in DATA rather than passed straight to
+ * t(), e.g. the nav/phase tables:
+ *
+ *   { to: '/x', labelKey: 'common:nav.categories' }
+ *
+ * These reach t() indirectly (`t(item.labelKey)`), so the t() regex cannot see
+ * them and a deleted key stays invisible to this gate. That is how
+ * `common:nav.feedback` survived long after the key was removed — the landing
+ * page rendered the literal text "nav.feedback" in every locale while the gate
+ * reported all translations in sync.
+ *
+ * The namespace must be one we actually ship. Without that constraint any
+ * property whose name ends in "Key" holding a colon-separated string would be
+ * collected — `cacheKey: 'user:123'`, `sortKey: 'a:b'` — and then reported as a
+ * missing translation key, failing the gate on code that is perfectly fine.
+ *
+ * @param content source text of one file
+ * @returns "ns:key" strings
+ */
+function extractDataHeldKeys(content) {
+  const found = []
+  const dataKeyRegex = /\b\w*[Kk]ey:\s*['"](\w+):([\w.]+)['"]/g
+  let match
+  while ((match = dataKeyRegex.exec(content)) !== null) {
+    const [, ns, key] = match
+    if (NAMESPACES.includes(ns)) found.push(`${ns}:${key}`)
+  }
+  return found
 }
 
 // ── Check 1 & 2: Missing / Extra keys per locale ────────────────────

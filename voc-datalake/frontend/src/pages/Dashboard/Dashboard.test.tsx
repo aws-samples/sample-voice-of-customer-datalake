@@ -299,6 +299,9 @@ describe('Dashboard', () => {
       })
       // URGENT_PREVIEW_LIMIT is 5; the 6th item must not render.
       expect(screen.queryByText('Urgent issue 5')).not.toBeInTheDocument()
+      // Pin the fetch side too, so the request limit and the render cap cannot
+      // drift apart in opposite directions and still satisfy this test.
+      expect(mockGetUrgentFeedback).toHaveBeenCalledWith(expect.objectContaining({ limit: 5 }))
     })
 
     it('displays urgent feedback items', async () => {
