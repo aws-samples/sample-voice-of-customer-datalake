@@ -40,7 +40,14 @@ interface ModalShellProps {
    * dialog whenever the title was a ReactNode. The VISIBLE heading stays in
    * `children`, where each modal already renders it.
    */
-  readonly ariaLabel: string
+  readonly ariaLabel?: string
+  /**
+   * Id of the visible heading, as an alternative to `ariaLabel`. Preferred when a
+   * heading already exists: the accessible name cannot drift from what is on
+   * screen, and no separate (translatable) string is introduced. Exactly one of
+   * `ariaLabel` / `ariaLabelledBy` must be supplied.
+   */
+  readonly ariaLabelledBy?: string
   readonly children: ReactNode
   /** Extra classes for the panel, e.g. a different max-width. */
   readonly panelClassName?: string
@@ -118,6 +125,7 @@ export default function ModalShell({
   isOpen,
   onClose,
   ariaLabel,
+  ariaLabelledBy,
   children,
   panelClassName,
   dismissable = true,
@@ -199,7 +207,8 @@ export default function ModalShell({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={ariaLabel}
+        aria-label={ariaLabelledBy === undefined ? ariaLabel : undefined}
+        aria-labelledby={ariaLabelledBy}
         tabIndex={-1}
         className={clsx('relative bg-white rounded-xl shadow-xl w-full', panelClassName)}
       >

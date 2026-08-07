@@ -43,13 +43,13 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
     <ModalShell
       isOpen
       onClose={onCancel}
-      ariaLabel="Create New Form"
+      ariaLabelledBy="template-wizard-title"
       panelClassName="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
     >
-      <div className="flex flex-col overflow-hidden">
+      <>
         <div className="flex items-center justify-between p-3 sm:p-4 border-b">
           <div className="min-w-0 flex-1">
-            <h2 className="text-base sm:text-lg font-semibold">Create New Form</h2>
+            <h2 id="template-wizard-title" className="text-base sm:text-lg font-semibold">Create New Form</h2>
             <p className="text-xs sm:text-sm text-gray-500">Choose a template to get started</p>
           </div>
           <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0 ml-2">
@@ -126,7 +126,7 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
             </button>
           </div>
         </div>
-      </div>
+      </>
     </ModalShell>
   )
 }
