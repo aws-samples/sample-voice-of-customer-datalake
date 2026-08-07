@@ -11,6 +11,10 @@
  */
 import { AlertCircle, Loader2, Wand2 } from 'lucide-react'
 import ConfirmModal from '../../components/ConfirmModal'
+import { useCallback, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { projectsApi } from '../../api/projectsApi'
+import { pollJobToCompletion } from './jobPolling'
 
 /** Exactly one of the two source documents exists, so the build needs a confirm. */
 function hasOnlyOneDoc(hasPrd: boolean, hasPrfaq: boolean): boolean {
@@ -23,10 +27,6 @@ const SINGLE_DOC_MESSAGE = {
   prd: { key: 'documents.prototype.confirmPrdOnly', defaultValue: 'No PR-FAQ yet — the prototype will be built from the PRD only. Continue?' },
   prfaq: { key: 'documents.prototype.confirmPrfaqOnly', defaultValue: 'No PRD yet — the prototype will be built from the PR-FAQ only. Continue?' },
 } as const
-import { useCallback, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { projectsApi } from '../../api/projectsApi'
-import { pollJobToCompletion } from './jobPolling'
 
 export default function BuildPrototypeButton({
   projectId, hasPrd, hasPrfaq, onDocumentChanged,

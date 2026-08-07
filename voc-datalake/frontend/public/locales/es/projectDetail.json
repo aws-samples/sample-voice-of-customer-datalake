@@ -59,6 +59,8 @@
     "newDocument": "Nuevo Documento",
     "noDocuments": "Sin documentos",
     "prototype": {
+      "cancel": "Cancelar",
+      "confirmBuild": "Crear de todos modos",
       "building": "Creando…",
       "button": "Crear prototipo",
       "buttonTitle": "Generar un prototipo HTML clicable a partir del PRD + PR-FAQ de este proyecto",

@@ -59,6 +59,8 @@
     "newDocument": "New Document",
     "noDocuments": "No documents",
     "prototype": {
+      "cancel": "Cancel",
+      "confirmBuild": "Build anyway",
       "building": "Building…",
       "button": "Build Prototype",
       "buttonTitle": "Generate a clickable HTML prototype from this project's PRD + PR-FAQ",

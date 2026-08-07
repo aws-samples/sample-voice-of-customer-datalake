@@ -59,6 +59,8 @@
     "newDocument": "新建文档",
     "noDocuments": "无文档",
     "prototype": {
+      "cancel": "取消",
+      "confirmBuild": "仍然创建",
       "building": "构建中…",
       "button": "构建原型",
       "buttonTitle": "根据本项目的 PRD + PR-FAQ 生成可点击的 HTML 原型",

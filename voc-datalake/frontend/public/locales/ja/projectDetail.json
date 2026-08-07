@@ -59,6 +59,8 @@
     "newDocument": "新規ドキュメント",
     "noDocuments": "ドキュメントなし",
     "prototype": {
+      "cancel": "キャンセル",
+      "confirmBuild": "それでも作成",
       "building": "作成中…",
       "button": "プロトタイプを作成",
       "buttonTitle": "このプロジェクトの PRD + PR-FAQ からクリック可能な HTML プロトタイプを生成",

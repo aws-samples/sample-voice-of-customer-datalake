@@ -59,6 +59,8 @@
     "newDocument": "새 문서",
     "noDocuments": "문서 없음",
     "prototype": {
+      "cancel": "취소",
+      "confirmBuild": "그래도 생성",
       "building": "생성 중…",
       "button": "프로토타입 생성",
       "buttonTitle": "이 프로젝트의 PRD + PR-FAQ로 클릭 가능한 HTML 프로토타입 생성",

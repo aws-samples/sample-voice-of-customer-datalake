@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import i18n from 'i18next'
 
 const mockGetFeedbackFormStats = vi.fn()
 
@@ -76,19 +77,20 @@ describe('FormCard (issue #171)', () => {
   it('gives every icon-only card action an accessible name', () => {
     renderCard({ ...buildForm(), enabled: true })
 
-    // Under test i18n, t() echoes the key, so the key IS the accessible name.
-    // Asserting it still proves each control has a non-empty name wired from
-    // the right translation key, which is what the hardcoded titles lacked.
-    expect(screen.getByRole('button', { name: 'disableForm' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'editForm' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'deleteForm' })).toBeInTheDocument()
+    // Resolve through the same i18n instance the component uses, so these stay
+    // correct whether the harness echoes keys or returns real strings.
+    const { t } = i18n
+    expect(screen.getByRole('button', { name: t('feedbackForms:disableForm') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('feedbackForms:editForm') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('feedbackForms:deleteForm') })).toBeInTheDocument()
   })
 
   it('names the toggle for the action it performs when the form is disabled', () => {
     renderCard({ ...buildForm(), enabled: false })
 
-    expect(screen.getByRole('button', { name: 'enableForm' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'disableForm' })).not.toBeInTheDocument()
+    const { t } = i18n
+    expect(screen.getByRole('button', { name: t('feedbackForms:enableForm') })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('feedbackForms:disableForm') })).not.toBeInTheDocument()
   })
 
   it('survives a runtime record without a theme (the #171 crash)', () => {
