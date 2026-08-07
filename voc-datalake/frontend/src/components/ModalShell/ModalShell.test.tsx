@@ -153,7 +153,35 @@ describe('ModalShell', () => {
     expect(last).toHaveFocus()
   })
 
-  it('only the dialog holding focus reacts to Escape when shells are stacked', async () => {
+  it('closes the top-most dialog on Escape even when focus is on the body', async () => {
+    // THE regression this guard exists for. The previous focus-based guard died
+    // silently here — and focus lands on <body> in ordinary flows, e.g. when the
+    // focused control is removed or disabled. Passing requires the stack/document
+    // -order guard, not a focus check.
+    const user = userEvent.setup()
+    const onCloseOuter = vi.fn()
+    const onCloseInner = vi.fn()
+    render(
+      <>
+        <ModalShell isOpen onClose={onCloseOuter} ariaLabel="Outer">
+          <button>outer-button</button>
+        </ModalShell>
+        <ModalShell isOpen onClose={onCloseInner} ariaLabel="Inner">
+          <button>inner-button</button>
+        </ModalShell>
+      </>,
+    )
+    // Simulate focus being dropped to the body, as browsers do.
+    ;(document.activeElement instanceof HTMLElement ? document.activeElement : null)?.blur()
+    expect(document.activeElement).toBe(document.body)
+
+    await user.keyboard('{Escape}')
+
+    expect(onCloseInner).toHaveBeenCalledTimes(1)
+    expect(onCloseOuter).not.toHaveBeenCalled()
+  })
+
+  it('closes only the top-most dialog on Escape when shells are stacked', async () => {
     // ConfirmModal is used as an unsaved-changes guard inside other modals, so
     // shells nest. An unguarded document listener would close both on one press.
     const user = userEvent.setup()

@@ -13,12 +13,17 @@
  * - focus moves into the dialog on open and returns to the trigger on close
  * - Tab is trapped inside the dialog, in both directions
  *
- * STACKING: Escape and Tab are handled in one document-level listener that bails
- * unless focus is inside *this* panel. ConfirmModal is used as an unsaved-changes
- * guard inside other modals, so shells nest; an unguarded document listener would
- * let one Escape close both dialogs, and would let shift-Tab in the inner dialog
- * yank focus into the outer panel. This is also why Escape is handled here rather
- * than via useEscapeKey — that hook is unguarded by design.
+ * STACKING: Escape and Tab are handled in one document-level listener that acts
+ * only for the top-most open shell, determined by document position (see
+ * `openShells`). ConfirmModal is used as an unsaved-changes guard inside other
+ * modals, so shells nest; an unguarded document listener would let one Escape
+ * close both dialogs, and would let shift-Tab in the inner dialog yank focus into
+ * the outer panel. This is also why Escape is handled here rather than via
+ * useEscapeKey — that hook is unguarded by design.
+ *
+ * FOCUS: initial focus lands on the first focusable descendant (for ConfirmModal
+ * that is Cancel, deliberately the non-destructive choice). Introducing an
+ * `initialFocusRef` would change that, so it is stated here rather than implied.
  *
  * @module components/ModalShell
  */
@@ -61,12 +66,15 @@ function focusable(root: HTMLElement): HTMLElement[] {
   )
   // NB: deliberately not using offsetParent — jsdom does no layout and returns
   // null for every element, which would filter the list empty under test.
-  /** The element and each ancestor up to and including `root`. */
-  const selfAndAncestors = (el: HTMLElement): HTMLElement[] =>
-    el === root || el.parentElement === null ? [el] : [el, ...selfAndAncestors(el.parentElement)]
-
+  /**
+   * Walks up to `root`, short-circuiting on the first hidden ancestor. Recursive
+   * rather than a loop because `no-restricted-syntax` bans mutable bindings here,
+   * and without building an intermediate array — this runs per candidate on every
+   * Tab keypress.
+   */
   const hiddenByAncestor = (el: HTMLElement): boolean =>
-    selfAndAncestors(el).some((node) => getComputedStyle(node).display === 'none')
+    getComputedStyle(el).display === 'none' ||
+    (el !== root && el.parentElement !== null && hiddenByAncestor(el.parentElement))
   return [...candidates].filter((el) => {
     if (el.closest('[hidden]') !== null || el.closest('[aria-hidden="true"]') !== null) return false
     if (el.closest('details:not([open])') !== null) return false
@@ -76,16 +84,35 @@ function focusable(root: HTMLElement): HTMLElement[] {
 }
 
 /**
- * Open shells, outermost first. Only the last one reacts to Escape and Tab.
+ * Every open shell's panel. Only the top-most reacts to Escape and Tab.
  *
- * An earlier revision gated on `panel.contains(document.activeElement)`, which
- * silently disabled BOTH Escape and the Tab trap whenever focus left the panel —
- * and that happens in ordinary flows: the focused control is removed or becomes
- * disabled (browsers drop focus to <body>), focus enters an iframe, or something
- * calls blur(). The shell would then fail exactly as the modals it replaces do,
- * without any visible signal. Registration order is authoritative instead.
+ * Two rejected approaches, both of which failed silently:
+ *
+ * 1. `panel.contains(document.activeElement)` — disabled BOTH Escape and the Tab
+ *    trap whenever focus left the panel, which happens in ordinary flows: the
+ *    focused control is removed or becomes disabled (browsers drop focus to
+ *    <body>), focus enters an iframe, or something calls blur().
+ * 2. Registration order (last registered wins) — React runs CHILD effects before
+ *    PARENT effects, so an outer modal that renders with a nested shell already
+ *    open registers inner-then-outer, and Escape would close the OUTER dialog.
+ *
+ * Top-most is therefore derived from document position, which is independent of
+ * both focus and mount order. A descendant follows its ancestor in document
+ * order, so this is correct for nested and sibling shells alike.
  */
 const openShells: HTMLElement[] = []
+
+/** The open shell latest in document order, i.e. the one painted on top. */
+function topMostShell(): HTMLElement | undefined {
+  return openShells.reduce<HTMLElement | undefined>(
+    (top, panel) =>
+      top === undefined ||
+      (top.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+        ? panel
+        : top,
+    undefined,
+  )
+}
 
 export default function ModalShell({
   isOpen,
@@ -129,8 +156,9 @@ export default function ModalShell({
     const onKeyDown = (e: KeyboardEvent) => {
       const panel = panelRef.current
       if (!panel) return
-      // Only the top-most open dialog reacts, regardless of where focus is.
-      if (openShells[openShells.length - 1] !== panel) return
+      // Only the top-most open dialog reacts — independent of focus and of the
+      // order the shells happened to mount in.
+      if (topMostShell() !== panel) return
 
       if (e.key === 'Escape') {
         if (dismissable) onClose()
