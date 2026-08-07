@@ -103,6 +103,10 @@ function makeEvent(body: Record<string, unknown>, path = '/chat/stream') {
 describe('handler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks() clears calls but KEEPS implementations, so a per-test
+    // mockResolvedValue would leak into later tests. Re-assert the default
+    // (no admin override configured) so model resolution is order-independent.
+    mockResolveModelOverride.mockResolvedValue(undefined);
 
     // Default: converseStream yields a simple text response then stops
     mockConverseStream.mockReturnValue(
@@ -347,6 +351,25 @@ describe('handler', () => {
     }
     // Resolved once for the whole loop, not per persona.
     expect(mockResolveModelOverride).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes modelId undefined on roundtable turns when no override is configured', async () => {
+    // Guards against "fixing" the hoist with a non-null default: converseStream
+    // owns the env-default fallback, so the handler must pass undefined through.
+    mockResolveModelOverride.mockResolvedValue(undefined);
+    mockConverseStream.mockImplementation(() => (async function* () {
+      yield { messageStop: { stopReason: 'end_turn' } };
+    })());
+
+    await (handler as StreamHandler)(makeEvent({
+      message: '@all thoughts?',
+      project_id: 'proj-1',
+      roundtable: true,
+    }), mockStream());
+
+    for (const [params] of mockConverseStream.mock.calls) {
+      expect((params as Record<string, unknown>).modelId).toBeUndefined();
+    }
   });
 
   it('roundtable does not inject the prior transcript into persona prompts', async () => {
