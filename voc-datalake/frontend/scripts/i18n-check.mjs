@@ -140,7 +140,7 @@ function extractKeysFromSource(files) {
       }
     }
 
-    for (const dataKey of extractDataHeldKeys(content)) usedKeys.add(dataKey)
+    for (const dataKey of extractDataHeldKeys(content, file)) usedKeys.add(dataKey)
   }
 
   return usedKeys
@@ -166,13 +166,28 @@ function extractKeysFromSource(files) {
  * @param content source text of one file
  * @returns "ns:key" strings
  */
-function extractDataHeldKeys(content) {
+function extractDataHeldKeys(content, file) {
   const found = []
   const dataKeyRegex = /\b\w*[Kk]ey:\s*['"](\w+):([\w.]+)['"]/g
   let match
   while ((match = dataKeyRegex.exec(content)) !== null) {
     const [, ns, key] = match
-    if (NAMESPACES.includes(ns)) found.push(`${ns}:${key}`)
+    if (NAMESPACES.includes(ns)) {
+      found.push(`${ns}:${key}`)
+    } else if (/^[a-z]+$/i.test(ns) && key.includes('.')) {
+      // Don't drop a near-miss silently: a mistyped namespace
+      // (`commmon:nav.categories`) is exactly the class of bug this extractor
+      // exists to catch, and skipping it quietly would recreate the blind spot.
+      //
+      // Warned rather than failed, because the namespace list is the only thing
+      // separating a real key from an unrelated `foo:bar` string. The guard is
+      // deliberately narrow — an alphabetic namespace AND a dotted key path — so
+      // `cacheKey: 'user:123'` and `sortKey: 'a:b'` stay silent while anything
+      // actually shaped like a translation key gets surfaced.
+      console.warn(
+        `⚠️  ${file}: '${ns}:${key}' is shaped like a translation key but '${ns}' is not a known namespace — typo?`,
+      )
+    }
   }
   return found
 }
