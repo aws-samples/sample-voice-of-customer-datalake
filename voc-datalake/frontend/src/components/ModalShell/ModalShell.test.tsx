@@ -198,6 +198,13 @@ describe('ModalShell', () => {
       </ModalShell>,
     )
 
+    // Documents a consequence of the same effect ordering: the CHILD's focus
+    // effect runs first, then the PARENT's overwrites it, so focus lands outside
+    // the top-most dialog. Escape still works because the guard is document-order
+    // based, not focus based — but stage 2 introduces genuinely nested wizards and
+    // will need to decide whether the inner dialog should keep focus.
+    expect(screen.getByRole('button', { name: 'outer-button' })).toHaveFocus()
+
     await user.keyboard('{Escape}')
 
     expect(onCloseInner).toHaveBeenCalledTimes(1)
