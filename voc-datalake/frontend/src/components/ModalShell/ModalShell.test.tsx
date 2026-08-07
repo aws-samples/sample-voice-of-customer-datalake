@@ -53,9 +53,9 @@ describe('ModalShell', () => {
 
   it('closes when the overlay is clicked', async () => {
     const user = userEvent.setup()
-    const { container } = renderShell()
+    renderShell()
 
-    const overlay = container.querySelector('.absolute.inset-0')
+    const overlay = screen.getByTestId('modal-overlay')
     expect(overlay).not.toBeNull()
     await user.click(overlay as Element)
 
@@ -76,10 +76,10 @@ describe('ModalShell', () => {
 
   it('ignores Escape and overlay clicks when not dismissable', async () => {
     const user = userEvent.setup()
-    const { container } = renderShell({ dismissable: false })
+    renderShell({ dismissable: false })
 
     await user.keyboard('{Escape}')
-    await user.click(container.querySelector('.absolute.inset-0') as Element)
+    await user.click(screen.getByTestId('modal-overlay') as Element)
 
     expect(onClose).not.toHaveBeenCalled()
   })
@@ -88,6 +88,19 @@ describe('ModalShell', () => {
     renderShell()
 
     expect(screen.getByRole('button', { name: 'first' })).toHaveFocus()
+  })
+
+  it('skips hidden controls when choosing where to put focus', () => {
+    // A modal with collapsible sections would otherwise focus an invisible
+    // control, leaving the user with no visible focus ring.
+    render(
+      <ModalShell isOpen onClose={onClose} ariaLabel="Test dialog">
+        <button style={{ display: 'none' }}>hidden</button>
+        <button>visible</button>
+      </ModalShell>,
+    )
+
+    expect(screen.getByRole('button', { name: 'visible' })).toHaveFocus()
   })
 
   it('restores focus to the triggering element when closed', async () => {
@@ -110,6 +123,65 @@ describe('ModalShell', () => {
     await user.click(screen.getByRole('button', { name: 'close' }))
 
     expect(trigger).toHaveFocus()
+  })
+
+  it('wraps shift-Tab from the first focusable back to the last', async () => {
+    const user = userEvent.setup()
+    renderShell()
+    const first = screen.getByRole('button', { name: 'first' })
+    const last = screen.getByRole('button', { name: 'last' })
+
+    first.focus()
+    await user.tab({ shift: true })
+
+    expect(last).toHaveFocus()
+  })
+
+  it('only the dialog holding focus reacts to Escape when shells are stacked', async () => {
+    // ConfirmModal is used as an unsaved-changes guard inside other modals, so
+    // shells nest. An unguarded document listener would close both on one press.
+    const user = userEvent.setup()
+    const onCloseOuter = vi.fn()
+    const onCloseInner = vi.fn()
+    render(
+      <>
+        <ModalShell isOpen onClose={onCloseOuter} ariaLabel="Outer">
+          <button>outer-button</button>
+        </ModalShell>
+        <ModalShell isOpen onClose={onCloseInner} ariaLabel="Inner">
+          <button>inner-button</button>
+        </ModalShell>
+      </>,
+    )
+    screen.getByRole('button', { name: 'inner-button' }).focus()
+
+    await user.keyboard('{Escape}')
+
+    expect(onCloseInner).toHaveBeenCalledTimes(1)
+    expect(onCloseOuter).not.toHaveBeenCalled()
+  })
+
+  it('does not trap Tab for a dialog that does not hold focus', async () => {
+    const user = userEvent.setup()
+    render(
+      <>
+        <ModalShell isOpen onClose={vi.fn()} ariaLabel="Outer">
+          <button>outer-first</button>
+          <button>outer-last</button>
+        </ModalShell>
+        <ModalShell isOpen onClose={vi.fn()} ariaLabel="Inner">
+          <button>inner-only</button>
+        </ModalShell>
+      </>,
+    )
+    const inner = screen.getByRole('button', { name: 'inner-only' })
+    inner.focus()
+
+    // Sole focusable in the focused dialog ⇒ Tab wraps to itself, and must not
+    // hand focus to the other shell's panel.
+    await user.tab()
+
+    expect(inner).toHaveFocus()
   })
 
   it('wraps Tab from the last focusable back to the first', async () => {

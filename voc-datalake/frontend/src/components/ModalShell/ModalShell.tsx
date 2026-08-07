@@ -9,16 +9,21 @@
  * behaviour the default:
  *
  * - `role="dialog"` + `aria-modal` + a non-empty accessible name
- * - Escape closes, via the existing useEscapeKey hook
- * - overlay click closes, with the panel NOT swallowing its own clicks
+ * - Escape closes; overlay click closes, with the panel NOT swallowing its clicks
  * - focus moves into the dialog on open and returns to the trigger on close
- * - Tab is trapped inside the dialog while it is open
+ * - Tab is trapped inside the dialog, in both directions
+ *
+ * STACKING: Escape and Tab are handled in one document-level listener that bails
+ * unless focus is inside *this* panel. ConfirmModal is used as an unsaved-changes
+ * guard inside other modals, so shells nest; an unguarded document listener would
+ * let one Escape close both dialogs, and would let shift-Tab in the inner dialog
+ * yank focus into the outer panel. This is also why Escape is handled here rather
+ * than via useEscapeKey — that hook is unguarded by design.
  *
  * @module components/ModalShell
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 interface ModalShellProps {
   readonly isOpen: boolean
@@ -42,13 +47,23 @@ interface ModalShellProps {
   readonly dismissable?: boolean
 }
 
-/** Focusable descendants, in DOM order, excluding programmatically-focused ones. */
+/**
+ * Focusable descendants in DOM order, excluding anything not actually reachable.
+ * `offsetParent === null` catches display:none and hidden ancestors; visibility
+ * is checked separately because it does not affect offsetParent.
+ */
 function focusable(root: HTMLElement): HTMLElement[] {
-  return [
-    ...root.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ),
-  ]
+  const candidates = root.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, [contenteditable]:not([contenteditable="false"]), audio[controls], video[controls], [tabindex]:not([tabindex="-1"])',
+  )
+  // NB: deliberately not using offsetParent — jsdom does no layout and returns
+  // null for every element, which would filter the list empty under test.
+  return [...candidates].filter((el) => {
+    if (el.closest('[hidden]') !== null || el.closest('[aria-hidden="true"]') !== null) return false
+    if (el.closest('details:not([open])') !== null) return false
+    const style = getComputedStyle(el)
+    return style.display !== 'none' && style.visibility !== 'hidden'
+  })
 }
 
 export default function ModalShell({
@@ -60,8 +75,6 @@ export default function ModalShell({
   dismissable = true,
 }: ModalShellProps) {
   const panelRef = useRef<HTMLDivElement>(null)
-
-  useEscapeKey(isOpen && dismissable, onClose)
 
   // Move focus into the dialog on open, and restore it to whatever opened the
   // dialog on close — otherwise keyboard users are dropped at the top of the page.
@@ -77,20 +90,26 @@ export default function ModalShell({
     return () => trigger?.focus?.()
   }, [isOpen])
 
-  // Trap Tab inside the dialog. Without this, tabbing walks into the page behind
-  // the overlay, which is invisible but still reachable.
   useEffect(() => {
     if (!isOpen) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return
       const panel = panelRef.current
       if (!panel) return
+      // Stacking guard: only the dialog that currently holds focus reacts.
+      if (!panel.contains(document.activeElement)) return
+
+      if (e.key === 'Escape') {
+        if (dismissable) onClose()
+        return
+      }
+      if (e.key !== 'Tab') return
+
       const items = focusable(panel)
       if (items.length === 0) return
       const first = items[0]
       const last = items[items.length - 1]
       const active = document.activeElement
-      if (e.shiftKey && (active === first || !panel.contains(active))) {
+      if (e.shiftKey && active === first) {
         e.preventDefault()
         last.focus()
       } else if (!e.shiftKey && active === last) {
@@ -100,7 +119,7 @@ export default function ModalShell({
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [isOpen])
+  }, [isOpen, dismissable, onClose])
 
   if (!isOpen) return null
 
@@ -109,6 +128,8 @@ export default function ModalShell({
       {/* Overlay is a sibling of the panel, not its container, so clicks inside
           the panel are never mistaken for overlay clicks. */}
       <div
+        data-testid="modal-overlay"
+        aria-hidden="true"
         className="absolute inset-0 bg-black/50"
         onClick={dismissable ? onClose : undefined}
       />
