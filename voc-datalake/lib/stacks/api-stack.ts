@@ -1048,6 +1048,11 @@ export class VocApiStack extends cdk.Stack {
     // list and lambda/api/feedback_form_handler.py in step: every route the
     // handler registers needs a method here, and api-stack.test.ts asserts that
     // only these three are unauthenticated.
+    //
+    // Do NOT reintroduce a {proxy+} here to avoid the two-step upgrade it costs
+    // on already-deployed environments: {form_id} and {proxy+} cannot coexist as
+    // sibling variable paths, which is what makes the upgrade two deploys. See
+    // docs/deployment.md, "A sibling ({proxy+}) of this resource...".
     const feedbackFormsResource = this.api.root.addResource('feedback-forms');
     feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);
     feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions);

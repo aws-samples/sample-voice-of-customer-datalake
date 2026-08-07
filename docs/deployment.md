@@ -622,6 +622,39 @@ Add the flag to every subsequent deploy of that environment (or to a
 local, uncommitted context override). New deployments should NOT set it —
 fresh pools get case-insensitive sign-in by default.
 
+### VocApiStack fails: "A sibling ({proxy+}) of this resource already has a variable path part"
+
+Only affects environments deployed **before** the `/feedback-forms` item
+routes were made explicit. Those routes used to sit behind a `{proxy+}`
+catch-all; they are now declared individually, which means the deploy has to
+create `/feedback-forms/{form_id}` and delete `/feedback-forms/{proxy+}`.
+CloudFormation creates new resources before deleting old ones inside a single
+update, so both variable path parts exist momentarily and API Gateway rejects
+the pair. The stack rolls back cleanly and the API keeps serving.
+
+**Fresh deployments are unaffected** — there is no proxy to remove.
+
+Upgrade an existing environment in two deploys. First remove the old proxy on
+its own, by temporarily commenting out the `feedbackFormItem` block in
+`lib/stacks/api-stack.ts` (everything from `addResource('{form_id}')` through
+the `publicFeedbackFormMethods` loop):
+
+```bash
+cdk deploy VocApiStack --exclusively
+```
+
+Then restore the file and deploy again to create the explicit routes:
+
+```bash
+git checkout -- lib/stacks/api-stack.ts
+cdk deploy VocApiStack --exclusively
+```
+
+Between the two deploys the per-form routes are unavailable, so the
+embeddable widget stops working until the second deploy finishes. They fail
+closed (no data is served), and the window is one deploy long. Schedule it
+accordingly if forms are live.
+
 ### CloudFront Cache
 
 If changes don't appear after deployment:
