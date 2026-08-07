@@ -138,7 +138,8 @@ async function retryAfterRefresh(
   body: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<Response> {
-  const expired = () => {
+  /** Ends the session and hands back the error to throw at the call site. */
+  const endSessionWithError = () => {
     endExpiredSession()
     return new StreamAuthError('Session expired - please sign in again')
   }
@@ -146,12 +147,12 @@ async function retryAfterRefresh(
   try {
     await authService.refreshSession()
   } catch {
-    throw expired()
+    throw endSessionWithError()
   }
 
   const retry = await postStream(endpoint, body, signal)
   if (retry.status === 401) {
-    throw expired()
+    throw endSessionWithError()
   }
   return retry
 }

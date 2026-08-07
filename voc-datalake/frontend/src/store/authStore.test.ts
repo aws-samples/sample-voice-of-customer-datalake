@@ -77,6 +77,26 @@ describe('authStore', () => {
       expect(state.refreshToken).toBe('refresh-token-789')
       expect(state.isAuthenticated).toBe(true)
     })
+
+    /*
+     * Tokens only arrive from Cognito, so this is the one moment a session
+     * goes from "restored from localStorage" to "validated" — and the only
+     * thing that releases ProtectedRoute's validation gate. Drop it and a
+     * *successful* refresh leaves the app on its loader forever, which is a
+     * worse failure than the expired-session bug this replaced.
+     */
+    it('marks the session validated, releasing the boot-validation gate', () => {
+      const { setTokens } = useAuthStore.getState()
+      expect(useAuthStore.getState().sessionReady).toBe(false)
+
+      setTokens({
+        accessToken: 'access',
+        idToken: 'id',
+        refreshToken: 'refresh',
+      })
+
+      expect(useAuthStore.getState().sessionReady).toBe(true)
+    })
   })
 
   describe('logout', () => {
@@ -112,6 +132,15 @@ describe('authStore', () => {
       const state = useAuthStore.getState()
       expect(state.isAuthenticated).toBe(false)
       expect(state.error).toBeNull()
+    })
+
+    it('un-validates the session so the next page load revalidates', () => {
+      const { setTokens, logout } = useAuthStore.getState()
+
+      setTokens({ accessToken: 'access', idToken: 'id', refreshToken: 'refresh' })
+      logout()
+
+      expect(useAuthStore.getState().sessionReady).toBe(false)
     })
   })
 
