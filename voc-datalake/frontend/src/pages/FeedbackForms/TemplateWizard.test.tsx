@@ -69,14 +69,23 @@ describe('TemplateWizard dialog semantics (ModalShell adoption)', () => {
       </>,
     )
 
-    const [first, second] = screen.getAllByRole('dialog')
-    const firstId = first.getAttribute('aria-labelledby')
-    const secondId = second.getAttribute('aria-labelledby')
+    const dialogs = screen.getAllByRole('dialog')
+    // Asserted before destructuring so a regression to a single dialog fails here
+    // rather than as a TypeError on the second element.
+    expect(dialogs).toHaveLength(2)
+
+    const [first, second] = dialogs
+    // Coalesce at the read so the ids are `string`, not `string | null` — the
+    // truthiness assertions below are the real check, and `getElementById` then
+    // needs no inline fallback.
+    const labelId = (dialog: HTMLElement) => dialog.getAttribute('aria-labelledby') ?? ''
+    const firstId = labelId(first)
+    const secondId = labelId(second)
 
     expect(firstId).toBeTruthy()
     expect(secondId).toBeTruthy()
     expect(firstId).not.toBe(secondId)
-    expect(first.contains(document.getElementById(firstId ?? ''))).toBe(true)
-    expect(second.contains(document.getElementById(secondId ?? ''))).toBe(true)
+    expect(first.contains(document.getElementById(firstId))).toBe(true)
+    expect(second.contains(document.getElementById(secondId))).toBe(true)
   })
 })
