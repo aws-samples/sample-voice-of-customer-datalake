@@ -119,7 +119,7 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
   const { t } = useTranslation('feedbackForms')
   // Hoisted so the label is computed once and shared by aria-label and title,
   // which also keeps this component under the ESLint complexity ceiling.
-  const toggleLabel = form.enabled ? t('disableForm') : t('enableForm')
+  const toggleLabel = form.enabled ? t('card.disableForm') : t('card.enableForm')
   const [copied, setCopied] = useState<string | null>(null)
   const [showEmbed, setShowEmbed] = useState(false)
   const [showSubmissions, setShowSubmissions] = useState(false)
@@ -183,16 +183,16 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
             <button
               onClick={() => onEdit(form)}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              aria-label={t('editForm')}
-              title={t('editForm')}
+              aria-label={t('card.editForm')}
+              title={t('card.editForm')}
             >
               <Edit2 size={18} className="text-gray-600" />
             </button>
             <button
               onClick={() => onDelete(form.form_id)}
               className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-              aria-label={t('deleteForm')}
-              title={t('deleteForm')}
+              aria-label={t('card.deleteForm')}
+              title={t('card.deleteForm')}
             >
               <Trash2 size={18} className="text-red-500" />
             </button>
