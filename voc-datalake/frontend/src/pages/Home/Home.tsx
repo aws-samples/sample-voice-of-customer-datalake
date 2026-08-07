@@ -19,7 +19,6 @@
 import {
   Globe,
   Database,
-  MessageSquare,
   FolderOpen,
   SearchX,
   Bot,
@@ -69,7 +68,9 @@ const PHASES: Phase[] = [
     titleKey: 'home.phase2Title',
     descKey: 'home.phase2Desc',
     links: [
-      { to: '/feedback', labelKey: 'common:nav.feedback', icon: MessageSquare },
+      // No `/feedback` link here: that route and its `nav.feedback` label were
+      // both removed when the standalone Feedback list was consolidated into
+      // Categories (issue #198), so the chip rendered the raw key text.
       { to: '/categories', labelKey: 'common:nav.categories', icon: FolderOpen },
       { to: '/problems', labelKey: 'common:nav.problemAnalysis', icon: SearchX },
     ],
