@@ -181,6 +181,29 @@ describe('ModalShell', () => {
     expect(onCloseOuter).not.toHaveBeenCalled()
   })
 
+  it('closes the inner dialog when a nested shell is already open on first commit', async () => {
+    // The bug the document-order guard fixes. React runs CHILD effects before
+    // PARENT effects, so registration order here is [inner, outer] and a
+    // "last registered wins" guard would close the OUTER dialog. Sibling shells
+    // cannot catch this: there, registration and document order agree.
+    const user = userEvent.setup()
+    const onCloseOuter = vi.fn()
+    const onCloseInner = vi.fn()
+    render(
+      <ModalShell isOpen onClose={onCloseOuter} ariaLabel="Outer">
+        <button>outer-button</button>
+        <ModalShell isOpen onClose={onCloseInner} ariaLabel="Inner">
+          <button>inner-button</button>
+        </ModalShell>
+      </ModalShell>,
+    )
+
+    await user.keyboard('{Escape}')
+
+    expect(onCloseInner).toHaveBeenCalledTimes(1)
+    expect(onCloseOuter).not.toHaveBeenCalled()
+  })
+
   it('closes only the top-most dialog on Escape when shells are stacked', async () => {
     // ConfirmModal is used as an unsaved-changes guard inside other modals, so
     // shells nest. An unguarded document listener would close both on one press.
@@ -205,7 +228,7 @@ describe('ModalShell', () => {
     expect(onCloseOuter).not.toHaveBeenCalled()
   })
 
-  it('does not trap Tab for a dialog that does not hold focus', async () => {
+  it('does not trap Tab for a dialog that is not top-most', async () => {
     const user = userEvent.setup()
     render(
       <>
