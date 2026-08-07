@@ -164,6 +164,8 @@ function extractKeysFromSource(files) {
  * missing translation key, failing the gate on code that is perfectly fine.
  *
  * @param content source text of one file
+ * @param file path to that file, used only to locate a suspected typo in the
+ *   warning message
  * @returns "ns:key" strings
  */
 function extractDataHeldKeys(content, file) {
