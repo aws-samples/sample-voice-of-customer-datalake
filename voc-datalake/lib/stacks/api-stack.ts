@@ -1033,17 +1033,41 @@ export class VocApiStack extends cdk.Stack {
     usersResource.addMethod('POST', usersIntegration, authMethodOptions);
     usersResource.addProxy({ defaultIntegration: usersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /feedback-form/* (legacy single form - public endpoints, proxy to feedback form Lambda)
-    const feedbackFormResource = this.api.root.addResource('feedback-form');
-    const feedbackFormProxy = feedbackFormResource.addProxy({ defaultIntegration: feedbackFormIntegration, anyMethod: true });
-    NagSuppressions.addResourceSuppressions(feedbackFormProxy, publicFeedbackEndpointSuppressions, true);
-
     // /feedback-forms/* (multiple forms)
+    //
+    // Item routes are declared EXPLICITLY instead of behind an `anyMethod` proxy.
+    // A proxy with no `defaultMethodOptions` defaults every method to
+    // AuthorizationType.NONE, which published form update, form delete and reads
+    // of submitted customer feedback with no credentials at all. Explicit routes
+    // fail closed: a new handler route is unreachable until it is wired here,
+    // rather than silently inheriting a catch-all's (absent) authorization.
+    //
+    // Only the three routes the embeddable widget needs stay public — verified
+    // against lambda/api/static/feedback-widget.js (config + submit) plus the
+    // /iframe embed variant, which a browser navigates to directly. Keep this
+    // list and lambda/api/feedback_form_handler.py in step: every route the
+    // handler registers needs a method here, and api-stack.test.ts asserts that
+    // only these three are unauthenticated.
     const feedbackFormsResource = this.api.root.addResource('feedback-forms');
     feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);
     feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions);
-    const feedbackFormsProxy = feedbackFormsResource.addProxy({ defaultIntegration: feedbackFormIntegration, anyMethod: true });
-    NagSuppressions.addResourceSuppressions(feedbackFormsProxy, publicFeedbackEndpointSuppressions, true);
+
+    const feedbackFormItem = feedbackFormsResource.addResource('{form_id}');
+    feedbackFormItem.addMethod('GET', feedbackFormIntegration, authMethodOptions);
+    feedbackFormItem.addMethod('PUT', feedbackFormIntegration, authMethodOptions);
+    feedbackFormItem.addMethod('DELETE', feedbackFormIntegration, authMethodOptions);
+    feedbackFormItem.addResource('submissions').addMethod('GET', feedbackFormIntegration, authMethodOptions);
+    feedbackFormItem.addResource('stats').addMethod('GET', feedbackFormIntegration, authMethodOptions);
+
+    // Intentionally unauthenticated: the widget runs on the customer's own site.
+    const publicFeedbackFormMethods = [
+      feedbackFormItem.addResource('config').addMethod('GET', feedbackFormIntegration),
+      feedbackFormItem.addResource('submit').addMethod('POST', feedbackFormIntegration),
+      feedbackFormItem.addResource('iframe').addMethod('GET', feedbackFormIntegration),
+    ];
+    for (const publicMethod of publicFeedbackFormMethods) {
+      NagSuppressions.addResourceSuppressions(publicMethod, publicFeedbackEndpointSuppressions);
+    }
 
     // /projects/*
     const projectsResource = this.api.root.addResource('projects');

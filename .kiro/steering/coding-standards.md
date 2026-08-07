@@ -150,7 +150,7 @@ lambda/api/
 ├── settings_handler.py      # /settings/*
 ├── projects_handler.py      # /projects/*
 ├── users_handler.py         # /users/* (Cognito admin)
-├── feedback_form_handler.py # /feedback-form/*, /feedback-forms/*
+├── feedback_form_handler.py # /feedback-forms/*
 ├── data_explorer_handler.py # /data-explorer/* (S3 raw data & DynamoDB browser)
 └── projects.py              # Shared business logic for projects
 ```
