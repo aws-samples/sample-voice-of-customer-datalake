@@ -14,7 +14,18 @@ import ModalShell from './ModalShell'
 
 const onClose = vi.fn()
 
-function renderShell(props: Partial<React.ComponentProps<typeof ModalShell>> = {}) {
+/**
+ * Overridable props exclude the accessible-name pair on purpose. The name is a
+ * union (exactly one of ariaLabel / ariaLabelledBy), and `Partial<>` of a union
+ * makes both optional — which would let a spread satisfy neither arm and defeat
+ * the very guarantee these tests pin. Tests needing a different naming strategy
+ * render ModalShell directly, as the ariaLabelledBy cases below do.
+ */
+type ShellOverrides = Partial<
+  Omit<React.ComponentProps<typeof ModalShell>, 'ariaLabel' | 'ariaLabelledBy'>
+>
+
+function renderShell(props: ShellOverrides = {}) {
   return render(
     <ModalShell isOpen onClose={onClose} ariaLabel="Test dialog" {...props}>
       <button>first</button>

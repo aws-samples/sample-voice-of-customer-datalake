@@ -30,17 +30,9 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import clsx from 'clsx'
 
-interface ModalShellProps {
+interface ModalShellBaseProps {
   readonly isOpen: boolean
   readonly onClose: () => void
-  /**
-   * The dialog's accessible name. A plain string rather than a node, so the name
-   * can never resolve to empty — an earlier draft rendered the title into a
-   * hidden element and pointed aria-labelledby at it, which produced a nameless
-   * dialog whenever the title was a ReactNode. The VISIBLE heading stays in
-   * `children`, where each modal already renders it.
-   */
-  readonly ariaLabel: string
   readonly children: ReactNode
   /** Extra classes for the panel, e.g. a different max-width. */
   readonly panelClassName?: string
@@ -51,6 +43,27 @@ interface ModalShellProps {
    */
   readonly dismissable?: boolean
 }
+
+/**
+ * The dialog's accessible name, as a union so that supplying NEITHER is a type
+ * error rather than a documented rule. Two optional props would let a caller omit
+ * both and get an unnamed dialog — precisely the defect this shell exists to
+ * prevent, and the reason the name is required at all.
+ *
+ * - `ariaLabel` is a plain string, never a node, so the name cannot resolve to
+ *   empty. An earlier draft rendered the title into a hidden element and pointed
+ *   aria-labelledby at it, which produced a NAMELESS dialog whenever the title was
+ *   a ReactNode. The visible heading stays in `children`.
+ * - `ariaLabelledBy` is preferred when a heading already exists: the name cannot
+ *   drift from what is on screen, and no separate translatable string is added.
+ *
+ * `?: never` on the unused side keeps object literals from satisfying both arms.
+ */
+type ModalShellNameProps =
+  | { readonly ariaLabel: string; readonly ariaLabelledBy?: never }
+  | { readonly ariaLabelledBy: string; readonly ariaLabel?: never }
+
+type ModalShellProps = ModalShellBaseProps & ModalShellNameProps
 
 /**
  * Focusable descendants in DOM order, excluding anything not actually reachable.
@@ -118,6 +131,7 @@ export default function ModalShell({
   isOpen,
   onClose,
   ariaLabel,
+  ariaLabelledBy,
   children,
   panelClassName,
   dismissable = true,
@@ -195,11 +209,15 @@ export default function ModalShell({
         className="absolute inset-0 bg-black/50"
         onClick={dismissable ? onClose : undefined}
       />
+      {/* Exactly one of aria-label / aria-labelledby is defined (enforced by
+          ModalShellNameProps), so neither needs to defer to the other — the
+          unused one is undefined and renders as no attribute at all. */}
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         tabIndex={-1}
         className={clsx('relative bg-white rounded-xl shadow-xl w-full', panelClassName)}
       >

@@ -80,6 +80,55 @@ describe('DocWizard', () => {
     mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
   })
 
+  // #283 stage 2: this wizard was one of the two keyboard traps found by browser
+  // testing — no role="dialog", a fused overlay, and Escape did nothing. It now
+  // renders through ModalShell, so it inherits dialog semantics and dismissal.
+  describe('dialog semantics (ModalShell adoption)', () => {
+    it('is exposed as a modal dialog named by its title', () => {
+      render(<DocWizard {...makeProps()} />, { wrapper: createWrapper() })
+
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toHaveAttribute('aria-modal', 'true')
+      // Asserted as an exact string, not a bare toHaveAccessibleName(): the latter
+      // passes on any non-empty name, so it would not have caught the name drifting
+      // away from the visible heading.
+      expect(dialog).toHaveAccessibleName('Generate PR-FAQ')
+    })
+
+    it('keeps the dialog name in step with the doc-type selection', () => {
+      // Pins the name to the same value the heading shows, which is what makes the
+      // exact assertion above meaningful rather than a hardcoded coincidence.
+      render(
+        <DocWizard {...makeProps({ docTypes: ['prfaq', 'prd'] })} />,
+        { wrapper: createWrapper() },
+      )
+
+      expect(screen.getByRole('dialog')).toHaveAccessibleName('Generate PRD + PR-FAQ')
+    })
+
+    it('closes on Escape', async () => {
+      const user = userEvent.setup()
+      const props = makeProps()
+      render(<DocWizard {...props} />, { wrapper: createWrapper() })
+
+      await user.keyboard('{Escape}')
+
+      expect(props.onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('closes on overlay click but not on panel click', async () => {
+      const user = userEvent.setup()
+      const props = makeProps()
+      render(<DocWizard {...props} />, { wrapper: createWrapper() })
+
+      await user.click(screen.getByRole('dialog'))
+      expect(props.onClose).not.toHaveBeenCalled()
+
+      await user.click(screen.getByTestId('modal-overlay'))
+      expect(props.onClose).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('doc-type multi-select', () => {
     it('shows PR-FAQ title when only prfaq is selected', () => {
       render(<DocWizard {...makeProps()} />, { wrapper: createWrapper() })

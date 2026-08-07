@@ -10,6 +10,7 @@ import type { ContextConfig } from './types'
 import { DataSourcesStep, FeedbackFiltersStep, ItemSelectionStep } from './DataSourceSteps'
 import type { ExtraDataSource } from './DataSourceSteps'
 import { useWizardState } from './useWizardState'
+import ModalShell from '../ModalShell'
 
 type AccentColor = 'purple' | 'amber' | 'blue' | 'green'
 
@@ -84,68 +85,71 @@ export default function DataSourceWizard({
   const colors = colorClasses[accentColor]
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 sm:p-6">
-      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
-        <WizardHeader title={title} icon={icon} step={step} totalSteps={totalSteps} onClose={onClose} />
-        <ProgressBar step={step} totalSteps={totalSteps} bgClass={colors.bg} />
-        
-        <div className="p-4 sm:p-6 overflow-y-auto max-h-[60vh]">
-          {stepContent === 'dataSources' && (
-            <DataSourcesStep
-              contextConfig={contextConfig}
-              onContextChange={onContextChange}
-              showFeedback={showFeedback}
-              showPersonas={showPersonas}
-              showDocuments={showDocuments}
-              showResearch={showResearch}
-              combineDocuments={combineDocuments}
-              personasCount={personas.length}
-              documentsCount={documents.length}
-              otherDocsCount={otherDocs.length}
-              researchDocsCount={researchDocs.length}
-              extraDataSources={extraDataSources}
-            />
-          )}
+    <ModalShell
+      isOpen
+      onClose={onClose}
+      ariaLabel={title}
+      panelClassName="max-w-2xl max-h-[90vh] overflow-hidden"
+    >
+      <WizardHeader title={title} icon={icon} step={step} totalSteps={totalSteps} onClose={onClose} />
+      <ProgressBar step={step} totalSteps={totalSteps} bgClass={colors.bg} />
 
-          {stepContent === 'feedbackFilters' && (
-            <FeedbackFiltersStep
-              contextConfig={contextConfig}
-              onContextChange={onContextChange}
-              sources={sources}
-              categories={categories}
-              loadingCategories={loadingCategories}
-              colors={colors}
-            />
-          )}
+      <div className="p-4 sm:p-6 overflow-y-auto max-h-[60vh]">
+        {stepContent === 'dataSources' && (
+          <DataSourcesStep
+            contextConfig={contextConfig}
+            onContextChange={onContextChange}
+            showFeedback={showFeedback}
+            showPersonas={showPersonas}
+            showDocuments={showDocuments}
+            showResearch={showResearch}
+            combineDocuments={combineDocuments}
+            personasCount={personas.length}
+            documentsCount={documents.length}
+            otherDocsCount={otherDocs.length}
+            researchDocsCount={researchDocs.length}
+            extraDataSources={extraDataSources}
+          />
+        )}
 
-          {stepContent === 'itemSelection' && (
-            <ItemSelectionStep
-              contextConfig={contextConfig}
-              onContextChange={onContextChange}
-              personas={personas}
-              documents={documents}
-              otherDocs={otherDocs}
-              researchDocs={researchDocs}
-              combineDocuments={combineDocuments}
-            />
-          )}
+        {stepContent === 'feedbackFilters' && (
+          <FeedbackFiltersStep
+            contextConfig={contextConfig}
+            onContextChange={onContextChange}
+            sources={sources}
+            categories={categories}
+            loadingCategories={loadingCategories}
+            colors={colors}
+          />
+        )}
 
-          {stepContent === 'final' && renderFinalStep()}
-        </div>
+        {stepContent === 'itemSelection' && (
+          <ItemSelectionStep
+            contextConfig={contextConfig}
+            onContextChange={onContextChange}
+            personas={personas}
+            documents={documents}
+            otherDocs={otherDocs}
+            researchDocs={researchDocs}
+            combineDocuments={combineDocuments}
+          />
+        )}
 
-        <WizardFooter
-          step={step}
-          totalSteps={totalSteps}
-          colors={colors}
-          finalStepValid={finalStepValid}
-          isSubmitting={isSubmitting}
-          submitLabel={submitLabel}
-          onBack={handleBack}
-          onNext={handleNext}
-          onSubmit={onSubmit}
-        />
+        {stepContent === 'final' && renderFinalStep()}
       </div>
-    </div>
+
+      <WizardFooter
+        step={step}
+        totalSteps={totalSteps}
+        colors={colors}
+        finalStepValid={finalStepValid}
+        isSubmitting={isSubmitting}
+        submitLabel={submitLabel}
+        onBack={handleBack}
+        onNext={handleNext}
+        onSubmit={onSubmit}
+      />
+    </ModalShell>
   )
 }
 
