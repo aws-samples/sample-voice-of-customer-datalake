@@ -659,24 +659,6 @@ describe('API Client', () => {
     })
   })
 
-  describe('getFeedbackFormConfig', () => {
-    it('fetches feedback form configuration', async () => {
-      const mockConfig = { success: true, config: { enabled: true, title: 'Feedback' } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockConfig),
-      })
-
-      const result = await api.getFeedbackFormConfig()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/config',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockConfig)
-    })
-  })
-
   describe('getS3ImportSources', () => {
     it('fetches S3 import sources', async () => {
       const mockResponse = { sources: [{ name: 'default', display_name: 'Default' }], bucket: 'test-bucket' }
@@ -980,46 +962,6 @@ describe('API Client', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ job_id: 'job-1', reviews }),
-        })
-      )
-    })
-  })
-
-  describe('saveFeedbackFormConfig', () => {
-    it('sends PUT request with form config', async () => {
-      const config = { enabled: true, title: 'Feedback', description: 'Share your thoughts' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'Saved' }),
-      })
-
-      await api.saveFeedbackFormConfig(config as any)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/config',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify(config),
-        })
-      )
-    })
-  })
-
-  describe('submitFeedbackForm', () => {
-    it('sends POST request with feedback data', async () => {
-      const data = { text: 'Great product!', rating: 5, email: 'test@example.com' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, feedback_id: 'fb-1' }),
-      })
-
-      await api.submitFeedbackForm(data)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/submit',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify(data),
         })
       )
     })

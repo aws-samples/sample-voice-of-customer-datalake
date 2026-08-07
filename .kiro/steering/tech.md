@@ -58,7 +58,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-settings-api` | `settings_handler.py` | `/settings/*` | DynamoDB (aggregates), Bedrock |
 | `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB (projects, jobs, feedback), Step Functions, Bedrock, S3 |
 | `voc-users-api` | `users_handler.py` | `/users/*` | Cognito admin |
-| `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*`, `/feedback-forms/*` | DynamoDB (aggregates), SQS |
+| `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-forms/*` | DynamoDB (aggregates), SQS |
 | `voc-chat-stream` | `lambda/stream` (TypeScript, esbuild-bundled) | `/chat/stream` SSE via API Gateway | DynamoDB read, Bedrock streaming |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 | `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read |

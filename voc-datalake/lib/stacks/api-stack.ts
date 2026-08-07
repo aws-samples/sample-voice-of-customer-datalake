@@ -1033,17 +1033,75 @@ export class VocApiStack extends cdk.Stack {
     usersResource.addMethod('POST', usersIntegration, authMethodOptions);
     usersResource.addProxy({ defaultIntegration: usersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
-    // /feedback-form/* (legacy single form - public endpoints, proxy to feedback form Lambda)
-    const feedbackFormResource = this.api.root.addResource('feedback-form');
-    const feedbackFormProxy = feedbackFormResource.addProxy({ defaultIntegration: feedbackFormIntegration, anyMethod: true });
-    NagSuppressions.addResourceSuppressions(feedbackFormProxy, publicFeedbackEndpointSuppressions, true);
-
     // /feedback-forms/* (multiple forms)
+    //
+    // Item routes are declared EXPLICITLY instead of behind an `anyMethod` proxy.
+    // A proxy with no `defaultMethodOptions` defaults every method to
+    // AuthorizationType.NONE, which published form update, form delete and reads
+    // of submitted customer feedback with no credentials at all. Explicit routes
+    // fail closed: a new handler route is unreachable until it is wired here,
+    // rather than silently inheriting a catch-all's (absent) authorization.
+    //
+    // Only the three routes the embeddable widget needs stay public — verified
+    // against lambda/api/static/feedback-widget.js (config + submit) plus the
+    // /iframe embed variant, which a browser navigates to directly. Keep this
+    // list and lambda/api/feedback_form_handler.py in step: every route the
+    // handler registers needs a method here, and api-stack.test.ts asserts that
+    // only these three are unauthenticated.
+    //
+    // Do NOT reintroduce a {proxy+} here to avoid the two-step upgrade it costs
+    // on already-deployed environments: {form_id} and {proxy+} cannot coexist as
+    // sibling variable paths, which is what makes the upgrade two deploys. See
+    // docs/deployment.md, "A sibling ({proxy+}) of this resource...".
     const feedbackFormsResource = this.api.root.addResource('feedback-forms');
     feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);
     feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions);
-    const feedbackFormsProxy = feedbackFormsResource.addProxy({ defaultIntegration: feedbackFormIntegration, anyMethod: true });
-    NagSuppressions.addResourceSuppressions(feedbackFormsProxy, publicFeedbackEndpointSuppressions, true);
+
+    // One-shot flag for upgrading an environment that still has the old
+    // /feedback-forms/{proxy+}. CloudFormation creates new resources before
+    // deleting old ones inside a single update, so {form_id} and {proxy+} would
+    // exist together and API Gateway rejects two variable path parts at one
+    // level. Deploy once with -c skipFeedbackFormItemRoutes=true to retire the
+    // proxy, then deploy again without it to create these routes.
+    //
+    // Absent (the default, and always for fresh deployments) this is a no-op —
+    // the synthesized template is identical either way. Never leave it set:
+    // while it is on, the per-form routes do not exist and the embeddable widget
+    // is down. See docs/deployment.md.
+    //
+    // TODO(cleanup): this flag exists only to migrate environments deployed
+    // before the item routes became explicit. Once every environment has run the
+    // two-deploy upgrade, delete the flag, this branch and its tests — a
+    // permanently available "skip the authorization-bearing routes" switch is a
+    // footgun once nothing needs it.
+    const skipFeedbackFormItemRoutes =
+      this.node.tryGetContext('skipFeedbackFormItemRoutes') === true
+      || this.node.tryGetContext('skipFeedbackFormItemRoutes') === 'true';
+
+    if (skipFeedbackFormItemRoutes) {
+      cdk.Annotations.of(this).addWarningV2(
+        'voc:skipFeedbackFormItemRoutes',
+        'skipFeedbackFormItemRoutes is set: /feedback-forms/{form_id}/* is NOT being deployed. '
+        + 'This is the first of two upgrade deploys — re-deploy without the flag to restore the routes.',
+      );
+    } else {
+      const feedbackFormItem = feedbackFormsResource.addResource('{form_id}');
+      feedbackFormItem.addMethod('GET', feedbackFormIntegration, authMethodOptions);
+      feedbackFormItem.addMethod('PUT', feedbackFormIntegration, authMethodOptions);
+      feedbackFormItem.addMethod('DELETE', feedbackFormIntegration, authMethodOptions);
+      feedbackFormItem.addResource('submissions').addMethod('GET', feedbackFormIntegration, authMethodOptions);
+      feedbackFormItem.addResource('stats').addMethod('GET', feedbackFormIntegration, authMethodOptions);
+
+      // Intentionally unauthenticated: the widget runs on the customer's own site.
+      const publicFeedbackFormMethods = [
+        feedbackFormItem.addResource('config').addMethod('GET', feedbackFormIntegration),
+        feedbackFormItem.addResource('submit').addMethod('POST', feedbackFormIntegration),
+        feedbackFormItem.addResource('iframe').addMethod('GET', feedbackFormIntegration),
+      ];
+      for (const publicMethod of publicFeedbackFormMethods) {
+        NagSuppressions.addResourceSuppressions(publicMethod, publicFeedbackEndpointSuppressions);
+      }
+    }
 
     // /projects/*
     const projectsResource = this.api.root.addResource('projects');

@@ -244,7 +244,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-settings-api` | `settings_handler.py` | `/settings/*` | DynamoDB, Bedrock |
 | `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB, Step Functions, Bedrock, S3 |
 | `voc-users-api` | `users_handler.py` | `/users/*` | Cognito admin |
-| `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*`, `/feedback-forms/*` | DynamoDB, SQS |
+| `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-forms/*` | DynamoDB, SQS |
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 
@@ -264,7 +264,10 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 - Lambda Powertools (Logger, Tracer, Metrics) on all functions
 
 #### ⚠️ Known Considerations (Document but assess carefully)
-- **Public Feedback Form Endpoints**: `/feedback-form/submit` is public (required for form submissions)
+- **Public Feedback Form Endpoints**: exactly three routes are unauthenticated by design —
+  `GET /feedback-forms/{id}/config`, `POST /feedback-forms/{id}/submit` and
+  `GET /feedback-forms/{id}/iframe` (the embeddable widget runs on the customer's own site).
+  Every other route under `/feedback-forms` requires Cognito; `api-stack.test.ts` enforces this.
   - Mitigated by: Rate limiting, input validation
 - **Bedrock Global Inference Profile**: Uses cross-region inference for availability
   - Ensure IAM scoped to specific inference profile ARN

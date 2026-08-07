@@ -37,7 +37,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB, Step Functions, Bedrock |
 | `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
-| `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-form/*` | DynamoDB, SQS |
+| `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-forms/*` | DynamoDB, SQS |
 | `voc-users-api` | `users_handler.py` | `/users/*` | Cognito, DynamoDB |
 
 ### DynamoDB Tables
@@ -84,7 +84,7 @@ voc-datalake/
 │   │   ├── settings_handler.py   # /settings/*
 │   │   ├── projects_handler.py   # /projects/*
 │   │   ├── data_explorer_handler.py # /data-explorer/*
-│   │   ├── feedback_form_handler.py # /feedback-form/*
+│   │   ├── feedback_form_handler.py # /feedback-forms/*
 │   │   ├── users_handler.py      # /users/*
 │   │   └── projects.py           # Shared business logic
 │   └── layers/                   # Lambda layers

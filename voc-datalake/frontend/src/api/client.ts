@@ -18,7 +18,6 @@ import type {
   PrioritizationScore,
   S3ImportSource,
   S3ImportFile,
-  FeedbackFormConfig,
   FeedbackForm,
   CognitoUser,
   ValidationLogEntry,
@@ -570,24 +569,6 @@ export const api = {
     fetchApi<{ success: boolean; message?: string }>(`/data-explorer/feedback?feedback_id=${encodeURIComponent(feedbackId)}`, {
       method: 'DELETE'
     }),
-
-  // Feedback Form (Embeddable) - Legacy single form
-  getFeedbackFormConfig: () => fetchApi<{ success: boolean; config: FeedbackFormConfig }>('/feedback-form/config'),
-  
-  saveFeedbackFormConfig: (config: FeedbackFormConfig) =>
-    fetchApi<{ success: boolean; message: string }>('/feedback-form/config', {
-      method: 'PUT',
-      body: JSON.stringify(config)
-    }),
-  
-  submitFeedbackForm: (data: { text: string; rating?: number; email?: string; name?: string; page_url?: string; custom_fields?: Record<string, string> }) =>
-    fetchApi<{ success: boolean; feedback_id?: string; message: string }>('/feedback-form/submit', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
-  getFeedbackFormEmbed: (apiEndpoint: string) =>
-    fetchApi<{ success: boolean; script_embed: string; iframe_embed: string }>(`/feedback-form/embed?api_endpoint=${encodeURIComponent(apiEndpoint)}`),
 
   // Feedback Forms (Multiple forms management)
   getFeedbackForms: () => fetchApi<{ success: boolean; forms: FeedbackForm[] }>('/feedback-forms'),

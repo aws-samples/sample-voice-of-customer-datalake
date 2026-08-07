@@ -51,7 +51,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── settings_handler.py       # /settings/* (brand, categories config)
     │   │   ├── projects_handler.py       # /projects/* (research projects, personas)
     │   │   ├── users_handler.py          # /users/* (Cognito user administration)
-    │   │   ├── feedback_form_handler.py  # /feedback-form/*, /feedback-forms/* (embeddable forms)
+    │   │   ├── feedback_form_handler.py  # /feedback-forms/* (embeddable forms)
     │   │   ├── data_explorer_handler.py  # /data-explorer/* (S3 raw data & DynamoDB browser)
     │   │   ├── logs_handler.py           # /logs/* (system logs)
     │   │   ├── manual_import_handler.py  # /manual-import/* (manual data import)
@@ -233,17 +233,37 @@ voice-of-customer-datalake/       # Root repository
 | POST | `/users/{username}/reset-password` | Reset password |
 
 ### Feedback Forms (feedback_form_handler.py)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/feedback-form/config` | Get form config (public) |
-| PUT | `/feedback-form/config` | Update form config |
-| POST | `/feedback-form/submit` | Submit feedback (public) |
-| GET | `/feedback-form/embed` | Get embed code |
-| GET | `/feedback-forms` | List all forms |
-| POST | `/feedback-forms` | Create form |
-| GET | `/feedback-forms/{id}` | Get form (public) |
-| PUT | `/feedback-forms/{id}` | Update form |
-| DELETE | `/feedback-forms/{id}` | Delete form |
+
+Every route requires Cognito **except** the three marked public, which the
+embeddable widget calls from the customer's own site.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/feedback-forms` | Cognito | List all forms |
+| POST | `/feedback-forms` | Cognito | Create form |
+| GET | `/feedback-forms/{id}` | Cognito | Get form |
+| PUT | `/feedback-forms/{id}` | Cognito | Update form |
+| DELETE | `/feedback-forms/{id}` | Cognito | Delete form |
+| GET | `/feedback-forms/{id}/submissions` | Cognito | Read submitted feedback |
+| GET | `/feedback-forms/{id}/stats` | Cognito | Submission count + average rating |
+| GET | `/feedback-forms/{id}/config` | **public** | Form config for the widget |
+| POST | `/feedback-forms/{id}/submit` | **public** | Submit feedback |
+| GET | `/feedback-forms/{id}/iframe` | **public** | Iframe embed variant |
+
+> There is no `/feedback-form/*` (singular) API. These routes are declared
+> **explicitly** in `api-stack.ts` rather than behind a `{proxy+}`, so adding a
+> route to the handler also requires wiring it there. That is deliberate: a
+> proxy without `defaultMethodOptions` defaults to `AuthorizationType: NONE`,
+> which is how form update/delete and submission reads were once public.
+> `api-stack.test.ts` asserts the handler and stack stay in step, and that only
+> the three public routes are unauthenticated.
+
+> ⚠️ **"Cognito" above means authenticated, NOT authorized.** These routes check
+> that the caller has a valid token; they do not check *which* forms the caller
+> owns. `feedback_form_handler.py` imports no auth helper, so **any authenticated
+> user can read, update or delete any form and read any form's submissions**.
+> That residual gap is tracked separately (same class as the missing per-user
+> scoping on projects) — do not read this table as "fully protected".
 
 ### Projects (projects_handler.py)
 | Method | Path | Description |

@@ -88,30 +88,6 @@ function filterByDateBasis(items, searchParams) {
   });
 }
 
-// Mock feedback form config (in-memory)
-let feedbackFormConfig = {
-  enabled: true,
-  title: 'Share Your Feedback',
-  description: 'We value your opinion. Help us improve by sharing your experience.',
-  question: 'How was your experience?',
-  placeholder: 'Tell us what you liked or what we could do better...',
-  rating_enabled: true,
-  rating_type: 'emoji',
-  rating_max: 5,
-  submit_button_text: 'Submit',
-  success_message: 'Thank you for your feedback! 🎉',
-  theme: {
-    primary_color: '#3B82F6',
-    background_color: '#FFFFFF',
-    text_color: '#1F2937',
-    border_radius: '12px'
-  },
-  collect_email: false,
-  collect_name: false,
-  custom_fields: [],
-  brand_name: 'Demo Brand',
-};
-
 // Mock sources status
 const mockSourcesStatus = {
   sources: [
@@ -332,22 +308,6 @@ const mockS3Files = {
 };
 
 const handlers = {
-  // Feedback Form endpoints
-  'GET /feedback-form/config': () => ({ success: true, config: feedbackFormConfig }),
-  'PUT /feedback-form/config': (body) => {
-    feedbackFormConfig = { ...feedbackFormConfig, ...body };
-    return { success: true, message: 'Configuration saved' };
-  },
-  'POST /feedback-form/submit': (body) => {
-    console.log('📝 Feedback submitted:', body);
-    return { success: true, feedback_id: 'mock_' + Date.now(), message: feedbackFormConfig.success_message };
-  },
-  'GET /feedback-form/embed': () => ({
-    success: true,
-    script_embed: '<!-- Mock embed code -->',
-    iframe_embed: '<!-- Mock iframe code -->'
-  }),
-
   // Feedback Forms list
   'GET /feedback-forms': () => ({ forms: mockFeedbackForms }),
 
