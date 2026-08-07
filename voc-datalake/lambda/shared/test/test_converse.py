@@ -29,6 +29,25 @@ class TestConverse:
         assert result == 'Hello, world!'
         mock_client.converse.assert_called_once()
 
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_explicit_model_id_takes_precedence_over_surface(
+        self, mock_get_client, mock_get_active_model_id
+    ):
+        """Does not resolve the surface when model_id is explicit."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'Done'}]}}
+        }
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Say hello', surface='documents', model_id='explicit-model')
+
+        assert result == 'Done'
+        mock_get_active_model_id.assert_not_called()
+        assert mock_client.converse.call_args.kwargs['modelId'] == 'explicit-model'
+
     @patch('shared.converse.get_bedrock_client')
     def test_includes_system_prompt(self, mock_get_client):
         """Includes system prompt when provided."""
@@ -465,6 +484,46 @@ class TestConverseChain:
         
         call_args = mock_converse.call_args
         assert call_args.kwargs['thinking_budget'] == 3000
+
+    @patch('shared.converse.converse')
+    def test_pins_explicit_model_id(self, mock_converse):
+        """Forwards an explicit model_id to every step."""
+        mock_converse.side_effect = ['First output', 'Second output']
+
+        from shared.converse import converse_chain
+        steps = [
+            {'system': 'S1', 'user': 'U1'},
+            {'system': 'S2', 'user': 'U2'},
+        ]
+
+        converse_chain(steps, surface='documents', model_id='resolved-model')
+
+        assert [c.kwargs['model_id'] for c in mock_converse.call_args_list] == [
+            'resolved-model',
+            'resolved-model',
+        ]
+        assert [c.kwargs['surface'] for c in mock_converse.call_args_list] == [
+            'documents',
+            'documents',
+        ]
+
+    @patch('shared.converse.converse')
+    def test_step_model_overrides_chain_model_id(self, mock_converse):
+        """Uses the step model when both chain and step models are set."""
+        mock_converse.side_effect = ['First output', 'Second output']
+
+        from shared.converse import converse_chain
+        steps = [
+            {'system': 'S1', 'user': 'U1'},
+            {'system': 'S2', 'user': 'U2', 'model': 'step-model'},
+        ]
+
+        converse_chain(steps, surface='documents', model_id='chain-model')
+
+        assert [c.kwargs['model_id'] for c in mock_converse.call_args_list] == [
+            'chain-model',
+            'step-model',
+        ]
 
 
 class TestExtractText:

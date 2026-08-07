@@ -284,3 +284,68 @@ class TestGenerateAvatarPromptWithLlm:
         result = generate_avatar_prompt_with_llm(persona_data, mock_bedrock)
         
         assert 'Professional headshot' in result
+
+
+class TestGeneratePersonasModelMetadata:
+    """Tests for persona generation model metadata."""
+
+    def test_stores_resolved_model_id(self):
+        """Stamps the resolved model, not the global fallback constant."""
+        import projects
+
+        table = MagicMock()
+        table.query.return_value = {'Items': []}
+        feedback_items = [{'feedback_id': 'f1', 'source_platform': 'web'}]
+
+        with patch('projects.projects_table', table), \
+                patch('projects.get_feedback_context', return_value=feedback_items), \
+                patch('projects.format_feedback_for_llm', return_value='feedback'), \
+                patch('projects.get_feedback_statistics', return_value={'total': 1}), \
+                patch('projects.get_persona_generation_steps', return_value=[
+                    {'step_name': projects.PERSONA_SYNTHESIS_STEP},
+                ]), \
+                patch('projects.converse_chain', return_value=[
+                    json.dumps([{'name': 'Ada'}]),
+                ]) as mock_chain, \
+                patch('projects.get_active_model_id', return_value='resolved-model') as mock_model_id:
+            projects.generate_personas(
+                'proj-1',
+                {'persona_count': 1, 'generate_avatars': False},
+            )
+
+        assert table.put_item.called
+        stored = table.put_item.call_args.kwargs['Item']
+        assert stored['llm_metadata']['model'] == 'resolved-model'
+        # One resolution per invocation, and the chain is PINNED to it: the
+        # model converse() invokes is the one llm_metadata records.
+        mock_model_id.assert_called_once_with(surface='documents')
+        assert mock_chain.call_args.kwargs['model_id'] == 'resolved-model'
+
+    def test_rejects_persona_step_model_override(self):
+        """llm_metadata records one model, so persona steps must not override it."""
+        import projects
+        from shared.exceptions import ServiceError
+
+        table = MagicMock()
+        table.query.return_value = {'Items': []}
+        feedback_items = [{'feedback_id': 'f1', 'source_platform': 'web'}]
+
+        with patch('projects.projects_table', table), \
+                patch('projects.get_feedback_context', return_value=feedback_items), \
+                patch('projects.format_feedback_for_llm', return_value='feedback'), \
+                patch('projects.get_feedback_statistics', return_value={'total': 1}), \
+                patch('projects.get_persona_generation_steps', return_value=[
+                    {
+                        'step_name': projects.PERSONA_SYNTHESIS_STEP,
+                        'model': 'other-model',
+                    },
+                ]), \
+                patch('projects.converse_chain') as mock_chain, \
+                patch('projects.get_active_model_id', return_value='resolved-model'):
+            with pytest.raises(ServiceError, match='Failed to generate personas'):
+                projects.generate_personas(
+                    'proj-1',
+                    {'persona_count': 1, 'generate_avatars': False},
+                )
+
+        mock_chain.assert_not_called()

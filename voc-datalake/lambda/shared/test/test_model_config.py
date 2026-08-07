@@ -45,6 +45,12 @@ class TestAllowlist:
     def test_allowlist_has_all_five_models(self):
         assert ALLOWED_MODEL_IDS == {SONNET5, SONNET46, OPUS5, OPUS48, HAIKU45}
 
+    def test_allowlist_is_anthropic_only_for_raw_invoke_model_callers(self):
+        assert all(
+            model_id.startswith('global.anthropic.')
+            for model_id in ALLOWED_MODEL_IDS
+        )
+
     def test_every_surface_default_is_allowlisted(self):
         """A surface whose Automatic default isn't invocable would break that
         surface out of the box."""

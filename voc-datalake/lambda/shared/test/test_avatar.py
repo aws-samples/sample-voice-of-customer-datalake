@@ -1,17 +1,17 @@
 """Tests for shared.avatar module - avatar generation utilities."""
 
+import base64
 import json
 from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import patch, MagicMock
-import base64
+from unittest.mock import MagicMock, patch
 
 
 class TestGenerateAvatarPromptWithLlm:
     """Tests for generate_avatar_prompt_with_llm function."""
 
     @patch('shared.avatar.get_avatar_prompt_config')
-    @patch('shared.aws.BEDROCK_MODEL_ID', 'test-model')
-    def test_successful_prompt_generation(self, mock_config):
+    @patch('shared.model_config.get_active_model_id', return_value='test-model')
+    def test_successful_prompt_generation(self, mock_model_id, mock_config):
         """Generates image prompt from persona data using Claude."""
         from shared.avatar import generate_avatar_prompt_with_llm
 
@@ -42,10 +42,12 @@ class TestGenerateAvatarPromptWithLlm:
         result = generate_avatar_prompt_with_llm(persona, mock_bedrock)
         assert result == 'Professional headshot of a software engineer'
         mock_bedrock.invoke_model.assert_called_once()
+        assert mock_bedrock.invoke_model.call_args.kwargs['modelId'] == 'test-model'
+        mock_model_id.assert_called_once_with(surface='utility')
 
     @patch('shared.avatar.get_avatar_prompt_config')
-    @patch('shared.aws.BEDROCK_MODEL_ID', 'test-model')
-    def test_handles_thinking_blocks_in_response(self, mock_config):
+    @patch('shared.model_config.get_active_model_id', return_value='test-model')
+    def test_handles_thinking_blocks_in_response(self, mock_model_id, mock_config):
         """Extracts text from response with thinking blocks."""
         from shared.avatar import generate_avatar_prompt_with_llm
 
@@ -69,8 +71,8 @@ class TestGenerateAvatarPromptWithLlm:
         assert result == 'A portrait of a teacher'
 
     @patch('shared.avatar.get_avatar_prompt_config')
-    @patch('shared.aws.BEDROCK_MODEL_ID', 'test-model')
-    def test_fallback_on_llm_error(self, mock_config):
+    @patch('shared.model_config.get_active_model_id', return_value='test-model')
+    def test_fallback_on_llm_error(self, mock_model_id, mock_config):
         """Uses fallback prompt when LLM call fails."""
         from shared.avatar import generate_avatar_prompt_with_llm
 
@@ -89,8 +91,8 @@ class TestGenerateAvatarPromptWithLlm:
         assert 'Designer' in result
 
     @patch('shared.avatar.get_avatar_prompt_config')
-    @patch('shared.aws.BEDROCK_MODEL_ID', 'test-model')
-    def test_fallback_with_empty_occupation(self, mock_config):
+    @patch('shared.model_config.get_active_model_id', return_value='test-model')
+    def test_fallback_with_empty_occupation(self, mock_model_id, mock_config):
         """Uses 'professional' as default occupation in fallback."""
         from shared.avatar import generate_avatar_prompt_with_llm
 
