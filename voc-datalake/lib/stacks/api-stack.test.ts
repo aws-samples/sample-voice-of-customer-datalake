@@ -396,3 +396,43 @@ describe('skipFeedbackFormItemRoutes (transitional upgrade flag)', () => {
     expect(apiMethods(apiTemplate()).map((m) => m.route)).toContain('PUT /feedback-forms/{form_id}');
   });
 });
+
+
+describe('metrics Lambda IAM grants', () => {
+  // The /metrics/* and /feedback/entities handlers read a whole date window with
+  // a base-table Query on the aggregates table (see _query_metric_window). Every
+  // Python test for those endpoints mocks `aggregates_table`, so a narrowed grant
+  // would surface only as an AccessDenied 500 in a deployed environment. This
+  // pins the action that makes those reads possible.
+  const StatementSchema = z.object({
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+
+  it('grants dynamodb:Query on the aggregates table itself, not only its indexes', () => {
+    const policies = apiTemplate().findResources('AWS::IAM::Policy');
+    const metricsPolicy = Object.entries(policies).find(([id]) => id.includes('MetricsLambdaRole'));
+    expect(metricsPolicy, 'no IAM policy found for MetricsLambdaRole').toBeDefined();
+
+    const statements = z
+      .object({ Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(StatementSchema) }) }) })
+      .parse(metricsPolicy?.[1]).Properties.PolicyDocument.Statement;
+
+    const aggregatesQueryStatements = statements.filter((s) => {
+      const actions = Array.isArray(s.Action) ? s.Action : [s.Action];
+      return actions.includes('dynamodb:Query') && JSON.stringify(s.Resource).includes('Aggregates');
+    });
+    expect(aggregatesQueryStatements.length).toBeGreaterThan(0);
+
+    // The bare table ARN must be present, not just the `/index/*` child: a
+    // grant covering only indexes would satisfy a laxer check while every
+    // windowed read still failed.
+    const resources = JSON.stringify(aggregatesQueryStatements.map((s) => s.Resource));
+    expect(resources).toContain('Aggregates');
+    const hasBareTableArn = aggregatesQueryStatements.some((s) => {
+      const list = Array.isArray(s.Resource) ? s.Resource : [s.Resource];
+      return list.some((r) => JSON.stringify(r).includes('Aggregates') && !JSON.stringify(r).includes('index/*'));
+    });
+    expect(hasBareTableArn, 'aggregates Query granted on indexes only').toBe(true);
+  });
+});

@@ -187,6 +187,45 @@ def _scan_window_items(
 # Feedback Endpoints
 # ============================================
 
+def _query_metric_window(pk: str, days: int, current_date: datetime) -> list[dict]:
+    """Read one metric partition's trailing `days` window, newest date first.
+
+    `sk` is 'YYYY-MM-DD' and ISO dates sort lexicographically, so a window is a
+    contiguous sort-key range that `between()` bounds server-side: a fixed
+    number of requests regardless of `days`, not one `get_item` per day.
+
+    `ScanIndexForward=False` is load-bearing. Callers hand these items straight
+    to the client as `daily_totals` / `daily_sentiment`, which are charted
+    newest-first; DynamoDB's default ascending order would reverse both series
+    while leaving every total correct.
+
+    Not the `gsi1-by-metric-type` index: it only holds items the aggregator tags
+    with `metric_type`, which is just the daily_source and persona partitions.
+    These `pk`s are known anyway, so the base table answers directly and bounds
+    the window server-side instead of reading all dates and filtering in memory.
+    """
+    oldest = (current_date - timedelta(days=days - 1)).strftime('%Y-%m-%d')
+    newest = current_date.strftime('%Y-%m-%d')
+    condition = Key('pk').eq(pk) & Key('sk').between(oldest, newest)
+    items: list[dict] = []
+    kwargs: dict = {'KeyConditionExpression': condition, 'ScanIndexForward': False}
+    # A 365-day window of counter items sits far inside one 1 MB page today, but
+    # that rests on item width the aggregator controls, and these endpoints have
+    # no is_partial signal with which to report a truncated window. So follow the
+    # cursor -- but bounded, never `while True`: one date yields at most one item
+    # and an unfiltered page yields at least one, so a window of `days` dates
+    # cannot span more than `days` pages. A bound also means a surprising
+    # response shape degrades to a short read instead of spinning.
+    for _ in range(days):
+        response = aggregates_table.query(**kwargs)
+        items.extend(response.get('Items', []))
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            break
+        kwargs['ExclusiveStartKey'] = last_key
+    return items
+
+
 @app.get("/feedback")
 @tracer.capture_method
 def list_feedback():
@@ -669,42 +708,6 @@ def _summary_from_items(days: int) -> dict:
         'daily_totals': totals,
         'daily_sentiment': sentiment_data,
     }
-
-
-def _query_metric_window(pk: str, days: int, current_date: datetime) -> list[dict]:
-    """Read one metric partition's trailing `days` window in a SINGLE query.
-
-    The aggregates table is keyed `(pk, sk)` with `sk` = 'YYYY-MM-DD'. ISO dates
-    sort lexicographically, so a trailing window is a contiguous sort-key range
-    and `between()` expresses it server-side: **one** request regardless of
-    `days`, replacing the one `get_item` per day this helper was extracted to
-    remove (`/metrics/summary` alone issued 3 x days, ~270 at a 90-day window).
-
-    Items come back NEWEST FIRST (`ScanIndexForward=False`) because the loops
-    this replaces walked `i` from 0 (today) upward, and `daily_totals` /
-    `daily_sentiment` are handed to the client in that order to be charted.
-    A plain query would return them ascending and silently reverse the charts.
-
-    Deliberately NOT the `gsi1-by-metric-type` shape used by `/metrics/sources`
-    and `/metrics/personas`. That index only carries items the aggregator tags
-    with `metric_type`, and it tags *only* `METRIC#daily_source#` and
-    `METRIC#persona#` (`aggregator/handler.py:26-31`) — precisely the two
-    endpoints that use it. The partitions here carry no such attribute and need
-    none: their `pk` is known, so the base table's own key schema answers the
-    question directly, and the window is filtered server-side rather than
-    reading every date ever recorded and discarding most of it in memory.
-
-    One page suffices: `validate_days` caps `days` at 365 and these are
-    single-counter items (~150 bytes), so a full window is ~55 KB against
-    DynamoDB's 1 MB page limit.
-    """
-    oldest = (current_date - timedelta(days=days - 1)).strftime('%Y-%m-%d')
-    newest = current_date.strftime('%Y-%m-%d')
-    response = aggregates_table.query(
-        KeyConditionExpression=Key('pk').eq(pk) & Key('sk').between(oldest, newest),
-        ScanIndexForward=False,
-    )
-    return response.get('Items', [])
 
 
 @app.get("/metrics/summary")
