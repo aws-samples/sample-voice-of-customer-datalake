@@ -11,6 +11,7 @@
 
 import { Loader2, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
+import ModalShell from '../ModalShell'
 
 interface ConfirmModalProps {
   isOpen: boolean
@@ -55,12 +56,18 @@ export default function ConfirmModal({
   const styles = variantStyles[variant]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onCancel}
+      ariaLabel={title}
+      panelClassName="max-w-md"
+      // An in-flight confirmation must not be dismissable: closing the dialog
+      // would not cancel the work it already started.
+      dismissable={!isLoading}
+    >
       
       {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-4 sm:p-6">
+      <div className="p-4 sm:p-6">
         <div className="flex items-start gap-3 sm:gap-4">
           <div className={clsx('w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0', styles.icon)}>
             <AlertTriangle size={18} className="sm:w-5 sm:h-5" />
@@ -89,6 +96,6 @@ export default function ConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   )
 }
