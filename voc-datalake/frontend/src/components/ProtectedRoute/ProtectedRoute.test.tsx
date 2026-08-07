@@ -2,21 +2,28 @@
  * @fileoverview Tests for ProtectedRoute component.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ProtectedRoute from './ProtectedRoute'
 import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
 
-// Mock the auth store
+/*
+ * The store mock is a hook *and* carries `getState`, because the component
+ * reads reactively for rendering and imperatively inside the validation
+ * effect (where a stale closure would decide whether to force a sign-out).
+ */
+const mockGetState = vi.fn(() => ({ isAuthenticated: true }))
 vi.mock('../../store/authStore', () => ({
-  useAuthStore: vi.fn(),
+  useAuthStore: Object.assign(vi.fn(), { getState: () => mockGetState() }),
 }))
 
 // Mock the auth service
 vi.mock('../../services/auth', () => ({
   authService: {
     isConfigured: vi.fn(),
+    refreshSession: vi.fn(),
+    signOut: vi.fn(),
   },
 }))
 
@@ -45,9 +52,20 @@ function renderWithRouter(
   )
 }
 
+/** Point the store at a given auth state, reactively and imperatively. */
+function setAuthState(state: { isAuthenticated: boolean; sessionReady?: boolean }) {
+  ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(state)
+  mockGetState.mockReturnValue({ isAuthenticated: state.isAuthenticated })
+}
+
 describe('ProtectedRoute', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // clearAllMocks keeps implementations, so both halves of the store mock
+    // are re-pointed explicitly — otherwise a case that sets one of them
+    // leaks its state into every case after it.
+    mockGetState.mockReturnValue({ isAuthenticated: true })
+    ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
     // Reset import.meta.env.DEV mock
     vi.stubGlobal('import', { meta: { env: { DEV: false } } })
   })
@@ -57,10 +75,8 @@ describe('ProtectedRoute', () => {
       ;(authService.isConfigured as ReturnType<typeof vi.fn>).mockReturnValue(true)
     })
 
-    it('renders children when user is authenticated', () => {
-      ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-        isAuthenticated: true,
-      })
+    it('renders children when the session is authenticated and validated', () => {
+      setAuthState({ isAuthenticated: true, sessionReady: true })
 
       renderWithRouter(
         <ProtectedRoute>
@@ -69,12 +85,11 @@ describe('ProtectedRoute', () => {
       )
 
       expect(screen.getByText('Protected Content')).toBeInTheDocument()
+      expect(authService.refreshSession).not.toHaveBeenCalled()
     })
 
     it('redirects to login when user is not authenticated', () => {
-      ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-        isAuthenticated: false,
-      })
+      setAuthState({ isAuthenticated: false })
 
       renderWithRouter(
         <ProtectedRoute>
@@ -84,6 +99,74 @@ describe('ProtectedRoute', () => {
 
       expect(screen.getByText('Login Page')).toBeInTheDocument()
       expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
+    })
+  })
+
+  /*
+   * `isAuthenticated` comes back from localStorage on every page load, so
+   * without these three cases an expired token renders the whole app and only
+   * fails later, one 401 at a time — the defect this validation gate exists
+   * to close.
+   */
+  describe('when a restored session has not been validated yet', () => {
+    beforeEach(() => {
+      ;(authService.isConfigured as ReturnType<typeof vi.fn>).mockReturnValue(true)
+      setAuthState({ isAuthenticated: true, sessionReady: false })
+    })
+
+    it('renders neither the app nor a redirect while validating', () => {
+      renderWithRouter(
+        <ProtectedRoute>
+          <div>Protected Content</div>
+        </ProtectedRoute>
+      )
+
+      expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
+      expect(screen.queryByText('Login Page')).not.toBeInTheDocument()
+    })
+
+    it('attempts a silent refresh', () => {
+      renderWithRouter(
+        <ProtectedRoute>
+          <div>Protected Content</div>
+        </ProtectedRoute>
+      )
+
+      // eslint-disable-next-line vitest/prefer-called-with
+      expect(authService.refreshSession).toHaveBeenCalled()
+    })
+
+    it('signs out when the refresh fails without clearing auth state itself', async () => {
+      // A ConfigError rejection leaves the store authenticated; failing open
+      // here would strand the user on the loader forever.
+      ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('Cognito not configured'),
+      )
+
+      renderWithRouter(
+        <ProtectedRoute>
+          <div>Protected Content</div>
+        </ProtectedRoute>
+      )
+
+      // eslint-disable-next-line vitest/prefer-called-with
+      await waitFor(() => expect(authService.signOut).toHaveBeenCalled())
+    })
+
+    it('leaves the sign-out to refreshSession when it already cleared state', async () => {
+      ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('Session refresh failed'),
+      )
+      mockGetState.mockReturnValue({ isAuthenticated: false })
+
+      renderWithRouter(
+        <ProtectedRoute>
+          <div>Protected Content</div>
+        </ProtectedRoute>
+      )
+
+      await waitFor(() => expect(authService.refreshSession).toHaveBeenCalledWith())
+      expect(authService.signOut).not.toHaveBeenCalled()
     })
   })
 

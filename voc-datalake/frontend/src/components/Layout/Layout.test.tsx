@@ -78,10 +78,14 @@ vi.mock('../UserProfileModal', () => ({
 import Layout from './Layout'
 import { useIsAdmin } from '../../store/authStore'
 
-function createWrapper(initialEntries = ['/']) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+/**
+ * @param initialEntries - router history to start from
+ * @param queryClient - pass one in to inspect the cache after interacting
+ */
+function createWrapper(
+  initialEntries = ['/'],
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TestRouter initialEntries={initialEntries}>
@@ -298,6 +302,24 @@ describe('Layout with authenticated user', () => {
     await waitFor(() => {
       expect(screen.getByTitle('Sign out')).toBeInTheDocument()
     })
+  })
+
+  /*
+   * Sign-out is an in-app navigation, so the QueryClient survives it. Without
+   * an explicit clear, the next person to sign in on this browser sees the
+   * previous session's cached feedback while their own loads.
+   */
+  it('leaves no cached data behind when signing out', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    queryClient.setQueryData(['feedback'], { count: 1, items: [{ feedback_id: 'private' }] })
+    const user = userEvent.setup()
+
+    render(<Layout />, { wrapper: createWrapper(['/'], queryClient) })
+    await user.click(await screen.findByTitle('Sign out'))
+
+    expect(queryClient.getQueryData(['feedback'])).toBeUndefined()
+    // eslint-disable-next-line vitest/prefer-called-with
+    expect(mockSignOut).toHaveBeenCalled()
   })
 })
 

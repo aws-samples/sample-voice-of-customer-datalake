@@ -180,7 +180,6 @@ export const authService = {
             refreshToken,
           })
           useAuthStore.getState().setUser(user)
-          useAuthStore.getState().setSessionReady(true)
 
           // Sync session with Amplify for IAM signing
           void authService.syncAmplifySession()
