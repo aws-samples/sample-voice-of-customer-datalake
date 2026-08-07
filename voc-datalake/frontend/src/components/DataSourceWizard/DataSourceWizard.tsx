@@ -10,6 +10,7 @@ import type { ContextConfig } from './types'
 import { DataSourcesStep, FeedbackFiltersStep, ItemSelectionStep } from './DataSourceSteps'
 import type { ExtraDataSource } from './DataSourceSteps'
 import { useWizardState } from './useWizardState'
+import ModalShell from '../ModalShell'
 
 type AccentColor = 'purple' | 'amber' | 'blue' | 'green'
 
@@ -84,8 +85,13 @@ export default function DataSourceWizard({
   const colors = colorClasses[accentColor]
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 sm:p-6">
-      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+    <ModalShell
+      isOpen
+      onClose={onClose}
+      ariaLabel={title}
+      panelClassName="max-w-2xl max-h-[90vh] overflow-hidden"
+    >
+      <div>
         <WizardHeader title={title} icon={icon} step={step} totalSteps={totalSteps} onClose={onClose} />
         <ProgressBar step={step} totalSteps={totalSteps} bgClass={colors.bg} />
         
@@ -145,7 +151,7 @@ export default function DataSourceWizard({
           onSubmit={onSubmit}
         />
       </div>
-    </div>
+    </ModalShell>
   )
 }
 

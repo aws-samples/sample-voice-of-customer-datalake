@@ -80,6 +80,41 @@ describe('DocWizard', () => {
     mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
   })
 
+  // #283 stage 2: this wizard was one of the two keyboard traps found by browser
+  // testing — no role="dialog", a fused overlay, and Escape did nothing. It now
+  // renders through ModalShell, so it inherits dialog semantics and dismissal.
+  describe('dialog semantics (ModalShell adoption)', () => {
+    it('is exposed as a modal dialog named by its title', () => {
+      render(<DocWizard {...makeProps()} />, { wrapper: createWrapper() })
+
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toHaveAttribute('aria-modal', 'true')
+      expect(dialog).toHaveAccessibleName()
+    })
+
+    it('closes on Escape', async () => {
+      const user = userEvent.setup()
+      const props = makeProps()
+      render(<DocWizard {...props} />, { wrapper: createWrapper() })
+
+      await user.keyboard('{Escape}')
+
+      expect(props.onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('closes on overlay click but not on panel click', async () => {
+      const user = userEvent.setup()
+      const props = makeProps()
+      render(<DocWizard {...props} />, { wrapper: createWrapper() })
+
+      await user.click(screen.getByRole('dialog'))
+      expect(props.onClose).not.toHaveBeenCalled()
+
+      await user.click(screen.getByTestId('modal-overlay'))
+      expect(props.onClose).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('doc-type multi-select', () => {
     it('shows PR-FAQ title when only prfaq is selected', () => {
       render(<DocWizard {...makeProps()} />, { wrapper: createWrapper() })

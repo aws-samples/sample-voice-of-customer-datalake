@@ -6,6 +6,7 @@ import { X, ArrowRight, User } from 'lucide-react'
 import type { FeedbackForm } from '../../api/client'
 import clsx from 'clsx'
 import { formTemplates } from './formTemplates'
+import ModalShell from '../../components/ModalShell'
 
 interface TemplateWizardProps {
   readonly onSelect: (config: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>) => void
@@ -39,8 +40,13 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
   ] as const
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <ModalShell
+      isOpen
+      onClose={onCancel}
+      ariaLabel="Create New Form"
+      panelClassName="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+    >
+      <div className="flex flex-col overflow-hidden">
         <div className="flex items-center justify-between p-3 sm:p-4 border-b">
           <div className="min-w-0 flex-1">
             <h2 className="text-base sm:text-lg font-semibold">Create New Form</h2>
@@ -121,6 +127,6 @@ export default function TemplateWizard({ onSelect, onCancel }: TemplateWizardPro
           </div>
         </div>
       </div>
-    </div>
+    </ModalShell>
   )
 }
