@@ -49,8 +49,11 @@ interface ModalShellProps {
 
 /**
  * Focusable descendants in DOM order, excluding anything not actually reachable.
- * `offsetParent === null` catches display:none and hidden ancestors; visibility
- * is checked separately because it does not affect offsetParent.
+ *
+ * `display:none` must be checked up the ancestor chain: computed `display` of a
+ * child inside a hidden container is the child's own value, so checking only the
+ * element itself misses the motivating case — collapsible sections hide the
+ * container, not each control. `visibility:hidden` inherits, so one check does.
  */
 function focusable(root: HTMLElement): HTMLElement[] {
   const candidates = root.querySelectorAll<HTMLElement>(
@@ -58,13 +61,31 @@ function focusable(root: HTMLElement): HTMLElement[] {
   )
   // NB: deliberately not using offsetParent — jsdom does no layout and returns
   // null for every element, which would filter the list empty under test.
+  /** The element and each ancestor up to and including `root`. */
+  const selfAndAncestors = (el: HTMLElement): HTMLElement[] =>
+    el === root || el.parentElement === null ? [el] : [el, ...selfAndAncestors(el.parentElement)]
+
+  const hiddenByAncestor = (el: HTMLElement): boolean =>
+    selfAndAncestors(el).some((node) => getComputedStyle(node).display === 'none')
   return [...candidates].filter((el) => {
     if (el.closest('[hidden]') !== null || el.closest('[aria-hidden="true"]') !== null) return false
     if (el.closest('details:not([open])') !== null) return false
-    const style = getComputedStyle(el)
-    return style.display !== 'none' && style.visibility !== 'hidden'
+    if (getComputedStyle(el).visibility === 'hidden') return false
+    return !hiddenByAncestor(el)
   })
 }
+
+/**
+ * Open shells, outermost first. Only the last one reacts to Escape and Tab.
+ *
+ * An earlier revision gated on `panel.contains(document.activeElement)`, which
+ * silently disabled BOTH Escape and the Tab trap whenever focus left the panel —
+ * and that happens in ordinary flows: the focused control is removed or becomes
+ * disabled (browsers drop focus to <body>), focus enters an iframe, or something
+ * calls blur(). The shell would then fail exactly as the modals it replaces do,
+ * without any visible signal. Registration order is authoritative instead.
+ */
+const openShells: HTMLElement[] = []
 
 export default function ModalShell({
   isOpen,
@@ -90,13 +111,26 @@ export default function ModalShell({
     return () => trigger?.focus?.()
   }, [isOpen])
 
+  // Register in the open-shell stack for as long as this shell is open, so the
+  // keydown handler can tell whether it is the top-most dialog.
+  useEffect(() => {
+    if (!isOpen) return
+    const panel = panelRef.current
+    if (!panel) return
+    openShells.push(panel)
+    return () => {
+      const i = openShells.indexOf(panel)
+      if (i !== -1) openShells.splice(i, 1)
+    }
+  }, [isOpen])
+
   useEffect(() => {
     if (!isOpen) return
     const onKeyDown = (e: KeyboardEvent) => {
       const panel = panelRef.current
       if (!panel) return
-      // Stacking guard: only the dialog that currently holds focus reacts.
-      if (!panel.contains(document.activeElement)) return
+      // Only the top-most open dialog reacts, regardless of where focus is.
+      if (openShells[openShells.length - 1] !== panel) return
 
       if (e.key === 'Escape') {
         if (dismissable) onClose()

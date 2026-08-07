@@ -103,6 +103,22 @@ describe('ModalShell', () => {
     expect(screen.getByRole('button', { name: 'visible' })).toHaveFocus()
   })
 
+  it('skips controls inside a hidden container, not just hidden controls', () => {
+    // The real collapsible-section shape: the CONTAINER is hidden, and computed
+    // display of a child inside it is the child's own value — so checking only
+    // the element misses this. Requires walking ancestors.
+    render(
+      <ModalShell isOpen onClose={onClose} ariaLabel="Test dialog">
+        <div style={{ display: 'none' }}>
+          <button>collapsed</button>
+        </div>
+        <button>visible</button>
+      </ModalShell>,
+    )
+
+    expect(screen.getByRole('button', { name: 'visible' })).toHaveFocus()
+  })
+
   it('restores focus to the triggering element when closed', async () => {
     const user = userEvent.setup()
     function Harness() {
