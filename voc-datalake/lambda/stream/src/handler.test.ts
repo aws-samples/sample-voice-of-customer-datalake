@@ -367,6 +367,9 @@ describe('handler', () => {
       roundtable: true,
     }), mockStream());
 
+    // Pin the call count first: a bare for-of over mock.calls passes vacuously
+    // if roundtable dispatch regresses and no persona turn is ever made.
+    expect(mockConverseStream.mock.calls).toHaveLength(3);
     for (const [params] of mockConverseStream.mock.calls) {
       expect((params as Record<string, unknown>).modelId).toBeUndefined();
     }
