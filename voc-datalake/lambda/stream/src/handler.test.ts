@@ -29,6 +29,12 @@ const {
   mockWrapStreamWithHeaders: vi.fn(),
   mockIsWebSearchConfigured: vi.fn(),
 }));
+const { mockResolveModelOverride } = vi.hoisted(() => ({
+  mockResolveModelOverride: vi.fn(),
+}));
+vi.mock('./bedrock/model-override.js', () => ({
+  resolveModelOverride: mockResolveModelOverride,
+}));
 
 /** The handler streams into a mock — invoke it with a test-friendly signature. */
 type StreamHandler = (event: unknown, stream: unknown) => Promise<void>;
@@ -97,6 +103,10 @@ function makeEvent(body: Record<string, unknown>, path = '/chat/stream') {
 describe('handler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks() clears calls but KEEPS implementations, so a per-test
+    // mockResolvedValue would leak into later tests. Re-assert the default
+    // (no admin override configured) so model resolution is order-independent.
+    mockResolveModelOverride.mockResolvedValue(undefined);
 
     // Default: converseStream yields a simple text response then stops
     mockConverseStream.mockReturnValue(
@@ -316,6 +326,53 @@ describe('handler', () => {
     // 3 personas → exactly 3 turns (previously the multi-round loop produced ~8)
     expect(personaTurns).toHaveLength(3);
     expect(mockConverseStream.mock.calls).toHaveLength(3);
+  });
+
+  it('sends the admin-configured chat model on every roundtable persona turn', async () => {
+    // Regression: handleRoundtableChat used to omit `modelId`, so each persona
+    // turn silently fell back to the BEDROCK_MODEL_ID env default and ignored
+    // the Settings picker. Fails if that argument is dropped again.
+    mockResolveModelOverride.mockResolvedValue('global.anthropic.claude-sonnet-4-6');
+    mockConverseStream.mockImplementation(() => (async function* () {
+      yield { contentBlockDelta: { delta: { text: 'my own view' }, contentBlockIndex: 0 } };
+      yield { messageStop: { stopReason: 'end_turn' } };
+    })());
+
+    await (handler as StreamHandler)(makeEvent({
+      message: '@all what frustrates you most?',
+      project_id: 'proj-1',
+      roundtable: true,
+    }), mockStream());
+
+    expect(mockConverseStream.mock.calls).toHaveLength(3);
+    for (const [params] of mockConverseStream.mock.calls) {
+      expect((params as Record<string, unknown>).modelId)
+        .toBe('global.anthropic.claude-sonnet-4-6');
+    }
+    // Resolved once for the whole loop, not per persona.
+    expect(mockResolveModelOverride).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes modelId undefined on roundtable turns when no override is configured', async () => {
+    // Guards against "fixing" the hoist with a non-null default: converseStream
+    // owns the env-default fallback, so the handler must pass undefined through.
+    mockResolveModelOverride.mockResolvedValue(undefined);
+    mockConverseStream.mockImplementation(() => (async function* () {
+      yield { messageStop: { stopReason: 'end_turn' } };
+    })());
+
+    await (handler as StreamHandler)(makeEvent({
+      message: '@all thoughts?',
+      project_id: 'proj-1',
+      roundtable: true,
+    }), mockStream());
+
+    // Pin the call count first: a bare for-of over mock.calls passes vacuously
+    // if roundtable dispatch regresses and no persona turn is ever made.
+    expect(mockConverseStream.mock.calls).toHaveLength(3);
+    for (const [params] of mockConverseStream.mock.calls) {
+      expect((params as Record<string, unknown>).modelId).toBeUndefined();
+    }
   });
 
   it('roundtable does not inject the prior transcript into persona prompts', async () => {
