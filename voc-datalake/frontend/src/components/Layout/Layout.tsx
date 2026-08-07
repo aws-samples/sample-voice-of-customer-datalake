@@ -151,6 +151,19 @@ export default function Layout() {
   // is one page's length and is therefore clamped by `limit`.
   // Sharing this key with Dashboard's summary query is intentional — identical
   // params, one cache entry, so the badge and the Dashboard card cannot disagree.
+  //
+  // COST NOTE: /metrics/summary loops `days` sequential get_item calls three
+  // times over (daily_total, daily_sentiment, urgent — metrics_handler.py:684,
+  // 692, 701), so a 90-day window is ~270 round-trips against ~1 query for the
+  // old list call. Request *count* is unchanged (one per staleTime window per
+  // dateParams, shared with Dashboard), but the single request is heavier and it
+  // now runs on pages that never needed a summary.
+  //
+  // The fix belongs in the handler, not here: the same file already shows the
+  // right shape three times over (build the date set, then one query filtered in
+  // memory — see the sources/personas/entities blocks), instead of one get_item
+  // per day. That is a backend change with its own benchmarks, deliberately out
+  // of scope for a badge-correctness fix.
   const { data: summaryData } = useQuery({
     queryKey: ['summary', dateParams],
     queryFn: () => api.getSummary(dateParams),
