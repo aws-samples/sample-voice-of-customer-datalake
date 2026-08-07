@@ -2,6 +2,7 @@
  * FormCard Component - displays a single feedback form with embed options and stats
  */
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Trash2, Copy, Check, Code, ExternalLink, ToggleLeft, ToggleRight, Edit2, MessageSquare, Star, BarChart3 } from 'lucide-react'
 import type { FeedbackForm } from '../../api/client'
@@ -115,6 +116,10 @@ function EmbedCodeSection({ iframeUrl, iframeEmbed, copied, onCopy }: EmbedCodeS
 }
 
 export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: FormCardProps) {
+  const { t } = useTranslation('feedbackForms')
+  // Hoisted so the label is computed once and shared by aria-label and title,
+  // which also keeps this component under the ESLint complexity ceiling.
+  const toggleLabel = form.enabled ? t('disableForm') : t('enableForm')
   const [copied, setCopied] = useState<string | null>(null)
   const [showEmbed, setShowEmbed] = useState(false)
   const [showSubmissions, setShowSubmissions] = useState(false)
@@ -165,13 +170,30 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
             )}
           </div>
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-            <button onClick={() => onToggle(form.form_id, !form.enabled)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title={form.enabled ? 'Disable form' : 'Enable form'}>
+            {/* aria-label as well as title: title is hover-only, so on its own it
+                leaves these icon-only controls poorly described for AT users. */}
+            <button
+              onClick={() => onToggle(form.form_id, !form.enabled)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label={toggleLabel}
+              title={toggleLabel}
+            >
               {form.enabled ? <ToggleRight size={20} className="text-green-600" /> : <ToggleLeft size={20} className="text-gray-400" />}
             </button>
-            <button onClick={() => onEdit(form)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit form">
+            <button
+              onClick={() => onEdit(form)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label={t('editForm')}
+              title={t('editForm')}
+            >
               <Edit2 size={18} className="text-gray-600" />
             </button>
-            <button onClick={() => onDelete(form.form_id)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete form">
+            <button
+              onClick={() => onDelete(form.form_id)}
+              className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+              aria-label={t('deleteForm')}
+              title={t('deleteForm')}
+            >
               <Trash2 size={18} className="text-red-500" />
             </button>
           </div>

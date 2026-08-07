@@ -70,6 +70,27 @@ describe('FormCard (issue #171)', () => {
     expect(screen.getByText(defaultFormConfig.theme.primary_color)).toBeInTheDocument()
   })
 
+  // U12: these icon-only controls carried hardcoded English titles, so they read
+  // the same in every locale. They now take translated aria-labels — the
+  // accessible name is what assistive tech actually announces.
+  it('gives every icon-only card action an accessible name', () => {
+    renderCard({ ...buildForm(), enabled: true })
+
+    // Under test i18n, t() echoes the key, so the key IS the accessible name.
+    // Asserting it still proves each control has a non-empty name wired from
+    // the right translation key, which is what the hardcoded titles lacked.
+    expect(screen.getByRole('button', { name: 'disableForm' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'editForm' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'deleteForm' })).toBeInTheDocument()
+  })
+
+  it('names the toggle for the action it performs when the form is disabled', () => {
+    renderCard({ ...buildForm(), enabled: false })
+
+    expect(screen.getByRole('button', { name: 'enableForm' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'disableForm' })).not.toBeInTheDocument()
+  })
+
   it('survives a runtime record without a theme (the #171 crash)', () => {
     const form = buildForm()
     // The wire can deliver records persisted before the theme field existed;
