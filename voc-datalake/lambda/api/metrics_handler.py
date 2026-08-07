@@ -225,7 +225,7 @@ def _query_metric_window(pk: str, days: int, current_date: datetime) -> list[dic
     # it rather than return a quietly short answer that reads as authoritative.
     logger.warning(
         'Metric window paging hit its bound; returning a partial window',
-        extra={'pk': pk, 'days': days, 'pages': days, 'items': len(items)},
+        extra={'pk': pk, 'days': days, 'items': len(items)},
     )
     return items
 
