@@ -26,7 +26,7 @@ vi.mock('../services/auth', () => ({
 
 import { api, getDaysFromRange, getDateRangeParams, ALL_TIME_DAYS } from './client'
 import { authService } from '../services/auth'
-import { SESSION_EXPIRED_PATH } from '../services/sessionExpiry'
+import { SESSION_EXPIRED_PATH, resetSessionExpiryForTests } from '../services/sessionExpiry'
 
 describe('API Client', () => {
   beforeEach(() => {
@@ -144,6 +144,8 @@ describe('API Client', () => {
         value: { href: '', replace },
         writable: true,
       })
+      // The redirect is idempotent and only a real page load resets it.
+      resetSessionExpiryForTests()
 
       await expect(api.getFeedback({ days: 7 })).rejects.toThrow('Session expired')
       expect(authService.signOut).toHaveBeenCalled()

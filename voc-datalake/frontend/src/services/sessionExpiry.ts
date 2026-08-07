@@ -25,15 +25,41 @@ const EXPIRED_FLAG = 'expired'
 export const SESSION_EXPIRED_PATH = `/login?${EXPIRED_FLAG}=1`
 
 /**
+ * Whether a redirect is already under way.
+ *
+ * Concurrent requests 401 together, so all three callers can reach this within
+ * the same tick. `location.replace` does not stop JavaScript from running, so
+ * without this the second and third calls issue redundant navigations while
+ * the first is still resolving. Module-level rather than per-call because the
+ * callers are independent and never see each other.
+ */
+const ending = { inProgress: false }
+
+/**
  * Clear auth state and send the user to `/login` with an explanation.
  *
  * `replace` rather than `assign`: the page we are leaving can no longer load
  * its data, so leaving it in the back history invites the user straight back
  * into the state this function exists to end.
+ *
+ * Idempotent — safe to call from every path that discovers the dead session.
  */
 export function endExpiredSession(): void {
+  if (ending.inProgress) return
+  ending.inProgress = true
   authService.signOut()
   window.location.replace(SESSION_EXPIRED_PATH)
+}
+
+/**
+ * Test seam: forget that a redirect happened.
+ *
+ * Production never needs this — the redirect is a full document load, which
+ * resets the module. A test environment has no such reset, so without it the
+ * first case to end a session would silently disarm every later one.
+ */
+export function resetSessionExpiryForTests(): void {
+  ending.inProgress = false
 }
 
 /**

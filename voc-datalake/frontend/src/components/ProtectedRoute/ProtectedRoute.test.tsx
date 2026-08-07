@@ -7,6 +7,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ProtectedRoute from './ProtectedRoute'
 import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
+import { endExpiredSession } from '../../services/sessionExpiry'
 
 /*
  * The store mock is a hook *and* carries `getState`, because the component
@@ -25,6 +26,10 @@ vi.mock('../../services/auth', () => ({
     refreshSession: vi.fn(),
     signOut: vi.fn(),
   },
+}))
+
+vi.mock('../../services/sessionExpiry', () => ({
+  endExpiredSession: vi.fn(),
 }))
 
 // Helper to render with router
@@ -52,10 +57,17 @@ function renderWithRouter(
   )
 }
 
-/** Point the store at a given auth state, reactively and imperatively. */
+/**
+ * Point the store at a given auth state, reactively and imperatively.
+ *
+ * Both halves must agree: the component renders from the hook and checks the
+ * post-refresh outcome through `getState`, so a helper that set only one of
+ * them would let a case pass for the wrong reason.
+ */
 function setAuthState(state: { isAuthenticated: boolean; sessionReady?: boolean }) {
-  ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(state)
-  mockGetState.mockReturnValue({ isAuthenticated: state.isAuthenticated })
+  const resolved = { sessionReady: false, ...state }
+  ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(resolved)
+  mockGetState.mockReturnValue(resolved)
 }
 
 describe('ProtectedRoute', () => {
@@ -132,16 +144,20 @@ describe('ProtectedRoute', () => {
         </ProtectedRoute>
       )
 
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(authService.refreshSession).toHaveBeenCalled()
+      expect(authService.refreshSession).toHaveBeenCalledWith()
     })
 
-    it('signs out when the refresh fails without clearing auth state itself', async () => {
-      // A ConfigError rejection leaves the store authenticated; failing open
-      // here would strand the user on the loader forever.
-      ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new Error('Cognito not configured'),
-      )
+    it('retries once before giving up, so a connectivity blip is survivable', async () => {
+      // First attempt fails; the second validates. refreshSession signs the
+      // user out for a transport failure exactly as for a dead session, so
+      // without the retry a moment of bad network is a forced logout.
+      ;(authService.refreshSession as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(new Error('network'))
+        .mockImplementationOnce(() => {
+          // Stand in for setTokens releasing the gate on a real refresh.
+          mockGetState.mockReturnValue({ isAuthenticated: true, sessionReady: true })
+          return Promise.resolve(undefined)
+        })
 
       renderWithRouter(
         <ProtectedRoute>
@@ -149,15 +165,16 @@ describe('ProtectedRoute', () => {
         </ProtectedRoute>
       )
 
-      // eslint-disable-next-line vitest/prefer-called-with
-      await waitFor(() => expect(authService.signOut).toHaveBeenCalled())
+      await waitFor(() => expect(authService.refreshSession).toHaveBeenCalledTimes(2))
+      expect(endExpiredSession).not.toHaveBeenCalled()
     })
 
-    it('leaves the sign-out to refreshSession when it already cleared state', async () => {
+    it('ends the session WITH the reason when both attempts fail', async () => {
+      // The bare <Navigate to="/login"> below would drop the explanation —
+      // and this is the path an idle deployment actually takes.
       ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error('Session refresh failed'),
       )
-      mockGetState.mockReturnValue({ isAuthenticated: false })
 
       renderWithRouter(
         <ProtectedRoute>
@@ -165,8 +182,22 @@ describe('ProtectedRoute', () => {
         </ProtectedRoute>
       )
 
-      await waitFor(() => expect(authService.refreshSession).toHaveBeenCalledWith())
-      expect(authService.signOut).not.toHaveBeenCalled()
+      await waitFor(() => expect(endExpiredSession).toHaveBeenCalledWith())
+    })
+
+    it('ends the session if a refresh resolves without producing tokens', async () => {
+      // Only setTokens releases the gate, so a resolve that left sessionReady
+      // false would otherwise hang on the loader forever.
+      ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
+      mockGetState.mockReturnValue({ isAuthenticated: true, sessionReady: false })
+
+      renderWithRouter(
+        <ProtectedRoute>
+          <div>Protected Content</div>
+        </ProtectedRoute>
+      )
+
+      await waitFor(() => expect(endExpiredSession).toHaveBeenCalledWith())
     })
   })
 

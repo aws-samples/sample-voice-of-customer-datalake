@@ -318,8 +318,7 @@ describe('Layout with authenticated user', () => {
     await user.click(await screen.findByTitle('Sign out'))
 
     expect(queryClient.getQueryData(['feedback'])).toBeUndefined()
-    // eslint-disable-next-line vitest/prefer-called-with
-    expect(mockSignOut).toHaveBeenCalled()
+    expect(mockSignOut).toHaveBeenCalledWith()
   })
 })
 

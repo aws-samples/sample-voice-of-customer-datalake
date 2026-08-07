@@ -3,8 +3,15 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
+import { z } from 'zod'
 import { useAuthStore, useIsAdmin } from './authStore'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
+
+/** Validates the persisted envelope at the boundary instead of asserting a type. */
+const PersistedAuthSchema = z.object({
+  state: z.record(z.string(), z.unknown()),
+  version: z.number().optional(),
+})
 
 // useIsAdmin reads the runtime config directly (services/auth imports this
 // store, so importing authService here would be a cycle) — mock the module
@@ -141,6 +148,44 @@ describe('authStore', () => {
       logout()
 
       expect(useAuthStore.getState().sessionReady).toBe(false)
+    })
+  })
+
+  /*
+   * The boot-validation gate in ProtectedRoute depends on `sessionReady` being
+   * ABSENT from the persisted payload: it must come back false on every page
+   * load, while `isAuthenticated` comes back true. Persist it and the gate is
+   * inert — `needsValidation` would always be false, the app would render on a
+   * restored-but-unvalidated session again, and every other test here would
+   * still pass, because they run against a fresh in-memory store.
+   *
+   * Asserting the whole key set rather than just the one omission, so adding
+   * any future field to the store forces a decision about persisting it.
+   */
+  describe('persisted shape', () => {
+    it('persists identity but not the validated flag', () => {
+      const { setUser, setTokens } = useAuthStore.getState()
+      setUser({ username: 'test', email: 'test@example.com', groups: [] })
+      setTokens({ accessToken: 'access', idToken: 'id', refreshToken: 'refresh' })
+
+      /*
+       * The suite's localStorage is a spy that stores nothing (see
+       * test/setup.ts), so read what persist WROTE rather than trying to read
+       * it back — which also inspects the payload more directly.
+       */
+      const writes = vi.mocked(localStorage.setItem).mock.calls
+        .filter(([key]) => key === 'voc-auth')
+      expect(writes.length).toBeGreaterThan(0)
+      const raw = writes[writes.length - 1][1]
+      const persisted: unknown = JSON.parse(raw)
+      const shape = PersistedAuthSchema.parse(persisted)
+
+      expect(Object.keys(shape.state).toSorted()).toEqual([
+        'accessToken', 'idToken', 'isAuthenticated', 'user',
+      ])
+      // The refresh token is memory-only by design; see the store's docblock.
+      expect(shape.state).not.toHaveProperty('refreshToken')
+      expect(shape.state).not.toHaveProperty('sessionReady')
     })
   })
 

@@ -14,7 +14,15 @@ import { useEffect } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
+import { endExpiredSession } from '../../services/sessionExpiry'
 import PageLoader from '../PageLoader'
+
+/**
+ * Pause before the single boot-validation retry. Long enough for a brief
+ * connectivity gap to clear, short enough to stay inside the loading state a
+ * user already accepts.
+ */
+const BOOT_REFRESH_RETRY_MS = 300
 
 interface ProtectedRouteProps {
   /** Child components to render if authenticated */
@@ -55,24 +63,55 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
     if (!needsValidation) return
 
     /*
-     * Guards a late rejection: if the user has already left for /login and
-     * started signing in, a refresh failure landing afterwards must not sign
-     * out the session they just created. (Object rather than `let` — the
-     * codebase's local-mutable idiom.)
+     * Stops OUR follow-up work after unmount — it cannot cancel the refresh
+     * itself, and `refreshSession` clears auth state internally for the
+     * failures it can attribute, so that part happens either way. What this
+     * prevents is a late failure redirecting a user who has already reached
+     * /login and signed in again.
+     *
+     * Object rather than `let` because `no-restricted-syntax` bans `let`.
      */
     const run = { live: true }
 
-    void authService.refreshSession().catch(() => {
-      /*
-       * refreshSession clears auth state itself for the failures it can
-       * attribute (no current user, refresh rejected). A ConfigError leaves
-       * it intact, which would strand this component on its loader forever —
-       * so fail closed here rather than trusting that.
-       */
-      if (run.live && useAuthStore.getState().isAuthenticated) {
-        authService.signOut()
+    /**
+     * @returns whether the session came back validated
+     */
+    const attemptRefresh = async (): Promise<boolean> => {
+      try {
+        await authService.refreshSession()
+      } catch {
+        return false
       }
-    })
+      /*
+       * A post-condition, not trust: only `setTokens` releases the gate, so a
+       * resolve that somehow produced no tokens would leave this component on
+       * its loader forever — the failure this gate exists to avoid.
+       */
+      return useAuthStore.getState().sessionReady
+    }
+
+    const validate = async () => {
+      if (await attemptRefresh()) return
+
+      /*
+       * `refreshSession` rejects — and signs out — for a transport failure just
+       * as it does for a genuinely dead session, and this now runs on every
+       * page load. One retry keeps a moment of bad connectivity from becoming
+       * a forced logout; a real expiry just costs one extra round-trip.
+       */
+      await new Promise((resolve) => setTimeout(resolve, BOOT_REFRESH_RETRY_MS))
+      if (!run.live) return
+      if (await attemptRefresh()) return
+
+      /*
+       * End it with the REASON, rather than falling through to the bare
+       * `<Navigate to="/login">` below. This is the path an idle deployment
+       * actually takes, so it is the one that most needs the explanation.
+       */
+      if (run.live) endExpiredSession()
+    }
+
+    void validate()
 
     return () => { run.live = false }
   }, [needsValidation])

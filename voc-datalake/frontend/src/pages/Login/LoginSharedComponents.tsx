@@ -13,7 +13,14 @@ interface ErrorAlertProps { readonly message: string }
 
 export function ErrorAlert({ message }: Readonly<ErrorAlertProps>) {
   return (
-    <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
+    // role="alert" so the message is announced when it appears. It carried no
+    // role at all, which meant a screen-reader user got a red box they were
+    // never told about — including the session-expired notice, which is
+    // present on first render.
+    <div
+      role="alert"
+      className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg"
+    >
       <AlertCircle size={16} />
       {message}
     </div>

@@ -81,8 +81,7 @@ describe('streamChat auth handling', () => {
     const events = await drain(streamChat('https://api.example.com/chat/stream', { message: 'hi' }))
 
     expect(events).toEqual([{ type: 'done' }])
-    // eslint-disable-next-line vitest/prefer-called-with
-    expect(authService.refreshSession).toHaveBeenCalled()
+    expect(authService.refreshSession).toHaveBeenCalledWith()
     expect(endExpiredSession).not.toHaveBeenCalled()
 
     // The retry must carry the new token, not the one that just 401'd.
@@ -98,8 +97,7 @@ describe('streamChat auth handling', () => {
       drain(streamChat('https://api.example.com/chat/stream', { message: 'hi' })),
     ).rejects.toThrow('Session expired')
 
-    // eslint-disable-next-line vitest/prefer-called-with
-    expect(endExpiredSession).toHaveBeenCalled()
+    expect(endExpiredSession).toHaveBeenCalledWith()
     expect(global.fetch).toHaveBeenCalledTimes(1)
   })
 
@@ -113,8 +111,7 @@ describe('streamChat auth handling', () => {
       drain(streamChat('https://api.example.com/chat/stream', { message: 'hi' })),
     ).rejects.toThrow('Session expired')
 
-    // eslint-disable-next-line vitest/prefer-called-with
-    expect(endExpiredSession).toHaveBeenCalled()
+    expect(endExpiredSession).toHaveBeenCalledWith()
   })
 
   it('leaves non-401 failures alone', async () => {

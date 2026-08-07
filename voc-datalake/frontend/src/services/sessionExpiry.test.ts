@@ -11,7 +11,12 @@ vi.mock('./auth', () => ({
 }))
 
 import { authService } from './auth'
-import { endExpiredSession, isSessionExpiredRedirect, SESSION_EXPIRED_PATH } from './sessionExpiry'
+import {
+  endExpiredSession,
+  isSessionExpiredRedirect,
+  resetSessionExpiryForTests,
+  SESSION_EXPIRED_PATH,
+} from './sessionExpiry'
 
 describe('sessionExpiry', () => {
   const originalLocation = window.location
@@ -19,6 +24,10 @@ describe('sessionExpiry', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // The redirect is idempotent by design, and production resets it with a
+    // full document load. Without this reset here, the first case to end a
+    // session would silently disarm every later one.
+    resetSessionExpiryForTests()
     Object.defineProperty(window, 'location', {
       value: { replace },
       writable: true,
@@ -36,11 +45,20 @@ describe('sessionExpiry', () => {
     it('clears auth state before navigating', () => {
       endExpiredSession()
 
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(authService.signOut).toHaveBeenCalled()
+      expect(authService.signOut).toHaveBeenCalledWith()
       expect(replace).toHaveBeenCalledWith(SESSION_EXPIRED_PATH)
     })
 
+    it('navigates once however many callers discover the dead session', () => {
+      // Concurrent requests 401 together, and all three callers share this
+      // seam, so this is the normal case rather than an edge one.
+      endExpiredSession()
+      endExpiredSession()
+      endExpiredSession()
+
+      expect(replace).toHaveBeenCalledTimes(1)
+      expect(authService.signOut).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('isSessionExpiredRedirect', () => {
