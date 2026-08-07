@@ -358,6 +358,15 @@ def get_urgent_feedback():
         if len(items) >= limit:
             break
     
+    # NOTE: `count` is this page's length, NOT the number of urgent items in the
+    # window — the scan above stops once `limit` items are collected, so `count`
+    # is bounded by `limit`. Do not read it as a total: the sidebar urgent badge
+    # did exactly that with limit=10 and could never display more than 10.
+    # For a true total use /metrics/summary's `urgent_count`, which sums the
+    # exact METRIC#urgent daily aggregates. Renaming this field (or adding a
+    # companion `total`/`has_more`) is an API change left to its own commit;
+    # `test_count_is_the_returned_page_length_not_the_window_total` pins the
+    # current semantics so the constraint is discoverable.
     return {'count': len(items), 'items': items[:limit]}
 
 

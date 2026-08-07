@@ -10,10 +10,12 @@ import { TestRouter } from '../../test/test-utils'
 
 // Mock API before importing component
 const mockGetUrgentFeedback = vi.fn()
+const mockGetSummary = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
     getUrgentFeedback: (params: unknown) => mockGetUrgentFeedback(params),
+    getSummary: (params: unknown) => mockGetSummary(params),
   },
   getDaysFromRange: vi.fn(() => 7),
   getDateRangeParams: () => ({ days: 7 }),
@@ -99,7 +101,7 @@ function createWrapper(initialEntries = ['/']) {
 describe('Layout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
+    mockGetSummary.mockResolvedValue({ urgent_count: 0 })
   })
 
   describe('sidebar', () => {
@@ -172,24 +174,50 @@ describe('Layout', () => {
   })
 
   describe('urgent feedback badge', () => {
-    it('shows urgent count badge when urgent items exist', async () => {
-      mockGetUrgentFeedback.mockResolvedValue({ count: 5, items: [] })
-      
+    it('shows the urgent count from the summary aggregate', async () => {
+      mockGetSummary.mockResolvedValue({ urgent_count: 5 })
+
       render(<Layout />, { wrapper: createWrapper() })
-      
+
       await waitFor(() => {
         expect(screen.getByText('5')).toBeInTheDocument()
       })
     })
 
-    it('does not show badge when no urgent items', async () => {
-      mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
-      
+    it('does not show badge when there are no urgent items', async () => {
+      mockGetSummary.mockResolvedValue({ urgent_count: 0 })
+
       render(<Layout />, { wrapper: createWrapper() })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('0')).not.toBeInTheDocument()
       })
+    })
+
+    // Regression: the badge used to call /feedback/urgent and render its
+    // `count`, which is one page's length and is clamped by `limit`. Because
+    // Dashboard requests the same endpoint with a different limit under an
+    // identical query key, the badge rendered the other component's page size.
+    // Reverting to getUrgentFeedback makes this assert 3 instead of 11.
+    it('reports the true total even when the urgent list page is smaller', async () => {
+      mockGetSummary.mockResolvedValue({ urgent_count: 11 })
+      mockGetUrgentFeedback.mockResolvedValue({ count: 3, items: [] })
+
+      render(<Layout />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('11')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('3')).not.toBeInTheDocument()
+    })
+
+    it('does not fetch the paginated urgent list at all', async () => {
+      render(<Layout />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(mockGetSummary).toHaveBeenCalled()
+      })
+      expect(mockGetUrgentFeedback).not.toHaveBeenCalled()
     })
   })
 
@@ -261,7 +289,7 @@ describe('Layout', () => {
 describe('Layout with authenticated user', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
+    mockGetSummary.mockResolvedValue({ urgent_count: 0 })
   })
 
   it('displays sign out button when authenticated', async () => {
@@ -276,7 +304,7 @@ describe('Layout with authenticated user', () => {
 describe('workflow sections and gating (P11 — AI-PDLC phases)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
+    mockGetSummary.mockResolvedValue({ urgent_count: 0 })
     mockIsMenuItemEnabled.mockImplementation(() => true)
     vi.mocked(useIsAdmin).mockReturnValue(true)
   })

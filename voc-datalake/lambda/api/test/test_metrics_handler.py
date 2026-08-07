@@ -2,6 +2,7 @@
 Tests for metrics_handler.py - /feedback/* and /metrics/* endpoints.
 """
 import json
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 
@@ -225,6 +226,68 @@ class TestGetUrgentFeedback:
         assert response['statusCode'] == 200
         assert 'items' in body
         assert 'count' in body
+
+    @patch('metrics_handler.feedback_table')
+    def test_count_is_the_returned_page_length_not_the_window_total(
+        self, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """`count` reports how many items this page returned, NOT the window total.
+
+        Pinning deliberately-surprising behaviour. The handler returns
+        ``{'count': len(items), 'items': items[:limit]}`` and stops scanning once
+        it has ``limit`` items, so ``count`` is bounded by ``limit`` and cannot
+        express "how many urgent items exist".
+
+        This is a trap for consumers: the sidebar urgent badge read this field
+        with ``limit=10`` and could therefore never display more than 10, no
+        matter how many urgent items the window held. The frontend now takes its
+        count from ``/metrics/summary`` (which sums the exact ``METRIC#urgent``
+        aggregates) instead. Until this field is renamed or given a companion
+        total, that remains the only correct source for a total, and this test
+        exists so the constraint is discoverable from the backend tests.
+
+        DELETE THIS TEST when ``count`` is fixed to report a true window total
+        (or replaced by ``total``/``has_more``). It pins today's deliberately
+        surprising behaviour, so the intended future fix SHOULD fail it — that
+        failure is the reminder to update the frontend's source of truth at the
+        same time, not a regression.
+        """
+        # Ten urgent items available, but the caller asks for three.
+        mock_fb_table.query.return_value = {
+            'Items': [
+                {'pk': 'SOURCE#webscraper', 'sk': f'FEEDBACK#{i}', 'urgency': 'high'}
+                for i in range(10)
+            ]
+        }
+        # The date must be computed, not hardcoded: the handler drops anything
+        # older than the window, so a fixed date silently empties the result and
+        # the assertions below would pass against zero items.
+        recent = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d')
+        mock_fb_table.get_item.return_value = {
+            'Item': {
+                'feedback_id': '1', 'urgency': 'high',
+                'original_text': 'Urgent issue!', 'date': recent,
+            }
+        }
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from metrics_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback/urgent',
+            query_params={'limit': '3'},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        # Exactly the requested page, not "at most" — ten items were available.
+        assert len(body['items']) == 3
+        # The point: `count` tracks the page, not the window, so it reports 3
+        # while ten urgent items exist. It must not be read as a total.
+        assert body['count'] == 3
 
     @patch('metrics_handler.feedback_table')
     def test_respects_limit_parameter(

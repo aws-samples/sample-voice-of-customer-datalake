@@ -29,8 +29,8 @@ import {
   Database,
   Menu,
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
-import { api, getDateRangeParams } from '../../api/client'
+import { getDateRangeParams } from '../../api/client'
+import { useSummaryQuery } from '../../hooks/useSummaryQuery'
 import { useConfigStore } from '../../store/configStore'
 import { useAuthStore, useIsAdmin } from '../../store/authStore'
 import { authService } from '../../services/auth'
@@ -146,11 +146,24 @@ export default function Layout() {
   // Filter nav items based on menu config and user role
   const visibleNavItems = NAV_ITEMS.filter(item => isNavItemVisible(item, isAdmin))
 
-  const { data: urgentData } = useQuery({
-    queryKey: ['urgent', dateParams],
-    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: 10 }),
-    enabled: !!config.apiEndpoint,
-  })
+  // Badge count comes from /metrics/summary (exact: it sums the precomputed
+  // METRIC#urgent daily aggregates), NOT from /feedback/urgent whose `count`
+  // is one page's length and is therefore clamped by `limit`.
+  //
+  // Shared with Dashboard through useSummaryQuery so both observers provably
+  // resolve to one cache entry — see that module for why this is a hook rather
+  // than a repeated inline useQuery.
+  //
+  // COST NOTE: get_summary in metrics_handler.py walks the window day by day
+  // three times over (daily_total, daily_sentiment_avg and urgent each get their
+  // own sequential get_item loop), so a 90-day window costs ~270 round-trips
+  // against ~1 query for the old list call, now on pages that never needed a
+  // summary. Request *count* is unchanged (one per staleTime window per
+  // dateParams, shared with Dashboard); the single request is heavier.
+  // The fix belongs in the handler, which already shows the right shape in its
+  // sources/personas/entities blocks: build the date set, then one query
+  // filtered in memory. Tracked separately as the per-day fan-out work.
+  const { data: summaryData } = useSummaryQuery(dateParams, config.apiEndpoint)
 
   const handleLogout = useCallback(() => {
     authService.signOut()
@@ -161,7 +174,7 @@ export default function Layout() {
   const showProfile = useCallback(() => setShowProfileModal(true), [])
   const hideProfile = useCallback(() => setShowProfileModal(false), [])
 
-  const urgentCount = urgentData?.count ?? 0
+  const urgentCount = summaryData?.urgent_count ?? 0
 
   return (
     <div className="h-screen flex overflow-hidden">

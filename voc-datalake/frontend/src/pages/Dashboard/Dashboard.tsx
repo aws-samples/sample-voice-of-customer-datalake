@@ -23,8 +23,34 @@ import { generateDashboardPDF } from './dashboardPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
 import DashboardEmptyState from './DashboardEmptyState'
+import { useSummaryQuery } from '../../hooks/useSummaryQuery'
 
 const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
+
+/**
+ * How many urgent items the dashboard previews. The list is a preview, not the
+ * full set — the heading reports the true total from /metrics/summary, so this
+ * number must never be presented as a count.
+ */
+const URGENT_PREVIEW_LIMIT = 5
+
+/**
+ * Count for the "Urgent Issues (N)" heading.
+ *
+ * The heading and the list beneath it come from different sources: the exact
+ * `METRIC#urgent` aggregate (via /metrics/summary) and a windowed scan (via
+ * /feedback/urgent). They can disagree when aggregates are missing, stale, or
+ * bounded differently — and the aggregate can legitimately read 0 while the scan
+ * still returns items, so a nullish fallback would not catch it (0 is not
+ * nullish).
+ *
+ * Taking the larger value holds two invariants at once: never understate the
+ * total (reporting the page size was the original defect), and never claim fewer
+ * items than are visibly rendered.
+ */
+function urgentHeadingCount(aggregateTotal: number | undefined, previewLength: number | undefined): number {
+  return Math.max(aggregateTotal ?? 0, previewLength ?? 0)
+}
 
 function NotConfiguredState() {
   return (
@@ -229,11 +255,18 @@ function SourceChart({ sources }: Readonly<SourceChartProps>) {
 
 interface UrgentFeedbackProps {
   items: FeedbackItem[] | undefined
-  count: number
+  /**
+   * Exact urgent total for the window, from /metrics/summary's `urgent_count`.
+   * Deliberately not the preview list's `count`, which is that page's length and
+   * is clamped by the limit it was fetched with. The heading is reconciled
+   * against the rendered items by `urgentHeadingCount`.
+   */
+  aggregateTotal: number | undefined
 }
 
-function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
+function UrgentFeedback({ items, aggregateTotal }: Readonly<UrgentFeedbackProps>) {
   const hasItems = items && items.length > 0
+  const count = urgentHeadingCount(aggregateTotal, items?.length)
 
   return (
     <div className="card !p-4 sm:!p-6">
@@ -243,7 +276,7 @@ function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
       </h3>
       {hasItems ? (
         <div className="space-y-3 max-h-[400px] sm:max-h-[600px] overflow-y-auto">
-          {items.slice(0, 6).map((item) => (
+          {items.slice(0, URGENT_PREVIEW_LIMIT).map((item) => (
             <FeedbackCard key={item.feedback_id} feedback={item} compact />
           ))}
         </div>
@@ -302,11 +335,11 @@ export default function Dashboard() {
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const isConfigured = !!config.apiEndpoint
 
-  const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['summary', dateParams],
-    queryFn: () => api.getSummary(dateParams),
-    enabled: isConfigured,
-  })
+  // Shared with the sidebar urgent badge via useSummaryQuery so the two cannot
+  // resolve to different cache entries (see that module).
+  // Takes the endpoint rather than `isConfigured`: the hook owns both the query
+  // key and its enabling condition, so callers cannot make them disagree.
+  const { data: summary, isLoading: summaryLoading } = useSummaryQuery(dateParams, config.apiEndpoint)
 
   const { data: sentiment } = useQuery({
     queryKey: ['sentiment', dateParams],
@@ -326,9 +359,13 @@ export default function Dashboard() {
     enabled: isConfigured,
   })
 
+  // `limit` MUST stay in the query key: /feedback/urgent returns a different
+  // payload per limit, so a key that omits it lets two callers with different
+  // limits collide on one cache entry (which is how the sidebar badge used to
+  // render this list's page size).
   const { data: urgentFeedback } = useQuery({
-    queryKey: ['urgent', dateParams],
-    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: 5 }),
+    queryKey: ['urgent', dateParams, URGENT_PREVIEW_LIMIT],
+    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: URGENT_PREVIEW_LIMIT }),
     enabled: isConfigured,
   })
 
@@ -398,7 +435,7 @@ export default function Dashboard() {
           </h3>
           <SocialFeed limit={8} showFilters={true} />
         </div>
-        <UrgentFeedback items={urgentFeedback?.items} count={urgentFeedback?.count || 0} />
+        <UrgentFeedback items={urgentFeedback?.items} aggregateTotal={summary?.urgent_count} />
       </div>
     </div>
   )

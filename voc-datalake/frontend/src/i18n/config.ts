@@ -21,7 +21,7 @@ export { supportedLanguages, languageNames, changeLanguage } from './languages'
 export type { SupportedLanguage } from './languages'
 
 const defaultNS = 'common'
-const namespaces = ['common', 'dashboard', 'dataExplorer', 'feedback', 'feedbackDetail', 'chat', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail'] as const
+const namespaces = ['common', 'dashboard', 'dataExplorer', 'feedbackDetail', 'chat', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail'] as const
 
 void i18n
   .use(HttpBackend)

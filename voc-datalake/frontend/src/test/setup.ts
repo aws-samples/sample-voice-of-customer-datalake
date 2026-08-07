@@ -13,7 +13,6 @@ import { initReactI18next } from 'react-i18next'
 // assertions can match real translated strings instead of raw i18n keys.
 import commonEn from '../../public/locales/en/common.json'
 import dashboardEn from '../../public/locales/en/dashboard.json'
-import feedbackEn from '../../public/locales/en/feedback.json'
 import feedbackDetailEn from '../../public/locales/en/feedbackDetail.json'
 import chatEn from '../../public/locales/en/chat.json'
 import loginEn from '../../public/locales/en/login.json'
@@ -33,7 +32,6 @@ import projectDetailEn from '../../public/locales/en/projectDetail.json'
 const namespaceResources = {
   common: commonEn,
   dashboard: dashboardEn,
-  feedback: feedbackEn,
   feedbackDetail: feedbackDetailEn,
   chat: chatEn,
   login: loginEn,
