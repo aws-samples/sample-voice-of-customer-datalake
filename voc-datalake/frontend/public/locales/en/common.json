@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "Close"
+  },
   "appDescription": "Unified customer feedback intelligence platform",
   "appName": "VoC Analytics",
   "appTagline": "Voice of the Customer Analytics",

@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "关闭"
+  },
   "appDescription": "统一客户反馈智能平台",
   "appName": "VoC 分析",
   "appTagline": "客户之声分析平台",

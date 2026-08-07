@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "닫기"
+  },
   "appDescription": "통합 고객 피드백 인텔리전스 플랫폼",
   "appName": "VoC 애널리틱스",
   "appTagline": "고객의 목소리 분석",
