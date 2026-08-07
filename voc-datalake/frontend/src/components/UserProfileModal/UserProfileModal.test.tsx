@@ -308,12 +308,30 @@ describe('UserProfileModal', () => {
       expect(mockOnClose).not.toHaveBeenCalled()
     })
 
-    it('exposes the close control with an accessible name', () => {
+    it('clears typed password state when closed with Escape', async () => {
+      // Escape must route through handleClose. Asserting only that onClose fired
+      // would pass even when wired to onClose directly, leaving passwords in state.
+      const user = userEvent.setup()
+      const { rerender } = render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+      await user.click(screen.getByRole('button', { name: /change password/i }))
+      const currentPassword = screen.getByLabelText(/current password/i)
+      await user.type(currentPassword, 'secret-value')
+      expect(currentPassword).toHaveValue('secret-value')
+
+      await user.keyboard('{Escape}')
+      rerender(<UserProfileModal isOpen={false} onClose={mockOnClose} />)
+      rerender(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      await user.click(screen.getByRole('button', { name: /change password/i }))
+      expect(screen.getByLabelText(/current password/i)).toHaveValue('')
+    })
+
+    it('labels the close control "Close", not the sidebar menu string', () => {
       render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
 
-      // Fails if the aria-label regresses: the name must be non-empty.
-      const closeButton = screen.getByRole('button', { name: /close/i })
-      expect(closeButton).toHaveAccessibleName()
+      // Exact string, not /close/i: a regex also matches "Close menu" (the wrong
+      // key) and an unresolved namespace returning the raw key path.
+      expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
     })
 
     it('marks the panel as a modal dialog labelled by its heading', () => {
@@ -322,6 +340,29 @@ describe('UserProfileModal', () => {
       const dialog = screen.getByRole('dialog')
       expect(dialog).toHaveAttribute('aria-modal', 'true')
       expect(dialog).toHaveAccessibleName(/my profile/i)
+    })
+
+    it('closes when the overlay is clicked', async () => {
+      const user = userEvent.setup()
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      const overlay = document.querySelector('.absolute.inset-0')
+      expect(overlay).not.toBeNull()
+      await user.click(overlay as Element)
+
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not close when the panel itself is clicked', async () => {
+      // The important half: guards the relative-panel / absolute-overlay layering
+      // from being refactored back into one fused element, which is what made the
+      // overlay unclickable in the first place.
+      const user = userEvent.setup()
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      await user.click(screen.getByRole('dialog'))
+
+      expect(mockOnClose).not.toHaveBeenCalled()
     })
 
     it('calls onClose when X button is clicked', async () => {

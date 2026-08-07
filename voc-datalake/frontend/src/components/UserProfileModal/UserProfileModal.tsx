@@ -298,10 +298,22 @@ export default function UserProfileModal({
   const [isChanging, setIsChanging] = useState(false)
   const [passwordError, setPasswordError] = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState(false)
-  // Escape closes the dialog. Without this the modal was a keyboard trap: its
-  // only exit was an icon button that had no accessible name.
-  useEscapeKey(isOpen, onClose)
+  // Declared above the early return so the Escape hook can reference it without
+  // a temporal-dead-zone error, and so hook order stays stable across renders.
+  const handleClose = () => {
+    setActiveTab('profile')
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setPasswordError('')
+    setPasswordSuccess(false)
+    onClose()
+  }
 
+  // Escape closes the dialog — the modal was otherwise a keyboard trap. It must
+  // route through handleClose, not onClose, or Escape leaves typed passwords in
+  // state and they reappear when the modal is reopened.
+  useEscapeKey(isOpen, handleClose)
 
   if (!isOpen || !user) return null
 
@@ -332,16 +344,6 @@ export default function UserProfileModal({
     }
   }
 
-  const handleClose = () => {
-    setActiveTab('profile')
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
-    setPasswordError('')
-    setPasswordSuccess(false)
-    onClose()
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Overlay is its own element so a click on it closes the dialog without
@@ -360,7 +362,7 @@ export default function UserProfileModal({
           </h3>
           <button
             onClick={handleClose}
-            aria-label={t('common:sidebar.closeMenu')}
+            aria-label={t('common:actions.close')}
             className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
           >
             <X size={20} />

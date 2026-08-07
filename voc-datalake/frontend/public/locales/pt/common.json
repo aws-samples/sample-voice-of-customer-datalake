@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "Fechar"
+  },
   "appDescription": "Plataforma unificada de inteligência de feedback do cliente",
   "appName": "VoC Analítico",
   "appTagline": "Análise da Voz do Cliente",
