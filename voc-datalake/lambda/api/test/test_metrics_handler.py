@@ -227,6 +227,57 @@ class TestGetUrgentFeedback:
         assert 'count' in body
 
     @patch('metrics_handler.feedback_table')
+    def test_count_is_the_returned_page_length_not_the_window_total(
+        self, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """`count` reports how many items this page returned, NOT the window total.
+
+        Pinning deliberately-surprising behaviour. The handler returns
+        ``{'count': len(items), 'items': items[:limit]}`` and stops scanning once
+        it has ``limit`` items, so ``count`` is bounded by ``limit`` and cannot
+        express "how many urgent items exist".
+
+        This is a trap for consumers: the sidebar urgent badge read this field
+        with ``limit=10`` and could therefore never display more than 10, no
+        matter how many urgent items the window held. The frontend now takes its
+        count from ``/metrics/summary`` (which sums the exact ``METRIC#urgent``
+        aggregates) instead. Until this field is renamed or given a companion
+        total, that remains the only correct source for a total, and this test
+        exists so the constraint is discoverable from the backend tests.
+        """
+        # Ten urgent items available, but the caller asks for three.
+        mock_fb_table.query.return_value = {
+            'Items': [
+                {'pk': 'SOURCE#webscraper', 'sk': f'FEEDBACK#{i}', 'urgency': 'high'}
+                for i in range(10)
+            ]
+        }
+        mock_fb_table.get_item.return_value = {
+            'Item': {
+                'feedback_id': '1', 'urgency': 'high',
+                'original_text': 'Urgent issue!', 'date': '2026-01-07',
+            }
+        }
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from metrics_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback/urgent',
+            query_params={'limit': '3'},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert len(body['items']) <= 3
+        # The point: `count` tracks the page, so it never exceeds the limit and
+        # must not be read as a total.
+        assert body['count'] <= 3
+
+    @patch('metrics_handler.feedback_table')
     def test_respects_limit_parameter(
         self, mock_fb_table, api_gateway_event, lambda_context
     ):

@@ -228,12 +228,77 @@ describe('Dashboard', () => {
     // with. It must report the summary aggregate instead. The fixtures diverge
     // on purpose — summary says 5 urgent, the preview page says 3.
     it('reports the summary total in the urgent heading, not the preview page size', async () => {
+      // Own the divergence rather than inheriting it from shared fixtures: 11
+      // urgent items exist, the preview page carries 2. The heading must say 11.
+      mockGetSummary.mockResolvedValue({
+        total_feedback: 1234,
+        avg_sentiment: 0.65,
+        urgent_count: 11,
+        daily_totals: [{ date: '2025-01-01', count: 100 }],
+        daily_sentiment: [{ date: '2025-01-01', avg_sentiment: 0.5, count: 100 }],
+      })
+      mockGetUrgentFeedback.mockResolvedValue({
+        count: 2,
+        items: [
+          { feedback_id: '1', original_text: 'Urgent issue 1', urgency: 'high' },
+          { feedback_id: '2', original_text: 'Urgent issue 2', urgency: 'high' },
+        ],
+      })
+
       render(<Dashboard />, { wrapper: createWrapper() })
 
       await waitFor(() => {
-        expect(screen.getByText('Urgent Issues (5)')).toBeInTheDocument()
+        expect(screen.getByText('Urgent Issues (11)')).toBeInTheDocument()
       })
-      expect(screen.queryByText('Urgent Issues (3)')).not.toBeInTheDocument()
+      expect(screen.queryByText('Urgent Issues (2)')).not.toBeInTheDocument()
+    })
+
+    // The heading and the list come from different sources (exact METRIC#urgent
+    // aggregate vs. windowed scan), so the heading must never claim fewer items
+    // than are visible beneath it. A stale or un-backfilled aggregate reads 0
+    // while the scan still returns items — and 0 is not nullish, so `??` would
+    // not catch it. This is the reachable case; a summary *failure* instead
+    // swaps the whole dashboard for its empty state.
+    it('never reports fewer urgent items than it renders', async () => {
+      mockGetSummary.mockResolvedValue({
+        total_feedback: 1234,
+        avg_sentiment: 0.65,
+        urgent_count: 0,
+        daily_totals: [{ date: '2025-01-01', count: 100 }],
+        daily_sentiment: [{ date: '2025-01-01', avg_sentiment: 0.5, count: 100 }],
+      })
+      mockGetUrgentFeedback.mockResolvedValue({
+        count: 2,
+        items: [
+          { feedback_id: '1', original_text: 'Urgent issue 1', urgency: 'high' },
+          { feedback_id: '2', original_text: 'Urgent issue 2', urgency: 'high' },
+        ],
+      })
+
+      render(<Dashboard />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Urgent Issues (2)')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('Urgent Issues (0)')).not.toBeInTheDocument()
+    })
+
+    // Pins the fetch limit to the render cap so the two cannot drift apart again.
+    it('renders no more urgent cards than the preview limit fetches', async () => {
+      const many = Array.from({ length: 9 }, (_, i) => ({
+        feedback_id: String(i),
+        original_text: `Urgent issue ${i}`,
+        urgency: 'high',
+      }))
+      mockGetUrgentFeedback.mockResolvedValue({ count: many.length, items: many })
+
+      render(<Dashboard />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Urgent issue 0')).toBeInTheDocument()
+      })
+      // URGENT_PREVIEW_LIMIT is 5; the 6th item must not render.
+      expect(screen.queryByText('Urgent issue 5')).not.toBeInTheDocument()
     })
 
     it('displays urgent feedback items', async () => {

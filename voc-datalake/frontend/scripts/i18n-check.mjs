@@ -139,6 +139,22 @@ function extractKeysFromSource(files) {
         usedKeys.add(`${ns}:${filePrefix}${rawKey}`)
       }
     }
+
+    // Match namespace-qualified keys held in DATA rather than passed straight to
+    // t(), e.g. the nav/phase tables:
+    //   { to: '/x', labelKey: 'common:nav.categories' }
+    // These reach t() indirectly (t(item.labelKey)), so the t() regex above
+    // cannot see them and a deleted key stays invisible to this gate. That is
+    // how `common:nav.feedback` survived here long after the key was removed —
+    // the landing page rendered the literal text "nav.feedback" in all locales
+    // while the gate reported everything in sync.
+    //
+    // Only `ns:dotted.path` literals are collected: the explicit namespace makes
+    // them unambiguous, so this cannot mistake an arbitrary string for a key.
+    const dataKeyRegex = /\b\w*[Kk]ey:\s*['"](\w+):([\w.]+)['"]/g
+    while ((match = dataKeyRegex.exec(content)) !== null) {
+      usedKeys.add(`${match[1]}:${match[2]}`)
+    }
   }
 
   return usedKeys

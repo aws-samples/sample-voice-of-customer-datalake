@@ -101,7 +101,6 @@ function createWrapper(initialEntries = ['/']) {
 describe('Layout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
     mockGetSummary.mockResolvedValue({ urgent_count: 0 })
   })
 
@@ -290,7 +289,6 @@ describe('Layout', () => {
 describe('Layout with authenticated user', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
     mockGetSummary.mockResolvedValue({ urgent_count: 0 })
   })
 
@@ -306,7 +304,6 @@ describe('Layout with authenticated user', () => {
 describe('workflow sections and gating (P11 — AI-PDLC phases)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
     mockGetSummary.mockResolvedValue({ urgent_count: 0 })
     mockIsMenuItemEnabled.mockImplementation(() => true)
     vi.mocked(useIsAdmin).mockReturnValue(true)

@@ -7,6 +7,35 @@ import { render, screen } from '../../test/test-utils'
 import Home from './Home'
 
 describe('Home', () => {
+  // Regression: the phase-2 card carried `{ to: '/feedback', labelKey:
+  // 'common:nav.feedback' }`. Both were removed when the Feedback list was
+  // consolidated into Categories, so i18next fell back to echoing the key and
+  // the app's landing page rendered a chip labelled literally "nav.feedback" in
+  // all 8 locales. Reverting the fix makes both of these fail.
+  describe('no stale navigation or unresolved labels', () => {
+    it('renders no raw i18n key anywhere on the page', () => {
+      const { container } = render(<Home />)
+      // An unresolved i18next key renders as its own dotted path, e.g.
+      // "nav.feedback" or "home.phase1Title". Every segment starts lowercase.
+      // That last part matters: `textContent` concatenates adjacent blocks
+      // without whitespace, so prose yields tokens like "next.How" — requiring a
+      // lowercase segment start excludes those without weakening the check.
+      const rawKeys = (container.textContent ?? '')
+        .split(/\s+/)
+        .filter((token) => /^[a-z][a-z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/.test(token))
+      expect(rawKeys).toEqual([])
+    })
+
+    it('does not link to the removed /feedback route', () => {
+      const { container } = render(<Home />)
+      const hrefs = [...container.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'))
+      expect(hrefs).not.toContain('/feedback')
+      // The signals phase still offers its surviving destinations.
+      expect(hrefs).toContain('/categories')
+      expect(hrefs).toContain('/problems')
+    })
+  })
+
   describe('hero', () => {
     it('renders the welcome heading and intro', () => {
       render(<Home />)
