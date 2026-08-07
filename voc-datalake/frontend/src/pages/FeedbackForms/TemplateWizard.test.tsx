@@ -52,4 +52,31 @@ describe('TemplateWizard dialog semantics (ModalShell adoption)', () => {
     await user.click(screen.getByTestId('modal-overlay'))
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
+
+  // The heading id was a module-level constant before review; two mounted
+  // instances then shared it, and getElementById resolves to the FIRST match, so
+  // the second dialog was named by the first dialog's heading.
+  //
+  // Asserting the accessible NAME cannot catch that — the title is a fixed string,
+  // so both dialogs read "Create New Form" either way and the test passes while
+  // broken. The observable defect is the cross-reference, so that is what is
+  // pinned: ids must differ, and each must resolve INSIDE its own dialog.
+  it('names each instance from its own heading when mounted twice', () => {
+    render(
+      <>
+        <TemplateWizard onSelect={onSelect} onCancel={onCancel} />
+        <TemplateWizard onSelect={onSelect} onCancel={onCancel} />
+      </>,
+    )
+
+    const [first, second] = screen.getAllByRole('dialog')
+    const firstId = first.getAttribute('aria-labelledby')
+    const secondId = second.getAttribute('aria-labelledby')
+
+    expect(firstId).toBeTruthy()
+    expect(secondId).toBeTruthy()
+    expect(firstId).not.toBe(secondId)
+    expect(first.contains(document.getElementById(firstId ?? ''))).toBe(true)
+    expect(second.contains(document.getElementById(secondId ?? ''))).toBe(true)
+  })
 })
