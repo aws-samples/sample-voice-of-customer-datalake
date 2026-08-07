@@ -63,6 +63,8 @@
       "button": "构建原型",
       "buttonTitle": "根据本项目的 PRD + PR-FAQ 生成可点击的 HTML 原型",
       "buttonTitleOne": "根据现有文档（PRD 或 PR-FAQ）生成可点击的 HTML 原型",
+      "cancel": "取消",
+      "confirmBuild": "仍然创建",
       "confirmPrdOnly": "尚无 PR-FAQ — 原型将仅基于 PRD 构建。是否继续？",
       "confirmPrfaqOnly": "尚无 PRD — 原型将仅基于 PR-FAQ 构建。是否继续？",
       "downloadHtml": "下载 .html",

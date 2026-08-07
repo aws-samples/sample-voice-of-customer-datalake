@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import i18n from 'i18next'
 
 const mockGetFeedbackFormStats = vi.fn()
 
@@ -68,6 +69,41 @@ describe('FormCard (issue #171)', () => {
 
     expect(screen.getByText('Website Feedback')).toBeInTheDocument()
     expect(screen.getByText(defaultFormConfig.theme.primary_color)).toBeInTheDocument()
+  })
+
+  // U12: these icon-only controls carried hardcoded English titles, so they read
+  // the same in every locale. They now take translated aria-labels — the
+  // accessible name is what assistive tech actually announces.
+  it('gives every icon-only card action an accessible name', () => {
+    renderCard({ ...buildForm(), enabled: true })
+
+    // Resolve through the same i18n instance the component uses, so these stay
+    // correct whether the harness echoes keys or returns real strings.
+    const { t } = i18n
+    expect(screen.getByRole('button', { name: t('feedbackForms:card.disableForm') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('feedbackForms:card.editForm') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('feedbackForms:card.deleteForm') })).toBeInTheDocument()
+  })
+
+  // Resolving through i18n.t alone cannot catch a WRONG key path: the harness
+  // echoes the key, so component and expectation agree even when the key does
+  // not exist. This asserts against the real en catalogue instead, which is what
+  // caught these labels rendering as raw keys in the deployed build.
+  it('uses key paths that actually exist in the en catalogue', async () => {
+    const en = (await import('../../../public/locales/en/feedbackForms.json')).default
+    const card = en.card as Record<string, string>
+
+    for (const key of ['editForm', 'deleteForm', 'enableForm', 'disableForm']) {
+      expect(card[key], `feedbackForms:card.${key} missing from en catalogue`).toBeTruthy()
+    }
+  })
+
+  it('names the toggle for the action it performs when the form is disabled', () => {
+    renderCard({ ...buildForm(), enabled: false })
+
+    const { t } = i18n
+    expect(screen.getByRole('button', { name: t('feedbackForms:card.enableForm') })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('feedbackForms:card.disableForm') })).not.toBeInTheDocument()
   })
 
   it('survives a runtime record without a theme (the #171 crash)', () => {

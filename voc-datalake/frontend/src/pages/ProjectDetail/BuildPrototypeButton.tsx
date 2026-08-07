@@ -10,10 +10,23 @@
  * Lives in the project tab bar (top-right).
  */
 import { AlertCircle, Loader2, Wand2 } from 'lucide-react'
+import ConfirmModal from '../../components/ConfirmModal'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
 import { pollJobToCompletion } from './jobPolling'
+
+/** Exactly one of the two source documents exists, so the build needs a confirm. */
+function hasOnlyOneDoc(hasPrd: boolean, hasPrfaq: boolean): boolean {
+  return hasPrd !== hasPrfaq
+}
+
+// Keyed rather than branched in a helper, so neither the component's complexity
+// budget nor the no-selector-parameter rule is tripped.
+const SINGLE_DOC_MESSAGE = {
+  prd: { key: 'documents.prototype.confirmPrdOnly', defaultValue: 'No PR-FAQ yet — the prototype will be built from the PRD only. Continue?' },
+  prfaq: { key: 'documents.prototype.confirmPrfaqOnly', defaultValue: 'No PRD yet — the prototype will be built from the PR-FAQ only. Continue?' },
+} as const
 
 export default function BuildPrototypeButton({
   projectId, hasPrd, hasPrfaq, onDocumentChanged,
@@ -27,21 +40,17 @@ export default function BuildPrototypeButton({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [showConfirm, setShowConfirm] = useState(false)
   const disabled = !hasPrd && !hasPrfaq
 
-  // Both → use both. Only one → confirm we'll build from just that document.
-  const confirmSingleDocBuild = useCallback((): boolean => {
-    if (hasPrd && !hasPrfaq) {
-      return window.confirm(t('documents.prototype.confirmPrdOnly', { defaultValue: 'No PR-FAQ yet — the prototype will be built from the PRD only. Continue?' }))
-    }
-    if (!hasPrd && hasPrfaq) {
-      return window.confirm(t('documents.prototype.confirmPrfaqOnly', { defaultValue: 'No PRD yet — the prototype will be built from the PR-FAQ only. Continue?' }))
-    }
-    return true
-  }, [hasPrd, hasPrfaq, t])
+  // Both → build straight away. Only one → confirm we'll build from just that
+  // document. This was window.confirm, which cannot be styled and sat outside
+  // the ConfirmModal pattern every other guarded action in the app uses.
+  const needsConfirm = hasOnlyOneDoc(hasPrd, hasPrfaq)
+  const single = SINGLE_DOC_MESSAGE[hasPrd ? 'prd' : 'prfaq']
+  const confirmMessage = t(single.key, { defaultValue: single.defaultValue })
 
-  const onClick = useCallback(async () => {
-    if (!confirmSingleDocBuild()) return
+  const runBuild = useCallback(async () => {
     setBusy(true)
     setError(null)
     try {
@@ -61,7 +70,20 @@ export default function BuildPrototypeButton({
     } finally {
       setBusy(false)
     }
-  }, [projectId, i18n.language, onDocumentChanged, t, confirmSingleDocBuild])
+  }, [projectId, i18n.language, onDocumentChanged, t])
+
+  const onClick = useCallback(() => {
+    if (needsConfirm) {
+      setShowConfirm(true)
+      return
+    }
+    void runBuild()
+  }, [needsConfirm, runBuild])
+
+  const onConfirm = useCallback(() => {
+    setShowConfirm(false)
+    void runBuild()
+  }, [runBuild])
 
   const isDisabled = disabled || busy
   const buttonTitleKey = hasPrd && hasPrfaq
@@ -89,6 +111,16 @@ export default function BuildPrototypeButton({
           ? t('documents.prototype.building', { defaultValue: 'Building…' })
           : t('documents.prototype.button', { defaultValue: 'Build Prototype' })}
       </button>
+      <ConfirmModal
+        isOpen={showConfirm}
+        title={t('documents.prototype.button', { defaultValue: 'Build Prototype' })}
+        message={confirmMessage}
+        confirmLabel={t('documents.prototype.confirmBuild', { defaultValue: 'Build anyway' })}
+        cancelLabel={t('documents.prototype.cancel', { defaultValue: 'Cancel' })}
+        variant="warning"
+        onConfirm={onConfirm}
+        onCancel={() => setShowConfirm(false)}
+      />
     </div>
   )
 }

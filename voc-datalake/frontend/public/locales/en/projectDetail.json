@@ -63,6 +63,8 @@
       "button": "Build Prototype",
       "buttonTitle": "Generate a clickable HTML prototype from this project's PRD + PR-FAQ",
       "buttonTitleOne": "Generate a clickable HTML prototype from the available document (PRD or PR-FAQ)",
+      "cancel": "Cancel",
+      "confirmBuild": "Build anyway",
       "confirmPrdOnly": "No PR-FAQ yet — the prototype will be built from the PRD only. Continue?",
       "confirmPrfaqOnly": "No PRD yet — the prototype will be built from the PR-FAQ only. Continue?",
       "downloadHtml": "Download .html",

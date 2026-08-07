@@ -63,6 +63,8 @@
       "button": "Créer le prototype",
       "buttonTitle": "Générer un prototype HTML cliquable à partir du PRD + PR-FAQ de ce projet",
       "buttonTitleOne": "Générer un prototype HTML cliquable à partir du document disponible (PRD ou PR-FAQ)",
+      "cancel": "Annuler",
+      "confirmBuild": "Créer quand même",
       "confirmPrdOnly": "Pas encore de PR-FAQ — le prototype sera créé uniquement à partir du PRD. Continuer ?",
       "confirmPrfaqOnly": "Pas encore de PRD — le prototype sera créé uniquement à partir du PR-FAQ. Continuer ?",
       "downloadHtml": "Télécharger le .html",
