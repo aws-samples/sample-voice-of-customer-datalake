@@ -686,6 +686,43 @@ class TestQueryMetricWindow:
         # ...and the first does not carry one.
         assert 'ExclusiveStartKey' not in mock_table.query.call_args_list[0].kwargs
 
+    def test_warns_when_the_paging_bound_is_hit_with_a_cursor_still_open(self):
+        """A bounded loop must not turn truncation back into a silent short read.
+
+        By the bound's own invariant this is unreachable (a window of `days`
+        dates cannot span more than `days` pages), so if it ever happens an
+        assumption has broken and that needs to be visible — these endpoints
+        have no is_partial field to carry the fact.
+        """
+        from metrics_handler import _query_metric_window
+
+        # Every page reports another cursor, so the bound is what stops it.
+        with patch('metrics_handler.aggregates_table') as mock_table, \
+             patch('metrics_handler.logger') as mock_logger:
+            mock_table.query.return_value = {
+                'Items': [{'sk': '2026-03-10', 'count': 1}],
+                'LastEvaluatedKey': {'pk': 'p', 'sk': '2026-03-10'},
+            }
+            items = _query_metric_window('METRIC#urgent', 3,
+                                         datetime(2026, 3, 10, tzinfo=timezone.utc))
+
+        assert mock_table.query.call_count == 3, 'bound should cap pages at `days`'
+        assert len(items) == 3
+        assert mock_logger.warning.called, 'a partial window must not be silent'
+
+    def test_does_not_warn_when_the_window_completes(self):
+        """The warning must be specific to truncation, not fire on every read."""
+        from metrics_handler import _query_metric_window
+
+        with patch('metrics_handler.aggregates_table') as mock_table, \
+             patch('metrics_handler.logger') as mock_logger:
+            mock_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 1}]}
+            _query_metric_window('METRIC#urgent', 3,
+                                 datetime(2026, 3, 10, tzinfo=timezone.utc))
+
+        assert mock_table.query.call_count == 1
+        assert not mock_logger.warning.called
+
     def test_a_single_day_window_is_the_current_date_alone(self):
         """days=1 must not read a zero-width or off-by-one range."""
         from boto3.dynamodb.conditions import Key

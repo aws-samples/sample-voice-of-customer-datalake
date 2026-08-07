@@ -11,7 +11,7 @@ from typing import Any
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Attr, Key
 
-from shared.logging import tracer
+from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource
 from shared.api import (
     create_api_resolver, validate_days, validate_limit, validate_int,
@@ -183,10 +183,6 @@ def _scan_window_items(
     return items, is_partial
 
 
-# ============================================
-# Feedback Endpoints
-# ============================================
-
 def _query_metric_window(pk: str, days: int, current_date: datetime) -> list[dict]:
     """Read one metric partition's trailing `days` window, newest date first.
 
@@ -221,9 +217,22 @@ def _query_metric_window(pk: str, days: int, current_date: datetime) -> list[dic
         items.extend(response.get('Items', []))
         last_key = response.get('LastEvaluatedKey')
         if not last_key:
-            break
+            return items
         kwargs['ExclusiveStartKey'] = last_key
+    # Exhausting the bound with a cursor still open means the invariant above no
+    # longer holds, so the window really is partial. Nothing in the response
+    # shape can express that -- these endpoints have no is_partial flag -- so log
+    # it rather than return a quietly short answer that reads as authoritative.
+    logger.warning(
+        'Metric window paging hit its bound; returning a partial window',
+        extra={'pk': pk, 'days': days, 'pages': days, 'items': len(items)},
+    )
     return items
+
+
+# ============================================
+# Feedback Endpoints
+# ============================================
 
 
 @app.get("/feedback")

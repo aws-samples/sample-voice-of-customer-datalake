@@ -409,6 +409,11 @@ describe('metrics Lambda IAM grants', () => {
     Resource: z.unknown(),
   });
 
+  // Resource matching is keyed on the logical-ID substring 'Aggregates' appearing
+  // in the serialized Ref/GetAtt/ImportValue, since a cross-stack table ARN has no
+  // stable literal to compare against. Renaming the table construct away from
+  // 'Aggregates' will fail this test rather than silently pass it — the safe
+  // direction, but worth knowing before you chase the failure into IAM.
   it('grants dynamodb:Query on the aggregates table itself, not only its indexes', () => {
     const policies = apiTemplate().findResources('AWS::IAM::Policy');
     const metricsPolicy = Object.entries(policies).find(([id]) => id.includes('MetricsLambdaRole'));

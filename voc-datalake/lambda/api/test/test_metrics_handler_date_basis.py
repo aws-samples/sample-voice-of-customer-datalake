@@ -727,7 +727,10 @@ class TestReviewMetricsPartiality:
         self, mock_fb, mock_agg, api_gateway_event, lambda_context
     ):
         """The exact pre-computed aggregate branch is never partial."""
-        mock_agg.get_item.return_value = {'Item': {'count': 5}}
+        # Aggregate reads are windowed queries now, not per-day get_items. This
+        # test is about the is_partial flag, so it only needs the branch to
+        # resolve; an unstubbed query would return a MagicMock, not rows.
+        mock_agg.query.return_value = {'Items': [{'sk': _day(1), 'count': 5}]}
 
         from metrics_handler import lambda_handler
         event = api_gateway_event(
