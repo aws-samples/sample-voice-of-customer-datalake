@@ -89,7 +89,21 @@ describe('DocWizard', () => {
 
       const dialog = screen.getByRole('dialog')
       expect(dialog).toHaveAttribute('aria-modal', 'true')
-      expect(dialog).toHaveAccessibleName()
+      // Asserted as an exact string, not a bare toHaveAccessibleName(): the latter
+      // passes on any non-empty name, so it would not have caught the name drifting
+      // away from the visible heading.
+      expect(dialog).toHaveAccessibleName('Generate PR-FAQ')
+    })
+
+    it('keeps the dialog name in step with the doc-type selection', () => {
+      // Pins the name to the same value the heading shows, which is what makes the
+      // exact assertion above meaningful rather than a hardcoded coincidence.
+      render(
+        <DocWizard {...makeProps({ docTypes: ['prfaq', 'prd'] })} />,
+        { wrapper: createWrapper() },
+      )
+
+      expect(screen.getByRole('dialog')).toHaveAccessibleName('Generate PRD + PR-FAQ')
     })
 
     it('closes on Escape', async () => {
