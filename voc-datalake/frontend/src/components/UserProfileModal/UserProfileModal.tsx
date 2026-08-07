@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 import { changeLanguage, isSupportedLanguage, languageNames, supportedLanguages } from '../../i18n/languages'
 import { authService } from '../../services/auth'
 import { useAuthStore } from '../../store/authStore'
@@ -297,6 +298,10 @@ export default function UserProfileModal({
   const [isChanging, setIsChanging] = useState(false)
   const [passwordError, setPasswordError] = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState(false)
+  // Escape closes the dialog. Without this the modal was a keyboard trap: its
+  // only exit was an icon button that had no accessible name.
+  useEscapeKey(isOpen, onClose)
+
 
   if (!isOpen || !user) return null
 
@@ -338,14 +343,26 @@ export default function UserProfileModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Overlay is its own element so a click on it closes the dialog without
+          swallowing clicks inside the panel. */}
+      <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="user-profile-modal-title"
+        className="relative bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col"
+      >
         <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
+          <h3 id="user-profile-modal-title" className="text-lg font-semibold flex items-center gap-2">
             <User size={20} className="text-blue-600" />
             {t('userProfile.myProfile')}
           </h3>
-          <button onClick={handleClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded">
+          <button
+            onClick={handleClose}
+            aria-label={t('common:sidebar.closeMenu')}
+            className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
+          >
             <X size={20} />
           </button>
         </div>

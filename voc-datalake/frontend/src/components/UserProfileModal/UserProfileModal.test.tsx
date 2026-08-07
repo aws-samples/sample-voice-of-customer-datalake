@@ -288,11 +288,47 @@ describe('UserProfileModal', () => {
   })
 
   describe('close behavior', () => {
+    // U12 regression: the dialog was a keyboard trap — Escape and overlay click
+    // did nothing, and the only exit was an icon button with no accessible name.
+    it('closes when Escape is pressed', async () => {
+      const user = userEvent.setup()
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      await user.keyboard('{Escape}')
+
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not close on Escape while closed', async () => {
+      const user = userEvent.setup()
+      render(<UserProfileModal isOpen={false} onClose={mockOnClose} />)
+
+      await user.keyboard('{Escape}')
+
+      expect(mockOnClose).not.toHaveBeenCalled()
+    })
+
+    it('exposes the close control with an accessible name', () => {
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      // Fails if the aria-label regresses: the name must be non-empty.
+      const closeButton = screen.getByRole('button', { name: /close/i })
+      expect(closeButton).toHaveAccessibleName()
+    })
+
+    it('marks the panel as a modal dialog labelled by its heading', () => {
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toHaveAttribute('aria-modal', 'true')
+      expect(dialog).toHaveAccessibleName(/my profile/i)
+    })
+
     it('calls onClose when X button is clicked', async () => {
       const user = userEvent.setup()
       render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
       
-      const closeButton = screen.getByRole('button', { name: '' })
+      const closeButton = screen.getByRole('button', { name: /close/i })
       await user.click(closeButton)
       
       expect(mockOnClose).toHaveBeenCalledTimes(1)
@@ -307,7 +343,7 @@ describe('UserProfileModal', () => {
       await user.type(screen.getByLabelText(/current password/i), 'test')
       
       // Close the modal
-      const closeButton = screen.getByRole('button', { name: '' })
+      const closeButton = screen.getByRole('button', { name: /close/i })
       await user.click(closeButton)
       
       expect(mockOnClose).toHaveBeenCalledWith()
