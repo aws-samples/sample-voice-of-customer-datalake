@@ -282,22 +282,30 @@ class TestSummaryDateBasis:
         ]
         # All items carry sentiment_score 0.8
         assert body['avg_sentiment'] == 0.8
-        # Aggregates table is bypassed entirely under review basis
+        # Aggregates table is bypassed entirely under review basis. Both access
+        # shapes must be absent for "entirely" to hold, now that the windowed
+        # query has replaced the per-day get_item walk.
         mock_agg.get_item.assert_not_called()
+        mock_agg.query.assert_not_called()
 
     @patch('metrics_handler.aggregates_table')
     @patch('metrics_handler.feedback_table')
     def test_imported_basis_still_reads_aggregates(
         self, mock_fb, mock_agg, api_gateway_event, lambda_context
     ):
-        mock_agg.get_item.return_value = {'Item': {'count': 5, 'sum': Decimal('2.5')}}
+        # Imported basis reads the aggregates table. It now does so with one
+        # windowed query per metric partition rather than a get_item per day;
+        # the point of this test is the table it reads, not the call shape.
+        mock_agg.query.return_value = {
+            'Items': [{'sk': _day(1), 'count': 5, 'sum': Decimal('2.5')}]
+        }
 
         from metrics_handler import lambda_handler
         event = api_gateway_event(path='/metrics/summary', query_params={'days': '7'})
         body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['period_days'] == 7
-        assert mock_agg.get_item.called
+        assert mock_agg.query.called
         mock_fb.query.assert_not_called()
 
 
@@ -719,7 +727,10 @@ class TestReviewMetricsPartiality:
         self, mock_fb, mock_agg, api_gateway_event, lambda_context
     ):
         """The exact pre-computed aggregate branch is never partial."""
-        mock_agg.get_item.return_value = {'Item': {'count': 5}}
+        # Aggregate reads are windowed queries now, not per-day get_items. This
+        # test is about the is_partial flag, so it only needs the branch to
+        # resolve; an unstubbed query would return a MagicMock, not rows.
+        mock_agg.query.return_value = {'Items': [{'sk': _day(1), 'count': 5}]}
 
         from metrics_handler import lambda_handler
         event = api_gateway_event(

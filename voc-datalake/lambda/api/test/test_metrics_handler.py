@@ -104,8 +104,10 @@ class TestGetSummaryEndpoint:
         self, mock_agg_table, api_gateway_event, lambda_context
     ):
         """Returns aggregated metrics for specified period."""
-        mock_agg_table.get_item.return_value = {
-            'Item': {'count': 50, 'sum': 25.0}
+        # One query per metric partition (see _query_metric_window), not one
+        # get_item per day.
+        mock_agg_table.query.return_value = {
+            'Items': [{'sk': '2026-01-07', 'count': 50, 'sum': 25.0}]
         }
         
         import sys
@@ -123,16 +125,19 @@ class TestGetSummaryEndpoint:
         body = json.loads(response['body'])
         
         assert response['statusCode'] == 200
-        assert 'total_feedback' in body
-        assert 'period_days' in body
         assert body['period_days'] == 7
+        # Exact values, not just key presence: the single item the stubbed query
+        # returns carries count=50, so every derived figure is determined.
+        assert body['total_feedback'] == 50
+        assert body['urgent_count'] == 50
+        assert body['daily_totals'] == [{'date': '2026-01-07', 'count': 50}]
 
     @patch('metrics_handler.aggregates_table')
     def test_returns_zero_totals_when_no_data(
         self, mock_agg_table, api_gateway_event, lambda_context
     ):
         """Returns zero values when no aggregates exist."""
-        mock_agg_table.get_item.return_value = {}
+        mock_agg_table.query.return_value = {'Items': []}
         
         import sys
         import os
@@ -161,19 +166,15 @@ class TestGetSentimentEndpoint:
         self, mock_fb_table, mock_agg_table, api_gateway_event, lambda_context
     ):
         """Returns sentiment distribution."""
-        def get_item_side_effect(Key):
-            pk = Key.get('pk', '')
-            if 'positive' in pk:
-                return {'Item': {'count': 60}}
-            elif 'negative' in pk:
-                return {'Item': {'count': 20}}
-            elif 'neutral' in pk:
-                return {'Item': {'count': 15}}
-            elif 'mixed' in pk:
-                return {'Item': {'count': 5}}
-            return {}
+        # Stub at the window helper: it takes the pk as a plain string, whereas
+        # the pk inside a real query's KeyConditionExpression is buried in a
+        # boto3 Condition object. The query shape itself is covered by
+        # TestQueryMetricWindow.
+        counts = {'positive': 60, 'negative': 20, 'neutral': 15, 'mixed': 5}
         
-        mock_agg_table.get_item.side_effect = get_item_side_effect
+        def window_side_effect(pk, days, current_date):
+            label = pk.rsplit('#', 1)[-1]
+            return [{'sk': '2026-01-07', 'count': counts[label]}]
         
         import sys
         import os
@@ -186,13 +187,26 @@ class TestGetSentimentEndpoint:
             query_params={'days': '7'}
         )
         
-        response = lambda_handler(event, lambda_context)
+        with patch('metrics_handler._query_metric_window',
+                   side_effect=window_side_effect) as mock_window:
+            response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
         
         assert response['statusCode'] == 200
-        assert 'breakdown' in body
-        assert 'positive' in body['breakdown']
-        assert 'negative' in body['breakdown']
+        # Exact breakdown, so a mis-keyed window would fail rather than pass on
+        # mere key presence.
+        assert body['breakdown'] == counts
+        assert body['total'] == 100
+        # The FULL partition keys, not just the trailing label: the stub above
+        # derives its label with rsplit, so 'METRIC#sentiment#positive' would
+        # satisfy it just as well as the real 'METRIC#daily_sentiment#positive'.
+        # Without this, the endpoint-to-partition mapping is unasserted.
+        assert [c.args[0] for c in mock_window.call_args_list] == [
+            'METRIC#daily_sentiment#positive',
+            'METRIC#daily_sentiment#neutral',
+            'METRIC#daily_sentiment#negative',
+            'METRIC#daily_sentiment#mixed',
+        ]
 
 
 class TestGetUrgentFeedback:
@@ -472,17 +486,26 @@ class TestGetCategoryMetrics:
         self, mock_fb_table, mock_agg_table, api_gateway_event, lambda_context
     ):
         """Returns category distribution."""
+        # get_configured_categories memoizes in a module-level cache that other
+        # test modules populate, so the stub below is only authoritative once
+        # the cache is cleared. Same pattern as shared/test/test_api.py.
+        from shared.api import clear_categories_cache
+        clear_categories_cache()
+        
+        # The configured-category list is still a get_item; only the per-day
+        # count walk became a windowed query.
         def get_item_side_effect(Key):
-            pk = Key.get('pk', '')
-            if pk == 'SETTINGS#categories':
+            if Key.get('pk', '') == 'SETTINGS#categories':
                 return {'Item': {'categories': [{'name': 'product'}, {'name': 'delivery'}]}}
-            elif 'product' in pk:
-                return {'Item': {'count': 50}}
-            elif 'delivery' in pk:
-                return {'Item': {'count': 30}}
             return {}
         
         mock_agg_table.get_item.side_effect = get_item_side_effect
+        
+        counts = {'product': 50, 'delivery': 30}
+        
+        def window_side_effect(pk, days, current_date):
+            category = pk.rsplit('#', 1)[-1]
+            return [{'sk': '2026-01-07', 'count': counts[category]}]
         
         import sys
         import os
@@ -495,11 +518,28 @@ class TestGetCategoryMetrics:
             query_params={'days': '7'}
         )
         
-        response = lambda_handler(event, lambda_context)
+        try:
+            with patch('metrics_handler._query_metric_window',
+                       side_effect=window_side_effect) as mock_window:
+                response = lambda_handler(event, lambda_context)
+        finally:
+            # Clearing on the way in fixed the inbound leak; clearing on the way
+            # out stops this test from handing {product, delivery} to whatever
+            # runs next. Same bug class, other direction.
+            clear_categories_cache()
         body = json.loads(response['body'])
         
         assert response['statusCode'] == 200
-        assert 'categories' in body
+        # Exact values and descending-by-count ordering, both of which the
+        # previous 'categories' in body assertion could not see.
+        assert body['categories'] == {'product': 50, 'delivery': 30}
+        assert list(body['categories']) == ['product', 'delivery']
+        # Full partition keys: the stub derives its category with rsplit, so a
+        # wrong prefix would otherwise pass.
+        assert [c.args[0] for c in mock_window.call_args_list] == [
+            'METRIC#daily_category#product',
+            'METRIC#daily_category#delivery',
+        ]
 
 
 class TestGetSourceMetrics:
@@ -566,3 +606,236 @@ class TestGetPersonaMetrics:
         
         assert response['statusCode'] == 200
         assert 'personas' in body
+
+
+class TestQueryMetricWindow:
+    """Tests for _query_metric_window - the per-day fan-out replacement.
+
+    The aggregates table is (pk, sk) with sk = 'YYYY-MM-DD'. Because ISO dates
+    sort lexicographically a trailing window is one contiguous sort-key range,
+    so a whole window costs ONE request instead of one get_item per day.
+    """
+
+    def test_reads_a_whole_window_in_one_query_with_inclusive_iso_bounds(self):
+        """One query, exact pk, and bounds spanning exactly `days` dates."""
+        # conftest.py already puts lambda/ and lambda/api/ on sys.path (:13-16),
+        # so the per-test path insertion the older tests carry is redundant.
+        from boto3.dynamodb.conditions import Key
+        from metrics_handler import _query_metric_window
+
+        current = datetime(2026, 3, 10, 12, 0, tzinfo=timezone.utc)
+        with patch('metrics_handler.aggregates_table') as mock_table:
+            mock_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 2}]}
+            items = _query_metric_window('METRIC#urgent', 7, current)
+
+        assert mock_table.query.call_count == 1
+        assert mock_table.get_item.call_count == 0
+        kwargs = mock_table.query.call_args.kwargs
+        # 7 days ending 2026-03-10 is 03-04..03-10 inclusive, i.e. the same set
+        # the replaced `for i in range(days)` loop visited. Comparing whole
+        # Condition objects pins the pk, both bounds and the operators at once.
+        assert kwargs['KeyConditionExpression'] == (
+            Key('pk').eq('METRIC#urgent') & Key('sk').between('2026-03-04', '2026-03-10')
+        )
+        assert items == [{'sk': '2026-03-10', 'count': 2}]
+
+    def test_requests_newest_first_because_the_charts_read_that_order(self):
+        """ScanIndexForward=False: a default query would silently reverse charts.
+
+        The loops this replaced counted `i` up from 0 (today), so `daily_totals`
+        and `daily_sentiment` reach the client newest-first. DynamoDB's default
+        is ascending, which would invert both series without changing any total.
+        """
+        from metrics_handler import _query_metric_window
+
+        with patch('metrics_handler.aggregates_table') as mock_table:
+            mock_table.query.return_value = {'Items': []}
+            _query_metric_window('METRIC#daily_total', 30,
+                                 datetime(2026, 3, 10, tzinfo=timezone.utc))
+
+        assert mock_table.query.call_args.kwargs['ScanIndexForward'] is False
+
+    def test_follows_last_evaluated_key_so_a_window_cannot_truncate(self):
+        """Paged windows are concatenated, in order, and the cursor is passed on.
+
+        A 365-day window of counter items fits one 1 MB page today, but that
+        rests on item width the aggregator controls. If a page boundary ever
+        appears these endpoints have no is_partial signal, so a dropped page
+        would be a silently wrong total.
+        """
+        from metrics_handler import _query_metric_window
+
+        pages = [
+            {'Items': [{'sk': '2026-03-10', 'count': 1}], 'LastEvaluatedKey': {'pk': 'p', 'sk': '2026-03-10'}},
+            {'Items': [{'sk': '2026-03-09', 'count': 2}]},
+        ]
+        with patch('metrics_handler.aggregates_table') as mock_table:
+            mock_table.query.side_effect = pages
+            items = _query_metric_window('METRIC#urgent', 7,
+                                         datetime(2026, 3, 10, tzinfo=timezone.utc))
+
+        assert mock_table.query.call_count == 2
+        assert items == [
+            {'sk': '2026-03-10', 'count': 1},
+            {'sk': '2026-03-09', 'count': 2},
+        ]
+        # Second call resumes from the first page's cursor.
+        assert mock_table.query.call_args_list[1].kwargs['ExclusiveStartKey'] == {
+            'pk': 'p', 'sk': '2026-03-10'
+        }
+        # ...and the first does not carry one.
+        assert 'ExclusiveStartKey' not in mock_table.query.call_args_list[0].kwargs
+
+    def test_warns_when_the_paging_bound_is_hit_with_a_cursor_still_open(self):
+        """A bounded loop must not turn truncation back into a silent short read.
+
+        By the bound's own invariant this is unreachable (a window of `days`
+        dates cannot span more than `days` pages), so if it ever happens an
+        assumption has broken and that needs to be visible — these endpoints
+        have no is_partial field to carry the fact.
+        """
+        from metrics_handler import _query_metric_window
+
+        # Every page reports another cursor, so the bound is what stops it.
+        with patch('metrics_handler.aggregates_table') as mock_table, \
+             patch('metrics_handler.logger') as mock_logger:
+            mock_table.query.return_value = {
+                'Items': [{'sk': '2026-03-10', 'count': 1}],
+                'LastEvaluatedKey': {'pk': 'p', 'sk': '2026-03-10'},
+            }
+            items = _query_metric_window('METRIC#urgent', 3,
+                                         datetime(2026, 3, 10, tzinfo=timezone.utc))
+
+        assert mock_table.query.call_count == 3, 'bound should cap pages at `days`'
+        assert len(items) == 3
+        assert mock_logger.warning.called, 'a partial window must not be silent'
+
+    def test_does_not_warn_when_the_window_completes(self):
+        """The warning must be specific to truncation, not fire on every read."""
+        from metrics_handler import _query_metric_window
+
+        with patch('metrics_handler.aggregates_table') as mock_table, \
+             patch('metrics_handler.logger') as mock_logger:
+            mock_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 1}]}
+            _query_metric_window('METRIC#urgent', 3,
+                                 datetime(2026, 3, 10, tzinfo=timezone.utc))
+
+        assert mock_table.query.call_count == 1
+        assert not mock_logger.warning.called
+
+    def test_a_single_day_window_is_the_current_date_alone(self):
+        """days=1 must not read a zero-width or off-by-one range."""
+        from boto3.dynamodb.conditions import Key
+        from metrics_handler import _query_metric_window
+
+        with patch('metrics_handler.aggregates_table') as mock_table:
+            mock_table.query.return_value = {'Items': []}
+            _query_metric_window('METRIC#urgent', 1,
+                                 datetime(2026, 3, 10, tzinfo=timezone.utc))
+
+        assert mock_table.query.call_args.kwargs['KeyConditionExpression'] == (
+            Key('pk').eq('METRIC#urgent') & Key('sk').between('2026-03-10', '2026-03-10')
+        )
+
+
+class TestMetricsRequestCountIsIndependentOfWindow:
+    """The point of the change: round-trips must not scale with `days`.
+
+    Before this, /metrics/summary issued 3 x days sequential get_item calls
+    (~270 at a 90-day window, measured at 2609ms on 6,234 items). These tests
+    fail if that shape comes back.
+    """
+
+    @patch('metrics_handler.aggregates_table')
+    def test_summary_issues_three_queries_whatever_the_window(
+        self, mock_agg_table, api_gateway_event, lambda_context
+    ):
+        """One query per metric partition, and zero per-day get_items."""
+        from metrics_handler import lambda_handler
+
+        counts = []
+        for days in ('1', '7', '90', '365'):
+            mock_agg_table.reset_mock()
+            mock_agg_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 3, 'sum': 1.5}]}
+            event = api_gateway_event(
+                method='GET', path='/metrics/summary', query_params={'days': days}
+            )
+            response = lambda_handler(event, lambda_context)
+            assert response['statusCode'] == 200
+            counts.append(mock_agg_table.query.call_count)
+            # Scoped to METRIC# partitions rather than all get_item calls: the
+            # fan-out being guarded against was per-day METRIC# reads, and a
+            # legitimate single-shot settings read (SETTINGS#...) moving onto
+            # this table later should not fail this test.
+            metric_get_items = [
+                c for c in mock_agg_table.get_item.call_args_list
+                if str(c.kwargs.get('Key', {}).get('pk', '')).startswith('METRIC#')
+            ]
+            assert metric_get_items == [], f'per-day METRIC# get_item returned at days={days}'
+
+        # daily_total + daily_sentiment_avg + urgent = 3, flat across windows.
+        assert counts == [3, 3, 3, 3]
+
+    @patch('metrics_handler.aggregates_table')
+    def test_sentiment_issues_one_query_per_label_whatever_the_window(
+        self, mock_agg_table, api_gateway_event, lambda_context
+    ):
+        """Was 4 labels x days (360 reads at 90d); now 4 regardless."""
+        from metrics_handler import lambda_handler
+
+        counts = []
+        for days in ('7', '90'):
+            mock_agg_table.reset_mock()
+            mock_agg_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 1}]}
+            event = api_gateway_event(
+                method='GET', path='/metrics/sentiment', query_params={'days': days}
+            )
+            response = lambda_handler(event, lambda_context)
+            assert response['statusCode'] == 200
+            counts.append(mock_agg_table.query.call_count)
+
+        assert counts == [4, 4]
+
+    @patch('metrics_handler.aggregates_table')
+    def test_summary_keeps_daily_series_newest_first(
+        self, mock_agg_table, api_gateway_event, lambda_context
+    ):
+        """The handler must not re-sort what the query already ordered."""
+        from metrics_handler import lambda_handler
+
+        mock_agg_table.query.return_value = {'Items': [
+            {'sk': '2026-03-10', 'count': 5, 'sum': 2.5},
+            {'sk': '2026-03-09', 'count': 3, 'sum': 1.5},
+        ]}
+        event = api_gateway_event(
+            method='GET', path='/metrics/summary', query_params={'days': '7'}
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert [t['date'] for t in body['daily_totals']] == ['2026-03-10', '2026-03-09']
+        assert [s['date'] for s in body['daily_sentiment']] == ['2026-03-10', '2026-03-09']
+
+    @patch('metrics_handler.aggregates_table')
+    def test_urgent_count_sums_the_window_exactly(
+        self, mock_agg_table, api_gateway_event, lambda_context
+    ):
+        """urgent_count is the sidebar badge AND the Dashboard heading (#278).
+
+        Those two must stay equal, so this value is a published contract: it is
+        the sum of METRIC#urgent over the window, not a page length.
+        """
+        from metrics_handler import lambda_handler
+
+        mock_agg_table.query.return_value = {'Items': [
+            {'sk': '2026-03-10', 'count': 7},
+            {'sk': '2026-03-09', 'count': 4},
+            {'sk': '2026-03-08', 'count': 1},
+        ]}
+        event = api_gateway_event(
+            method='GET', path='/metrics/summary', query_params={'days': '30'}
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert body['urgent_count'] == 12

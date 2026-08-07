@@ -11,7 +11,7 @@ from typing import Any
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Attr, Key
 
-from shared.logging import tracer
+from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource
 from shared.api import (
     create_api_resolver, validate_days, validate_limit, validate_int,
@@ -183,9 +183,57 @@ def _scan_window_items(
     return items, is_partial
 
 
+def _query_metric_window(pk: str, days: int, current_date: datetime) -> list[dict]:
+    """Read one metric partition's trailing `days` window, newest date first.
+
+    `sk` is 'YYYY-MM-DD' and ISO dates sort lexicographically, so a window is a
+    contiguous sort-key range that `between()` bounds server-side: a fixed
+    number of requests regardless of `days`, not one `get_item` per day.
+
+    `ScanIndexForward=False` is load-bearing. Callers hand these items straight
+    to the client as `daily_totals` / `daily_sentiment`, which are charted
+    newest-first; DynamoDB's default ascending order would reverse both series
+    while leaving every total correct.
+
+    Not the `gsi1-by-metric-type` index: it only holds items the aggregator tags
+    with `metric_type`, which is just the daily_source and persona partitions.
+    These `pk`s are known anyway, so the base table answers directly and bounds
+    the window server-side instead of reading all dates and filtering in memory.
+    """
+    oldest = (current_date - timedelta(days=days - 1)).strftime('%Y-%m-%d')
+    newest = current_date.strftime('%Y-%m-%d')
+    condition = Key('pk').eq(pk) & Key('sk').between(oldest, newest)
+    items: list[dict] = []
+    kwargs: dict = {'KeyConditionExpression': condition, 'ScanIndexForward': False}
+    # A 365-day window of counter items sits far inside one 1 MB page today, but
+    # that rests on item width the aggregator controls, and these endpoints have
+    # no is_partial signal with which to report a truncated window. So follow the
+    # cursor -- but bounded, never `while True`: one date yields at most one item
+    # and an unfiltered page yields at least one, so a window of `days` dates
+    # cannot span more than `days` pages. A bound also means a surprising
+    # response shape degrades to a short read instead of spinning.
+    for _ in range(days):
+        response = aggregates_table.query(**kwargs)
+        items.extend(response.get('Items', []))
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            return items
+        kwargs['ExclusiveStartKey'] = last_key
+    # Exhausting the bound with a cursor still open means the invariant above no
+    # longer holds, so the window really is partial. Nothing in the response
+    # shape can express that -- these endpoints have no is_partial flag -- so log
+    # it rather than return a quietly short answer that reads as authoritative.
+    logger.warning(
+        'Metric window paging hit its bound; returning a partial window',
+        extra={'pk': pk, 'days': days, 'items': len(items)},
+    )
+    return items
+
+
 # ============================================
 # Feedback Endpoints
 # ============================================
+
 
 @app.get("/feedback")
 @tracer.capture_method
@@ -421,13 +469,11 @@ def get_entities():
     categories_list = get_configured_categories(aggregates_table)
     category_counts = {}
     for category in categories_list:
-        total = 0
-        for i in range(days):
-            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_category#{category}', 'sk': date})
-            item = response.get('Item')
-            if item:
-                total += int(item.get('count', 0))
+        total = sum(
+            int(item.get('count', 0))
+            for item in _query_metric_window(
+                f'METRIC#daily_category#{category}', days, current_date)
+        )
         if total > 0:
             category_counts[category] = total
     
@@ -455,13 +501,10 @@ def get_entities():
             persona_counts[persona_name] = persona_counts.get(persona_name, 0) + int(item.get('count', 0))
     
     # Get feedback count
-    feedback_count = 0
-    for i in range(days):
-        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        response = aggregates_table.get_item(Key={'pk': 'METRIC#daily_total', 'sk': date})
-        item = response.get('Item')
-        if item:
-            feedback_count += int(item.get('count', 0))
+    feedback_count = sum(
+        int(item.get('count', 0))
+        for item in _query_metric_window('METRIC#daily_total', days, current_date)
+    )
     
     # Extract issues from recent feedback
     issues = {}
@@ -689,30 +732,21 @@ def get_summary():
     
     current_date = datetime.now(timezone.utc)
     
-    totals = []
-    for i in range(days):
-        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        response = aggregates_table.get_item(Key={'pk': 'METRIC#daily_total', 'sk': date})
-        item = response.get('Item')
-        if item:
-            totals.append({'date': date, 'count': item.get('count', 0)})
+    totals = [
+        {'date': item['sk'], 'count': item.get('count', 0)}
+        for item in _query_metric_window('METRIC#daily_total', days, current_date)
+    ]
     
     sentiment_data = []
-    for i in range(days):
-        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        response = aggregates_table.get_item(Key={'pk': 'METRIC#daily_sentiment_avg', 'sk': date})
-        item = response.get('Item')
-        if item and item.get('count', 0) > 0:
+    for item in _query_metric_window('METRIC#daily_sentiment_avg', days, current_date):
+        if item.get('count', 0) > 0:
             avg = float(item.get('sum', 0)) / float(item.get('count', 1))
-            sentiment_data.append({'date': date, 'avg_sentiment': round(avg, 3), 'count': item.get('count')})
+            sentiment_data.append({'date': item['sk'], 'avg_sentiment': round(avg, 3), 'count': item.get('count')})
     
-    urgent_count = 0
-    for i in range(days):
-        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        response = aggregates_table.get_item(Key={'pk': 'METRIC#urgent', 'sk': date})
-        item = response.get('Item')
-        if item:
-            urgent_count += item.get('count', 0)
+    urgent_count = sum(
+        item.get('count', 0)
+        for item in _query_metric_window('METRIC#urgent', days, current_date)
+    )
     
     total_feedback = sum(int(t.get('count', 0)) for t in totals)
     avg_sentiment = sum(float(s.get('avg_sentiment', 0)) * int(s.get('count', 0)) for s in sentiment_data) / max(total_feedback, 1)
@@ -750,14 +784,11 @@ def get_sentiment_metrics():
                 result[sentiment] += 1
     else:
         for sentiment in sentiments:
-            total = 0
-            for i in range(days):
-                date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-                response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_sentiment#{sentiment}', 'sk': date})
-                item = response.get('Item')
-                if item:
-                    total += int(item.get('count', 0))
-            result[sentiment] = total
+            result[sentiment] = sum(
+                int(item.get('count', 0))
+                for item in _query_metric_window(
+                    f'METRIC#daily_sentiment#{sentiment}', days, current_date)
+            )
     
     total = sum(result.values())
     return {
@@ -794,13 +825,11 @@ def get_category_metrics():
             result[category] = result.get(category, 0) + 1
     else:
         for category in categories:
-            total = 0
-            for i in range(days):
-                date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-                response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_category#{category}', 'sk': date})
-                item = response.get('Item')
-                if item:
-                    total += item.get('count', 0)
+            total = sum(
+                int(item.get('count', 0))
+                for item in _query_metric_window(
+                    f'METRIC#daily_category#{category}', days, current_date)
+            )
             if total > 0:
                 result[category] = total
     
