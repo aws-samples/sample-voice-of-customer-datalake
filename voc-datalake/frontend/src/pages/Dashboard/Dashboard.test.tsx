@@ -223,6 +223,19 @@ describe('Dashboard', () => {
       })
     })
 
+    // Regression: the heading used to report the preview list's `count`, which
+    // is one page's length and is clamped by the limit the list was fetched
+    // with. It must report the summary aggregate instead. The fixtures diverge
+    // on purpose — summary says 5 urgent, the preview page says 3.
+    it('reports the summary total in the urgent heading, not the preview page size', async () => {
+      render(<Dashboard />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('Urgent Issues (5)')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('Urgent Issues (3)')).not.toBeInTheDocument()
+    })
+
     it('displays urgent feedback items', async () => {
       render(<Dashboard />, { wrapper: createWrapper() })
       

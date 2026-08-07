@@ -146,9 +146,14 @@ export default function Layout() {
   // Filter nav items based on menu config and user role
   const visibleNavItems = NAV_ITEMS.filter(item => isNavItemVisible(item, isAdmin))
 
-  const { data: urgentData } = useQuery({
-    queryKey: ['urgent', dateParams],
-    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: 10 }),
+  // Badge count comes from /metrics/summary (exact: it sums the precomputed
+  // METRIC#urgent daily aggregates), NOT from /feedback/urgent whose `count`
+  // is one page's length and is therefore clamped by `limit`.
+  // Sharing this key with Dashboard's summary query is intentional — identical
+  // params, one cache entry, so the badge and the Dashboard card cannot disagree.
+  const { data: summaryData } = useQuery({
+    queryKey: ['summary', dateParams],
+    queryFn: () => api.getSummary(dateParams),
     enabled: !!config.apiEndpoint,
   })
 
@@ -161,7 +166,7 @@ export default function Layout() {
   const showProfile = useCallback(() => setShowProfileModal(true), [])
   const hideProfile = useCallback(() => setShowProfileModal(false), [])
 
-  const urgentCount = urgentData?.count ?? 0
+  const urgentCount = summaryData?.urgent_count ?? 0
 
   return (
     <div className="h-screen flex overflow-hidden">

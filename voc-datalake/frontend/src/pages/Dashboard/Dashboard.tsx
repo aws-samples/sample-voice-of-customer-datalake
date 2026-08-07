@@ -26,6 +26,13 @@ import DashboardEmptyState from './DashboardEmptyState'
 
 const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
 
+/**
+ * How many urgent items the dashboard previews. The list is a preview, not the
+ * full set — the heading reports the true total from /metrics/summary, so this
+ * number must never be presented as a count.
+ */
+const URGENT_PREVIEW_LIMIT = 5
+
 function NotConfiguredState() {
   return (
     <div className="flex flex-col items-center justify-center h-full">
@@ -243,7 +250,7 @@ function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
       </h3>
       {hasItems ? (
         <div className="space-y-3 max-h-[400px] sm:max-h-[600px] overflow-y-auto">
-          {items.slice(0, 6).map((item) => (
+          {items.slice(0, URGENT_PREVIEW_LIMIT).map((item) => (
             <FeedbackCard key={item.feedback_id} feedback={item} compact />
           ))}
         </div>
@@ -326,9 +333,13 @@ export default function Dashboard() {
     enabled: isConfigured,
   })
 
+  // `limit` MUST stay in the query key: /feedback/urgent returns a different
+  // payload per limit, so a key that omits it lets two callers with different
+  // limits collide on one cache entry (which is how the sidebar badge used to
+  // render this list's page size).
   const { data: urgentFeedback } = useQuery({
-    queryKey: ['urgent', dateParams],
-    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: 5 }),
+    queryKey: ['urgent', dateParams, URGENT_PREVIEW_LIMIT],
+    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: URGENT_PREVIEW_LIMIT }),
     enabled: isConfigured,
   })
 
@@ -398,7 +409,10 @@ export default function Dashboard() {
           </h3>
           <SocialFeed limit={8} showFilters={true} />
         </div>
-        <UrgentFeedback items={urgentFeedback?.items} count={urgentFeedback?.count || 0} />
+        {/* Count comes from the summary aggregate, not the preview list — the
+            list is capped at URGENT_PREVIEW_LIMIT and its `count` would
+            understate the total. */}
+        <UrgentFeedback items={urgentFeedback?.items} count={summary?.urgent_count ?? 0} />
       </div>
     </div>
   )
