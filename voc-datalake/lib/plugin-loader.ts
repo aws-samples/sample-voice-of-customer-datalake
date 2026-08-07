@@ -113,7 +113,10 @@ const IntegritySchema = z.object({
 
 const SecretsSchema = z.record(ConfigKeySchema, z.string());
 
-const ManifestSchema = z.object({
+/** Exported so tests can assert against the canonical manifest contract instead
+ *  of re-declaring a partial shape. A local re-declaration would keep passing if
+ *  a field here were renamed or moved, which silently disables such a guard. */
+export const ManifestSchema = z.object({
   id: PluginIdSchema,
   name: SafeStringSchema,
   icon: IconSchema,

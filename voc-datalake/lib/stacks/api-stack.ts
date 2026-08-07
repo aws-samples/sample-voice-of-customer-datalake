@@ -1068,12 +1068,19 @@ export class VocApiStack extends cdk.Stack {
     // the synthesized template is identical either way. Never leave it set:
     // while it is on, the per-form routes do not exist and the embeddable widget
     // is down. See docs/deployment.md.
+    //
+    // TODO(cleanup): this flag exists only to migrate environments deployed
+    // before the item routes became explicit. Once every environment has run the
+    // two-deploy upgrade, delete the flag, this branch and its tests — a
+    // permanently available "skip the authorization-bearing routes" switch is a
+    // footgun once nothing needs it.
     const skipFeedbackFormItemRoutes =
       this.node.tryGetContext('skipFeedbackFormItemRoutes') === true
       || this.node.tryGetContext('skipFeedbackFormItemRoutes') === 'true';
 
     if (skipFeedbackFormItemRoutes) {
-      cdk.Annotations.of(this).addWarning(
+      cdk.Annotations.of(this).addWarningV2(
+        'voc:skipFeedbackFormItemRoutes',
         'skipFeedbackFormItemRoutes is set: /feedback-forms/{form_id}/* is NOT being deployed. '
         + 'This is the first of two upgrade deploys — re-deploy without the flag to restore the routes.',
       );

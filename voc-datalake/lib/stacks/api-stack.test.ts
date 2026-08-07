@@ -18,7 +18,7 @@
  * CORS preflight methods from `defaultCorsPreflightOptions`, and cdk-nag's own
  * APIG4 rule excludes them for the same reason.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, it, expect } from 'vitest';
@@ -35,6 +35,7 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import { z } from 'zod';
 
 import { VocApiStack } from './api-stack';
+import { ManifestSchema } from '../plugin-loader';
 
 /** The only routes that may be served without credentials: the embeddable
  *  widget runs on the customer's own site. `config` and `submit` are fetched
@@ -50,15 +51,24 @@ const INTENTIONALLY_PUBLIC_ROUTES = [
  *  the Cognito flow. Authenticated, just not by Cognito. */
 const CUSTOM_AUTHORIZER_ROUTE_PREFIXES = ['/mcp'];
 
-/** Every plugin on disk. Used to synthesize the shape a real deployment has,
- *  rather than only the empty one. */
-const ALL_PLUGIN_IDS = [
-  'app_reviews_android',
-  'app_reviews_ios',
-  's3_import',
-  'synthetic_reviews',
-  'webscraper',
-];
+const PLUGINS_DIR = join(__dirname, '..', '..', 'plugins');
+
+/**
+ * Every plugin on disk, enumerated rather than hardcoded — a hardcoded list would
+ * make a newly registered plugin invisible to both the all-plugins invariant and
+ * the webhook pin below, i.e. exactly the case they exist to catch.
+ *
+ * `plugins/` also holds Python test files, `__pycache__`, `_shared/` and
+ * `_template/` (which does have a manifest.json), so filter the way
+ * `loadPlugins` does: a directory with a manifest, not `_`-prefixed.
+ */
+function discoverPluginIds(): string[] {
+  return readdirSync(PLUGINS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
+    .filter((entry) => existsSync(join(PLUGINS_DIR, entry.name, 'manifest.json')))
+    .map((entry) => entry.name)
+    .sort();
+}
 
 function synthApiTemplate(context: Record<string, unknown> = {}, enabledSources: string[] = []): Template {
   // Skip asset bundling (Docker) and the frontend-freshness guard — template
@@ -126,8 +136,15 @@ function apiTemplate(): Template {
 
 /** Every plugin on disk enabled — the shape a real deployment has. */
 function apiTemplateAllPlugins(): Template {
-  cachedAllPlugins ??= synthApiTemplate({}, ALL_PLUGIN_IDS);
+  cachedAllPlugins ??= synthApiTemplate({}, discoverPluginIds());
   return cachedAllPlugins;
+}
+
+/** The transitional first-deploy shape. */
+let cachedFlagged: Template | undefined;
+function apiTemplateFlagged(): Template {
+  cachedFlagged ??= synthApiTemplate({ skipFeedbackFormItemRoutes: true });
+  return cachedFlagged;
 }
 
 // Template values arrive as `unknown`; parse rather than assert (no `as`).
@@ -189,7 +206,15 @@ const unauthenticatedRoutes = (template: Template) =>
 
 /** Collapses a caller-side path to the shape the template declares: strips any
  *  query string and normalizes the form-id segment, which appears variously as
- *  `${formId}`, a literal example id, or `{form_id}`. */
+ *  `${formId}`, a literal example id, or `{form_id}`.
+ *
+ *  Deliberately a smoke test, with two known limits: a path built by
+ *  concatenation (`'/feedback-forms/' + id + '/submit'`) collapses to
+ *  `/feedback-forms` and passes without being checked, and a genuine collection
+ *  subresource (say `/feedback-forms/templates`) would be normalized to
+ *  `{form_id}` and pass spuriously. It catches the case that actually bit us —
+ *  a whole route removed from the stack while a caller still names it — and a
+ *  full solution would mean parsing the TypeScript. */
 function normalizeFormsPath(raw: string): string {
   const path = raw.split('?')[0].replace(/\/+$/, '');
   return path.replace(/^\/feedback-forms\/[^/]+/, '/feedback-forms/{form_id}');
@@ -208,6 +233,18 @@ describe('VocApiStack authorization invariant', () => {
     expect(unauthenticatedRoutes(apiTemplate())).toEqual(INTENTIONALLY_PUBLIC_ROUTES);
   });
 
+  it('discovers the real plugins, excluding scaffolding', () => {
+    // Two guards below are only as good as this enumeration, so pin it: it must
+    // find plugins, and must not pick up `_template`/`_shared` (which are not
+    // deployable) or the Python test files sitting in the same directory.
+    const ids = discoverPluginIds();
+
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.filter((id) => id.startsWith('_'))).toEqual([]);
+    expect(ids.filter((id) => id.endsWith('.py'))).toEqual([]);
+    expect(ids).toContain('webscraper');
+  });
+
   it('leaves only those three unauthenticated with every plugin enabled too', () => {
     // The empty-plugin shape is not what anyone deploys. Plugin webhook
     // receivers are deliberately unauthenticated, so if a plugin ever declares
@@ -222,13 +259,17 @@ describe('VocApiStack authorization invariant', () => {
     // above is exactly three routes. Reading the manifests directly makes that
     // assumption fail loudly the day it stops holding — the previous test
     // compares two identical shapes until then, so on its own it cannot.
-    const pluginsDir = join(__dirname, '..', '..', 'plugins');
-    const withWebhook = ALL_PLUGIN_IDS.filter((id) => {
-      const manifest: unknown = JSON.parse(readFileSync(join(pluginsDir, id, 'manifest.json'), 'utf-8'));
-      const parsed = z
-        .object({ infrastructure: z.object({ webhook: z.object({ enabled: z.boolean() }).optional() }).optional() })
-        .safeParse(manifest);
-      return parsed.success && parsed.data.infrastructure?.webhook?.enabled === true;
+    //
+    // Parsed with the canonical ManifestSchema and `.parse`, deliberately: a
+    // local partial schema plus `safeParse` would treat a renamed or moved
+    // `infrastructure.webhook.enabled` as "no webhook" and silently disable this
+    // guard. Shape drift must throw here, not pass.
+    const pluginIds = discoverPluginIds();
+    expect(pluginIds.length, 'no plugins discovered — the enumeration is broken').toBeGreaterThan(0);
+
+    const withWebhook = pluginIds.filter((id) => {
+      const raw: unknown = JSON.parse(readFileSync(join(PLUGINS_DIR, id, 'manifest.json'), 'utf-8'));
+      return ManifestSchema.parse(raw).infrastructure.webhook?.enabled === true;
     });
 
     expect(
@@ -306,12 +347,25 @@ describe('stack and callers stay in step', () => {
 
   it('has no proxy resource left without explicit method options', () => {
     // The original defect in source form: `addProxy` without
-    // `defaultMethodOptions` silently publishes everything beneath it. Matched
-    // on the call expression rather than a single line, so reformatting an
-    // addProxy call across lines cannot fail this falsely.
+    // `defaultMethodOptions` silently publishes everything beneath it.
+    //
+    // Each call's argument list is delimited by matching its parentheses, not by
+    // a fixed window: a fixed slice both false-fails when the option sits just
+    // past the cutoff and false-passes on an unrelated occurrence just inside it.
     const source = readRepoFile('lib', 'stacks', 'api-stack.ts');
     const bareProxies = [...source.matchAll(/addProxy\(/g)]
-      .map((match) => source.slice(match.index ?? 0, (match.index ?? 0) + 400))
+      .map((match) => {
+        const open = (match.index ?? 0) + match[0].length - 1;
+        let depth = 0;
+        for (let i = open; i < source.length; i += 1) {
+          if (source[i] === '(') depth += 1;
+          else if (source[i] === ')') {
+            depth -= 1;
+            if (depth === 0) return source.slice(open, i + 1);
+          }
+        }
+        return source.slice(open);
+      })
       .filter((call) => !call.includes('defaultMethodOptions'));
 
     expect(bareProxies).toEqual([]);
@@ -319,7 +373,7 @@ describe('stack and callers stay in step', () => {
 });
 
 describe('skipFeedbackFormItemRoutes (transitional upgrade flag)', () => {
-  const flagged = () => synthApiTemplate({ skipFeedbackFormItemRoutes: true });
+  const flagged = apiTemplateFlagged;
 
   it('omits the item routes so the old {proxy+} can be retired first', () => {
     // {form_id} cannot be created while {proxy+} still exists, and CloudFormation
