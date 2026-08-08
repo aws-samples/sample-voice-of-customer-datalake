@@ -14,7 +14,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import KiroExportSettings from './KiroExportSettings'
 import {
-  deriveOverviewState, REMIX_MIN_DOCUMENTS, type OverviewStep, type OverviewStepState,
+  deriveOverviewState, type OverviewStep, type OverviewStepState,
 } from './overviewState'
 import type { TFunction } from 'i18next'
 import type {
@@ -150,7 +150,10 @@ export default function OverviewTab({
           buttonLabel={t('overview.selectAndRemix')}
           configureLabel={t('overview.configureAnd')}
           onClick={onRemixDocuments}
-          disabled={documents.length < REMIX_MIN_DOCUMENTS}
+          // Remix is the one card where a missing input is a hard block rather
+          // than a hint, so it reuses the derived flag instead of restating the
+          // two-document rule — one expression of it, in overviewState.
+          disabled={steps.remix.missingUpstream}
           disabledMessage={t('overview.needAtLeast2Docs')}
         />
       </div>
