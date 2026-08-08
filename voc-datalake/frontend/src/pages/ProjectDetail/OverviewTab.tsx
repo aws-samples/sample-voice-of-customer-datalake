@@ -214,29 +214,28 @@ function ActionCard({
   disabled,
   disabledMessage,
 }: ActionCardProps) {
-  const { t } = useTranslation('projectDetail')
-  // The visual badge is decorative, so the sequence has to reach assistive
-  // technology some other way: as the first thing inside the card's heading.
-  const stepNumberLabel = t('overview.stepNumber', { position: state.position })
-
   return (
     <div className="bg-white rounded-xl p-4 sm:p-6 border">
       <div className="flex items-center gap-3 mb-4">
-        <div className={`w-10 h-10 ${iconBg} rounded-lg flex items-center justify-center flex-shrink-0 relative`}>
+        <div className={`w-10 h-10 ${iconBg} rounded-lg flex items-center justify-center flex-shrink-0`}>
           {icon}
-          {/* Decorative here: the position is announced from inside the heading
-              below, so repeating it would read the number twice. */}
-          <span
-            aria-hidden="true"
-            className="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-gray-800 text-white text-[10px] font-semibold flex items-center justify-center"
-          >
-            {state.position}
-          </span>
         </div>
         <div className="min-w-0">
+          {/*
+            The position is part of the heading text rather than a badge over the
+            icon. It reads the same way to everyone — a screen reader announces
+            "1. Product / Service Description" — where the badge had to be
+            aria-hidden and re-announced from a parallel hidden span, which is the
+            tell that it could not carry its own meaning. It also matches the
+            wizard, which states its sequence as text ("Step 1 of 4") rather than
+            as a numeric chip; no chip idiom exists anywhere else in the app.
+
+            Not translated: a bare ordinal and a period need no catalogue entry,
+            and inventing one per locale would be eight strings to maintain for
+            punctuation.
+          */}
           <h3 className="font-semibold text-sm sm:text-base">
-            <span className="sr-only">{stepNumberLabel}</span>
-            {title}
+            <span className="text-gray-400 tabular-nums">{state.position}.</span>{' '}{title}
           </h3>
           <p className="text-xs sm:text-sm text-gray-500">{description}</p>
         </div>

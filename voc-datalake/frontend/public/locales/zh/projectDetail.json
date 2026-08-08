@@ -233,8 +233,7 @@
       "productEmpty": "尚未描述",
       "research": "调研文档：{{total}}",
       "researchNone": "尚未运行"
-    },
-    "stepNumber": "第 {{position}} 步："
+    }
   },
   "personaEdit": {
     "ageRange": "年龄范围",

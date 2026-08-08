@@ -236,8 +236,7 @@
       "productEmpty": "Ainda não descrito",
       "research": "Documentos de pesquisa: {{total}}",
       "researchNone": "Ainda não executada"
-    },
-    "stepNumber": "Etapa {{position}}: "
+    }
   },
   "personaEdit": {
     "ageRange": "Faixa Etária",

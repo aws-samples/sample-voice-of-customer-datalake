@@ -160,15 +160,16 @@ describe('OverviewTab', () => {
       expect(titles[4]).toContain('Remix Documents')
     })
 
-    it('announces each card position to assistive technology', () => {
-      // The visual badge is aria-hidden, so without this the sequence would exist
-      // only for sighted users.
+    it('carries each card position in the heading, not in a parallel hidden label', () => {
+      // The position is heading text, so it reaches everyone through one channel.
+      // Asserting on the accessible name is what pins that: it would fail if the
+      // number went back to being a decorative badge with an aria-hidden span.
       render(<OverviewTab {...defaultProps} />)
 
       const titles = cardTitlesInOrder()
-      expect(titles[0]).toContain('Step 1')
-      expect(titles[2]).toContain('Step 3')
-      expect(titles[4]).toContain('Step 5')
+      expect(titles[0]).toBe('1. Product / Service Description')
+      expect(titles[2]).toBe('3. Run Research')
+      expect(titles[4]).toBe('5. Remix Documents')
     })
   })
 

@@ -236,8 +236,7 @@
       "productEmpty": "Aún sin describir",
       "research": "Documentos de investigación: {{total}}",
       "researchNone": "Aún no ejecutada"
-    },
-    "stepNumber": "Paso {{position}}: "
+    }
   },
   "personaEdit": {
     "ageRange": "Rango de Edad",

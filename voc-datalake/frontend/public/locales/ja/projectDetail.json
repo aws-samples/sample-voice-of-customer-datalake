@@ -233,8 +233,7 @@
       "productEmpty": "未記述",
       "research": "リサーチ文書: {{total}}",
       "researchNone": "未実行"
-    },
-    "stepNumber": "ステップ {{position}}: "
+    }
   },
   "personaEdit": {
     "ageRange": "年齢層",

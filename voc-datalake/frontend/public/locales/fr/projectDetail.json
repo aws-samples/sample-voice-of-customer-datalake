@@ -236,8 +236,7 @@
       "productEmpty": "Pas encore décrit",
       "research": "Documents de recherche : {{total}}",
       "researchNone": "Pas encore lancée"
-    },
-    "stepNumber": "Étape {{position}} : "
+    }
   },
   "personaEdit": {
     "ageRange": "Tranche d'âge",

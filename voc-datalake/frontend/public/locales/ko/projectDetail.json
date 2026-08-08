@@ -233,8 +233,7 @@
       "productEmpty": "아직 설명하지 않음",
       "research": "리서치 문서: {{total}}",
       "researchNone": "아직 실행하지 않음"
-    },
-    "stepNumber": "{{position}}단계: "
+    }
   },
   "personaEdit": {
     "ageRange": "나이대",
