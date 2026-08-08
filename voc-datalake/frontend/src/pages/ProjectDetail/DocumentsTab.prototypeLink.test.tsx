@@ -12,9 +12,12 @@
  * 2. Saying nothing about the lifetime, which is what let users treat a
  *    session-scoped credential as a share link in the first place.
  *
- * Deliberately no fake timers: the expiry branch is chosen by putting `Expires`
- * either side of the real clock, so nothing here depends on timer control (which
- * has leaked across files in this suite — see useProjectData.test.ts).
+ * Almost none of this needs fake timers: the expiry branch is chosen by putting
+ * `Expires` either side of the real clock. The one exception is
+ * "keeps a URL that loaded successfully even after its signature expires", where the
+ * distinguishing event IS a deadline passing — it enables timers itself and restores
+ * them in a `finally`, so the leak that has bitten this suite before stays contained to
+ * that test (see the note in useProjectData.test.ts).
  */
 import { render, screen, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
