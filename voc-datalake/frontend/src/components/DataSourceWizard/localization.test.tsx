@@ -16,6 +16,7 @@ import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18next'
 import { Sparkles } from 'lucide-react'
+import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages'
 import DataSourceWizard from './DataSourceWizard'
 import { DataSourcesStep, FeedbackFiltersStep, ItemSelectionStep } from './DataSourceSteps'
 import ContextSummary from './ContextSummary'
@@ -200,25 +201,38 @@ describe('DataSourceWizard localization', () => {
   // Library's default text matcher normalizes whitespace, so a rendered
   // assertion cannot tell U+00A0 from a plain space — and a plain space is
   // exactly the bug (it lets the colon wrap to the next line).
-  it('uses locale-correct separator codepoints in all 8 catalogues', () => {
-    const expected: ReadonlyArray<readonly [string, { dataSourceWizard: { labelSeparator: string } }, string]> = [
-      ['en', enComponents, ':'],
-      ['de', deComponents, ':'],
-      ['es', esComponents, ':'],
-      ['pt', ptComponents, ':'],
-      ['ko', koComponents, ':'],
+  it('uses locale-correct separator codepoints in every supported locale', () => {
+    // Both tables are keyed by SupportedLanguage and the loop is driven by
+    // `supportedLanguages`, so adding a locale to the app without a catalogue or
+    // an expected separator is a TYPECHECK failure — stronger than asserting the
+    // table's length, which pins its size but not its membership.
+    const catalogues: Record<SupportedLanguage, { dataSourceWizard: { labelSeparator: string } }> = {
+      en: enComponents,
+      es: esComponents,
+      fr: frComponents,
+      de: deComponents,
+      pt: ptComponents,
+      ja: jaComponents,
+      zh: zhComponents,
+      ko: koComponents,
+    }
+    const expected: Record<SupportedLanguage, string> = {
+      en: ':',
+      es: ':',
+      de: ':',
+      pt: ':',
+      ko: ':',
       // French sets a space before the colon, and it must not be a break
       // opportunity — hence U+00A0 rather than U+0020.
-      ['fr', frComponents, '\u00A0:'],
-      ['ja', jaComponents, '\uFF1A'], // Full-width colon.
-      ['zh', zhComponents, '\uFF1A'],
-    ]
-    expect(expected).toHaveLength(8)
-    for (const [lang, catalogue, separator] of expected) {
+      fr: '\u00A0:',
+      ja: '\uFF1A', // Full-width colon.
+      zh: '\uFF1A',
+    }
+    for (const lang of supportedLanguages) {
       expect(
-        catalogue.dataSourceWizard.labelSeparator,
+        catalogues[lang].dataSourceWizard.labelSeparator,
         `${lang} labelSeparator codepoints`,
-      ).toBe(separator)
+      ).toBe(expected[lang])
     }
   })
 
