@@ -80,7 +80,7 @@
       "openNewTab": "새 탭에서 열기",
       "previewLabel": "미리보기",
       "rawLabel": "원본 출력 (파싱 실패 — 다시 생성해 주세요)",
-      "timeout": "프로토타입 생성이 너무 오래 걸립니다. 잠시 후 문서 탭에서 확인하세요."
+      "started": "시작했습니다 — 백그라운드 작업에서 진행 상황을 확인하세요."
     },
     "selectDocument": "문서를 선택하세요"
   },
@@ -113,8 +113,12 @@
   "jobs": {
     "backgroundJobs": "백그라운드 작업",
     "backgroundJobsDesc": "이 프로젝트의 장시간 실행 작업",
+    "completedCount_one": "완료 {{count}}개",
+    "completedCount_other": "완료 {{count}}개",
     "created": "생성됨:",
     "dismiss": "닫기",
+    "moreFailedCount_one": "실패 {{count}}개 더",
+    "moreFailedCount_other": "실패 {{count}}개 더",
     "staleMessage": "10분 이상 업데이트 없음. 곧 자동으로 삭제됩니다.",
     "starting": "시작 중...",
     "status": {
@@ -327,9 +331,8 @@
       "description": "위 입력과 업로드된 파일로부터 정돈된 제품/서비스 설명 문서를 저장합니다.",
       "errorEmpty": "보고서를 생성하기 전에 제품 컨텍스트 필드를 하나 이상 입력하거나 내부 문서를 업로드하세요.",
       "generating": "생성 중…",
-      "successMessage": "문서 탭에서 확인하세요.",
-      "successTitle": "보고서 저장 완료",
-      "timeout": "리포트 생성이 너무 오래 걸립니다. 잠시 후 문서 탭에서 확인하세요.",
+      "startedMessage": "백그라운드 작업에서 진행 상황을 확인하세요.",
+      "startedTitle": "보고서 생성을 시작했습니다",
       "title": "보고서 생성"
     },
     "subtitle": "여기에 입력된 정보는 PRD 및 PR/FAQ 생성 시 현재 제품 컨텍스트로 자동 주입됩니다.",

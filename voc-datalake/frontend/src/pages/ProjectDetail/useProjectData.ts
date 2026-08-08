@@ -15,13 +15,65 @@ import type {
 } from '../../api/types'
 import type { ContextConfig } from '../../components/DataSourceWizard/exports'
 
+/**
+ * Query key for a project's job list.
+ *
+ * Exported because the key has to be identical in three places that can drift:
+ * the query itself, the wizard mutations that invalidate it, and
+ * ProjectDetail's onJobStarted (which is the only thing that makes the panel
+ * notice a job started outside a wizard). A typo in any of them fails silently
+ * — the panel simply never updates.
+ */
+export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] as const
+
+/**
+ * How long to keep polling the jobs list after an action reports that it started
+ * a job.
+ *
+ * A single invalidation is not enough: `api_list_jobs` queries DynamoDB without
+ * `ConsistentRead`, and the handler returns `job_id` as soon as it has written
+ * the row and invoked the worker — so the one refetch an invalidation triggers
+ * can legitimately come back empty. If it does, `refetchInterval` drops to 0 and
+ * the panel is blind again, which is the exact defect this file's polling exists
+ * to prevent. Polling for a short window instead means the panel does not have
+ * to win that race on the first try.
+ */
+export const JOB_START_POLL_WINDOW_MS = 30_000
+
+const JOB_POLL_INTERVAL_MS = 3000
+
+/**
+ * How long until the jobs list should be read again: the poll cadence while
+ * there is work to watch, 0 to stop.
+ *
+ * Pure and exported so the window above can be pinned without driving a
+ * component through 30 seconds of timers — the interesting cases are all about
+ * *when* polling stops, and that decision is entirely here.
+ */
+export function jobsPollInterval(
+  jobs: ReadonlyArray<Pick<ProjectJob, 'status'>>,
+  jobStartedAt: number | null,
+  now: number,
+): number {
+  if (jobs.some((job) => job.status === 'running' || job.status === 'pending')) {
+    return JOB_POLL_INTERVAL_MS
+  }
+  const withinStartWindow = jobStartedAt != null && now - jobStartedAt < JOB_START_POLL_WINDOW_MS
+  return withinStartWindow ? JOB_POLL_INTERVAL_MS : 0
+}
+
 interface UseProjectDataProps {
   id: string | undefined
   apiEndpoint: string
+  /**
+   * `Date.now()` of the last long-running action kicked off from this page, or
+   * null if none. Only used to keep the jobs poll alive across the window above.
+   */
+  jobStartedAt?: number | null
 }
 
 export function useProjectData({
-  id, apiEndpoint,
+  id, apiEndpoint, jobStartedAt = null,
 }: UseProjectDataProps) {
   const queryClient = useQueryClient()
   const isEnabled = apiEndpoint !== '' && id != null && id !== ''
@@ -35,15 +87,13 @@ export function useProjectData({
   })
 
   const { data: jobsData } = useQuery({
-    queryKey: ['project-jobs', id],
+    queryKey: projectJobsKey(id),
     queryFn: () => projectsApi.getJobs(id ?? ''),
     enabled: isEnabled,
-    refetchInterval: (query) => {
-      const jobs = query.state.data?.jobs ?? []
-      const hasRunning = jobs.some((j: ProjectJob) => j.status === 'running' || j.status === 'pending')
-      // Return consistent type - 0 means no refetch (same as false)
-      return hasRunning ? 3000 : 0
-    },
+    // Re-evaluated after every fetch, so the start window closes itself without
+    // needing a re-render. 0 means no refetch (same as false).
+    refetchInterval: (query) =>
+      jobsPollInterval(query.state.data?.jobs ?? [], jobStartedAt, Date.now()),
   })
 
   // When a job completes, refresh project data
@@ -103,7 +153,7 @@ export function useProjectMutations({
       response_language: i18n.language,
     }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
       onSuccess()
     },
     onError,
@@ -134,7 +184,7 @@ export function useProjectMutations({
       return Promise.all(types.map((docType) => projectsApi.generateDocument(projectId, { doc_type: docType, ...base })))
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
       onSuccess()
     },
     onError,
@@ -154,7 +204,7 @@ export function useProjectMutations({
       use_web_search: researchConfig.useWebSearch,
     }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
       onSuccess()
     },
     onError,
@@ -174,7 +224,7 @@ export function useProjectMutations({
       response_language: i18n.language,
     }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
       onSuccess()
     },
     onError,
@@ -182,7 +232,7 @@ export function useProjectMutations({
 
   const dismissJobMut = useMutation({
     mutationFn: (jobId: string) => projectsApi.dismissJob(projectId, jobId),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) }),
   })
 
   return {
@@ -243,7 +293,7 @@ export function usePersonaMutations({
     }) =>
       projectsApi.importPersona(projectId, data),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
     },
   })
 

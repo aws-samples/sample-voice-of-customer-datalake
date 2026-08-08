@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
-import { pollJobToCompletion } from './jobPolling'
+import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
@@ -27,7 +27,12 @@ interface DocumentsTabProps {
   readonly onEditDoc: () => void
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
-  readonly onDocumentChanged?: () => void
+  /**
+   * A prototype revision was started. Only the jobs panel needs to know: the
+   * refreshed document list arrives when the job completes, via useProjectData,
+   * whether or not this tab is still mounted.
+   */
+  readonly onJobStarted?: () => void
   readonly isDeleting: boolean
 }
 
@@ -39,7 +44,7 @@ export default function DocumentsTab({
   onEditDoc,
   onDeleteDoc,
   onCreateDoc,
-  onDocumentChanged,
+  onJobStarted,
   isDeleting,
 }: DocumentsTabProps) {
   const { t } = useTranslation('projectDetail')
@@ -117,7 +122,7 @@ export default function DocumentsTab({
                   url={selectedDoc.prototype_url}
                   title={selectedDoc.title}
                   prototypeFormat={selectedDoc.prototype_format}
-                  onDocumentChanged={onDocumentChanged}
+                  onJobStarted={onJobStarted}
                 />
               ) : (
                 <div className="prose prose-sm max-w-none overflow-y-auto flex-1" style={{
@@ -145,59 +150,66 @@ export default function DocumentsTab({
 type TFunc = (key: string, opts?: Record<string, unknown>) => string
 
 function PrototypeFeedbackButton({
-  projectId, basePrototypeId, title, onRegenerated, t,
+  projectId, basePrototypeId, title, onJobStarted, t,
 }: {
   readonly projectId: string
   readonly basePrototypeId: string
   readonly title: string
-  readonly onRegenerated?: () => void
+  /** Tells the Background Jobs panel to pick the revision up. */
+  readonly onJobStarted?: () => void
   readonly t: TFunc
 }) {
   const { i18n } = useTranslation('projectDetail')
   const [open, setOpen] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [busy, setBusy] = useState(false)
+  // Lowers itself, so it cannot still claim "started" after the panel has
+  // reported the revision finished or failed.
+  const started = useTransientFlag()
   const [error, setError] = useState<string | null>(null)
 
+  // Closes as soon as the revision is *started*: the jobs panel owns the wait
+  // from here, and it survives the navigation that used to destroy the only
+  // progress indication. Only a failure to start is reported inline.
   const onSubmit = useCallback(async () => {
     const fb = feedback.trim()
     if (fb === '') return
     setBusy(true)
     setError(null)
     try {
-      const start = await projectsApi.buildPrototype(projectId, {
+      await projectsApi.buildPrototype(projectId, {
         response_language: i18n.language,
         title,
         feedback: fb,
         base_prototype_id: basePrototypeId,
       })
-      const outcome = await pollJobToCompletion(projectId, start.job_id)
-      if (outcome.status === 'completed') {
-        setOpen(false)
-        setFeedback('')
-        onRegenerated?.()
-        return
-      }
-      if (outcome.status === 'failed') {
-        throw new Error(outcome.job.error || 'Prototype revision failed')
-      }
-      throw new Error(t('documents.prototype.timeout', { defaultValue: 'Prototype build took too long. Check the Documents tab in a moment.' }))
+      // The form closes but the text is kept: the revision can still fail
+      // minutes later, in the jobs panel, and clearing it would mean retyping
+      // the feedback to retry.
+      setOpen(false)
+      started.set()
+      onJobStarted?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Revision failed')
     } finally {
       setBusy(false)
     }
-  }, [feedback, projectId, basePrototypeId, title, i18n.language, onRegenerated, t])
+  }, [feedback, projectId, basePrototypeId, title, i18n.language, onJobStarted, started])
 
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 text-orange-600 hover:underline"
-        title={t('documents.prototype.feedbackTitle', { defaultValue: 'Give feedback to regenerate this prototype' })}
-      >
-        <Wand2 size={12} /> {t('documents.prototype.feedbackButton', { defaultValue: 'Revise with feedback' })}
-      </button>
+      <span className="inline-flex items-center gap-2">
+        <button
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1 text-orange-600 hover:underline"
+          title={t('documents.prototype.feedbackTitle', { defaultValue: 'Give feedback to regenerate this prototype' })}
+        >
+          <Wand2 size={12} /> {t('documents.prototype.feedbackButton', { defaultValue: 'Revise with feedback' })}
+        </button>
+        {/* The panel is the real progress report, but it is a refetch away and
+            renders nothing until the job appears — so say something here too. */}
+        {started.isSet ? <span className="text-emerald-700">{t('documents.prototype.started')}</span> : null}
+      </span>
     )
   }
 
@@ -281,7 +293,7 @@ function LegacyHtmlActions({
 // so the Prioritization page can reuse it.
 
 function PrototypeView({
-  projectId, documentId, html, url, title, prototypeFormat, onDocumentChanged,
+  projectId, documentId, html, url, title, prototypeFormat, onJobStarted,
 }: {
   readonly projectId: string
   readonly documentId: string
@@ -289,7 +301,7 @@ function PrototypeView({
   readonly url?: string
   readonly title: string
   readonly prototypeFormat?: string
-  readonly onDocumentChanged?: () => void
+  readonly onJobStarted?: () => void
 }) {
   const { t } = useTranslation('projectDetail')
 
@@ -319,7 +331,7 @@ function PrototypeView({
               projectId={projectId}
               basePrototypeId={documentId}
               title={title}
-              onRegenerated={onDocumentChanged}
+              onJobStarted={onJobStarted}
               t={t}
             />
             {url ? (

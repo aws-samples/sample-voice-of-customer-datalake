@@ -80,7 +80,7 @@
       "openNewTab": "在新标签页中打开",
       "previewLabel": "实时预览",
       "rawLabel": "原始输出（解析失败 — 请重新生成）",
-      "timeout": "原型构建耗时过长。请稍后查看“文档”标签页。"
+      "started": "已开始 — 可在后台任务中查看进度。"
     },
     "selectDocument": "选择文档"
   },
@@ -113,8 +113,12 @@
   "jobs": {
     "backgroundJobs": "后台任务",
     "backgroundJobsDesc": "此项目的长时间运行任务",
+    "completedCount_one": "{{count}}个已完成",
+    "completedCount_other": "{{count}}个已完成",
     "created": "创建时间：",
     "dismiss": "关闭",
+    "moreFailedCount_one": "还有{{count}}个失败",
+    "moreFailedCount_other": "还有{{count}}个失败",
     "staleMessage": "超过 10 分钟无更新，将很快自动清除。",
     "starting": "启动中...",
     "status": {
@@ -327,9 +331,8 @@
       "description": "根据上述输入和已上传的文件，保存一份完善的产品/服务描述文档。",
       "errorEmpty": "生成报告前，请至少填写一个产品上下文字段或上传一份内部文档。",
       "generating": "生成中…",
-      "successMessage": "请在“文档”标签页中打开。",
-      "successTitle": "报告已保存",
-      "timeout": "报告生成耗时过长。请稍后查看“文档”标签页。",
+      "startedMessage": "可在后台任务中查看进度。",
+      "startedTitle": "报告已开始生成",
       "title": "生成报告"
     },
     "subtitle": "此处的信息将作为当前产品上下文自动注入 PRD 和 PR/FAQ 的生成。",

@@ -18,14 +18,16 @@ vi.mock('../../api/projectsApi', () => ({
   },
 }))
 
-const mockPollJob = vi.fn()
-vi.mock('./jobPolling', () => ({
-  pollJobToCompletion: (...args: unknown[]) => mockPollJob(...args),
-}))
+const mockJobStarted = vi.fn()
 
 function renderButton(props: { hasPrd: boolean; hasPrfaq: boolean }) {
   return render(
-    <BuildPrototypeButton projectId="proj_1" hasPrd={props.hasPrd} hasPrfaq={props.hasPrfaq} />,
+    <BuildPrototypeButton
+      projectId="proj_1"
+      hasPrd={props.hasPrd}
+      hasPrfaq={props.hasPrfaq}
+      onJobStarted={mockJobStarted}
+    />,
   )
 }
 
@@ -38,7 +40,6 @@ describe('BuildPrototypeButton confirm gate (U12)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
-    mockPollJob.mockResolvedValue({ status: 'completed', job: {} })
   })
 
   it('asks for confirmation instead of building when only a PRD exists', async () => {
@@ -103,5 +104,65 @@ describe('BuildPrototypeButton confirm gate (U12)', () => {
     await user.click(buildButton())
 
     expect(mockBuildPrototype).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * U9: this component no longer waits for the build. It hands off to the jobs
+ * panel, which is the only thing that reports progress and failure now — so
+ * failing to hand off makes a multi-minute billable build invisible.
+ */
+describe('BuildPrototypeButton handover to the jobs panel (U9)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
+  })
+
+  it('announces the started job once the build request succeeds', async () => {
+    const user = userEvent.setup()
+    renderButton({ hasPrd: true, hasPrfaq: true })
+
+    await user.click(buildButton())
+
+    await waitFor(() => expect(mockJobStarted).toHaveBeenCalledTimes(1))
+  })
+
+  it('reports the failure inline and announces nothing when the build cannot start', async () => {
+    const user = userEvent.setup()
+    mockBuildPrototype.mockRejectedValue(new Error('Bedrock unavailable'))
+    renderButton({ hasPrd: true, hasPrfaq: true })
+
+    await user.click(buildButton())
+
+    await waitFor(() => expect(screen.getByText(/Bedrock unavailable/)).toBeInTheDocument())
+    expect(mockJobStarted).not.toHaveBeenCalled()
+  })
+
+  it('shows the busy label only until the request returns, not until the job finishes', async () => {
+    const user = userEvent.setup()
+    // Hold the request open so the busy label is observable — otherwise this
+    // assertion passes on a button that never showed it at all.
+    let releaseRequest = () => {}
+    mockBuildPrototype.mockImplementation(() => new Promise((resolve) => {
+      releaseRequest = () => resolve({ job_id: 'job_1' })
+    }))
+    renderButton({ hasPrd: true, hasPrfaq: true })
+
+    await user.click(buildButton())
+    expect(await screen.findByText(/building…/i)).toBeInTheDocument()
+
+    releaseRequest()
+
+    // The old code kept "Building…" for up to five minutes of polling.
+    await waitFor(() => expect(screen.queryByText(/building…/i)).not.toBeInTheDocument())
+  })
+
+  it('acknowledges the start, since the panel renders nothing until it refetches', async () => {
+    const user = userEvent.setup()
+    renderButton({ hasPrd: true, hasPrfaq: true })
+
+    await user.click(buildButton())
+
+    expect(await screen.findByText(/track it in background jobs/i)).toBeInTheDocument()
   })
 })

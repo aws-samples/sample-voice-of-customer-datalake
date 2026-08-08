@@ -1,6 +1,13 @@
 /**
- * BuildPrototypeButton — kicks off an Opus 5 HTML prototype build for the
- * whole project, then polls the job to completion.
+ * BuildPrototypeButton — kicks off an Opus 5 HTML prototype build for the whole
+ * project and hands the wait to the Background Jobs panel.
+ *
+ * It used to await the job in local component state, which meant the only
+ * progress indication in the app died with the component on any unmount, and a
+ * build that outlived a five-minute client deadline was reported as a failure
+ * while it was still running and about to succeed. The panel already renders
+ * status, progress and staleness for exactly these job records, and survives
+ * tab switches — so this component's job ends once the job is started.
  *
  * The backend references the project's latest PRD *and* PR-FAQ: if both exist
  * it uses both, if only one exists it uses that one. So the button is enabled
@@ -14,7 +21,7 @@ import ConfirmModal from '../../components/ConfirmModal'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
-import { pollJobToCompletion } from './jobPolling'
+import { useTransientFlag } from './useTransientFlag'
 
 /** Exactly one of the two source documents exists, so the build needs a confirm. */
 function hasOnlyOneDoc(hasPrd: boolean, hasPrfaq: boolean): boolean {
@@ -29,15 +36,18 @@ const SINGLE_DOC_MESSAGE = {
 } as const
 
 export default function BuildPrototypeButton({
-  projectId, hasPrd, hasPrfaq, onDocumentChanged,
+  projectId, hasPrd, hasPrfaq, onJobStarted,
 }: {
   readonly projectId: string
   readonly hasPrd: boolean
   readonly hasPrfaq: boolean
-  readonly onDocumentChanged?: () => void
+  /** Tells the Background Jobs panel to pick the new job up. */
+  readonly onJobStarted?: () => void
 }) {
   const { t, i18n } = useTranslation('projectDetail')
   const [busy, setBusy] = useState(false)
+  // Lowers itself: the panel takes over, so the line must not outlive the gap.
+  const started = useTransientFlag()
   const [error, setError] = useState<string | null>(null)
 
   const [showConfirm, setShowConfirm] = useState(false)
@@ -50,27 +60,22 @@ export default function BuildPrototypeButton({
   const single = SINGLE_DOC_MESSAGE[hasPrd ? 'prd' : 'prfaq']
   const confirmMessage = t(single.key, { defaultValue: single.defaultValue })
 
+  // Only the *start* call is reported here. Progress, failure and completion all
+  // belong to the jobs panel, which outlives this component.
   const runBuild = useCallback(async () => {
     setBusy(true)
     setError(null)
+    started.clear()
     try {
-      const start = await projectsApi.buildPrototype(projectId, { response_language: i18n.language })
-      const outcome = await pollJobToCompletion(projectId, start.job_id)
-      if (outcome.status === 'completed') {
-        onDocumentChanged?.()
-        return
-      }
-      if (outcome.status === 'failed') {
-        throw new Error(outcome.job.error || 'Prototype build failed')
-      }
-      throw new Error(t('documents.prototype.timeout', { defaultValue: 'Prototype build took too long. Check the Documents tab in a moment.' }))
+      await projectsApi.buildPrototype(projectId, { response_language: i18n.language })
+      started.set()
+      onJobStarted?.()
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Prototype failed'
-      setError(msg)
+      setError(e instanceof Error ? e.message : 'Prototype failed')
     } finally {
       setBusy(false)
     }
-  }, [projectId, i18n.language, onDocumentChanged, t])
+  }, [projectId, i18n.language, onJobStarted, started])
 
   const onClick = useCallback(() => {
     if (needsConfirm) {
@@ -99,6 +104,12 @@ export default function BuildPrototypeButton({
         <span className="text-xs text-red-600 inline-flex items-center gap-1 max-w-[200px] truncate" title={error}>
           <AlertCircle size={12} /> {error}
         </span>
+      ) : null}
+      {/* The jobs panel is the real progress report, but it is a refetch away
+          and renders nothing until the job appears — so acknowledge the start
+          here too, the way the product report card does. */}
+      {started.isSet && error == null ? (
+        <span className="text-xs text-emerald-700">{t('documents.prototype.started')}</span>
       ) : null}
       <button
         onClick={onClick}

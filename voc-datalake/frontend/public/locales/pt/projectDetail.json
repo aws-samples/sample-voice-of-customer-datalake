@@ -80,7 +80,7 @@
       "openNewTab": "Abrir em nova aba",
       "previewLabel": "Prévia ao vivo",
       "rawLabel": "Saída bruta (falha na análise — regenere, por favor)",
-      "timeout": "A criação do protótipo demorou demais. Verifique a aba Documentos em instantes."
+      "started": "Iniciado — acompanhe em Tarefas em Segundo Plano."
     },
     "selectDocument": "Selecione um documento"
   },
@@ -113,8 +113,14 @@
   "jobs": {
     "backgroundJobs": "Tarefas em Segundo Plano",
     "backgroundJobsDesc": "Tarefas de longa duração para este projeto",
+    "completedCount_many": "{{count}} concluídos",
+    "completedCount_one": "{{count}} concluído",
+    "completedCount_other": "{{count}} concluídos",
     "created": "Criado:",
     "dismiss": "Descartar",
+    "moreFailedCount_many": "{{count}} mais com falha",
+    "moreFailedCount_one": "{{count}} mais com falha",
+    "moreFailedCount_other": "{{count}} mais com falha",
     "staleMessage": "Sem atualizações há 10+ minutos. Será limpo automaticamente em breve.",
     "starting": "Iniciando...",
     "status": {
@@ -329,9 +335,8 @@
       "description": "Salva um documento refinado de descrição do produto/serviço a partir das entradas acima e dos arquivos enviados.",
       "errorEmpty": "Preencha pelo menos um campo de contexto do produto ou envie um documento interno antes de gerar um relatório.",
       "generating": "Gerando…",
-      "successMessage": "Abra na aba Documentos.",
-      "successTitle": "Relatório salvo",
-      "timeout": "A geração do relatório demorou demais. Verifique a aba Documentos em instantes.",
+      "startedMessage": "Acompanhe em Tarefas em Segundo Plano.",
+      "startedTitle": "Relatório iniciado",
       "title": "Gerar relatório"
     },
     "subtitle": "As informações daqui são injetadas automaticamente na geração de PRD e PR/FAQ como contexto atual do produto.",

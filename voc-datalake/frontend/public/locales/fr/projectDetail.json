@@ -80,7 +80,7 @@
       "openNewTab": "Ouvrir dans un nouvel onglet",
       "previewLabel": "Aperçu en direct",
       "rawLabel": "Sortie brute (analyse échouée — veuillez régénérer)",
-      "timeout": "La création du prototype a pris trop de temps. Vérifiez l’onglet Fichiers dans un instant."
+      "started": "Lancé — suivez la progression dans Tâches en arrière-plan."
     },
     "selectDocument": "Sélectionner un document"
   },
@@ -113,8 +113,14 @@
   "jobs": {
     "backgroundJobs": "Tâches en arrière-plan",
     "backgroundJobsDesc": "Tâches longues pour ce projet",
+    "completedCount_many": "{{count}} terminées",
+    "completedCount_one": "{{count}} terminée",
+    "completedCount_other": "{{count}} terminées",
     "created": "Créée :",
     "dismiss": "Fermer",
+    "moreFailedCount_many": "{{count}} autres en échec",
+    "moreFailedCount_one": "{{count}} autre en échec",
+    "moreFailedCount_other": "{{count}} autres en échec",
     "staleMessage": "Aucune mise à jour depuis 10+ minutes. Sera effacée automatiquement bientôt.",
     "starting": "Démarrage...",
     "status": {
@@ -329,9 +335,8 @@
       "description": "Enregistre un document soigné de description du produit/service à partir des informations ci-dessus et des fichiers envoyés.",
       "errorEmpty": "Renseignez au moins un champ de contexte produit ou envoyez un document interne avant de générer un rapport.",
       "generating": "Génération…",
-      "successMessage": "Ouvrez-le dans l’onglet Fichiers.",
-      "successTitle": "Rapport enregistré",
-      "timeout": "La génération du rapport a pris trop de temps. Vérifiez l’onglet Fichiers dans un instant.",
+      "startedMessage": "Suivez-le dans Tâches en arrière-plan.",
+      "startedTitle": "Rapport lancé",
       "title": "Générer le rapport"
     },
     "subtitle": "Les informations saisies ici sont automatiquement injectées dans la génération de PRD et de PR/FAQ comme contexte produit actuel.",

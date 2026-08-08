@@ -80,7 +80,7 @@
       "openNewTab": "Open in new tab",
       "previewLabel": "Live preview",
       "rawLabel": "Raw output (parse failed — please regenerate)",
-      "timeout": "Prototype build took too long. Check the Documents tab in a moment."
+      "started": "Started — track it in Background Jobs."
     },
     "selectDocument": "Select a document"
   },
@@ -113,8 +113,12 @@
   "jobs": {
     "backgroundJobs": "Background Jobs",
     "backgroundJobsDesc": "Long-running tasks for this project",
+    "completedCount_one": "{{count}} completed",
+    "completedCount_other": "{{count}} completed",
     "created": "Created:",
     "dismiss": "Dismiss",
+    "moreFailedCount_one": "{{count}} more failed",
+    "moreFailedCount_other": "{{count}} more failed",
     "staleMessage": "No updates for 10+ minutes. Will auto-clear soon.",
     "starting": "Starting...",
     "status": {
@@ -327,9 +331,8 @@
       "description": "Save a polished Product/Service Description document from the inputs above and uploaded files.",
       "errorEmpty": "Add at least one product context field or upload an internal document before generating a report.",
       "generating": "Generating…",
-      "successMessage": "Open it in the Documents tab.",
-      "successTitle": "Report saved",
-      "timeout": "Report generation took too long. Check the Documents tab in a moment.",
+      "startedMessage": "Track it in Background Jobs.",
+      "startedTitle": "Report started",
       "title": "Generate report"
     },
     "subtitle": "The information here is automatically injected into PRD & PR/FAQ generation as the current product context.",

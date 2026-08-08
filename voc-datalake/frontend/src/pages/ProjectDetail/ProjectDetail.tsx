@@ -24,7 +24,7 @@ import {
   useSelectionState, useDocModalState, useImportModalState, useConfirmModalState,
 } from './useModalState'
 import {
-  useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations,
+  useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations, projectJobsKey,
 } from './useProjectData'
 import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
@@ -36,6 +36,10 @@ export default function ProjectDetail() {
   const { config } = useConfigStore()
 
   const [activeTab, setActiveTab] = useState<Tab>('overview')
+  // When a long-running action last reported that it started a job. Keeps the
+  // jobs poll alive while the new row becomes readable — see
+  // JOB_START_POLL_WINDOW_MS in useProjectData.
+  const [jobStartedAt, setJobStartedAt] = useState<number | null>(null)
   const { t } = useTranslation('projectDetail')
 
   // Custom hooks for state management
@@ -51,6 +55,7 @@ export default function ProjectDetail() {
   } = useProjectData({
     id,
     apiEndpoint: config.apiEndpoint,
+    jobStartedAt,
   })
 
   // Mutations
@@ -96,6 +101,27 @@ export default function ProjectDetail() {
       { onSuccess: importModal.closeModal },
     )
   }, [importPersonaMut, importModal])
+
+  /**
+   * Long-running actions (prototype build, prototype revision, product report)
+   * hand their wait to the Background Jobs panel instead of polling in local
+   * state. Invalidating is what makes the panel *see* the new job: its
+   * refetchInterval is 0 whenever nothing is already in flight (see
+   * useProjectData), so without this the panel would never start polling and a
+   * build started from an idle project would stay invisible.
+   *
+   * The timestamp matters as much as the invalidation. The invalidation buys one
+   * refetch, and the job row is read without ConsistentRead, so that one refetch
+   * can come back empty and leave the panel blind again. Recording the start
+   * keeps the poll alive until the row appears.
+   *
+   * The wizard mutations invalidate for themselves in useProjectMutations, and
+   * are unaffected: their jobs are created on the same synchronous path.
+   */
+  const handleJobStarted = useCallback(() => {
+    setJobStartedAt(Date.now())
+    void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
+  }, [queryClient, id])
 
   const handleSaveKiroPrompt = useCallback((prompt: string) => {
     const project = data?.project
@@ -199,9 +225,7 @@ export default function ProjectDetail() {
             projectId={project.project_id}
             hasPrd={hasPrd}
             hasPrfaq={hasPrfaq}
-            onDocumentChanged={() => {
-              void queryClient.invalidateQueries({ queryKey: ['project', id] })
-            }}
+            onJobStarted={handleJobStarted}
           />
         )}
       />
@@ -268,6 +292,7 @@ export default function ProjectDetail() {
         onDocumentChanged={() => {
           void queryClient.invalidateQueries({ queryKey: ['project', id] })
         }}
+        onJobStarted={handleJobStarted}
       />
 
       <PersonaEditModalWrapper
