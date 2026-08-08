@@ -89,11 +89,13 @@ describe('useTransientFlag', () => {
   it('drops its pending timer on unmount', () => {
     const { result, unmount } = renderHook(() => useTransientFlag(1000))
     act(() => result.current.set())
+    expect(vi.getTimerCount()).toBe(1)
 
     unmount()
 
-    // Firing into an unmounted hook would warn (or, in React 18, error). The
-    // assertion is that advancing past the window is uneventful.
-    expect(() => act(() => vi.advanceTimersByTime(2000))).not.toThrow()
+    // Asserted on the timer itself, not on "nothing threw": a setState after
+    // unmount is a no-op in React 18, so a throw-based assertion would pass
+    // whether or not the cleanup exists.
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

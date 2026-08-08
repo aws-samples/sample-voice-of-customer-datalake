@@ -96,6 +96,9 @@ function hasNoContextFields(context: ProductContext): boolean {
     success_metrics: context.success_metrics,
     free_form_notes: context.free_form_notes,
   }
+  // `?? ''` is not dead despite the non-nullable annotation: these values come
+  // from JSON, where a cleared field can arrive as null, and the spread over
+  // emptyContext() at the fetch site only fills keys that are *absent*.
   return Object.values(authored).every((value) => (value ?? '').trim() === '')
 }
 
