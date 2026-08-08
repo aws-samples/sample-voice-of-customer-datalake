@@ -32,6 +32,9 @@ import WizardSection from './WizardSection'
 import type { Tab } from './types'
 import type { ProductContext } from '../../api/types'
 
+/** The product-context query's data shape, taken from the call that produces it. */
+type ProductContextResponse = Awaited<ReturnType<typeof projectsApi.getProductContext>>
+
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -135,7 +138,11 @@ export default function ProjectDetail() {
    * response, so a refetch would ask for what we already have.
    */
   const handleContextSaved = useCallback((context: ProductContext) => {
-    queryClient.setQueryData(productContextKey(id), { context })
+    // Typed from the API function itself rather than as a bare object literal:
+    // `setQueryData` cannot infer a plain key's data type, so an untyped write
+    // would silently truncate the cache entry if `getProductContext` ever returned
+    // more than `{ context }`. Deriving the type means the two cannot drift.
+    queryClient.setQueryData<ProductContextResponse>(productContextKey(id), { context })
   }, [queryClient, id])
 
   const handleSaveKiroPrompt = useCallback((prompt: string) => {

@@ -16,10 +16,19 @@ import { useState } from 'react'
 const fieldInputId = (field: string) => `product-context-${field}`
 
 export function FieldShell({
-  label, field, savingField, highlight, children,
+  label, field, inputId, savingField, highlight, children,
 }: {
   readonly label: string
   readonly field: string
+  /**
+   * The id of the control `children` renders, so the label points at it.
+   *
+   * Required rather than derived from `field`: the shell cannot see whether its
+   * children actually carry that id, and a `htmlFor` pointing at nothing is worse
+   * for a screen reader than the unlabelled input this replaced. Making it a
+   * parameter means any new caller has to supply the id it really rendered.
+   */
+  readonly inputId: string
   readonly savingField: string | null
   readonly highlight: boolean
   readonly children: React.ReactNode
@@ -27,7 +36,7 @@ export function FieldShell({
   return (
     <div className={`transition-colors rounded-md ${highlight ? 'ring-2 ring-yellow-300 ring-offset-2 ring-offset-white' : ''}`}>
       <div className="flex items-center justify-between mb-1">
-        <label htmlFor={fieldInputId(field)} className="text-xs font-medium text-gray-700">{label}</label>
+        <label htmlFor={inputId} className="text-xs font-medium text-gray-700">{label}</label>
         {savingField === field && <Loader2 size={12} className="animate-spin text-gray-400" />}
       </div>
       {children}
@@ -52,7 +61,7 @@ export function TextField({
     setDraft(value)
   }
   return (
-    <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
+    <FieldShell label={label} field={field} inputId={fieldInputId(field)} savingField={savingField} highlight={highlight}>
       <input
         id={fieldInputId(field)}
         type="text"
@@ -82,7 +91,7 @@ export function TextAreaField({
     setDraft(value)
   }
   return (
-    <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
+    <FieldShell label={label} field={field} inputId={fieldInputId(field)} savingField={savingField} highlight={highlight}>
       <textarea
         id={fieldInputId(field)}
         value={draft}
@@ -106,7 +115,7 @@ export function SelectField({
   readonly onSave: (v: string) => void
 }) {
   return (
-    <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
+    <FieldShell label={label} field={field} inputId={fieldInputId(field)} savingField={savingField} highlight={highlight}>
       <select
         id={fieldInputId(field)}
         value={value}
