@@ -9,7 +9,66 @@
  */
 import clsx from 'clsx'
 import { useCallback, useMemo, useState } from 'react'
+import { signedUrlExpiresAt, unsignedUrlKey } from './prototypeLinkLifetime'
+import { useDeadlinePassed } from './useDeadlinePassed'
 import type { PrototypeBlock, PrototypeSpec } from './prototypeSpec'
+
+/**
+ * Keep the URL this frame actually loaded with, ignoring re-signings of the same
+ * document.
+ *
+ * A prototype URL is a signed credential that the app replaces before it expires,
+ * so `url` changes roughly hourly while pointing at the very same document. Passing
+ * each new value straight to `src` would **reload the iframe** — silently resetting
+ * a reviewer who is several screens into the prototype, on a timer they cannot see.
+ *
+ * It is also unnecessary. A signature governs the *request*; once the document is
+ * loaded, the credential behind it has no further bearing on it. Only a NEW
+ * request needs a live signature, which means the anchors beside this frame, not
+ * the frame.
+ *
+ * So: follow the address, ignore the credential. `unsignedUrlKey` is what tells
+ * those apart, and a genuine change of document (different path, or dropping to a
+ * legacy inline prototype) still reloads, because that is a different address.
+ */
+function useLoadedUrl(url: string | undefined): string | undefined {
+  // Whether the URL on offer has ALREADY lapsed. Read only at the moment it is taken —
+  // see `deadOnArrival` below — so this asks "could this ever load?", not "is the
+  // document still fresh?".
+  const incomingIsDead = useDeadlinePassed(signedUrlExpiresAt(url))
+
+  const [loaded, setLoaded] = useState<{
+    readonly url: string | undefined
+    /**
+     * True when this URL was already expired when the frame took it, so it never had a
+     * chance of rendering and any replacement is an improvement.
+     *
+     * This, and NOT the URL's deadline, is what licenses a swap. Releasing on the
+     * deadline instead reintroduces exactly the reload the freeze exists to prevent: a
+     * frame that loaded fine at t+0 would swap at t+60m to the URL delivered at t+55m,
+     * reloading the prototype under the reviewer once an hour. Once a document is in
+     * the browser, the credential that fetched it has no further bearing on it — only a
+     * fetch that never succeeded does.
+     */
+    readonly deadOnArrival: boolean
+  }>(() => ({ url, deadOnArrival: incomingIsDead }))
+
+  const addressChanged = unsignedUrlKey(loaded.url) !== unsignedUrlKey(url)
+
+  // Adopt for a genuinely different document, or to escape a URL that could never have
+  // worked. `url !== loaded.url` matters: with no replacement on offer there is nothing
+  // to adopt, and swapping a dead URL for itself would reload the frame every render.
+  const adopt = addressChanged || (loaded.deadOnArrival && url !== loaded.url)
+
+  if (adopt) {
+    // Guarded render-phase update — the same derive-from-props pattern
+    // useCategoryFilters uses to adopt external changes. React re-renders
+    // immediately; the value returned below is already the new one, so the frame
+    // never renders a stale src even for one frame.
+    setLoaded({ url, deadOnArrival: incomingIsDead })
+  }
+  return adopt ? url : loaded.url
+}
 
 /**
  * Renders a self-contained HTML prototype inside an iframe.
@@ -22,6 +81,9 @@ import type { PrototypeBlock, PrototypeSpec } from './prototypeSpec'
  * `sandbox` on the old `srcDoc` approach was only compensating for the fact
  * that a same-document `srcDoc` shares the parent's CSP/origin unless
  * sandboxed).
+ *
+ * That `url` is SIGNED and short-lived, so the caller hands over a new one
+ * periodically; `useLoadedUrl` above is why that does not reload the frame.
  *
  * `html` (legacy fallback): pre-migration prototypes have no `prototype_url`
  * and are rendered the old way, via `srcDoc` + `sandbox` — still broken
@@ -36,11 +98,13 @@ export function HtmlPrototypeFrame({
   readonly title?: string
   readonly className?: string
 }) {
-  if (url) {
+  const loadedUrl = useLoadedUrl(url)
+
+  if (loadedUrl) {
     return (
       <iframe
         title={title || 'Prototype'}
-        src={url}
+        src={loadedUrl}
         className={className ?? 'w-full h-full border-0'}
       />
     )
