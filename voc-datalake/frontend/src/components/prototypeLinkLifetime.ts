@@ -55,16 +55,7 @@ export const REFRESH_LEAD_MS = 5 * 60_000
  */
 export const MIN_REFRESH_DELAY_MS = 30_000
 
-/**
- * Epoch ms at which a signed CloudFront URL stops working, or null if that cannot
- * be determined.
- *
- * Null covers every "do not schedule anything, and do not claim a deadline" case:
- * no URL at all (legacy prototypes store their HTML inline and are rendered from
- * `content`), an unsigned URL, and a signature whose `Expires` is missing or not a
- * usable number. Callers must treat null as "say nothing" rather than substituting
- * a default, because a wrong deadline is worse than none.
- */
+/** The raw `Expires` query value, or null if the URL will not parse or has none. */
 function readExpiresParam(url: string): string | null {
   try {
     return new URL(url).searchParams.get('Expires')
@@ -155,10 +146,10 @@ export function earliestPrototypeExpiry(
  */
 export function refreshDelayMs(expiresAt: number | null, now: number): number | null {
   if (expiresAt == null) return null
-  // ponytail: the floor wins whenever the deadline is nearer than the lead, so a
-  // URL arriving with under REFRESH_LEAD_MS + MIN_REFRESH_DELAY_MS of life is
-  // replaced on a fixed 30s cadence rather than proportionally — and one arriving
-  // with under ~30s left is briefly dead before the replacement lands.
+  // Known simplification: the floor wins whenever the deadline is nearer than the
+  // lead, so a URL arriving with under REFRESH_LEAD_MS + MIN_REFRESH_DELAY_MS of
+  // life is replaced on a fixed 30s cadence rather than proportionally — and one
+  // arriving with under ~30s left is briefly dead before the replacement lands.
   //
   // Harmless at the deployed TTL (~1h, matched to the Cognito token lifetime) and
   // it keeps the pathological case bounded. But it sets a real ceiling: configure
@@ -179,4 +170,30 @@ export function refreshDelayMs(expiresAt: number | null, now: number): number | 
  */
 export function isExpired(expiresAt: number | null, now: number): boolean {
   return expiresAt != null && expiresAt <= now
+}
+
+/**
+ * The deadline as a string for the viewer's locale.
+ *
+ * Two things this is careful about, both of which a bare `HH:mm` got wrong:
+ *
+ * - **Locale.** `Intl` picks the conventions of `locale`, so `en-US` gets a 12-hour
+ *   clock and `de` a 24-hour one, rather than forcing one on everybody. `Intl` over
+ *   date-fns locale objects only because it needs no imports and no locale registry
+ *   — the app does not currently load date-fns locales at all.
+ * - **Ambiguity across midnight.** A time alone reads as *past* when the deadline is
+ *   just after midnight and it is currently 23:50, so the date is included whenever
+ *   the deadline does not fall on the same local day as `now`. Same convention #288
+ *   adopted for job timestamps.
+ *
+ * `now` is a parameter rather than read here so this stays pure and testable, and so
+ * a component can pass a clock it sampled outside its render body.
+ */
+export function formatExpiry(expiresAt: number, now: number, locale: string): string {
+  const deadline = new Date(expiresAt)
+  const sameLocalDay = deadline.toDateString() === new Date(now).toDateString()
+  return new Intl.DateTimeFormat(locale, {
+    timeStyle: 'short',
+    ...(sameLocalDay ? {} : { dateStyle: 'short' }),
+  }).format(deadline)
 }

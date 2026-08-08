@@ -78,7 +78,7 @@
       "feedbackTitle": "提供反馈以重新生成此原型",
       "linkExpired": "链接已过期 — 请重新打开项目",
       "linkExpires": "链接有效期至 {{time}}",
-      "linkExpiryHint": "此链接与您的会话绑定，不是永久分享链接。在此页面保持打开时，预览会自动刷新。",
+      "linkExpiryHint": "与您的会话绑定，非分享链接",
       "needsDocs": "请先创建 PRD 或 PR-FAQ 以启用原型构建",
       "openNewTab": "在新标签页中打开",
       "previewLabel": "实时预览",

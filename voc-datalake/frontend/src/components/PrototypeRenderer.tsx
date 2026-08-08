@@ -9,7 +9,8 @@
  */
 import clsx from 'clsx'
 import { useCallback, useMemo, useState } from 'react'
-import { unsignedUrlKey } from './prototypeLinkLifetime'
+import { signedUrlExpiresAt, unsignedUrlKey } from './prototypeLinkLifetime'
+import { useDeadlinePassed } from './useDeadlinePassed'
 import type { PrototypeBlock, PrototypeSpec } from './prototypeSpec'
 
 /**
@@ -34,14 +35,29 @@ function useLoadedUrl(url: string | undefined): string | undefined {
   const [loaded, setLoaded] = useState(url)
   const loadedKey = unsignedUrlKey(loaded)
   const nextKey = unsignedUrlKey(url)
-  if (loadedKey !== nextKey) {
+
+  // A frozen URL must not be frozen PAST ITS OWN DEADLINE. If the frame mounts
+  // against an expired signature — stale cached project data, a machine resumed from
+  // suspend, a refetch that failed once — the iframe loads a dead URL and renders
+  // CloudFront's 403. Without this, the replacement that arrives moments later is
+  // ignored, because the address has not changed, and the pane stays broken until
+  // something remounts it. Freezing is only ever a courtesy to a WORKING document.
+  const loadedIsDead = useDeadlinePassed(signedUrlExpiresAt(loaded))
+
+  // Adopt on a different address, or when what we are holding is dead and something
+  // newer is on offer. `url !== loaded` matters: with no replacement yet there is
+  // nothing to adopt, and swapping a dead URL for itself would reload the frame on
+  // every render.
+  const adopt = loadedKey !== nextKey || (loadedIsDead && url !== loaded)
+
+  if (adopt) {
     // Guarded render-phase update — the same derive-from-props pattern
     // useCategoryFilters uses to adopt external changes. React re-renders
     // immediately; the value returned below is already the new one, so the frame
     // never renders a stale src even for one frame.
     setLoaded(url)
   }
-  return loadedKey === nextKey ? loaded : url
+  return adopt ? url : loaded
 }
 
 /**

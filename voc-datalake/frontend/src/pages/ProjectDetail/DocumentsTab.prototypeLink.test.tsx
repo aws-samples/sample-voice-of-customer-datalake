@@ -17,10 +17,12 @@
  * has leaked across files in this suite — see useProjectData.test.ts).
  */
 import { render, screen } from '@testing-library/react'
-import { format } from 'date-fns'
 import { MemoryRouter } from 'react-router-dom'
 import DocumentsTab from './DocumentsTab'
+import { formatExpiry } from '../../components/prototypeLinkLifetime'
 import type { Project, ProjectDocument } from '../../api/types'
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const project: Project = {
   project_id: 'proj-1',
@@ -81,15 +83,35 @@ describe('prototype link lifetime', () => {
   it('states when the current link stops working', () => {
     const expiresAt = Date.now() + HOUR_MS
     renderTab(prototypeDoc(signedUrl(expiresAt, 'sig-1')))
-    // Computed the same way the component does, so the assertion holds in any
-    // timezone rather than only the one the suite happens to run in.
-    const expected = format(new Date(Math.floor(expiresAt / 1000) * 1000), 'HH:mm')
-    expect(screen.getByText(`Link valid until ${expected}`)).toBeInTheDocument()
+    // Formatted the same way the component does, so the assertion holds in any timezone
+    // and under any locale rather than only the one the suite happens to run in.
+    const expected = formatExpiry(Math.floor(expiresAt / 1000) * 1000, Date.now(), 'en')
+    expect(screen.getByText(new RegExp(`Link valid until ${escapeRegExp(expected)}`))).toBeInTheDocument()
   })
 
-  it('says the link is tied to the session rather than presenting it as a share link', () => {
+  /**
+   * This warning is the entire point of the label, so it must not be hover-only. A
+   * `title` is invisible on touch and announced inconsistently by screen readers.
+   */
+  it('says the link is session-scoped in VISIBLE text, not a tooltip', () => {
     renderTab(prototypeDoc(signedUrl(Date.now() + HOUR_MS, 'sig-1')))
-    expect(screen.getByTitle(/tied to your session/i)).toBeInTheDocument()
+    expect(screen.getByText(/tied to your session, not a share link/i)).toBeInTheDocument()
+    expect(screen.queryByTitle(/tied to your session/i)).not.toBeInTheDocument()
+  })
+
+  it('points both link actions at that warning for assistive technology', () => {
+    renderTab(prototypeDoc(signedUrl(Date.now() + HOUR_MS, 'sig-1')))
+    const noteId = screen.getByText(/tied to your session/i).closest('span[id]')?.getAttribute('id')
+    expect(noteId).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Open in new tab/i })).toHaveAttribute('aria-describedby', noteId)
+    expect(screen.getByRole('link', { name: /Download \.html/i })).toHaveAttribute('aria-describedby', noteId)
+  })
+
+  it('does not dangle aria-describedby when there is no readable deadline', () => {
+    // An unsigned URL renders no note, so the anchors must not reference a missing id.
+    const doc = prototypeDoc('https://d111.cloudfront.net/prototypes/proj-1/doc-1.html')
+    renderTab(doc)
+    expect(screen.getByRole('link', { name: /Open in new tab/i })).not.toHaveAttribute('aria-describedby')
   })
 
   it('reports a lapsed link instead of promising a window it cannot honour', () => {
@@ -139,6 +161,29 @@ describe('re-signing the same prototype', () => {
     expect(linkHref(/Download \.html/i)).toBe(resigned)
   })
 
+  /**
+   * The freeze is a courtesy to a WORKING document, and must not outlive one. Mounting
+   * against an expired URL — stale cached project data, a machine resumed from suspend,
+   * a refetch that failed once — loads a dead signature and renders CloudFront's 403.
+   * If the frame then ignored the replacement, the pane would stay broken until
+   * something remounted it, and the Prioritization page would inherit that too.
+   */
+  it('lets go of an expired URL as soon as a live replacement arrives', () => {
+    const dead = signedUrl(Date.now() - HOUR_MS, 'sig-dead')
+    const { rerender } = renderTab(prototypeDoc(dead))
+    expect(frameSrc()).toBe(dead)
+
+    const fresh = signedUrl(Date.now() + HOUR_MS, 'sig-fresh')
+    const doc = prototypeDoc(fresh)
+    rerender(
+      <MemoryRouter>
+        <DocumentsTab {...baseProps} documents={[doc]} selectedDoc={doc} />
+      </MemoryRouter>,
+    )
+
+    expect(frameSrc()).toBe(fresh)
+  })
+
   it('still loads a genuinely different document, which is a different address', () => {
     const { rerender } = renderTab(prototypeDoc(signedUrl(Date.now() + HOUR_MS, 'sig-1')))
 
@@ -163,14 +208,13 @@ describe('document pane height', () => {
    * 1440px tall.
    */
   it('gives a prototype the viewport rather than a fixed 500px', () => {
-    const { container } = renderTab(prototypeDoc(signedUrl(Date.now() + HOUR_MS, 'sig-1')))
-    const pane = container.querySelector('.lg\\:col-span-2')
-    expect(pane).toHaveClass('lg:min-h-[70vh]')
+    renderTab(prototypeDoc(signedUrl(Date.now() + HOUR_MS, 'sig-1')))
+    expect(screen.getByTestId('document-detail-pane')).toHaveClass('lg:min-h-[70vh]')
   })
 
   it('leaves prose documents on the shorter pane, where extra height is only whitespace', () => {
-    const { container } = renderTab(proseDoc)
-    const pane = container.querySelector('.lg\\:col-span-2')
+    renderTab(proseDoc)
+    const pane = screen.getByTestId('document-detail-pane')
     expect(pane).toHaveClass('lg:min-h-[500px]')
     expect(pane).not.toHaveClass('lg:min-h-[70vh]')
   })

@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   signedUrlExpiresAt, earliestPrototypeExpiry, refreshDelayMs, isExpired,
+  unsignedUrlKey, formatExpiry,
   REFRESH_LEAD_MS, MIN_REFRESH_DELAY_MS,
 } from './prototypeLinkLifetime'
 import type { ProjectDocument } from '../api/types'
@@ -57,6 +58,83 @@ describe('signedUrlExpiresAt', () => {
 
   it('reads a past Expires rather than rejecting it, so the UI can say it lapsed', () => {
     expect(signedUrlExpiresAt(signed(1_000_000))).toBe(1_000_000_000)
+  })
+})
+
+/**
+ * This is the load-bearing function for the iframe freeze: it decides what counts as
+ * "the same document". Get it wrong in one direction and re-signing reloads the frame
+ * (the bug the freeze exists to prevent); wrong in the other and selecting a different
+ * prototype shows the previous one.
+ */
+describe('unsignedUrlKey', () => {
+  it('is unchanged by a new signature on the same document', () => {
+    const a = 'https://d1.cloudfront.net/prototypes/p/d.html?Expires=1&Signature=aaa&Key-Pair-Id=K1'
+    const b = 'https://d1.cloudfront.net/prototypes/p/d.html?Expires=999&Signature=zzz&Key-Pair-Id=K1'
+    expect(unsignedUrlKey(a)).toBe(unsignedUrlKey(b))
+  })
+
+  it('is unaffected by query parameter order', () => {
+    const a = 'https://d1.cloudfront.net/prototypes/p/d.html?Expires=1&Signature=aaa'
+    const b = 'https://d1.cloudfront.net/prototypes/p/d.html?Signature=aaa&Expires=1'
+    expect(unsignedUrlKey(a)).toBe(unsignedUrlKey(b))
+  })
+
+  it('differs for a different document', () => {
+    const a = 'https://d1.cloudfront.net/prototypes/p/d1.html?Expires=1'
+    const b = 'https://d1.cloudfront.net/prototypes/p/d2.html?Expires=1'
+    expect(unsignedUrlKey(a)).not.toBe(unsignedUrlKey(b))
+  })
+
+  it('differs for a different host, so a distribution change is a different address', () => {
+    const a = 'https://d1.cloudfront.net/prototypes/p/d.html'
+    const b = 'https://d2.cloudfront.net/prototypes/p/d.html'
+    expect(unsignedUrlKey(a)).not.toBe(unsignedUrlKey(b))
+  })
+
+  it('treats a trailing slash as a different path, matching how S3 keys work', () => {
+    expect(unsignedUrlKey('https://d1.cloudfront.net/p/d.html'))
+      .not.toBe(unsignedUrlKey('https://d1.cloudfront.net/p/d.html/'))
+  })
+
+  it('falls back to the raw string when the URL will not parse', () => {
+    expect(unsignedUrlKey('not-a-url')).toBe('not-a-url')
+  })
+
+  it('is undefined when there is no URL, so a legacy prototype has no address', () => {
+    expect(unsignedUrlKey(undefined)).toBeUndefined()
+    expect(unsignedUrlKey('')).toBeUndefined()
+  })
+})
+
+describe('formatExpiry', () => {
+  const AT_1405 = new Date(2026, 7, 8, 14, 5).getTime()
+  const SAME_DAY_NOON = new Date(2026, 7, 8, 12, 0).getTime()
+  const DAY_BEFORE = new Date(2026, 7, 7, 23, 50).getTime()
+
+  it('uses a 24-hour clock for a locale that expects one', () => {
+    expect(formatExpiry(AT_1405, SAME_DAY_NOON, 'de-DE')).toBe('14:05')
+  })
+
+  it('uses a 12-hour clock for a locale that expects one', () => {
+    // Forcing HH:mm on en-US was the original defect: a locale-agnostic format is not
+    // the same thing as a locale-appropriate one.
+    expect(formatExpiry(AT_1405, SAME_DAY_NOON, 'en-US')).toMatch(/2:05/)
+  })
+
+  it('omits the date when the deadline is later the same day', () => {
+    expect(formatExpiry(AT_1405, SAME_DAY_NOON, 'en-US')).not.toMatch(/2026|\/|\d{4}/)
+  })
+
+  /**
+   * A time alone reads as ALREADY PAST when the deadline is just after midnight and it
+   * is currently 23:50 — the one case where a bare clock time actively misinforms.
+   */
+  it('includes the date when the deadline falls on another day', () => {
+    const formatted = formatExpiry(AT_1405, DAY_BEFORE, 'en-US')
+    expect(formatted).toMatch(/2:05/)
+    expect(formatted).toMatch(/8/)
+    expect(formatted.length).toBeGreaterThan('2:05 PM'.length)
   })
 })
 

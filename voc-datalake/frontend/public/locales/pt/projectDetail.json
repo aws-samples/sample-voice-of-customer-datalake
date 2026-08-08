@@ -78,7 +78,7 @@
       "feedbackTitle": "Dê feedback para regenerar este protótipo",
       "linkExpired": "Link expirado — reabra o projeto",
       "linkExpires": "Link válido até {{time}}",
-      "linkExpiryHint": "Este link está vinculado à sua sessão e não é um link de compartilhamento permanente. A prévia se atualiza automaticamente enquanto esta página estiver aberta.",
+      "linkExpiryHint": "vinculado à sua sessão, não é um link de compartilhamento",
       "needsDocs": "Crie primeiro um PRD ou um PR-FAQ para habilitar a criação do protótipo",
       "openNewTab": "Abrir em nova aba",
       "previewLabel": "Prévia ao vivo",

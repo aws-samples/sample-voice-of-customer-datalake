@@ -78,7 +78,7 @@
       "feedbackTitle": "Donnez des retours pour régénérer ce prototype",
       "linkExpired": "Lien expiré — rouvrez le projet",
       "linkExpires": "Lien valable jusqu’à {{time}}",
-      "linkExpiryHint": "Ce lien est lié à votre session et n’est pas un lien de partage permanent. L’aperçu s’actualise automatiquement tant que cette page reste ouverte.",
+      "linkExpiryHint": "lié à votre session, pas un lien de partage",
       "needsDocs": "Créez d’abord un PRD ou un PR-FAQ pour activer la création de prototype",
       "openNewTab": "Ouvrir dans un nouvel onglet",
       "previewLabel": "Aperçu en direct",

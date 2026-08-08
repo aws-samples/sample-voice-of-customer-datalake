@@ -78,7 +78,7 @@
       "feedbackTitle": "Da feedback para regenerar este prototipo",
       "linkExpired": "Enlace caducado: vuelve a abrir el proyecto",
       "linkExpires": "Enlace válido hasta las {{time}}",
-      "linkExpiryHint": "Este enlace está vinculado a tu sesión y no es un enlace para compartir de forma permanente. La vista previa se actualiza automáticamente mientras esta página esté abierta.",
+      "linkExpiryHint": "vinculado a tu sesión, no es un enlace para compartir",
       "needsDocs": "Crea primero un PRD o un PR-FAQ para habilitar la creación del prototipo",
       "openNewTab": "Abrir en una pestaña nueva",
       "previewLabel": "Vista previa en vivo",
