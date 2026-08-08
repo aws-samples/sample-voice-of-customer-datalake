@@ -4,6 +4,7 @@
  */
 
 import { X, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { ProjectPersona, ProjectDocument } from '../../api/client'
 import clsx from 'clsx'
 import type { ContextConfig } from './types'
@@ -163,19 +164,22 @@ interface WizardHeaderProps {
 }
 
 function WizardHeader({ title, icon, step, totalSteps, onClose }: WizardHeaderProps) {
+  const { t } = useTranslation('components')
   return (
     <div className="flex items-center justify-between p-3 sm:p-4 border-b">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <div className="flex-shrink-0">{icon}</div>
         <div className="min-w-0">
           <h2 className="text-base sm:text-lg font-semibold truncate">{title}</h2>
-          <p className="text-xs sm:text-sm text-gray-500">Step {step} of {totalSteps}</p>
+          <p className="text-xs sm:text-sm text-gray-500">
+            {t('components:dataSourceWizard.stepOf', { step, total: totalSteps })}
+          </p>
         </div>
       </div>
       <button 
         onClick={onClose} 
         className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0"
-        aria-label="Close wizard"
+        aria-label={t('components:dataSourceWizard.closeWizard')}
       >
         <X size={20} />
       </button>
@@ -222,6 +226,7 @@ function WizardFooter({
   onNext,
   onSubmit,
 }: WizardFooterProps) {
+  const { t } = useTranslation('components')
   return (
     <div className="flex justify-between p-3 sm:p-4 border-t bg-gray-50 gap-2">
       <button
@@ -230,7 +235,7 @@ function WizardFooter({
         className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-lg disabled:opacity-50 text-sm sm:text-base"
       >
         <ChevronLeft size={16} className="flex-shrink-0" />
-        <span className="hidden sm:inline">Back</span>
+        <span className="hidden sm:inline">{t('components:dataSourceWizard.back')}</span>
       </button>
       
       {step < totalSteps ? (
@@ -238,7 +243,7 @@ function WizardFooter({
           onClick={onNext}
           className={clsx('flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-white rounded-lg text-sm sm:text-base', colors.bg, colors.hover)}
         >
-          <span>Next</span>
+          <span>{t('components:dataSourceWizard.next')}</span>
           <ChevronRight size={16} className="flex-shrink-0" />
         </button>
       ) : (
@@ -250,7 +255,7 @@ function WizardFooter({
           {isSubmitting ? (
             <>
               <Loader2 size={16} className="animate-spin flex-shrink-0" />
-              <span className="truncate">Processing...</span>
+              <span className="truncate">{t('components:dataSourceWizard.processing')}</span>
             </>
           ) : (
             submitLabel
