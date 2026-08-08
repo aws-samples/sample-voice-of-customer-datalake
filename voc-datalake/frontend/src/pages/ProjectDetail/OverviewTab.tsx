@@ -235,13 +235,22 @@ function ActionCard({
             punctuation.
           */}
           <h3 className="font-semibold text-sm sm:text-base">
-            <span className="text-gray-400 tabular-nums">{state.position}.</span>{' '}{title}
+            {/*
+              gray-500, not gray-400: on white, #9ca3af is 2.54:1 and #6b7280 is
+              4.83:1, so only the latter clears the 4.5:1 minimum for small text.
+              It matters more now than it would have before — with the hidden
+              counterpart gone, this text is the *only* channel carrying the
+              sequence, so making it hard to read would undo the change.
+            */}
+            <span className="text-gray-500 tabular-nums">{state.position}.</span>{' '}{title}
           </h3>
           <p className="text-xs sm:text-sm text-gray-500">{description}</p>
         </div>
       </div>
       {stateLabel == null ? null : (
-        <p className={`text-xs mb-3 ${state.hasOutput ? 'text-green-700' : 'text-gray-400'}`}>{stateLabel}</p>
+        // Both branches clear 4.5:1 on white (green-700 5.02:1, gray-500 4.83:1).
+        // "None yet" is information, not decoration, so it has to be readable.
+        <p className={`text-xs mb-3 ${state.hasOutput ? 'text-green-700' : 'text-gray-500'}`}>{stateLabel}</p>
       )}
       <button
         onClick={onClick}
@@ -252,7 +261,10 @@ function ActionCard({
         <span className="hidden sm:inline">{configureLabel}</span>{buttonLabel}
       </button>
       {hint == null ? null : <p className="text-xs text-amber-700 mt-2 text-center">{hint}</p>}
-      {disabled === true && disabledMessage != null && disabledMessage !== '' ? <p className="text-xs text-gray-400 mt-2 text-center">{disabledMessage}</p> : null}
+      {/* Pre-existing gray-400, raised with the rest: this line explains why a
+          button is disabled, which is the last text on the card that should be
+          hard to read. */}
+      {disabled === true && disabledMessage != null && disabledMessage !== '' ? <p className="text-xs text-gray-500 mt-2 text-center">{disabledMessage}</p> : null}
     </div>
   )
 }

@@ -162,8 +162,9 @@ describe('OverviewTab', () => {
 
     it('carries each card position in the heading, not in a parallel hidden label', () => {
       // The position is heading text, so it reaches everyone through one channel.
-      // Asserting on the accessible name is what pins that: it would fail if the
-      // number went back to being a decorative badge with an aria-hidden span.
+      // These assert the heading's full text content, which is what fails if the
+      // number goes back to a decorative badge plus an aria-hidden span — the
+      // number would leave the heading, and an exact match cannot miss that.
       render(<OverviewTab {...defaultProps} />)
 
       const titles = cardTitlesInOrder()
