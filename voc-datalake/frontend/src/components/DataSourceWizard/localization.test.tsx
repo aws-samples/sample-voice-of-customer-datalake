@@ -79,6 +79,12 @@ describe('DataSourceWizard localization', () => {
   })
 
   beforeEach(() => {
+    // The i18next singleton is shared. Vitest isolates per file today, so the
+    // beforeAll switch holds — but assert it rather than assume, since a switch
+    // to a shared pool would otherwise make every case below silently vacuous
+    // (under `en` the German assertions would fail, but the negative
+    // "no English literal" ones would pass for the wrong reason).
+    expect(i18n.language).toBe('de')
     mockGetSources.mockResolvedValue({ sources: {} })
     mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
   })
@@ -109,7 +115,7 @@ describe('DataSourceWizard localization', () => {
     expect(screen.queryByText('Customer Feedback')).not.toBeInTheDocument()
   })
 
-  it('translates the feedback filters step, including sentiment labels', () => {
+  it('translates the feedback filters step, including sentiment labels shared with the summary', () => {
     render(
       <FeedbackFiltersStep
         contextConfig={defaultContextConfig}
@@ -166,15 +172,22 @@ describe('DataSourceWizard localization', () => {
     )
 
     expect(screen.getByText(de.contextSummary)).toBeInTheDocument()
-    expect(screen.getByText(`${de.sources}:`)).toBeInTheDocument()
-    expect(screen.getByText(`${de.personas}:`)).toBeInTheDocument()
-    expect(screen.getByText(de.allPersonas.replace('{{total}}', '2'))).toBeInTheDocument()
-    expect(screen.getByText(de.allResearch.replace('{{total}}', '1'))).toBeInTheDocument()
+    // Separator is translated too, so this also pins that the ASCII colon is no
+    // longer concatenated in code.
+    expect(screen.getByText(`${de.sources}${de.labelSeparator}`)).toBeInTheDocument()
+    expect(screen.getByText(`${de.personas}${de.labelSeparator}`)).toBeInTheDocument()
+    expect(
+      screen.getByText(de.allPersonas_other.replace('{{count}}', '2')),
+    ).toBeInTheDocument()
+    // One research doc in the fixture ⇒ the singular variant.
+    expect(
+      screen.getByText(de.allResearch_one.replace('{{count}}', '1')),
+    ).toBeInTheDocument()
     expect(screen.queryByText('Context Summary')).not.toBeInTheDocument()
     expect(screen.queryByText('All 2 personas')).not.toBeInTheDocument()
   })
 
-  it('translates the wizard chrome', () => {
+  it('translates the wizard chrome', async () => {
     render(
       <DataSourceWizard
         title="Test Wizard"
@@ -194,12 +207,16 @@ describe('DataSourceWizard localization', () => {
       { wrapper: createWrapper() },
     )
 
-    // Matched on the template's leading fragment so this does not also pin the
-    // step count, which belongs to useWizardState's own tests.
-    const stepPrefix = de.stepOf
-      .slice(0, de.stepOf.indexOf('{{total}}'))
-      .replace('{{step}}', '1')
-    expect(screen.getByText(stepPrefix, { exact: false })).toBeInTheDocument()
+    // Settle the mocked getSources/getCategoriesConfig queries before asserting,
+    // so their resolution can't land outside act().
+    expect(await screen.findByText(de.customerFeedback)).toBeInTheDocument()
+
+    // Asserted per literal fragment between the placeholders, so it neither
+    // pins the step count (useWizardState's concern) nor assumes the locale
+    // orders {{step}} before {{total}}.
+    for (const fragment of de.stepOf.split(/\{\{\w+\}\}/).filter(f => f.trim())) {
+      expect(screen.getByText(fragment, { exact: false })).toBeInTheDocument()
+    }
     expect(screen.getByLabelText(de.closeWizard)).toBeInTheDocument()
     expect(screen.getByText(de.back)).toBeInTheDocument()
     expect(screen.getByText(de.next)).toBeInTheDocument()

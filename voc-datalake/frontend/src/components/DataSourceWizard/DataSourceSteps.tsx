@@ -9,6 +9,7 @@ import type { ProjectPersona, ProjectDocument } from '../../api/client'
 import { SENTIMENTS } from '../../constants/filters'
 import clsx from 'clsx'
 import type { ContextConfig } from './types'
+import { useSentimentLabels } from './sentimentLabels'
 
 /** Time-range choices offered as "Last N days"; 365 and 3650 get their own labels. */
 const DAY_RANGE_OPTIONS = [7, 14, 30, 60, 90] as const
@@ -276,16 +277,8 @@ export function FeedbackFiltersStep({
   loadingCategories,
   colors,
 }: FeedbackFiltersStepProps) {
-  const { t } = useTranslation(['components', 'common'])
-  // Written out per sentiment rather than as t(`common:sentiment.${s}`) so the
-  // i18n gate can see each key is referenced; a template literal is invisible
-  // to it, which is how translated-but-unwired keys go unnoticed.
-  const sentimentLabels: Record<string, string> = {
-    positive: t('common:sentiment.positive'),
-    negative: t('common:sentiment.negative'),
-    neutral: t('common:sentiment.neutral'),
-    mixed: t('common:sentiment.mixed'),
-  }
+  const { t } = useTranslation('components')
+  const sentimentLabels = useSentimentLabels()
   return (
     <div className="space-y-4 sm:space-y-6">
       <div>
@@ -344,7 +337,7 @@ export function FeedbackFiltersStep({
                 getSentimentClass(s, contextConfig.sentiments.includes(s), colors)
               )}
             >
-              {sentimentLabels[s] ?? s}
+              {sentimentLabels[s]}
             </button>
           ))}
         </div>

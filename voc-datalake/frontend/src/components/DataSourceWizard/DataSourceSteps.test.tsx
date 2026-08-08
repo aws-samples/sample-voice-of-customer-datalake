@@ -394,13 +394,17 @@ describe('FeedbackFiltersStep', () => {
       expect(negativeButton).toHaveClass('bg-red-100')
     })
 
-    // Labels are looked up per sentiment, so adding a value to SENTIMENTS
-    // without a matching common:sentiment.* key would silently render the raw
-    // slug — the same defect class this wiring fixed.
-    it('renders a label, not the raw slug, for every sentiment in SENTIMENTS', () => {
-      render(<FeedbackFiltersStep {...defaultProps} />)
+    // A render assertion cannot tell "translated" from "i18next echoed the key",
+    // so check the key PATH against the real catalogue. Coverage of the map
+    // itself is a typecheck concern now: it is keyed by the Sentiment literal
+    // union, so a new sentiment without a label will not compile.
+    it('has a common:sentiment entry for every SENTIMENTS value', async () => {
+      const en = (await import('../../../public/locales/en/common.json')).default
       for (const sentiment of SENTIMENTS) {
-        expect(screen.queryByText(sentiment)).not.toBeInTheDocument()
+        expect(
+          (en.sentiment as Record<string, string>)[sentiment],
+          `common:sentiment.${sentiment} missing from the en catalogue`,
+        ).toBeTruthy()
       }
     })
   })
