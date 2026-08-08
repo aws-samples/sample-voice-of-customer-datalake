@@ -25,10 +25,15 @@ import {
 } from './useModalState'
 import {
   useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations, projectJobsKey,
+  productContextKey,
 } from './useProjectData'
 import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
 import type { Tab } from './types'
+import type { ProductContext } from '../../api/types'
+
+/** The product-context query's data shape, taken from the call that produces it. */
+type ProductContextResponse = Awaited<ReturnType<typeof projectsApi.getProductContext>>
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -51,7 +56,7 @@ export default function ProjectDetail() {
 
   // Data fetching
   const {
-    data, isLoading, jobsData, queryClient,
+    data, isLoading, jobsData, productContext, queryClient,
   } = useProjectData({
     id,
     apiEndpoint: config.apiEndpoint,
@@ -121,6 +126,23 @@ export default function ProjectDetail() {
   const handleJobStarted = useCallback(() => {
     setJobStartedAt(Date.now())
     void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
+  }, [queryClient, id])
+
+  /**
+   * The Product tab saved the context. It owns the record while editing, but the
+   * Overview card reads completeness from the shared query — and this page stays
+   * mounted across tab switches, so without this the card would keep reporting the
+   * count from page load.
+   *
+   * Seeding the cache rather than invalidating: the tab hands over the server's own
+   * response, so a refetch would ask for what we already have.
+   */
+  const handleContextSaved = useCallback((context: ProductContext) => {
+    // Typed from the API function itself rather than as a bare object literal:
+    // `setQueryData` cannot infer a plain key's data type, so an untyped write
+    // would silently truncate the cache entry if `getProductContext` ever returned
+    // more than `{ context }`. Deriving the type means the two cannot drift.
+    queryClient.setQueryData<ProductContextResponse>(productContextKey(id), { context })
   }, [queryClient, id])
 
   const handleSaveKiroPrompt = useCallback((prompt: string) => {
@@ -269,13 +291,14 @@ export default function ProjectDetail() {
         project={project}
         personas={personas}
         documents={documents}
+        productContext={productContext}
         selectedPersona={selection.selectedPersona}
         selectedDoc={selection.selectedDoc}
         isDeleting={deletePersonaMut.isPending || deleteDocMut.isPending}
         isSavingNotes={updatePersonaMut.isPending}
         onGeneratePersonas={() => wizard.setActiveWizard('persona')}
         onGenerateDoc={() => wizard.setActiveWizard('doc')}
-        onRunResearch={() => wizard.setActiveWizard('research')}
+        onRunResearch={() => wizard.openResearchWizard(personas.map((p) => p.persona_id))}
         onRemixDocuments={wizard.openMergeWizard}
         onOpenProductTool={() => setActiveTab('product')}
         onSaveKiroPrompt={handleSaveKiroPrompt}
@@ -289,6 +312,7 @@ export default function ProjectDetail() {
         onDeleteDoc={() => selection.selectedDoc && confirm.openDocumentConfirm(selection.selectedDoc.document_id)}
         onCreateDoc={docModal.openCreateModal}
         onSaveAsDocument={docModal.openSaveAsModal}
+        onContextSaved={handleContextSaved}
         onDocumentChanged={() => {
           void queryClient.invalidateQueries({ queryKey: ['project', id] })
         }}

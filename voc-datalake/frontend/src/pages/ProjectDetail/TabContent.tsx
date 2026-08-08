@@ -11,7 +11,7 @@ import type {
   Tab, NoteItem,
 } from './types'
 import type {
-  Project, ProjectPersona, ProjectDocument,
+  Project, ProjectPersona, ProjectDocument, ProductContext,
 } from '../../api/types'
 
 interface TabContentProps {
@@ -19,6 +19,8 @@ interface TabContentProps {
   readonly project: Project
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
+  /** For the Overview card's completeness display; undefined until it loads. */
+  readonly productContext?: ProductContext
   readonly selectedPersona: ProjectPersona | null
   readonly selectedDoc: ProjectDocument | null
   readonly isDeleting: boolean
@@ -39,6 +41,8 @@ interface TabContentProps {
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
   readonly onSaveAsDocument: (content: string) => void
+  /** The Product tab saved the context; the Overview card's copy needs the new one. */
+  readonly onContextSaved?: (context: ProductContext) => void
   readonly onDocumentChanged?: () => void
   /** A long-running job was kicked off; the Background Jobs panel takes it from here. */
   readonly onJobStarted?: () => void
@@ -49,6 +53,7 @@ export default function TabContent({
   project,
   personas,
   documents,
+  productContext,
   selectedPersona,
   selectedDoc,
   isDeleting,
@@ -69,6 +74,7 @@ export default function TabContent({
   onDeleteDoc,
   onCreateDoc,
   onSaveAsDocument,
+  onContextSaved,
   onDocumentChanged,
   onJobStarted,
 }: TabContentProps) {
@@ -78,6 +84,7 @@ export default function TabContent({
         project={project}
         personas={personas}
         documents={documents}
+        productContext={productContext}
         onGeneratePersonas={onGeneratePersonas}
         onGenerateDoc={onGenerateDoc}
         onRunResearch={onRunResearch}
@@ -106,7 +113,13 @@ export default function TabContent({
   }
 
   if (activeTab === 'product') {
-    return <ProductTab projectId={project.project_id} onJobStarted={onJobStarted} />
+    return (
+      <ProductTab
+        projectId={project.project_id}
+        onContextSaved={onContextSaved}
+        onJobStarted={onJobStarted}
+      />
+    )
   }
 
   if (activeTab === 'documents') {

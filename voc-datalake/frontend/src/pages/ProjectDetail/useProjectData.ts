@@ -27,6 +27,16 @@ import type { ContextConfig } from '../../components/DataSourceWizard/exports'
 export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] as const
 
 /**
+ * Query key for a project's product context.
+ *
+ * Exported for the same reason as the jobs key: more than one place needs it.
+ * The Product tab still fetches the context itself, because it edits the record
+ * field by field and owns that local state; if it is ever moved onto React Query
+ * this is the key it should share.
+ */
+export const productContextKey = (id: string | undefined) => ['product-context', id] as const
+
+/**
  * How long to keep polling the jobs list after an action reports that it started
  * a job.
  *
@@ -41,6 +51,16 @@ export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] a
 export const JOB_START_POLL_WINDOW_MS = 30_000
 
 const JOB_POLL_INTERVAL_MS = 3000
+
+/**
+ * How long a fetched product context counts as fresh.
+ *
+ * Generous because the only writer is the Product tab, and it pushes its result
+ * into this cache directly. Five minutes bounds the staleness if the record is
+ * ever changed elsewhere (the global chat's `create_project` tool can seed five of
+ * its fields) without paying a request every time the window regains focus.
+ */
+const PRODUCT_CONTEXT_STALE_MS = 5 * 60_000
 
 /**
  * How long until the jobs list should be read again: the poll cadence while
@@ -96,6 +116,33 @@ export function useProjectData({
       jobsPollInterval(query.state.data?.jobs ?? [], jobStartedAt, Date.now()),
   })
 
+  /**
+   * The product context, fetched here rather than only in the Product tab so the
+   * Overview card can report how complete the description is.
+   *
+   * This is the one Overview card whose state is not derivable from data the page
+   * already loads, and it is card #1 in the numbered sequence — a first step that
+   * cannot say whether it is done would undercut the numbering. The cost is one
+   * small extra request per project open.
+   *
+   * Failing is not fatal: `undefined` reaches the card as "unknown", which renders
+   * no state rather than a wrong one — hence `retry: false`, since the card is
+   * built to tolerate not knowing and a retry storm buys nothing.
+   *
+   * `staleTime` is what keeps the cost honest. Without it the default refetch on
+   * window focus makes "one request per project open" untrue for anyone who tabs
+   * away and back. The record only changes from the Product tab, which hands the
+   * new value straight into this cache (see ProjectDetail's onContextSaved), so
+   * there is nothing a background refetch would discover.
+   */
+  const { data: productContextData } = useQuery({
+    queryKey: productContextKey(id),
+    queryFn: () => projectsApi.getProductContext(id ?? ''),
+    enabled: isEnabled,
+    staleTime: PRODUCT_CONTEXT_STALE_MS,
+    retry: false,
+  })
+
   // When a job completes, refresh project data
   useEffect(() => {
     const jobs = jobsData?.jobs ?? []
@@ -113,6 +160,7 @@ export function useProjectData({
     data,
     isLoading,
     jobsData,
+    productContext: productContextData?.context,
     queryClient,
   }
 }

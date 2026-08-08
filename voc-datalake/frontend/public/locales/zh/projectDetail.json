@@ -203,7 +203,19 @@
     "generatePersonasDesc": "从反馈创建用户角色",
     "generatePrdPrfaq": "生成 PRD / PR-FAQ",
     "generatePrdPrfaqDesc": "从反馈创建产品文档",
+    "hint": {
+      "documentsNeedContext": "有人物角色或调研，这些文档会更充实。",
+      "researchNeedsPersonas": "先生成人物角色，调研即可以其为依据。"
+    },
     "needAtLeast2Docs": "需要至少 2 个文档",
+    "nextStep": {
+      "documents": "生成 PRD 或 PR-FAQ。",
+      "personas": "根据反馈生成人物角色。",
+      "product": "描述您的产品或服务。",
+      "remix": "将文档重新组合为新版本。",
+      "research": "运行调研——您的人物角色可以为其提供依据。"
+    },
+    "nextStepLabel": "下一步：",
     "openProductTool": "打开",
     "productDescription": "产品/服务描述",
     "productDescriptionDesc": "描述当前产品。将用于 PRD 和 PR/FAQ 的生成。",
@@ -211,7 +223,17 @@
     "remixDocumentsDesc": "合并和修订文档以创建新版本",
     "runResearch": "运行研究",
     "runResearchDesc": "使用筛选器深入分析反馈",
-    "selectAndRemix": "选择并重新混合"
+    "selectAndRemix": "选择并重新混合",
+    "state": {
+      "documents": "PRD / PR-FAQ 文档：{{total}}",
+      "documentsNone": "暂无",
+      "personas": "已创建人物角色：{{total}}",
+      "personasNone": "暂无",
+      "product": "已填写 {{filled}}/{{total}} 个字段",
+      "productEmpty": "尚未描述",
+      "research": "调研文档：{{total}}",
+      "researchNone": "尚未运行"
+    }
   },
   "personaEdit": {
     "ageRange": "年龄范围",

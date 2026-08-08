@@ -203,7 +203,19 @@
     "generatePersonasDesc": "Create user personas from feedback",
     "generatePrdPrfaq": "Generate PRD / PR-FAQ",
     "generatePrdPrfaqDesc": "Create product documents from feedback",
+    "hint": {
+      "documentsNeedContext": "Personas or research make these documents stronger.",
+      "researchNeedsPersonas": "Generate personas first to ground the research in them."
+    },
     "needAtLeast2Docs": "Need at least 2 documents",
+    "nextStep": {
+      "documents": "Generate a PRD or PR-FAQ.",
+      "personas": "Generate personas from your feedback.",
+      "product": "Describe your product or service.",
+      "remix": "Remix your documents into a new version.",
+      "research": "Run research — your personas can ground it."
+    },
+    "nextStepLabel": "Next step:",
     "openProductTool": "Open",
     "productDescription": "Product / Service Description",
     "productDescriptionDesc": "Describe the current product. Feeds PRD and PR/FAQ generation.",
@@ -211,7 +223,17 @@
     "remixDocumentsDesc": "Combine and revise documents into new versions",
     "runResearch": "Run Research",
     "runResearchDesc": "Deep dive into feedback with filters",
-    "selectAndRemix": "Select & Remix"
+    "selectAndRemix": "Select & Remix",
+    "state": {
+      "documents": "PRD / PR-FAQ documents: {{total}}",
+      "documentsNone": "None yet",
+      "personas": "Personas created: {{total}}",
+      "personasNone": "None yet",
+      "product": "{{filled}} of {{total}} fields filled",
+      "productEmpty": "Not described yet",
+      "research": "Research documents: {{total}}",
+      "researchNone": "Not run yet"
+    }
   },
   "personaEdit": {
     "ageRange": "Age Range",

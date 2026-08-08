@@ -19,6 +19,12 @@ import type {
 } from '../../api/types'
 import type { ContextConfig, ExtraDataSource } from '../../components/DataSourceWizard/exports'
 
+/**
+ * The data sources the persona generator cannot read, so the wizard must not
+ * offer them. Module-level so it is one array rather than a new one per render.
+ */
+const PERSONA_HIDDEN_DATA_SOURCES = ['personas', 'documents', 'research'] as const
+
 interface PersonaWizardProps {
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
@@ -43,6 +49,14 @@ export function PersonaWizard({
       documents={documents}
       contextConfig={contextConfig}
       onContextChange={onContextChange}
+      // Persona generation reads feedback and nothing else: `generatePersonas`
+      // sends only feedback filters, persona count and custom instructions. Left
+      // on, the shared wizard offered Personas / Documents / Research toggles and
+      // item pickers, and ContextSummary reported the selection back — inputs the
+      // mutation then dropped. Worse now that Personas comes first in the
+      // sequence, since this is exactly where someone would look for "use my
+      // research".
+      hideDataSources={PERSONA_HIDDEN_DATA_SOURCES}
       renderFinalStep={() => (
         <div className="space-y-6">
           <div>
