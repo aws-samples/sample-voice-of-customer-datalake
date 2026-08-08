@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DataSourcesStep, FeedbackFiltersStep, ItemSelectionStep } from './DataSourceSteps'
+import { SENTIMENTS } from '../../constants/filters'
 import type { ContextConfig } from './types'
 import type { ProjectPersona, ProjectDocument } from '../../api/client'
 
@@ -355,11 +356,14 @@ describe('FeedbackFiltersStep', () => {
   })
 
   describe('Sentiments', () => {
+    // Labels come from common:sentiment.*, so they are capitalised by the
+    // catalogue rather than by a CSS `capitalize` class. The value written back
+    // into contextConfig stays lowercase.
     it('displays sentiment buttons', () => {
       render(<FeedbackFiltersStep {...defaultProps} />)
-      expect(screen.getByText('positive')).toBeInTheDocument()
-      expect(screen.getByText('negative')).toBeInTheDocument()
-      expect(screen.getByText('neutral')).toBeInTheDocument()
+      expect(screen.getByText('Positive')).toBeInTheDocument()
+      expect(screen.getByText('Negative')).toBeInTheDocument()
+      expect(screen.getByText('Neutral')).toBeInTheDocument()
     })
 
     it('toggles sentiment selection when clicked', async () => {
@@ -367,7 +371,7 @@ describe('FeedbackFiltersStep', () => {
       const onContextChange = vi.fn()
       render(<FeedbackFiltersStep {...defaultProps} onContextChange={onContextChange} />)
       
-      await user.click(screen.getByText('positive'))
+      await user.click(screen.getByText('Positive'))
       
       expect(onContextChange).toHaveBeenCalledWith(
         expect.objectContaining({ sentiments: ['positive'] })
@@ -378,7 +382,7 @@ describe('FeedbackFiltersStep', () => {
       const config = { ...defaultContextConfig, sentiments: ['positive'] }
       render(<FeedbackFiltersStep {...defaultProps} contextConfig={config} />)
       
-      const positiveButton = screen.getByText('positive')
+      const positiveButton = screen.getByText('Positive')
       expect(positiveButton).toHaveClass('bg-green-100')
     })
 
@@ -386,8 +390,18 @@ describe('FeedbackFiltersStep', () => {
       const config = { ...defaultContextConfig, sentiments: ['negative'] }
       render(<FeedbackFiltersStep {...defaultProps} contextConfig={config} />)
       
-      const negativeButton = screen.getByText('negative')
+      const negativeButton = screen.getByText('Negative')
       expect(negativeButton).toHaveClass('bg-red-100')
+    })
+
+    // Labels are looked up per sentiment, so adding a value to SENTIMENTS
+    // without a matching common:sentiment.* key would silently render the raw
+    // slug — the same defect class this wiring fixed.
+    it('renders a label, not the raw slug, for every sentiment in SENTIMENTS', () => {
+      render(<FeedbackFiltersStep {...defaultProps} />)
+      for (const sentiment of SENTIMENTS) {
+        expect(screen.queryByText(sentiment)).not.toBeInTheDocument()
+      }
     })
   })
 
