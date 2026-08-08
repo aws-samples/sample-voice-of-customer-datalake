@@ -203,7 +203,19 @@
     "generatePersonasDesc": "フィードバックからユーザーペルソナを作成",
     "generatePrdPrfaq": "PRD / PR-FAQ を生成",
     "generatePrdPrfaqDesc": "フィードバックから製品ドキュメントを作成",
+    "hint": {
+      "researchNeedsPersonas": "先にペルソナを生成すると、リサーチをペルソナに基づけられます。",
+      "documentsNeedContext": "ペルソナやリサーチがあると、これらの文書はより充実します。"
+    },
     "needAtLeast2Docs": "最低 2 つのドキュメントが必要です",
+    "nextStep": {
+      "product": "製品またはサービスを記述します。",
+      "personas": "フィードバックからペルソナを生成します。",
+      "research": "リサーチを実行します（ペルソナで根拠づけられます）。",
+      "documents": "PRD または PR-FAQ を生成します。",
+      "remix": "ドキュメントを組み合わせて新しいバージョンにします。"
+    },
+    "nextStepLabel": "次のステップ:",
     "openProductTool": "開く",
     "productDescription": "製品／サービス説明",
     "productDescriptionDesc": "現在の製品を記述してください。PRD と PR/FAQ の生成に反映されます。",
@@ -211,7 +223,18 @@
     "remixDocumentsDesc": "ドキュメントを組み合わせて新しいバージョンに修正",
     "runResearch": "リサーチを実行",
     "runResearchDesc": "フィルターを使用してフィードバックを深掘り",
-    "selectAndRemix": "選択してリミックス"
+    "selectAndRemix": "選択してリミックス",
+    "state": {
+      "product": "{{total}} 項目中 {{filled}} 項目入力済み",
+      "productEmpty": "未記述",
+      "personas": "作成済みペルソナ: {{total}}",
+      "personasNone": "まだありません",
+      "research": "リサーチ文書: {{total}}",
+      "researchNone": "未実行",
+      "documents": "PRD / PR-FAQ 文書: {{total}}",
+      "documentsNone": "まだありません"
+    },
+    "stepNumber": "ステップ {{position}}: "
   },
   "personaEdit": {
     "ageRange": "年齢層",

@@ -24,6 +24,9 @@ import {
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
 import { DocsUpload } from './ProductDocsUpload'
+import {
+  countFilledProductContextFields, emptyProductContext,
+} from './productContextFields'
 import { useTransientFlag } from './useTransientFlag'
 import {
   SelectField, TextAreaField, TextField,
@@ -43,63 +46,6 @@ function singleFieldPatch<K extends keyof ProductContext>(field: K, value: Produ
   const patch: Partial<ProductContext> = {}
   patch[field] = value
   return patch
-}
-
-const emptyContext = (): ProductContext => ({
-  product_name: '',
-  one_liner: '',
-  target_users: '',
-  problem_solved: '',
-  current_state: '',
-  key_features: '',
-  differentiators: '',
-  known_limitations: '',
-  non_goals: '',
-  success_metrics: '',
-  free_form_notes: '',
-})
-
-/**
- * The only member of `ProductContext` the user does not author. Constrained to
- * `keyof ProductContext`, so renaming the field on the type breaks this line
- * rather than silently turning a server timestamp into "content".
- */
-type ServerSetField = Extract<keyof ProductContext, 'updated_at'>
-
-/**
- * True when the user has filled in none of the context fields.
- *
- * The annotation on the shape below is the point: **leaving a field out is a
- * compile error**, so a field added to `ProductContext` cannot be silently
- * excluded from the check. A plain array of field names would catch a typo but
- * not an omission — and an omitted field means a project where only that field is
- * filled starts a job the backend rejects inside the worker.
- *
- * `Required` rather than a bare `Omit`, because `Omit` alone would accept a
- * literal that skips an *optional* member: every authored field is required
- * today, but the guarantee should not quietly depend on that staying true.
- *
- * `updated_at` is the one member the user does not author, so it is the one this
- * deliberately drops.
- */
-function hasNoContextFields(context: ProductContext): boolean {
-  const authored: Required<Omit<ProductContext, ServerSetField>> = {
-    product_name: context.product_name,
-    one_liner: context.one_liner,
-    target_users: context.target_users,
-    problem_solved: context.problem_solved,
-    current_state: context.current_state,
-    key_features: context.key_features,
-    differentiators: context.differentiators,
-    known_limitations: context.known_limitations,
-    non_goals: context.non_goals,
-    success_metrics: context.success_metrics,
-    free_form_notes: context.free_form_notes,
-  }
-  // `?? ''` is not dead despite the non-nullable annotation: these values come
-  // from JSON, where a cleared field can arrive as null, and the spread over
-  // emptyContext() at the fetch site only fills keys that are *absent*.
-  return Object.values(authored).every((value) => (value ?? '').trim() === '')
 }
 
 /**
@@ -141,7 +87,7 @@ interface ProductTabProps {
 export default function ProductTab({ projectId, onJobStarted }: ProductTabProps) {
   const { t, i18n } = useTranslation('projectDetail')
   const [mode, setMode] = useState<Mode>(() => readSavedMode(projectId))
-  const [context, setContext] = useState<ProductContext>(emptyContext)
+  const [context, setContext] = useState<ProductContext>(emptyProductContext)
   const [loading, setLoading] = useState(true)
   const [savingField, setSavingField] = useState<string | null>(null)
   const [highlightFields, setHighlightFields] = useState<Set<string>>(new Set())
@@ -164,7 +110,7 @@ export default function ProductTab({ projectId, onJobStarted }: ProductTabProps)
   useEffect(() => {
     const lifecycle = { cancelled: false }
     projectsApi.getProductContext(projectId).then((r) => {
-      if (!lifecycle.cancelled) setContext({ ...emptyContext(), ...r.context })
+      if (!lifecycle.cancelled) setContext({ ...emptyProductContext(), ...r.context })
     }).catch((e) => {
       console.error('Failed to load product context', e)
     }).finally(() => {
@@ -179,7 +125,7 @@ export default function ProductTab({ projectId, onJobStarted }: ProductTabProps)
     setSavingField(field)
     try {
       const r = await projectsApi.updateProductContext(projectId, singleFieldPatch(field, value))
-      setContext({ ...emptyContext(), ...r.context })
+      setContext({ ...emptyProductContext(), ...r.context })
     } catch (e) {
       console.error(`Failed to save ${String(field)}`, e)
     } finally {
@@ -188,7 +134,7 @@ export default function ProductTab({ projectId, onJobStarted }: ProductTabProps)
   }, [projectId])
 
   const onPatchFromChat = useCallback((patch: Partial<ProductContext>, fresh: ProductContext) => {
-    setContext({ ...emptyContext(), ...fresh })
+    setContext({ ...emptyProductContext(), ...fresh })
     const keys = Object.keys(patch)
     if (keys.length) {
       setHighlightFields(new Set(keys))
@@ -241,7 +187,7 @@ export default function ProductTab({ projectId, onJobStarted }: ProductTabProps)
           <ReportCard
             projectId={projectId}
             language={i18n.language}
-            hasNoFields={hasNoContextFields(context)}
+            hasNoFields={countFilledProductContextFields(context) === 0}
             onJobStarted={onJobStarted}
             t={t}
           />

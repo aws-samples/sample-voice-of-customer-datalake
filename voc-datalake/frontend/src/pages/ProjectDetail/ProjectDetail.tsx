@@ -51,7 +51,7 @@ export default function ProjectDetail() {
 
   // Data fetching
   const {
-    data, isLoading, jobsData, queryClient,
+    data, isLoading, jobsData, productContext, queryClient,
   } = useProjectData({
     id,
     apiEndpoint: config.apiEndpoint,
@@ -269,13 +269,14 @@ export default function ProjectDetail() {
         project={project}
         personas={personas}
         documents={documents}
+        productContext={productContext}
         selectedPersona={selection.selectedPersona}
         selectedDoc={selection.selectedDoc}
         isDeleting={deletePersonaMut.isPending || deleteDocMut.isPending}
         isSavingNotes={updatePersonaMut.isPending}
         onGeneratePersonas={() => wizard.setActiveWizard('persona')}
         onGenerateDoc={() => wizard.setActiveWizard('doc')}
-        onRunResearch={() => wizard.setActiveWizard('research')}
+        onRunResearch={() => wizard.openResearchWizard(personas.map((p) => p.persona_id))}
         onRemixDocuments={wizard.openMergeWizard}
         onOpenProductTool={() => setActiveTab('product')}
         onSaveKiroPrompt={handleSaveKiroPrompt}

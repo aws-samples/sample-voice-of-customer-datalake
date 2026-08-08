@@ -11,7 +11,7 @@ import type {
   Tab, NoteItem,
 } from './types'
 import type {
-  Project, ProjectPersona, ProjectDocument,
+  Project, ProjectPersona, ProjectDocument, ProductContext,
 } from '../../api/types'
 
 interface TabContentProps {
@@ -19,6 +19,8 @@ interface TabContentProps {
   readonly project: Project
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
+  /** For the Overview card's completeness display; undefined until it loads. */
+  readonly productContext?: ProductContext
   readonly selectedPersona: ProjectPersona | null
   readonly selectedDoc: ProjectDocument | null
   readonly isDeleting: boolean
@@ -49,6 +51,7 @@ export default function TabContent({
   project,
   personas,
   documents,
+  productContext,
   selectedPersona,
   selectedDoc,
   isDeleting,
@@ -78,6 +81,7 @@ export default function TabContent({
         project={project}
         personas={personas}
         documents={documents}
+        productContext={productContext}
         onGeneratePersonas={onGeneratePersonas}
         onGenerateDoc={onGenerateDoc}
         onRunResearch={onRunResearch}

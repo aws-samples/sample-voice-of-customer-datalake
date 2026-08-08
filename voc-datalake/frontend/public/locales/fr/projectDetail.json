@@ -206,7 +206,19 @@
     "generatePersonasDesc": "Créer des personas utilisateur à partir des retours",
     "generatePrdPrfaq": "Générer PRD / PR-FAQ",
     "generatePrdPrfaqDesc": "Créer des documents produit à partir des retours",
+    "hint": {
+      "researchNeedsPersonas": "Générez d'abord des personas pour y ancrer la recherche.",
+      "documentsNeedContext": "Les personas ou la recherche renforcent ces documents."
+    },
     "needAtLeast2Docs": "Au moins 2 documents requis",
+    "nextStep": {
+      "product": "Décrivez votre produit ou service.",
+      "personas": "Générez des personas à partir de vos retours.",
+      "research": "Lancez la recherche — vos personas peuvent l'étayer.",
+      "documents": "Générez un PRD ou un PR-FAQ.",
+      "remix": "Combinez vos documents en une nouvelle version."
+    },
+    "nextStepLabel": "Étape suivante :",
     "openProductTool": "Ouvrir",
     "productDescription": "Description du produit/service",
     "productDescriptionDesc": "Décrivez le produit actuel. Alimente la génération de PRD et de PR/FAQ.",
@@ -214,7 +226,18 @@
     "remixDocumentsDesc": "Combiner et réviser les documents pour créer de nouvelles versions",
     "runResearch": "Lancer une recherche",
     "runResearchDesc": "Analyser en profondeur les retours avec des filtres",
-    "selectAndRemix": "Sélectionner & Remixer"
+    "selectAndRemix": "Sélectionner & Remixer",
+    "state": {
+      "product": "{{filled}} champs sur {{total}} remplis",
+      "productEmpty": "Pas encore décrit",
+      "personas": "Personas créés : {{total}}",
+      "personasNone": "Aucun pour l'instant",
+      "research": "Documents de recherche : {{total}}",
+      "researchNone": "Pas encore lancée",
+      "documents": "Documents PRD / PR-FAQ : {{total}}",
+      "documentsNone": "Aucun pour l'instant"
+    },
+    "stepNumber": "Étape {{position}} : "
   },
   "personaEdit": {
     "ageRange": "Tranche d'âge",

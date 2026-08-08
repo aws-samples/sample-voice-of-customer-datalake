@@ -27,6 +27,16 @@ import type { ContextConfig } from '../../components/DataSourceWizard/exports'
 export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] as const
 
 /**
+ * Query key for a project's product context.
+ *
+ * Exported for the same reason as the jobs key: more than one place needs it.
+ * The Product tab still fetches the context itself, because it edits the record
+ * field by field and owns that local state; if it is ever moved onto React Query
+ * this is the key it should share.
+ */
+export const productContextKey = (id: string | undefined) => ['product-context', id] as const
+
+/**
  * How long to keep polling the jobs list after an action reports that it started
  * a job.
  *
@@ -96,6 +106,24 @@ export function useProjectData({
       jobsPollInterval(query.state.data?.jobs ?? [], jobStartedAt, Date.now()),
   })
 
+  /**
+   * The product context, fetched here rather than only in the Product tab so the
+   * Overview card can report how complete the description is.
+   *
+   * This is the one Overview card whose state is not derivable from data the page
+   * already loads, and it is card #1 in the numbered sequence — a first step that
+   * cannot say whether it is done would undercut the numbering. The cost is one
+   * small extra request per project open.
+   *
+   * Failing is not fatal: `undefined` reaches the card as "unknown", which renders
+   * no state rather than a wrong one.
+   */
+  const { data: productContextData } = useQuery({
+    queryKey: productContextKey(id),
+    queryFn: () => projectsApi.getProductContext(id ?? ''),
+    enabled: isEnabled,
+  })
+
   // When a job completes, refresh project data
   useEffect(() => {
     const jobs = jobsData?.jobs ?? []
@@ -113,6 +141,7 @@ export function useProjectData({
     data,
     isLoading,
     jobsData,
+    productContext: productContextData?.context,
     queryClient,
   }
 }
