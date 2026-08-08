@@ -18,6 +18,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ProjectDetail from './ProjectDetail'
 import { emptyProductContext } from './productContextFields'
+import { stubElementScrollTo } from '../../test/stubScrollTo'
 import { useConfigStore } from '../../store/configStore'
 import type { Project, ProductContext } from '../../api/types'
 
@@ -76,12 +77,12 @@ function renderPage() {
 describe('ProjectDetail product-context handover', () => {
   // The Product tab renders the AI interview, whose effect scrolls the transcript;
   // jsdom has no Element.scrollTo and the exception would blank the tab.
-  const realScrollTo = Element.prototype.scrollTo
+  let restoreScrollTo: () => void
   beforeAll(() => {
-    Element.prototype.scrollTo = vi.fn()
+    restoreScrollTo = stubElementScrollTo()
   })
   afterAll(() => {
-    Element.prototype.scrollTo = realScrollTo
+    restoreScrollTo()
   })
 
   beforeEach(() => {

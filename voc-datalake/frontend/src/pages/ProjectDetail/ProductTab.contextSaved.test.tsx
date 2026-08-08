@@ -13,6 +13,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ProductTab from './ProductTab'
 import { emptyProductContext } from './productContextFields'
+import { stubElementScrollTo } from '../../test/stubScrollTo'
 import type { ProductContext } from '../../api/types'
 
 const mockGetProductContext = vi.fn()
@@ -41,12 +42,12 @@ describe('ProductTab onContextSaved', () => {
   // the whole tab as an empty div — which would turn "the callback was not called"
   // into a vacuous pass. Restored afterwards so the stub cannot leak into another
   // file's expectations.
-  const realScrollTo = Element.prototype.scrollTo
+  let restoreScrollTo: () => void
   beforeAll(() => {
-    Element.prototype.scrollTo = vi.fn()
+    restoreScrollTo = stubElementScrollTo()
   })
   afterAll(() => {
-    Element.prototype.scrollTo = realScrollTo
+    restoreScrollTo()
   })
 
   beforeEach(() => {
