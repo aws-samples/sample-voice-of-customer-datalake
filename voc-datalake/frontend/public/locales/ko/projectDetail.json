@@ -204,16 +204,16 @@
     "generatePrdPrfaq": "PRD / PR-FAQ 생성",
     "generatePrdPrfaqDesc": "피드백에서 제품 문서 생성",
     "hint": {
-      "researchNeedsPersonas": "먼저 페르소나를 생성하면 리서치의 근거로 사용할 수 있습니다.",
-      "documentsNeedContext": "페르소나나 리서치가 있으면 이 문서가 더 탄탄해집니다."
+      "documentsNeedContext": "페르소나나 리서치가 있으면 이 문서가 더 탄탄해집니다.",
+      "researchNeedsPersonas": "먼저 페르소나를 생성하면 리서치의 근거로 사용할 수 있습니다."
     },
     "needAtLeast2Docs": "최소 2개의 문서 필요",
     "nextStep": {
-      "product": "제품 또는 서비스를 설명하세요.",
-      "personas": "피드백에서 페르소나를 생성하세요.",
-      "research": "리서치를 실행하세요. 페르소나로 근거를 더할 수 있습니다.",
       "documents": "PRD 또는 PR-FAQ를 생성하세요.",
-      "remix": "문서를 결합해 새 버전을 만드세요."
+      "personas": "피드백에서 페르소나를 생성하세요.",
+      "product": "제품 또는 서비스를 설명하세요.",
+      "remix": "문서를 결합해 새 버전을 만드세요.",
+      "research": "리서치를 실행하세요. 페르소나로 근거를 더할 수 있습니다."
     },
     "nextStepLabel": "다음 단계:",
     "openProductTool": "열기",
@@ -225,14 +225,14 @@
     "runResearchDesc": "필터를 사용하여 피드백 심층 분석",
     "selectAndRemix": "선택 & 리믹스",
     "state": {
-      "product": "{{total}}개 항목 중 {{filled}}개 입력됨",
-      "productEmpty": "아직 설명하지 않음",
+      "documents": "PRD / PR-FAQ 문서: {{total}}",
+      "documentsNone": "아직 없음",
       "personas": "생성된 페르소나: {{total}}",
       "personasNone": "아직 없음",
+      "product": "{{total}}개 항목 중 {{filled}}개 입력됨",
+      "productEmpty": "아직 설명하지 않음",
       "research": "리서치 문서: {{total}}",
-      "researchNone": "아직 실행하지 않음",
-      "documents": "PRD / PR-FAQ 문서: {{total}}",
-      "documentsNone": "아직 없음"
+      "researchNone": "아직 실행하지 않음"
     },
     "stepNumber": "{{position}}단계: "
   },

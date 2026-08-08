@@ -41,6 +41,8 @@ interface TabContentProps {
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
   readonly onSaveAsDocument: (content: string) => void
+  /** The Product tab saved the context; the Overview card's copy needs the new one. */
+  readonly onContextSaved?: (context: ProductContext) => void
   readonly onDocumentChanged?: () => void
   /** A long-running job was kicked off; the Background Jobs panel takes it from here. */
   readonly onJobStarted?: () => void
@@ -72,6 +74,7 @@ export default function TabContent({
   onDeleteDoc,
   onCreateDoc,
   onSaveAsDocument,
+  onContextSaved,
   onDocumentChanged,
   onJobStarted,
 }: TabContentProps) {
@@ -110,7 +113,13 @@ export default function TabContent({
   }
 
   if (activeTab === 'product') {
-    return <ProductTab projectId={project.project_id} onJobStarted={onJobStarted} />
+    return (
+      <ProductTab
+        projectId={project.project_id}
+        onContextSaved={onContextSaved}
+        onJobStarted={onJobStarted}
+      />
+    )
   }
 
   if (activeTab === 'documents') {

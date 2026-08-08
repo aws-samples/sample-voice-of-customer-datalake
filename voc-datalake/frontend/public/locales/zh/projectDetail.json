@@ -204,16 +204,16 @@
     "generatePrdPrfaq": "生成 PRD / PR-FAQ",
     "generatePrdPrfaqDesc": "从反馈创建产品文档",
     "hint": {
-      "researchNeedsPersonas": "先生成人物角色，调研即可以其为依据。",
-      "documentsNeedContext": "有人物角色或调研，这些文档会更充实。"
+      "documentsNeedContext": "有人物角色或调研，这些文档会更充实。",
+      "researchNeedsPersonas": "先生成人物角色，调研即可以其为依据。"
     },
     "needAtLeast2Docs": "需要至少 2 个文档",
     "nextStep": {
-      "product": "描述您的产品或服务。",
-      "personas": "根据反馈生成人物角色。",
-      "research": "运行调研——您的人物角色可以为其提供依据。",
       "documents": "生成 PRD 或 PR-FAQ。",
-      "remix": "将文档重新组合为新版本。"
+      "personas": "根据反馈生成人物角色。",
+      "product": "描述您的产品或服务。",
+      "remix": "将文档重新组合为新版本。",
+      "research": "运行调研——您的人物角色可以为其提供依据。"
     },
     "nextStepLabel": "下一步：",
     "openProductTool": "打开",
@@ -225,14 +225,14 @@
     "runResearchDesc": "使用筛选器深入分析反馈",
     "selectAndRemix": "选择并重新混合",
     "state": {
-      "product": "已填写 {{filled}}/{{total}} 个字段",
-      "productEmpty": "尚未描述",
+      "documents": "PRD / PR-FAQ 文档：{{total}}",
+      "documentsNone": "暂无",
       "personas": "已创建人物角色：{{total}}",
       "personasNone": "暂无",
+      "product": "已填写 {{filled}}/{{total}} 个字段",
+      "productEmpty": "尚未描述",
       "research": "调研文档：{{total}}",
-      "researchNone": "尚未运行",
-      "documents": "PRD / PR-FAQ 文档：{{total}}",
-      "documentsNone": "暂无"
+      "researchNone": "尚未运行"
     },
     "stepNumber": "第 {{position}} 步："
   },

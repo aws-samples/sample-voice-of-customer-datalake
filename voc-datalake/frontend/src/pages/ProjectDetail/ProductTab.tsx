@@ -78,13 +78,26 @@ function readSavedMode(projectId: string): Mode {
 interface ProductTabProps {
   readonly projectId: string
   /**
+   * The context was just saved, with the server's copy of it.
+   *
+   * This tab owns the record while it is being edited — per-field autosave against
+   * local state — but the Overview card reports how complete the description is
+   * from its own query. Without this, filling fields here and returning to
+   * Overview left card 1 reporting the old count for the rest of the session,
+   * because `ProjectDetail` stays mounted across tab switches.
+   *
+   * Handing the fresh context back rather than asking for a refetch: the response
+   * is already in hand, so a round trip would only re-fetch what we just read.
+   */
+  readonly onContextSaved?: (context: ProductContext) => void
+  /**
    * A report generation was started. The Background Jobs panel owns the wait;
    * the document itself lands in the Documents tab when the job completes.
    */
   readonly onJobStarted?: () => void
 }
 
-export default function ProductTab({ projectId, onJobStarted }: ProductTabProps) {
+export default function ProductTab({ projectId, onContextSaved, onJobStarted }: ProductTabProps) {
   const { t, i18n } = useTranslation('projectDetail')
   const [mode, setMode] = useState<Mode>(() => readSavedMode(projectId))
   const [context, setContext] = useState<ProductContext>(emptyProductContext)
@@ -119,28 +132,44 @@ export default function ProductTab({ projectId, onJobStarted }: ProductTabProps)
     return () => { lifecycle.cancelled = true }
   }, [projectId])
 
+  /**
+   * Adopt a saved context: normalise it, then tell the page it changed.
+   *
+   * Both write paths go through here so neither can update the form while leaving
+   * the Overview card reporting a stale count — and a third write path added later
+   * inherits the notification instead of having to remember it.
+   */
+  const adoptSavedContext = useCallback((fresh: ProductContext) => {
+    const normalised = {
+      ...emptyProductContext(),
+      ...fresh,
+    }
+    setContext(normalised)
+    onContextSaved?.(normalised)
+  }, [onContextSaved])
+
   const persistField = useCallback(async <K extends keyof ProductContext>(
     field: K, value: ProductContext[K],
   ) => {
     setSavingField(field)
     try {
       const r = await projectsApi.updateProductContext(projectId, singleFieldPatch(field, value))
-      setContext({ ...emptyProductContext(), ...r.context })
+      adoptSavedContext(r.context)
     } catch (e) {
       console.error(`Failed to save ${String(field)}`, e)
     } finally {
       setSavingField(null)
     }
-  }, [projectId])
+  }, [projectId, adoptSavedContext])
 
   const onPatchFromChat = useCallback((patch: Partial<ProductContext>, fresh: ProductContext) => {
-    setContext({ ...emptyProductContext(), ...fresh })
+    adoptSavedContext(fresh)
     const keys = Object.keys(patch)
     if (keys.length) {
       setHighlightFields(new Set(keys))
       setTimeout(() => setHighlightFields(new Set()), 1800)
     }
-  }, [])
+  }, [adoptSavedContext])
 
   if (loading) {
     return (

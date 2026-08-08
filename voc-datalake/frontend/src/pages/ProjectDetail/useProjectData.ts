@@ -53,6 +53,16 @@ export const JOB_START_POLL_WINDOW_MS = 30_000
 const JOB_POLL_INTERVAL_MS = 3000
 
 /**
+ * How long a fetched product context counts as fresh.
+ *
+ * Generous because the only writer is the Product tab, and it pushes its result
+ * into this cache directly. Five minutes bounds the staleness if the record is
+ * ever changed elsewhere (the global chat's `create_project` tool can seed five of
+ * its fields) without paying a request every time the window regains focus.
+ */
+const PRODUCT_CONTEXT_STALE_MS = 5 * 60_000
+
+/**
  * How long until the jobs list should be read again: the poll cadence while
  * there is work to watch, 0 to stop.
  *
@@ -116,12 +126,21 @@ export function useProjectData({
    * small extra request per project open.
    *
    * Failing is not fatal: `undefined` reaches the card as "unknown", which renders
-   * no state rather than a wrong one.
+   * no state rather than a wrong one — hence `retry: false`, since the card is
+   * built to tolerate not knowing and a retry storm buys nothing.
+   *
+   * `staleTime` is what keeps the cost honest. Without it the default refetch on
+   * window focus makes "one request per project open" untrue for anyone who tabs
+   * away and back. The record only changes from the Product tab, which hands the
+   * new value straight into this cache (see ProjectDetail's onContextSaved), so
+   * there is nothing a background refetch would discover.
    */
   const { data: productContextData } = useQuery({
     queryKey: productContextKey(id),
     queryFn: () => projectsApi.getProductContext(id ?? ''),
     enabled: isEnabled,
+    staleTime: PRODUCT_CONTEXT_STALE_MS,
+    retry: false,
   })
 
   // When a job completes, refresh project data

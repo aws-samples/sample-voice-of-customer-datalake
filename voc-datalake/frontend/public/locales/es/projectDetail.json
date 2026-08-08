@@ -207,16 +207,16 @@
     "generatePrdPrfaq": "Generar PRD / PR-FAQ",
     "generatePrdPrfaqDesc": "Crear documentos de producto a partir del feedback",
     "hint": {
-      "researchNeedsPersonas": "Genere personas primero para fundamentar la investigación en ellas.",
-      "documentsNeedContext": "Las personas o la investigación fortalecen estos documentos."
+      "documentsNeedContext": "Las personas o la investigación fortalecen estos documentos.",
+      "researchNeedsPersonas": "Genere personas primero para fundamentar la investigación en ellas."
     },
     "needAtLeast2Docs": "Se necesitan al menos 2 documentos",
     "nextStep": {
-      "product": "Describa su producto o servicio.",
-      "personas": "Genere personas a partir de sus comentarios.",
-      "research": "Ejecute la investigación: sus personas pueden fundamentarla.",
       "documents": "Genere un PRD o PR-FAQ.",
-      "remix": "Combine sus documentos en una nueva versión."
+      "personas": "Genere personas a partir de sus comentarios.",
+      "product": "Describa su producto o servicio.",
+      "remix": "Combine sus documentos en una nueva versión.",
+      "research": "Ejecute la investigación: sus personas pueden fundamentarla."
     },
     "nextStepLabel": "Siguiente paso:",
     "openProductTool": "Abrir",
@@ -228,14 +228,14 @@
     "runResearchDesc": "Análisis profundo del feedback con filtros",
     "selectAndRemix": "Seleccionar y Remezlar",
     "state": {
-      "product": "{{filled}} de {{total}} campos completados",
-      "productEmpty": "Aún sin describir",
+      "documents": "Documentos PRD / PR-FAQ: {{total}}",
+      "documentsNone": "Ninguno todavía",
       "personas": "Personas creadas: {{total}}",
       "personasNone": "Ninguna todavía",
+      "product": "{{filled}} de {{total}} campos completados",
+      "productEmpty": "Aún sin describir",
       "research": "Documentos de investigación: {{total}}",
-      "researchNone": "Aún no ejecutada",
-      "documents": "Documentos PRD / PR-FAQ: {{total}}",
-      "documentsNone": "Ninguno todavía"
+      "researchNone": "Aún no ejecutada"
     },
     "stepNumber": "Paso {{position}}: "
   },

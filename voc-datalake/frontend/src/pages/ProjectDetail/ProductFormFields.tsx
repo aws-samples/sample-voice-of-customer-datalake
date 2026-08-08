@@ -5,6 +5,16 @@
 import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
 
+/**
+ * The DOM id for a context field's control.
+ *
+ * These labels used to be bare `<label>` elements with no `htmlFor` and inputs
+ * with no `id`, so nothing tied the two together: a screen reader announced an
+ * unlabelled text box, and clicking the label did not focus the field. The field
+ * key is already unique within the form, so it makes a stable id without a hook.
+ */
+const fieldInputId = (field: string) => `product-context-${field}`
+
 export function FieldShell({
   label, field, savingField, highlight, children,
 }: {
@@ -17,7 +27,7 @@ export function FieldShell({
   return (
     <div className={`transition-colors rounded-md ${highlight ? 'ring-2 ring-yellow-300 ring-offset-2 ring-offset-white' : ''}`}>
       <div className="flex items-center justify-between mb-1">
-        <label className="text-xs font-medium text-gray-700">{label}</label>
+        <label htmlFor={fieldInputId(field)} className="text-xs font-medium text-gray-700">{label}</label>
         {savingField === field && <Loader2 size={12} className="animate-spin text-gray-400" />}
       </div>
       {children}
@@ -44,6 +54,7 @@ export function TextField({
   return (
     <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
       <input
+        id={fieldInputId(field)}
         type="text"
         value={draft}
         maxLength={max}
@@ -73,6 +84,7 @@ export function TextAreaField({
   return (
     <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
       <textarea
+        id={fieldInputId(field)}
         value={draft}
         rows={rows}
         maxLength={max}
@@ -96,6 +108,7 @@ export function SelectField({
   return (
     <FieldShell label={label} field={field} savingField={savingField} highlight={highlight}>
       <select
+        id={fieldInputId(field)}
         value={value}
         onChange={(e) => onSave(e.target.value)}
         className="w-full px-3 py-2 border rounded-md text-sm bg-white"

@@ -204,16 +204,16 @@
     "generatePrdPrfaq": "PRD / PR-FAQ を生成",
     "generatePrdPrfaqDesc": "フィードバックから製品ドキュメントを作成",
     "hint": {
-      "researchNeedsPersonas": "先にペルソナを生成すると、リサーチをペルソナに基づけられます。",
-      "documentsNeedContext": "ペルソナやリサーチがあると、これらの文書はより充実します。"
+      "documentsNeedContext": "ペルソナやリサーチがあると、これらの文書はより充実します。",
+      "researchNeedsPersonas": "先にペルソナを生成すると、リサーチをペルソナに基づけられます。"
     },
     "needAtLeast2Docs": "最低 2 つのドキュメントが必要です",
     "nextStep": {
-      "product": "製品またはサービスを記述します。",
-      "personas": "フィードバックからペルソナを生成します。",
-      "research": "リサーチを実行します（ペルソナで根拠づけられます）。",
       "documents": "PRD または PR-FAQ を生成します。",
-      "remix": "ドキュメントを組み合わせて新しいバージョンにします。"
+      "personas": "フィードバックからペルソナを生成します。",
+      "product": "製品またはサービスを記述します。",
+      "remix": "ドキュメントを組み合わせて新しいバージョンにします。",
+      "research": "リサーチを実行します（ペルソナで根拠づけられます）。"
     },
     "nextStepLabel": "次のステップ:",
     "openProductTool": "開く",
@@ -225,14 +225,14 @@
     "runResearchDesc": "フィルターを使用してフィードバックを深掘り",
     "selectAndRemix": "選択してリミックス",
     "state": {
-      "product": "{{total}} 項目中 {{filled}} 項目入力済み",
-      "productEmpty": "未記述",
+      "documents": "PRD / PR-FAQ 文書: {{total}}",
+      "documentsNone": "まだありません",
       "personas": "作成済みペルソナ: {{total}}",
       "personasNone": "まだありません",
+      "product": "{{total}} 項目中 {{filled}} 項目入力済み",
+      "productEmpty": "未記述",
       "research": "リサーチ文書: {{total}}",
-      "researchNone": "未実行",
-      "documents": "PRD / PR-FAQ 文書: {{total}}",
-      "documentsNone": "まだありません"
+      "researchNone": "未実行"
     },
     "stepNumber": "ステップ {{position}}: "
   },

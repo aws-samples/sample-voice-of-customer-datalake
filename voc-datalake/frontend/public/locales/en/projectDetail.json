@@ -204,16 +204,16 @@
     "generatePrdPrfaq": "Generate PRD / PR-FAQ",
     "generatePrdPrfaqDesc": "Create product documents from feedback",
     "hint": {
-      "researchNeedsPersonas": "Generate personas first to ground the research in them.",
-      "documentsNeedContext": "Personas or research make these documents stronger."
+      "documentsNeedContext": "Personas or research make these documents stronger.",
+      "researchNeedsPersonas": "Generate personas first to ground the research in them."
     },
     "needAtLeast2Docs": "Need at least 2 documents",
     "nextStep": {
-      "product": "Describe your product or service.",
-      "personas": "Generate personas from your feedback.",
-      "research": "Run research — your personas can ground it.",
       "documents": "Generate a PRD or PR-FAQ.",
-      "remix": "Remix your documents into a new version."
+      "personas": "Generate personas from your feedback.",
+      "product": "Describe your product or service.",
+      "remix": "Remix your documents into a new version.",
+      "research": "Run research — your personas can ground it."
     },
     "nextStepLabel": "Next step:",
     "openProductTool": "Open",
@@ -225,14 +225,14 @@
     "runResearchDesc": "Deep dive into feedback with filters",
     "selectAndRemix": "Select & Remix",
     "state": {
-      "product": "{{filled}} of {{total}} fields filled",
-      "productEmpty": "Not described yet",
+      "documents": "PRD / PR-FAQ documents: {{total}}",
+      "documentsNone": "None yet",
       "personas": "Personas created: {{total}}",
       "personasNone": "None yet",
+      "product": "{{filled}} of {{total}} fields filled",
+      "productEmpty": "Not described yet",
       "research": "Research documents: {{total}}",
-      "researchNone": "Not run yet",
-      "documents": "PRD / PR-FAQ documents: {{total}}",
-      "documentsNone": "None yet"
+      "researchNone": "Not run yet"
     },
     "stepNumber": "Step {{position}}: "
   },

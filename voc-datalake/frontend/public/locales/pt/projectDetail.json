@@ -207,16 +207,16 @@
     "generatePrdPrfaq": "Gerar PRD / PR-FAQ",
     "generatePrdPrfaqDesc": "Criar documentos de produto a partir de feedback",
     "hint": {
-      "researchNeedsPersonas": "Gere personas primeiro para fundamentar a pesquisa nelas.",
-      "documentsNeedContext": "Personas ou pesquisa deixam estes documentos mais consistentes."
+      "documentsNeedContext": "Personas ou pesquisa deixam estes documentos mais consistentes.",
+      "researchNeedsPersonas": "Gere personas primeiro para fundamentar a pesquisa nelas."
     },
     "needAtLeast2Docs": "Necessário pelo menos 2 documentos",
     "nextStep": {
-      "product": "Descreva seu produto ou serviço.",
-      "personas": "Gere personas a partir dos seus feedbacks.",
-      "research": "Execute a pesquisa — suas personas podem fundamentá-la.",
       "documents": "Gere um PRD ou PR-FAQ.",
-      "remix": "Combine seus documentos em uma nova versão."
+      "personas": "Gere personas a partir dos seus feedbacks.",
+      "product": "Descreva seu produto ou serviço.",
+      "remix": "Combine seus documentos em uma nova versão.",
+      "research": "Execute a pesquisa — suas personas podem fundamentá-la."
     },
     "nextStepLabel": "Próxima etapa:",
     "openProductTool": "Abrir",
@@ -228,14 +228,14 @@
     "runResearchDesc": "Análise profunda de feedback com filtros",
     "selectAndRemix": "Selecionar & Remixar",
     "state": {
-      "product": "{{filled}} de {{total}} campos preenchidos",
-      "productEmpty": "Ainda não descrito",
+      "documents": "Documentos PRD / PR-FAQ: {{total}}",
+      "documentsNone": "Nenhum ainda",
       "personas": "Personas criadas: {{total}}",
       "personasNone": "Nenhuma ainda",
+      "product": "{{filled}} de {{total}} campos preenchidos",
+      "productEmpty": "Ainda não descrito",
       "research": "Documentos de pesquisa: {{total}}",
-      "researchNone": "Ainda não executada",
-      "documents": "Documentos PRD / PR-FAQ: {{total}}",
-      "documentsNone": "Nenhum ainda"
+      "researchNone": "Ainda não executada"
     },
     "stepNumber": "Etapa {{position}}: "
   },

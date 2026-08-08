@@ -25,10 +25,12 @@ import {
 } from './useModalState'
 import {
   useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations, projectJobsKey,
+  productContextKey,
 } from './useProjectData'
 import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
 import type { Tab } from './types'
+import type { ProductContext } from '../../api/types'
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -121,6 +123,19 @@ export default function ProjectDetail() {
   const handleJobStarted = useCallback(() => {
     setJobStartedAt(Date.now())
     void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
+  }, [queryClient, id])
+
+  /**
+   * The Product tab saved the context. It owns the record while editing, but the
+   * Overview card reads completeness from the shared query — and this page stays
+   * mounted across tab switches, so without this the card would keep reporting the
+   * count from page load.
+   *
+   * Seeding the cache rather than invalidating: the tab hands over the server's own
+   * response, so a refetch would ask for what we already have.
+   */
+  const handleContextSaved = useCallback((context: ProductContext) => {
+    queryClient.setQueryData(productContextKey(id), { context })
   }, [queryClient, id])
 
   const handleSaveKiroPrompt = useCallback((prompt: string) => {
@@ -290,6 +305,7 @@ export default function ProjectDetail() {
         onDeleteDoc={() => selection.selectedDoc && confirm.openDocumentConfirm(selection.selectedDoc.document_id)}
         onCreateDoc={docModal.openCreateModal}
         onSaveAsDocument={docModal.openSaveAsModal}
+        onContextSaved={handleContextSaved}
         onDocumentChanged={() => {
           void queryClient.invalidateQueries({ queryKey: ['project', id] })
         }}

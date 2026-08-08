@@ -64,6 +64,16 @@ function cardTitlesInOrder(): string[] {
     .map((h) => h.textContent ?? '')
 }
 
+/** The card whose heading contains `title`, for assertions scoped to one card. */
+function cardFor(title: string): HTMLElement {
+  const heading = within(screen.getByTestId('overview-cards'))
+    .getAllByRole('heading', { level: 3 })
+    .find((h) => (h.textContent ?? '').includes(title))
+  const card = heading?.closest('div.bg-white')
+  if (!(card instanceof HTMLElement)) throw new Error(`no card found for "${title}"`)
+  return card
+}
+
 describe('OverviewTab', () => {
   it('renders Generate Personas action card', () => {
     render(<OverviewTab {...defaultProps} />)
@@ -164,16 +174,30 @@ describe('OverviewTab', () => {
 
   describe('per-card state', () => {
     /**
-     * The bug in one assertion: before U8 these two renders were identical, so
+     * The bug, stated as a test: before U8 these two renders were identical, so
      * nothing on the tab could tell an untouched project from a finished one.
+     *
+     * Asserts the four specific state strings rather than just "the markup
+     * differs" — a difference anywhere would pass while three of the four cards
+     * had silently stopped reporting.
      */
-    it('renders differently for an empty project and a populated one', () => {
-      const { container: empty } = render(
+    it('reports every step differently for an empty project and a populated one', () => {
+      const populatedStates = [
+        '2 of 11 fields filled',
+        'Personas created: 3',
+        'Research documents: 1',
+        'PRD / PR-FAQ documents: 2',
+      ]
+
+      const { unmount } = render(
         <OverviewTab {...defaultProps} productContext={emptyProductContext()} />,
       )
-      const emptyHtml = empty.innerHTML
+      for (const text of populatedStates) {
+        expect(screen.queryByText(text)).not.toBeInTheDocument()
+      }
+      unmount()
 
-      const { container: populated } = render(
+      render(
         <OverviewTab
           {...defaultProps}
           personas={[persona('p1'), persona('p2'), persona('p3')]}
@@ -181,8 +205,9 @@ describe('OverviewTab', () => {
           productContext={contextWith({ product_name: 'VoC', one_liner: 'Feedback intelligence' })}
         />,
       )
-
-      expect(populated.innerHTML).not.toBe(emptyHtml)
+      for (const text of populatedStates) {
+        expect(screen.getByText(text)).toBeInTheDocument()
+      }
     })
 
     it('reports what each step has produced', () => {
@@ -234,10 +259,15 @@ describe('OverviewTab', () => {
     it('does not disable a generator just because an optional input is missing', () => {
       // The hints are advice. Every generator works without its optional inputs,
       // so gating them would block work the backend accepts.
+      //
+      // Scoped by card rather than by index: indexing into the button list would
+      // depend on the very ordering these tests exist to pin, so a reorder would
+      // silently change what is being asserted.
       render(<OverviewTab {...defaultProps} />)
 
-      expect(screen.getByRole('button', { name: /Run Research/i })).not.toBeDisabled()
-      expect(screen.getAllByRole('button', { name: /Generate/i })[1]).not.toBeDisabled()
+      expect(within(cardFor('Run Research')).getByRole('button')).not.toBeDisabled()
+      expect(within(cardFor('Generate PRD / PR-FAQ')).getByRole('button')).not.toBeDisabled()
+      expect(within(cardFor('Generate Personas')).getByRole('button')).not.toBeDisabled()
     })
   })
 

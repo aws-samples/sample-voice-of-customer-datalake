@@ -207,16 +207,16 @@
     "generatePrdPrfaq": "Générer PRD / PR-FAQ",
     "generatePrdPrfaqDesc": "Créer des documents produit à partir des retours",
     "hint": {
-      "researchNeedsPersonas": "Générez d'abord des personas pour y ancrer la recherche.",
-      "documentsNeedContext": "Les personas ou la recherche renforcent ces documents."
+      "documentsNeedContext": "Les personas ou la recherche renforcent ces documents.",
+      "researchNeedsPersonas": "Générez d'abord des personas pour y ancrer la recherche."
     },
     "needAtLeast2Docs": "Au moins 2 documents requis",
     "nextStep": {
-      "product": "Décrivez votre produit ou service.",
-      "personas": "Générez des personas à partir de vos retours.",
-      "research": "Lancez la recherche — vos personas peuvent l'étayer.",
       "documents": "Générez un PRD ou un PR-FAQ.",
-      "remix": "Combinez vos documents en une nouvelle version."
+      "personas": "Générez des personas à partir de vos retours.",
+      "product": "Décrivez votre produit ou service.",
+      "remix": "Combinez vos documents en une nouvelle version.",
+      "research": "Lancez la recherche — vos personas peuvent l'étayer."
     },
     "nextStepLabel": "Étape suivante :",
     "openProductTool": "Ouvrir",
@@ -228,14 +228,14 @@
     "runResearchDesc": "Analyser en profondeur les retours avec des filtres",
     "selectAndRemix": "Sélectionner & Remixer",
     "state": {
-      "product": "{{filled}} champs sur {{total}} remplis",
-      "productEmpty": "Pas encore décrit",
+      "documents": "Documents PRD / PR-FAQ : {{total}}",
+      "documentsNone": "Aucun pour l'instant",
       "personas": "Personas créés : {{total}}",
       "personasNone": "Aucun pour l'instant",
+      "product": "{{filled}} champs sur {{total}} remplis",
+      "productEmpty": "Pas encore décrit",
       "research": "Documents de recherche : {{total}}",
-      "researchNone": "Pas encore lancée",
-      "documents": "Documents PRD / PR-FAQ : {{total}}",
-      "documentsNone": "Aucun pour l'instant"
+      "researchNone": "Pas encore lancée"
     },
     "stepNumber": "Étape {{position}} : "
   },
