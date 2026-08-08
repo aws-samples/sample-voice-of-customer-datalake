@@ -401,8 +401,12 @@ describe('FeedbackFiltersStep', () => {
     it('has a common:sentiment entry for every SENTIMENTS value', async () => {
       const en = (await import('../../../public/locales/en/common.json')).default
       for (const sentiment of SENTIMENTS) {
+        // Indexed with no cast on purpose: because `sentiment` is the Sentiment
+        // literal union, a key MISSING from the catalogue is a tsc error here,
+        // and the assertion below covers a key present but empty. Widening to
+        // Record<string, string> would discard the compile-time half.
         expect(
-          (en.sentiment as Record<string, string>)[sentiment],
+          en.sentiment[sentiment],
           `common:sentiment.${sentiment} missing from the en catalogue`,
         ).toBeTruthy()
       }

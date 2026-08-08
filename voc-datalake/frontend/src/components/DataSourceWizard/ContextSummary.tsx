@@ -22,30 +22,37 @@ function formatListOrFallback(items: string[], fallback: string): string {
   return items.length > 0 ? items.join(', ') : fallback
 }
 
+/**
+ * Field label plus its separator. Takes the RESOLVED label rather than a key so
+ * every `t()` call stays a literal the i18n gate can see — `label(key)` would
+ * hide them all behind a dynamic argument.
+ */
+function withSeparator(label: string, separator: string): string {
+  return `${label}${separator}`
+}
+
 // Feedback section component
 function FeedbackSection({ config }: Readonly<{ config: ContextConfig }>) {
   const { t } = useTranslation('components')
   const sentimentLabels = useSentimentLabels()
   if (!config.useFeedback) return null
   const all = t('components:dataSourceWizard.all')
-  // Takes the RESOLVED label, so every t() key stays a literal the i18n gate
-  // can see — `label(key)` would hide them behind a dynamic argument.
-  const label = (resolved: string) => `${resolved}${t('components:dataSourceWizard.labelSeparator')}`
+  const sep = t('components:dataSourceWizard.labelSeparator')
   return (
     <div className="space-y-1">
-      <p><span className="text-gray-500">{label(t('components:dataSourceWizard.sources'))}</span> {formatListOrFallback(config.sources, all)}</p>
-      <p><span className="text-gray-500">{label(t('components:dataSourceWizard.categories'))}</span> {formatListOrFallback(config.categories, all)}</p>
-      <p><span className="text-gray-500">{label(t('components:dataSourceWizard.sentiments'))}</span> {
+      <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.sources'), sep)}</span> {formatListOrFallback(config.sources, all)}</p>
+      <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.categories'), sep)}</span> {formatListOrFallback(config.categories, all)}</p>
+      <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.sentiments'), sep)}</span> {
         formatListOrFallback(toSentimentLabels(config.sentiments, sentimentLabels), all)
       }</p>
-      <p><span className="text-gray-500">{label(t('components:dataSourceWizard.timeRange'))}</span> {t('components:dataSourceWizard.lastDays', { days: config.days })}</p>
+      <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.timeRange'), sep)}</span> {t('components:dataSourceWizard.lastDays', { days: config.days })}</p>
     </div>
   )
 }
 
 export default function ContextSummary({ config, personas, documents }: ContextSummaryProps) {
   const { t } = useTranslation('components')
-  const label = (resolved: string) => `${resolved}${t('components:dataSourceWizard.labelSeparator')}`
+  const sep = t('components:dataSourceWizard.labelSeparator')
   const selectedPersonas = personas.filter(p => config.selectedPersonaIds.includes(p.persona_id))
   const researchDocs = documents.filter(d => d.document_type === 'research')
   const otherDocs = documents.filter(d => d.document_type !== 'research')
@@ -61,7 +68,7 @@ export default function ContextSummary({ config, personas, documents }: ContextS
       <FeedbackSection config={config} />
       
       {config.usePersonas && (
-        <p><span className="text-gray-500">{label(t('components:dataSourceWizard.personas'))}</span> {
+        <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.personas'), sep)}</span> {
           formatListOrFallback(
             selectedPersonas.map(p => p.name),
             t('components:dataSourceWizard.allPersonas', { count: personas.length }),
@@ -70,7 +77,7 @@ export default function ContextSummary({ config, personas, documents }: ContextS
       )}
       
       {config.useDocuments && (
-        <p><span className="text-gray-500">{label(t('components:dataSourceWizard.documents'))}</span> {
+        <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.documents'), sep)}</span> {
           formatListOrFallback(
             selectedDocs.map(d => d.title),
             t('components:dataSourceWizard.allDocuments', { count: otherDocs.length }),
@@ -79,7 +86,7 @@ export default function ContextSummary({ config, personas, documents }: ContextS
       )}
       
       {config.useResearch && (
-        <p><span className="text-gray-500">{label(t('components:dataSourceWizard.research'))}</span> {
+        <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.research'), sep)}</span> {
           formatListOrFallback(
             selectedResearch.map(d => d.title),
             t('components:dataSourceWizard.allResearch', { count: researchDocs.length }),
