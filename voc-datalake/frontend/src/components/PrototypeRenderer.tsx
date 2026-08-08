@@ -32,32 +32,42 @@ import type { PrototypeBlock, PrototypeSpec } from './prototypeSpec'
  * legacy inline prototype) still reloads, because that is a different address.
  */
 function useLoadedUrl(url: string | undefined): string | undefined {
-  const [loaded, setLoaded] = useState(url)
-  const loadedKey = unsignedUrlKey(loaded)
-  const nextKey = unsignedUrlKey(url)
+  // Whether the URL on offer has ALREADY lapsed. Read only at the moment it is taken —
+  // see `deadOnArrival` below — so this asks "could this ever load?", not "is the
+  // document still fresh?".
+  const incomingIsDead = useDeadlinePassed(signedUrlExpiresAt(url))
 
-  // A frozen URL must not be frozen PAST ITS OWN DEADLINE. If the frame mounts
-  // against an expired signature — stale cached project data, a machine resumed from
-  // suspend, a refetch that failed once — the iframe loads a dead URL and renders
-  // CloudFront's 403. Without this, the replacement that arrives moments later is
-  // ignored, because the address has not changed, and the pane stays broken until
-  // something remounts it. Freezing is only ever a courtesy to a WORKING document.
-  const loadedIsDead = useDeadlinePassed(signedUrlExpiresAt(loaded))
+  const [loaded, setLoaded] = useState<{
+    readonly url: string | undefined
+    /**
+     * True when this URL was already expired when the frame took it, so it never had a
+     * chance of rendering and any replacement is an improvement.
+     *
+     * This, and NOT the URL's deadline, is what licenses a swap. Releasing on the
+     * deadline instead reintroduces exactly the reload the freeze exists to prevent: a
+     * frame that loaded fine at t+0 would swap at t+60m to the URL delivered at t+55m,
+     * reloading the prototype under the reviewer once an hour. Once a document is in
+     * the browser, the credential that fetched it has no further bearing on it — only a
+     * fetch that never succeeded does.
+     */
+    readonly deadOnArrival: boolean
+  }>(() => ({ url, deadOnArrival: incomingIsDead }))
 
-  // Adopt on a different address, or when what we are holding is dead and something
-  // newer is on offer. `url !== loaded` matters: with no replacement yet there is
-  // nothing to adopt, and swapping a dead URL for itself would reload the frame on
-  // every render.
-  const adopt = loadedKey !== nextKey || (loadedIsDead && url !== loaded)
+  const addressChanged = unsignedUrlKey(loaded.url) !== unsignedUrlKey(url)
+
+  // Adopt for a genuinely different document, or to escape a URL that could never have
+  // worked. `url !== loaded.url` matters: with no replacement on offer there is nothing
+  // to adopt, and swapping a dead URL for itself would reload the frame every render.
+  const adopt = addressChanged || (loaded.deadOnArrival && url !== loaded.url)
 
   if (adopt) {
     // Guarded render-phase update — the same derive-from-props pattern
     // useCategoryFilters uses to adopt external changes. React re-renders
     // immediately; the value returned below is already the new one, so the frame
     // never renders a stale src even for one frame.
-    setLoaded(url)
+    setLoaded({ url, deadOnArrival: incomingIsDead })
   }
-  return adopt ? url : loaded
+  return adopt ? url : loaded.url
 }
 
 /**

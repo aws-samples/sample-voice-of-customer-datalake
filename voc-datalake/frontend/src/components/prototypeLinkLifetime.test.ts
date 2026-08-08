@@ -130,6 +130,16 @@ describe('formatExpiry', () => {
    * A time alone reads as ALREADY PAST when the deadline is just after midnight and it
    * is currently 23:50 — the one case where a bare clock time actively misinforms.
    */
+  /**
+   * The locale comes from i18next's detection chain — a querystring, a cookie,
+   * navigator.language — none of which this code controls, and `Intl` throws RangeError
+   * on a malformed tag. Throwing here would take down the whole document pane.
+   */
+  it('falls back to the runtime locale instead of throwing on a malformed tag', () => {
+    expect(() => formatExpiry(AT_1405, SAME_DAY_NOON, 'not a locale!')).not.toThrow()
+    expect(formatExpiry(AT_1405, SAME_DAY_NOON, 'not a locale!')).toMatch(/\d/)
+  })
+
   it('includes the date when the deadline falls on another day', () => {
     const formatted = formatExpiry(AT_1405, DAY_BEFORE, 'en-US')
     expect(formatted).toMatch(/2:05/)

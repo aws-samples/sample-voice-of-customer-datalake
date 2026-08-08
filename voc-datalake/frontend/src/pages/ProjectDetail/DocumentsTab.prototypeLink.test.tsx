@@ -16,7 +16,7 @@
  * either side of the real clock, so nothing here depends on timer control (which
  * has leaked across files in this suite — see useProjectData.test.ts).
  */
-import { render, screen } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import DocumentsTab from './DocumentsTab'
 import { formatExpiry } from '../../components/prototypeLinkLifetime'
@@ -159,6 +159,47 @@ describe('re-signing the same prototype', () => {
 
     expect(linkHref(/Open in new tab/i)).toBe(resigned)
     expect(linkHref(/Download \.html/i)).toBe(resigned)
+  })
+
+  /**
+   * The regression that the first attempt at the fix above introduced: releasing on the
+   * loaded URL's DEADLINE rather than on whether it ever worked. A frame that loaded
+   * fine at t+0 would swap at t+60m to the replacement delivered at t+55m, reloading the
+   * prototype under the reviewer once an hour — the exact behaviour the freeze exists to
+   * prevent, five minutes late.
+   *
+   * Needs timers, because the distinguishing event is a deadline passing on a frame that
+   * is working. They are scoped to this test and torn down straight after.
+   */
+  it('keeps a URL that loaded successfully even after its signature expires', () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const live = signedUrl(Date.now() + HOUR_MS, 'sig-live')
+      const { rerender } = renderTab(prototypeDoc(live))
+      expect(frameSrc()).toBe(live)
+
+      // The pre-expiry refresh lands: same document, later deadline. Frame keeps `live`.
+      const resigned = signedUrl(Date.now() + 2 * HOUR_MS, 'sig-next')
+      const doc = prototypeDoc(resigned)
+      const render2 = () => rerender(
+        <MemoryRouter>
+          <DocumentsTab {...baseProps} documents={[doc]} selectedDoc={doc} />
+        </MemoryRouter>,
+      )
+      render2()
+      expect(frameSrc()).toBe(live)
+
+      // Now push past `live`'s own deadline. The document is already in the browser, so
+      // its signature is irrelevant and the frame must not move.
+      act(() => {
+        vi.advanceTimersByTime(HOUR_MS + 60_000)
+      })
+      render2()
+
+      expect(frameSrc()).toBe(live)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   /**

@@ -192,8 +192,18 @@ export function isExpired(expiresAt: number | null, now: number): boolean {
 export function formatExpiry(expiresAt: number, now: number, locale: string): string {
   const deadline = new Date(expiresAt)
   const sameLocalDay = deadline.toDateString() === new Date(now).toDateString()
-  return new Intl.DateTimeFormat(locale, {
+  const options: Intl.DateTimeFormatOptions = {
     timeStyle: 'short',
     ...(sameLocalDay ? {} : { dateStyle: 'short' }),
-  }).format(deadline)
+  }
+  try {
+    return new Intl.DateTimeFormat(locale, options).format(deadline)
+  } catch {
+    // `Intl` throws RangeError on a malformed language tag, and `locale` comes from
+    // i18next's detection chain — which reads a querystring, a cookie and
+    // navigator.language, none of which this code controls. Falling back to the runtime
+    // default costs a possibly-wrong clock convention; letting it throw would take down
+    // the whole document pane over a bad tag.
+    return new Intl.DateTimeFormat(undefined, options).format(deadline)
+  }
 }

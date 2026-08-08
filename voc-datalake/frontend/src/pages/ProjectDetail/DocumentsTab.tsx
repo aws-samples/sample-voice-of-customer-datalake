@@ -6,7 +6,7 @@ import { format } from 'date-fns'
 import {
   FileText, Pencil, Trash2, Loader2, Wand2, AlertCircle, Clock,
 } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -313,16 +313,20 @@ function LegacyHtmlActions({
 // (CDN_SIGNED_URL_TTL_SECONDS is not set in the stack), so a number hardcoded here
 // would be a guess that silently diverges the day it is configured.
 
-/**
- * Referenced by `aria-describedby` on the open/download anchors, so the warning
- * reaches a screen-reader user at the moment they are about to activate the link —
- * not only someone who happens to hover it.
- */
-const LINK_LIFETIME_NOTE_ID = 'prototype-link-lifetime'
-
 function LinkLifetimeNote({
-  url, t, locale,
-}: { readonly url: string; readonly t: TFunc; readonly locale: string }) {
+  url, t, locale, noteId,
+}: {
+  readonly url: string
+  readonly t: TFunc
+  readonly locale: string
+  /**
+   * Minted with `useId` by the caller, which also puts it on the anchors'
+   * `aria-describedby` — so the warning reaches a screen-reader user at the moment they
+   * are about to activate the link, not only someone who happens to hover it. Generated
+   * rather than a module constant so two prototype panes on one screen cannot collide.
+   */
+  readonly noteId: string
+}) {
   const expiresAt = signedUrlExpiresAt(url)
 
   // Flips itself at the deadline via a single timer, so the label cannot keep
@@ -343,11 +347,14 @@ function LinkLifetimeNote({
 
   return (
     <span
-      id={LINK_LIFETIME_NOTE_ID}
-      className={clsx('inline-flex items-center gap-1 min-w-0', expired ? 'text-amber-700' : 'text-gray-400')}
+      id={noteId}
+      className={clsx('inline-flex items-start gap-1', expired ? 'text-amber-700' : 'text-gray-400')}
     >
-      <Clock size={11} className="flex-shrink-0" />
-      <span className="truncate">
+      <Clock size={11} className="flex-shrink-0 mt-0.5" />
+      {/* Wraps rather than truncates. Under `truncate` the clipped end was the hint —
+          i.e. the sentence this label exists for — so a narrow pane silently put the
+          warning back out of sight for sighted users. */}
+      <span>
         {expired
           ? t('documents.prototype.linkExpired', { defaultValue: 'Link expired — reopen the project' })
           : t('documents.prototype.linkExpires', {
@@ -382,6 +389,7 @@ function PrototypeView({
   readonly onJobStarted?: () => void
 }) {
   const { t, i18n } = useTranslation('projectDetail')
+  const lifetimeNoteId = useId()
 
   const isHtml = prototypeFormat === 'html' || Boolean(url) || (prototypeFormat === undefined && looksLikeHtmlDocument(html))
   const spec = useMemo(() => (isHtml ? null : parsePrototypeSpec(html)), [isHtml, html])
@@ -411,7 +419,7 @@ function PrototypeView({
             <span className="flex-shrink-0">{t('documents.prototype.previewLabel', { defaultValue: 'Live preview' })}</span>
             {/* Only signed CDN prototypes have a lifetime to report; legacy inline
                 ones are rendered from `content` and never expire. */}
-            {url ? <LinkLifetimeNote url={url} t={t} locale={i18n.language} /> : null}
+            {url ? <LinkLifetimeNote url={url} t={t} locale={i18n.language} noteId={lifetimeNoteId} /> : null}
           </span>
           <div className="flex items-center gap-3 flex-shrink-0">
             <PrototypeFeedbackButton
@@ -430,7 +438,7 @@ function PrototypeView({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:underline"
-                  aria-describedby={hasLifetimeNote ? LINK_LIFETIME_NOTE_ID : undefined}
+                  aria-describedby={hasLifetimeNote ? lifetimeNoteId : undefined}
                 >
                   {t('documents.prototype.openNewTab', { defaultValue: 'Open in new tab' })}
                 </a>
@@ -438,7 +446,7 @@ function PrototypeView({
                   href={url}
                   download={`${safeName}.html`}
                   className="text-blue-600 hover:underline"
-                  aria-describedby={hasLifetimeNote ? LINK_LIFETIME_NOTE_ID : undefined}
+                  aria-describedby={hasLifetimeNote ? lifetimeNoteId : undefined}
                 >
                   {t('documents.prototype.downloadHtml', { defaultValue: 'Download .html' })}
                 </a>
