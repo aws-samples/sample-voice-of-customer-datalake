@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
+import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
@@ -162,7 +163,9 @@ function PrototypeFeedbackButton({
   const [open, setOpen] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [busy, setBusy] = useState(false)
-  const [started, setStarted] = useState(false)
+  // Lowers itself, so it cannot still claim "started" after the panel has
+  // reported the revision finished or failed.
+  const started = useTransientFlag()
   const [error, setError] = useState<string | null>(null)
 
   // Closes as soon as the revision is *started*: the jobs panel owns the wait
@@ -184,14 +187,14 @@ function PrototypeFeedbackButton({
       // minutes later, in the jobs panel, and clearing it would mean retyping
       // the feedback to retry.
       setOpen(false)
-      setStarted(true)
+      started.set()
       onJobStarted?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Revision failed')
     } finally {
       setBusy(false)
     }
-  }, [feedback, projectId, basePrototypeId, title, i18n.language, onJobStarted])
+  }, [feedback, projectId, basePrototypeId, title, i18n.language, onJobStarted, started])
 
   if (!open) {
     return (
@@ -205,7 +208,7 @@ function PrototypeFeedbackButton({
         </button>
         {/* The panel is the real progress report, but it is a refetch away and
             renders nothing until the job appears — so say something here too. */}
-        {started ? <span className="text-emerald-700">{t('documents.prototype.started')}</span> : null}
+        {started.isSet ? <span className="text-emerald-700">{t('documents.prototype.started')}</span> : null}
       </span>
     )
   }

@@ -21,6 +21,7 @@ import ConfirmModal from '../../components/ConfirmModal'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
+import { useTransientFlag } from './useTransientFlag'
 
 /** Exactly one of the two source documents exists, so the build needs a confirm. */
 function hasOnlyOneDoc(hasPrd: boolean, hasPrfaq: boolean): boolean {
@@ -45,7 +46,8 @@ export default function BuildPrototypeButton({
 }) {
   const { t, i18n } = useTranslation('projectDetail')
   const [busy, setBusy] = useState(false)
-  const [started, setStarted] = useState(false)
+  // Lowers itself: the panel takes over, so the line must not outlive the gap.
+  const started = useTransientFlag()
   const [error, setError] = useState<string | null>(null)
 
   const [showConfirm, setShowConfirm] = useState(false)
@@ -63,17 +65,17 @@ export default function BuildPrototypeButton({
   const runBuild = useCallback(async () => {
     setBusy(true)
     setError(null)
-    setStarted(false)
+    started.clear()
     try {
       await projectsApi.buildPrototype(projectId, { response_language: i18n.language })
-      setStarted(true)
+      started.set()
       onJobStarted?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Prototype failed')
     } finally {
       setBusy(false)
     }
-  }, [projectId, i18n.language, onJobStarted])
+  }, [projectId, i18n.language, onJobStarted, started])
 
   const onClick = useCallback(() => {
     if (needsConfirm) {
@@ -106,7 +108,7 @@ export default function BuildPrototypeButton({
       {/* The jobs panel is the real progress report, but it is a refetch away
           and renders nothing until the job appears — so acknowledge the start
           here too, the way the product report card does. */}
-      {started && error == null ? (
+      {started.isSet && error == null ? (
         <span className="text-xs text-emerald-700">{t('documents.prototype.started')}</span>
       ) : null}
       <button

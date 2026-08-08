@@ -151,11 +151,14 @@ describe('ProductTab report guard', () => {
     mockGetProductContext.mockResolvedValue({ context: filledContext })
     render(<ProductTab projectId="proj-1" />)
 
-    await user.click(await waitFor(generateButton))
+    const button = await waitFor(generateButton)
+    // DocsUpload lists docs for its own pane, so snapshot that and require the
+    // click to add nothing: the common path must not pay for the guard.
+    const callsBeforeClick = mockListProductDocs.mock.calls.length
+
+    await user.click(button)
 
     await waitFor(() => expect(mockGenerateProductReport).toHaveBeenCalledTimes(1))
-    // The common path must not pay for the guard. DocsUpload lists docs for its
-    // own pane, so assert on calls made after the click rather than zero calls.
-    expect(mockListProductDocs.mock.calls.length).toBeLessThanOrEqual(1)
+    expect(mockListProductDocs.mock.calls.length).toBe(callsBeforeClick)
   })
 })

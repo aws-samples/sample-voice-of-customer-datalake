@@ -142,6 +142,37 @@ describe('JobsSection resting state', () => {
     expect(screen.getByText('1 completed')).toBeInTheDocument()
   })
 
+  it('never hides an in-flight job behind failures, however many there are', () => {
+    const jobs = [
+      ...Array.from({ length: 6 }, (_, i) => createJob({ job_id: `failed-${i}`, status: 'failed' as const })),
+      createJob({ job_id: 'running', status: 'running', progress: 55 }),
+    ]
+    render(<JobsSection jobs={jobs} onDismiss={vi.fn()} />)
+
+    // The cap applies to failures only, and in-flight work is ordered first, so
+    // the running job is visible even though six failures precede it in the list.
+    expect(screen.getByText('55%')).toBeInTheDocument()
+  })
+
+  it('makes failures past the cap reachable rather than merely counted', async () => {
+    const user = userEvent.setup()
+    const jobs = Array.from({ length: 5 }, (_, i) => createJob({
+      job_id: `failed-${i}`,
+      status: 'failed' as const,
+      error: `failure number ${i}`,
+    }))
+    render(<JobsSection jobs={jobs} onDismiss={vi.fn()} />)
+
+    // Three inline, two behind a summary that must expand — a bare count would
+    // leave them unreachable until the visible ones were dismissed one by one.
+    expect(screen.getByText('failure number 0')).toBeInTheDocument()
+    expect(screen.queryByText('failure number 4')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { expanded: false }))
+
+    expect(screen.getByText('failure number 4')).toBeInTheDocument()
+  })
+
   it('shows only a time for a job created today', () => {
     render(<JobsSection jobs={[createJob({ created_at: new Date().toISOString() })]} onDismiss={vi.fn()} />)
     expect(screen.getByText(/^\d{1,2}:\d{2}$/)).toBeInTheDocument()

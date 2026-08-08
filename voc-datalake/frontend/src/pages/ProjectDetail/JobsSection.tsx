@@ -208,13 +208,19 @@ function JobsSectionHeader() {
 }
 
 /**
- * Completed jobs, behind a single summary line. Owns its own expansion state:
- * nothing outside this group needs to know whether it is open.
+ * A group of jobs behind a single summary line. Owns its own expansion state:
+ * nothing outside the group needs to know whether it is open.
+ *
+ * Used for completed jobs and for failures past the inline cap. The overflow has
+ * to be expandable rather than a bare count, or those failures would be
+ * unreachable until the visible ones were dismissed one by one.
  */
-function CompletedJobsGroup({
-  jobs, onDismiss,
-}: JobsSectionProps) {
-  const { t } = useTranslation('projectDetail')
+function CollapsibleJobGroup({
+  jobs, label, icon, onDismiss,
+}: JobsSectionProps & {
+  readonly label: string
+  readonly icon: React.ReactNode
+}) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -226,8 +232,8 @@ function CompletedJobsGroup({
         className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 rounded"
       >
         {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <CheckCircle size={14} className="text-green-600" />
-        {t('jobs.completedCount', { count: jobs.length })}
+        {icon}
+        {label}
       </button>
       {expanded
         ? jobs.map((job) => (
@@ -239,27 +245,29 @@ function CompletedJobsGroup({
 }
 
 /**
- * Upper bound on the always-visible rows, so a project that accumulated many
- * failures cannot push the tab content off the screen — the very problem this
- * panel's resting state exists to solve.
+ * Upper bound on the failed rows shown inline, so a project that accumulated
+ * failures cannot push the tab content off the screen — the problem this panel's
+ * resting state exists to solve.
  *
- * In-flight work is ordered ahead of failures precisely so the cap can never
- * hide a running job, which is why the previous unordered `slice(0, 5)` had to
- * go rather than simply being kept.
+ * The cap applies to failures only. In-flight work is never capped: it is
+ * inherently bounded by what a user can start, and a cap over the combined list
+ * could hide a running job behind failed ones, which is why the original
+ * unordered `slice(0, 5)` had to go rather than simply being kept.
  */
-const MAX_VISIBLE_JOBS = 5
+const MAX_VISIBLE_FAILED = 3
 
 function isInFlight(job: ProjectJob): boolean {
   return job.status === 'running' || job.status === 'pending'
 }
 
 /**
- * Completed is the only status that goes to rest — see the file header for why
- * failures stay expanded.
+ * Three groups: in-flight always inline, the first few failures inline, and the
+ * rest — failures beyond the cap, and everything completed — behind their own
+ * collapsible summaries. See the file header for why failures come first.
  */
 function partitionByAttention(jobs: ProjectJob[]): {
-  readonly needsAttention: ProjectJob[]
-  readonly hiddenCount: number
+  readonly inline: ProjectJob[]
+  readonly overflowFailed: ProjectJob[]
   readonly completed: ProjectJob[]
 } {
   const inFlight: ProjectJob[] = []
@@ -270,10 +278,9 @@ function partitionByAttention(jobs: ProjectJob[]): {
     else if (isInFlight(job)) inFlight.push(job)
     else failed.push(job)
   }
-  const ordered = [...inFlight, ...failed]
   return {
-    needsAttention: ordered.slice(0, MAX_VISIBLE_JOBS),
-    hiddenCount: Math.max(0, ordered.length - MAX_VISIBLE_JOBS),
+    inline: [...inFlight, ...failed.slice(0, MAX_VISIBLE_FAILED)],
+    overflowFailed: failed.slice(MAX_VISIBLE_FAILED),
     completed,
   }
 }
@@ -291,13 +298,13 @@ export default function JobsSection({
 
   if (jobs.length === 0) return null
 
-  const { needsAttention, hiddenCount, completed } = partitionByAttention(jobs)
+  const { inline, overflowFailed, completed } = partitionByAttention(jobs)
 
   return (
     <div className="bg-white rounded-xl p-6 border">
       <JobsSectionHeader />
       <div className="space-y-3">
-        {needsAttention.map((job) => (
+        {inline.map((job) => (
           <JobItem
             key={job.job_id}
             job={job}
@@ -305,12 +312,22 @@ export default function JobsSection({
             onDismiss={onDismiss}
           />
         ))}
-        {hiddenCount > 0
-          ? <p className="text-sm text-gray-500">{t('jobs.moreCount', { count: hiddenCount })}</p>
-          : null}
-        {completed.length > 0
-          ? <CompletedJobsGroup jobs={completed} onDismiss={onDismiss} />
-          : null}
+        {overflowFailed.length > 0 ? (
+          <CollapsibleJobGroup
+            jobs={overflowFailed}
+            label={t('jobs.moreCount', { count: overflowFailed.length })}
+            icon={<XCircle size={14} className="text-red-600" />}
+            onDismiss={onDismiss}
+          />
+        ) : null}
+        {completed.length > 0 ? (
+          <CollapsibleJobGroup
+            jobs={completed}
+            label={t('jobs.completedCount', { count: completed.length })}
+            icon={<CheckCircle size={14} className="text-green-600" />}
+            onDismiss={onDismiss}
+          />
+        ) : null}
       </div>
     </div>
   )

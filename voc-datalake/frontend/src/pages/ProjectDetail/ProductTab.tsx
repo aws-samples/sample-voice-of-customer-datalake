@@ -24,6 +24,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
 import { DocsUpload } from './ProductDocsUpload'
+import { useTransientFlag } from './useTransientFlag'
 import {
   SelectField, TextAreaField, TextField,
 } from './ProductFormFields'
@@ -59,18 +60,39 @@ const emptyContext = (): ProductContext => ({
 })
 
 /**
- * The user-authored fields, i.e. everything in `ProductContext` except the
- * server-set `updated_at`. `satisfies` makes a typo a compile error.
+ * The only member of `ProductContext` the user does not author. Constrained to
+ * `keyof ProductContext`, so renaming the field on the type breaks this line
+ * rather than silently turning a server timestamp into "content".
  */
-const CONTEXT_FIELDS = [
-  'product_name', 'one_liner', 'target_users', 'problem_solved', 'current_state',
-  'key_features', 'differentiators', 'known_limitations', 'non_goals',
-  'success_metrics', 'free_form_notes',
-] as const satisfies ReadonlyArray<keyof ProductContext>
+type ServerSetField = Extract<keyof ProductContext, 'updated_at'>
 
-/** True when the user has filled in none of the context fields. */
+/**
+ * True when the user has filled in none of the context fields.
+ *
+ * The `Omit` annotation is the point of the shape below: **leaving a field out is
+ * a compile error**, so a field added to `ProductContext` cannot be silently
+ * excluded from the check. A plain array of field names would catch a typo but
+ * not an omission — and an omitted field means a project where only that field is
+ * filled starts a job the backend rejects inside the worker.
+ *
+ * `updated_at` is the one member the user does not author, so it is the one this
+ * deliberately drops.
+ */
 function hasNoContextFields(context: ProductContext): boolean {
-  return CONTEXT_FIELDS.every((field) => (context[field] ?? '').trim() === '')
+  const authored: Omit<ProductContext, ServerSetField> = {
+    product_name: context.product_name,
+    one_liner: context.one_liner,
+    target_users: context.target_users,
+    problem_solved: context.problem_solved,
+    current_state: context.current_state,
+    key_features: context.key_features,
+    differentiators: context.differentiators,
+    known_limitations: context.known_limitations,
+    non_goals: context.non_goals,
+    success_metrics: context.success_metrics,
+    free_form_notes: context.free_form_notes,
+  }
+  return Object.values(authored).every((value) => (value ?? '').trim() === '')
 }
 
 /**
@@ -474,7 +496,8 @@ function ReportCard({
   readonly t: TFunc
 }) {
   const [busy, setBusy] = useState(false)
-  const [started, setStarted] = useState(false)
+  // Lowers itself once the panel has had time to pick the job up.
+  const started = useTransientFlag()
   const [error, setError] = useState<string | null>(null)
 
   // Fire-and-forget: the server creates the job record and the Background Jobs
@@ -493,21 +516,21 @@ function ReportCard({
   const onGenerate = useCallback(async () => {
     setBusy(true)
     setError(null)
-    setStarted(false)
+    started.clear()
     try {
       if (hasNoFields && !await hasReadyProductDoc(projectId)) {
         setError(t('product.report.errorEmpty'))
         return
       }
       await projectsApi.generateProductReport(projectId, { response_language: language })
-      setStarted(true)
+      started.set()
       onJobStarted?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Report failed')
     } finally {
       setBusy(false)
     }
-  }, [projectId, language, hasNoFields, onJobStarted, t])
+  }, [projectId, language, hasNoFields, onJobStarted, started, t])
 
   return (
     <div className="bg-white border rounded-xl p-4">
@@ -524,7 +547,7 @@ function ReportCard({
         {busy ? <Loader2 size={14} className="animate-spin" /> : <FileOutput size={14} />}
         {busy ? t('product.report.generating') : t('product.report.button')}
       </button>
-      {started && (
+      {started.isSet && (
         <div className="mt-2 text-xs text-emerald-700 inline-flex items-center gap-1">
           <CheckCircle2 size={12} />
           <span><strong>{t('product.report.startedTitle')}.</strong> {t('product.report.startedMessage')}</span>
