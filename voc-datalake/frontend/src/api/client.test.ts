@@ -26,6 +26,7 @@ vi.mock('../services/auth', () => ({
 
 import { api, getDaysFromRange, getDateRangeParams, ALL_TIME_DAYS } from './client'
 import { authService } from '../services/auth'
+import { SESSION_EXPIRED_PATH, resetSessionExpiryForTests } from '../services/sessionExpiry'
 
 describe('API Client', () => {
   beforeEach(() => {
@@ -132,19 +133,25 @@ describe('API Client', () => {
       expect(global.fetch).toHaveBeenCalledTimes(2)
     })
 
-    it('signs out and redirects when refresh fails', async () => {
+    it('signs out and redirects with a reason when refresh fails', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce({ ok: false, status: 401 })
         .mockResolvedValueOnce({ ok: false, status: 401 })
 
       const originalLocation = window.location
+      const replace = vi.fn()
       Object.defineProperty(window, 'location', {
-        value: { href: '' },
+        value: { href: '', replace },
         writable: true,
       })
+      // The redirect is idempotent and only a real page load resets it.
+      resetSessionExpiryForTests()
 
       await expect(api.getFeedback({ days: 7 })).rejects.toThrow('Session expired')
       expect(authService.signOut).toHaveBeenCalled()
+      // The reason must travel with the redirect: without it /login cannot
+      // tell the user why the app they were using stopped working.
+      expect(replace).toHaveBeenCalledWith(SESSION_EXPIRED_PATH)
 
       window.location = originalLocation
     })

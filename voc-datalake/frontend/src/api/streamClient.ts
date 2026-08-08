@@ -7,6 +7,8 @@
 import {
   getBaseUrl, getAuthHeaders, getDateBasisBodyParams,
 } from './baseUrl'
+import { authService } from '../services/auth'
+import { endExpiredSession } from '../services/sessionExpiry'
 
 class StreamAuthError extends Error {
   constructor(message: string) {
@@ -109,6 +111,52 @@ async function* readSSEStream(reader: ReadableStreamDefaultReader<Uint8Array>): 
   }
 }
 
+/** POST the stream request, reading the auth header fresh on every attempt. */
+function postStream(
+  endpoint: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Response> {
+  return fetch(endpoint, {
+    method: 'POST',
+    headers: getStreamHeaders(),
+    body: JSON.stringify(body),
+    signal,
+  })
+}
+
+/**
+ * A 401 here means what it means in `fetchApi`: try one silent refresh, and
+ * if that does not yield a working token, end the session visibly.
+ *
+ * Previously this path threw an inline "session expired" message and stopped
+ * there, so the app kept rendering as if signed in — the chat surface was the
+ * one place a dead session produced a message and no sign-out.
+ */
+async function retryAfterRefresh(
+  endpoint: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Response> {
+  /** Ends the session and hands back the error to throw at the call site. */
+  const endSessionWithError = () => {
+    endExpiredSession()
+    return new StreamAuthError('Session expired - please sign in again')
+  }
+
+  try {
+    await authService.refreshSession()
+  } catch {
+    throw endSessionWithError()
+  }
+
+  const retry = await postStream(endpoint, body, signal)
+  if (retry.status === 401) {
+    throw endSessionWithError()
+  }
+  return retry
+}
+
 /**
  * Async generator that streams SSE events from the chat endpoint.
  * Yields parsed StreamEvent objects as they arrive.
@@ -118,17 +166,12 @@ export async function* streamChat(
   body: Record<string, unknown>,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
-  const headers = getStreamHeaders()
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal,
-  })
+  const first = await postStream(endpoint, body, signal)
+  const response = first.status === 401
+    ? await retryAfterRefresh(endpoint, body, signal)
+    : first
 
   if (!response.ok) {
-    if (response.status === 401) throw new StreamAuthError('Session expired - please sign in again')
     if (response.status === 403) throw new StreamAuthError('Access denied - please sign in again')
     throw new StreamResponseError(`Stream error: ${response.status}`, response.status)
   }

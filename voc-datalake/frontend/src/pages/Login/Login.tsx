@@ -20,6 +20,7 @@ import {
   useNavigate, useLocation,
 } from 'react-router-dom'
 import { authService } from '../../services/auth'
+import { isSessionExpiredRedirect } from '../../services/sessionExpiry'
 import {
   LoginForm,
   NewPasswordForm,
@@ -189,6 +190,17 @@ export default function Login() {
   const [message, setMessage] = useState<string | null>(null)
   const [cognitoUser, setCognitoUser] = useState<CognitoUser | null>(null)
 
+  /*
+   * Arriving here because a session died is not the same as arriving here to
+   * sign in, and the user is owed the difference — otherwise an app that was
+   * working a moment ago just becomes a login form. Derived per render rather
+   * than seeded into state so it survives translations loading late, and a
+   * real submit error (wrong password) takes precedence over it.
+   */
+  const expiredNotice = isSessionExpiredRedirect(location.search)
+    ? t('errors.sessionExpired')
+    : null
+
   const handleLogin = async (e: SyntheticEvent) => {
     e.preventDefault()
     setError(null)
@@ -321,7 +333,7 @@ export default function Login() {
             verificationCode={verificationCode}
             showPassword={showPassword}
             isLoading={isLoading}
-            error={error}
+            error={error ?? expiredNotice}
             message={message}
             onUsernameChange={setUsername}
             onPasswordChange={setPassword}

@@ -1,4 +1,5 @@
 import { authService } from '../services/auth'
+import { endExpiredSession } from '../services/sessionExpiry'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange, getDateBasisBodyParams, ALL_TIME_DAYS } from './baseUrl'
 import type {
   DateBasis,
@@ -130,8 +131,9 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
     try {
       return await handleUnauthorized<T>(endpoint, options, headers, baseUrl)
     } catch {
-      authService.signOut()
-      window.location.href = '/login'
+      // Carries the reason to /login so the user is told the session ended,
+      // instead of meeting a bare login form after a working-looking app.
+      endExpiredSession()
       throw new Error('Session expired. Please login again.')
     }
   }

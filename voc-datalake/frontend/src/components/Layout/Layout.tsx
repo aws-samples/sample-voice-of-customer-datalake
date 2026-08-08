@@ -29,6 +29,7 @@ import {
   Database,
   Menu,
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { getDateRangeParams } from '../../api/client'
 import { useSummaryQuery } from '../../hooks/useSummaryQuery'
 import { useConfigStore } from '../../store/configStore'
@@ -139,6 +140,7 @@ export default function Layout() {
   const { user, isAuthenticated } = useAuthStore()
   const isAdmin = useIsAdmin()
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
+  const queryClient = useQueryClient()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)
@@ -166,9 +168,15 @@ export default function Layout() {
   const { data: summaryData } = useSummaryQuery(dateParams, config.apiEndpoint)
 
   const handleLogout = useCallback(() => {
+    // Sign-out is an in-app navigation, so the QueryClient outlives it and
+    // every cached authenticated response — urgent counts, feedback, projects
+    // — would render for whoever signs in next while their own data loads.
+    // The expired-session path does a full document load and so drops the
+    // cache implicitly; this one has to be explicit.
+    queryClient.clear()
     authService.signOut()
     navigate('/login')
-  }, [navigate])
+  }, [navigate, queryClient])
 
   const toggleSidebar = useCallback(() => setSidebarCollapsed(prev => !prev), [])
   const showProfile = useCallback(() => setShowProfileModal(true), [])

@@ -59,8 +59,6 @@ interface AuthState {
     idToken: string;
     refreshToken: string
   }) => void
-  /** Mark session as validated and ready for API calls */
-  setSessionReady: (ready: boolean) => void
   /** Set loading state */
   setLoading: (loading: boolean) => void
   /** Set error message */
@@ -89,8 +87,14 @@ export const useAuthStore = create<AuthState>()(
         idToken: tokens.idToken,
         refreshToken: tokens.refreshToken,
         isAuthenticated: true,
+        // Tokens only ever arrive from Cognito — sign-in, the new-password
+        // challenge, or a refresh — so this is the one moment a session
+        // becomes *validated*, as opposed to merely restored from
+        // localStorage. Setting it here rather than at each call site means a
+        // future fourth caller cannot forget it and strand ProtectedRoute on
+        // its loading state.
+        sessionReady: true,
       }),
-      setSessionReady: (sessionReady) => set({ sessionReady }),
       setLoading: (isLoading) => set({ isLoading }),
       setError: (error) => set({ error }),
       logout: () => set({
