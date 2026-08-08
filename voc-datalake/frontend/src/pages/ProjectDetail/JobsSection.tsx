@@ -315,7 +315,7 @@ export default function JobsSection({
         {overflowFailed.length > 0 ? (
           <CollapsibleJobGroup
             jobs={overflowFailed}
-            label={t('jobs.moreCount', { count: overflowFailed.length })}
+            label={t('jobs.moreFailedCount', { count: overflowFailed.length })}
             icon={<XCircle size={14} className="text-red-600" />}
             onDismiss={onDismiss}
           />

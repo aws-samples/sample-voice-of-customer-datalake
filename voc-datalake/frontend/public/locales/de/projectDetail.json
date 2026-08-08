@@ -117,8 +117,8 @@
     "completedCount_other": "{{count}} abgeschlossen",
     "created": "Erstellt:",
     "dismiss": "Verwerfen",
-    "moreCount_one": "{{count}} weitere",
-    "moreCount_other": "{{count}} weitere",
+    "moreFailedCount_one": "{{count}} weitere fehlgeschlagen",
+    "moreFailedCount_other": "{{count}} weitere fehlgeschlagen",
     "staleMessage": "Keine Updates seit 10+ Minuten. Wird bald automatisch entfernt.",
     "starting": "Wird gestartet...",
     "status": {

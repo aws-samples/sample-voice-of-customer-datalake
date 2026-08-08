@@ -69,17 +69,21 @@ type ServerSetField = Extract<keyof ProductContext, 'updated_at'>
 /**
  * True when the user has filled in none of the context fields.
  *
- * The `Omit` annotation is the point of the shape below: **leaving a field out is
- * a compile error**, so a field added to `ProductContext` cannot be silently
+ * The annotation on the shape below is the point: **leaving a field out is a
+ * compile error**, so a field added to `ProductContext` cannot be silently
  * excluded from the check. A plain array of field names would catch a typo but
  * not an omission — and an omitted field means a project where only that field is
  * filled starts a job the backend rejects inside the worker.
+ *
+ * `Required` rather than a bare `Omit`, because `Omit` alone would accept a
+ * literal that skips an *optional* member: every authored field is required
+ * today, but the guarantee should not quietly depend on that staying true.
  *
  * `updated_at` is the one member the user does not author, so it is the one this
  * deliberately drops.
  */
 function hasNoContextFields(context: ProductContext): boolean {
-  const authored: Omit<ProductContext, ServerSetField> = {
+  const authored: Required<Omit<ProductContext, ServerSetField>> = {
     product_name: context.product_name,
     one_liner: context.one_liner,
     target_users: context.target_users,

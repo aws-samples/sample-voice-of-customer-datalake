@@ -6,7 +6,7 @@
  * to themselves they would sit on screen indefinitely, still claiming a job was
  * *started* long after the panel has reported it finished or failed.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 /** Long enough to read, short enough that the panel has taken over by then. */
 const DEFAULT_DURATION_MS = 8000
@@ -41,5 +41,8 @@ export function useTransientFlag(durationMs = DEFAULT_DURATION_MS): {
   // Unmounting mid-window must not leave a timer holding a setState.
   useEffect(() => cancelTimer, [cancelTimer])
 
-  return { isSet, set, clear }
+  // Memoised because callers list this in useCallback deps: a fresh literal each
+  // render would give those callbacks a new identity on every render, including
+  // on each toggle of the flag itself.
+  return useMemo(() => ({ isSet, set, clear }), [isSet, set, clear])
 }

@@ -117,8 +117,8 @@
     "completedCount_other": "{{count}} completed",
     "created": "Created:",
     "dismiss": "Dismiss",
-    "moreCount_one": "{{count}} more",
-    "moreCount_other": "{{count}} more",
+    "moreFailedCount_one": "{{count}} more failed",
+    "moreFailedCount_other": "{{count}} more failed",
     "staleMessage": "No updates for 10+ minutes. Will auto-clear soon.",
     "starting": "Starting...",
     "status": {

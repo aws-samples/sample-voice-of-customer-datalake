@@ -117,8 +117,8 @@
     "completedCount_other": "{{count}}件完了",
     "created": "作成:",
     "dismiss": "閉じる",
-    "moreCount_one": "ほか{{count}}件",
-    "moreCount_other": "ほか{{count}}件",
+    "moreFailedCount_one": "ほか{{count}}件が失敗",
+    "moreFailedCount_other": "ほか{{count}}件が失敗",
     "staleMessage": "10分以上更新がありません。まもなく自動削除されます。",
     "starting": "開始中...",
     "status": {

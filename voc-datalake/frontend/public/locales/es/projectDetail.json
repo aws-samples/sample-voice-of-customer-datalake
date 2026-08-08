@@ -118,9 +118,9 @@
     "completedCount_other": "{{count}} completados",
     "created": "Creado:",
     "dismiss": "Descartar",
-    "moreCount_many": "{{count}} más",
-    "moreCount_one": "{{count}} más",
-    "moreCount_other": "{{count}} más",
+    "moreFailedCount_many": "{{count}} más con error",
+    "moreFailedCount_one": "{{count}} más con error",
+    "moreFailedCount_other": "{{count}} más con error",
     "staleMessage": "Sin actualizaciones hace 10+ minutos. Se borrará automáticamente pronto.",
     "starting": "Iniciando...",
     "status": {

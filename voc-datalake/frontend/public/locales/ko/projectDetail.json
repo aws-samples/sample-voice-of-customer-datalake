@@ -117,8 +117,8 @@
     "completedCount_other": "완료 {{count}}개",
     "created": "생성됨:",
     "dismiss": "닫기",
-    "moreCount_one": "외 {{count}}개",
-    "moreCount_other": "외 {{count}}개",
+    "moreFailedCount_one": "실패 {{count}}개 더",
+    "moreFailedCount_other": "실패 {{count}}개 더",
     "staleMessage": "10분 이상 업데이트 없음. 곧 자동으로 삭제됩니다.",
     "starting": "시작 중...",
     "status": {

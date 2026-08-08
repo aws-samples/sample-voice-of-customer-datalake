@@ -117,8 +117,8 @@
     "completedCount_other": "{{count}}个已完成",
     "created": "创建时间：",
     "dismiss": "关闭",
-    "moreCount_one": "还有{{count}}个",
-    "moreCount_other": "还有{{count}}个",
+    "moreFailedCount_one": "还有{{count}}个失败",
+    "moreFailedCount_other": "还有{{count}}个失败",
     "staleMessage": "超过 10 分钟无更新，将很快自动清除。",
     "starting": "启动中...",
     "status": {
