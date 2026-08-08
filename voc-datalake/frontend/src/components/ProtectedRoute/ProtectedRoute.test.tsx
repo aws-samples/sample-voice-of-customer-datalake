@@ -185,6 +185,16 @@ describe('ProtectedRoute', () => {
       await waitFor(() => expect(endExpiredSession).toHaveBeenCalledWith())
     })
 
+    /*
+     * The case where `refreshSession` clears auth state before rejecting — the
+     * real failure path — is NOT tested here on purpose. A mocked store cannot
+     * reproduce it: re-pointing a `vi.fn()` does not notify React, so nothing
+     * re-renders, the effect is never torn down, and the broken and fixed
+     * implementations behave identically. It lives in
+     * `ProtectedRoute.storeIntegration.test.tsx`, against the real store, where
+     * it actually fails if the gate goes back to being store-derived.
+     */
+
     it('ends the session if a refresh resolves without producing tokens', async () => {
       // Only setTokens releases the gate, so a resolve that left sessionReady
       // false would otherwise hang on the loader forever.
@@ -238,9 +248,10 @@ describe('ProtectedRoute', () => {
   describe('location state', () => {
     it('preserves return path in location state when redirecting', () => {
       ;(authService.isConfigured as ReturnType<typeof vi.fn>).mockReturnValue(true)
-      ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-        isAuthenticated: false,
-      })
+      // Through the helper, so the hook and `getState` agree: the one-shot gate
+      // reads `getState`, and setting only the hook left this validating and
+      // rendering the loader instead of redirecting.
+      setAuthState({ isAuthenticated: false })
 
       // The Navigate component should include state with the original path
       // This is tested implicitly by the redirect behavior

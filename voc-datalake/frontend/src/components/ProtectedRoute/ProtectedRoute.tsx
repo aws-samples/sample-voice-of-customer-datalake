@@ -10,7 +10,7 @@
  * @module components/ProtectedRoute
  */
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
@@ -44,7 +44,7 @@ interface ProtectedRouteProps {
  */
 export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProps>) {
   const location = useLocation()
-  const { isAuthenticated, sessionReady } = useAuthStore()
+  const { isAuthenticated } = useAuthStore()
 
   /*
    * `isAuthenticated` is restored from localStorage, so on a fresh page load
@@ -52,15 +52,25 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
    * Rendering on that alone is what made an expired session look like a
    * working application: the full shell appeared, then every request 401'd.
    *
-   * `sessionReady` is the difference between restored and *validated*. It is
-   * set only when tokens arrive from Cognito (see authStore.setTokens) and
-   * cleared on logout, so it is false exactly once per page load — one
-   * refresh, not one per navigation.
+   * `sessionReady` is the difference between restored and *validated*: set only
+   * when tokens arrive from Cognito (see authStore.setTokens) and cleared on
+   * logout, so it is false exactly once per page load.
+   *
+   * 🔑 This is deliberately a ONE-SHOT snapshot in local state, NOT a value
+   * derived from the store on every render. Deriving it looks tidier and is
+   * broken: a failing refresh clears auth state internally, which would flip
+   * the derived condition to false, tear down the effect below mid-flight, and
+   * cancel both the retry and the redirect that carries the reason — leaving
+   * the user on the bare login form this component is trying to avoid. The
+   * validation outcome must not be cancellable by the thing it is validating.
    */
-  const needsValidation = isAuthenticated && !sessionReady && authService.isConfigured()
+  const [validating, setValidating] = useState(() => {
+    const { isAuthenticated: restored, sessionReady } = useAuthStore.getState()
+    return restored && !sessionReady && authService.isConfigured()
+  })
 
   useEffect(() => {
-    if (!needsValidation) return
+    if (!validating) return
 
     /*
      * Stops OUR follow-up work after unmount — it cannot cancel the refresh
@@ -91,7 +101,10 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
     }
 
     const validate = async () => {
-      if (await attemptRefresh()) return
+      if (await attemptRefresh()) {
+        if (run.live) setValidating(false)
+        return
+      }
 
       /*
        * `refreshSession` rejects — and signs out — for a transport failure just
@@ -101,12 +114,20 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
        */
       await new Promise((resolve) => setTimeout(resolve, BOOT_REFRESH_RETRY_MS))
       if (!run.live) return
-      if (await attemptRefresh()) return
+
+      if (await attemptRefresh()) {
+        if (run.live) setValidating(false)
+        return
+      }
 
       /*
        * End it with the REASON, rather than falling through to the bare
        * `<Navigate to="/login">` below. This is the path an idle deployment
        * actually takes, so it is the one that most needs the explanation.
+       *
+       * No `setValidating(false)` here on purpose: this navigates the document,
+       * and staying on the loader until it does is what stops a flash of the
+       * unexplained login form.
        */
       if (run.live) endExpiredSession()
     }
@@ -114,7 +135,7 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
     void validate()
 
     return () => { run.live = false }
-  }, [needsValidation])
+  }, [validating])
 
   // If Cognito is not configured, only allow access in development mode
   if (!authService.isConfigured()) {
@@ -125,9 +146,14 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }
 
-  // Hold the shell back until the restored session is confirmed. On failure
-  // the effect above clears auth state, which falls through to the redirect.
-  if (needsValidation) {
+  /*
+   * Hold the shell back until the restored session is confirmed. Gated on the
+   * local snapshot, not on auth state: a failing refresh clears auth state
+   * before this component decides anything, and rendering the redirect on that
+   * would show the unexplained login form a moment before the redirect that
+   * explains it.
+   */
+  if (validating) {
     return <PageLoader />
   }
 

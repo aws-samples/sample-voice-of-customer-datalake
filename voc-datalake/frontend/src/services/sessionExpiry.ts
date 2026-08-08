@@ -52,11 +52,13 @@ export function endExpiredSession(): void {
 }
 
 /**
- * Test seam: forget that a redirect happened.
+ * Test seam — forget that a redirect happened. `__`-prefixed so a call site in
+ * production code is obviously wrong.
  *
- * Production never needs this — the redirect is a full document load, which
- * resets the module. A test environment has no such reset, so without it the
- * first case to end a session would silently disarm every later one.
+ * Production never needs it: the redirect is a full document load, which resets
+ * the module. A test environment has no such reset, so **any test that
+ * exercises an expiry path must call this first** — forgetting it does not fail
+ * loudly, it silently disarms the redirect the test is asserting.
  */
 export function resetSessionExpiryForTests(): void {
   ending.inProgress = false
