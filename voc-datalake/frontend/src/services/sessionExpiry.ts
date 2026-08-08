@@ -52,8 +52,9 @@ export function endExpiredSession(): void {
 }
 
 /**
- * Test seam — forget that a redirect happened. `__`-prefixed so a call site in
- * production code is obviously wrong.
+ * Test seam — forget that a redirect happened. The `ForTests` suffix is the
+ * signal; a `__` prefix would read louder but is rejected by this repo's
+ * `@typescript-eslint/naming-convention`.
  *
  * Production never needs it: the redirect is a full document load, which resets
  * the module. A test environment has no such reset, so **any test that
