@@ -24,7 +24,11 @@ export function stubElementScrollTo(): () => void {
     if (existed) {
       Element.prototype.scrollTo = original
     } else {
-      delete (Element.prototype as { scrollTo?: unknown }).scrollTo
+      // `Reflect.deleteProperty` rather than `delete (… as { scrollTo?: unknown })`:
+      // TS types the method as required, so a plain delete needs an assertion, and
+      // an assertion here would claim something about the type rather than do the
+      // one thing intended.
+      Reflect.deleteProperty(Element.prototype, 'scrollTo')
     }
   }
 }
