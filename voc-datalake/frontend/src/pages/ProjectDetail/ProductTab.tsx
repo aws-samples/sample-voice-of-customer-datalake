@@ -23,7 +23,6 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
-import { pollJobToCompletion } from './jobPolling'
 import { DocsUpload } from './ProductDocsUpload'
 import {
   SelectField, TextAreaField, TextField,
@@ -59,6 +58,34 @@ const emptyContext = (): ProductContext => ({
   free_form_notes: '',
 })
 
+/** Narrows a key of the empty template to a ProductContext field. */
+function isContextField(field: string, template: ProductContext): field is keyof ProductContext {
+  return Object.hasOwn(template, field)
+}
+
+/**
+ * True when the user has authored nothing at all.
+ *
+ * The report generator rejects an empty context server-side, but that rejection
+ * happens inside the async job now that the jobs panel owns the wait — so
+ * without this check the user pays for a job that cannot succeed and reads the
+ * reason as an untranslated job error.
+ *
+ * Iterates the empty template rather than a hand-written field list, so a field
+ * added to `emptyContext` is covered automatically and the server-set
+ * `updated_at` (absent from the template) is correctly ignored.
+ *
+ * ponytail: mirrors the backend's *field* check only. The backend also accepts
+ * "or an uploaded internal document", but no product doc can currently reach the
+ * `ready` state — nothing writes it, there is no extractor lambda — so the two
+ * are equivalent today. Revisit this alongside that gap.
+ */
+function isContextEmpty(context: ProductContext): boolean {
+  const template = emptyContext()
+  return Object.keys(template).every((field) =>
+    !isContextField(field, template) || (context[field] ?? '').trim() === '')
+}
+
 type Mode = 'both' | 'chat' | 'upload'
 
 const modeKey = (projectId: string) => `voc:productTabMode:${projectId}`
@@ -71,10 +98,14 @@ function readSavedMode(projectId: string): Mode {
 
 interface ProductTabProps {
   readonly projectId: string
-  readonly onDocumentChanged?: () => void
+  /**
+   * A report generation was started. The Background Jobs panel owns the wait;
+   * the document itself lands in the Documents tab when the job completes.
+   */
+  readonly onJobStarted?: () => void
 }
 
-export default function ProductTab({ projectId, onDocumentChanged }: ProductTabProps) {
+export default function ProductTab({ projectId, onJobStarted }: ProductTabProps) {
   const { t, i18n } = useTranslation('projectDetail')
   const [mode, setMode] = useState<Mode>(() => readSavedMode(projectId))
   const [context, setContext] = useState<ProductContext>(emptyContext)
@@ -177,7 +208,8 @@ export default function ProductTab({ projectId, onDocumentChanged }: ProductTabP
           <ReportCard
             projectId={projectId}
             language={i18n.language}
-            onDocumentChanged={onDocumentChanged}
+            contextIsEmpty={isContextEmpty(context)}
+            onJobStarted={onJobStarted}
             t={t}
           />
         </div>
@@ -429,46 +461,42 @@ function InterviewChat({
 // ── Generate report ─────────────────────────────────────────────────────────
 
 function ReportCard({
-  projectId, language, onDocumentChanged, t,
+  projectId, language, contextIsEmpty, onJobStarted, t,
 }: {
   readonly projectId: string
   readonly language: string
-  readonly onDocumentChanged?: () => void
+  readonly contextIsEmpty: boolean
+  readonly onJobStarted?: () => void
   readonly t: TFunc
 }) {
   const [busy, setBusy] = useState(false)
-  const [success, setSuccess] = useState(false)
+  const [started, setStarted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Async: kick off the job, then poll until completed/failed. Polling beats a
-  // long-running fetch because API Gateway caps requests at 29s and Bedrock can
-  // take ~40s to produce a Korean report. Tolerate transient network errors so
-  // a Wi-Fi blip mid-poll doesn't kill the flow.
+  // Fire-and-forget: the server creates the job record and the Background Jobs
+  // panel renders its progress, so nothing here needs to survive until the
+  // report is written — which is what the old five-minute local poll got wrong,
+  // reporting a still-running job as "took too long". This card keeps a local
+  // "started" line because it sits below the fold of an 11-field form, so the
+  // panel at the top of the page may be scrolled out of view at click time.
   const onGenerate = useCallback(async () => {
+    if (contextIsEmpty) {
+      setError(t('product.report.errorEmpty'))
+      return
+    }
     setBusy(true)
     setError(null)
-    setSuccess(false)
+    setStarted(false)
     try {
-      const start = await projectsApi.generateProductReport(projectId, { response_language: language })
-      const outcome = await pollJobToCompletion(projectId, start.job_id, { intervalMs: 2500 })
-      if (outcome.status === 'completed') {
-        setSuccess(true)
-        onDocumentChanged?.()
-        return
-      }
-      if (outcome.status === 'failed') {
-        throw new Error(outcome.job.error || 'Report generation failed')
-      }
-      throw new Error(t('product.report.timeout', { defaultValue: 'Report generation took too long. Check the Documents tab in a moment.' }))
+      await projectsApi.generateProductReport(projectId, { response_language: language })
+      setStarted(true)
+      onJobStarted?.()
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Report failed'
-      setError(msg.includes('at least one product context') || msg.includes('one product') || msg.toLowerCase().includes('add at least')
-        ? t('product.report.errorEmpty')
-        : msg)
+      setError(e instanceof Error ? e.message : 'Report failed')
     } finally {
       setBusy(false)
     }
-  }, [projectId, language, onDocumentChanged, t])
+  }, [projectId, language, contextIsEmpty, onJobStarted, t])
 
   return (
     <div className="bg-white border rounded-xl p-4">
@@ -485,10 +513,10 @@ function ReportCard({
         {busy ? <Loader2 size={14} className="animate-spin" /> : <FileOutput size={14} />}
         {busy ? t('product.report.generating') : t('product.report.button')}
       </button>
-      {success && (
+      {started && (
         <div className="mt-2 text-xs text-emerald-700 inline-flex items-center gap-1">
           <CheckCircle2 size={12} />
-          <span><strong>{t('product.report.successTitle')}.</strong> {t('product.report.successMessage')}</span>
+          <span><strong>{t('product.report.startedTitle')}.</strong> {t('product.report.startedMessage')}</span>
         </div>
       )}
       {error && (

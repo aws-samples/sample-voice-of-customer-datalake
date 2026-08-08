@@ -1,16 +1,27 @@
 /**
- * JobsSection - Displays background jobs for a project
+ * JobsSection - Displays background jobs for a project.
+ *
+ * This panel renders above the tab content on every project tab, so whatever it
+ * shows outranks the content the user came for. It therefore shows only work
+ * that still needs attention — running, pending and failed jobs — and puts
+ * completed ones to rest behind a one-line summary.
+ *
+ * Failures deliberately stay expanded alongside running work: a completion is
+ * self-explanatory and read at a glance, a failure is neither, and since the
+ * long-running actions hand their wait to this panel (see ProjectDetail's
+ * onJobStarted) this is the only place a failed build is reported.
  */
 import clsx from 'clsx'
-import { format } from 'date-fns'
+import { isToday, isValid } from 'date-fns'
 import {
-  Clock, Loader2, CheckCircle, XCircle, X,
+  Clock, Loader2, CheckCircle, XCircle, X, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import {
   useState, useEffect,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import JobStatusBadge from './JobStatusBadge'
+import { safeFormatDate } from '../../utils/dateUtils'
 import type { ProjectJob } from '../../api/types'
 
 type JobStatus = 'running' | 'pending' | 'completed' | 'failed'
@@ -129,20 +140,34 @@ function JobItemContent({
   )
 }
 
+/**
+ * `HH:mm` alone is ambiguous the moment a job outlives the day it started, and
+ * completed jobs are kept until dismissed — so date the ones that aren't from
+ * today. Routed through safeFormatDate because an unparseable created_at used to
+ * throw "Invalid time value" out of the render.
+ */
+function formatJobTime(createdAt: string): string {
+  const created = new Date(createdAt)
+  const pattern = isValid(created) && !isToday(created) ? 'MMM d, HH:mm' : 'HH:mm'
+  return safeFormatDate(created, pattern, '')
+}
+
 function JobItemActions({
   job, isStale, onDismiss,
 }: JobItemProps) {
+  const { t } = useTranslation('projectDetail')
   const showDismiss = job.status === 'completed' || job.status === 'failed' || isStale
 
   return (
     <div className="flex items-center gap-2 flex-shrink-0">
       <span className="text-xs text-gray-400">
-        {format(new Date(job.created_at), 'HH:mm')}
+        {formatJobTime(job.created_at)}
       </span>
       {showDismiss ? <button
         onClick={() => onDismiss(job.job_id)}
         className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600"
-        title="Dismiss"
+        title={t('jobs.dismiss')}
+        aria-label={t('jobs.dismiss')}
       >
         <X size={14} />
       </button> : null}
@@ -182,6 +207,54 @@ function JobsSectionHeader() {
   )
 }
 
+/**
+ * Completed jobs, behind a single summary line. Owns its own expansion state:
+ * nothing outside this group needs to know whether it is open.
+ */
+function CompletedJobsGroup({
+  jobs, onDismiss,
+}: JobsSectionProps) {
+  const { t } = useTranslation('projectDetail')
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={() => setExpanded((open) => !open)}
+        aria-expanded={expanded}
+        className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 rounded"
+      >
+        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <CheckCircle size={14} className="text-green-600" />
+        {t('jobs.completedCount', { count: jobs.length })}
+      </button>
+      {expanded
+        ? jobs.map((job) => (
+          <JobItem key={job.job_id} job={job} isStale={false} onDismiss={onDismiss} />
+        ))
+        : null}
+    </div>
+  )
+}
+
+/**
+ * Completed is the only status that goes to rest — see the file header for why
+ * failures stay expanded.
+ */
+function partitionByAttention(jobs: ProjectJob[]): {
+  readonly needsAttention: ProjectJob[]
+  readonly completed: ProjectJob[]
+} {
+  const needsAttention: ProjectJob[] = []
+  const completed: ProjectJob[] = []
+  for (const job of jobs) {
+    if (job.status === 'completed') completed.push(job)
+    else needsAttention.push(job)
+  }
+  return { needsAttention, completed }
+}
+
 export default function JobsSection({
   jobs, onDismiss,
 }: JobsSectionProps) {
@@ -194,11 +267,17 @@ export default function JobsSection({
 
   if (jobs.length === 0) return null
 
+  const { needsAttention, completed } = partitionByAttention(jobs)
+
   return (
     <div className="bg-white rounded-xl p-6 border">
       <JobsSectionHeader />
       <div className="space-y-3">
-        {jobs.slice(0, 5).map((job) => (
+        {/* No cap here. The old slice(0, 5) existed to bound a list that
+            completed jobs flooded; now that they collapse, capping could only
+            hide a running job behind finished ones. The API already bounds the
+            query at 50. */}
+        {needsAttention.map((job) => (
           <JobItem
             key={job.job_id}
             job={job}
@@ -206,6 +285,9 @@ export default function JobsSection({
             onDismiss={onDismiss}
           />
         ))}
+        {completed.length > 0
+          ? <CompletedJobsGroup jobs={completed} onDismiss={onDismiss} />
+          : null}
       </div>
     </div>
   )

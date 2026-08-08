@@ -24,7 +24,7 @@ import {
   useSelectionState, useDocModalState, useImportModalState, useConfirmModalState,
 } from './useModalState'
 import {
-  useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations,
+  useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations, projectJobsKey,
 } from './useProjectData'
 import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
@@ -96,6 +96,20 @@ export default function ProjectDetail() {
       { onSuccess: importModal.closeModal },
     )
   }, [importPersonaMut, importModal])
+
+  /**
+   * Long-running actions (prototype build, prototype revision, product report)
+   * hand their wait to the Background Jobs panel instead of polling in local
+   * state. Invalidating is what makes the panel *see* the new job: its
+   * refetchInterval is 0 whenever nothing is already in flight (see
+   * useProjectData), so without this the panel would never start polling and a
+   * build started from an idle project would stay invisible.
+   *
+   * The wizard mutations already do this for themselves in useProjectMutations.
+   */
+  const handleJobStarted = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
+  }, [queryClient, id])
 
   const handleSaveKiroPrompt = useCallback((prompt: string) => {
     const project = data?.project
@@ -199,9 +213,7 @@ export default function ProjectDetail() {
             projectId={project.project_id}
             hasPrd={hasPrd}
             hasPrfaq={hasPrfaq}
-            onDocumentChanged={() => {
-              void queryClient.invalidateQueries({ queryKey: ['project', id] })
-            }}
+            onJobStarted={handleJobStarted}
           />
         )}
       />
@@ -268,6 +280,7 @@ export default function ProjectDetail() {
         onDocumentChanged={() => {
           void queryClient.invalidateQueries({ queryKey: ['project', id] })
         }}
+        onJobStarted={handleJobStarted}
       />
 
       <PersonaEditModalWrapper

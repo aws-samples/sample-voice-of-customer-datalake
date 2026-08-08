@@ -40,6 +40,8 @@ interface TabContentProps {
   readonly onCreateDoc: () => void
   readonly onSaveAsDocument: (content: string) => void
   readonly onDocumentChanged?: () => void
+  /** A long-running job was kicked off; the Background Jobs panel takes it from here. */
+  readonly onJobStarted?: () => void
 }
 
 export default function TabContent({
@@ -68,6 +70,7 @@ export default function TabContent({
   onCreateDoc,
   onSaveAsDocument,
   onDocumentChanged,
+  onJobStarted,
 }: TabContentProps) {
   if (activeTab === 'overview') {
     return (
@@ -103,7 +106,7 @@ export default function TabContent({
   }
 
   if (activeTab === 'product') {
-    return <ProductTab projectId={project.project_id} onDocumentChanged={onDocumentChanged} />
+    return <ProductTab projectId={project.project_id} onJobStarted={onJobStarted} />
   }
 
   if (activeTab === 'documents') {
@@ -116,7 +119,7 @@ export default function TabContent({
         onEditDoc={onEditDoc}
         onDeleteDoc={onDeleteDoc}
         onCreateDoc={onCreateDoc}
-        onDocumentChanged={onDocumentChanged}
+        onJobStarted={onJobStarted}
         isDeleting={isDeleting}
       />
     )

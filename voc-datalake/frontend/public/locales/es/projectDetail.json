@@ -79,8 +79,7 @@
       "needsDocs": "Crea primero un PRD o un PR-FAQ para habilitar la creación del prototipo",
       "openNewTab": "Abrir en una pestaña nueva",
       "previewLabel": "Vista previa en vivo",
-      "rawLabel": "Salida sin procesar (falló el análisis — regenera, por favor)",
-      "timeout": "La creación del prototipo tardó demasiado. Revisa la pestaña Documentos en un momento."
+      "rawLabel": "Salida sin procesar (falló el análisis — regenera, por favor)"
     },
     "selectDocument": "Selecciona un documento"
   },
@@ -113,6 +112,9 @@
   "jobs": {
     "backgroundJobs": "Tareas en segundo plano",
     "backgroundJobsDesc": "Tareas de larga duración para este proyecto",
+    "completedCount_many": "{{count}} completados",
+    "completedCount_one": "{{count}} completado",
+    "completedCount_other": "{{count}} completados",
     "created": "Creado:",
     "dismiss": "Descartar",
     "staleMessage": "Sin actualizaciones hace 10+ minutos. Se borrará automáticamente pronto.",
@@ -329,9 +331,8 @@
       "description": "Guarda un documento pulido de descripción del producto/servicio a partir de los datos anteriores y los archivos subidos.",
       "errorEmpty": "Completa al menos un campo de contexto del producto o sube un documento interno antes de generar un informe.",
       "generating": "Generando…",
-      "successMessage": "Ábrelo en la pestaña Documentos.",
-      "successTitle": "Informe guardado",
-      "timeout": "La generación del informe tardó demasiado. Revisa la pestaña Documentos en un momento.",
+      "startedMessage": "Síguelo en Tareas en segundo plano.",
+      "startedTitle": "Informe iniciado",
       "title": "Generar informe"
     },
     "subtitle": "La información de aquí se inyecta automáticamente en la generación de PRD y PR/FAQ como contexto actual del producto.",

@@ -14,6 +14,11 @@ const createJob = (overrides: Partial<ProjectJob> = {}): ProjectJob => ({
   ...overrides,
 })
 
+/** Completed jobs rest behind a summary line; open it to reach their rows. */
+const expandCompleted = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByRole('button', { expanded: false }))
+}
+
 describe('JobsSection', () => {
   it('returns null when jobs array is empty', () => {
     const { container } = render(<JobsSection jobs={[]} onDismiss={vi.fn()} />)
@@ -31,8 +36,10 @@ describe('JobsSection', () => {
     expect(screen.getByText('PRD Generation')).toBeInTheDocument()
   })
 
-  it('renders job status badge', () => {
+  it('renders job status badge', async () => {
+    const user = userEvent.setup()
     render(<JobsSection jobs={[createJob({ status: 'completed' })]} onDismiss={vi.fn()} />)
+    await expandCompleted(user)
     expect(screen.getByText('completed')).toBeInTheDocument()
   })
 
@@ -51,8 +58,10 @@ describe('JobsSection', () => {
     expect(screen.getByText('Something went wrong')).toBeInTheDocument()
   })
 
-  it('shows dismiss button for completed jobs', () => {
+  it('shows dismiss button for completed jobs', async () => {
+    const user = userEvent.setup()
     render(<JobsSection jobs={[createJob({ status: 'completed' })]} onDismiss={vi.fn()} />)
+    await expandCompleted(user)
     expect(screen.getByTitle('Dismiss')).toBeInTheDocument()
   })
 
@@ -65,17 +74,92 @@ describe('JobsSection', () => {
     const user = userEvent.setup()
     const onDismiss = vi.fn()
     render(<JobsSection jobs={[createJob({ status: 'completed', job_id: 'test-job' })]} onDismiss={onDismiss} />)
-    
+
+    await expandCompleted(user)
     await user.click(screen.getByTitle('Dismiss'))
     expect(onDismiss).toHaveBeenCalledWith('test-job')
   })
 
-  it('limits displayed jobs to 5', () => {
+  it('shows every completed job once expanded, not just the first five', async () => {
+    const user = userEvent.setup()
     const jobs = Array.from({ length: 7 }, (_, i) => createJob({ job_id: `job-${i}`, status: 'completed' }))
     render(<JobsSection jobs={jobs} onDismiss={vi.fn()} />)
-    
-    const dismissButtons = screen.getAllByTitle('Dismiss')
-    expect(dismissButtons).toHaveLength(5)
+
+    await expandCompleted(user)
+
+    // The summary line says 7, so the expansion has to show 7. The old
+    // slice(0, 5) would have made the count a lie.
+    expect(screen.getAllByTitle('Dismiss')).toHaveLength(7)
+  })
+})
+
+/**
+ * U7: the panel renders above the tab content on every project tab, so a
+ * finished project used to open with a block of stale log rows outranking the
+ * actions the user came for. These pin the resting state, and pin that failures
+ * are exempt from it — since the long-running actions now hand their wait to
+ * this panel, hiding a failure would make it unreportable.
+ */
+describe('JobsSection resting state', () => {
+  it('collapses a finished project to a single summary line', () => {
+    const jobs = Array.from({ length: 4 }, (_, i) => createJob({ job_id: `job-${i}`, status: 'completed' }))
+    render(<JobsSection jobs={jobs} onDismiss={vi.fn()} />)
+
+    expect(screen.getByText('4 completed')).toBeInTheDocument()
+    // Collapsed means no per-job rows at all: no job labels, no dismiss controls.
+    expect(screen.queryByTitle('Dismiss')).not.toBeInTheDocument()
+    expect(screen.queryByText('Research')).not.toBeInTheDocument()
+  })
+
+  it('keeps a running job expanded while completed ones rest', () => {
+    render(
+      <JobsSection
+        jobs={[
+          createJob({ job_id: 'running', status: 'running', progress: 40 }),
+          createJob({ job_id: 'done-1', status: 'completed' }),
+          createJob({ job_id: 'done-2', status: 'completed' }),
+        ]}
+        onDismiss={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('40%')).toBeInTheDocument()
+    expect(screen.getByText('2 completed')).toBeInTheDocument()
+  })
+
+  it('keeps a failed job visible without expanding anything', () => {
+    render(
+      <JobsSection
+        jobs={[
+          createJob({ job_id: 'boom', status: 'failed', error: 'Prototype build failed' }),
+          createJob({ job_id: 'done', status: 'completed' }),
+        ]}
+        onDismiss={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Prototype build failed')).toBeInTheDocument()
+    expect(screen.getByText('1 completed')).toBeInTheDocument()
+  })
+
+  it('shows only a time for a job created today', () => {
+    render(<JobsSection jobs={[createJob({ created_at: new Date().toISOString() })]} onDismiss={vi.fn()} />)
+    expect(screen.getByText(/^\d{1,2}:\d{2}$/)).toBeInTheDocument()
+  })
+
+  it('dates a job that is not from today', () => {
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+    render(<JobsSection jobs={[createJob({ created_at: threeDaysAgo })]} onDismiss={vi.fn()} />)
+
+    // A bare HH:mm is ambiguous across days, so the label must carry a date part.
+    expect(screen.queryByText(/^\d{1,2}:\d{2}$/)).not.toBeInTheDocument()
+    expect(screen.getByText(/[A-Za-z]{3} \d{1,2}, \d{1,2}:\d{2}/)).toBeInTheDocument()
+  })
+
+  it('renders nothing rather than an empty panel when a created_at is unparseable', () => {
+    render(<JobsSection jobs={[createJob({ created_at: 'not-a-date' })]} onDismiss={vi.fn()} />)
+    // Used to throw "Invalid time value" out of the render.
+    expect(screen.getByText('Background Jobs')).toBeInTheDocument()
   })
 
   it('renders stale warning for old running jobs', () => {

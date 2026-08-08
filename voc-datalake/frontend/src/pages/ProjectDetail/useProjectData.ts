@@ -15,6 +15,17 @@ import type {
 } from '../../api/types'
 import type { ContextConfig } from '../../components/DataSourceWizard/exports'
 
+/**
+ * Query key for a project's job list.
+ *
+ * Exported because the key has to be identical in three places that can drift:
+ * the query itself, the wizard mutations that invalidate it, and
+ * ProjectDetail's onJobStarted (which is the only thing that makes the panel
+ * notice a job started outside a wizard). A typo in any of them fails silently
+ * — the panel simply never updates.
+ */
+export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] as const
+
 interface UseProjectDataProps {
   id: string | undefined
   apiEndpoint: string
@@ -35,7 +46,7 @@ export function useProjectData({
   })
 
   const { data: jobsData } = useQuery({
-    queryKey: ['project-jobs', id],
+    queryKey: projectJobsKey(id),
     queryFn: () => projectsApi.getJobs(id ?? ''),
     enabled: isEnabled,
     refetchInterval: (query) => {
@@ -103,7 +114,7 @@ export function useProjectMutations({
       response_language: i18n.language,
     }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
       onSuccess()
     },
     onError,
@@ -134,7 +145,7 @@ export function useProjectMutations({
       return Promise.all(types.map((docType) => projectsApi.generateDocument(projectId, { doc_type: docType, ...base })))
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
       onSuccess()
     },
     onError,
@@ -154,7 +165,7 @@ export function useProjectMutations({
       use_web_search: researchConfig.useWebSearch,
     }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
       onSuccess()
     },
     onError,
@@ -174,7 +185,7 @@ export function useProjectMutations({
       response_language: i18n.language,
     }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
       onSuccess()
     },
     onError,
@@ -182,7 +193,7 @@ export function useProjectMutations({
 
   const dismissJobMut = useMutation({
     mutationFn: (jobId: string) => projectsApi.dismissJob(projectId, jobId),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) }),
   })
 
   return {
@@ -243,7 +254,7 @@ export function usePersonaMutations({
     }) =>
       projectsApi.importPersona(projectId, data),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project-jobs', id] })
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
     },
   })
 

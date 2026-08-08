@@ -79,8 +79,7 @@
       "needsDocs": "Erstellen Sie zuerst ein PRD oder ein PR-FAQ, um die Prototyp-Erstellung zu aktivieren",
       "openNewTab": "In neuem Tab öffnen",
       "previewLabel": "Live-Vorschau",
-      "rawLabel": "Rohausgabe (Parsen fehlgeschlagen — bitte neu generieren)",
-      "timeout": "Die Prototyp-Erstellung dauert zu lange. Prüfen Sie gleich den Dokumente-Tab."
+      "rawLabel": "Rohausgabe (Parsen fehlgeschlagen — bitte neu generieren)"
     },
     "selectDocument": "Dokument auswählen"
   },
@@ -113,6 +112,8 @@
   "jobs": {
     "backgroundJobs": "Hintergrundaufgaben",
     "backgroundJobsDesc": "Langfristige Aufgaben für dieses Projekt",
+    "completedCount_one": "{{count}} abgeschlossen",
+    "completedCount_other": "{{count}} abgeschlossen",
     "created": "Erstellt:",
     "dismiss": "Verwerfen",
     "staleMessage": "Keine Updates seit 10+ Minuten. Wird bald automatisch entfernt.",
@@ -327,9 +328,8 @@
       "description": "Erstellt aus den obigen Angaben und hochgeladenen Dateien ein ausgearbeitetes Produkt-/Service-Beschreibungsdokument.",
       "errorEmpty": "Füllen Sie mindestens ein Produktkontext-Feld aus oder laden Sie ein internes Dokument hoch, bevor Sie einen Bericht generieren.",
       "generating": "Wird generiert…",
-      "successMessage": "Im Dokumente-Tab öffnen.",
-      "successTitle": "Bericht gespeichert",
-      "timeout": "Die Berichterstellung dauert zu lange. Prüfen Sie gleich den Dokumente-Tab.",
+      "startedMessage": "Verfolgen Sie ihn unter Hintergrundaufgaben.",
+      "startedTitle": "Bericht gestartet",
       "title": "Bericht generieren"
     },
     "subtitle": "Die Angaben hier werden automatisch als aktueller Produktkontext in die PRD- & PR/FAQ-Generierung eingespeist.",
