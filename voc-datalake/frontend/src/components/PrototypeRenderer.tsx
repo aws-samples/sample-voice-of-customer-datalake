@@ -9,7 +9,40 @@
  */
 import clsx from 'clsx'
 import { useCallback, useMemo, useState } from 'react'
+import { unsignedUrlKey } from './prototypeLinkLifetime'
 import type { PrototypeBlock, PrototypeSpec } from './prototypeSpec'
+
+/**
+ * Keep the URL this frame actually loaded with, ignoring re-signings of the same
+ * document.
+ *
+ * A prototype URL is a signed credential that the app replaces before it expires,
+ * so `url` changes roughly hourly while pointing at the very same document. Passing
+ * each new value straight to `src` would **reload the iframe** — silently resetting
+ * a reviewer who is several screens into the prototype, on a timer they cannot see.
+ *
+ * It is also unnecessary. A signature governs the *request*; once the document is
+ * loaded, the credential behind it has no further bearing on it. Only a NEW
+ * request needs a live signature, which means the anchors beside this frame, not
+ * the frame.
+ *
+ * So: follow the address, ignore the credential. `unsignedUrlKey` is what tells
+ * those apart, and a genuine change of document (different path, or dropping to a
+ * legacy inline prototype) still reloads, because that is a different address.
+ */
+function useLoadedUrl(url: string | undefined): string | undefined {
+  const [loaded, setLoaded] = useState(url)
+  const loadedKey = unsignedUrlKey(loaded)
+  const nextKey = unsignedUrlKey(url)
+  if (loadedKey !== nextKey) {
+    // Guarded render-phase update — the same derive-from-props pattern
+    // useCategoryFilters uses to adopt external changes. React re-renders
+    // immediately; the value returned below is already the new one, so the frame
+    // never renders a stale src even for one frame.
+    setLoaded(url)
+  }
+  return loadedKey === nextKey ? loaded : url
+}
 
 /**
  * Renders a self-contained HTML prototype inside an iframe.
@@ -22,6 +55,9 @@ import type { PrototypeBlock, PrototypeSpec } from './prototypeSpec'
  * `sandbox` on the old `srcDoc` approach was only compensating for the fact
  * that a same-document `srcDoc` shares the parent's CSP/origin unless
  * sandboxed).
+ *
+ * That `url` is SIGNED and short-lived, so the caller hands over a new one
+ * periodically; `useLoadedUrl` above is why that does not reload the frame.
  *
  * `html` (legacy fallback): pre-migration prototypes have no `prototype_url`
  * and are rendered the old way, via `srcDoc` + `sandbox` — still broken
@@ -36,11 +72,13 @@ export function HtmlPrototypeFrame({
   readonly title?: string
   readonly className?: string
 }) {
-  if (url) {
+  const loadedUrl = useLoadedUrl(url)
+
+  if (loadedUrl) {
     return (
       <iframe
         title={title || 'Prototype'}
-        src={url}
+        src={loadedUrl}
         className={className ?? 'w-full h-full border-0'}
       />
     )

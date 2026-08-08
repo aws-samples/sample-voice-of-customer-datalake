@@ -4,7 +4,7 @@
 import clsx from 'clsx'
 import { format } from 'date-fns'
 import {
-  FileText, Pencil, Trash2, Loader2, Wand2, AlertCircle,
+  FileText, Pencil, Trash2, Loader2, Wand2, AlertCircle, Clock,
 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -14,6 +14,7 @@ import { projectsApi } from '../../api/projectsApi'
 import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
+import { signedUrlExpiresAt, isExpired } from '../../components/prototypeLinkLifetime'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import type {
   ProjectDocument, Project,
@@ -90,7 +91,17 @@ export default function DocumentsTab({
         </div>
 
         {/* Document Detail */}
-        <div className="lg:col-span-2 bg-white rounded-xl border p-4 sm:p-6 min-h-[400px] lg:min-h-[500px] overflow-hidden">
+        <div className={clsx(
+          'lg:col-span-2 bg-white rounded-xl border p-4 sm:p-6 min-h-[400px] overflow-hidden',
+          // A prototype is a whole generated application; a PRD is prose. They do
+          // not want the same pane. The fixed 500px minimum meant the most
+          // tangible artifact the product makes previewed in ~430px whether the
+          // monitor was 900px or 1440px tall — #288 stopped the jobs panel pushing
+          // it down the page, but a taller viewport still bought it nothing.
+          // 70vh is deliberately short of the full viewport so the pane still fits
+          // above the fold on a laptop rather than introducing a scroll.
+          selectedDoc?.document_type === 'prototype' ? 'lg:min-h-[70vh]' : 'lg:min-h-[500px]',
+        )}>
           {selectedDoc ? (
             <div className="h-full flex flex-col">
               <div className="flex items-start justify-between mb-4 gap-2">
@@ -288,6 +299,56 @@ function LegacyHtmlActions({
   )
 }
 
+// ── How long this prototype link lasts ──────────────────────────────────────
+// The URL is a signed, session-scoped credential, not a durable share link, and
+// until now nothing said so: a reviewer would copy it out of "Open in new tab",
+// pass it on, and it would die inside the hour with no explanation at either end.
+//
+// The deadline is read off the URL's own `Expires` rather than from a TTL constant
+// mirrored on this side. The signer's TTL is a Python-side fallback
+// (CDN_SIGNED_URL_TTL_SECONDS is not set in the stack), so a number hardcoded here
+// would be a guess that silently diverges the day it is configured.
+
+function LinkLifetimeNote({ url, t }: { readonly url: string; readonly t: TFunc }) {
+  // Sampled once, in state, rather than read during render: `Date.now()` in a render
+  // body is impure and makes the output depend on when React happens to re-render
+  // (the react-hooks/purity rule catches it). Same shape JobsSection uses for job
+  // staleness, minus its 30s interval — this label needs no ticking clock, because
+  // the thing that changes it is the URL being re-signed, and that re-renders anyway.
+  //
+  // Consequence worth knowing: `mountedAt` ages while the component stays mounted, so
+  // a link that lapses without any refetch landing will not flip this label on its
+  // own. That only happens if the refresh AND the focus refetch both fail, e.g.
+  // offline, and it errs toward saying nothing rather than wrongly claiming expiry.
+  //
+  // Declared before the early return below, because hooks cannot be conditional.
+  const [mountedAt] = useState(() => Date.now())
+
+  const expiresAt = signedUrlExpiresAt(url)
+  // No readable deadline — an unsigned or malformed URL. Say nothing rather than
+  // invent a window: a wrong expiry is worse than none.
+  if (expiresAt == null) return null
+
+  const expired = isExpired(expiresAt, mountedAt)
+
+  return (
+    <span
+      className={clsx('inline-flex items-center gap-1', expired ? 'text-amber-700' : 'text-gray-400')}
+      title={t('documents.prototype.linkExpiryHint', {
+        defaultValue: 'This link is tied to your session and is not a permanent share link. The preview refreshes itself while this page is open.',
+      })}
+    >
+      <Clock size={11} />
+      {expired
+        ? t('documents.prototype.linkExpired', { defaultValue: 'Link expired — reopen the project' })
+        : t('documents.prototype.linkExpires', {
+          time: format(new Date(expiresAt), 'HH:mm'),
+          defaultValue: 'Link valid until {{time}}',
+        })}
+    </span>
+  )
+}
+
 // ── Prototype view: render the JSON spec natively (no iframe) ────────────────
 // PrototypeRenderer/parsePrototypeSpec moved to components/PrototypeRenderer
 // so the Prioritization page can reuse it.
@@ -324,9 +385,14 @@ function PrototypeView({
   if (isHtml) {
     return (
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between mb-2 text-xs text-gray-500">
-          <span>{t('documents.prototype.previewLabel', { defaultValue: 'Live preview' })}</span>
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between mb-2 text-xs text-gray-500 gap-3">
+          <span className="inline-flex items-center gap-2 min-w-0">
+            <span className="flex-shrink-0">{t('documents.prototype.previewLabel', { defaultValue: 'Live preview' })}</span>
+            {/* Only signed CDN prototypes have a lifetime to report; legacy inline
+                ones are rendered from `content` and never expire. */}
+            {url ? <LinkLifetimeNote url={url} t={t} /> : null}
+          </span>
+          <div className="flex items-center gap-3 flex-shrink-0">
             <PrototypeFeedbackButton
               projectId={projectId}
               basePrototypeId={documentId}

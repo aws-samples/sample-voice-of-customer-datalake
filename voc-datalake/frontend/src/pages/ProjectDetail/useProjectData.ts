@@ -7,6 +7,7 @@ import {
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
+import { earliestPrototypeExpiry, refreshDelayMs } from '../../components/prototypeLinkLifetime'
 import type {
   PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, NoteItem,
 } from './types'
@@ -155,6 +156,35 @@ export function useProjectData({
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
     }
   }, [jobsData, id, queryClient])
+
+  /**
+   * Replace the prototype links before their signatures lapse.
+   *
+   * A prototype URL is a signed, session-scoped credential (see
+   * `prototypeLinkLifetime`), and refetching the project is the re-sign
+   * mechanism: the API mints a fresh signature on every read and never trusts a
+   * stored one. So the whole job here is knowing *when* to ask again.
+   *
+   * It has to happen ahead of expiry rather than in response to a 403, because the
+   * prototype's "Open in new tab" and "Download .html" are plain anchors — a click
+   * navigates immediately and nothing can fetch a replacement first.
+   *
+   * Re-arms whenever the documents change, which includes the refetch this timer
+   * causes: the new URL carries a later deadline, so the next delay is computed
+   * from it and the cycle continues for as long as the page is open. It is not the
+   * only protection — `['project', id]` sets no `staleTime`, so it inherits
+   * refetch-on-window-focus and a user who tabs away and back re-signs that way.
+   * This covers the case that has no user interaction to hook: a tab left focused
+   * and untouched past the hour.
+   */
+  useEffect(() => {
+    const delay = refreshDelayMs(earliestPrototypeExpiry(data?.documents ?? []), Date.now())
+    if (delay == null) return
+    const timer = setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [data?.documents, id, queryClient])
 
   return {
     data,
