@@ -22,6 +22,8 @@ import ContextSummary from './ContextSummary'
 import { defaultContextConfig } from './types'
 import deComponents from '../../../public/locales/de/components.json'
 import deCommon from '../../../public/locales/de/common.json'
+import frComponents from '../../../public/locales/fr/components.json'
+import jaComponents from '../../../public/locales/ja/components.json'
 import type { ProjectPersona, ProjectDocument } from '../../api/client'
 
 const mockGetSources = vi.fn()
@@ -185,6 +187,16 @@ describe('DataSourceWizard localization', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText('Context Summary')).not.toBeInTheDocument()
     expect(screen.queryByText('All 2 personas')).not.toBeInTheDocument()
+  })
+
+  // Asserted against the catalogue rather than the DOM on purpose: Testing
+  // Library's default text matcher normalizes whitespace, so a rendered
+  // assertion cannot tell U+00A0 from a plain space — and a plain space is
+  // exactly the bug (it lets the colon wrap to the next line).
+  it('uses locale-correct separator codepoints', () => {
+    expect(de.labelSeparator).toBe(':')
+    expect(frComponents.dataSourceWizard.labelSeparator).toBe('\u00A0:')
+    expect(jaComponents.dataSourceWizard.labelSeparator).toBe('\uFF1A')
   })
 
   it('translates the wizard chrome', async () => {
