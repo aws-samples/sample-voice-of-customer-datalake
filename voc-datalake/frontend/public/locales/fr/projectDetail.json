@@ -79,7 +79,8 @@
       "needsDocs": "Créez d’abord un PRD ou un PR-FAQ pour activer la création de prototype",
       "openNewTab": "Ouvrir dans un nouvel onglet",
       "previewLabel": "Aperçu en direct",
-      "rawLabel": "Sortie brute (analyse échouée — veuillez régénérer)"
+      "rawLabel": "Sortie brute (analyse échouée — veuillez régénérer)",
+      "started": "Lancé — suivez la progression dans Tâches en arrière-plan."
     },
     "selectDocument": "Sélectionner un document"
   },
@@ -117,6 +118,9 @@
     "completedCount_other": "{{count}} terminées",
     "created": "Créée :",
     "dismiss": "Fermer",
+    "moreCount_many": "{{count}} autres",
+    "moreCount_one": "{{count}} autre",
+    "moreCount_other": "{{count}} autres",
     "staleMessage": "Aucune mise à jour depuis 10+ minutes. Sera effacée automatiquement bientôt.",
     "starting": "Démarrage...",
     "status": {

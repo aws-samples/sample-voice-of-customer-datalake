@@ -6,7 +6,7 @@
  * wait — so the user would pay for a job that cannot succeed and read the reason
  * as an untranslated job error. The guard has to be here, before the call.
  */
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ProductTab from './ProductTab'
@@ -14,15 +14,27 @@ import type { ProductContext } from '../../api/types'
 
 const mockGetProductContext = vi.fn()
 const mockGenerateProductReport = vi.fn()
+const mockListProductDocs = vi.fn()
 
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
     getProductContext: (...args: unknown[]) => mockGetProductContext(...args),
     generateProductReport: (...args: unknown[]) => mockGenerateProductReport(...args),
     updateProductContext: vi.fn(),
-    listProductDocs: vi.fn().mockResolvedValue({ docs: [] }),
+    listProductDocs: (...args: unknown[]) => mockListProductDocs(...args),
   },
 }))
+
+const readyDoc = {
+  doc_id: 'doc-1',
+  filename: 'strategy.pdf',
+  content_type: 'application/pdf',
+  size_bytes: 1024,
+  status: 'ready' as const,
+  error: null,
+  extracted_chars: 4000,
+  created_at: '2026-08-01T09:00:00Z',
+}
 
 const emptyContext: Partial<ProductContext> = {}
 
@@ -34,17 +46,25 @@ const filledContext: Partial<ProductContext> = {
 const generateButton = () => screen.getByRole('button', { name: /generate report/i })
 
 describe('ProductTab report guard', () => {
+  // The tab's default mode renders the AI interview, whose effect scrolls the
+  // transcript. jsdom has no Element.scrollTo, and the resulting exception
+  // renders the whole tab as an empty div — which silently turns any "the API was
+  // not called" assertion into a vacuous pass. Restored afterwards so the stub
+  // cannot leak into another file's expectations.
+  const realScrollTo = Element.prototype.scrollTo
+
   beforeAll(() => {
-    // The tab's default mode renders the AI interview, whose effect scrolls the
-    // transcript. jsdom has no Element.scrollTo, and the resulting exception
-    // renders the whole tab as an empty div — which silently turns any
-    // "the API was not called" assertion into a vacuous pass.
     Element.prototype.scrollTo = vi.fn()
+  })
+
+  afterAll(() => {
+    Element.prototype.scrollTo = realScrollTo
   })
 
   beforeEach(() => {
     vi.clearAllMocks()
     mockGenerateProductReport.mockResolvedValue({ job_id: 'job-1' })
+    mockListProductDocs.mockResolvedValue({ docs: [] })
   })
 
   it('refuses to start a report when no context field is filled', async () => {
@@ -83,5 +103,59 @@ describe('ProductTab report guard', () => {
     await user.click(await waitFor(generateButton))
 
     expect(mockGenerateProductReport).not.toHaveBeenCalled()
+  })
+
+  /**
+   * The backend rule is "at least one field **or** a ready uploaded document", and
+   * `errorEmpty` says exactly that. A guard that only inspected fields would tell
+   * a user who uploaded a document to do what they had already done.
+   */
+  it('starts the report on a docs-only project, where the fields are empty', async () => {
+    const user = userEvent.setup()
+    mockGetProductContext.mockResolvedValue({ context: emptyContext })
+    mockListProductDocs.mockResolvedValue({ docs: [readyDoc] })
+    render(<ProductTab projectId="proj-1" />)
+
+    await user.click(await waitFor(generateButton))
+
+    await waitFor(() => expect(mockGenerateProductReport).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(/Add at least one product context field/i)).not.toBeInTheDocument()
+  })
+
+  it('blocks when the only uploaded document is still being extracted', async () => {
+    const user = userEvent.setup()
+    mockGetProductContext.mockResolvedValue({ context: emptyContext })
+    // Not `ready` ⇒ the backend will not use it, so the job would still fail.
+    mockListProductDocs.mockResolvedValue({ docs: [{ ...readyDoc, status: 'pending' as const }] })
+    render(<ProductTab projectId="proj-1" />)
+
+    await user.click(await waitFor(generateButton))
+
+    expect(mockGenerateProductReport).not.toHaveBeenCalled()
+  })
+
+  it('defers to the backend when the document list cannot be read', async () => {
+    const user = userEvent.setup()
+    mockGetProductContext.mockResolvedValue({ context: emptyContext })
+    mockListProductDocs.mockRejectedValue(new Error('network'))
+    render(<ProductTab projectId="proj-1" />)
+
+    await user.click(await waitFor(generateButton))
+
+    // Failing open: a list call that fails is no reason to block the user.
+    await waitFor(() => expect(mockGenerateProductReport).toHaveBeenCalledTimes(1))
+  })
+
+  it('does not ask for the document list when a field is already filled', async () => {
+    const user = userEvent.setup()
+    mockGetProductContext.mockResolvedValue({ context: filledContext })
+    render(<ProductTab projectId="proj-1" />)
+
+    await user.click(await waitFor(generateButton))
+
+    await waitFor(() => expect(mockGenerateProductReport).toHaveBeenCalledTimes(1))
+    // The common path must not pay for the guard. DocsUpload lists docs for its
+    // own pane, so assert on calls made after the click rather than zero calls.
+    expect(mockListProductDocs.mock.calls.length).toBeLessThanOrEqual(1)
   })
 })

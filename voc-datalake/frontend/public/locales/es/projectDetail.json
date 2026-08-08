@@ -79,7 +79,8 @@
       "needsDocs": "Crea primero un PRD o un PR-FAQ para habilitar la creación del prototipo",
       "openNewTab": "Abrir en una pestaña nueva",
       "previewLabel": "Vista previa en vivo",
-      "rawLabel": "Salida sin procesar (falló el análisis — regenera, por favor)"
+      "rawLabel": "Salida sin procesar (falló el análisis — regenera, por favor)",
+      "started": "Iniciado: síguelo en Tareas en segundo plano."
     },
     "selectDocument": "Selecciona un documento"
   },
@@ -117,6 +118,9 @@
     "completedCount_other": "{{count}} completados",
     "created": "Creado:",
     "dismiss": "Descartar",
+    "moreCount_many": "{{count}} más",
+    "moreCount_one": "{{count}} más",
+    "moreCount_other": "{{count}} más",
     "staleMessage": "Sin actualizaciones hace 10+ minutos. Se borrará automáticamente pronto.",
     "starting": "Iniciando...",
     "status": {

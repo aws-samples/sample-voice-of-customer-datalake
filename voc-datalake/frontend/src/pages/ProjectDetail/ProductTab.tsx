@@ -58,32 +58,36 @@ const emptyContext = (): ProductContext => ({
   free_form_notes: '',
 })
 
-/** Narrows a key of the empty template to a ProductContext field. */
-function isContextField(field: string, template: ProductContext): field is keyof ProductContext {
-  return Object.hasOwn(template, field)
+/**
+ * The user-authored fields, i.e. everything in `ProductContext` except the
+ * server-set `updated_at`. `satisfies` makes a typo a compile error.
+ */
+const CONTEXT_FIELDS = [
+  'product_name', 'one_liner', 'target_users', 'problem_solved', 'current_state',
+  'key_features', 'differentiators', 'known_limitations', 'non_goals',
+  'success_metrics', 'free_form_notes',
+] as const satisfies ReadonlyArray<keyof ProductContext>
+
+/** True when the user has filled in none of the context fields. */
+function hasNoContextFields(context: ProductContext): boolean {
+  return CONTEXT_FIELDS.every((field) => (context[field] ?? '').trim() === '')
 }
 
 /**
- * True when the user has authored nothing at all.
+ * The other half of the backend's rule: it accepts at least one field **or** a
+ * ready uploaded document. Asked only when the fields are empty, so this costs a
+ * request on a path that would otherwise start a job doomed to fail.
  *
- * The report generator rejects an empty context server-side, but that rejection
- * happens inside the async job now that the jobs panel owns the wait — so
- * without this check the user pays for a job that cannot succeed and reads the
- * reason as an untranslated job error.
- *
- * Iterates the empty template rather than a hand-written field list, so a field
- * added to `emptyContext` is covered automatically and the server-set
- * `updated_at` (absent from the template) is correctly ignored.
- *
- * ponytail: mirrors the backend's *field* check only. The backend also accepts
- * "or an uploaded internal document", but no product doc can currently reach the
- * `ready` state — nothing writes it, there is no extractor lambda — so the two
- * are equivalent today. Revisit this alongside that gap.
+ * A failure to answer resolves to `true` — better to let the backend decide than
+ * to block a user because a list call failed.
  */
-function isContextEmpty(context: ProductContext): boolean {
-  const template = emptyContext()
-  return Object.keys(template).every((field) =>
-    !isContextField(field, template) || (context[field] ?? '').trim() === '')
+async function hasReadyProductDoc(projectId: string): Promise<boolean> {
+  try {
+    const { docs } = await projectsApi.listProductDocs(projectId)
+    return docs.some((doc) => doc.status === 'ready')
+  } catch {
+    return true
+  }
 }
 
 type Mode = 'both' | 'chat' | 'upload'
@@ -208,7 +212,7 @@ export default function ProductTab({ projectId, onJobStarted }: ProductTabProps)
           <ReportCard
             projectId={projectId}
             language={i18n.language}
-            contextIsEmpty={isContextEmpty(context)}
+            hasNoFields={hasNoContextFields(context)}
             onJobStarted={onJobStarted}
             t={t}
           />
@@ -461,11 +465,11 @@ function InterviewChat({
 // ── Generate report ─────────────────────────────────────────────────────────
 
 function ReportCard({
-  projectId, language, contextIsEmpty, onJobStarted, t,
+  projectId, language, hasNoFields, onJobStarted, t,
 }: {
   readonly projectId: string
   readonly language: string
-  readonly contextIsEmpty: boolean
+  readonly hasNoFields: boolean
   readonly onJobStarted?: () => void
   readonly t: TFunc
 }) {
@@ -479,15 +483,22 @@ function ReportCard({
   // reporting a still-running job as "took too long". This card keeps a local
   // "started" line because it sits below the fold of an 11-field form, so the
   // panel at the top of the page may be scrolled out of view at click time.
+  //
+  // The pre-flight check exists because the backend's own rejection now happens
+  // *inside* the job: without it the user pays for a job that cannot succeed and
+  // reads the reason as an untranslated job error. It mirrors the backend rule in
+  // full — fields OR a ready uploaded document — and asks for the document list
+  // only when the fields are empty, so the common path costs nothing and a
+  // docs-only project is never falsely blocked.
   const onGenerate = useCallback(async () => {
-    if (contextIsEmpty) {
-      setError(t('product.report.errorEmpty'))
-      return
-    }
     setBusy(true)
     setError(null)
     setStarted(false)
     try {
+      if (hasNoFields && !await hasReadyProductDoc(projectId)) {
+        setError(t('product.report.errorEmpty'))
+        return
+      }
       await projectsApi.generateProductReport(projectId, { response_language: language })
       setStarted(true)
       onJobStarted?.()
@@ -496,7 +507,7 @@ function ReportCard({
     } finally {
       setBusy(false)
     }
-  }, [projectId, language, contextIsEmpty, onJobStarted, t])
+  }, [projectId, language, hasNoFields, onJobStarted, t])
 
   return (
     <div className="bg-white border rounded-xl p-4">

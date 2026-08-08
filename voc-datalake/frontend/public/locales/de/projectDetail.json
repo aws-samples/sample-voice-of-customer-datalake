@@ -79,7 +79,8 @@
       "needsDocs": "Erstellen Sie zuerst ein PRD oder ein PR-FAQ, um die Prototyp-Erstellung zu aktivieren",
       "openNewTab": "In neuem Tab öffnen",
       "previewLabel": "Live-Vorschau",
-      "rawLabel": "Rohausgabe (Parsen fehlgeschlagen — bitte neu generieren)"
+      "rawLabel": "Rohausgabe (Parsen fehlgeschlagen — bitte neu generieren)",
+      "started": "Gestartet — Verfolgen Sie den Fortschritt unter Hintergrundaufgaben."
     },
     "selectDocument": "Dokument auswählen"
   },
@@ -116,6 +117,8 @@
     "completedCount_other": "{{count}} abgeschlossen",
     "created": "Erstellt:",
     "dismiss": "Verwerfen",
+    "moreCount_one": "{{count}} weitere",
+    "moreCount_other": "{{count}} weitere",
     "staleMessage": "Keine Updates seit 10+ Minuten. Wird bald automatisch entfernt.",
     "starting": "Wird gestartet...",
     "status": {

@@ -138,13 +138,31 @@ describe('BuildPrototypeButton handover to the jobs panel (U9)', () => {
     expect(mockJobStarted).not.toHaveBeenCalled()
   })
 
-  it('stops showing the busy label once the request returns, without waiting for the job', async () => {
+  it('shows the busy label only until the request returns, not until the job finishes', async () => {
+    const user = userEvent.setup()
+    // Hold the request open so the busy label is observable — otherwise this
+    // assertion passes on a button that never showed it at all.
+    let releaseRequest = () => {}
+    mockBuildPrototype.mockImplementation(() => new Promise((resolve) => {
+      releaseRequest = () => resolve({ job_id: 'job_1' })
+    }))
+    renderButton({ hasPrd: true, hasPrfaq: true })
+
+    await user.click(buildButton())
+    expect(await screen.findByText(/building…/i)).toBeInTheDocument()
+
+    releaseRequest()
+
+    // The old code kept "Building…" for up to five minutes of polling.
+    await waitFor(() => expect(screen.queryByText(/building…/i)).not.toBeInTheDocument())
+  })
+
+  it('acknowledges the start, since the panel renders nothing until it refetches', async () => {
     const user = userEvent.setup()
     renderButton({ hasPrd: true, hasPrfaq: true })
 
     await user.click(buildButton())
 
-    // The old code kept "Building…" for up to five minutes of polling.
-    await waitFor(() => expect(screen.queryByText(/building…/i)).not.toBeInTheDocument())
+    expect(await screen.findByText(/track it in background jobs/i)).toBeInTheDocument()
   })
 })

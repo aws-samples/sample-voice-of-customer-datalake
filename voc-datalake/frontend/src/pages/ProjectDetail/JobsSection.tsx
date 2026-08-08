@@ -239,25 +239,49 @@ function CompletedJobsGroup({
 }
 
 /**
+ * Upper bound on the always-visible rows, so a project that accumulated many
+ * failures cannot push the tab content off the screen — the very problem this
+ * panel's resting state exists to solve.
+ *
+ * In-flight work is ordered ahead of failures precisely so the cap can never
+ * hide a running job, which is why the previous unordered `slice(0, 5)` had to
+ * go rather than simply being kept.
+ */
+const MAX_VISIBLE_JOBS = 5
+
+function isInFlight(job: ProjectJob): boolean {
+  return job.status === 'running' || job.status === 'pending'
+}
+
+/**
  * Completed is the only status that goes to rest — see the file header for why
  * failures stay expanded.
  */
 function partitionByAttention(jobs: ProjectJob[]): {
   readonly needsAttention: ProjectJob[]
+  readonly hiddenCount: number
   readonly completed: ProjectJob[]
 } {
-  const needsAttention: ProjectJob[] = []
+  const inFlight: ProjectJob[] = []
+  const failed: ProjectJob[] = []
   const completed: ProjectJob[] = []
   for (const job of jobs) {
     if (job.status === 'completed') completed.push(job)
-    else needsAttention.push(job)
+    else if (isInFlight(job)) inFlight.push(job)
+    else failed.push(job)
   }
-  return { needsAttention, completed }
+  const ordered = [...inFlight, ...failed]
+  return {
+    needsAttention: ordered.slice(0, MAX_VISIBLE_JOBS),
+    hiddenCount: Math.max(0, ordered.length - MAX_VISIBLE_JOBS),
+    completed,
+  }
 }
 
 export default function JobsSection({
   jobs, onDismiss,
 }: JobsSectionProps) {
+  const { t } = useTranslation('projectDetail')
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -267,16 +291,12 @@ export default function JobsSection({
 
   if (jobs.length === 0) return null
 
-  const { needsAttention, completed } = partitionByAttention(jobs)
+  const { needsAttention, hiddenCount, completed } = partitionByAttention(jobs)
 
   return (
     <div className="bg-white rounded-xl p-6 border">
       <JobsSectionHeader />
       <div className="space-y-3">
-        {/* No cap here. The old slice(0, 5) existed to bound a list that
-            completed jobs flooded; now that they collapse, capping could only
-            hide a running job behind finished ones. The API already bounds the
-            query at 50. */}
         {needsAttention.map((job) => (
           <JobItem
             key={job.job_id}
@@ -285,6 +305,9 @@ export default function JobsSection({
             onDismiss={onDismiss}
           />
         ))}
+        {hiddenCount > 0
+          ? <p className="text-sm text-gray-500">{t('jobs.moreCount', { count: hiddenCount })}</p>
+          : null}
         {completed.length > 0
           ? <CompletedJobsGroup jobs={completed} onDismiss={onDismiss} />
           : null}

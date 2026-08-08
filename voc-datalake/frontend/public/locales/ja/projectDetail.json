@@ -79,7 +79,8 @@
       "needsDocs": "プロトタイプ作成を有効にするには、まず PRD または PR-FAQ を作成してください",
       "openNewTab": "新しいタブで開く",
       "previewLabel": "ライブプレビュー",
-      "rawLabel": "生の出力（解析失敗 — 再生成してください）"
+      "rawLabel": "生の出力（解析失敗 — 再生成してください）",
+      "started": "開始しました — バックグラウンドジョブで進行状況を確認できます。"
     },
     "selectDocument": "ドキュメントを選択"
   },
@@ -116,6 +117,8 @@
     "completedCount_other": "{{count}}件完了",
     "created": "作成:",
     "dismiss": "閉じる",
+    "moreCount_one": "ほか{{count}}件",
+    "moreCount_other": "ほか{{count}}件",
     "staleMessage": "10分以上更新がありません。まもなく自動削除されます。",
     "starting": "開始中...",
     "status": {

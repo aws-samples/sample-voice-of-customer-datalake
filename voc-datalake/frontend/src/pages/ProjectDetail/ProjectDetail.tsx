@@ -36,6 +36,10 @@ export default function ProjectDetail() {
   const { config } = useConfigStore()
 
   const [activeTab, setActiveTab] = useState<Tab>('overview')
+  // When a long-running action last reported that it started a job. Keeps the
+  // jobs poll alive while the new row becomes readable — see
+  // JOB_START_POLL_WINDOW_MS in useProjectData.
+  const [jobStartedAt, setJobStartedAt] = useState<number | null>(null)
   const { t } = useTranslation('projectDetail')
 
   // Custom hooks for state management
@@ -51,6 +55,7 @@ export default function ProjectDetail() {
   } = useProjectData({
     id,
     apiEndpoint: config.apiEndpoint,
+    jobStartedAt,
   })
 
   // Mutations
@@ -105,9 +110,16 @@ export default function ProjectDetail() {
    * useProjectData), so without this the panel would never start polling and a
    * build started from an idle project would stay invisible.
    *
-   * The wizard mutations already do this for themselves in useProjectMutations.
+   * The timestamp matters as much as the invalidation. The invalidation buys one
+   * refetch, and the job row is read without ConsistentRead, so that one refetch
+   * can come back empty and leave the panel blind again. Recording the start
+   * keeps the poll alive until the row appears.
+   *
+   * The wizard mutations invalidate for themselves in useProjectMutations, and
+   * are unaffected: their jobs are created on the same synchronous path.
    */
   const handleJobStarted = useCallback(() => {
+    setJobStartedAt(Date.now())
     void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
   }, [queryClient, id])
 

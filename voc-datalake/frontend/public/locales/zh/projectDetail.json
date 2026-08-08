@@ -79,7 +79,8 @@
       "needsDocs": "请先创建 PRD 或 PR-FAQ 以启用原型构建",
       "openNewTab": "在新标签页中打开",
       "previewLabel": "实时预览",
-      "rawLabel": "原始输出（解析失败 — 请重新生成）"
+      "rawLabel": "原始输出（解析失败 — 请重新生成）",
+      "started": "已开始 — 可在后台任务中查看进度。"
     },
     "selectDocument": "选择文档"
   },
@@ -116,6 +117,8 @@
     "completedCount_other": "{{count}}个已完成",
     "created": "创建时间：",
     "dismiss": "关闭",
+    "moreCount_one": "还有{{count}}个",
+    "moreCount_other": "还有{{count}}个",
     "staleMessage": "超过 10 分钟无更新，将很快自动清除。",
     "starting": "启动中...",
     "status": {

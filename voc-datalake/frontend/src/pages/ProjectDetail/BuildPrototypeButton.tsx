@@ -45,6 +45,7 @@ export default function BuildPrototypeButton({
 }) {
   const { t, i18n } = useTranslation('projectDetail')
   const [busy, setBusy] = useState(false)
+  const [started, setStarted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [showConfirm, setShowConfirm] = useState(false)
@@ -62,8 +63,10 @@ export default function BuildPrototypeButton({
   const runBuild = useCallback(async () => {
     setBusy(true)
     setError(null)
+    setStarted(false)
     try {
       await projectsApi.buildPrototype(projectId, { response_language: i18n.language })
+      setStarted(true)
       onJobStarted?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Prototype failed')
@@ -99,6 +102,12 @@ export default function BuildPrototypeButton({
         <span className="text-xs text-red-600 inline-flex items-center gap-1 max-w-[200px] truncate" title={error}>
           <AlertCircle size={12} /> {error}
         </span>
+      ) : null}
+      {/* The jobs panel is the real progress report, but it is a refetch away
+          and renders nothing until the job appears — so acknowledge the start
+          here too, the way the product report card does. */}
+      {started && error == null ? (
+        <span className="text-xs text-emerald-700">{t('documents.prototype.started')}</span>
       ) : null}
       <button
         onClick={onClick}

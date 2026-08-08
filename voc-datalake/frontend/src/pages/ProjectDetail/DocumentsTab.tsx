@@ -162,6 +162,7 @@ function PrototypeFeedbackButton({
   const [open, setOpen] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [busy, setBusy] = useState(false)
+  const [started, setStarted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Closes as soon as the revision is *started*: the jobs panel owns the wait
@@ -179,8 +180,11 @@ function PrototypeFeedbackButton({
         feedback: fb,
         base_prototype_id: basePrototypeId,
       })
+      // The form closes but the text is kept: the revision can still fail
+      // minutes later, in the jobs panel, and clearing it would mean retyping
+      // the feedback to retry.
       setOpen(false)
-      setFeedback('')
+      setStarted(true)
       onJobStarted?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Revision failed')
@@ -191,13 +195,18 @@ function PrototypeFeedbackButton({
 
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 text-orange-600 hover:underline"
-        title={t('documents.prototype.feedbackTitle', { defaultValue: 'Give feedback to regenerate this prototype' })}
-      >
-        <Wand2 size={12} /> {t('documents.prototype.feedbackButton', { defaultValue: 'Revise with feedback' })}
-      </button>
+      <span className="inline-flex items-center gap-2">
+        <button
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1 text-orange-600 hover:underline"
+          title={t('documents.prototype.feedbackTitle', { defaultValue: 'Give feedback to regenerate this prototype' })}
+        >
+          <Wand2 size={12} /> {t('documents.prototype.feedbackButton', { defaultValue: 'Revise with feedback' })}
+        </button>
+        {/* The panel is the real progress report, but it is a refetch away and
+            renders nothing until the job appears — so say something here too. */}
+        {started ? <span className="text-emerald-700">{t('documents.prototype.started')}</span> : null}
+      </span>
     )
   }
 

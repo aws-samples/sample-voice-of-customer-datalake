@@ -112,6 +112,29 @@ describe('ProjectDetail job handover (U9)', () => {
     await waitFor(() => expect(mockGetJobs.mock.calls.length).toBeGreaterThan(callsBeforeBuild))
   })
 
+  /**
+   * The three callers used to invalidate ['project', id] themselves on
+   * completion. They no longer can — they are not waiting — so the refreshed
+   * document list has to come from useProjectData's completed-job effect.
+   */
+  it('refetches the project when a job completes, with no component waiting on it', async () => {
+    mockGetJobs.mockResolvedValue({
+      jobs: [{
+        job_id: 'job-1',
+        job_type: 'build_prototype',
+        status: 'completed',
+        progress: 100,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      }],
+    })
+    renderProjectDetail()
+
+    // Twice: the initial load, then the completed-job effect's invalidation.
+    await waitFor(() => expect(mockGetProject.mock.calls.length).toBeGreaterThan(1))
+  })
+
   it('does not disturb the jobs list when the build fails to start', async () => {
     const user = userEvent.setup()
     mockBuildPrototype.mockRejectedValue(new Error('Bedrock unavailable'))

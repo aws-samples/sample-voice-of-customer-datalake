@@ -79,7 +79,8 @@
       "needsDocs": "Create a PRD or a PR-FAQ first to enable prototype build",
       "openNewTab": "Open in new tab",
       "previewLabel": "Live preview",
-      "rawLabel": "Raw output (parse failed — please regenerate)"
+      "rawLabel": "Raw output (parse failed — please regenerate)",
+      "started": "Started — track it in Background Jobs."
     },
     "selectDocument": "Select a document"
   },
@@ -116,6 +117,8 @@
     "completedCount_other": "{{count}} completed",
     "created": "Created:",
     "dismiss": "Dismiss",
+    "moreCount_one": "{{count}} more",
+    "moreCount_other": "{{count}} more",
     "staleMessage": "No updates for 10+ minutes. Will auto-clear soon.",
     "starting": "Starting...",
     "status": {
