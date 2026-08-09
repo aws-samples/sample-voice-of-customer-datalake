@@ -86,6 +86,28 @@ function renderTabWithData(projectId = 'proj-123') {
   )
 }
 
+/**
+ * Empties every picker section via its bulk control.
+ *
+ * Bulk rather than per-checkbox because the sections are collapsed by default, so
+ * the individual rows are not rendered — but each header's Select all / Deselect
+ * all always is. Each click flips that section's control to "Select all", so the
+ * query is re-run rather than holding stale handles.
+ *
+ * Bounded: if a regression stopped the label flipping, an unbounded loop would
+ * spin to the test timeout instead of failing here with a usable message. There
+ * are only ever two sections.
+ */
+async function deselectEverySection(user: ReturnType<typeof userEvent.setup>) {
+  const deselectAll = () => screen.queryAllByRole('button', { name: /^Deselect all$/ })
+  for (let guard = 0; guard < 4; guard += 1) {
+    const remaining = deselectAll()
+    if (remaining.length === 0) return
+    await user.click(remaining[0])
+  }
+  throw new Error('Deselect all never stopped appearing — the bulk control is not flipping state')
+}
+
 const mockToken = {
   token_id: 'tok-1',
   name: 'My Kiro token',
@@ -352,14 +374,7 @@ describe('McpAccessTab \u2014 AutoseedContent', () => {
     // Starts enabled \u2014 all items are pre-selected
     expect(copyBtn).toBeEnabled()
 
-    // Empty the selection via each section's bulk control. The picker sections are
-    // collapsed by default so the individual rows are not rendered, but the
-    // header's Select all / Deselect all always is.
-    for (;;) {
-      const remaining = screen.queryAllByRole('button', { name: /^Deselect all$/ })
-      if (remaining.length === 0) break
-      await user.click(remaining[0])
-    }
+    await deselectEverySection(user)
 
     expect(copyBtn).toBeDisabled()
   })
@@ -415,20 +430,10 @@ describe('McpAccessTab \u2014 ExportCard', () => {
     renderTabWithData()
 
     // The copy button starts enabled because all items are pre-selected.
-    // Empty the selection via each section's bulk control, then verify the button
-    // becomes disabled. Bulk rather than per-checkbox because the picker sections
-    // are collapsed by default, so the individual rows are not rendered — but the
-    // header's Select all / Deselect all always is.
     const copyBtn = screen.getByRole('button', { name: /Copy to clipboard/i })
     expect(copyBtn).toBeEnabled()
 
-    // Each click flips that section's control to "Select all", so re-query rather
-    // than holding stale handles.
-    for (;;) {
-      const remaining = screen.queryAllByRole('button', { name: /^Deselect all$/ })
-      if (remaining.length === 0) break
-      await user.click(remaining[0])
-    }
+    await deselectEverySection(user)
 
     expect(copyBtn).toBeDisabled()
   })
