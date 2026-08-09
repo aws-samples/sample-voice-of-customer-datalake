@@ -93,7 +93,7 @@
     "copyFailed": "Error al copiar — inténtelo de nuevo.",
     "description": "Copia el contexto del proyecto al portapapeles — sin token de API",
     "emptyHint": "Genera personas o documentos primero para habilitar la exportación.",
-    "title": "Export"
+    "title": "Exportar"
   },
   "importPersona": {
     "aiImportDesc": "Claude extraerá información de persona de tu {{type}} y creará una persona estructurada con un avatar generado por IA.",
@@ -403,7 +403,7 @@
   "tabs": {
     "aiChat": "Chat IA",
     "documents": "Documentos",
-    "mcpAccess": "Export / MCP",
+    "mcpAccess": "Exportar / MCP",
     "overview": "Descripción General",
     "personas": "Arquetipos",
     "product": "Producto"

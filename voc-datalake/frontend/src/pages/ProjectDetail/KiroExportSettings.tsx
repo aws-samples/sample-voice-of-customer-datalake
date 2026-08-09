@@ -1,5 +1,13 @@
 /**
- * KiroExportSettings - Configure context for "Copy to Kiro" exports
+ * KiroExportSettings - editor for the per-project export-prompt template.
+ *
+ * The template is shared config for BOTH Kiro handoff paths, not just one:
+ * the backend's `_build_steering_file` injects it into the autoseed payload,
+ * and `DocumentExportMenu` prepends it to a single-document "Copy to Kiro".
+ *
+ * Renders as a SECTION, not a card — it has no bg/border/padding of its own and
+ * expects an enclosing card (the Export card in McpAccessTab) to supply them,
+ * and to own the h3 above this section's h4.
  */
 import {
   Sparkles, Settings, Check,
@@ -145,15 +153,21 @@ export default function KiroExportSettings({
     return <EmptyState />
   }
 
+  // Deliberately carries NO card chrome (no bg/border/padding): this renders as
+  // a section INSIDE the Export card, which supplies them. A wrapper here would
+  // nest a card in a card, which is why an earlier revision left it as a third
+  // sibling card and split the Export grouping in two.
+  // Heading is h4 with CollapsibleSection's class string — the established
+  // nested-section idiom in this tab — because the enclosing card owns the h3.
   return (
-    <div className="bg-white rounded-xl p-6 border">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-            <Sparkles size={20} className="text-purple-600" />
+          <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Sparkles size={16} className="text-purple-600" />
           </div>
           <div>
-            <h3 className="font-semibold">{t('kiroExport.title')}</h3>
+            <h4 className="font-medium text-sm text-gray-700">{t('kiroExport.title')}</h4>
             <p className="text-sm text-gray-500">{t('kiroExport.description')}</p>
           </div>
         </div>

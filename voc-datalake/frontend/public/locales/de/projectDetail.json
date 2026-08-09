@@ -93,7 +93,7 @@
     "copyFailed": "Kopieren fehlgeschlagen — bitte erneut versuchen.",
     "description": "Projektkontext in die Zwischenablage kopieren — kein API-Token erforderlich",
     "emptyHint": "Zuerst Personas oder Dokumente generieren, um den Export zu aktivieren.",
-    "title": "Export"
+    "title": "Exportieren"
   },
   "importPersona": {
     "aiImportDesc": "Claude extrahiert Persona-Informationen aus Ihrem {{type}} und erstellt eine strukturierte Persona mit einem KI-generierten Avatar.",
@@ -398,7 +398,7 @@
   "tabs": {
     "aiChat": "KI-Chat",
     "documents": "Dokumente",
-    "mcpAccess": "Export / MCP",
+    "mcpAccess": "Exportieren / MCP",
     "overview": "Übersicht",
     "personas": "Zielgruppen",
     "product": "Produkt"

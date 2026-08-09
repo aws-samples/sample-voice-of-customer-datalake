@@ -93,7 +93,7 @@
     "copyFailed": "Échec de la copie — veuillez réessayer.",
     "description": "Copier le contexte du projet dans le presse-papiers — aucun jeton API requis",
     "emptyHint": "Générez d'abord des personas ou des documents pour activer l'export.",
-    "title": "Export"
+    "title": "Exporter"
   },
   "importPersona": {
     "aiImportDesc": "Claude extraira les informations de persona de votre {{type}} et créera un persona structuré avec un avatar généré par IA.",
@@ -403,7 +403,7 @@
   "tabs": {
     "aiChat": "Chat IA",
     "documents": "Fichiers",
-    "mcpAccess": "Export / MCP",
+    "mcpAccess": "Exporter / MCP",
     "overview": "Aperçu",
     "personas": "Profils",
     "product": "Produit"

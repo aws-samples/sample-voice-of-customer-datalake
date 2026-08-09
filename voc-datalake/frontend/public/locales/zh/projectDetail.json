@@ -93,7 +93,7 @@
     "copyFailed": "复制失败 — 请重试。",
     "description": "将项目上下文复制到剪贴板 — 无需 API 令牌",
     "emptyHint": "请先生成用户角色或文档以启用导出。",
-    "title": "Export"
+    "title": "导出"
   },
   "importPersona": {
     "aiImportDesc": "Claude 将从您的 {{type}} 中提取人物角色信息，并创建一个带有 AI 生成头像的结构化人物角色。",
@@ -398,7 +398,7 @@
   "tabs": {
     "aiChat": "AI 对话",
     "documents": "文档",
-    "mcpAccess": "Export / MCP",
+    "mcpAccess": "导出 / MCP",
     "overview": "概览",
     "personas": "用户角色",
     "product": "产品"

@@ -25,6 +25,7 @@ import {
 import {
   useState, useCallback, useMemo,
 } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import { stripTrailingSlashes } from '../../api/baseUrl'
@@ -276,6 +277,12 @@ interface ExportCardProps {
   readonly onToggleAllPersonas: (select: boolean) => void
   readonly onToggleAllDocuments: (select: boolean) => void
   readonly onToggleSection: (section: string) => void
+  /**
+   * The export-prompt template editor, rendered as a section inside this card.
+   * A slot rather than a `project` prop so ExportCard stays presentational and
+   * needs no knowledge of the template — same idiom as ActionCard's `statusLine`.
+   */
+  readonly templateEditor: ReactNode
 }
 
 function ExportCard({
@@ -290,6 +297,7 @@ function ExportCard({
   onToggleAllPersonas,
   onToggleAllDocuments,
   onToggleSection,
+  templateEditor,
 }: ExportCardProps) {
   const { t } = useTranslation('projectDetail')
   const { copy: markCopied, copiedKey } = useCopyToClipboard()
@@ -368,6 +376,13 @@ function ExportCard({
           </div>
         </>
       )}
+      {/* Template editor sits OUTSIDE the isEmpty branch on purpose: the prompt
+          is configurable before any personas or documents exist, and it also
+          feeds Card 2's autoseed payload, so hiding it on an empty project
+          would strand the only editor for it. */}
+      <div className="mt-6 pt-6 border-t">
+        {templateEditor}
+      </div>
     </div>
   )
 }
@@ -527,13 +542,11 @@ export default function McpAccessTab({
       onToggleAllPersonas={toggleAllPersonas}
       onToggleAllDocuments={toggleAllDocuments}
       onToggleSection={toggleSection}
+      // Nested as a section inside the Export card rather than rendered as a
+      // third sibling card: the template belongs to the token-free export path,
+      // and a separate card split that grouping in two.
+      templateEditor={<KiroExportSettings project={project} onSave={onSaveKiroPrompt} />}
     />
-  )
-
-  // KiroExportSettings is a sibling card (not nested inside ExportCard) so its
-  // own bg-white/border wrapper doesn't create a card-inside-a-card layout.
-  const kiroSettingsCard = (
-    <KiroExportSettings project={project} onSave={onSaveKiroPrompt} />
   )
 
   // ── Card 2 — MCP Access (error branch) ───────────────────────────────────
@@ -541,7 +554,6 @@ export default function McpAccessTab({
     return (
       <div className="space-y-4">
         {exportCard}
-        {kiroSettingsCard}
         <McpAccessErrorState />
         <CollapsibleSection
           title={t('autoseed.title')}
@@ -562,11 +574,8 @@ export default function McpAccessTab({
   // ── Card 2 — MCP Access (normal branch) ──────────────────────────────────
   return (
     <div className="space-y-4">
-      {/* Card 1 — Export (no API token) */}
+      {/* Card 1 — Export (no API token); the template editor is a section inside it */}
       {exportCard}
-
-      {/* Kiro prompt template editor — sibling card, not nested inside ExportCard */}
-      {kiroSettingsCard}
 
       {/* Card 2 — MCP Access (API token required) */}
       <div className="bg-white rounded-xl p-6 border space-y-4">

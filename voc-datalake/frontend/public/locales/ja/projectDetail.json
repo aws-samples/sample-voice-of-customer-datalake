@@ -93,7 +93,7 @@
     "copyFailed": "コピーに失敗しました — もう一度お試しください。",
     "description": "プロジェクトコンテキストをクリップボードにコピー — APIトークン不要",
     "emptyHint": "エクスポートを有効にするには、まずペルソナまたはドキュメントを生成してください。",
-    "title": "Export"
+    "title": "エクスポート"
   },
   "importPersona": {
     "aiImportDesc": "Claudeが{{type}}からペルソナ情報を抽出し、AI生成アバター付きの構造化ペルソナを作成します。",
@@ -398,7 +398,7 @@
   "tabs": {
     "aiChat": "AIチャット",
     "documents": "ドキュメント",
-    "mcpAccess": "Export / MCP",
+    "mcpAccess": "エクスポート / MCP",
     "overview": "概要",
     "personas": "ペルソナ",
     "product": "製品"

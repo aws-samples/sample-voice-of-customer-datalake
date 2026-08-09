@@ -93,7 +93,7 @@
     "copyFailed": "Falha ao copiar — tente novamente.",
     "description": "Copia o contexto do projeto para a área de transferência — sem token de API",
     "emptyHint": "Gere personas ou documentos primeiro para ativar a exportação.",
-    "title": "Export"
+    "title": "Exportar"
   },
   "importPersona": {
     "aiImportDesc": "Claude extrairá informações de persona do seu {{type}} e criará uma persona estruturada com um avatar gerado por IA.",
@@ -403,7 +403,7 @@
   "tabs": {
     "aiChat": "Chat IA",
     "documents": "Documentos",
-    "mcpAccess": "Export / MCP",
+    "mcpAccess": "Exportar / MCP",
     "overview": "Visão Geral",
     "personas": "Arquétipos",
     "product": "Produto"
