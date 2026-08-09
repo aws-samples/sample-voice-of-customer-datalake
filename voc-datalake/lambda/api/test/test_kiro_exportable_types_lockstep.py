@@ -2,8 +2,10 @@
 KIRO_EXPORTABLE_DOC_TYPES must be complementary subsets of the full
 document_type union, and must never drift apart.
 
-The full union is:
-    prd | prfaq | research | custom | product_report | prototype
+The full union is parsed dynamically from frontend/src/api/types.ts
+(the `document_type` field of `ProjectDocument`), so this test fails
+automatically when a new document type is added to the TypeScript union
+without also deciding which Kiro constant it belongs in.
 
 The backend defines which types are EXCLUDED.
 The frontend defines which types are INCLUDED (shown in the picker).
@@ -18,18 +20,12 @@ import re
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Constants
+# Sources of truth
 # ---------------------------------------------------------------------------
 
-# All values in the `document_type` union from types.ts.
-# Cross-reference: frontend/src/api/types.ts line 303:
-#   document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'
-# Kept here so this test fails if someone adds a new type without deciding
-# whether it belongs in the export.  When you add a new document_type to
-# types.ts, also update this set and decide which constant it belongs in.
-ALL_DOCUMENT_TYPES: frozenset[str] = frozenset({
-    'prd', 'prfaq', 'research', 'custom', 'product_report', 'prototype',
-})
+# The TypeScript file that defines the document_type union.
+# Update this path if the file moves.
+TYPES_TS_SOURCE = 'frontend/src/api/types.ts'
 
 FRONTEND_SOURCE = 'frontend/src/pages/ProjectDetail/autoseedSelection.ts'
 
@@ -47,6 +43,31 @@ def _read(relative: str) -> str:
     path = _repo_root() / relative
     assert path.is_file(), f'{relative} not found — did the file move?'
     return path.read_text(encoding='utf-8')
+
+
+def _all_document_types() -> frozenset[str]:
+    """Parse the document_type union from frontend/src/api/types.ts.
+
+    Matches a line like:
+        document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'
+    and returns the set of type string values.
+
+    This is the authoritative source: adding a 7th type to the TypeScript union
+    causes this helper to return a 7-element set, and the complementarity test
+    then fails until KIRO_EXPORT_EXCLUDED_TYPES or KIRO_EXPORTABLE_DOC_TYPES is
+    updated to account for it.
+    """
+    source = _read(TYPES_TS_SOURCE)
+    match = re.search(
+        r"document_type\s*:\s*((?:'[^']+'(?:\s*\|\s*)?)+)",
+        source,
+    )
+    assert match, (
+        f"document_type union not found in {TYPES_TS_SOURCE} — "
+        "did the field name or file location change?"
+    )
+    raw = match.group(1)
+    return frozenset(re.findall(r"'([^']+)'", raw))
 
 
 def _backend_excluded_types() -> frozenset[str]:
@@ -87,9 +108,10 @@ def _frontend_exportable_types() -> frozenset[str]:
 
 class TestKiroExportableTypesLockstep:
     def test_frontend_exportable_and_backend_excluded_are_complementary(self):
-        """Excluded ∪ Exportable == ALL_DOCUMENT_TYPES and Excluded ∩ Exportable == ∅."""
+        """Excluded ∪ Exportable == all document_types from types.ts, and Excluded ∩ Exportable == ∅."""
         excluded = _backend_excluded_types()
         exportable = _frontend_exportable_types()
+        all_types = _all_document_types()
 
         union = excluded | exportable
         intersection = excluded & exportable
@@ -98,13 +120,14 @@ class TestKiroExportableTypesLockstep:
             f'A type appears in BOTH the backend excluded set and the frontend '
             f'exportable set: {intersection!r}. Remove it from one of them.'
         )
-        assert union == ALL_DOCUMENT_TYPES, (
-            f'Excluded ∪ Exportable != ALL_DOCUMENT_TYPES.\n'
-            f'  Missing from either: {ALL_DOCUMENT_TYPES - union!r}\n'
-            f'  Extra (unknown types): {union - ALL_DOCUMENT_TYPES!r}\n'
-            f'  If you added a new document_type, decide whether it belongs in '
-            f'the Kiro export and update both constants, then update '
-            f'ALL_DOCUMENT_TYPES in this test.'
+        assert union == all_types, (
+            f'Excluded ∪ Exportable != all document_types in {TYPES_TS_SOURCE}.\n'
+            f'  Missing from either constant: {all_types - union!r}\n'
+            f'  Extra (unknown types not in types.ts): {union - all_types!r}\n'
+            f'  If you added a new document_type to types.ts, decide whether it\n'
+            f'  belongs in the Kiro export and update KIRO_EXPORT_EXCLUDED_TYPES\n'
+            f'  (lambda/api/projects.py) or KIRO_EXPORTABLE_DOC_TYPES\n'
+            f'  (frontend/src/pages/ProjectDetail/autoseedSelection.ts).'
         )
 
     def test_backend_excludes_prototype(self):

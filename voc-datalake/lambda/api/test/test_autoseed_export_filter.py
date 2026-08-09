@@ -61,11 +61,10 @@ class TestAutoseedExcludesNonExportableTypes:
             f['path'] for f in result['files']
             if f['path'].startswith('.kiro/docs/')
         }
-        proto_path = '.kiro/docs/doc-d-proto.md'
-        assert any('d-prd' in p or 'prd' in p for p in doc_types_in_files), (
+        assert any('d-prd' in p for p in doc_types_in_files), (
             f'PRD should be exported; files: {doc_types_in_files}'
         )
-        assert proto_path not in doc_types_in_files, (
+        assert all('d-proto' not in p for p in doc_types_in_files), (
             'Prototype must not appear in Kiro export'
         )
 
@@ -81,7 +80,7 @@ class TestAutoseedExcludesNonExportableTypes:
 
         result = autoseed_project('proj-test')
         doc_paths = [f['path'] for f in result['files'] if f['path'].startswith('.kiro/docs/')]
-        assert any('d-report' in p or 'product-report' in p for p in doc_paths) is False, (
+        assert not any('d-report' in p or 'product-report' in p for p in doc_paths), (
             'product_report must not appear in Kiro export'
         )
 
