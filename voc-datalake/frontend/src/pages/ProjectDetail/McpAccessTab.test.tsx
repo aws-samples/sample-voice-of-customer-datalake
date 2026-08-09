@@ -313,6 +313,57 @@ describe('McpAccessTab', () => {
   })
 })
 
+describe('McpAccessTab \u2014 AutoseedContent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockListApiTokens.mockResolvedValue({ success: true, tokens: [] })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('shows error message when clipboard write fails in Kiro Autoseed section', async () => {
+    const user = userEvent.setup()
+    const mockWriteText = vi.fn().mockRejectedValue(new Error('Permission denied'))
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: mockWriteText } })
+    renderTabWithData()
+
+    // Expand the Kiro Autoseed collapsible section
+    await user.click(screen.getByText('Kiro Autoseed'))
+
+    const copyBtn = screen.getByRole('button', { name: /Copy Kiro Prompt/i })
+    await user.click(copyBtn)
+
+    await waitFor(() => {
+      // The localized 'autoseed.copyFailed' string is shown, not the raw error.
+      expect(screen.getByRole('alert')).toHaveTextContent('Copy failed')
+    })
+  })
+
+  it('disables Kiro Autoseed copy button when nothing is selected', async () => {
+    const user = userEvent.setup()
+    renderTabWithData()
+
+    // Expand the Kiro Autoseed collapsible section
+    await user.click(screen.getByText('Kiro Autoseed'))
+
+    const copyBtn = screen.getByRole('button', { name: /Copy Kiro Prompt/i })
+    // Starts enabled \u2014 all items are pre-selected
+    expect(copyBtn).toBeEnabled()
+
+    // Deselect every checkbox to produce an empty selection
+    const checkboxes = screen.getAllByRole('checkbox')
+    for (const cb of checkboxes) {
+      if ((cb as HTMLInputElement).checked) {
+        await user.click(cb)
+      }
+    }
+
+    expect(copyBtn).toBeDisabled()
+  })
+})
+
 describe('McpAccessTab \u2014 ExportCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()

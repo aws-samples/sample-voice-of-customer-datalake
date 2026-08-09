@@ -1,5 +1,6 @@
 {
   "autoseed": {
+    "copyFailed": "复制失败 — 请重试。",
     "copyKiroPrompt": "复制 Kiro 提示词",
     "description": "选择人物角色和文档以导入到 Kiro 工作区",
     "deselectAll": "取消全选",

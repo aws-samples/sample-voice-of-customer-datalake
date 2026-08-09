@@ -1,5 +1,6 @@
 {
   "autoseed": {
+    "copyFailed": "Copy failed — please try again.",
     "copyKiroPrompt": "Copy Kiro Prompt",
     "description": "Select personas and documents to seed into a Kiro workspace",
     "deselectAll": "Deselect all",

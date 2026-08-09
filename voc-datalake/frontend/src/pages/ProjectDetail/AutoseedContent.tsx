@@ -14,6 +14,7 @@ import {
   useState, useCallback,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { useConfigStore } from '../../store/configStore'
 import { generateKiroPrompt } from './generateKiroPrompt'
 import type {
@@ -38,15 +39,21 @@ export default function AutoseedContent({
 }: AutoseedContentProps) {
   const { config } = useConfigStore()
   const { t } = useTranslation('projectDetail')
-  const [copied, setCopied] = useState(false)
+  const { copy: markCopied, copiedKey } = useCopyToClipboard()
+  const [copyError, setCopyError] = useState<string | null>(null)
 
   const kiroPrompt = generateKiroPrompt(curlUrl)
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(kiroPrompt)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }, [kiroPrompt])
+    setCopyError(null)
+    try {
+      await navigator.clipboard.writeText(kiroPrompt)
+      markCopied(kiroPrompt, 'kiro-autoseed')
+    } catch (err) {
+      console.error('[AutoseedContent] clipboard write failed:', err)
+      setCopyError(t('autoseed.copyFailed'))
+    }
+  }, [kiroPrompt, markCopied, t])
 
   const isEmpty = personas.length === 0 && documents.length === 0
 
@@ -71,10 +78,13 @@ export default function AutoseedContent({
             disabled={config.apiEndpoint === '' || !hasSelection}
             className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {copied ? <Check size={16} /> : <Copy size={16} />}
-            {copied ? t('mcp.copied') : t('autoseed.copyKiroPrompt')}
+            {copiedKey === 'kiro-autoseed' ? <Check size={16} /> : <Copy size={16} />}
+            {copiedKey === 'kiro-autoseed' ? t('mcp.copied') : t('autoseed.copyKiroPrompt')}
           </button>
         </div>
+        {copyError != null && (
+          <p className="text-sm text-red-600 mb-2" role="alert">{copyError}</p>
+        )}
         <div className="bg-gray-900 rounded-lg p-4 max-h-48 overflow-y-auto">
           <pre className="text-xs text-gray-100 whitespace-pre-wrap">{kiroPrompt}</pre>
         </div>

@@ -1,5 +1,6 @@
 {
   "autoseed": {
+    "copyFailed": "복사 실패 — 다시 시도해 주세요.",
     "copyKiroPrompt": "Kiro 프롬프트 복사",
     "description": "Kiro 워크스페이스에 시드할 페르소나와 문서를 선택하세요",
     "deselectAll": "모두 선택 해제",

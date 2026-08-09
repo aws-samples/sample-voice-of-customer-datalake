@@ -1,5 +1,6 @@
 {
   "autoseed": {
+    "copyFailed": "Error al copiar — inténtelo de nuevo.",
     "copyKiroPrompt": "Copiar Prompt de Kiro",
     "description": "Selecciona personas y documentos para importar a un workspace de Kiro",
     "deselectAll": "Deseleccionar todo",

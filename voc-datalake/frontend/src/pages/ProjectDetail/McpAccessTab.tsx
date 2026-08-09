@@ -98,11 +98,26 @@ function groupDocumentsByType(documents: ProjectDocument[]): Record<DocType, Pro
   return groups
 }
 
-const DOC_TYPE_LABELS: Record<DocType, string> = {
-  prd: 'PRDs',
-  prfaq: 'PR/FAQs',
-  research: 'Research',
-  custom: 'Custom',
+/**
+ * Builds the `personaIds` / `documentIds` filter params for the autoseed API.
+ * Sends a filter only when the selection is a strict subset of all available
+ * items — the server returns everything when the param is absent, which is the
+ * correct behaviour for "all selected".
+ */
+function buildAutoseedParams(
+  selectedPersonaIds: ReadonlySet<string>,
+  totalPersonas: number,
+  selectedDocumentIds: ReadonlySet<string>,
+  totalDocuments: number,
+): { personaIds?: string[]; documentIds?: string[] } {
+  return {
+    personaIds: selectedPersonaIds.size > 0 && selectedPersonaIds.size < totalPersonas
+      ? [...selectedPersonaIds]
+      : undefined,
+    documentIds: selectedDocumentIds.size > 0 && selectedDocumentIds.size < totalDocuments
+      ? [...selectedDocumentIds]
+      : undefined,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +240,7 @@ function SharedPickers({
               const docs = docGroups[type]
               return (
                 <div key={type} className="mb-2">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{DOC_TYPE_LABELS[type]}</p>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{t(`autoseed.docTypes.${type}`)}</p>
                   {docs.map((d) => (
                     <CheckboxItem
                       key={d.document_id}
@@ -277,7 +292,7 @@ function ExportCard({
   onToggleSection,
 }: ExportCardProps) {
   const { t } = useTranslation('projectDetail')
-  const [copied, setCopied] = useState(false)
+  const { copy: markCopied, copiedKey } = useCopyToClipboard()
   const [copying, setCopying] = useState(false)
   const [copyError, setCopyError] = useState<string | null>(null)
   const isEmpty = personas.length === 0 && documents.length === 0
@@ -287,20 +302,10 @@ function ExportCard({
     setCopying(true)
     setCopyError(null)
     try {
-      // Only send persona_ids / document_ids when the selection is a strict
-      // subset — the server returns all by default when the params are absent,
-      // which is the correct behaviour for "all selected".
-      const personaParam = selectedPersonaIds.size > 0 && selectedPersonaIds.size < personas.length
-        ? [...selectedPersonaIds]
-        : undefined
-      const documentParam = selectedDocumentIds.size > 0 && selectedDocumentIds.size < documents.length
-        ? [...selectedDocumentIds]
-        : undefined
-
-      const payload = await api.autoseedProject(projectId, {
-        personaIds: personaParam,
-        documentIds: documentParam,
-      })
+      const payload = await api.autoseedProject(
+        projectId,
+        buildAutoseedParams(selectedPersonaIds, personas.length, selectedDocumentIds, documents.length),
+      )
 
       // Concatenate all file contents into a single clipboard payload.
       // The backend already bakes kiro_export_prompt into the steering file
@@ -308,17 +313,14 @@ function ExportCard({
       // duplicate it and diverge from the autoseed format.
       const text = payload.files.map((f) => `${f.content}`).join('\n\n')
       await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => {
-        setCopied(false)
-      }, 2000)
+      markCopied(text, 'export')
     } catch (err) {
       console.error('[ExportCard] autoseed copy failed:', err)
       setCopyError(t('export.copyFailed'))
     } finally {
       setCopying(false)
     }
-  }, [projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length, t])
+  }, [projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length, markCopied, t])
 
   return (
     <div className="bg-white rounded-xl p-6 border">
@@ -357,8 +359,8 @@ function ExportCard({
               disabled={!hasSelection || copying}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
-              {copied ? <Check size={16} /> : <Copy size={16} />}
-              {copied ? t('export.copyCopied') : t('export.copyContext')}
+              {copiedKey === 'export' ? <Check size={16} /> : <Copy size={16} />}
+              {copiedKey === 'export' ? t('export.copyCopied') : t('export.copyContext')}
             </button>
             {copyError != null && (
               <p className="text-sm text-red-600" role="alert">{copyError}</p>
@@ -500,13 +502,12 @@ export default function McpAccessTab({
   // Build the autoseed curl URL from shared selection (used by Card 2)
   const apiBase = stripTrailingSlashes(config.apiEndpoint === '' ? '' : config.apiEndpoint)
   const autoseedCurlUrl = useMemo(() => {
+    const { personaIds, documentIds } = buildAutoseedParams(
+      selectedPersonaIds, personas.length, selectedDocumentIds, documents.length,
+    )
     const params = new URLSearchParams()
-    if (selectedPersonaIds.size > 0 && selectedPersonaIds.size < personas.length) {
-      params.set('persona_ids', [...selectedPersonaIds].join(','))
-    }
-    if (selectedDocumentIds.size > 0 && selectedDocumentIds.size < documents.length) {
-      params.set('document_ids', [...selectedDocumentIds].join(','))
-    }
+    if (personaIds != null) params.set('persona_ids', personaIds.join(','))
+    if (documentIds != null) params.set('document_ids', documentIds.join(','))
     const qs = params.toString()
     const base = `${apiBase}/mcp/autoseed/${projectId}`
     return qs === '' ? base : `${base}?${qs}`

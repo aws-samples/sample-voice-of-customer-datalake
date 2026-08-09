@@ -1,5 +1,6 @@
 {
   "autoseed": {
+    "copyFailed": "コピーに失敗しました — もう一度お試しください。",
     "copyKiroPrompt": "Kiroプロンプトをコピー",
     "description": "ペルソナとドキュメントを選択してKiroワークスペースにシードします",
     "deselectAll": "すべて選択解除",
