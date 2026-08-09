@@ -117,6 +117,14 @@ export default function KiroExportSettings({
     setPrompt(storedPrompt)
   }
 
+  // Sync the editor with the latest stored value when opening it.
+  // This ensures the textarea shows the freshest server state even if the
+  // parent refetched the project after mount (e.g. polling or post-save).
+  const handleEdit = () => {
+    setPrompt(storedPrompt)
+    setIsEditing(true)
+  }
+
   const renderContent = () => {
     if (isEditing) {
       return (
@@ -126,7 +134,7 @@ export default function KiroExportSettings({
           onPromptChange={setPrompt}
           onSave={handleSave}
           onCancel={handleCancel}
-          onUseDefault={() => setPrompt(defaultPrompt)}
+          onUseDefault={() => setPrompt('')}
         />
       )
     }
@@ -156,7 +164,7 @@ export default function KiroExportSettings({
         </div>
         {!isEditing && (
           <button
-            onClick={() => setIsEditing(true)}
+            onClick={handleEdit}
             className="flex items-center gap-2 px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 rounded-lg"
           >
             <Settings size={16} />

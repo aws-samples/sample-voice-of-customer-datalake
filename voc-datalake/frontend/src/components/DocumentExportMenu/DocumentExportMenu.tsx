@@ -166,10 +166,11 @@ export default function DocumentExportMenu({
     const effectivePrompt = storedPrompt !== ''
       ? storedPrompt
       : (project?.kiro_default_export_prompt ?? '')
+    const sectionHeading = doc.document_type === 'prfaq' ? 'PR/FAQ Document' : 'PRD Document'
     const prdSection = `# ${doc.title}\n\n${doc.content ?? ''}`
     const fullContent = effectivePrompt === ''
       ? prdSection
-      : `${effectivePrompt}\n\n---\n\n## PRD Document\n\n${prdSection}`
+      : `${effectivePrompt}\n\n---\n\n## ${sectionHeading}\n\n${prdSection}`
 
     await navigator.clipboard.writeText(fullContent)
     setCopiedKiro(true)

@@ -57,8 +57,13 @@ class TestKiroDefaultPromptIsUnique:
 
         duplicates = []
         for ts_file in list(frontend_root.rglob('*.ts')) + list(frontend_root.rglob('*.tsx')):
-            # Test files are allowed to reference the text as expected values.
-            if '.test.' in ts_file.name:
+            # Test / story / fixture files are allowed to reference the text as
+            # expected values — they are not production source.
+            name = ts_file.name
+            if '.test.' in name or '.spec.' in name or '.stories.' in name:
+                continue
+            # Also skip files nested inside test or mock directories.
+            if '__tests__' in ts_file.parts or '__mocks__' in ts_file.parts:
                 continue
             if fingerprint in ts_file.read_text(encoding='utf-8'):
                 duplicates.append(str(ts_file.relative_to(_repo_root())))
@@ -80,13 +85,14 @@ class TestKiroDefaultPromptIsUnique:
 
         duplicates = []
         for py_file in lambda_root.rglob('*.py'):
-            # Skip __pycache__, the defining file itself, and test files.
+            # Skip __pycache__, the defining file itself, and test/fixture files.
             if '__pycache__' in py_file.parts:
                 continue
             if py_file.name == 'projects.py' and py_file.parent.name == 'api':
                 continue
-            # Test files are allowed to reference the constant as expected values.
-            if py_file.name.startswith('test_'):
+            # Test files and conftest are allowed to reference the constant as
+            # expected values — they are not production source.
+            if py_file.name.startswith('test_') or py_file.name == 'conftest.py':
                 continue
             text = py_file.read_text(encoding='utf-8')
             if fingerprint in text:

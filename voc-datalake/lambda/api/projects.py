@@ -237,9 +237,11 @@ def get_project(project_id: str) -> dict:
     if not project:
         raise NotFoundError('Project metadata not found')
 
-    # Expose the default so both consumers (the steering-file editor and the
-    # per-document "Copy to Kiro" action) always agree on the fallback text
-    # without duplicating the constant in the frontend bundle.
+    # Inject the default at read time so both consumers (the steering-file editor
+    # and the per-document "Copy to Kiro" action) always agree on the fallback
+    # text without duplicating the constant in the frontend bundle.
+    # NOTE: this field is COMPUTED, not stored in DynamoDB. Do not include it in
+    # any update expression or treat it as a persisted attribute.
     project['kiro_default_export_prompt'] = KIRO_DEFAULT_EXPORT_PROMPT
 
     return {

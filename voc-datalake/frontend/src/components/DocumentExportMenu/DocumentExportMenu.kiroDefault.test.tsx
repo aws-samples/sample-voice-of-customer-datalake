@@ -33,6 +33,13 @@ const mockDoc: ProjectDocument = {
   created_at: '2025-01-01T00:00:00Z',
 }
 
+const mockPrfaqDoc: ProjectDocument = {
+  ...mockDoc,
+  document_id: 'doc-2',
+  document_type: 'prfaq',
+  title: 'Test PRFAQ',
+}
+
 const projectWithDefault: Project = {
   project_id: 'proj-1',
   name: 'Test Project',
@@ -69,14 +76,14 @@ beforeEach(() => {
   navigator.clipboard.writeText = writeTextMock
 })
 
-// A non-clipboard test that runs first so that setup.ts's afterEach has a
-// chance to call vi.clearAllMocks() before any clipboard spy test runs.
-// This is necessary because vi.spyOn on navigator.clipboard.writeText is
-// unreliable in the very first test of a file in a singleFork environment
-// where previous test files may have left stale spy descriptors on the
-// clipboard property.
+// [vitest-workaround] This non-clipboard describe block MUST remain the first
+// test suite in this file. With singleFork: true, previous test files may leave
+// stale spy descriptors on navigator.clipboard.writeText. Running a non-clipboard
+// test first forces setup.ts's afterEach (which calls vi.clearAllMocks()) to
+// execute before any clipboard mock test, ensuring a clean slate.
+// TODO: remove this workaround if vitest resolves singleFork spy isolation.
 describe('DocumentExportMenu — menu renders for kiro-capable documents', () => {
-  it('shows the copy-to-kiro button for prd documents', async () => {
+  it('[vitest-workaround] warmup test — must remain first in file to flush stale clipboard spy', async () => {
     const user = userEvent.setup()
     render(<DocumentExportMenu document={mockDoc} project={projectWithDefault} />)
     await user.click(screen.getByRole('button', { name: /download options/i }))
@@ -155,5 +162,31 @@ describe('DocumentExportMenu — criterion 7: Copy to Kiro uses effective instru
     await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
 
     expect(writeTextMock.mock.calls[0][0].startsWith(CUSTOM_TEXT)).toBe(true)
+  })
+})
+
+describe('DocumentExportMenu — section heading matches document type', () => {
+  it('uses "PRD Document" heading for prd document type', async () => {
+    const user = userEvent.setup()
+    render(<DocumentExportMenu document={mockDoc} project={projectWithCustom} />)
+
+    await user.click(screen.getByRole('button', { name: /download options/i }))
+    await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
+
+    const copiedText = writeTextMock.mock.calls[0][0]
+    expect(copiedText).toContain('## PRD Document')
+    expect(copiedText).not.toContain('## PR/FAQ Document')
+  })
+
+  it('uses "PR/FAQ Document" heading for prfaq document type', async () => {
+    const user = userEvent.setup()
+    render(<DocumentExportMenu document={mockPrfaqDoc} project={projectWithCustom} />)
+
+    await user.click(screen.getByRole('button', { name: /download options/i }))
+    await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
+
+    const copiedText = writeTextMock.mock.calls[0][0]
+    expect(copiedText).toContain('## PR/FAQ Document')
+    expect(copiedText).not.toContain('## PRD Document')
   })
 })

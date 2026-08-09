@@ -72,18 +72,36 @@ describe('KiroExportSettings — criterion 6: shows effective instructions', () 
     expect(screen.getByText(/no kiro export prompt configured/i)).toBeInTheDocument()
   })
 
-  it('prefills editor with the default when clicking "Use default template"', async () => {
+  it('clears the editor to empty when clicking "Use default template"', async () => {
+    // "Use default template" sets prompt to '' so that saving stores an empty
+    // kiro_export_prompt, keeping the project following the default automatically.
+    // The preview (not the textarea) shows the effective prompt (defaultPrompt).
     const user = userEvent.setup()
     render(<KiroExportSettings project={projectWithCustom} onSave={vi.fn()} />)
 
     // Open the editor
     await user.click(screen.getByRole('button', { name: /edit/i }))
 
-    // Click "Use default template" to populate the textarea with the default
+    // Click "Use default template" — should clear the textarea, not fill with default text
     await user.click(screen.getByRole('button', { name: /use default template/i }))
 
     const textarea = screen.getByRole('textbox')
-    expect(textarea).toHaveValue(DEFAULT_TEXT)
+    expect(textarea).toHaveValue('')
+  })
+
+  it('saves empty string (not the default text) when clicking "Use default template" then Save', async () => {
+    // Verifies the no-freeze design: saving after "Use default template" must
+    // write '' to DynamoDB so future wording changes reach this project.
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(<KiroExportSettings project={projectWithCustom} onSave={onSave} />)
+
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+    await user.click(screen.getByRole('button', { name: /use default template/i }))
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    expect(onSave).toHaveBeenCalledWith('')
+    expect(onSave).not.toHaveBeenCalledWith(DEFAULT_TEXT)
   })
 })
 
