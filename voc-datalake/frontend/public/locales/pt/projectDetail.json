@@ -167,7 +167,7 @@
     "templateLabel": "Modelo de Prompt de Exportação",
     "title": "Configurações de Exportação Kiro",
     "useDefault": "Usar modelo padrão",
-    "usingDefault": "Seguindo as instruções padrão. Clique em \"Configurar\" para escrever as suas."
+    "usingDefault": "Seguindo as instruções padrão. Clique em \"{{action}}\" para escrever as suas."
   },
   "mcp": {
     "activeTokens": "Tokens Ativos ({{count}})",

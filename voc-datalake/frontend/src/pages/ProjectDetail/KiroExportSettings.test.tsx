@@ -118,6 +118,17 @@ describe('KiroExportSettings — the previewed text is attributed', () => {
     expect(screen.queryByText(/following the default instructions/i)).not.toBeInTheDocument()
   })
 
+  it('names the actual button in the hint, taken from the button\'s own translation', () => {
+    // The hint interpolates kiroExport.configure rather than repeating the word,
+    // so it can never point at a button that does not exist by that name.
+    render(<KiroExportSettings project={projectWithDefault} onSave={vi.fn()} />)
+
+    const buttonLabel = screen.getByRole('button', { name: /configure/i }).textContent?.trim()
+    expect(buttonLabel).toBeTruthy()
+    expect(screen.getByText(/following the default instructions/i).textContent)
+      .toContain(buttonLabel)
+  })
+
   it('previews the default as the textarea placeholder so clearing is legible', async () => {
     // "Use default template" clears to '', which would otherwise look like an
     // accidental wipe. The placeholder shows the text that will actually apply.

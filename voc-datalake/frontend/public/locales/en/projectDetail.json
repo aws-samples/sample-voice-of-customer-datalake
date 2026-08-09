@@ -165,7 +165,7 @@
     "templateLabel": "Export Prompt Template",
     "title": "Kiro Export Settings",
     "useDefault": "Use default template",
-    "usingDefault": "Following the default instructions. Click \"Configure\" to write your own."
+    "usingDefault": "Following the default instructions. Click \"{{action}}\" to write your own."
   },
   "mcp": {
     "activeTokens": "Active Tokens ({{count}})",

@@ -126,7 +126,11 @@ export default function KiroExportSettings({
     // Trim before saving so a whitespace-only entry is stored as '' (empty),
     // keeping the project following the default and avoiding a misleading
     // "Edit" button label with a visually blank preview.
-    onSave(prompt.trim())
+    const trimmed = prompt.trim()
+    onSave(trimmed)
+    // Keep local state equal to what was actually saved, rather than waiting for
+    // handleEdit to re-seed it from the refetched project.
+    setPrompt(trimmed)
     setIsEditing(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -166,7 +170,14 @@ export default function KiroExportSettings({
       return (
         <div className="space-y-2">
           {followingDefault && (
-            <p className="text-xs text-gray-500">{t('kiroExport.usingDefault')}</p>
+            <p className="text-xs text-gray-500">
+              {/*
+                The hint names the button to click. Feed it the button's OWN
+                translation rather than repeating the word per locale, so the two
+                cannot drift into naming a button that does not exist.
+              */}
+              {t('kiroExport.usingDefault', { action: t('kiroExport.configure') })}
+            </p>
           )}
           <PromptPreview prompt={effectivePrompt} />
         </div>

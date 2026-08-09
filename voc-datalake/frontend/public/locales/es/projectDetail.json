@@ -167,7 +167,7 @@
     "templateLabel": "Plantilla de prompt de exportación",
     "title": "Configuración de exportación a Kiro",
     "useDefault": "Usar plantilla predeterminada",
-    "usingDefault": "Se están usando las instrucciones predeterminadas. Haz clic en \"Configurar\" para escribir las tuyas."
+    "usingDefault": "Se están usando las instrucciones predeterminadas. Haz clic en \"{{action}}\" para escribir las tuyas."
   },
   "mcp": {
     "activeTokens": "Tokens activos ({{count}})",

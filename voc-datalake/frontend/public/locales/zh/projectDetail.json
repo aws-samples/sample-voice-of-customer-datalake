@@ -165,7 +165,7 @@
     "templateLabel": "导出提示词模板",
     "title": "Kiro 导出设置",
     "useDefault": "使用默认模板",
-    "usingDefault": "正在使用默认说明。点击\"配置\"可编写自己的说明。"
+    "usingDefault": "正在使用默认说明。点击\"{{action}}\"可编写自己的说明。"
   },
   "mcp": {
     "activeTokens": "活跃令牌 ({{count}})",

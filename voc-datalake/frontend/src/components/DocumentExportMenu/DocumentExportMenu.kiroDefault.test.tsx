@@ -5,12 +5,15 @@
  * "Both consumers must agree" — the prompt used in Copy to Kiro must match
  * what _build_steering_file produces server-side.
  *
- * Clipboard note: these tests spy on the `vi.fn()` that `test/setup.ts` already
- * installed as `navigator.clipboard.writeText`, which is the pattern the sibling
- * DocumentExportMenu.test.tsx uses. Nothing global is reassigned, so there is no
- * leak into later files under `singleFork: true` and no ordering requirement
- * between tests — setup.ts's `afterEach` -> `vi.clearAllMocks()` isolates the
- * call history.
+ * Clipboard note: `userEvent.setup()` installs its own `navigator.clipboard` stub
+ * to back `user.copy()`/`user.paste()`, and testing-library's `cleanup()` (run by
+ * `test/setup.ts`'s `afterEach`) tears it down again. Verified consequence: each
+ * test sees a different clipboard object and a different `writeText`. So the spy
+ * must be created AFTER `setup()` in the same test — a spy taken before it stays
+ * attached to the object `setup()` discards and records nothing, which is what
+ * made only the FIRST clipboard test in a file fail. Because the object it wraps
+ * does not outlive the test, the spy needs no explicit restore and cannot leak
+ * into later files under `singleFork: true`.
  */
 import {
   describe, it, expect, vi,
@@ -74,13 +77,9 @@ const projectWithNeither: Project = {
 /**
  * Render the menu, invoke "Copy to Kiro", and return the copied text.
  *
- * The spy is created per call rather than in a `beforeEach` so nothing outlives
- * the test that made it.
+ * Spy order is load-bearing — see the clipboard note in the file header.
  */
 async function copyToKiro(doc: ProjectDocument, project: Project): Promise<string> {
-  // Order matters: userEvent.setup() swaps in its OWN navigator.clipboard stub to
-  // back user.copy()/user.paste(), so a spy installed before it is left attached
-  // to the discarded object and records nothing. Spy after setup.
   const user = userEvent.setup()
   const writeTextSpy = vi.spyOn(navigator.clipboard, 'writeText')
   render(<DocumentExportMenu document={doc} project={project} />)

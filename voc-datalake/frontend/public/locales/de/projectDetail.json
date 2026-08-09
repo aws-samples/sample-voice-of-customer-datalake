@@ -165,7 +165,7 @@
     "templateLabel": "Export-Prompt-Vorlage",
     "title": "Kiro-Export-Einstellungen",
     "useDefault": "Standardvorlage verwenden",
-    "usingDefault": "Folgt den Standardanweisungen. Klicken Sie auf \"Konfigurieren\", um eigene zu schreiben."
+    "usingDefault": "Folgt den Standardanweisungen. Klicken Sie auf \"{{action}}\", um eigene zu schreiben."
   },
   "mcp": {
     "activeTokens": "Aktive Tokens ({{count}})",

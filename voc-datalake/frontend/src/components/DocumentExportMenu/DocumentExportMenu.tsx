@@ -98,6 +98,24 @@ function stripMarkdownLinks(text: string): string {
   return [...parts, text.slice(lastEnd)].join('')
 }
 
+/**
+ * Heading for the document section of the "Copy to Kiro" clipboard payload.
+ *
+ * Deliberately plain English, matching `_build_steering_file`'s scaffold, which
+ * emits "## Custom Instructions", "## Personas" etc. in English regardless of
+ * locale. Both Kiro handoff paths have to agree on the structural markdown, so
+ * this is English-only by design rather than by omission.
+ *
+ * Keyed rather than a `prfaq ? … : 'PRD Document'` ternary so that widening
+ * KiroSection's document_type gate below cannot silently label another document
+ * type as a PRD. The 'Document' fallback is unreachable while that gate admits
+ * only these two types.
+ */
+const KIRO_SECTION_HEADINGS: Partial<Record<ProjectDocument['document_type'], string>> = {
+  prd: 'PRD Document',
+  prfaq: 'PR/FAQ Document',
+}
+
 function KiroSection({
   doc, project, copiedKiro, onCopyToKiro, t,
 }: Readonly<{
@@ -166,12 +184,7 @@ export default function DocumentExportMenu({
     const effectivePrompt = storedPrompt !== ''
       ? storedPrompt
       : (project?.kiro_default_export_prompt ?? '')
-    // Keep these headings as plain English to match _build_steering_file's scaffold
-    // (which always emits "## Custom Instructions", "## Personas", etc. in English).
-    // Both consumers must agree on structural markdown so a non-English user's
-    // "Copy to Kiro" clipboard output and the autoseed steering file use the
-    // same heading convention — currently English-only on both paths.
-    const sectionHeading = doc.document_type === 'prfaq' ? 'PR/FAQ Document' : 'PRD Document'
+    const sectionHeading = KIRO_SECTION_HEADINGS[doc.document_type] ?? 'Document'
     const prdSection = `# ${doc.title}\n\n${doc.content ?? ''}`
     const fullContent = effectivePrompt === ''
       ? prdSection
