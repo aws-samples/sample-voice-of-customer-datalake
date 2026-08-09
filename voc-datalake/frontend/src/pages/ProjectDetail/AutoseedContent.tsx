@@ -87,12 +87,23 @@ export default function AutoseedContent({
         {copyError != null && (
           <p className="text-sm text-red-600 mb-2" role="alert">{copyError}</p>
         )}
-        <div className="bg-gray-900 rounded-lg p-4 max-h-48 overflow-y-auto">
-          <pre className="text-xs text-gray-100 whitespace-pre-wrap">{kiroPrompt}</pre>
-        </div>
-        <p className="text-xs text-gray-400 mt-2">
-          {t('autoseed.pasteHint')}
-        </p>
+        {/* The snippet is SUPPRESSED, not merely uncopyable-by-button, when a
+            section is fully deselected: the curl it contains omits that section's
+            filter, and the API reads an absent filter as "all". Rendering it while
+            disabling the button would still let a user select the text by hand and
+            seed everything they had just deselected. */}
+        {hasSelection ? (
+          <>
+            <div className="bg-gray-900 rounded-lg p-4 max-h-48 overflow-y-auto">
+              <pre className="text-xs text-gray-100 whitespace-pre-wrap">{kiroPrompt}</pre>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              {t('autoseed.pasteHint')}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-gray-500">{t('export.selectAtLeastOne')}</p>
+        )}
       </div>
     </div>
   )

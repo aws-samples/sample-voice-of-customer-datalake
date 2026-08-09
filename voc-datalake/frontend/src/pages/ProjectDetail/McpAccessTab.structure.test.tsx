@@ -15,7 +15,7 @@
  *    does not break the test; only unwiring a component does.
  */
 import {
-  describe, it, expect, vi, beforeAll, afterAll, beforeEach,
+  describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach,
 } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -102,6 +102,18 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockListApiTokens.mockResolvedValue({ tokens: [] })
 })
+
+/**
+ * Empties the PERSONAS section only.
+ *
+ * Both sections must be populated and only one emptied, because with no documents
+ * the old OR-based rule and the correct rule agree — a test using `renderTab()`
+ * alone passes against the bug, which mutation testing caught. The personas
+ * section renders first, hence [0].
+ */
+const deselectAllPersonas = () => screen.getAllByRole('button', {
+  name: enProjectDetail.autoseed.deselectAll,
+})[0]
 
 describe('McpAccessTab — two-card structure', () => {
   it('renders the template editor inside the Export card, not as a separate card', async () => {
@@ -212,14 +224,6 @@ describe('canCopyExport — a non-empty section with nothing selected is unsenda
 })
 
 describe('McpAccessTab — export guard is enforced in the UI', () => {
-  // BOTH sections must be populated, and only ONE of them emptied. With no
-  // documents the old OR-based rule and the correct rule agree, so a test using
-  // `renderTab()` alone passes against the bug — verified by mutation.
-  // The personas section renders first, hence [0].
-  const deselectAllPersonas = () => screen.getAllByRole('button', {
-    name: enProjectDetail.autoseed.deselectAll,
-  })[0]
-
   it('disables the copy button and says why once a whole section is deselected', async () => {
     renderTab(onePersona, oneDocument)
     const user = userEvent.setup()
@@ -249,6 +253,24 @@ describe('McpAccessTab — export guard is enforced in the UI', () => {
     // The billable/data-scope guard: nothing may be fetched or copied in a state
     // whose request would silently mean "everything".
     expect(mockAutoseedProject).not.toHaveBeenCalled()
+  })
+})
+
+describe('McpAccessTab — Card 2 hides the curl snippet when it would mean "everything"', () => {
+  it('suppresses the autoseed prompt, not just its copy button, once a section is emptied', async () => {
+    renderTab(onePersona, oneDocument)
+    const user = userEvent.setup()
+
+    // Expand Kiro Autoseed so the snippet is on screen to begin with.
+    await user.click(await screen.findByText(enProjectDetail.autoseed.title))
+    expect(screen.getByText(enProjectDetail.autoseed.pasteHint)).toBeInTheDocument()
+
+    await user.click(deselectAllPersonas())
+
+    // Disabling the button is not enough: the rendered curl omits persona_ids,
+    // which the API reads as "all", and text on screen can be selected by hand.
+    expect(screen.queryByText(enProjectDetail.autoseed.pasteHint)).not.toBeInTheDocument()
+    expect(screen.queryByText(/curl -s/)).not.toBeInTheDocument()
   })
 })
 

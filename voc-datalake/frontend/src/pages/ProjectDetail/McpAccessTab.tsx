@@ -23,7 +23,7 @@ import {
   Key, Plus, Copy, Check, Download,
 } from 'lucide-react'
 import {
-  useState, useCallback, useMemo,
+  useState, useCallback, useMemo, useId,
 } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -279,6 +279,7 @@ function ExportCard({
   templateEditor,
 }: ExportCardProps) {
   const { t } = useTranslation('projectDetail')
+  const blockedReasonId = useId()
   // markCopied, not copy: handleCopy awaits its own writeText so a rejection can
   // be surfaced, and copy() would write a second time and swallow that failure.
   const { markCopied, copiedKey } = useCopyToClipboard()
@@ -355,6 +356,10 @@ function ExportCard({
             <button
               onClick={() => void handleCopy()}
               disabled={!canCopy || copying}
+              // Associated so the reason is announced with the control rather
+              // than being visual-only; useId, not a constant, because a page can
+              // render more than one project surface.
+              aria-describedby={canCopy ? undefined : blockedReasonId}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
               {copiedKey === 'export' ? <Check size={16} /> : <Copy size={16} />}
@@ -363,7 +368,9 @@ function ExportCard({
             {/* Says WHY it is disabled. Without this the button just looks broken
                 when a section has items but none of them are selected. */}
             {!canCopy && (
-              <p className="text-sm text-gray-500">{t('export.selectAtLeastOne')}</p>
+              <p id={blockedReasonId} className="text-sm text-gray-500">
+                {t('export.selectAtLeastOne')}
+              </p>
             )}
             {copyError != null && (
               <p className="text-sm text-red-600" role="alert">{copyError}</p>
