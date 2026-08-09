@@ -98,9 +98,12 @@ function renderTabWithData(projectId = 'proj-123') {
  * spin to the test timeout instead of failing here with a usable message. There
  * are only ever two sections.
  */
+/** Personas and documents — the two sections a picker can offer. */
+const PICKER_SECTION_COUNT = 2
+
 async function deselectEverySection(user: ReturnType<typeof userEvent.setup>) {
   const deselectAll = () => screen.queryAllByRole('button', { name: /^Deselect all$/ })
-  for (let guard = 0; guard < 4; guard += 1) {
+  for (let attempt = 0; attempt <= PICKER_SECTION_COUNT; attempt += 1) {
     const remaining = deselectAll()
     if (remaining.length === 0) return
     await user.click(remaining[0])

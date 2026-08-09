@@ -81,19 +81,15 @@ function buildMcpConfig(baseUrl: string, projectId: string): string {
 }
 
 /**
- * The two cards sit side by side from `lg` up, and stack below it.
+ * Side by side from `lg` up, stacked below. Named because both return paths
+ * (normal and token-error) must lay out identically, and takes EXACTLY two
+ * children — the token-error path wraps its two for that reason.
  *
- * Side by side rather than stacked because the selection lives in the Export
- * card while the MCP card's curl URL is built from it — stacked, the control and
- * the thing it changes are never on screen together. It also stops the MCP card
- * being pushed below the fold, which matters because the token it issues is a
- * PREREQUISITE for the autoseed snippet that sits beside it.
- *
- * `items-start` so the shorter card keeps its own height instead of being
- * stretched to match its neighbour. Named once because both return paths (normal
- * and token-error) must lay out identically.
+ * `items-start` keeps the shorter card at its own height. Grid children need
+ * `min-w-0`: they default to `min-width: auto`, so the curl snippet's long
+ * unbroken URL would otherwise push its track past the even split.
  */
-const TWO_COLUMN_LAYOUT = 'grid gap-4 lg:grid-cols-2 items-start'
+const TWO_COLUMN_LAYOUT = 'grid grid-cols-1 lg:grid-cols-2 gap-4 items-start'
 
 type DocType = 'prd' | 'prfaq' | 'research' | 'custom'
 
@@ -337,7 +333,8 @@ function ExportCard({
   }, [projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length, markCopied, t])
 
   return (
-    <div className="bg-white rounded-xl p-6 border">
+    // min-w-0: this is a grid child in TWO_COLUMN_LAYOUT.
+    <div className="bg-white rounded-xl p-6 border min-w-0">
       <div className="flex items-center gap-3 mb-4">
         <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
           <Download size={20} className="text-green-600" />
@@ -600,7 +597,7 @@ export default function McpAccessTab({
         {exportCard}
         {/* Wrapped so the grid still has exactly two children: the error state
             and the autoseed section together are the MCP column. */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <McpAccessErrorState />
           <CollapsibleSection
             title={t('autoseed.title')}
@@ -626,7 +623,7 @@ export default function McpAccessTab({
       {exportCard}
 
       {/* Card 2 — MCP Access (API token required) */}
-      <div className="bg-white rounded-xl p-6 border space-y-4">
+      <div className="bg-white rounded-xl p-6 border space-y-4 min-w-0">
         <McpHeader
           showCreateForm={showCreateForm}
           newlyCreatedToken={newlyCreatedToken}

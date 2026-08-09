@@ -256,6 +256,38 @@ describe('McpAccessTab — export guard is enforced in the UI', () => {
   })
 })
 
+describe('McpAccessTab — the tab body lays out as exactly two columns', () => {
+  // The layout is a two-column grid, so a THIRD sibling would silently start a
+  // second row at half width. Asserting the child COUNT pins that invariant
+  // without coupling to the Tailwind classes that implement it — the token-error
+  // path in particular has to wrap its two elements to satisfy this.
+  const columnCount = () => {
+    const card = screen.getByText(enProjectDetail.export.title).closest('div.border')
+    const grid = card?.parentElement
+    return grid == null ? null : grid.children.length
+  }
+
+  it('gives the grid exactly two children when tokens load', async () => {
+    mockListApiTokens.mockResolvedValue({ tokens: [] })
+    renderTab(onePersona, oneDocument)
+
+    await screen.findByText(enProjectDetail.export.title)
+    expect(columnCount()).toBe(2)
+  })
+
+  it('gives the grid exactly two children when the token request fails', async () => {
+    mockListApiTokens.mockRejectedValue(new Error('token fetch failed'))
+    renderTab(onePersona, oneDocument)
+
+    // Waits on error-branch-ONLY copy. Awaiting export.title instead would prove
+    // nothing here: the Export card renders in both branches, so the assertion
+    // could run before the rejection settled and silently check the normal
+    // branch twice.
+    await screen.findByText(enProjectDetail.mcp.notAvailable)
+    expect(columnCount()).toBe(2)
+  })
+})
+
 describe('McpAccessTab — the picker sections start collapsed', () => {
   it('shows each selection count without rendering its rows', async () => {
     renderTab(onePersona, oneDocument)
