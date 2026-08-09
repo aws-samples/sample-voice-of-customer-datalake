@@ -165,7 +165,7 @@
     "templateLabel": "내보내기 프롬프트 템플릿",
     "title": "Kiro 내보내기 설정",
     "useDefault": "기본 템플릿 사용",
-    "usingDefault": "기본 지침을 따르고 있습니다. 직접 작성하려면 \"{{action}}\"을 클릭하세요."
+    "usingDefault": "기본 지침을 따르고 있습니다. 직접 작성하려면 \"{{action}}\" 버튼을 클릭하세요."
   },
   "mcp": {
     "activeTokens": "활성 토큰 ({{count}})",
