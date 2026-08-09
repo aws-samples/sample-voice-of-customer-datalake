@@ -13,33 +13,13 @@ import {
   Sparkles, Settings, Check,
 } from 'lucide-react'
 import {
-  useState, useMemo,
+  useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { KiroExportSettingsProps } from './types'
 
-const DEFAULT_PROMPT = `# Kiro Implementation Context
-
-## Project Overview
-Implement the following PRD for [Your Project Name].
-
-## Tech Stack
-- Frontend: React + TypeScript + Tailwind CSS
-- Backend: [Your backend stack]
-- Database: [Your database]
-
-## Coding Standards
-- Follow existing code patterns in the codebase
-- Use TypeScript strict mode
-- Write unit tests for new functionality
-- Follow the project's ESLint configuration
-
-## Implementation Notes
-- [Add specific implementation guidance here]
-- [Reference relevant files or patterns]
-- [Note any constraints or requirements]`
-
-// Empty state component
+// Empty state component — shown when there is no stored override and no default
+// available yet (e.g. list-route responses that omit kiro_default_export_prompt).
 function EmptyState() {
   const { t } = useTranslation('projectDetail')
   return (
@@ -64,10 +44,11 @@ function PromptPreview({ prompt }: Readonly<{ prompt: string }>) {
 
 // Editor component
 function PromptEditor({
-  prompt, saved, onPromptChange, onSave, onCancel, onUseDefault,
+  prompt, saved, defaultPrompt, onPromptChange, onSave, onCancel, onUseDefault,
 }: Readonly<{
   prompt: string
   saved: boolean
+  defaultPrompt: string
   onPromptChange: (value: string) => void
   onSave: () => void
   onCancel: () => void
@@ -83,18 +64,30 @@ function PromptEditor({
         <p className="text-xs text-gray-500 mb-2">
           {t('kiroExport.templateHint')}
         </p>
+        {/*
+          The placeholder is the backend-supplied default, so an empty textarea
+          previews the text that will actually be used. This is what makes
+          "Use default template" (which clears to '') legible rather than looking
+          like an accidental wipe. It is empty when no default is available,
+          which is also when the button below is hidden.
+        */}
         <textarea
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
-          placeholder={DEFAULT_PROMPT}
+          placeholder={defaultPrompt}
           rows={12}
           className="w-full px-3 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
         />
       </div>
       <div className="flex items-center justify-between">
-        <button onClick={onUseDefault} className="text-sm text-gray-500 hover:text-gray-700">
-          {t('kiroExport.useDefault')}
-        </button>
+        {/* Wrapper keeps the save/cancel pair right-aligned when the button is hidden. */}
+        <div>
+          {defaultPrompt !== '' && (
+            <button onClick={onUseDefault} className="text-sm text-gray-500 hover:text-gray-700">
+              {t('kiroExport.useDefault')}
+            </button>
+          )}
+        </div>
         <div className="flex gap-2">
           <button onClick={onCancel} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
             {t('kiroExport.cancel')}
@@ -115,15 +108,28 @@ function PromptEditor({
 export default function KiroExportSettings({
   project, onSave,
 }: Readonly<KiroExportSettingsProps>) {
-  const initialPrompt = useMemo(() => project.kiro_export_prompt ?? '', [project.kiro_export_prompt])
+  const storedPrompt = project.kiro_export_prompt ?? ''
+  const defaultPrompt = project.kiro_default_export_prompt ?? ''
   const { t } = useTranslation('projectDetail')
 
-  const [prompt, setPrompt] = useState(initialPrompt)
+  // One name for the state that the preview text, the preview hint and the button
+  // label all read from, so they cannot drift into telling the user two different
+  // things. An empty stored value means "follow the default".
+  const followingDefault = storedPrompt === ''
+  const effectivePrompt = followingDefault ? defaultPrompt : storedPrompt
+
+  const [prompt, setPrompt] = useState(storedPrompt)
   const [isEditing, setIsEditing] = useState(false)
   const [saved, setSaved] = useState(false)
 
   const handleSave = () => {
-    onSave(prompt)
+    // Trim before saving so a whitespace-only entry is stored as '' (empty),
+    // keeping the project following the default and avoiding a misleading
+    // "Edit" button label with a visually blank preview.
+    onSave(prompt.trim())
+    // Deliberately NOT syncing `prompt` to the trimmed value: handleEdit re-seeds
+    // it from `storedPrompt` every time the editor opens, so local state is never
+    // observable while stale. Assigning it here would be dead code.
     setIsEditing(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -131,7 +137,15 @@ export default function KiroExportSettings({
 
   const handleCancel = () => {
     setIsEditing(false)
-    setPrompt(project.kiro_export_prompt ?? '')
+    setPrompt(storedPrompt)
+  }
+
+  // Sync the editor with the latest stored value when opening it.
+  // This ensures the textarea shows the freshest server state even if the
+  // parent refetched the project after mount (e.g. polling or post-save).
+  const handleEdit = () => {
+    setPrompt(storedPrompt)
+    setIsEditing(true)
   }
 
   const renderContent = () => {
@@ -140,15 +154,33 @@ export default function KiroExportSettings({
         <PromptEditor
           prompt={prompt}
           saved={saved}
+          defaultPrompt={defaultPrompt}
           onPromptChange={setPrompt}
           onSave={handleSave}
           onCancel={handleCancel}
-          onUseDefault={() => setPrompt(DEFAULT_PROMPT)}
+          onUseDefault={() => setPrompt('')}
         />
       )
     }
-    if (prompt !== '') {
-      return <PromptPreview prompt={prompt} />
+    if (effectivePrompt !== '') {
+      // Say so when the previewed text is the default rather than this project's
+      // own: the Configure/Edit label alone is too easy to miss, and without this
+      // the preview reads as text the user wrote.
+      return (
+        <div className="space-y-2">
+          {followingDefault && (
+            <p className="text-xs text-gray-500">
+              {/*
+                The hint names the button to click. Feed it the button's OWN
+                translation rather than repeating the word per locale, so the two
+                cannot drift into naming a button that does not exist.
+              */}
+              {t('kiroExport.usingDefault', { action: t('kiroExport.configure') })}
+            </p>
+          )}
+          <PromptPreview prompt={effectivePrompt} />
+        </div>
+      )
     }
     return <EmptyState />
   }
@@ -173,11 +205,11 @@ export default function KiroExportSettings({
         </div>
         {!isEditing && (
           <button
-            onClick={() => setIsEditing(true)}
+            onClick={handleEdit}
             className="flex items-center gap-2 px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 rounded-lg"
           >
             <Settings size={16} />
-            {prompt === '' ? t('kiroExport.configure') : t('kiroExport.edit')}
+            {followingDefault ? t('kiroExport.configure') : t('kiroExport.edit')}
           </button>
         )}
       </div>

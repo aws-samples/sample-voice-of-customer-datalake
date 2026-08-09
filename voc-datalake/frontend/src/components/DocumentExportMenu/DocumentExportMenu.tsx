@@ -98,6 +98,24 @@ function stripMarkdownLinks(text: string): string {
   return [...parts, text.slice(lastEnd)].join('')
 }
 
+/**
+ * Heading for the document section of the "Copy to Kiro" clipboard payload.
+ *
+ * Deliberately plain English, matching `_build_steering_file`'s scaffold, which
+ * emits "## Custom Instructions", "## Personas" etc. in English regardless of
+ * locale. Both Kiro handoff paths have to agree on the structural markdown, so
+ * this is English-only by design rather than by omission.
+ *
+ * Keyed rather than a `prfaq ? … : 'PRD Document'` ternary so that widening
+ * KiroSection's document_type gate below cannot silently label another document
+ * type as a PRD. The 'Document' fallback is unreachable while that gate admits
+ * only these two types.
+ */
+const KIRO_SECTION_HEADINGS: Partial<Record<ProjectDocument['document_type'], string>> = {
+  prd: 'PRD Document',
+  prfaq: 'PR/FAQ Document',
+}
+
 function KiroSection({
   doc, project, copiedKiro, onCopyToKiro, t,
 }: Readonly<{
@@ -119,7 +137,8 @@ function KiroSection({
         {copiedKiro ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Sparkles size={16} className="flex-shrink-0" />}
         <span className="truncate">{copiedKiro ? t('documentExport.copied') : t('documentExport.copyToKiro')}</span>
       </button>
-      {(project?.kiro_export_prompt == null || project.kiro_export_prompt === '') && (
+      {(project?.kiro_export_prompt == null || project.kiro_export_prompt === '') &&
+        (project?.kiro_default_export_prompt == null || project.kiro_default_export_prompt === '') && (
         <p className="px-3 py-1 text-xs text-gray-400">
           {t('documentExport.kiroPromptTip')}
         </p>
@@ -161,11 +180,15 @@ export default function DocumentExportMenu({
   }
 
   const copyToKiro = async () => {
-    const kiroPrompt = project?.kiro_export_prompt != null && project.kiro_export_prompt !== '' ? project.kiro_export_prompt : ''
+    const storedPrompt = project?.kiro_export_prompt ?? ''
+    const effectivePrompt = storedPrompt !== ''
+      ? storedPrompt
+      : (project?.kiro_default_export_prompt ?? '')
+    const sectionHeading = KIRO_SECTION_HEADINGS[doc.document_type] ?? 'Document'
     const prdSection = `# ${doc.title}\n\n${doc.content ?? ''}`
-    const fullContent = kiroPrompt === ''
+    const fullContent = effectivePrompt === ''
       ? prdSection
-      : `${kiroPrompt}\n\n---\n\n## PRD Document\n\n${prdSection}`
+      : `${effectivePrompt}\n\n---\n\n## ${sectionHeading}\n\n${prdSection}`
 
     await navigator.clipboard.writeText(fullContent)
     setCopiedKiro(true)

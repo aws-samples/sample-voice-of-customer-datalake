@@ -167,7 +167,8 @@
     "templateHint": "Este contexto se añadirá al principio de los documentos PRD/PR-FAQ al usar \"Copiar a Kiro\". Incluye tu stack tecnológico, estándares de codificación y guía de implementación.",
     "templateLabel": "Plantilla de prompt de exportación",
     "title": "Configuración de exportación a Kiro",
-    "useDefault": "Usar plantilla predeterminada"
+    "useDefault": "Usar plantilla predeterminada",
+    "usingDefault": "Se están usando las instrucciones predeterminadas. Haz clic en \"{{action}}\" para escribir las tuyas."
   },
   "mcp": {
     "activeTokens": "Tokens activos ({{count}})",

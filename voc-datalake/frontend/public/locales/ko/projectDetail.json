@@ -165,7 +165,8 @@
     "templateHint": "이 컨텍스트는 \"Kiro로 복사\"를 사용할 때 PRD/PR-FAQ 문서 앞에 추가됩니다. 기술 스택, 코딩 표준 및 구현 가이드를 포함하세요.",
     "templateLabel": "내보내기 프롬프트 템플릿",
     "title": "Kiro 내보내기 설정",
-    "useDefault": "기본 템플릿 사용"
+    "useDefault": "기본 템플릿 사용",
+    "usingDefault": "기본 지침을 따르고 있습니다. 직접 작성하려면 \"{{action}}\" 버튼을 클릭하세요."
   },
   "mcp": {
     "activeTokens": "활성 토큰 ({{count}})",

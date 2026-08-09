@@ -38,6 +38,29 @@ from shared.prototypes import prototype_signed_url
 from shared.tables import get_projects_table, get_feedback_table
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
 
+# Default instructions used when a project has not set its own kiro_export_prompt.
+# Kept here — ONE definition only — so both _build_steering_file and the
+# get_project response agree on the wording. Do not duplicate this text in any
+# other file (backend or frontend). The frontend reads it from the API response
+# via the kiro_default_export_prompt field.
+#
+# Refers to the material by PRESENCE, never by file path. This text is delivered
+# three ways and only one of them has files: autoseed writes it to
+# .kiro/steering/, but the Export card concatenates file *contents* into a single
+# clipboard blob (paths discarded) and "Copy to Kiro" on a document pastes it
+# ahead of that one document with no personas at all. A path reference is a
+# dangling pointer in the latter two. The autoseed prompt describes the layout;
+# this text describes the content.
+KIRO_DEFAULT_EXPORT_PROMPT = """\
+Build against the project material provided here rather than from assumptions.
+
+- The personas described here are the audience. Check each decision against their goals and frustrations, and say which persona a change serves.
+- PRDs carry scope and acceptance criteria. Treat them as the contract for what "done" means, and flag anything you cannot satisfy rather than narrowing it silently.
+- PR/FAQs carry customer-facing language. Reuse their wording in UI copy so the product says what was promised.
+- Research documents carry the evidence. Cite them when a tradeoff is contested.
+- If a requirement is missing, ask rather than inventing one. If two documents disagree, surface the conflict instead of picking one.\
+"""
+
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
 
@@ -221,7 +244,14 @@ def get_project(project_id: str) -> dict:
     
     if not project:
         raise NotFoundError('Project metadata not found')
-    
+
+    # Inject the default at read time so both consumers (the steering-file editor
+    # and the per-document "Copy to Kiro" action) always agree on the fallback
+    # text without duplicating the constant in the frontend bundle.
+    # NOTE: this field is COMPUTED, not stored in DynamoDB. Do not include it in
+    # any update expression or treat it as a persisted attribute.
+    project['kiro_default_export_prompt'] = KIRO_DEFAULT_EXPORT_PROMPT
+
     return {
         'project': project,
         'personas': personas,
@@ -1634,7 +1664,10 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
     """Generate a Kiro steering file from project data."""
     name = project.get('name', 'Project')
     description = project.get('description', '')
-    kiro_prompt = project.get('kiro_export_prompt', '')
+    # Use `or ''` instead of a default arg so that a stored None (DynamoDB NULL)
+    # is treated as absent rather than raising AttributeError on .strip().
+    stored_prompt = (project.get('kiro_export_prompt') or '').strip()
+    kiro_prompt = stored_prompt if stored_prompt else KIRO_DEFAULT_EXPORT_PROMPT
 
     lines = [f'# {name} — Implementation Context', '']
     if description:
@@ -1644,7 +1677,7 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
     if personas:
         lines.append('## Personas')
         lines.append('')
-        lines.append(f'This project has {len(personas)} personas in `.kiro/personas/`. When building features:')
+        lines.append(f'This project has {len(personas)} personas. When building features:')
         lines.append('- Consider which persona the feature serves')
         lines.append('- Reference their goals, frustrations, and needs')
         lines.append('- Use their quotes to validate UX decisions')
@@ -1660,7 +1693,7 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
     if documents:
         lines.append('## Documents')
         lines.append('')
-        lines.append('Project documents are in `.kiro/docs/`:')
+        lines.append('Project documents:')
         for d in documents:
             dtitle = d.get('title', 'Untitled')
             dtype = d.get('document_type', 'custom')
@@ -1669,12 +1702,11 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
         lines.append('Use PRDs for acceptance criteria and scope. Use PR/FAQs for customer-facing messaging.')
         lines.append('')
 
-    # Custom instructions
-    if kiro_prompt:
-        lines.append('## Custom Instructions')
-        lines.append('')
-        lines.append(kiro_prompt)
-        lines.append('')
+    # Custom instructions (always present: either the project's own or the default)
+    lines.append('## Custom Instructions')
+    lines.append('')
+    lines.append(kiro_prompt)
+    lines.append('')
 
     return '\n'.join(lines)
 

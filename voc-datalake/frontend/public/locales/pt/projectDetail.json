@@ -167,7 +167,8 @@
     "templateHint": "Este contexto será adicionado no início dos documentos PRD/PR-FAQ ao usar \"Copiar para Kiro\". Inclua sua pilha de tecnologia, padrões de codificação e orientações de implementação.",
     "templateLabel": "Modelo de Prompt de Exportação",
     "title": "Configurações de Exportação Kiro",
-    "useDefault": "Usar modelo padrão"
+    "useDefault": "Usar modelo padrão",
+    "usingDefault": "Seguindo as instruções padrão. Clique em \"{{action}}\" para escrever as suas."
   },
   "mcp": {
     "activeTokens": "Tokens Ativos ({{count}})",

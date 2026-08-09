@@ -375,6 +375,13 @@ export interface Project {
   document_count: number
   filters?: Record<string, unknown>
   kiro_export_prompt?: string
+  /**
+   * The backend's static default instructions, sent on every GET /projects/{id}
+   * response so both the editor and "Copy to Kiro" can fall back to it without
+   * duplicating the text in the frontend bundle.
+   * Present on getProject responses; absent on list responses.
+   */
+  kiro_default_export_prompt?: string
 }
 
 export interface ProjectDetail {

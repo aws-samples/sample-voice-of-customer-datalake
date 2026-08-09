@@ -165,7 +165,8 @@
     "templateHint": "This context will be prepended to PRD/PR-FAQ documents when using \"Copy to Kiro\". Include your tech stack, coding standards, and implementation guidance.",
     "templateLabel": "Export Prompt Template",
     "title": "Kiro Export Settings",
-    "useDefault": "Use default template"
+    "useDefault": "Use default template",
+    "usingDefault": "Following the default instructions. Click \"{{action}}\" to write your own."
   },
   "mcp": {
     "activeTokens": "Active Tokens ({{count}})",
