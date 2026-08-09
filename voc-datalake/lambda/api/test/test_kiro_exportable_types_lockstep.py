@@ -58,15 +58,16 @@ def _all_document_types() -> frozenset[str]:
     updated to account for it.
     """
     source = _read(TYPES_TS_SOURCE)
-    match = re.search(
+    matches = re.findall(
         r"document_type\s*:\s*((?:'[^']+'(?:\s*\|\s*)?)+)",
         source,
     )
-    assert match, (
-        f"document_type union not found in {TYPES_TS_SOURCE} — "
-        "did the field name or file location change?"
+    assert len(matches) == 1, (
+        f"Expected exactly one 'document_type' union in {TYPES_TS_SOURCE}; "
+        f"found {len(matches)}. If another interface also declares document_type, "
+        f"anchor the regex to the ProjectDocument interface block."
     )
-    raw = match.group(1)
+    raw = matches[0]
     return frozenset(re.findall(r"'([^']+)'", raw))
 
 

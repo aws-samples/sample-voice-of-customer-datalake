@@ -80,6 +80,9 @@ class TestAutoseedExcludesNonExportableTypes:
 
         result = autoseed_project('proj-test')
         doc_paths = [f['path'] for f in result['files'] if f['path'].startswith('.kiro/docs/')]
+        assert any('d-prfaq' in p for p in doc_paths), (
+            f'PRFAQ should be exported; paths: {doc_paths}'
+        )
         assert not any('d-report' in p or 'product-report' in p for p in doc_paths), (
             'product_report must not appear in Kiro export'
         )
