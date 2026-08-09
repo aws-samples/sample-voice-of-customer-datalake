@@ -83,10 +83,8 @@ function buildMcpConfig(baseUrl: string, projectId: string): string {
   }, null, 2)
 }
 
-type DocType = KiroExportableDocType
-
-function groupDocumentsByType(documents: ProjectDocument[]): Record<DocType, ProjectDocument[]> {
-  const groups: Record<DocType, ProjectDocument[]> = {
+function groupDocumentsByType(documents: ProjectDocument[]): Record<KiroExportableDocType, ProjectDocument[]> {
+  const groups: Record<KiroExportableDocType, ProjectDocument[]> = {
     prd: [],
     prfaq: [],
     research: [],

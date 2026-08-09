@@ -1679,7 +1679,6 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
     return '\n'.join(lines)
 
 
-
 # Document types that must never appear in a Kiro export payload.
 # Prototypes are generated HTML — exporting them anchors the model on old output.
 # Product reports are internal analytics snapshots, not implementation context.

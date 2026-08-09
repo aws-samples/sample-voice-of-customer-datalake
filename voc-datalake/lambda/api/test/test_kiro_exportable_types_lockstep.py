@@ -17,15 +17,16 @@ lambda/shared/test/test_avatar_image_model_lockstep.py.
 import re
 from pathlib import Path
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 # All values in the `document_type` union from types.ts.
+# Cross-reference: frontend/src/api/types.ts line 303:
+#   document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'
 # Kept here so this test fails if someone adds a new type without deciding
-# whether it belongs in the export.
+# whether it belongs in the export.  When you add a new document_type to
+# types.ts, also update this set and decide which constant it belongs in.
 ALL_DOCUMENT_TYPES: frozenset[str] = frozenset({
     'prd', 'prfaq', 'research', 'custom', 'product_report', 'prototype',
 })
@@ -65,8 +66,10 @@ def _backend_excluded_types() -> frozenset[str]:
 def _frontend_exportable_types() -> frozenset[str]:
     """Read KIRO_EXPORTABLE_DOC_TYPES from autoseedSelection.ts."""
     path = _repo_root() / FRONTEND_SOURCE
-    if not path.is_file():
-        pytest.skip(f'{FRONTEND_SOURCE} not present in this tree')
+    assert path.is_file(), (
+        f'{FRONTEND_SOURCE} not found — did the file move?\n'
+        f'If so, update FRONTEND_SOURCE in this test file.'
+    )
     source = path.read_text(encoding='utf-8')
     # Match: export const KIRO_EXPORTABLE_DOC_TYPES = ['prd', 'prfaq', ...] as const
     match = re.search(
