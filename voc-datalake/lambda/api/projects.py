@@ -43,10 +43,18 @@ from shared.indexes import PROJECTS_BY_TYPE_INDEX
 # get_project response agree on the wording. Do not duplicate this text in any
 # other file (backend or frontend). The frontend reads it from the API response
 # via the kiro_default_export_prompt field.
+#
+# Refers to the material by PRESENCE, never by file path. This text is delivered
+# three ways and only one of them has files: autoseed writes it to
+# .kiro/steering/, but the Export card concatenates file *contents* into a single
+# clipboard blob (paths discarded) and "Copy to Kiro" on a document pastes it
+# ahead of that one document with no personas at all. A path reference is a
+# dangling pointer in the latter two. The autoseed prompt describes the layout;
+# this text describes the content.
 KIRO_DEFAULT_EXPORT_PROMPT = """\
-Build against the material in this workspace rather than from assumptions.
+Build against the project material provided here rather than from assumptions.
 
-- The personas in `.kiro/personas/` are the audience. Check each decision against their goals and frustrations, and say which persona a change serves.
+- The personas described here are the audience. Check each decision against their goals and frustrations, and say which persona a change serves.
 - PRDs carry scope and acceptance criteria. Treat them as the contract for what "done" means, and flag anything you cannot satisfy rather than narrowing it silently.
 - PR/FAQs carry customer-facing language. Reuse their wording in UI copy so the product says what was promised.
 - Research documents carry the evidence. Cite them when a tradeoff is contested.
@@ -1669,7 +1677,7 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
     if personas:
         lines.append('## Personas')
         lines.append('')
-        lines.append(f'This project has {len(personas)} personas in `.kiro/personas/`. When building features:')
+        lines.append(f'This project has {len(personas)} personas. When building features:')
         lines.append('- Consider which persona the feature serves')
         lines.append('- Reference their goals, frustrations, and needs')
         lines.append('- Use their quotes to validate UX decisions')
@@ -1685,7 +1693,7 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
     if documents:
         lines.append('## Documents')
         lines.append('')
-        lines.append('Project documents are in `.kiro/docs/`:')
+        lines.append('Project documents:')
         for d in documents:
             dtitle = d.get('title', 'Untitled')
             dtype = d.get('document_type', 'custom')

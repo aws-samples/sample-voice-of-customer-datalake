@@ -13,7 +13,7 @@ import userEvent from '@testing-library/user-event'
 import KiroExportSettings from './KiroExportSettings'
 import type { Project } from '../../api/types'
 
-const DEFAULT_TEXT = 'Build against the material in this workspace rather than from assumptions.'
+const DEFAULT_TEXT = 'Build against the project material provided here rather than from assumptions.'
 
 const baseProject: Project = {
   project_id: 'proj-1',
@@ -42,7 +42,7 @@ describe('KiroExportSettings — criterion 6: shows effective instructions', () 
   it('shows the default text in the preview when the project has no stored prompt', () => {
     render(<KiroExportSettings project={projectWithDefault} onSave={vi.fn()} />)
     // The default text should appear in the preview
-    expect(screen.getByText(new RegExp('Build against the material', 'i'))).toBeInTheDocument()
+    expect(screen.getByText(new RegExp('Build against the project material', 'i'))).toBeInTheDocument()
   })
 
   it('shows the project\'s own text when it has a stored prompt', () => {
@@ -53,7 +53,7 @@ describe('KiroExportSettings — criterion 6: shows effective instructions', () 
   it('does not show the default text when the project has its own prompt', () => {
     render(<KiroExportSettings project={projectWithCustom} onSave={vi.fn()} />)
     // The preview truncates at 300 chars; DEFAULT_TEXT start is unique enough
-    expect(screen.queryByText(new RegExp('Build against the material', 'i'))).not.toBeInTheDocument()
+    expect(screen.queryByText(new RegExp('Build against the project material', 'i'))).not.toBeInTheDocument()
   })
 
   it('shows "Configure" button when no stored prompt (following default)', () => {
@@ -219,6 +219,6 @@ describe('KiroExportSettings — criterion 8: clearing returns to default', () =
       kiro_default_export_prompt: DEFAULT_TEXT,
     }
     render(<KiroExportSettings project={projectAfterClear} onSave={vi.fn()} />)
-    expect(screen.getByText(new RegExp('Build against the material', 'i'))).toBeInTheDocument()
+    expect(screen.getByText(new RegExp('Build against the project material', 'i'))).toBeInTheDocument()
   })
 })

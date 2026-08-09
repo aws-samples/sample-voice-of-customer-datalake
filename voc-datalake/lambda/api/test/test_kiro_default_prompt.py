@@ -16,7 +16,7 @@ from unittest.mock import patch
 # copy of the text, and insensitive to reflowed whitespace. Defined once so the
 # frontend and Python duplication guards cannot drift apart. Update this when the
 # constant's opening sentence changes.
-_FINGERPRINT = 'Build against the material in this workspace rather than from assumptions'
+_FINGERPRINT = 'Build against the project material provided here rather than from assumptions'
 
 
 def _repo_root() -> Path:
@@ -45,7 +45,7 @@ class TestKiroDefaultPromptIsUnique:
         """KIRO_DEFAULT_EXPORT_PROMPT constant exists in projects.py."""
         from projects import KIRO_DEFAULT_EXPORT_PROMPT
         assert KIRO_DEFAULT_EXPORT_PROMPT, 'KIRO_DEFAULT_EXPORT_PROMPT must not be empty'
-        assert 'Build against the material in this workspace' in KIRO_DEFAULT_EXPORT_PROMPT
+        assert 'Build against the project material provided here' in KIRO_DEFAULT_EXPORT_PROMPT
 
     def test_default_text_not_duplicated_in_frontend(self):
         """A distinctive line from the default is not copied into any non-test .ts/.tsx file.
@@ -150,6 +150,56 @@ class TestBuildSteeringFileUsesDefault:
         project = {'name': 'Test', 'kiro_export_prompt': ''}
         result = _build_steering_file(project, [], [])
         assert '## Custom Instructions' in result
+
+
+class TestSteeringTextReferencesNoFilePaths:
+    """The steering text must describe content, never a `.kiro/` file layout.
+
+    It is delivered three ways and only one has files. `autoseed_project` writes
+    it to `.kiro/steering/` alongside real persona/document files, but the Export
+    card concatenates file *contents* into one clipboard blob (paths discarded)
+    and "Copy to Kiro" on a single document pastes it with no personas at all.
+    A path reference is a dangling pointer in the latter two.
+    """
+
+    def test_default_prompt_has_no_kiro_path_reference(self):
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT
+        assert '.kiro' not in KIRO_DEFAULT_EXPORT_PROMPT, (
+            'The default prompt must not reference a .kiro/ path: it is pasted as '
+            'flat text by "Copy to Kiro", where no such folder exists.'
+        )
+
+    def test_generated_steering_file_has_no_kiro_path_reference(self):
+        """Covers the generated Personas/Documents prose, not just the constant."""
+        from projects import _build_steering_file
+        project = {'name': 'Test', 'description': 'Desc', 'kiro_export_prompt': ''}
+        personas = [{'name': 'Ada', 'tagline': 'Engineer'}]
+        documents = [{'title': 'Spec', 'document_type': 'prd'}]
+        result = _build_steering_file(project, personas, documents)
+        assert '.kiro' not in result, (
+            f'Steering text leaks a .kiro/ path. The autoseed prompt describes the '
+            f'file layout; this text must describe only content. Got:\n{result}'
+        )
+
+    def test_autoseed_still_writes_kiro_paths(self):
+        """The FILE PATHS are unaffected — only the prose stopped naming them.
+
+        Guards against over-applying the fix: autoseed genuinely creates these
+        files, and its own prompt tells Kiro where they go.
+        """
+        with patch('projects.projects_table') as mock_table:
+            mock_table.query.return_value = {
+                'Items': [
+                    {'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1', 'name': 'Test',
+                     'kiro_export_prompt': ''},
+                    {'pk': 'PROJECT#p1', 'sk': 'PERSONA#x', 'persona_id': 'x', 'name': 'Ada'},
+                ]
+            }
+            from projects import autoseed_project
+            payload = autoseed_project('p1')
+        paths = [f['path'] for f in payload['files']]
+        assert any(p.startswith('.kiro/steering/') for p in paths), paths
+        assert any(p.startswith('.kiro/personas/') for p in paths), paths
 
 
 # ---------------------------------------------------------------------------

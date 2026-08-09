@@ -32,7 +32,7 @@ vi.mock('react-markdown', () => ({
 }))
 vi.mock('remark-gfm', () => ({ default: vi.fn() }))
 
-const DEFAULT_TEXT = 'Build against the material in this workspace rather than from assumptions.'
+const DEFAULT_TEXT = 'Build against the project material provided here rather than from assumptions.'
 const CUSTOM_TEXT = 'Use only TypeScript. Strict mode required.'
 
 const mockDoc: ProjectDocument = {
