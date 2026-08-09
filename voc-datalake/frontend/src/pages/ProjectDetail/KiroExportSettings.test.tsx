@@ -13,7 +13,14 @@ import userEvent from '@testing-library/user-event'
 import KiroExportSettings from './KiroExportSettings'
 import type { Project } from '../../api/types'
 
-const DEFAULT_TEXT = 'Build against the project material provided here rather than from assumptions.'
+// A SENTINEL, deliberately NOT a copy of the real backend wording. These tests
+// assert the component renders/copies whatever `kiro_default_export_prompt`
+// holds; the wording itself lives in exactly one place,
+// KIRO_DEFAULT_EXPORT_PROMPT in lambda/api/projects.py, whose uniqueness is
+// guarded by test_kiro_default_prompt.py. Copying it here would duplicate the
+// text in a second language that the guard cannot see (it skips test files), so
+// every harmless reword would break this suite.
+const DEFAULT_TEXT = 'SENTINEL backend default instructions'
 
 const baseProject: Project = {
   project_id: 'proj-1',
@@ -42,7 +49,7 @@ describe('KiroExportSettings — criterion 6: shows effective instructions', () 
   it('shows the default text in the preview when the project has no stored prompt', () => {
     render(<KiroExportSettings project={projectWithDefault} onSave={vi.fn()} />)
     // The default text should appear in the preview
-    expect(screen.getByText(new RegExp('Build against the project material', 'i'))).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(DEFAULT_TEXT, 'i'))).toBeInTheDocument()
   })
 
   it('shows the project\'s own text when it has a stored prompt', () => {
@@ -53,7 +60,7 @@ describe('KiroExportSettings — criterion 6: shows effective instructions', () 
   it('does not show the default text when the project has its own prompt', () => {
     render(<KiroExportSettings project={projectWithCustom} onSave={vi.fn()} />)
     // The preview truncates at 300 chars; DEFAULT_TEXT start is unique enough
-    expect(screen.queryByText(new RegExp('Build against the project material', 'i'))).not.toBeInTheDocument()
+    expect(screen.queryByText(new RegExp(DEFAULT_TEXT, 'i'))).not.toBeInTheDocument()
   })
 
   it('shows "Configure" button when no stored prompt (following default)', () => {
@@ -219,6 +226,6 @@ describe('KiroExportSettings — criterion 8: clearing returns to default', () =
       kiro_default_export_prompt: DEFAULT_TEXT,
     }
     render(<KiroExportSettings project={projectAfterClear} onSave={vi.fn()} />)
-    expect(screen.getByText(new RegExp('Build against the project material', 'i'))).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(DEFAULT_TEXT, 'i'))).toBeInTheDocument()
   })
 })
