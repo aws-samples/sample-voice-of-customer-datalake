@@ -192,6 +192,24 @@ describe('KiroExportSettings — criterion 8: clearing returns to default', () =
     expect(onSave).not.toHaveBeenCalledWith(DEFAULT_TEXT)
   })
 
+  it('reopens the editor from the stored value, discarding unsaved local edits', async () => {
+    // handleEdit re-seeds the textarea from the project prop on every open. That
+    // is what makes local state impossible to observe while stale, and it is why
+    // handleSave deliberately does not sync `prompt` to the trimmed value. The
+    // project prop does not change here, standing in for "parent has not
+    // refetched yet" — the editor must still show server truth, not the old edit.
+    const user = userEvent.setup()
+    render(<KiroExportSettings project={projectWithCustom} onSave={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+    await user.clear(screen.getByRole('textbox'))
+    await user.type(screen.getByRole('textbox'), '  Padded instructions.  ')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+    expect(screen.getByRole('textbox')).toHaveValue(projectWithCustom.kiro_export_prompt)
+  })
+
   it('shows default text in preview after saving empty (component re-renders with new project)', () => {
     // After clearing, the parent re-renders with kiro_export_prompt = '' and
     // kiro_default_export_prompt still set — the component should show the default.

@@ -112,11 +112,11 @@ export default function KiroExportSettings({
   const defaultPrompt = project.kiro_default_export_prompt ?? ''
   const { t } = useTranslation('projectDetail')
 
-  // The effective prompt is the stored value if non-empty, else the default.
-  const effectivePrompt = storedPrompt !== '' ? storedPrompt : defaultPrompt
-  // One name for the state that the button label and the preview hint must agree
-  // on, so they cannot drift into telling the user two different things.
+  // One name for the state that the preview text, the preview hint and the button
+  // label all read from, so they cannot drift into telling the user two different
+  // things. An empty stored value means "follow the default".
   const followingDefault = storedPrompt === ''
+  const effectivePrompt = followingDefault ? defaultPrompt : storedPrompt
 
   const [prompt, setPrompt] = useState(storedPrompt)
   const [isEditing, setIsEditing] = useState(false)
@@ -126,11 +126,10 @@ export default function KiroExportSettings({
     // Trim before saving so a whitespace-only entry is stored as '' (empty),
     // keeping the project following the default and avoiding a misleading
     // "Edit" button label with a visually blank preview.
-    const trimmed = prompt.trim()
-    onSave(trimmed)
-    // Keep local state equal to what was actually saved, rather than waiting for
-    // handleEdit to re-seed it from the refetched project.
-    setPrompt(trimmed)
+    onSave(prompt.trim())
+    // Deliberately NOT syncing `prompt` to the trimmed value: handleEdit re-seeds
+    // it from `storedPrompt` every time the editor opens, so local state is never
+    // observable while stale. Assigning it here would be dead code.
     setIsEditing(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
