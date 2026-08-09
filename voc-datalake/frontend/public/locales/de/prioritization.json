@@ -7,9 +7,15 @@
     "savingMobile": "..."
   },
   "configureApiEndpoint": "Konfigurieren Sie den API-Endpunkt in den Einstellungen, um die Priorisierung anzuzeigen.",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
   "empty": {
-    "description": "Erstellen Sie PR/FAQs in Ihren Projekten, um mit der Priorisierung zu beginnen.",
-    "title": "Keine PR/FAQs gefunden"
+    "description": "Erstellen Sie ein PRD oder PR/FAQ in Ihren Projekten, um mit der Priorisierung zu beginnen.",
+    "title": "Keine Dokumente gefunden",
+    "wrongTypeDescription": "Ihre Projekte haben Dokumente, aber keine PRDs oder PR/FAQs. Öffnen Sie ein Projekt und erstellen Sie ein PRD oder PR/FAQ, um es hier zu bewerten.",
+    "wrongTypeTitle": "Keine bewertbaren Dokumente"
   },
   "framework": {
     "description": "Bewerten Sie jedes PR/FAQ nach: <strong>Auswirkung</strong>, <strong>Markteinführungszeit</strong>, <strong>Strategische Passung</strong> und <strong>Konfidenz</strong>.",
@@ -62,6 +68,7 @@
     "highPriority": "Hohe Priorität",
     "mediumPriority": "Mittlere Priorität",
     "notScored": "Nicht bewertet",
+    "totalDocuments": "Dokumente gesamt",
     "totalPrfaqs": "Gesamt PR/FAQs"
   },
   "subtitle": "PR/FAQs über alle Projekte hinweg bewerten und priorisieren",

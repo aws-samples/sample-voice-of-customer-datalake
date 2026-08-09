@@ -68,6 +68,13 @@ export function getScore(scores: Record<string, PrioritizationScore>, docId: str
   }
 }
 
+/** Document types that are scorable on the Prioritization page. */
+const SCORABLE_TYPES = new Set<ProjectDocument['document_type']>(['prd', 'prfaq'])
+
+export function isScorable(doc: ProjectDocument): boolean {
+  return SCORABLE_TYPES.has(doc.document_type)
+}
+
 export function collectPRFAQs(allProjectDetails: Array<{ documents?: ProjectDocument[] }> | undefined, projects: Project[] | undefined): PRFAQWithProject[] {
   if (!allProjectDetails || !projects) return []
 
@@ -75,7 +82,7 @@ export function collectPRFAQs(allProjectDetails: Array<{ documents?: ProjectDocu
   for (const [index, detail] of allProjectDetails.entries()) {
     if (!detail.documents) continue
     const project = projects[index]
-    const prfaqDocs = detail.documents.filter((doc: ProjectDocument) => doc.document_type === 'prfaq')
+    const scorableDocs = detail.documents.filter(isScorable)
     // Pick the most-recent prototype for this project — that's the one the
     // user just generated from the latest PRD/PR-FAQ.
     const prototypes = detail.documents
@@ -83,7 +90,7 @@ export function collectPRFAQs(allProjectDetails: Array<{ documents?: ProjectDocu
       .slice()
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
     const latestPrototype = prototypes[0]
-    for (const doc of prfaqDocs) {
+    for (const doc of scorableDocs) {
       result.push({
         ...doc,
         project_id: project.project_id,

@@ -145,7 +145,7 @@ describe('Prioritization', () => {
       renderPrioritization()
 
       await waitFor(() => {
-        expect(screen.getByText('Total PR/FAQs')).toBeInTheDocument()
+        expect(screen.getByText('Total Documents')).toBeInTheDocument()
         expect(screen.getByText('High Priority')).toBeInTheDocument()
         expect(screen.getByText('Medium Priority')).toBeInTheDocument()
         expect(screen.getByText('Not Scored')).toBeInTheDocument()
@@ -172,13 +172,29 @@ describe('Prioritization', () => {
   })
 
   describe('empty state', () => {
-    it('shows empty state when no PR/FAQs exist', async () => {
+    it('shows generic empty state when no projects exist', async () => {
       mockGetProjects.mockResolvedValue({ projects: [] })
 
       renderPrioritization()
 
       await waitFor(() => {
-        expect(screen.getByText('No PR/FAQs Found')).toBeInTheDocument()
+        expect(screen.getByText('No Documents Found')).toBeInTheDocument()
+      })
+    })
+
+    it('shows wrong-type empty state when projects have only non-scorable documents', async () => {
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'r1', document_type: 'research', title: 'Research Only', content: '', created_at: '2025-01-01' },
+        ],
+      })
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByText('No Scorable Documents')).toBeInTheDocument()
       })
     })
   })
@@ -193,12 +209,13 @@ describe('Prioritization', () => {
       })
     })
 
-    it('shows project name for each PR/FAQ', async () => {
+    it('shows project name for each document row', async () => {
       renderPrioritization()
 
       await waitFor(() => {
-        expect(screen.getByText('Project 1')).toBeInTheDocument()
-        expect(screen.getByText('Project 2')).toBeInTheDocument()
+        // Project 1 may appear in multiple rows (prfaq + prd); just check at least one exists
+        expect(screen.getAllByText('Project 1').length).toBeGreaterThan(0)
+        expect(screen.getAllByText('Project 2').length).toBeGreaterThan(0)
       })
     })
 
@@ -208,6 +225,45 @@ describe('Prioritization', () => {
       await waitFor(() => {
         const notScoredLabels = screen.getAllByText('Not Scored')
         expect(notScoredLabels.length).toBeGreaterThan(0)
+      })
+    })
+
+    it('displays PRD documents alongside PR/FAQ documents', async () => {
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+          { document_id: 'd2', document_type: 'prd', title: 'Feature A PRD', content: '', created_at: '2025-01-02' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+        expect(screen.getByText('Feature A PRD')).toBeInTheDocument()
+      })
+    })
+
+    it('shows document type badge for each row', async () => {
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+          { document_id: 'd2', document_type: 'prd', title: 'Feature A PRD', content: '', created_at: '2025-01-02' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        // Both type badges must be visible so users can tell them apart
+        expect(screen.getByText('PR/FAQ')).toBeInTheDocument()
+        expect(screen.getByText('PRD')).toBeInTheDocument()
       })
     })
   })
@@ -263,7 +319,7 @@ describe('Prioritization', () => {
       })
 
       // StatsCards should render without crashing
-      expect(screen.getByText('Total PR/FAQs')).toBeInTheDocument()
+      expect(screen.getByText('Total Documents')).toBeInTheDocument()
     })
 
     it('renders stats cards when scores API returns no scores key', async () => {
@@ -275,7 +331,7 @@ describe('Prioritization', () => {
         expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
       })
 
-      expect(screen.getByText('Total PR/FAQs')).toBeInTheDocument()
+      expect(screen.getByText('Total Documents')).toBeInTheDocument()
     })
   })
 

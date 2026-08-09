@@ -47,6 +47,29 @@ function QuickScores({ score }: { readonly score: PrioritizationScore }): ReactE
   )
 }
 
+/** Maps document_type to Tailwind colour classes for the type badge. */
+const DOC_TYPE_BADGE_COLORS: Partial<Record<string, string>> = {
+  prfaq: 'bg-purple-100 text-purple-700',
+  prd: 'bg-blue-100 text-blue-700',
+}
+
+function resolveDocTypeLabel(documentType: string, t: (key: string) => string): string {
+  if (documentType === 'prfaq') return t('docType.prfaq')
+  if (documentType === 'prd') return t('docType.prd')
+  return documentType
+}
+
+function DocumentTypeBadge({ documentType }: { readonly documentType: string }): ReactElement {
+  const { t } = useTranslation('prioritization')
+  const color = DOC_TYPE_BADGE_COLORS[documentType] ?? 'bg-gray-100 text-gray-600'
+  // Resolve the i18n label for the type; fall back to the raw type string
+  // if no key is registered so the badge always has visible text.
+  const label = resolveDocTypeLabel(documentType, t)
+  return (
+    <span className={clsx('text-xs px-2 py-0.5 rounded-full whitespace-nowrap', color)}>{label}</span>
+  )
+}
+
 function PRFAQRowHeader({
   prfaq,
   index,
@@ -72,6 +95,7 @@ function PRFAQRowHeader({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-medium text-gray-900 truncate text-sm sm:text-base">{prfaq.title}</h3>
+            <DocumentTypeBadge documentType={prfaq.document_type} />
             <span className={clsx('text-xs px-2 py-0.5 rounded-full whitespace-nowrap', priority.color)}>{priority.label}</span>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 mt-1 text-xs sm:text-sm text-gray-500">

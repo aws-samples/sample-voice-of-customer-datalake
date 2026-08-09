@@ -7,9 +7,15 @@
     "savingMobile": "..."
   },
   "configureApiEndpoint": "在设置中配置 API 端点以查看优先级排序。",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
   "empty": {
-    "description": "在项目中创建 PR/FAQ 以开始优先级排序。",
-    "title": "未找到 PR/FAQ"
+    "description": "在项目中创建 PRD 或 PR/FAQ 以开始优先级排序。",
+    "title": "未找到文档",
+    "wrongTypeDescription": "您的项目有文档，但没有 PRD 或 PR/FAQ。请打开项目并生成 PRD 或 PR/FAQ 以在此处评分。",
+    "wrongTypeTitle": "没有可评分的文档"
   },
   "framework": {
     "description": "对每个 PR/FAQ 进行评分：<strong>影响力</strong>、<strong>上市时间</strong>、<strong>战略契合度</strong>和<strong>置信度</strong>。",
@@ -62,6 +68,7 @@
     "highPriority": "高优先级",
     "mediumPriority": "中优先级",
     "notScored": "未评分",
+    "totalDocuments": "文档总数",
     "totalPrfaqs": "PR/FAQ 总数"
   },
   "subtitle": "对所有项目中的 PR/FAQ 进行评分和优先级排序",

@@ -7,9 +7,15 @@
     "savingMobile": "..."
   },
   "configureApiEndpoint": "Configure o endpoint da API em Configurações para visualizar a priorização.",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
   "empty": {
-    "description": "Crie PR/FAQs em seus projetos para começar a priorizar.",
-    "title": "Nenhum PR/FAQ Encontrado"
+    "description": "Crie um PRD ou PR/FAQ em seus projetos para começar a priorizar.",
+    "title": "Nenhum Documento Encontrado",
+    "wrongTypeDescription": "Seus projetos têm documentos, mas nenhum é PRD nem PR/FAQ. Abra um projeto e gere um PRD ou PR/FAQ para pontuá-lo aqui.",
+    "wrongTypeTitle": "Nenhum Documento Pontuável"
   },
   "framework": {
     "description": "Pontue cada PR/FAQ em: <strong>Impacto</strong>, <strong>Tempo para o Mercado</strong>, <strong>Alinhamento Estratégico</strong> e <strong>Confiança</strong>.",
@@ -62,6 +68,7 @@
     "highPriority": "Alta Prioridade",
     "mediumPriority": "Média Prioridade",
     "notScored": "Não Pontuado",
+    "totalDocuments": "Total de Documentos",
     "totalPrfaqs": "Total de PR/FAQs"
   },
   "subtitle": "Pontue e priorize PR/FAQs em todos os projetos",
