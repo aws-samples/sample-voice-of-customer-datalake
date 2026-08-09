@@ -18,17 +18,17 @@
     "wrongTypeTitle": "没有可评分的文档"
   },
   "framework": {
-    "description": "对每个 PR/FAQ 进行评分：<strong>影响力</strong>、<strong>上市时间</strong>、<strong>战略契合度</strong>和<strong>置信度</strong>。",
+    "description": "对每个文档进行评分：<strong>影响力</strong>、<strong>上市时间</strong>、<strong>战略契合度</strong>和<strong>置信度</strong>。",
     "title": "优先级排序框架"
   },
-  "loading": "加载 PR/FAQ 中...",
+  "loading": "加载文档中...",
   "notes": {
     "label": "备注",
     "placeholder": "添加关于此优先级排序决策的备注..."
   },
   "preview": {
     "prototypeTitle": "原型",
-    "title": "PR/FAQ 预览",
+    "title": "文档预览",
     "viewFull": "查看完整文档",
     "viewMobile": "查看"
   },
@@ -68,11 +68,10 @@
     "highPriority": "高优先级",
     "mediumPriority": "中优先级",
     "notScored": "未评分",
-    "totalDocuments": "文档总数",
-    "totalPrfaqs": "PR/FAQ 总数"
+    "totalDocuments": "文档总数"
   },
-  "subtitle": "对所有项目中的 PR/FAQ 进行评分和优先级排序",
-  "title": "PR/FAQ 优先级排序",
+  "subtitle": "对所有项目中的 PRD 和 PR/FAQ 进行评分和优先级排序",
+  "title": "优先级排序",
   "unsavedChanges": {
     "cancel": "留在此页面",
     "confirm": "放弃更改",

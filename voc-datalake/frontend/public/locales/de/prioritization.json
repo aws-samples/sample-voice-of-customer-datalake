@@ -18,17 +18,17 @@
     "wrongTypeTitle": "Keine bewertbaren Dokumente"
   },
   "framework": {
-    "description": "Bewerten Sie jedes PR/FAQ nach: <strong>Auswirkung</strong>, <strong>Markteinführungszeit</strong>, <strong>Strategische Passung</strong> und <strong>Konfidenz</strong>.",
+    "description": "Bewerten Sie jedes Dokument nach: <strong>Auswirkung</strong>, <strong>Markteinführungszeit</strong>, <strong>Strategische Passung</strong> und <strong>Konfidenz</strong>.",
     "title": "Priorisierungsrahmen"
   },
-  "loading": "PR/FAQs werden geladen...",
+  "loading": "Dokumente werden geladen...",
   "notes": {
     "label": "Notizen",
     "placeholder": "Notizen zu dieser Priorisierungsentscheidung hinzufügen..."
   },
   "preview": {
     "prototypeTitle": "Prototyp",
-    "title": "PR/FAQ-Vorschau",
+    "title": "Dokumentvorschau",
     "viewFull": "Vollständiges Dokument anzeigen",
     "viewMobile": "Anzeigen"
   },
@@ -68,11 +68,10 @@
     "highPriority": "Hohe Priorität",
     "mediumPriority": "Mittlere Priorität",
     "notScored": "Nicht bewertet",
-    "totalDocuments": "Dokumente gesamt",
-    "totalPrfaqs": "Gesamt PR/FAQs"
+    "totalDocuments": "Dokumente gesamt"
   },
-  "subtitle": "PR/FAQs über alle Projekte hinweg bewerten und priorisieren",
-  "title": "PR/FAQ-Priorisierung",
+  "subtitle": "PRDs und PR/FAQs über alle Projekte hinweg bewerten und priorisieren",
+  "title": "Priorisierung",
   "unsavedChanges": {
     "cancel": "Auf Seite bleiben",
     "confirm": "Änderungen verwerfen",

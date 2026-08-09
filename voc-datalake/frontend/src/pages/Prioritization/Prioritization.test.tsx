@@ -138,7 +138,7 @@ describe('Prioritization', () => {
     it('renders page header', async () => {
       renderPrioritization()
 
-      expect(screen.getByText('PR/FAQ Prioritization')).toBeInTheDocument()
+      expect(screen.getByText('Prioritization')).toBeInTheDocument()
     })
 
     it('renders stats cards', async () => {
@@ -166,7 +166,7 @@ describe('Prioritization', () => {
       renderPrioritization()
 
       await waitFor(() => {
-        expect(screen.getByText('Loading PR/FAQs...')).toBeInTheDocument()
+        expect(screen.getByText('Loading documents...')).toBeInTheDocument()
       })
     })
   })
@@ -281,7 +281,7 @@ describe('Prioritization', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Prioritization Scores')).toBeInTheDocument()
-        expect(screen.getByText('PR/FAQ Preview')).toBeInTheDocument()
+        expect(screen.getByText('Document Preview')).toBeInTheDocument()
       })
     })
   })

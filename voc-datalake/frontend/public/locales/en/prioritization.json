@@ -18,17 +18,17 @@
     "wrongTypeTitle": "No Scorable Documents"
   },
   "framework": {
-    "description": "Score each PR/FAQ on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.",
+    "description": "Score each document on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.",
     "title": "Prioritization Framework"
   },
-  "loading": "Loading PR/FAQs...",
+  "loading": "Loading documents...",
   "notes": {
     "label": "Notes",
     "placeholder": "Add notes about this prioritization decision..."
   },
   "preview": {
     "prototypeTitle": "Prototype",
-    "title": "PR/FAQ Preview",
+    "title": "Document Preview",
     "viewFull": "View Full Document",
     "viewMobile": "View"
   },
@@ -68,11 +68,10 @@
     "highPriority": "High Priority",
     "mediumPriority": "Medium Priority",
     "notScored": "Not Scored",
-    "totalDocuments": "Total Documents",
-    "totalPrfaqs": "Total PR/FAQs"
+    "totalDocuments": "Total Documents"
   },
-  "subtitle": "Score and prioritize PR/FAQs across all projects",
-  "title": "PR/FAQ Prioritization",
+  "subtitle": "Score and prioritize PRDs and PR/FAQs across all projects",
+  "title": "Prioritization",
   "unsavedChanges": {
     "cancel": "Stay on Page",
     "confirm": "Discard Changes",

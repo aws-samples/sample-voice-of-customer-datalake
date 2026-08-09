@@ -68,11 +68,28 @@ export function getScore(scores: Record<string, PrioritizationScore>, docId: str
   }
 }
 
-/** Document types that are scorable on the Prioritization page. */
-const SCORABLE_TYPES = new Set<ProjectDocument['document_type']>(['prd', 'prfaq'])
+/**
+ * Per-type display metadata for every scorable document type.
+ *
+ * This is the single source of truth for which document types are scorable.
+ * Keys are constrained to `ProjectDocument['document_type']`, so a typo or
+ * stale entry is a compile error. Adding a new scorable type here automatically
+ * propagates to `isScorable` and to the `DocumentTypeBadge` in `PRFAQRow`.
+ */
+export const SCORABLE_TYPE_META: Partial<Record<ProjectDocument['document_type'], {
+  readonly badgeColor: string
+  readonly i18nKey: string
+}>> = {
+  prd: { badgeColor: 'bg-blue-100 text-blue-700', i18nKey: 'docType.prd' },
+  prfaq: { badgeColor: 'bg-purple-100 text-purple-700', i18nKey: 'docType.prfaq' },
+}
 
 export function isScorable(doc: ProjectDocument): boolean {
-  return SCORABLE_TYPES.has(doc.document_type)
+  // `in` operator checks key presence in SCORABLE_TYPE_META at runtime;
+  // the type of `doc.document_type` is already constrained by the API union,
+  // so no type assertion is needed and any typo in SCORABLE_TYPE_META is a
+  // compile error at the Partial<Record<...>> definition above.
+  return doc.document_type in SCORABLE_TYPE_META
 }
 
 export function collectPRFAQs(allProjectDetails: Array<{ documents?: ProjectDocument[] }> | undefined, projects: Project[] | undefined): PRFAQWithProject[] {

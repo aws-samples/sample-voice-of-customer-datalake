@@ -223,10 +223,10 @@ export default function Prioritization() {
   // creating a PRD or PR/FAQ rather than the generic "no documents" message.
   const hasNonScorableOnly = useMemo(() => {
     if (!allProjectDetails) return false
-    const hasAnyDoc = allProjectDetails.some(
+    const hasNonScorableDoc = allProjectDetails.some(
       (detail) => detail.documents && detail.documents.some((doc) => !isScorable(doc)),
     )
-    return allPRFAQs.length === 0 && hasAnyDoc
+    return allPRFAQs.length === 0 && hasNonScorableDoc
   }, [allProjectDetails, allPRFAQs])
 
   const sortedPRFAQs = useMemo(() => {
