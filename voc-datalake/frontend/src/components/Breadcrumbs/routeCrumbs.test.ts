@@ -9,8 +9,11 @@ import { describe, it, expect } from 'vitest'
 import i18n from 'i18next'
 import { buildCrumbs, RECORD_CRUMBS, SEGMENT_CRUMBS } from './routeCrumbs'
 
-// The real `t`, so a table entry pointing at a key the catalogue lacks fails
-// here rather than rendering the key path in the header.
+// The real `t`, so a table entry pointing at a key the catalogue lacks fails here
+// rather than rendering the key path in the header. The instance is the one
+// src/test/setup.ts initialises with the shipped `en` catalogues — this file
+// deliberately does not configure i18next, so the English strings asserted below
+// are the ones the app ships.
 const t = i18n.t.bind(i18n)
 
 const labels = (path: string, recordName?: string) =>
@@ -81,10 +84,15 @@ describe('label keys', () => {
     ...Object.entries(RECORD_CRUMBS),
   ].map(([segment, crumb]) => [segment, crumb?.labelKey ?? ''] as const)
 
-  it('covers both tables', () => {
-    // Anti-vacuous guard: an empty list would make the case below pass.
-    expect(entries.length).toBe(13)
-    expect(entries.every(([, labelKey]) => labelKey.startsWith('common:breadcrumbs.'))).toBe(true)
+  // Anti-vacuous guard by MEMBERSHIP, not size: an empty `entries` would make the
+  // case below pass, but pinning a count fails on every legitimately added segment
+  // while saying nothing about it. These two keys are unique to one table each, so
+  // they prove both tables were reached without constraining what's in them.
+  it('reaches both tables', () => {
+    const labelKeys = entries.map(([, labelKey]) => labelKey)
+    expect(labelKeys).toContain('common:breadcrumbs.dashboard')
+    expect(labelKeys).toContain('common:breadcrumbs.project')
+    expect(labelKeys.every((labelKey) => labelKey.startsWith('common:breadcrumbs.'))).toBe(true)
   })
 
   // A sentinel `defaultValue`, not a comparison against the key: i18next echoes a

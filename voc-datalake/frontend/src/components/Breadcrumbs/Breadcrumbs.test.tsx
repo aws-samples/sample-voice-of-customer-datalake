@@ -1,12 +1,14 @@
 /**
  * @fileoverview Tests for Breadcrumbs component.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
+import type { MockInstance } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18next'
 import { TestRouter } from '../../test/test-utils'
 import { routes } from '../../routes'
+import { projectsApi } from '../../api/projectsApi'
 import { useProjectData } from '../../pages/ProjectDetail/useProjectData'
 import Breadcrumbs from './Breadcrumbs'
 import { RECORD_CRUMBS, SEGMENT_CRUMBS } from './routeCrumbs'
@@ -14,17 +16,7 @@ import deCommon from '../../../public/locales/de/common.json'
 
 const PROJECT_ID = 'proj_20260101120000'
 
-const mockGetProject = vi.fn()
-const mockGetJobs = vi.fn()
-const mockGetProductContext = vi.fn()
-
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    getProject: (id: string) => mockGetProject(id),
-    getJobs: (id: string) => mockGetJobs(id),
-    getProductContext: (id: string) => mockGetProductContext(id),
-  },
-}))
+const PROJECT_NAME = 'Checkout Friction'
 
 function createQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
@@ -134,12 +126,12 @@ describe('Breadcrumbs', () => {
     it("shows the project's name once the page has loaded it", () => {
       renderWithRouter([`/projects/${PROJECT_ID}`], (client) => {
         client.setQueryData(['project', PROJECT_ID], {
-          project: { project_id: PROJECT_ID, name: 'Checkout Friction' },
+          project: { project_id: PROJECT_ID, name: PROJECT_NAME },
           personas: [],
           documents: [],
         })
       })
-      expect(screen.getByText('Checkout Friction')).toBeInTheDocument()
+      expect(screen.getByText(PROJECT_NAME)).toBeInTheDocument()
       expect(screen.queryByText(PROJECT_ID)).not.toBeInTheDocument()
     })
 
@@ -175,14 +167,25 @@ describe('Breadcrumbs', () => {
       return <div data-testid="page">{data?.project.name ?? 'page loading'}</div>
     }
 
+    // Spies on the real client rather than a `vi.mock` factory: a factory lists
+    // the members it knows about, so the day the hook calls another one it
+    // resolves to `undefined` and fails as an unrelated TypeError. Spies are
+    // checked against the real signatures, and `restoreAllMocks` gives each case
+    // a fresh call history without relying on the suite-wide `clearAllMocks`.
+    let getProject: MockInstance<typeof projectsApi.getProject>
+
     beforeEach(() => {
-      mockGetProject.mockResolvedValue({
-        project: { project_id: PROJECT_ID, name: 'Checkout Friction' },
+      getProject = vi.spyOn(projectsApi, 'getProject').mockResolvedValue({
+        project: { project_id: PROJECT_ID, name: PROJECT_NAME },
         personas: [],
         documents: [],
       })
-      mockGetJobs.mockResolvedValue({ jobs: [] })
-      mockGetProductContext.mockResolvedValue({ context: {} })
+      vi.spyOn(projectsApi, 'getJobs').mockResolvedValue({ jobs: [] })
+      vi.spyOn(projectsApi, 'getProductContext').mockResolvedValue({ context: {} })
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
     })
 
     it("fills the crumb from the page's fetch, and adds no request of its own", async () => {
@@ -203,11 +206,11 @@ describe('Breadcrumbs', () => {
       // Scoped to the nav: the probe renders the same string, so an unscoped
       // query matches twice and cannot say which of the two resolved.
       const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
-      await waitFor(() => expect(within(nav).getByText('Checkout Friction')).toBeInTheDocument())
-      expect(screen.getByTestId('page')).toHaveTextContent('Checkout Friction')
+      await waitFor(() => expect(within(nav).getByText(PROJECT_NAME)).toBeInTheDocument())
+      expect(screen.getByTestId('page')).toHaveTextContent(PROJECT_NAME)
       expect(within(nav).queryByText('Project')).not.toBeInTheDocument()
-      expect(mockGetProject).toHaveBeenCalledTimes(1)
-      expect(mockGetProject).toHaveBeenCalledWith(PROJECT_ID)
+      expect(getProject).toHaveBeenCalledTimes(1)
+      expect(getProject).toHaveBeenCalledWith(PROJECT_ID)
     })
   })
 
@@ -353,10 +356,10 @@ describe('Breadcrumbs', () => {
     it('leaves a record name untranslated, since it is data and not a label', () => {
       renderWithRouter([`/projects/${PROJECT_ID}`], (client) => {
         client.setQueryData(['project', PROJECT_ID], {
-          project: { project_id: PROJECT_ID, name: 'Checkout Friction' },
+          project: { project_id: PROJECT_ID, name: PROJECT_NAME },
         })
       })
-      expect(screen.getByText('Checkout Friction')).toBeInTheDocument()
+      expect(screen.getByText(PROJECT_NAME)).toBeInTheDocument()
     })
   })
 })
