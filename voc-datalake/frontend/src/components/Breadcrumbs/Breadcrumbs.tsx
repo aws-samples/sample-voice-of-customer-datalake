@@ -18,10 +18,11 @@ import { skipToken, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
 import clsx from 'clsx'
+import { projectKey } from '../../api/projectQueryKeys'
 import { buildCrumbs } from './routeCrumbs'
 
 /**
- * The one field a crumb needs off the `['project', id]` cache entry. Lenient by
+ * The one field a crumb needs off the project cache entry. Lenient by
  * construction: a failed parse (nothing cached yet, an error state, a record
  * saved before `name` existed) leaves the generic label in place rather than
  * throwing inside the page header.
@@ -38,14 +39,14 @@ const ProjectNameSchema = z.object({
  * Projects are the only record with a name to show: a feedback item has no title
  * field (see FeedbackItem), so `/feedback/:id` keeps its generic label.
  *
- * The `['project', id]` entry — ProjectDetail's, via useProjectData — is observed
- * with `skipToken`, i.e. read-only: the header must not issue a request of its
- * own, nor race that page for one. The subscription is live either way, so the
- * crumb fills in the moment the page's own query resolves.
+ * The entry is ProjectDetail's, via useProjectData — hence the shared `projectKey`
+ * — and it is observed with `skipToken`, i.e. read-only: the header must not issue
+ * a request of its own, nor race that page for one. The subscription is live
+ * either way, so the crumb fills in the moment the page's own query resolves.
  */
 function useRecordName(pathSegments: readonly string[]): string | undefined {
   const projectId = pathSegments[0] === 'projects' ? pathSegments[1] : undefined
-  const { data } = useQuery({ queryKey: ['project', projectId], queryFn: skipToken })
+  const { data } = useQuery({ queryKey: projectKey(projectId), queryFn: skipToken })
   return ProjectNameSchema.safeParse(data).data?.project.name
 }
 
