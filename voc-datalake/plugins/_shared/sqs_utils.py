@@ -16,6 +16,8 @@ any items could not be enqueued so callers cannot silently report success.
 """
 
 import json
+import random
+import time
 
 from shared.logging import logger, metrics
 
@@ -40,17 +42,22 @@ def send_messages_to_queue(
     metric_name: str,
     log_label: str,
     max_retries: int = 3,
+    initial_delay: float = 0.5,
 ) -> int:
     """Send *items* to *queue_url* in batches of 10 with failure handling.
 
     Args:
-        sqs_client:  A boto3 SQS client (or compatible mock).
-        queue_url:   The SQS queue URL.
-        items:       Normalised feedback dicts to enqueue.
-        metric_name: CloudWatch metric name for successfully enqueued count.
-        log_label:   Short label used in log messages (e.g. ``"ingestor"``).
-        max_retries: Maximum number of retries for transient (non-sender-fault)
-                     failures.  Defaults to 3.
+        sqs_client:    A boto3 SQS client (or compatible mock).
+        queue_url:     The SQS queue URL.
+        items:         Normalised feedback dicts to enqueue.
+        metric_name:   CloudWatch metric name for successfully enqueued count.
+        log_label:     Short label used in log messages (e.g. ``"ingestor"``).
+        max_retries:   Maximum number of retries for transient (non-sender-fault)
+                       failures.  Defaults to 3.
+        initial_delay: Base delay in seconds for the first retry.  Each
+                       subsequent retry doubles the base, multiplied by a
+                       uniform jitter in [0.5, 1.5].  Defaults to 0.5 s.
+                       Pass ``0`` in tests to keep them fast.
 
     Returns:
         The number of items that were successfully enqueued.
@@ -71,6 +78,18 @@ def send_messages_to_queue(
     for attempt in range(max_retries + 1):
         if not pending:
             break
+
+        if attempt > 0 and initial_delay > 0:
+            delay = initial_delay * (2 ** (attempt - 1)) * random.uniform(0.5, 1.5)
+            logger.debug(
+                "SQS retry attempt %d/%d for %d %s item(s); sleeping %.2fs",
+                attempt,
+                max_retries,
+                len(pending),
+                log_label,
+                delay,
+            )
+            time.sleep(delay)
 
         # Items that fail with SenderFault=false this round get queued here.
         transient_retry: list[dict] = []
@@ -104,6 +123,8 @@ def send_messages_to_queue(
                     continue
                 try:
                     idx = int(raw_id)
+                    if idx < 0:
+                        raise IndexError(f"negative batch index: {idx}")
                     failed_item = batch[idx]
                 except (ValueError, IndexError):
                     logger.error(

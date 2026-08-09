@@ -117,13 +117,17 @@ class TestBaseWebhookSendToQueue:
 
         mock_get_secret.return_value = {}
         mock_sqs_client = MagicMock()
-        # Use side_effect so each call gets a response whose Successful list
-        # matches the actual batch size (10, 5) — a single return_value would
-        # overclaim 10 successes for the last batch of 5.
-        mock_sqs_client.send_message_batch.side_effect = [
-            {'Successful': [{'Id': str(i)} for i in range(10)], 'Failed': []},
-            {'Successful': [{'Id': str(i)} for i in range(5)],  'Failed': []},
-        ]
+        # Use a callable side_effect that derives Successful from the actual
+        # Entries passed.  This is correct for any batch size and any number of
+        # calls — an unexpected extra call (e.g. a retry round) raises
+        # AttributeError rather than a confusing StopIteration, and the mock
+        # never overclaims successes for a short final batch.
+        def _batch_success(**kwargs):
+            return {
+                'Successful': [{'Id': e['Id']} for e in kwargs['Entries']],
+                'Failed': [],
+            }
+        mock_sqs_client.send_message_batch.side_effect = _batch_success
         mock_sqs.return_value = mock_sqs_client
 
         class TestWebhook(BaseWebhook):
@@ -134,9 +138,10 @@ class TestBaseWebhookSendToQueue:
 
         items = [{'id': f'item-{i}', 'text': f'Text {i}'} for i in range(15)]
         with patch('_shared.sqs_utils.metrics') as mock_metrics:
-            webhook.send_to_queue(items)
+            result = webhook.send_to_queue(items)
 
         assert mock_sqs_client.send_message_batch.call_count == 2
+        assert result == 15
         # Metric must reflect the actual confirmed count (15), not 20
         mock_metrics.add_metric.assert_called_once_with(
             name='WebhookItemsIngested', unit='Count', value=15

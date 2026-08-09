@@ -270,14 +270,17 @@ class TestBaseIngestorSendToQueue:
         from _shared.base_ingestor import BaseIngestor
 
         mock_sqs_client = MagicMock()
-        # Use side_effect so each call gets a response whose Successful list
-        # matches the actual batch size (10, 10, 5) — a single return_value
-        # would overclaim 10 successes for the last batch of 5.
-        mock_sqs_client.send_message_batch.side_effect = [
-            {'Successful': [{'Id': str(i)} for i in range(10)], 'Failed': []},
-            {'Successful': [{'Id': str(i)} for i in range(10)], 'Failed': []},
-            {'Successful': [{'Id': str(i)} for i in range(5)],  'Failed': []},
-        ]
+        # Use a callable side_effect that derives Successful from the actual
+        # Entries passed.  This is correct for any batch size and any number of
+        # calls — an unexpected extra call (e.g. a retry round) raises
+        # AttributeError rather than a confusing StopIteration, and the mock
+        # never overclaims successes for a short final batch.
+        def _batch_success(**kwargs):
+            return {
+                'Successful': [{'Id': e['Id']} for e in kwargs['Entries']],
+                'Failed': [],
+            }
+        mock_sqs_client.send_message_batch.side_effect = _batch_success
         mock_sqs.return_value = mock_sqs_client
         mock_dynamo.return_value.Table.return_value = MagicMock()
         mock_get_secret.return_value = {}
@@ -291,9 +294,10 @@ class TestBaseIngestorSendToQueue:
         # Send 25 items - should result in 3 batches (10 + 10 + 5)
         items = [{'id': f'item-{i}', 'text': f'Text {i}'} for i in range(25)]
         with patch('_shared.sqs_utils.metrics') as mock_metrics:
-            ingestor.send_to_queue(items)
+            result = ingestor.send_to_queue(items)
 
         assert mock_sqs_client.send_message_batch.call_count == 3
+        assert result == 25
         # Metric must reflect the actual confirmed count (25), not 30
         mock_metrics.add_metric.assert_called_once_with(
             name='ItemsIngested', unit='Count', value=25
@@ -529,6 +533,58 @@ class TestBaseIngestorRun:
         
         assert result['status'] == 'skipped'
         assert result['reason'] == 'circuit_breaker_open'
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.emit_audit_event')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_run_items_processed_uses_confirmed_count(
+        self, mock_audit, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """run() items_processed must equal the confirmed-enqueued count returned
+        by send_to_queue, not len(items).
+
+        Reverts-to-catch: if run() uses ``total_processed += len(items)`` instead
+        of ``total_processed += self.send_to_queue(items)``, then even a partial
+        failure that silently drops items would still report the full attempt count
+        as success — exactly the bug this PR was opened to fix.
+
+        This test fetches 3 items but the SQS mock confirms only 2; the expected
+        items_processed is 2, not 3.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs_client = MagicMock()
+        # 3 items sent, but SQS only confirms 2 Successful (no failures — this
+        # is the "honest partial success" scenario, e.g. de-dup on the queue side).
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}, {'Id': '1'}],
+            'Failed': [],
+        }
+        mock_sqs.return_value = mock_sqs_client
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield {'id': '1', 'text': 'Review 1', 'created_at': '2025-01-01T00:00:00Z'}
+                yield {'id': '2', 'text': 'Review 2', 'created_at': '2025-01-01T01:00:00Z'}
+                yield {'id': '3', 'text': 'Review 3', 'created_at': '2025-01-01T02:00:00Z'}
+
+        ingestor = TestIngestor()
+        ingestor.circuit_breaker = MagicMock()
+        ingestor.circuit_breaker.is_open.return_value = False
+
+        with patch('_shared.sqs_utils.metrics'):
+            result = ingestor.run()
+
+        assert result['status'] == 'success'
+        # Must reflect confirmed (2) not attempted (3)
+        assert result['items_processed'] == 2
 
     @patch('_shared.base_ingestor.get_dynamodb_resource')
     @patch('_shared.base_ingestor.get_s3_client')

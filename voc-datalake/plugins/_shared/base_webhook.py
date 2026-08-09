@@ -89,7 +89,7 @@ class BaseWebhook(ABC):
             "raw_data": item,
         }
 
-    def send_to_queue(self, items: list[dict]):
+    def send_to_queue(self, items: list[dict]) -> int:
         """Send items to SQS processing queue.
 
         Delegates to the shared helper which checks the ``Failed`` list in every
@@ -97,6 +97,9 @@ class BaseWebhook(ABC):
         any items cannot be enqueued — ensuring callers cannot silently lose
         feedback.  The ``WebhookItemsIngested`` metric reflects the actual
         enqueued count, not the attempted count.
+
+        Returns:
+            The number of items that SQS confirmed as enqueued.
 
         Note — partial-failure duplicate-delivery trade-off:
             If the helper raises ``RuntimeError`` after a partial success (some
@@ -110,7 +113,7 @@ class BaseWebhook(ABC):
             ``IDEMPOTENCY_TABLE`` is configured.  Ensure ``IDEMPOTENCY_TABLE`` is
             set in all production deployments to prevent double-processing.
         """
-        send_messages_to_queue(
+        return send_messages_to_queue(
             self._sqs,
             PROCESSING_QUEUE_URL,
             items,

@@ -239,7 +239,7 @@ class BaseIngestor(ABC):
             "raw_data": item if not s3_raw_uri else None,
         }
 
-    def send_to_queue(self, items: list[dict]):
+    def send_to_queue(self, items: list[dict]) -> int:
         """Send items to SQS processing queue.
 
         Delegates to the shared helper which checks the ``Failed`` list in every
@@ -247,8 +247,11 @@ class BaseIngestor(ABC):
         any items cannot be enqueued — ensuring callers cannot silently lose
         feedback.  The ``ItemsIngested`` metric reflects the actual enqueued
         count, not the attempted count.
+
+        Returns:
+            The number of items that SQS confirmed as enqueued.
         """
-        send_messages_to_queue(
+        return send_messages_to_queue(
             self._sqs,
             PROCESSING_QUEUE_URL,
             items,
@@ -312,15 +315,13 @@ class BaseIngestor(ABC):
 
                 # Batch send every 100 items
                 if len(items) >= 100:
-                    self.send_to_queue(items)
-                    total_processed += len(items)
+                    total_processed += self.send_to_queue(items)
                     items = []
                     self._update_source_run_status({'items_found': total_processed})
 
             # Send remaining items
             if items:
-                self.send_to_queue(items)
-                total_processed += len(items)
+                total_processed += self.send_to_queue(items)
 
             # Update watermark
             if last_id:

@@ -21,6 +21,7 @@ Mixed success+failure in one response               test_partial_batch_failure_r
 Failed entry missing Id field raises RuntimeError   test_missing_id_field_raises_without_index_error
 Non-numeric Id raises RuntimeError (no ValueError) test_non_numeric_id_raises_without_value_error
 Out-of-range Id raises RuntimeError (no IndexError) test_out_of_range_id_raises_without_index_error
+Negative Id raises RuntimeError (no wrong item)    test_negative_id_raises_without_wrong_item_blamed
 Full message body not logged (only id field)        test_personal_data_not_logged
 Return value = successfully enqueued count          test_return_value_is_enqueued_count
 """
@@ -125,6 +126,7 @@ class TestSendMessagesToQueueHappyPath:
                 items,
                 metric_name="ItemsIngested",
                 log_label="test",
+                initial_delay=0,
             )
 
         assert result == 5
@@ -149,6 +151,7 @@ class TestSendMessagesToQueueHappyPath:
                 [],
                 metric_name="ItemsIngested",
                 log_label="test",
+                initial_delay=0,
             )
 
         assert result == 0
@@ -168,6 +171,7 @@ class TestSendMessagesToQueueHappyPath:
                 items,
                 metric_name="ItemsIngested",
                 log_label="test",
+                initial_delay=0,
             )
         assert result == 3
 
@@ -177,16 +181,23 @@ class TestSendMessagesToQueueHappyPath:
 
         Reverts-to-catch: removing the batching loop would send all 25 in one
         call (which SQS rejects) or never send at all.
+
+        The callable side_effect derives Successful from the actual Entries
+        passed, so the mock is correct for any batch size and any number of
+        calls — an unexpected extra call produces an informative failure rather
+        than a confusing StopIteration.
         """
         send_messages_to_queue = _import_fn()
         items = [{"id": str(i), "text": "x"} for i in range(25)]
-        sqs = _make_sqs(
-            [
-                _success_response(10),
-                _success_response(10),
-                _success_response(5),
-            ]
-        )
+
+        def _batch_success(**kwargs):
+            return {
+                "Successful": [{"Id": e["Id"]} for e in kwargs["Entries"]],
+                "Failed": [],
+            }
+
+        sqs = MagicMock()
+        sqs.send_message_batch.side_effect = _batch_success
 
         with patch("_shared.sqs_utils.metrics"):
             send_messages_to_queue(
@@ -195,6 +206,7 @@ class TestSendMessagesToQueueHappyPath:
                 items,
                 metric_name="ItemsIngested",
                 log_label="test",
+                initial_delay=0,
             )
 
         assert sqs.send_message_batch.call_count == 3
@@ -225,6 +237,7 @@ class TestSendMessagesToQueueFailureHandling:
                 metric_name="ItemsIngested",
                 log_label="test",
                 max_retries=0,
+                initial_delay=0,
             )
 
     def test_raises_on_sender_fault_failure(self):
@@ -245,6 +258,7 @@ class TestSendMessagesToQueueFailureHandling:
                 items,
                 metric_name="ItemsIngested",
                 log_label="test",
+                initial_delay=0,
             )
 
     def test_metric_reflects_only_successful_items(self):
@@ -273,6 +287,7 @@ class TestSendMessagesToQueueFailureHandling:
                 items,
                 metric_name="ItemsIngested",
                 log_label="test",
+                initial_delay=0,
             )
 
         # Metric must be 3 (successful), not 5 (attempted)
@@ -313,6 +328,7 @@ class TestSendMessagesToQueueFailureHandling:
                 items,
                 metric_name="ItemsIngested",
                 log_label="test",
+                initial_delay=0,
             )
 
         # The error path must have logged the missing-Id case
@@ -357,6 +373,7 @@ class TestSendMessagesToQueueFailureHandling:
                 metric_name="ItemsIngested",
                 log_label="test",
                 max_retries=0,
+                initial_delay=0,
             )
 
         # The invalid-Id error path must have been logged
@@ -401,12 +418,62 @@ class TestSendMessagesToQueueFailureHandling:
                 metric_name="ItemsIngested",
                 log_label="test",
                 max_retries=0,
+                initial_delay=0,
             )
 
         # The invalid-Id error path must have been logged
         error_calls = [str(call) for call in mock_logger.error.call_args_list]
         assert any("invalid Id" in c for c in error_calls), (
             "Expected an error log about the invalid/out-of-range Id field"
+        )
+
+    def test_negative_id_raises_without_wrong_item_blamed(self):
+        """A Failed entry with a negative numeric Id (e.g. '-1') must raise
+        RuntimeError without silently using Python's negative-index semantics
+        (which would blame the last item in the batch).
+
+        Reverts-to-catch: before the ``if idx < 0`` guard, ``"-1"`` passed
+        ``int()`` cleanly and ``batch[-1]`` returned the *last* item, meaning
+        the actual failed item was untracked and a different item was
+        incorrectly recorded in permanent_failures.  With the guard in place
+        the negative index is caught by the same ``IndexError`` handler,
+        logged as an invalid Id, and escalated to RuntimeError.
+        """
+        send_messages_to_queue = _import_fn()
+        # Two items so that batch[-1] would resolve to items[1] (wrong item)
+        items = [{"id": "item-A", "text": "x"}, {"id": "item-B", "text": "y"}]
+        response_with_negative_id = {
+            "Successful": [],
+            "Failed": [
+                {
+                    "Id": "-1",  # negative — Python batch[-1] → last item
+                    "SenderFault": False,
+                    "Code": "InternalError",
+                    "Message": "test error",
+                }
+            ],
+        }
+        sqs = _make_sqs([response_with_negative_id])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            patch("_shared.sqs_utils.logger") as mock_logger,
+            pytest.raises(RuntimeError),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+                initial_delay=0,
+            )
+
+        # The invalid-Id error path must have been logged (not a silent wrong-item attribution)
+        error_calls = [str(call) for call in mock_logger.error.call_args_list]
+        assert any("invalid Id" in c for c in error_calls), (
+            "Expected an error log about the invalid (negative) Id field"
         )
 
     def test_partial_batch_failure_raises_and_counts_correctly(self):
@@ -430,6 +497,7 @@ class TestSendMessagesToQueueFailureHandling:
                 items,
                 metric_name="ItemsIngested",
                 log_label="test",
+                initial_delay=0,
             )
         mock_metrics.add_metric.assert_called_once_with(
             name="ItemsIngested", unit="Count", value=7
@@ -462,6 +530,7 @@ class TestSendMessagesToQueueRetryBehaviour:
                 metric_name="ItemsIngested",
                 log_label="test",
                 max_retries=1,
+                initial_delay=0,
             )
 
         # Must have been retried (2 calls) and succeeded
@@ -495,6 +564,7 @@ class TestSendMessagesToQueueRetryBehaviour:
                 metric_name="ItemsIngested",
                 log_label="test",
                 max_retries=3,
+                initial_delay=0,
             )
 
         # Only 1 call — SenderFault means no retry
@@ -524,6 +594,7 @@ class TestSendMessagesToQueueRetryBehaviour:
                 metric_name="ItemsIngested",
                 log_label="test",
                 max_retries=max_retries,
+                initial_delay=0,
             )
 
         # One call per attempt (initial + max_retries retries)
@@ -553,6 +624,7 @@ class TestSendMessagesToQueueRetryBehaviour:
                 metric_name="ItemsIngested",
                 log_label="test",
                 max_retries=1,
+                initial_delay=0,
             )
 
         assert result == 3
