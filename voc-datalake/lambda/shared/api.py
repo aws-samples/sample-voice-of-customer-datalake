@@ -3,31 +3,39 @@ Shared API utilities for VoC Lambda functions.
 Provides common helpers, encoders, validators, and decorators.
 """
 
+import functools
 import json
 import os
-import functools
-from decimal import Decimal
 from datetime import datetime, timezone
+from decimal import Decimal
 
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig, Response, content_types
+from aws_lambda_powertools.event_handler import (
+    APIGatewayRestResolver,
+    CORSConfig,
+    Response,
+    content_types,
+)
 
-from shared.logging import logger, tracer, metrics
 from shared.exceptions import (
     ApiError,
-    ValidationError,
-    NotFoundError,
-    ConfigurationError,
-    ServiceError,
     AuthorizationError,
+    ConfigurationError,
     ConflictError,
+    NotFoundError,
+    ServiceError,
+    ValidationError,
 )
 
 # Date-basis values live in shared.feedback (the data layer) so job Lambdas
 # don't import API-resolver machinery for constants; re-exported here for
 # API handlers and backward compatibility.
 from shared.feedback import (  # noqa: F401 — re-export
-    DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, VALID_DATE_BASES, validate_date_basis,
+    DATE_BASIS_IMPORTED,
+    DATE_BASIS_REVIEW,
+    VALID_DATE_BASES,
+    validate_date_basis,
 )
+from shared.logging import logger, metrics, tracer
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -104,6 +112,28 @@ def get_caller_groups(event: dict) -> list[str]:
         return cleaned.split(' ') if ' ' in cleaned else [cleaned]
     except Exception:
         return []
+
+
+def get_caller_subject(event: dict) -> str:
+    """Return the Cognito subject (``sub``) for the authenticated caller.
+
+    The ``sub`` claim is the stable, immutable identifier assigned by Cognito
+    at user-creation time.  Unlike a username (which can be reused) or an
+    email (which can change), it never refers to a different person.
+
+    Raises:
+        AuthorizationError: If the ``sub`` claim is absent or empty.  These
+            routes are protected by the Cognito authorizer, so an absent claim
+            indicates misconfiguration rather than an anonymous request — the
+            handler must fail closed rather than fall back to a shared key.
+    """
+    claims = (
+        event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+    )
+    sub = claims.get('sub', '') if isinstance(claims, dict) else ''
+    if sub:
+        return sub
+    raise AuthorizationError('Caller identity could not be determined')
 
 
 def require_admin(event: dict) -> None:
@@ -263,28 +293,29 @@ def api_handler(func):
 
 # Re-export exceptions for convenience
 __all__ = [
-    'DecimalEncoder',
-    'validate_days',
-    'validate_limit', 
-    'validate_int',
-    'validate_date_basis',
     'DATE_BASIS_IMPORTED',
     'DATE_BASIS_REVIEW',
-    'create_cors_config',
-    'create_api_resolver',
-    'api_handler',
-    'get_caller_groups',
-    'require_admin',
-    'get_configured_categories',
     'DEFAULT_CATEGORIES',
     # Exceptions
     'ApiError',
-    'ValidationError',
-    'NotFoundError',
-    'ConfigurationError',
-    'ServiceError',
     'AuthorizationError',
+    'ConfigurationError',
     'ConflictError',
+    'DecimalEncoder',
+    'NotFoundError',
+    'ServiceError',
+    'ValidationError',
+    'api_handler',
+    'create_api_resolver',
+    'create_cors_config',
+    'get_caller_groups',
+    'get_caller_subject',
+    'get_configured_categories',
+    'require_admin',
+    'validate_date_basis',
+    'validate_days',
+    'validate_int',
+    'validate_limit',
 ]
 
 

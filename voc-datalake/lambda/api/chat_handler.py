@@ -5,24 +5,29 @@ Manages AI chat conversations.
 
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer
-from shared.aws import get_dynamodb_resource
-from shared.api import (
-    create_api_resolver, api_handler, validate_days, get_configured_categories,
-    validate_date_basis, DATE_BASIS_REVIEW,
-)
-from shared.feedback import basis_date, window_cutoff
-from shared.exceptions import ConfigurationError, NotFoundError as AppNotFoundError
-from shared.indexes import FEEDBACK_BY_DATE_INDEX
-
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Key
+from shared.api import (
+    DATE_BASIS_REVIEW,
+    api_handler,
+    create_api_resolver,
+    get_caller_subject,
+    get_configured_categories,
+    validate_date_basis,
+    validate_days,
+)
+from shared.aws import get_dynamodb_resource
+from shared.exceptions import ConfigurationError
+from shared.exceptions import NotFoundError as AppNotFoundError
+from shared.feedback import basis_date, window_cutoff
+from shared.indexes import FEEDBACK_BY_DATE_INDEX
+from shared.logging import logger, tracer
 
 # AWS Clients
 dynamodb = get_dynamodb_resource()
@@ -68,7 +73,7 @@ def chat():
             total_feedback += item.get('count', 0)
     
     sentiment_counts = {'positive': 0, 'negative': 0, 'neutral': 0, 'mixed': 0}
-    for sentiment in sentiment_counts.keys():
+    for sentiment in sentiment_counts:
         for i in range(days):
             date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
             response = aggregates_table.get_item(Key={'pk': f'METRIC#daily_sentiment#{sentiment}', 'sk': date})
@@ -186,12 +191,13 @@ def get_conversations(proxy: str = ""):
     """List or get chat conversations."""
     if not conversations_table:
         return {'conversations': []}
-    
+
+    caller_pk = f"USER#{get_caller_subject(app.current_event.raw_event)}"
     conversation_id = proxy.strip() if proxy and proxy != '_list' else None
-    
+
     if conversation_id:
         try:
-            response = conversations_table.get_item(Key={'pk': 'USER#default', 'sk': f'CONV#{conversation_id}'})
+            response = conversations_table.get_item(Key={'pk': caller_pk, 'sk': f'CONV#{conversation_id}'})
             item = response.get('Item')
             if not item:
                 raise NotFoundError(f"Conversation {conversation_id} not found")
@@ -205,13 +211,13 @@ def get_conversations(proxy: str = ""):
             }
         except NotFoundError:
             raise
-    
+
     response = conversations_table.query(
-        KeyConditionExpression=Key('pk').eq('USER#default'),
+        KeyConditionExpression=Key('pk').eq(caller_pk),
         ScanIndexForward=False,
         Limit=50
     )
-    
+
     conversations = []
     for item in response.get('Items', []):
         conversations.append({
@@ -221,7 +227,7 @@ def get_conversations(proxy: str = ""):
             'createdAt': item.get('created_at'),
             'updatedAt': item.get('updated_at'),
         })
-    
+
     return {'conversations': conversations}
 
 
@@ -231,12 +237,13 @@ def save_conversation(proxy: str = ""):
     """Save a chat conversation."""
     if not conversations_table:
         raise ConfigurationError('Conversations not configured')
-    
+
+    caller_pk = f"USER#{get_caller_subject(app.current_event.raw_event)}"
     body = app.current_event.json_body
     conversation_id = body.get('id') or f"conv-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
-    
+
     item = {
-        'pk': 'USER#default',
+        'pk': caller_pk,
         'sk': f'CONV#{conversation_id}',
         'conversation_id': conversation_id,
         'title': body.get('title', 'New Conversation'),
@@ -245,7 +252,7 @@ def save_conversation(proxy: str = ""):
         'created_at': body.get('createdAt') or datetime.now(timezone.utc).isoformat(),
         'updated_at': datetime.now(timezone.utc).isoformat(),
     }
-    
+
     conversations_table.put_item(Item=item)
     return {'success': True, 'id': conversation_id}
 
@@ -258,8 +265,9 @@ def delete_conversation(proxy: str):
         raise ConfigurationError('Conversations table not configured')
     if not proxy:
         raise AppNotFoundError('Conversation ID is required')
-    
-    conversations_table.delete_item(Key={'pk': 'USER#default', 'sk': f'CONV#{proxy}'})
+
+    caller_pk = f"USER#{get_caller_subject(app.current_event.raw_event)}"
+    conversations_table.delete_item(Key={'pk': caller_pk, 'sk': f'CONV#{proxy}'})
     return {'success': True}
 
 
