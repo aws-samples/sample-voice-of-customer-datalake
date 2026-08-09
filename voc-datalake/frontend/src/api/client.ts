@@ -102,14 +102,14 @@ export async function parseJsonResponse<T>(response: Response): Promise<T> {
 async function handleUnauthorized<T>(
   fullUrl: string,
   options: RequestInit | undefined,
-  headers: Record<string, string>,
 ): Promise<T> {
   await authService.refreshSession()
-  const newIdToken = authService.getIdToken()
-  if (newIdToken) {
-    headers['Authorization'] = newIdToken
-  }
-  const retryResponse = await fetch(fullUrl, { ...options, headers })
+  // Rebuild headers through buildHeaders so the origin check fires on the
+  // retry path too — this prevents an attacker-controlled server from
+  // receiving the refreshed token by responding 401 to the first request.
+  // The stream client (streamClient.ts) already does the same via postStream.
+  const retryHeaders = buildHeaders(options?.headers, fullUrl)
+  const retryResponse = await fetch(fullUrl, { ...options, headers: retryHeaders })
   if (!retryResponse.ok) {
     throw new Error(`API Error: ${retryResponse.status}`)
   }
@@ -129,7 +129,7 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
   
   if (response.status === 401) {
     try {
-      return await handleUnauthorized<T>(fullUrl, options, headers)
+      return await handleUnauthorized<T>(fullUrl, options)
     } catch {
       // Carries the reason to /login so the user is told the session ended,
       // instead of meeting a bare login form after a working-looking app.

@@ -3,7 +3,7 @@
  */
 import { authService } from '../services/auth'
 import { useConfigStore } from '../store/configStore'
-import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
+import { buildTrustedApiOrigins, isTrustedOrigin } from '../lib/trustedOrigins'
 
 /**
  * Remove trailing slashes from a URL string.
@@ -29,34 +29,17 @@ export function getBaseUrl(): string {
  * Build the allowlist of trusted API origins.
  *
  * The authoritative origin is always the one from the deployment's runtime
- * config (config.json). In development, `localhost` on any port is also
- * trusted so developers can run the mock server locally.
+ * config (config.json). In development, any localhost or 127.0.0.1 hostname
+ * (on any port) is also trusted so developers can run the mock server locally.
  *
  * Returns an empty array when the runtime config is not loaded yet — the
  * caller treats an empty allowlist as "no origin is trusted", which is the
  * safe outcome.
+ *
+ * Delegates to {@link buildTrustedApiOrigins} from `lib/trustedOrigins` to
+ * avoid duplicating security-critical logic.
  */
-export function getTrustedApiOrigins(): string[] {
-  if (!isConfigLoaded()) return []
-
-  const cfg = getRuntimeConfig()
-  const origins: string[] = []
-
-  try {
-    const url = new URL(cfg.apiEndpoint)
-    origins.push(url.origin)
-  } catch {
-    // Unparseable runtime config endpoint: no trusted origin can be derived.
-    // Fail closed — callers see an empty allowlist and withhold the token.
-  }
-
-  if (import.meta.env.DEV) {
-    // Any localhost port (mock server, vite proxy, etc.) is trusted in dev.
-    origins.push('http://localhost')
-  }
-
-  return origins
-}
+export { buildTrustedApiOrigins as getTrustedApiOrigins }
 
 /**
  * Return true when `requestUrl` resolves to a trusted API origin.
@@ -64,22 +47,14 @@ export function getTrustedApiOrigins(): string[] {
  * Parsing failures are treated as unsafe (return false), so a malformed or
  * crafted URL value in the config store can never receive the auth header.
  *
- * Relative URLs (no origin) match without a hostname check — they are always
- * same-origin requests, which are safe.
+ * Path-relative URLs (`/api/...`) are always same-origin: safe.
+ * Protocol-relative URLs (`//host/...`) are resolved against
+ * `window.location.origin` — `//evil.example.com/...` is therefore NOT
+ * treated as same-origin.
+ *
+ * Delegates to {@link isTrustedOrigin} from `lib/trustedOrigins`.
  */
-export function isTrustedRequestOrigin(requestUrl: string): boolean {
-  // Relative URLs have no hostname, so they are always same-origin: safe.
-  if (requestUrl.startsWith('/')) return true
-
-  try {
-    const parsed = new URL(requestUrl)
-    const trustedOrigins = getTrustedApiOrigins()
-    return trustedOrigins.includes(parsed.origin)
-  } catch {
-    // Unparseable URL: fail closed.
-    return false
-  }
-}
+export { isTrustedOrigin as isTrustedRequestOrigin }
 
 /**
  * Bounded lookback (in days) used for the widest ("90d") time range.
@@ -138,7 +113,7 @@ export function getAuthHeaders(
   }
 
   // Default to safe when no target is provided (relative URL paths, tests).
-  const originIsTrusted = targetUrl === undefined || isTrustedRequestOrigin(targetUrl)
+  const originIsTrusted = targetUrl === undefined || isTrustedOrigin(targetUrl)
 
   if (originIsTrusted && authService.isConfigured()) {
     const idToken = authService.getIdToken()

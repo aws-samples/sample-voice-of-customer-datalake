@@ -9,7 +9,7 @@
  * - Logs tab: Validation/processing logs
  * - Users tab: User administration (admin only)
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -221,9 +221,14 @@ describe('Settings', () => {
   })
 
   describe('brand tab - API configuration section (production mode gate)', () => {
+    afterEach(() => {
+      // Restore any stubbed env vars so later tests in this file always run
+      // under the default (DEV = true) Vitest environment.
+      vi.unstubAllEnvs()
+    })
+
     it('hides API Configuration section when import.meta.env.DEV is false', () => {
-      // @ts-expect-error - modifying read-only property for test
-      import.meta.env.DEV = false
+      vi.stubEnv('DEV', false)
 
       render(<Settings />, { wrapper: createWrapper() })
 
@@ -231,23 +236,15 @@ describe('Settings', () => {
       expect(screen.queryByText('API Configuration')).not.toBeInTheDocument()
       // The URL input is definitely absent.
       expect(screen.queryByPlaceholderText(/your-api-id.execute-api/i)).not.toBeInTheDocument()
-
-      // @ts-expect-error - restoring read-only property
-      import.meta.env.DEV = true
     })
 
     it('shows API Configuration section when import.meta.env.DEV is true', () => {
       // Confirm positive case with the same query, proving the test is not vacuous.
-      // @ts-expect-error - modifying read-only property for test
-      import.meta.env.DEV = true
+      vi.stubEnv('DEV', true)
 
       render(<Settings />, { wrapper: createWrapper() })
 
       expect(screen.getByText('API Configuration')).toBeInTheDocument()
-
-      // Restore (already true, but be explicit)
-      // @ts-expect-error - restoring read-only property
-      import.meta.env.DEV = true
     })
   })
 
