@@ -86,6 +86,13 @@
     },
     "selectDocument": "Selecciona un documento"
   },
+  "export": {
+    "copyCopied": "¡Copiado!",
+    "copyContext": "Copiar al portapapeles",
+    "description": "Copia el contexto del proyecto al portapapeles — sin token de API",
+    "emptyHint": "Genera personas o documentos primero para habilitar la exportación.",
+    "title": "Export"
+  },
   "importPersona": {
     "aiImportDesc": "Claude extraerá información de persona de tu {{type}} y creará una persona estructurada con un avatar generado por IA.",
     "aiPoweredImport": "Importación Impulsada por IA:",
@@ -394,7 +401,7 @@
   "tabs": {
     "aiChat": "Chat IA",
     "documents": "Documentos",
-    "mcpAccess": "Acceso MCP",
+    "mcpAccess": "Export / MCP",
     "overview": "Descripción General",
     "personas": "Arquetipos",
     "product": "Producto"

@@ -86,6 +86,13 @@
     },
     "selectDocument": "문서를 선택하세요"
   },
+  "export": {
+    "copyCopied": "복사됨!",
+    "copyContext": "클립보드에 복사",
+    "description": "프로젝트 컨텍스트를 클립보드에 복사 — API 토큰 불필요",
+    "emptyHint": "내보내기를 활성화하려면 먼저 페르소나 또는 문서를 생성하세요.",
+    "title": "Export"
+  },
   "importPersona": {
     "aiImportDesc": "Claude가 {{type}}에서 페르소나 정보를 추출하고 AI 생성 아바타가 포함된 구조화된 페르소나를 생성합니다.",
     "aiPoweredImport": "AI 기반 가져오기:",
@@ -389,7 +396,7 @@
   "tabs": {
     "aiChat": "AI 채팅",
     "documents": "문서",
-    "mcpAccess": "MCP 액세스",
+    "mcpAccess": "Export / MCP",
     "overview": "개요",
     "personas": "페르소나",
     "product": "제품"

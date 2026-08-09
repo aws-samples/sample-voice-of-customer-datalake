@@ -95,7 +95,7 @@
     "downloadOptions": "Options de téléchargement",
     "downloadPDF": "Télécharger en PDF",
     "downloadTXT": "Télécharger en TXT",
-    "kiroPromptTip": "Conseil : Configurez l'invite Kiro dans les paramètres du projet"
+    "kiroPromptTip": "Conseil : Configurez l'invite Kiro dans l'onglet Export / MCP"
   },
   "errorBoundary": {
     "description": "Cette page a rencontré une erreur inattendue. Vous pouvez la recharger ou revenir à l'accueil — le reste de l'application n'est pas affecté.",

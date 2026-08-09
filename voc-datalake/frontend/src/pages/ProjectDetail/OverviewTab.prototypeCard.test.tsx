@@ -83,7 +83,6 @@ function renderCard(props: { hasPrd: boolean; hasPrfaq: boolean; hasPrototype?: 
       onRunResearch={vi.fn()}
       onRemixDocuments={vi.fn()}
       onOpenProductTool={vi.fn()}
-      onSaveKiroPrompt={vi.fn()}
       onJobStarted={mockJobStarted}
     />,
   )

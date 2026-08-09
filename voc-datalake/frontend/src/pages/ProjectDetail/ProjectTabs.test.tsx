@@ -21,7 +21,7 @@ describe('ProjectTabs', () => {
   it('renders chat and mcp tabs', () => {
     render(<ProjectTabs {...defaultProps} />)
     expect(screen.getByText('AI Chat')).toBeInTheDocument()
-    expect(screen.getByText('MCP Access')).toBeInTheDocument()
+    expect(screen.getByText('Export / MCP')).toBeInTheDocument()
   })
 
   it('displays personas count', () => {

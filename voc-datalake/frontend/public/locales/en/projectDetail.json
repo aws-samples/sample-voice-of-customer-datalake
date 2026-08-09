@@ -86,6 +86,13 @@
     },
     "selectDocument": "Select a document"
   },
+  "export": {
+    "copyContext": "Copy to clipboard",
+    "copyCopied": "Copied!",
+    "description": "Copy project context to clipboard — no API token needed",
+    "emptyHint": "Generate personas or documents first to enable export.",
+    "title": "Export"
+  },
   "importPersona": {
     "aiImportDesc": "Claude will extract persona information from your {{type}} and create a structured persona with an AI-generated avatar.",
     "aiPoweredImport": "AI-Powered Import:",
@@ -389,7 +396,7 @@
   "tabs": {
     "aiChat": "AI Chat",
     "documents": "Documents",
-    "mcpAccess": "MCP Access",
+    "mcpAccess": "Export / MCP",
     "overview": "Overview",
     "personas": "Personas",
     "product": "Product"

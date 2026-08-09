@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import McpAccessTab from './McpAccessTab'
+import type { Project } from '../../api/types'
 
 // Mock the API client
 const mockListApiTokens = vi.fn()
@@ -27,6 +28,17 @@ vi.mock('../../store/configStore', () => ({
   }),
 }))
 
+const mockProject: Project = {
+  project_id: 'proj-123',
+  name: 'Test Project',
+  description: 'A test project',
+  status: 'active',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  persona_count: 0,
+  document_count: 0,
+}
+
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -37,7 +49,13 @@ function renderTab(projectId = 'proj-123') {
   const qc = createQueryClient()
   return render(
     <QueryClientProvider client={qc}>
-      <McpAccessTab projectId={projectId} personas={[]} documents={[]} />
+      <McpAccessTab
+        projectId={projectId}
+        project={mockProject}
+        personas={[]}
+        documents={[]}
+        onSaveKiroPrompt={vi.fn()}
+      />
     </QueryClientProvider>
   )
 }

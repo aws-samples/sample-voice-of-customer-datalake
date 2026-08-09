@@ -86,6 +86,13 @@
     },
     "selectDocument": "ドキュメントを選択"
   },
+  "export": {
+    "copyCopied": "コピーしました！",
+    "copyContext": "クリップボードにコピー",
+    "description": "プロジェクトコンテキストをクリップボードにコピー — APIトークン不要",
+    "emptyHint": "エクスポートを有効にするには、まずペルソナまたはドキュメントを生成してください。",
+    "title": "Export"
+  },
   "importPersona": {
     "aiImportDesc": "Claudeが{{type}}からペルソナ情報を抽出し、AI生成アバター付きの構造化ペルソナを作成します。",
     "aiPoweredImport": "AI搭載インポート:",
@@ -389,7 +396,7 @@
   "tabs": {
     "aiChat": "AIチャット",
     "documents": "ドキュメント",
-    "mcpAccess": "MCPアクセス",
+    "mcpAccess": "Export / MCP",
     "overview": "概要",
     "personas": "ペルソナ",
     "product": "製品"

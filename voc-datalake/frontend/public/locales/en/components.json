@@ -88,7 +88,7 @@
     "downloadOptions": "Download options",
     "downloadPDF": "Download as PDF",
     "downloadTXT": "Download as TXT",
-    "kiroPromptTip": "Tip: Configure Kiro prompt in project settings"
+    "kiroPromptTip": "Tip: Configure Kiro prompt in the Export / MCP tab"
   },
   "errorBoundary": {
     "description": "This page hit an unexpected error. You can reload it or go back home — the rest of the app is unaffected.",

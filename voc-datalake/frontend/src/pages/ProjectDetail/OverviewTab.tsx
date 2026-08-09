@@ -21,7 +21,6 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal'
-import KiroExportSettings from './KiroExportSettings'
 import {
   deriveOverviewState, type OverviewStep, type OverviewStepState,
 } from './overviewState'
@@ -43,7 +42,6 @@ interface OverviewTabProps {
   readonly onRunResearch: () => void
   readonly onRemixDocuments: () => void
   readonly onOpenProductTool: () => void
-  readonly onSaveKiroPrompt: (prompt: string) => void
   /** Tells the Background Jobs panel to pick up a started prototype build. */
   readonly onJobStarted?: () => void
 }
@@ -58,7 +56,6 @@ export default function OverviewTab({
   onRunResearch,
   onRemixDocuments,
   onOpenProductTool,
-  onSaveKiroPrompt,
   onJobStarted,
 }: OverviewTabProps) {
   const { t } = useTranslation('projectDetail')
@@ -222,9 +219,6 @@ export default function OverviewTab({
           disabledMessage={t('overview.needAtLeast2Docs')}
         />
       </div>
-
-      {/* Kiro Export Settings */}
-      <KiroExportSettings project={project} onSave={onSaveKiroPrompt} />
 
       {/* Only reachable from the prototype card, and only when exactly one of
           PRD/PR-FAQ exists — the build is billable, so which document it will

@@ -295,4 +295,32 @@ export const projectsApi = {
 
   deleteProductDoc: (projectId: string, docId: string) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/product-docs/${docId}`, { method: 'DELETE' }),
+
+  /**
+   * GET /projects/{project_id}/autoseed
+   *
+   * Returns the same autoseed payload as the Bearer-token MCP route, but is
+   * authorised by the user's existing Cognito session — so it requires no API
+   * token. Card 1 ("Export") in the Export / MCP tab wires its copy button to
+   * this route.
+   *
+   * The backend helper _build_steering_file already injects the project's
+   * kiro_export_prompt into the payload as a "## Custom Instructions" section,
+   * server-side, so the response already has the template baked in.
+   */
+  autoseedProject: (projectId: string, params: {
+    personaIds?: string[]
+    documentIds?: string[]
+  } = {}) => {
+    const searchParams = new URLSearchParams()
+    if ((params.personaIds?.length ?? 0) > 0) {
+      searchParams.set('persona_ids', (params.personaIds ?? []).join(','))
+    }
+    if ((params.documentIds?.length ?? 0) > 0) {
+      searchParams.set('document_ids', (params.documentIds ?? []).join(','))
+    }
+    const qs = searchParams.toString()
+    const path = qs === '' ? `/projects/${projectId}/autoseed` : `/projects/${projectId}/autoseed?${qs}`
+    return fetchApi<{ project: Record<string, unknown>; files: Array<{ path: string; content: string }> }>(path)
+  },
 }

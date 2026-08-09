@@ -86,6 +86,13 @@
     },
     "selectDocument": "Dokument auswählen"
   },
+  "export": {
+    "copyCopied": "Kopiert!",
+    "copyContext": "In Zwischenablage kopieren",
+    "description": "Projektkontext in die Zwischenablage kopieren — kein API-Token erforderlich",
+    "emptyHint": "Zuerst Personas oder Dokumente generieren, um den Export zu aktivieren.",
+    "title": "Export"
+  },
   "importPersona": {
     "aiImportDesc": "Claude extrahiert Persona-Informationen aus Ihrem {{type}} und erstellt eine strukturierte Persona mit einem KI-generierten Avatar.",
     "aiPoweredImport": "KI-gestützter Import:",
@@ -389,7 +396,7 @@
   "tabs": {
     "aiChat": "KI-Chat",
     "documents": "Dokumente",
-    "mcpAccess": "MCP-Zugang",
+    "mcpAccess": "Export / MCP",
     "overview": "Übersicht",
     "personas": "Zielgruppen",
     "product": "Produkt"

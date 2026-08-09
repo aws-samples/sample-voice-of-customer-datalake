@@ -90,7 +90,6 @@ export default function TabContent({
         onRunResearch={onRunResearch}
         onRemixDocuments={onRemixDocuments}
         onOpenProductTool={onOpenProductTool}
-        onSaveKiroPrompt={onSaveKiroPrompt}
         // Same callback DocumentsTab uses for prototype *revisions* — the build
         // now starts from the Overview card, so both ends of the prototype
         // lifecycle hand off to the one jobs panel.
@@ -154,5 +153,13 @@ export default function TabContent({
     )
   }
 
-  return <McpAccessTab projectId={project.project_id} personas={personas} documents={documents} />
+  return (
+    <McpAccessTab
+      projectId={project.project_id}
+      project={project}
+      personas={personas}
+      documents={documents}
+      onSaveKiroPrompt={onSaveKiroPrompt}
+    />
+  )
 }
