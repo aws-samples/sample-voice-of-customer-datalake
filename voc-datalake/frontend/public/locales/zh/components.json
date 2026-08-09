@@ -88,7 +88,9 @@
     "downloadOptions": "下载选项",
     "downloadPDF": "下载为 PDF",
     "downloadTXT": "下载为 TXT",
-    "kiroPromptTip": "提示：在 Export / MCP 标签页中配置 Kiro 提示词"
+    "kiroPromptTip": "提示：在 Export / MCP 标签页中配置 Kiro 提示词",
+    "kiroSectionPrd": "PRD 文档",
+    "kiroSectionPrfaq": "PR/FAQ 文档"
   },
   "errorBoundary": {
     "description": "此页面遇到意外错误。您可以重新加载或返回首页，应用的其他部分不受影响。",

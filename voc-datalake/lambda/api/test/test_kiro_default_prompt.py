@@ -9,9 +9,8 @@ Covers acceptance criteria 1–5 and 8–9 from the task specification:
  5. get_project response exposes both the stored value and the default.
  8. Clearing the field returns the project to following the default.
 """
-import re
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -19,12 +18,6 @@ import pytest
 def _repo_root() -> Path:
     # lambda/api/test/ -> voc-datalake/
     return Path(__file__).resolve().parents[3]
-
-
-def _read(relative: str) -> str:
-    path = _repo_root() / relative
-    assert path.is_file(), f'{relative} not found — did the file move?'
-    return path.read_text(encoding='utf-8')
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +122,14 @@ class TestBuildSteeringFileUsesDefault:
         result = _build_steering_file(project, [], [])
         assert KIRO_DEFAULT_EXPORT_PROMPT in result
 
+    def test_none_kiro_export_prompt_uses_default(self):
+        """Stored None (DynamoDB NULL) must use the default, not raise AttributeError."""
+        from projects import _build_steering_file, KIRO_DEFAULT_EXPORT_PROMPT
+        project = {'name': 'Test', 'kiro_export_prompt': None}
+        # Must not raise AttributeError: 'NoneType' object has no attribute 'strip'
+        result = _build_steering_file(project, [], [])
+        assert KIRO_DEFAULT_EXPORT_PROMPT in result
+
     def test_steering_file_always_has_custom_instructions_section(self):
         """The ## Custom Instructions section is always present now."""
         from projects import _build_steering_file
@@ -145,7 +146,7 @@ class TestBuildSteeringFileUsesCustomPrompt:
     """A non-empty kiro_export_prompt is used and the default is not."""
 
     def test_custom_prompt_appears_in_steering_file(self):
-        from projects import _build_steering_file, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import _build_steering_file
         custom = 'Use only TypeScript. No classes. Pure functions only.'
         project = {'name': 'Test', 'kiro_export_prompt': custom}
         result = _build_steering_file(project, [], [])

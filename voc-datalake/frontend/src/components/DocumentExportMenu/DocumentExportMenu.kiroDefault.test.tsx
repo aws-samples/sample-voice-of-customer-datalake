@@ -6,7 +6,7 @@
  * what _build_steering_file produces server-side.
  */
 import {
-  describe, it, expect, vi, beforeEach,
+  describe, it, expect, vi, beforeEach, afterEach,
 } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -68,12 +68,21 @@ const projectWithNeither: Project = {
 // clean call history regardless of test position within the file.
 const writeTextMock = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined)
 
+let originalWriteText: typeof navigator.clipboard.writeText
+
 beforeEach(() => {
+  originalWriteText = navigator.clipboard.writeText
   writeTextMock.mockClear()
   // Replace the clipboard write function directly on the existing mock object.
   // This avoids re-defining the entire clipboard property (which can interfere
   // with vi.spyOn), while still giving each test a fresh call history.
   navigator.clipboard.writeText = writeTextMock
+})
+
+afterEach(() => {
+  // Restore the original clipboard.writeText so the global is not permanently
+  // mutated for later test files in the vitest singleFork session.
+  navigator.clipboard.writeText = originalWriteText
 })
 
 // [vitest-workaround] This non-clipboard describe block MUST remain the first

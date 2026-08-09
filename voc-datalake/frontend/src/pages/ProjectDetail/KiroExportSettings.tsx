@@ -13,7 +13,7 @@ import {
   Sparkles, Settings, Check,
 } from 'lucide-react'
 import {
-  useState, useMemo,
+  useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { KiroExportSettingsProps } from './types'
@@ -94,7 +94,7 @@ function PromptEditor({
 export default function KiroExportSettings({
   project, onSave,
 }: Readonly<KiroExportSettingsProps>) {
-  const storedPrompt = useMemo(() => project.kiro_export_prompt ?? '', [project.kiro_export_prompt])
+  const storedPrompt = project.kiro_export_prompt ?? ''
   const defaultPrompt = project.kiro_default_export_prompt ?? ''
   const { t } = useTranslation('projectDetail')
 

@@ -95,7 +95,9 @@
     "downloadOptions": "Opciones de descarga",
     "downloadPDF": "Descargar como PDF",
     "downloadTXT": "Descargar como TXT",
-    "kiroPromptTip": "Consejo: Configura el prompt de Kiro en la pestaña Export / MCP"
+    "kiroPromptTip": "Consejo: Configura el prompt de Kiro en la pestaña Export / MCP",
+    "kiroSectionPrd": "Documento PRD",
+    "kiroSectionPrfaq": "Documento PR/FAQ"
   },
   "errorBoundary": {
     "description": "Esta página encontró un error inesperado. Puedes recargarla o volver al inicio; el resto de la aplicación no se ve afectado.",

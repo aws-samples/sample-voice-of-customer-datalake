@@ -166,7 +166,9 @@ export default function DocumentExportMenu({
     const effectivePrompt = storedPrompt !== ''
       ? storedPrompt
       : (project?.kiro_default_export_prompt ?? '')
-    const sectionHeading = doc.document_type === 'prfaq' ? 'PR/FAQ Document' : 'PRD Document'
+    const sectionHeading = doc.document_type === 'prfaq'
+      ? t('documentExport.kiroSectionPrfaq')
+      : t('documentExport.kiroSectionPrd')
     const prdSection = `# ${doc.title}\n\n${doc.content ?? ''}`
     const fullContent = effectivePrompt === ''
       ? prdSection
