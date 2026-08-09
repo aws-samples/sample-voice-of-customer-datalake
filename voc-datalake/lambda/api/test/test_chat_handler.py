@@ -307,14 +307,15 @@ class TestChatConversationsEndpointNoTable:
     """Tests for /chat/conversations/* endpoints when table is NOT configured."""
 
     def test_list_conversations_returns_empty_when_no_table(self):
-        """Returns empty list when conversations table not configured."""
+        """Returns empty list when conversations table not configured (authenticated request)."""
         import chat_handler
 
         original_table = chat_handler.conversations_table
         chat_handler.conversations_table = None
 
         try:
-            result = chat_handler.get_conversations(proxy='_list')
+            with _current_event_ctx(chat_handler, sub='user-abc'):
+                result = chat_handler.get_conversations(proxy='_list')
 
             assert result['conversations'] == []
         finally:
@@ -329,7 +330,7 @@ class TestSaveConversation:
     """Tests for POST /chat/conversations/* endpoint."""
 
     def test_returns_error_when_table_not_configured(self):
-        """Returns error when conversations table not configured."""
+        """Returns ConfigurationError when conversations table not configured (authenticated request)."""
         import chat_handler
         from shared.exceptions import ConfigurationError
 
@@ -411,7 +412,7 @@ class TestDeleteConversation:
     """Tests for DELETE /chat/conversations/* endpoint."""
 
     def test_raises_error_when_table_not_configured(self):
-        """Raises ConfigurationError when conversations table not configured."""
+        """Raises ConfigurationError when conversations table not configured (authenticated request)."""
         import chat_handler
         from shared.exceptions import ConfigurationError
 
@@ -419,7 +420,7 @@ class TestDeleteConversation:
         chat_handler.conversations_table = None
 
         try:
-            with pytest.raises(ConfigurationError) as exc_info:
+            with _current_event_ctx(chat_handler, sub='user-abc'), pytest.raises(ConfigurationError) as exc_info:
                 chat_handler.delete_conversation(proxy='conv-123')
 
             assert 'not configured' in str(exc_info.value)
@@ -618,6 +619,7 @@ class TestFailClosedWithNoIdentity:
         try:
             with _current_event_ctx(chat_handler, sub=None), pytest.raises(AuthorizationError):  # no sub claim
                 chat_handler.get_conversations(proxy='conv-123')
+            mock_table.get_item.assert_not_called()
         finally:
             chat_handler.conversations_table = original_table
 
@@ -635,6 +637,7 @@ class TestFailClosedWithNoIdentity:
         try:
             with _current_event_ctx(chat_handler, sub=None), pytest.raises(AuthorizationError):
                 chat_handler.get_conversations(proxy='_list')
+            mock_table.query.assert_not_called()
         finally:
             chat_handler.conversations_table = original_table
 
@@ -656,6 +659,7 @@ class TestFailClosedWithNoIdentity:
         try:
             with patch.object(chat_handler.app, 'current_event', mock_event, create=True), pytest.raises(AuthorizationError):
                 chat_handler.save_conversation(proxy='new')
+            mock_table.put_item.assert_not_called()
         finally:
             chat_handler.conversations_table = original_table
 
@@ -673,6 +677,7 @@ class TestFailClosedWithNoIdentity:
         try:
             with _current_event_ctx(chat_handler, sub=None), pytest.raises(AuthorizationError):
                 chat_handler.delete_conversation(proxy='conv-123')
+            mock_table.delete_item.assert_not_called()
         finally:
             chat_handler.conversations_table = original_table
 
@@ -697,15 +702,18 @@ class TestFailClosedWithNoIdentity:
         def _all_pk_calls():
             pks = []
             for call in mock_table.get_item.call_args_list:
-                pks.append(call.kwargs.get('Key', {}).get('pk', ''))
+                key = call.kwargs.get('Key') or (call.args[0] if call.args else {})
+                pks.append(key.get('pk', ''))
             for call in mock_table.query.call_args_list:
-                expr = call.kwargs.get('KeyConditionExpression')
+                expr = call.kwargs.get('KeyConditionExpression') or (call.args[0] if call.args else None)
                 if expr is not None:
                     pks.append(_pk_from_condition(expr))
             for call in mock_table.put_item.call_args_list:
-                pks.append(call.kwargs.get('Item', {}).get('pk', ''))
+                item = call.kwargs.get('Item') or (call.args[0] if call.args else {})
+                pks.append(item.get('pk', ''))
             for call in mock_table.delete_item.call_args_list:
-                pks.append(call.kwargs.get('Key', {}).get('pk', ''))
+                key = call.kwargs.get('Key') or (call.args[0] if call.args else {})
+                pks.append(key.get('pk', ''))
             return pks
 
         try:

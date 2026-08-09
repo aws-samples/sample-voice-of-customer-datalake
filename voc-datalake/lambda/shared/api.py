@@ -127,9 +127,11 @@ def get_caller_subject(event: dict) -> str:
             indicates misconfiguration rather than an anonymous request — the
             handler must fail closed rather than fall back to a shared key.
     """
-    authorizer = event.get('requestContext', {}).get('authorizer')
+    request_context = event.get('requestContext')
+    authorizer = request_context.get('authorizer') if isinstance(request_context, dict) else None
     claims = authorizer.get('claims', {}) if isinstance(authorizer, dict) else {}
-    sub = claims.get('sub', '').strip() if isinstance(claims, dict) else ''
+    raw_sub = claims.get('sub') if isinstance(claims, dict) else None
+    sub = raw_sub.strip() if isinstance(raw_sub, str) else ''
     if sub:
         return sub
     raise AuthorizationError('Caller identity could not be determined')

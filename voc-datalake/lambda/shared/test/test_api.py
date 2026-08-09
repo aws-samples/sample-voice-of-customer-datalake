@@ -562,3 +562,17 @@ class TestGetCallerSubject:
         sub_a = get_caller_subject(self._event('user-a-111'))
         sub_b = get_caller_subject(self._event('user-b-222'))
         assert sub_a != sub_b
+
+    def test_raises_authorization_error_when_request_context_is_none(self):
+        """requestContext=null must raise AuthorizationError, not AttributeError."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': None})
+
+    def test_raises_authorization_error_when_sub_is_non_string(self):
+        """A non-string sub (e.g. integer from custom authorizer) must raise AuthorizationError."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {'authorizer': {'claims': {'sub': 123}}}})

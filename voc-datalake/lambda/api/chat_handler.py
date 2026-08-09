@@ -189,10 +189,9 @@ Top Categories: {', '.join([f"{cat}: {count}" for cat, count in sorted(category_
 @tracer.capture_method
 def get_conversations(proxy: str = ""):
     """List or get chat conversations."""
+    caller_pk = f"USER#{get_caller_subject(app.current_event.raw_event)}"
     if not conversations_table:
         return {'conversations': []}
-
-    caller_pk = f"USER#{get_caller_subject(app.current_event.raw_event)}"
     conversation_id = proxy.strip() if proxy and proxy != '_list' else None
 
     if conversation_id:
@@ -232,10 +231,9 @@ def get_conversations(proxy: str = ""):
 @tracer.capture_method
 def save_conversation(proxy: str = ""):
     """Save a chat conversation."""
+    caller_pk = f"USER#{get_caller_subject(app.current_event.raw_event)}"
     if not conversations_table:
         raise ConfigurationError('Conversations not configured')
-
-    caller_pk = f"USER#{get_caller_subject(app.current_event.raw_event)}"
     body = app.current_event.json_body
     conversation_id = body.get('id') or f"conv-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
 
@@ -258,12 +256,11 @@ def save_conversation(proxy: str = ""):
 @tracer.capture_method
 def delete_conversation(proxy: str):
     """Delete a chat conversation."""
+    caller_pk = f"USER#{get_caller_subject(app.current_event.raw_event)}"
     if not conversations_table:
         raise ConfigurationError('Conversations table not configured')
     if not proxy:
         raise AppNotFoundError('Conversation ID is required')
-
-    caller_pk = f"USER#{get_caller_subject(app.current_event.raw_event)}"
     conversations_table.delete_item(Key={'pk': caller_pk, 'sk': f'CONV#{proxy}'})
     return {'success': True}
 
