@@ -16,6 +16,7 @@ from shared.logging import logger, tracer, metrics
 from shared.aws import get_sqs_client, get_secret
 
 from .audit import emit_audit_event
+from .sqs_utils import send_messages_to_queue
 
 __all__ = ["BaseWebhook", "logger", "tracer", "metrics"]
 
@@ -89,21 +90,21 @@ class BaseWebhook(ABC):
         }
 
     def send_to_queue(self, items: list[dict]):
-        """Send items to SQS processing queue."""
-        if not items:
-            return
+        """Send items to SQS processing queue.
 
-        for i in range(0, len(items), 10):
-            batch = items[i : i + 10]
-            entries = [
-                {"Id": str(idx), "MessageBody": json.dumps(item, default=str)}
-                for idx, item in enumerate(batch)
-            ]
-
-            self._sqs.send_message_batch(QueueUrl=PROCESSING_QUEUE_URL, Entries=entries)
-
-        logger.info(f"Sent {len(items)} webhook items to processing queue")
-        metrics.add_metric(name="WebhookItemsIngested", unit="Count", value=len(items))
+        Delegates to the shared helper which checks the ``Failed`` list in every
+        batch response, retries transient errors, and raises ``RuntimeError`` if
+        any items cannot be enqueued — ensuring callers cannot silently lose
+        feedback.  The ``WebhookItemsIngested`` metric reflects the actual
+        enqueued count, not the attempted count.
+        """
+        send_messages_to_queue(
+            self._sqs,
+            PROCESSING_QUEUE_URL,
+            items,
+            metric_name="WebhookItemsIngested",
+            log_label="webhook",
+        )
 
     def _extract_client_ip(self, event: dict) -> str:
         """Extract client IP from API Gateway event."""

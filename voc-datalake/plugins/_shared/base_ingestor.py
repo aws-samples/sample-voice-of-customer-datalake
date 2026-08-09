@@ -27,6 +27,7 @@ from shared.aws import (
 )
 from .circuit_breaker import CircuitBreaker
 from .audit import emit_audit_event
+from .sqs_utils import send_messages_to_queue
 
 # Re-export for backwards compatibility with existing handlers
 __all__ = ["BaseIngestor", "logger", "tracer", "metrics", "fetch_with_retry"]
@@ -239,21 +240,21 @@ class BaseIngestor(ABC):
         }
 
     def send_to_queue(self, items: list[dict]):
-        """Send items to SQS processing queue."""
-        if not items:
-            return
+        """Send items to SQS processing queue.
 
-        for i in range(0, len(items), 10):
-            batch = items[i : i + 10]
-            entries = [
-                {"Id": str(idx), "MessageBody": json.dumps(item, default=str)}
-                for idx, item in enumerate(batch)
-            ]
-
-            self._sqs.send_message_batch(QueueUrl=PROCESSING_QUEUE_URL, Entries=entries)
-
-        logger.info(f"Sent {len(items)} items to processing queue")
-        metrics.add_metric(name="ItemsIngested", unit="Count", value=len(items))
+        Delegates to the shared helper which checks the ``Failed`` list in every
+        batch response, retries transient errors, and raises ``RuntimeError`` if
+        any items cannot be enqueued — ensuring callers cannot silently lose
+        feedback.  The ``ItemsIngested`` metric reflects the actual enqueued
+        count, not the attempted count.
+        """
+        send_messages_to_queue(
+            self._sqs,
+            PROCESSING_QUEUE_URL,
+            items,
+            metric_name="ItemsIngested",
+            log_label="ingestor",
+        )
 
     @tracer.capture_method
     def _update_source_run_status(self, updates: dict):

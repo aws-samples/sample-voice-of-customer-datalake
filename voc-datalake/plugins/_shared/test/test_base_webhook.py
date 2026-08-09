@@ -1,6 +1,8 @@
 """Tests for base_webhook.py - Base class for webhook handlers."""
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestBaseWebhookInit:
@@ -112,20 +114,26 @@ class TestBaseWebhookSendToQueue:
     def test_sends_items_to_sqs_in_batches(self, mock_get_secret, mock_sqs):
         """Sends items to SQS in batches of 10."""
         from _shared.base_webhook import BaseWebhook
-        
+
         mock_get_secret.return_value = {}
         mock_sqs_client = MagicMock()
+        # Return a proper SQS response so the helper can inspect Successful/Failed.
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': str(i)} for i in range(10)],
+            'Failed': [],
+        }
         mock_sqs.return_value = mock_sqs_client
-        
+
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
                 return []
-        
+
         webhook = TestWebhook()
-        
+
         items = [{'id': f'item-{i}', 'text': f'Text {i}'} for i in range(15)]
-        webhook.send_to_queue(items)
-        
+        with patch('_shared.sqs_utils.metrics'):
+            webhook.send_to_queue(items)
+
         assert mock_sqs_client.send_message_batch.call_count == 2
 
     @patch('_shared.base_webhook.get_sqs_client')
@@ -133,19 +141,96 @@ class TestBaseWebhookSendToQueue:
     def test_does_nothing_for_empty_items(self, mock_get_secret, mock_sqs):
         """Does not call SQS when items list is empty."""
         from _shared.base_webhook import BaseWebhook
-        
+
         mock_get_secret.return_value = {}
         mock_sqs_client = MagicMock()
         mock_sqs.return_value = mock_sqs_client
-        
+
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
                 return []
-        
+
         webhook = TestWebhook()
-        webhook.send_to_queue([])
-        
+        with patch('_shared.sqs_utils.metrics'):
+            webhook.send_to_queue([])
+
         mock_sqs_client.send_message_batch.assert_not_called()
+
+    @patch('_shared.base_webhook.get_sqs_client')
+    @patch('_shared.base_webhook.get_secret')
+    def test_raises_when_sqs_reports_failed_entries(self, mock_get_secret, mock_sqs):
+        """send_to_queue raises RuntimeError when SQS returns Failed entries.
+
+        Reverts-to-catch: discarding the send_message_batch response (the
+        original defect) means no exception is raised and feedback is lost.
+        This test fails against the old code.
+        """
+        from _shared.base_webhook import BaseWebhook
+
+        mock_get_secret.return_value = {}
+        mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [],
+            'Failed': [
+                {
+                    'Id': '0',
+                    'SenderFault': True,
+                    'Code': 'MessageTooLarge',
+                    'Message': 'Message too large',
+                }
+            ],
+        }
+        mock_sqs.return_value = mock_sqs_client
+
+        class TestWebhook(BaseWebhook):
+            def parse_webhook_payload(self, body, headers):
+                return []
+
+        webhook = TestWebhook()
+        items = [{'id': 'wh-item', 'text': 'Webhook feedback'}]
+
+        with patch('_shared.sqs_utils.metrics'), pytest.raises(RuntimeError):
+            webhook.send_to_queue(items)
+
+    @patch('_shared.base_webhook.get_sqs_client')
+    @patch('_shared.base_webhook.get_secret')
+    def test_metric_uses_actual_enqueued_count(self, mock_get_secret, mock_sqs):
+        """WebhookItemsIngested metric equals the confirmed-enqueued count, not
+        the attempted count.
+
+        Reverts-to-catch: emitting len(items) regardless of the response was
+        the original bug; this test would then see value=2 instead of value=1.
+        """
+        from _shared.base_webhook import BaseWebhook
+
+        mock_get_secret.return_value = {}
+        mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}],
+            'Failed': [
+                {
+                    'Id': '1',
+                    'SenderFault': True,
+                    'Code': 'MessageTooLarge',
+                    'Message': 'Too large',
+                }
+            ],
+        }
+        mock_sqs.return_value = mock_sqs_client
+
+        class TestWebhook(BaseWebhook):
+            def parse_webhook_payload(self, body, headers):
+                return []
+
+        webhook = TestWebhook()
+        items = [{'id': '0', 'text': 'ok'}, {'id': '1', 'text': 'x' * 300_000}]
+
+        with patch('_shared.sqs_utils.metrics') as mock_metrics, pytest.raises(RuntimeError):
+            webhook.send_to_queue(items)
+
+        mock_metrics.add_metric.assert_called_once_with(
+            name='WebhookItemsIngested', unit='Count', value=1
+        )
 
 
 class TestBaseWebhookHandle:
@@ -159,29 +244,34 @@ class TestBaseWebhookHandle:
     ):
         """Parses payload, normalizes items, and queues them."""
         from _shared.base_webhook import BaseWebhook
-        
+
         mock_get_secret.return_value = {}
         mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}, {'Id': '1'}],
+            'Failed': [],
+        }
         mock_sqs.return_value = mock_sqs_client
-        
+
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
                 return [
                     {'id': '1', 'text': 'Review 1', 'created_at': '2025-01-01T00:00:00Z'},
                     {'id': '2', 'text': 'Review 2', 'created_at': '2025-01-01T01:00:00Z'},
                 ]
-        
+
         webhook = TestWebhook()
-        
+
         event = {
             'body': json.dumps({'eventType': 'review-created'}),
             'headers': {'Content-Type': 'application/json'},
             'isBase64Encoded': False,
             'requestContext': {'identity': {'sourceIp': '1.2.3.4'}},
         }
-        
-        result = webhook.handle(event, None)
-        
+
+        with patch('_shared.sqs_utils.metrics'):
+            result = webhook.handle(event, None)
+
         assert result['statusCode'] == 200
         body = json.loads(result['body'])
         assert body['status'] == 'ok'
@@ -285,33 +375,38 @@ class TestBaseWebhookHandle:
         """Decodes base64 body before processing."""
         import base64
         from _shared.base_webhook import BaseWebhook
-        
+
         mock_get_secret.return_value = {}
         mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}],
+            'Failed': [],
+        }
         mock_sqs.return_value = mock_sqs_client
-        
+
         parsed_body = None
-        
+
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
                 nonlocal parsed_body
                 parsed_body = body
                 return [{'id': '1', 'text': 'Test'}]
-        
+
         webhook = TestWebhook()
-        
+
         original_body = json.dumps({'test': 'data'})
         encoded_body = base64.b64encode(original_body.encode()).decode()
-        
+
         event = {
             'body': encoded_body,
             'headers': {},
             'isBase64Encoded': True,
             'requestContext': {'identity': {'sourceIp': '1.2.3.4'}},
         }
-        
-        webhook.handle(event, None)
-        
+
+        with patch('_shared.sqs_utils.metrics'):
+            webhook.handle(event, None)
+
         assert parsed_body == {'test': 'data'}
 
     @patch('_shared.base_webhook.get_sqs_client')
@@ -322,26 +417,31 @@ class TestBaseWebhookHandle:
     ):
         """Emits webhook.received audit event."""
         from _shared.base_webhook import BaseWebhook
-        
+
         mock_get_secret.return_value = {}
         mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}],
+            'Failed': [],
+        }
         mock_sqs.return_value = mock_sqs_client
-        
+
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
                 return [{'id': '1', 'text': 'Test'}]
-        
+
         webhook = TestWebhook()
-        
+
         event = {
             'body': '{}',
             'headers': {},
             'isBase64Encoded': False,
             'requestContext': {'identity': {'sourceIp': '192.168.1.100'}},
         }
-        
-        webhook.handle(event, None)
-        
+
+        with patch('_shared.sqs_utils.metrics'):
+            webhook.handle(event, None)
+
         # Should have called audit at least twice (start and end)
         assert mock_audit.call_count >= 1
 
