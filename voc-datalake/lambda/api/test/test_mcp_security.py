@@ -372,7 +372,13 @@ class TestPartialResultReporting:
 
     @patch("mcp_handler.aggregates_table")
     def test_partial_failure_logged_at_warning(self, mock_table):
-        """A failed read is logged at WARNING level (not silently swallowed)."""
+        """A failed read is logged at WARNING level (not silently swallowed),
+        and the WARNING log must not contain token or token_hash values.
+
+        The docstring promises failures are logged "without any token or hash" —
+        this test enforces that promise so a future refactor that accidentally
+        adds a sensitive field trips CI immediately.
+        """
         mock_table.get_item.side_effect = Exception("Throttled")
         mock_table.query.return_value = {"Items": []}
 
@@ -380,6 +386,11 @@ class TestPartialResultReporting:
         with patch("mcp_handler.logger") as mock_logger:
             _tool_get_metrics_summary({"days": 1}, {})
             assert mock_logger.warning.called, "Failure must be logged at WARNING level"
+            for call in mock_logger.warning.call_args_list:
+                extra = (call.kwargs or {}).get("extra", {})
+                assert "token" not in extra and "token_hash" not in extra, (
+                    f"WARNING log must not contain token/hash fields; extra={extra}"
+                )
 
     @patch("mcp_handler.aggregates_table")
     def test_existing_fields_unchanged_when_partial(self, mock_table):
@@ -420,11 +431,13 @@ class TestPartialResultReporting:
 
     @patch("mcp_handler.aggregates_table", None)
     def test_aggregates_table_not_configured_includes_is_partial(self):
-        """When aggregates_table is None, the response includes is_partial=True.
+        """When aggregates_table is None, the response includes is_partial=True
+        and the full five-field payload shape with zeroed values.
 
         The docstring promises is_partial is always present in the response.
-        The early-exit path must honour that invariant so clients can parse
-        is_partial unconditionally without a KeyError.
+        The early-exit path must honour the full payload shape so clients can
+        read total_feedback, period_days, sentiment_breakdown, and top_categories
+        unconditionally without a KeyError.
         """
         from mcp_handler import _tool_get_metrics_summary
         content = _tool_get_metrics_summary({"days": 1}, {})
@@ -432,6 +445,13 @@ class TestPartialResultReporting:
         payload = json.loads(content[0]["text"])
         assert "is_partial" in payload, "is_partial must be present even on the early-exit path"
         assert payload["is_partial"] is True
+        # All four normal-path fields must be present with zeroed/empty values
+        assert "total_feedback" in payload, "total_feedback must be present on early-exit path"
+        assert payload["total_feedback"] == 0
+        assert "period_days" in payload, "period_days must be present on early-exit path"
+        assert payload["period_days"] == 1  # from args
+        assert "sentiment_breakdown" in payload, "sentiment_breakdown must be present on early-exit path"
+        assert "top_categories" in payload, "top_categories must be present on early-exit path"
 
 
 # ===========================================================================

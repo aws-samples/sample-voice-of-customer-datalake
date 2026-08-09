@@ -317,7 +317,14 @@ def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
     and the failure is logged at WARNING level — without any token or hash.
     """
     if not aggregates_table:
-        return [{"type": "text", "text": json.dumps({"is_partial": True, "error": "Aggregates table not configured"})}]
+        return [{"type": "text", "text": json.dumps({
+            "is_partial": True,
+            "error": "Aggregates table not configured",
+            "period_days": args.get("days", 7),
+            "total_feedback": 0,
+            "sentiment_breakdown": {},
+            "top_categories": {},
+        })}]
 
     days = min(args.get('days', 7), 30)
     current_date = datetime.now(timezone.utc)
@@ -534,6 +541,11 @@ TOOL_SCOPE_REQUIREMENTS: dict[str, str] = {
     "get_feedback_detail": "read",
 }
 
+# The complete set of valid required-scope values.  Both _scope_allows and
+# _handle_tools_call reference this constant so adding a new scope means one
+# change instead of three.
+_VALID_REQUIRED_SCOPES: frozenset[str] = frozenset({"read", "read-write"})
+
 
 # ============================================
 # MCP JSON-RPC protocol handling
@@ -584,13 +596,14 @@ def _scope_allows(token_scope: str, required_scope: str) -> bool:
 
     "read-write" satisfies both "read" and "read-write".
     "read" satisfies only "read".
-    Any other value is treated as insufficient.
+    Any value not in _VALID_REQUIRED_SCOPES is treated as insufficient.
     """
+    if required_scope not in _VALID_REQUIRED_SCOPES:
+        return False
     if required_scope == "read":
         return token_scope in ("read", "read-write")
-    if required_scope == "read-write":
-        return token_scope == "read-write"
-    return False
+    # required_scope == "read-write"
+    return token_scope == "read-write"
 
 
 def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
@@ -613,7 +626,6 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
     if not _scope_allows(token_scope, required_scope):
         # Distinguish between a valid-but-insufficient token scope and a
         # server-side misconfiguration in TOOL_SCOPE_REQUIREMENTS.
-        _VALID_REQUIRED_SCOPES = frozenset({"read", "read-write"})
         if required_scope not in _VALID_REQUIRED_SCOPES:
             logger.error(
                 "Unrecognised required_scope value in TOOL_SCOPE_REQUIREMENTS",
