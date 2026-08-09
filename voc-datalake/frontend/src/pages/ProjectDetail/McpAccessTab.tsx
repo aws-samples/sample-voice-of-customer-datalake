@@ -452,7 +452,9 @@ export default function McpAccessTab({
   const { t } = useTranslation('projectDetail')
 
   // Only exportable document types appear in the picker and the payload.
-  // Prototypes and product_reports are excluded from Kiro exports everywhere.
+  // Prototypes are the sole exclusion — see KIRO_EXPORT_EXCLUDED_TYPES in
+  // projects.py, which this list mirrors. Product reports ARE exported: they are
+  // markdown describing the current product, which is grounding a coding agent wants.
   const exportableDocs = useMemo(() => filterExportableDocs(documents), [documents])
 
   // ── Shared picker state (used by both cards) ──────────────────────────────

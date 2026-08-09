@@ -9,14 +9,15 @@
  * NOTE: picker sections start collapsed (expandedSections = new Set()).
  * PickerSection only renders its children when expanded. Tests that assert row
  * presence/absence must either:
- *   (a) expand the documents section first (fireEvent.click on the header), or
+ *   (a) expand the documents section first (expandDocuments(), which clicks it by role), or
  *   (b) assert on the section *header* being absent/present (when filterExportableDocs
  *       produces 0 docs, SharedPickers returns null so the header is never rendered).
  * Asserting on row text without expanding is vacuous — the rows are absent whether
  * or not the filter is applied.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import McpAccessTab from './McpAccessTab'
 import type { Project, ProjectDocument, ProjectPersona } from '../../api/types'
@@ -105,6 +106,16 @@ beforeEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
+/**
+ * Expand the documents picker section. Found by ROLE, not by text: if the header
+ * stops being a button this fails for the right reason instead of clicking a
+ * non-interactive node and silently proving nothing.
+ */
+async function expandDocuments(): Promise<void> {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Documents \(/ }))
+}
+
 describe('McpAccessTab — export picker excludes non-exportable document types', () => {
   it('does not render a row for a prototype document — section header absent when prototype is only doc', () => {
     // filterExportableDocs([prototype]) == [] → SharedPickers returns null → no header
@@ -113,21 +124,17 @@ describe('McpAccessTab — export picker excludes non-exportable document types'
     expect(screen.queryByText(/Documents \(/)).not.toBeInTheDocument()
   })
 
-  it('renders a row for a product_report document when section is expanded', () => {
+  it('renders a row for a product_report document when section is expanded', async () => {
     // product_report is an exportable type — it must appear in the picker
     renderTab([makeDoc('d-report', 'product_report', 'Q4 Product Report')])
-    // Expand the documents section to see the rows
-    const docsToggle = screen.getByText(/Documents \(/)
-    fireEvent.click(docsToggle)
+    await expandDocuments()
     expect(screen.getByText('Q4 Product Report')).toBeInTheDocument()
   })
 
-  it('renders rows for all five exportable types when section is expanded', () => {
+  it('renders rows for all five exportable types when section is expanded', async () => {
     renderTab(allSixDocTypes)
 
-    // Picker sections start collapsed — expand the documents section first.
-    const docsToggle = screen.getByText(/Documents \(/)
-    fireEvent.click(docsToggle)
+    await expandDocuments()
 
     expect(screen.getByText('My PRD')).toBeInTheDocument()
     expect(screen.getByText('My PR/FAQ')).toBeInTheDocument()
@@ -142,11 +149,9 @@ describe('McpAccessTab — export picker excludes non-exportable document types'
     expect(screen.queryByText(/Documents \(/)).not.toBeInTheDocument()
   })
 
-  it('renders product_report row but not prototype row when section is expanded (mixed types)', () => {
+  it('renders product_report row but not prototype row when section is expanded (mixed types)', async () => {
     renderTab(allSixDocTypes)
-    // Expand the section so rows are actually rendered
-    const docsToggle = screen.getByText(/Documents \(/)
-    fireEvent.click(docsToggle)
+    await expandDocuments()
     // product_report is exportable — must be visible
     expect(screen.getByText('Q4 Product Report')).toBeInTheDocument()
     // prototype is excluded — must be absent from the rows
