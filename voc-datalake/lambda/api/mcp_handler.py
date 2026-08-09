@@ -97,11 +97,15 @@ def _authenticate(event: dict) -> dict | None:
         return None
 
     # Query all tokens for this project and find matching hash
-    response = projects_table.query(
-        KeyConditionExpression=(
-            Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('TOKEN#')
-        ),
-    )
+    try:
+        response = projects_table.query(
+            KeyConditionExpression=(
+                Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('TOKEN#')
+            ),
+        )
+    except Exception as exc:
+        logger.warning('Failed to query tokens for authentication', extra={'error': str(exc)})
+        return None
 
     for item in response.get('Items', []):
         stored_hash = item.get('token_hash', '')
@@ -572,6 +576,12 @@ def _scope_allows(token_scope: str, required_scope: str) -> bool:
         return token_scope in ("read", "read-write")
     if required_scope == "read-write":
         return token_scope == "read-write"
+    # required_scope is not a recognised value — this is a server-side
+    # misconfiguration in TOOL_SCOPE_REQUIREMENTS, not a token problem.
+    logger.error(
+        "Unrecognised required_scope value in TOOL_SCOPE_REQUIREMENTS",
+        extra={"required_scope": required_scope},
+    )
     return False
 
 
@@ -597,7 +607,7 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
             "Scope insufficient for tool",
             extra={"tool": tool_name, "required": required_scope, "token_scope": token_scope},
         )
-        return _jsonrpc_error(req_id, -32001, f"Forbidden: token scope '{token_scope}' cannot call '{tool_name}'")
+        return _jsonrpc_error(req_id, -32003, f"Forbidden: token scope '{token_scope}' cannot call '{tool_name}'")
 
     try:
         content = handler(arguments, token_info)

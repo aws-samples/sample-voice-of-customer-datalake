@@ -115,6 +115,20 @@ class TestConstantTimeTokenComparison:
         result = _authenticate(self._make_event("voc_realtoken"))
         assert result is None
 
+    @patch("mcp_handler.projects_table")
+    def test_authenticate_returns_none_when_query_raises(self, mock_table):
+        """When projects_table.query raises, _authenticate returns None (not a 500).
+
+        A transient DynamoDB error in the token-lookup path must not propagate
+        as an unhandled exception; the caller should receive a clean 401 instead.
+        """
+        mock_table.query.side_effect = Exception("ProvisionedThroughputExceededException")
+
+        from mcp_handler import _authenticate
+        result = _authenticate(self._make_event("voc_testtoken"))
+
+        assert result is None, "DynamoDB query failure must return None, not raise"
+
 
 # ===========================================================================
 # 2. Scope enforcement
@@ -177,7 +191,10 @@ class TestScopeEnforcement:
         )
 
         assert "error" in result, "Expected a JSON-RPC error response"
-        assert result["error"]["code"] == -32001
+        # -32003 = Forbidden (scope insufficient); -32001 is reserved for Unauthorized (bad/missing token)
+        assert result["error"]["code"] == -32003, (
+            f"Expected -32003 (Forbidden) for scope failure, got {result['error']['code']}"
+        )
         assert "Forbidden" in result["error"]["message"]
         # The handler must NOT have been called
         write_handler.assert_not_called()
@@ -234,6 +251,19 @@ class TestScopeEnforcement:
         assert _scope_allows("", "read") is False
         assert _scope_allows("", "read-write") is False
         assert _scope_allows("read", "unknown") is False
+
+    def test_unrecognised_required_scope_logs_error(self):
+        """When TOOL_SCOPE_REQUIREMENTS contains an unrecognised value, _scope_allows
+        logs at ERROR level so the misconfiguration is surfaced in logs rather than
+        silently looking like a token permission problem.
+        """
+        import mcp_handler
+        with patch("mcp_handler.logger") as mock_logger:
+            result = mcp_handler._scope_allows("read-write", "write")  # "write" is not valid
+            assert result is False
+            assert mock_logger.error.called, (
+                "_scope_allows must log at ERROR for an unrecognised required_scope value"
+            )
 
 
 # ===========================================================================
