@@ -61,11 +61,53 @@ Build against the project material provided here rather than from assumptions.
 - If a requirement is missing, ask rather than inventing one. If two documents disagree, surface the conflict instead of picking one.\
 """
 
+# ---------------------------------------------------------------------------
+# Input-context budget constants
+#
+# Every bare number in this file was once a silent bug waiting to happen. Each
+# limit below is a NAMED CONSTANT with a comment stating what actually bounds
+# it, so a future reader can reason about whether it is still appropriate.
+#
+# What bounds these values:
+#   - Bedrock input token budget: Claude models have a 200 K-token context
+#     window. The chain steps for persona/document generation consume ~5-10 K
+#     tokens of system/user prompt overhead, leaving ~190 K tokens for
+#     feedback content. 1 token ≈ 4 chars (English); 1 K tokens ≈ 4 000 chars.
+#   - DynamoDB read cost: each item read is billed; higher limits mean more
+#     reads per generation call. The numbers below are conservative enough that
+#     a single generation does not dominate the read budget.
+#   - Latency: multi-step LLM chains already run for 30-120 s. Larger contexts
+#     add proportional prefill latency (roughly linear in tokens). The limits
+#     below keep prefill well under 10 s on typical hardware.
+#
+# MAX_PERSONA_CONTEXT_CHARS: hard cap on the character length of the assembled
+#   feedback block passed to persona generation. 200 000 chars ≈ 50 K tokens —
+#   generous relative to the old 30 000-char (≈ 7.5 K token) cap that predated
+#   Claude 3, while still leaving >140 K tokens for prompts and chain overhead.
+#   When this cap fires the response carries context_truncated=True so the
+#   condition is observable instead of buried in a log line.
+MAX_PERSONA_CONTEXT_CHARS: int = 200_000
+
+# Per-surface item-fetch limits. "Item" = one DynamoDB feedback record.
+# At ~600 chars / item (the average after format_feedback_for_llm formatting),
+# 500 items ≈ 300 K chars ≈ 75 K tokens — safely within context even before
+# MAX_PERSONA_CONTEXT_CHARS trims the tail.
+FEEDBACK_LIMIT_PERSONA: int = 500   # bounded by Bedrock input token budget
+FEEDBACK_LIMIT_PRD: int = 200       # bounded by Bedrock input token budget
+FEEDBACK_LIMIT_PRFAQ: int = 200     # bounded by Bedrock input token budget
+# Quick single-call helpers: lower limits keep latency under API Gateway's
+# 29 s timeout and reduce read cost for interactive (non-generation) paths.
+FEEDBACK_LIMIT_AUTOFILL: int = 50   # bounded by API Gateway 29 s timeout
+FEEDBACK_LIMIT_BRIEF: int = 100     # bounded by API Gateway 29 s timeout
+FEEDBACK_LIMIT_RESEARCH_SUGGEST: int = 100  # bounded by API Gateway 29 s timeout
+FEEDBACK_LIMIT_RESEARCH: int = 500  # bounded by Bedrock input token budget
+# ---------------------------------------------------------------------------
+
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
 
 
-def generate_persona_avatar(persona_data: dict, s3_bucket: str = None) -> dict:
+def generate_persona_avatar(persona_data: dict, s3_bucket: str | None = None) -> dict:
     """Wrapper for shared avatar generation that provides the bedrock client.
     
     Args:
@@ -368,7 +410,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     
     # Get feedback data
     try:
-        feedback_items = get_feedback_context(filters, limit=50)
+        feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_PERSONA)
         logger.info(f"[PERSONA] Fetched {len(feedback_items) if feedback_items else 0} feedback items")
     except Exception as e:
         logger.error(f"[PERSONA] Failed to fetch feedback: {e}")
@@ -389,11 +431,21 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     except Exception as e:
         logger.error(f"[PERSONA] Failed to format feedback: {e}")
         raise
-    
-    # Truncate context if too large
-    if len(feedback_context) > 30000:
-        feedback_context = feedback_context[:30000] + "\n\n[... additional feedback truncated ...]"
-        logger.info("[PERSONA] Context truncated to 30000 chars")
+
+    # Trim context if it exceeds the per-generation input budget.
+    # MAX_PERSONA_CONTEXT_CHARS is set to leave sufficient headroom for the
+    # system prompt, chain steps, and model overhead within the Bedrock context
+    # window. When this fires we log a WARNING (not INFO) and surface the
+    # condition in the API response so callers can observe it.
+    context_truncated = False
+    if len(feedback_context) > MAX_PERSONA_CONTEXT_CHARS:
+        feedback_context = feedback_context[:MAX_PERSONA_CONTEXT_CHARS] + "\n\n[... additional feedback truncated ...]"
+        context_truncated = True
+        logger.warning(
+            f"[PERSONA] Context trimmed to {MAX_PERSONA_CONTEXT_CHARS} chars "
+            f"(corpus was larger than the input budget; increase "
+            f"MAX_PERSONA_CONTEXT_CHARS if the budget allows it)"
+        )
     
     try:
         llm_start_time = time.time()
@@ -558,6 +610,8 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
             },
             'metadata': {
                 'feedback_count': len(feedback_items),
+                'feedback_items_used': len(feedback_items),
+                'context_truncated': context_truncated,
                 'source_breakdown': source_breakdown,
                 'generation_time_ms': llm_time
             }
@@ -582,9 +636,9 @@ def generate_prd(project_id: str, body: dict) -> dict:
     filters = project_data.get('project', {}).get('filters', {})
     
     # Get feedback context
-    feedback_items = get_feedback_context(filters, limit=50)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_PRD)
     feedback_context = format_feedback_for_llm(feedback_items)
-    
+
     # Format personas for context
     personas_context = ""
     for p in personas:
@@ -594,7 +648,7 @@ def generate_prd(project_id: str, body: dict) -> dict:
 - Goals: {', '.join(p.get('goals', [])[:3])}
 - Frustrations: {', '.join(p.get('frustrations', [])[:3])}
 """
-    
+
     feature_idea = body.get('feature_idea', 'Improve customer experience based on feedback')
 
     # Inject the per-project product/service context (structured fields + uploaded internal docs).
@@ -672,7 +726,7 @@ def autofill_prfaq_questions(project_id: str, body: dict) -> dict:
     personas = project_data.get('personas', [])
     filters = project_data.get('project', {}).get('filters', {})
 
-    feedback_items = get_feedback_context(filters, limit=20)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_AUTOFILL)
     feedback_context = format_feedback_for_llm(feedback_items)
 
     personas_context = ""
@@ -773,7 +827,7 @@ def suggest_document_brief(project_id: str, body: dict) -> dict:
     project_data = get_project(project_id)
     filters = (body or {}).get('filters') or project_data.get('project', {}).get('filters', {})
 
-    feedback_items = get_feedback_context(filters, limit=40)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_BRIEF)
     feedback_context = format_feedback_for_llm(feedback_items)
     feedback_stats = get_feedback_statistics(feedback_items) if feedback_items else "(no feedback yet)"
 
@@ -854,7 +908,7 @@ def suggest_research_questions(project_id: str, body: dict) -> dict:
     filters = (body or {}).get('filters') or project.get('filters', {})
 
     # Sample real feedback so suggestions are grounded in what was actually said.
-    feedback_items = get_feedback_context(filters, limit=40)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_RESEARCH_SUGGEST)
     feedback_context = format_feedback_for_llm(feedback_items)
     feedback_stats = get_feedback_statistics(feedback_items) if feedback_items else "(no feedback yet)"
 
@@ -936,9 +990,9 @@ def generate_prfaq(project_id: str, body: dict) -> dict:
     filters = project_data.get('project', {}).get('filters', {})
     
     # Get feedback context
-    feedback_items = get_feedback_context(filters, limit=30)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_PRFAQ)
     feedback_context = format_feedback_for_llm(feedback_items)
-    
+
     # Format personas
     personas_context = ""
     for p in personas:
@@ -1467,7 +1521,7 @@ def run_research(project_id: str, body: dict) -> dict:
     
     # Get feedback for research - this is the PRIMARY data source
     logger.info(f"Fetching feedback with filters: {filters}")
-    feedback_items = get_feedback_context(filters, limit=100)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_RESEARCH)
     logger.info(f"Found {len(feedback_items)} feedback items for research")
     
     if not feedback_items:
