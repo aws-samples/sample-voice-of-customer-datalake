@@ -630,8 +630,12 @@ def api_generate_product_report(project_id: str):
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler for projects API."""
     try:
-        logger.info(f"Received event: {json.dumps(event)}")
-        
+        # Do NOT log the raw event here: the serialised payload carries the
+        # caller's Authorization header (Cognito bearer token) and the full
+        # request body.  Powertools' @logger.inject_lambda_context already
+        # attaches request-id, function name, and cold-start flag — no
+        # diagnostic value is lost.  (issue #245)
+
         # Normal API Gateway request
         result = app.resolve(event, context)
         logger.info(f"Returning result: {json.dumps(result, cls=DecimalEncoder)}")
