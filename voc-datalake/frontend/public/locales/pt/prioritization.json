@@ -7,22 +7,28 @@
     "savingMobile": "..."
   },
   "configureApiEndpoint": "Configure o endpoint da API em Configurações para visualizar a priorização.",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
   "empty": {
-    "description": "Crie PR/FAQs em seus projetos para começar a priorizar.",
-    "title": "Nenhum PR/FAQ Encontrado"
+    "description": "Crie um PRD ou PR/FAQ em seus projetos para começar a priorizar.",
+    "title": "Nenhum Documento Encontrado",
+    "wrongTypeDescription": "Seus projetos têm documentos, mas nenhum é PRD nem PR/FAQ. Abra um projeto e gere um PRD ou PR/FAQ para pontuá-lo aqui.",
+    "wrongTypeTitle": "Nenhum Documento Pontuável"
   },
   "framework": {
-    "description": "Pontue cada PR/FAQ em: <strong>Impacto</strong>, <strong>Tempo para o Mercado</strong>, <strong>Alinhamento Estratégico</strong> e <strong>Confiança</strong>.",
+    "description": "Pontue cada documento em: <strong>Impacto</strong>, <strong>Tempo para o Mercado</strong>, <strong>Alinhamento Estratégico</strong> e <strong>Confiança</strong>.",
     "title": "Framework de Priorização"
   },
-  "loading": "Carregando PR/FAQs...",
+  "loading": "Carregando documentos...",
   "notes": {
     "label": "Notas",
     "placeholder": "Adicione notas sobre esta decisão de priorização..."
   },
   "preview": {
     "prototypeTitle": "Protótipo",
-    "title": "Visualização de PR/FAQ",
+    "title": "Visualização do Documento",
     "viewFull": "Visualizar Documento Completo",
     "viewMobile": "Visualizar"
   },
@@ -62,10 +68,10 @@
     "highPriority": "Alta Prioridade",
     "mediumPriority": "Média Prioridade",
     "notScored": "Não Pontuado",
-    "totalPrfaqs": "Total de PR/FAQs"
+    "totalDocuments": "Total de Documentos"
   },
-  "subtitle": "Pontue e priorize PR/FAQs em todos os projetos",
-  "title": "Priorização de PR/FAQ",
+  "subtitle": "Pontue e priorize PRDs e PR/FAQs em todos os projetos",
+  "title": "Priorização",
   "unsavedChanges": {
     "cancel": "Permanecer na Página",
     "confirm": "Descartar Alterações",

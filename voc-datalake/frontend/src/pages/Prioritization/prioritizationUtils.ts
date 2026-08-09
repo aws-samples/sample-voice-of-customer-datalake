@@ -68,6 +68,30 @@ export function getScore(scores: Record<string, PrioritizationScore>, docId: str
   }
 }
 
+/**
+ * Per-type display metadata for every scorable document type.
+ *
+ * This is the single source of truth for which document types are scorable.
+ * Keys are constrained to `ProjectDocument['document_type']`, so a typo or
+ * stale entry is a compile error. Adding a new scorable type here automatically
+ * propagates to `isScorable` and to the `DocumentTypeBadge` in `PRFAQRow`.
+ */
+export const SCORABLE_TYPE_META: Partial<Record<ProjectDocument['document_type'], {
+  readonly badgeColor: string
+  readonly i18nKey: string
+}>> = {
+  prd: { badgeColor: 'bg-blue-100 text-blue-700', i18nKey: 'docType.prd' },
+  prfaq: { badgeColor: 'bg-purple-100 text-purple-700', i18nKey: 'docType.prfaq' },
+}
+
+export function isScorable(doc: ProjectDocument): boolean {
+  // `in` operator checks key presence in SCORABLE_TYPE_META at runtime;
+  // the type of `doc.document_type` is already constrained by the API union,
+  // so no type assertion is needed and any typo in SCORABLE_TYPE_META is a
+  // compile error at the Partial<Record<...>> definition above.
+  return doc.document_type in SCORABLE_TYPE_META
+}
+
 export function collectPRFAQs(allProjectDetails: Array<{ documents?: ProjectDocument[] }> | undefined, projects: Project[] | undefined): PRFAQWithProject[] {
   if (!allProjectDetails || !projects) return []
 
@@ -75,7 +99,7 @@ export function collectPRFAQs(allProjectDetails: Array<{ documents?: ProjectDocu
   for (const [index, detail] of allProjectDetails.entries()) {
     if (!detail.documents) continue
     const project = projects[index]
-    const prfaqDocs = detail.documents.filter((doc: ProjectDocument) => doc.document_type === 'prfaq')
+    const scorableDocs = detail.documents.filter(isScorable)
     // Pick the most-recent prototype for this project — that's the one the
     // user just generated from the latest PRD/PR-FAQ.
     const prototypes = detail.documents
@@ -83,7 +107,7 @@ export function collectPRFAQs(allProjectDetails: Array<{ documents?: ProjectDocu
       .slice()
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
     const latestPrototype = prototypes[0]
-    for (const doc of prfaqDocs) {
+    for (const doc of scorableDocs) {
       result.push({
         ...doc,
         project_id: project.project_id,

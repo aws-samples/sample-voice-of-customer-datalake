@@ -7,22 +7,28 @@
     "savingMobile": "..."
   },
   "configureApiEndpoint": "優先順位付けを表示するには、設定でAPIエンドポイントを構成してください。",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
   "empty": {
-    "description": "プロジェクトでPR/FAQを作成して優先順位付けを開始してください。",
-    "title": "PR/FAQが見つかりません"
+    "description": "優先順位付けを開始するには、プロジェクトでPRDまたはPR/FAQを作成してください。",
+    "title": "ドキュメントが見つかりません",
+    "wrongTypeDescription": "プロジェクトにドキュメントはありますが、PRDもPR/FAQもありません。プロジェクトを開き、PRDまたはPR/FAQを生成してここで評価してください。",
+    "wrongTypeTitle": "スコアリング可能なドキュメントがありません"
   },
   "framework": {
-    "description": "各PR/FAQを次の基準で評価: <strong>インパクト</strong>、<strong>市場投入時間</strong>、<strong>戦略的適合性</strong>、<strong>確信度</strong>。",
+    "description": "各ドキュメントを次の基準で評価: <strong>インパクト</strong>、<strong>市場投入時間</strong>、<strong>戦略的適合性</strong>、<strong>確信度</strong>。",
     "title": "優先順位付けフレームワーク"
   },
-  "loading": "PR/FAQを読み込み中...",
+  "loading": "ドキュメントを読み込み中...",
   "notes": {
     "label": "メモ",
     "placeholder": "この優先順位付けの決定に関するメモを追加..."
   },
   "preview": {
     "prototypeTitle": "プロトタイプ",
-    "title": "PR/FAQプレビュー",
+    "title": "ドキュメントプレビュー",
     "viewFull": "完全なドキュメントを表示",
     "viewMobile": "表示"
   },
@@ -62,10 +68,10 @@
     "highPriority": "高優先度",
     "mediumPriority": "中優先度",
     "notScored": "未評価",
-    "totalPrfaqs": "PR/FAQ合計"
+    "totalDocuments": "ドキュメント合計"
   },
-  "subtitle": "すべてのプロジェクトのPR/FAQをスコアリングして優先順位付け",
-  "title": "PR/FAQ 優先順位付け",
+  "subtitle": "すべてのプロジェクトのPRDおよびPR/FAQをスコアリングして優先順位付け",
+  "title": "優先順位付け",
   "unsavedChanges": {
     "cancel": "ページに留まる",
     "confirm": "変更を破棄",

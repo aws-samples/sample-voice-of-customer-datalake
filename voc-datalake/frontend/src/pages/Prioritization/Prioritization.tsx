@@ -23,7 +23,7 @@ import ConfirmModal from '../../components/ConfirmModal'
 import { useConfigStore } from '../../store/configStore'
 import PRFAQRow from './PRFAQRow'
 import {
-  calculatePriorityScore, getScore, collectPRFAQs, comparePRFAQs,
+  calculatePriorityScore, getScore, collectPRFAQs, comparePRFAQs, isScorable,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection,
@@ -49,7 +49,7 @@ function StatsCards({
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{allPRFAQs.length}</div><div className="text-sm text-gray-500">{t('stats.totalPrfaqs')}</div></div>
+      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{allPRFAQs.length}</div><div className="text-sm text-gray-500">{t('stats.totalDocuments')}</div></div>
       <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-green-600">{highPriority}</div><div className="text-sm text-gray-500">{t('stats.highPriority')}</div></div>
       <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-blue-600">{mediumPriority}</div><div className="text-sm text-gray-500">{t('stats.mediumPriority')}</div></div>
       <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-400">{notScored}</div><div className="text-sm text-gray-500">{t('stats.notScored')}</div></div>
@@ -104,7 +104,7 @@ function SortControls({
 }
 
 function PRFAQList({
-  isLoading, prfaqs, scores, expandedId, onToggleExpand, onUpdateScore,
+  isLoading, prfaqs, scores, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
 }: {
   readonly isLoading: boolean
   readonly prfaqs: PRFAQWithProject[]
@@ -112,6 +112,7 @@ function PRFAQList({
   readonly expandedId: string | null
   readonly onToggleExpand: (id: string) => void
   readonly onUpdateScore: (docId: string, field: keyof PrioritizationScore, value: number | string) => void
+  readonly hasNonScorableOnly: boolean
 }) {
   const { t } = useTranslation('prioritization')
 
@@ -119,6 +120,9 @@ function PRFAQList({
     return <div className="text-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" /><p className="text-gray-500 mt-4">{t('loading')}</p></div>
   }
   if (prfaqs.length === 0) {
+    if (hasNonScorableOnly) {
+      return <div className="text-center py-12 bg-white rounded-lg border"><FileText size={48} className="mx-auto text-gray-300 mb-4" /><h3 className="text-lg font-medium text-gray-900">{t('empty.wrongTypeTitle')}</h3><p className="text-gray-500 mt-1">{t('empty.wrongTypeDescription')}</p></div>
+    }
     return <div className="text-center py-12 bg-white rounded-lg border"><FileText size={48} className="mx-auto text-gray-300 mb-4" /><h3 className="text-lg font-medium text-gray-900">{t('empty.title')}</h3><p className="text-gray-500 mt-1">{t('empty.description')}</p></div>
   }
   return (
@@ -214,6 +218,17 @@ export default function Prioritization() {
 
   const allPRFAQs = useMemo(() => collectPRFAQs(allProjectDetails, projects), [allProjectDetails, projects])
 
+  // True when data is loaded, nothing is scorable, but non-scorable documents exist.
+  // Used to show a more helpful empty-state message pointing the user toward
+  // creating a PRD or PR/FAQ rather than the generic "no documents" message.
+  const hasNonScorableOnly = useMemo(() => {
+    if (!allProjectDetails) return false
+    const hasNonScorableDoc = allProjectDetails.some(
+      (detail) => detail.documents && detail.documents.some((doc) => !isScorable(doc)),
+    )
+    return allPRFAQs.length === 0 && hasNonScorableDoc
+  }, [allProjectDetails, allPRFAQs])
+
   const sortedPRFAQs = useMemo(() => {
     const sorted = [...allPRFAQs].sort((a, b) => comparePRFAQs(a, b, scores, sortField))
     return sortDirection === 'desc' ? sorted.reverse() : sorted
@@ -286,6 +301,7 @@ export default function Prioritization() {
         expandedId={expandedId}
         onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
         onUpdateScore={updateScore}
+        hasNonScorableOnly={hasNonScorableOnly}
       />
 
       <ConfirmModal

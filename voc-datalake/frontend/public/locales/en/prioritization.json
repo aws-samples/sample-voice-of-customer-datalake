@@ -7,22 +7,28 @@
     "savingMobile": "..."
   },
   "configureApiEndpoint": "Configure API endpoint in Settings to view prioritization.",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
   "empty": {
-    "description": "Create PR/FAQs in your projects to start prioritizing.",
-    "title": "No PR/FAQs Found"
+    "description": "Create a PRD or PR/FAQ in your projects to start prioritizing.",
+    "title": "No Documents Found",
+    "wrongTypeDescription": "Your projects have documents, but none are PRDs or PR/FAQs. Open a project and generate a PRD or PR/FAQ to score it here.",
+    "wrongTypeTitle": "No Scorable Documents"
   },
   "framework": {
-    "description": "Score each PR/FAQ on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.",
+    "description": "Score each document on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.",
     "title": "Prioritization Framework"
   },
-  "loading": "Loading PR/FAQs...",
+  "loading": "Loading documents...",
   "notes": {
     "label": "Notes",
     "placeholder": "Add notes about this prioritization decision..."
   },
   "preview": {
     "prototypeTitle": "Prototype",
-    "title": "PR/FAQ Preview",
+    "title": "Document Preview",
     "viewFull": "View Full Document",
     "viewMobile": "View"
   },
@@ -62,10 +68,10 @@
     "highPriority": "High Priority",
     "mediumPriority": "Medium Priority",
     "notScored": "Not Scored",
-    "totalPrfaqs": "Total PR/FAQs"
+    "totalDocuments": "Total Documents"
   },
-  "subtitle": "Score and prioritize PR/FAQs across all projects",
-  "title": "PR/FAQ Prioritization",
+  "subtitle": "Score and prioritize PRDs and PR/FAQs across all projects",
+  "title": "Prioritization",
   "unsavedChanges": {
     "cancel": "Stay on Page",
     "confirm": "Discard Changes",

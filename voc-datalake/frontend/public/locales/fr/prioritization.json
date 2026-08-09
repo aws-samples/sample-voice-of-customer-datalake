@@ -7,22 +7,28 @@
     "savingMobile": "..."
   },
   "configureApiEndpoint": "Configurez le point de terminaison API dans les paramètres pour afficher la priorisation.",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
   "empty": {
-    "description": "Créez des PR/FAQ dans vos projets pour commencer à prioriser.",
-    "title": "Aucun PR/FAQ trouvé"
+    "description": "Créez un PRD ou un PR/FAQ dans vos projets pour commencer à prioriser.",
+    "title": "Aucun document trouvé",
+    "wrongTypeDescription": "Vos projets contiennent des documents, mais aucun PRD ni PR/FAQ. Ouvrez un projet et générez un PRD ou un PR/FAQ pour l'évaluer ici.",
+    "wrongTypeTitle": "Aucun document évaluable"
   },
   "framework": {
-    "description": "Évaluez chaque PR/FAQ sur : <strong>Impact</strong>, <strong>Délai de mise sur le marché</strong>, <strong>Adéquation stratégique</strong> et <strong>Confiance</strong>.",
+    "description": "Évaluez chaque document sur : <strong>Impact</strong>, <strong>Délai de mise sur le marché</strong>, <strong>Adéquation stratégique</strong> et <strong>Confiance</strong>.",
     "title": "Cadre de priorisation"
   },
-  "loading": "Chargement des PR/FAQ...",
+  "loading": "Chargement des documents...",
   "notes": {
     "label": "Remarques",
     "placeholder": "Ajouter des notes sur cette décision de priorisation..."
   },
   "preview": {
     "prototypeTitle": "Prototype cliquable",
-    "title": "Aperçu PR/FAQ",
+    "title": "Aperçu du document",
     "viewFull": "Voir le document complet",
     "viewMobile": "Voir"
   },
@@ -62,10 +68,10 @@
     "highPriority": "Haute priorité",
     "mediumPriority": "Priorité moyenne",
     "notScored": "Non évalué",
-    "totalPrfaqs": "Total PR/FAQ"
+    "totalDocuments": "Total documents"
   },
-  "subtitle": "Évaluer et prioriser les PR/FAQ de tous les projets",
-  "title": "Priorisation des PR/FAQ",
+  "subtitle": "Évaluer et prioriser les PRD et PR/FAQ de tous les projets",
+  "title": "Priorisation",
   "unsavedChanges": {
     "cancel": "Rester sur la page",
     "confirm": "Abandonner les modifications",

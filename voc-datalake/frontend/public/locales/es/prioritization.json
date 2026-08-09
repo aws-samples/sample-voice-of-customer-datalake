@@ -7,22 +7,28 @@
     "savingMobile": "..."
   },
   "configureApiEndpoint": "Configure el endpoint de la API en Configuración para ver la priorización.",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
   "empty": {
-    "description": "Cree PR/FAQs en sus proyectos para comenzar a priorizar.",
-    "title": "No se encontraron PR/FAQs"
+    "description": "Cree un PRD o PR/FAQ en sus proyectos para comenzar a priorizar.",
+    "title": "No se encontraron documentos",
+    "wrongTypeDescription": "Sus proyectos tienen documentos, pero ninguno es PRD ni PR/FAQ. Abra un proyecto y genere un PRD o PR/FAQ para puntuarlo aquí.",
+    "wrongTypeTitle": "No hay documentos puntuables"
   },
   "framework": {
-    "description": "Puntúe cada PR/FAQ en: <strong>Impacto</strong>, <strong>Tiempo de comercialización</strong>, <strong>Ajuste estratégico</strong> y <strong>Confianza</strong>.",
+    "description": "Puntúe cada documento en: <strong>Impacto</strong>, <strong>Tiempo de comercialización</strong>, <strong>Ajuste estratégico</strong> y <strong>Confianza</strong>.",
     "title": "Marco de priorización"
   },
-  "loading": "Cargando PR/FAQs...",
+  "loading": "Cargando documentos...",
   "notes": {
     "label": "Notas",
     "placeholder": "Agregar notas sobre esta decisión de priorización..."
   },
   "preview": {
     "prototypeTitle": "Prototipo",
-    "title": "Vista previa de PR/FAQ",
+    "title": "Vista previa del documento",
     "viewFull": "Ver documento completo",
     "viewMobile": "Ver"
   },
@@ -62,10 +68,10 @@
     "highPriority": "Alta prioridad",
     "mediumPriority": "Prioridad media",
     "notScored": "Sin puntuar",
-    "totalPrfaqs": "Total de PR/FAQ"
+    "totalDocuments": "Total de documentos"
   },
-  "subtitle": "Puntuar y priorizar PR/FAQs en todos los proyectos",
-  "title": "Priorización de PR/FAQ",
+  "subtitle": "Puntuar y priorizar PRD y PR/FAQs en todos los proyectos",
+  "title": "Priorización",
   "unsavedChanges": {
     "cancel": "Permanecer en la página",
     "confirm": "Descartar cambios",

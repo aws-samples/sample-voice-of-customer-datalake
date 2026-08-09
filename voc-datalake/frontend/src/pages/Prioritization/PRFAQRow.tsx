@@ -14,7 +14,7 @@ import ReactMarkdown from 'react-markdown'
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import {
-  calculatePriorityScore, getPriorityLabel,
+  calculatePriorityScore, getPriorityLabel, SCORABLE_TYPE_META,
 } from './prioritizationUtils'
 import ScoreSlider from './ScoreSlider'
 import type { PRFAQWithProject } from './prioritizationUtils'
@@ -47,6 +47,23 @@ function QuickScores({ score }: { readonly score: PrioritizationScore }): ReactE
   )
 }
 
+/**
+ * Resolved-value badge — receives a pre-computed label and colour from the
+ * parent (which already has `t` in scope) instead of calling `useTranslation`
+ * itself. Consistent with `PrototypePanel`, which accepts `t` as a prop for
+ * the same reason.
+ */
+function DocumentTypeBadge({
+  label, color,
+}: {
+  readonly label: string
+  readonly color: string
+}): ReactElement {
+  return (
+    <span className={clsx('text-xs px-2 py-0.5 rounded-full whitespace-nowrap', color)}>{label}</span>
+  )
+}
+
 function PRFAQRowHeader({
   prfaq,
   index,
@@ -65,6 +82,12 @@ function PRFAQRowHeader({
   readonly isExpanded: boolean
   readonly onToggle: () => void
 }) {
+  const { t } = useTranslation('prioritization')
+  // Resolve badge label and colour here so DocumentTypeBadge is a pure
+  // presentational component (consistent with PrototypePanel's t-as-prop pattern).
+  const typeMeta = SCORABLE_TYPE_META[prfaq.document_type]
+  const badgeLabel = typeMeta ? t(typeMeta.i18nKey) : prfaq.document_type
+  const badgeColor = typeMeta?.badgeColor ?? 'bg-gray-100 text-gray-600'
   return (
     <button type="button" className="w-full p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 cursor-pointer hover:bg-gray-50 text-left" onClick={onToggle}>
       <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
@@ -72,6 +95,7 @@ function PRFAQRowHeader({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-medium text-gray-900 truncate text-sm sm:text-base">{prfaq.title}</h3>
+            <DocumentTypeBadge label={badgeLabel} color={badgeColor} />
             <span className={clsx('text-xs px-2 py-0.5 rounded-full whitespace-nowrap', priority.color)}>{priority.label}</span>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 mt-1 text-xs sm:text-sm text-gray-500">
