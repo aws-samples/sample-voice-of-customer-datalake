@@ -11,7 +11,7 @@ from typing import Any
 
 from shared.logging import logger, tracer
 from shared.aws import invoke_lambda_async
-from shared.api import create_api_resolver, validate_days, validate_int, api_handler, DecimalEncoder, validate_date_basis
+from shared.api import create_api_resolver, validate_days, validate_int, api_handler, validate_date_basis
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
 from shared.jobs import create_job
 from shared.exceptions import NotFoundError, ServiceError, ValidationError
@@ -638,7 +638,10 @@ def lambda_handler(event: dict, context: Any) -> dict:
 
         # Normal API Gateway request
         result = app.resolve(event, context)
-        logger.info(f"Returning result: {json.dumps(result, cls=DecimalEncoder)}")
+        # Do NOT log the full response body here: it may contain user-generated
+        # content (project text, verbatims, persona data).  Status code is
+        # sufficient for operational monitoring.  (issue #245)
+        logger.debug("Returning response", extra={"status_code": result.get("statusCode")})
         return result
         
     except Exception as e:

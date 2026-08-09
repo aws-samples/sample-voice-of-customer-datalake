@@ -43,7 +43,8 @@ _SCAN_ROOTS = [
     'processor',
     'research',
     'shared',
-    'stream',
+    # 'stream' is omitted: lambda/stream/ contains only TypeScript source;
+    # rglob('*.py') would find nothing there.
 ]
 
 # Directory names that stop the descent when encountered.
@@ -51,8 +52,9 @@ _EXCLUDE_DIR_NAMES = frozenset({'test', 'layers', 'cdk.out', '__pycache__', '.ve
 
 
 def _lambda_root() -> Path:
-    # This file lives at lambda/api/test/; resolve four levels up for lambda/.
-    return Path(__file__).resolve().parents[3] / 'lambda'
+    # This file lives at lambda/api/test/test_no_event_logging.py.
+    # parents[0] = lambda/api/test, parents[1] = lambda/api, parents[2] = lambda/
+    return Path(__file__).resolve().parents[2]
 
 
 def _source_files():
@@ -125,7 +127,7 @@ class TestNoRawEventLogging:
         accidentally scanning a single file or an empty subtree.
         """
         count = sum(1 for _ in _source_files())
-        assert count > 5, (
+        assert count > 5, (  # currently ~56 files; any credible lambda tree has well more than 5
             f'Only {count} source file(s) found — expected many more.\n'
             f'Lambda root: {_lambda_root()}'
         )
