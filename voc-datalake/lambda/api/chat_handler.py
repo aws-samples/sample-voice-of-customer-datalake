@@ -196,21 +196,18 @@ def get_conversations(proxy: str = ""):
     conversation_id = proxy.strip() if proxy and proxy != '_list' else None
 
     if conversation_id:
-        try:
-            response = conversations_table.get_item(Key={'pk': caller_pk, 'sk': f'CONV#{conversation_id}'})
-            item = response.get('Item')
-            if not item:
-                raise NotFoundError(f"Conversation {conversation_id} not found")
-            return {
-                'id': item.get('conversation_id'),
-                'title': item.get('title', 'New Conversation'),
-                'messages': item.get('messages', []),
-                'filters': item.get('filters', {}),
-                'createdAt': item.get('created_at'),
-                'updatedAt': item.get('updated_at'),
-            }
-        except NotFoundError:
-            raise
+        response = conversations_table.get_item(Key={'pk': caller_pk, 'sk': f'CONV#{conversation_id}'})
+        item = response.get('Item')
+        if not item:
+            raise NotFoundError(f"Conversation {conversation_id} not found")
+        return {
+            'id': item.get('conversation_id'),
+            'title': item.get('title', 'New Conversation'),
+            'messages': item.get('messages', []),
+            'filters': item.get('filters', {}),
+            'createdAt': item.get('created_at'),
+            'updatedAt': item.get('updated_at'),
+        }
 
     response = conversations_table.query(
         KeyConditionExpression=Key('pk').eq(caller_pk),

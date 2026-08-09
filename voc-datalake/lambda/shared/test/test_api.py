@@ -535,6 +535,27 @@ class TestGetCallerSubject:
         with pytest.raises(AuthorizationError):
             get_caller_subject({'requestContext': {}})
 
+    def test_raises_authorization_error_when_sub_whitespace_only(self):
+        """A whitespace-only sub must be treated as absent (fail closed)."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject(self._event('   '))
+
+    def test_raises_authorization_error_when_authorizer_is_none(self):
+        """requestContext.authorizer=null must raise, not crash with AttributeError."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {'authorizer': None}})
+
+    def test_raises_authorization_error_when_claims_is_none(self):
+        """requestContext.authorizer.claims=null must raise, not crash."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {'authorizer': {'claims': None}}})
+
     def test_two_different_subs_yield_different_values(self):
         """Two callers with different subs must never collide."""
         from shared.api import get_caller_subject

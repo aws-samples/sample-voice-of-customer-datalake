@@ -5,6 +5,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from boto3.dynamodb.conditions import ConditionExpressionBuilder
 
 # Bedrock model ID used in production
 BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
@@ -40,11 +41,24 @@ def _current_event_ctx(chat_handler_module, sub: str | None = 'test-user-sub'):
     """Return a ``patch.object`` context manager that patches
     ``app.current_event`` for the duration of the ``with`` block.
 
-    Using ``patch.object`` ensures proper teardown regardless of whether
-    ``app.resolve()`` has modified the class-level attribute during the test.
+    ``create=True`` is required because ``current_event`` is only a type
+    annotation on the base class; it becomes an instance attribute only after
+    ``app.resolve()`` is called.  ``patch.object(..., create=True)`` sets the
+    attribute for the duration of the block and removes it on exit, regardless
+    of whether the attribute existed beforehand.
     """
     mock_event = _make_current_event_mock(sub)
-    return patch.object(chat_handler_module.app, 'current_event', mock_event)
+    return patch.object(chat_handler_module.app, 'current_event', mock_event, create=True)
+
+
+def _pk_from_condition(expr) -> str:
+    """Extract the partition key value from a boto3 ``KeyConditionExpression``.
+
+    Uses the public ``ConditionExpressionBuilder`` API rather than the private
+    ``_values`` attribute, so the assertion is stable across boto3 versions.
+    """
+    built = ConditionExpressionBuilder().build_expression(expr)
+    return next(iter(built.attribute_value_placeholders.values()))
 
 
 # ---------------------------------------------------------------------------
@@ -231,8 +245,7 @@ class TestChatConversationsEndpointWithTable:
             # Verify the PK used in the query is the caller's subject
             call_kwargs = mock_table.query.call_args.kwargs
             pk_expr = call_kwargs['KeyConditionExpression']
-            # boto3 condition stores the compared value in _values[1]
-            assert pk_expr._values[1] == 'USER#user-abc'
+            assert _pk_from_condition(pk_expr) == 'USER#user-abc'
         finally:
             chat_handler.conversations_table = original_table
 
@@ -328,7 +341,7 @@ class TestSaveConversation:
             mock_event.json_body = {'title': 'New Conversation', 'messages': []}
             mock_event.raw_event = _make_raw_event(sub='user-abc')
 
-            with patch.object(chat_handler.app, 'current_event', mock_event), pytest.raises(ConfigurationError):
+            with patch.object(chat_handler.app, 'current_event', mock_event, create=True), pytest.raises(ConfigurationError):
                 chat_handler.save_conversation(proxy='new')
         finally:
             chat_handler.conversations_table = original_table
@@ -353,7 +366,7 @@ class TestSaveConversation:
             }
             mock_event.raw_event = _make_raw_event(sub='user-abc')
 
-            with patch.object(chat_handler.app, 'current_event', mock_event):
+            with patch.object(chat_handler.app, 'current_event', mock_event, create=True):
                 result = chat_handler.save_conversation(proxy='new')
 
             assert result['success'] is True
@@ -380,7 +393,7 @@ class TestSaveConversation:
             mock_event.json_body = {'title': 'New Conversation', 'messages': []}
             mock_event.raw_event = _make_raw_event(sub='user-abc')
 
-            with patch.object(chat_handler.app, 'current_event', mock_event):
+            with patch.object(chat_handler.app, 'current_event', mock_event, create=True):
                 result = chat_handler.save_conversation(proxy='new')
 
             assert result['success'] is True
@@ -483,8 +496,7 @@ class TestCrossUserIsolation:
         mock_table.get_item.side_effect = get_item_side_effect
 
         def query_side_effect(KeyConditionExpression, **_kwargs):
-            # boto3 condition stores the compared value in _values[1]
-            pk_value = KeyConditionExpression._values[1]
+            pk_value = _pk_from_condition(KeyConditionExpression)
             if pk_value == user_a_pk:
                 return {'Items': [user_a_item]}
             return {'Items': []}
@@ -525,8 +537,7 @@ class TestCrossUserIsolation:
             # User B's query must use USER_B_SUB, not USER_A_SUB
             call_kwargs = mock_table.query.call_args.kwargs
             pk_expr = call_kwargs['KeyConditionExpression']
-            # boto3 condition stores the compared value in _values[1]
-            actual_pk = pk_expr._values[1]
+            actual_pk = _pk_from_condition(pk_expr)
             assert actual_pk == f'USER#{self.USER_B_SUB}'
             assert actual_pk != f'USER#{self.USER_A_SUB}'
         finally:
@@ -550,7 +561,7 @@ class TestCrossUserIsolation:
         mock_event.raw_event = _make_raw_event(sub=self.USER_B_SUB)
 
         try:
-            with patch.object(chat_handler.app, 'current_event', mock_event):
+            with patch.object(chat_handler.app, 'current_event', mock_event, create=True):
                 chat_handler.save_conversation(proxy=self.CONV_ID)
 
             saved_item = mock_table.put_item.call_args.kwargs['Item']
@@ -643,7 +654,7 @@ class TestFailClosedWithNoIdentity:
         mock_event.raw_event = _make_raw_event(sub=None)
 
         try:
-            with patch.object(chat_handler.app, 'current_event', mock_event), pytest.raises(AuthorizationError):
+            with patch.object(chat_handler.app, 'current_event', mock_event, create=True), pytest.raises(AuthorizationError):
                 chat_handler.save_conversation(proxy='new')
         finally:
             chat_handler.conversations_table = original_table
@@ -688,10 +699,9 @@ class TestFailClosedWithNoIdentity:
             for call in mock_table.get_item.call_args_list:
                 pks.append(call.kwargs.get('Key', {}).get('pk', ''))
             for call in mock_table.query.call_args_list:
-                # boto3 condition stores the compared value in _values[1]
                 expr = call.kwargs.get('KeyConditionExpression')
-                if expr is not None and hasattr(expr, '_values'):
-                    pks.append(expr._values[1])
+                if expr is not None:
+                    pks.append(_pk_from_condition(expr))
             for call in mock_table.put_item.call_args_list:
                 pks.append(call.kwargs.get('Item', {}).get('pk', ''))
             for call in mock_table.delete_item.call_args_list:
@@ -705,7 +715,7 @@ class TestFailClosedWithNoIdentity:
 
             mock_event = _make_current_event_mock(sub='real-user-sub')
             mock_event.json_body = {'title': 'T', 'messages': []}
-            with patch.object(chat_handler.app, 'current_event', mock_event):
+            with patch.object(chat_handler.app, 'current_event', mock_event, create=True):
                 chat_handler.save_conversation(proxy='new')
 
             with _current_event_ctx(chat_handler, sub='real-user-sub'):
