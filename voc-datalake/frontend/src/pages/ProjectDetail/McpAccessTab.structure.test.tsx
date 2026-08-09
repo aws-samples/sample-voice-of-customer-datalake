@@ -256,6 +256,36 @@ describe('McpAccessTab — export guard is enforced in the UI', () => {
   })
 })
 
+describe('McpAccessTab — the picker sections start collapsed', () => {
+  it('shows each selection count without rendering its rows', async () => {
+    renderTab(onePersona, oneDocument)
+
+    // The count and the bulk control are what a user needs before copying, so
+    // they must be visible with the section shut.
+    expect(await screen.findByRole('button', { name: /Personas \(1\/1\)/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Documents \(1\/1\)/ })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^Deselect all$/ })).toHaveLength(2)
+
+    // The rows themselves are not rendered until asked for.
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+  })
+
+  it('renders the rows once a section is expanded', async () => {
+    renderTab(onePersona, oneDocument)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /Personas \(1\/1\)/ }))
+
+    // Named, not counted: a bare toHaveLength(1) also passes when the personas
+    // section is shut and the DOCUMENT row is the one on screen — verified by
+    // mutation, where it went green against the old expanded-by-default state.
+    const personaRow = screen.getByRole('checkbox', { name: /Persona A/ })
+    expect(personaRow).toBeChecked()
+    // and the other section stayed shut
+    expect(screen.queryByRole('checkbox', { name: /Doc A/ })).not.toBeInTheDocument()
+  })
+})
+
 describe('McpAccessTab — Card 2 hides the curl snippet when it would mean "everything"', () => {
   it('suppresses the autoseed prompt, not just its copy button, once a section is emptied', async () => {
     renderTab(onePersona, oneDocument)
@@ -321,6 +351,13 @@ describe('McpAccessTab — autoseed group labels resolve', () => {
     // catch a deletion. A render assertion is the only check that would fail.
     // Needs a document: the group heading is per document-type.
     renderTab(onePersona, oneDocument)
+
+    // The documents picker is collapsed by default and the group heading lives in
+    // its body, so expand it the way a user would. Matched on the header's
+    // accessible name, which carries the "1/1" selection count.
+    await userEvent.setup().click(
+      await screen.findByRole('button', { name: /Documents \(1\/1\)/ }),
+    )
 
     expect(await screen.findByText(enProjectDetail.autoseed.docTypes.prd)).toBeInTheDocument()
     expect(screen.queryByText(/autoseed\.docTypes\./)).not.toBeInTheDocument()

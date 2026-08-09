@@ -80,6 +80,21 @@ function buildMcpConfig(baseUrl: string, projectId: string): string {
   }, null, 2)
 }
 
+/**
+ * The two cards sit side by side from `lg` up, and stack below it.
+ *
+ * Side by side rather than stacked because the selection lives in the Export
+ * card while the MCP card's curl URL is built from it — stacked, the control and
+ * the thing it changes are never on screen together. It also stops the MCP card
+ * being pushed below the fold, which matters because the token it issues is a
+ * PREREQUISITE for the autoseed snippet that sits beside it.
+ *
+ * `items-start` so the shorter card keeps its own height instead of being
+ * stretched to match its neighbour. Named once because both return paths (normal
+ * and token-error) must lay out identically.
+ */
+const TWO_COLUMN_LAYOUT = 'grid gap-4 lg:grid-cols-2 items-start'
+
 type DocType = 'prd' | 'prfaq' | 'research' | 'custom'
 
 function isValidDocType(value: string): value is DocType {
@@ -445,8 +460,12 @@ export default function McpAccessTab({
   // that arrive after mount.
   const [deselectedPersonaIds, setDeselectedPersonaIds] = useState<Set<string>>(() => new Set())
   const [deselectedDocumentIds, setDeselectedDocumentIds] = useState<Set<string>>(() => new Set())
+  // Collapsed by default. Each section's header already states its selection as
+  // "Personas (3/4)" and carries the Select all / Deselect all control, so the
+  // count — the thing a user needs before copying — is visible without the rows.
+  // Expanding is for changing the selection, not for reading it.
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    () => new Set(['personas', 'documents']),
+    () => new Set(),
   )
 
   const selectedPersonaIds = useMemo(
@@ -577,28 +596,32 @@ export default function McpAccessTab({
   // ── Card 2 — MCP Access (error branch) ───────────────────────────────────
   if (isError) {
     return (
-      <div className="space-y-4">
+      <div className={TWO_COLUMN_LAYOUT}>
         {exportCard}
-        <McpAccessErrorState />
-        <CollapsibleSection
-          title={t('autoseed.title')}
-          expanded={autoseedExpanded}
-          onToggle={() => setAutoseedExpanded((prev) => !prev)}
-        >
-          <AutoseedContent
-            personas={personas}
-            documents={documents}
-            curlUrl={autoseedCurlUrl}
-            hasSelection={hasPickerSelection}
-          />
-        </CollapsibleSection>
+        {/* Wrapped so the grid still has exactly two children: the error state
+            and the autoseed section together are the MCP column. */}
+        <div className="space-y-4">
+          <McpAccessErrorState />
+          <CollapsibleSection
+            title={t('autoseed.title')}
+            expanded={autoseedExpanded}
+            onToggle={() => setAutoseedExpanded((prev) => !prev)}
+          >
+            <AutoseedContent
+              personas={personas}
+              documents={documents}
+              curlUrl={autoseedCurlUrl}
+              hasSelection={hasPickerSelection}
+            />
+          </CollapsibleSection>
+        </div>
       </div>
     )
   }
 
   // ── Card 2 — MCP Access (normal branch) ──────────────────────────────────
   return (
-    <div className="space-y-4">
+    <div className={TWO_COLUMN_LAYOUT}>
       {/* Card 1 — Export (no API token); the template editor is a section inside it */}
       {exportCard}
 

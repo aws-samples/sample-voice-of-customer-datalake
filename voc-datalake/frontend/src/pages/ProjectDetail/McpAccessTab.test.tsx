@@ -352,12 +352,13 @@ describe('McpAccessTab \u2014 AutoseedContent', () => {
     // Starts enabled \u2014 all items are pre-selected
     expect(copyBtn).toBeEnabled()
 
-    // Deselect every checkbox to produce an empty selection
-    const checkboxes = screen.getAllByRole('checkbox')
-    for (const cb of checkboxes) {
-      if ((cb as HTMLInputElement).checked) {
-        await user.click(cb)
-      }
+    // Empty the selection via each section's bulk control. The picker sections are
+    // collapsed by default so the individual rows are not rendered, but the
+    // header's Select all / Deselect all always is.
+    for (;;) {
+      const remaining = screen.queryAllByRole('button', { name: /^Deselect all$/ })
+      if (remaining.length === 0) break
+      await user.click(remaining[0])
     }
 
     expect(copyBtn).toBeDisabled()
@@ -414,16 +415,19 @@ describe('McpAccessTab \u2014 ExportCard', () => {
     renderTabWithData()
 
     // The copy button starts enabled because all items are pre-selected.
-    // Uncheck every checkbox to produce an empty selection, then verify
-    // the button becomes disabled.
+    // Empty the selection via each section's bulk control, then verify the button
+    // becomes disabled. Bulk rather than per-checkbox because the picker sections
+    // are collapsed by default, so the individual rows are not rendered — but the
+    // header's Select all / Deselect all always is.
     const copyBtn = screen.getByRole('button', { name: /Copy to clipboard/i })
     expect(copyBtn).toBeEnabled()
 
-    const checkboxes = screen.getAllByRole('checkbox')
-    for (const cb of checkboxes) {
-      if ((cb as HTMLInputElement).checked) {
-        await user.click(cb)
-      }
+    // Each click flips that section's control to "Select all", so re-query rather
+    // than holding stale handles.
+    for (;;) {
+      const remaining = screen.queryAllByRole('button', { name: /^Deselect all$/ })
+      if (remaining.length === 0) break
+      await user.click(remaining[0])
     }
 
     expect(copyBtn).toBeDisabled()
