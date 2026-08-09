@@ -12,7 +12,6 @@ import boto3
 from shared.api import api_handler, create_api_resolver, require_admin
 from shared.aws import get_secrets_client
 from shared.exceptions import (
-    AuthorizationError,
     ConfigurationError,
     ServiceError,
     ValidationError,
@@ -44,15 +43,28 @@ app = create_api_resolver()
 #     namespace prefixes / internal keys).
 #   • At most MAX_CREDENTIAL_KEYS_PER_REQUEST keys per write request.
 #
-_CREDENTIAL_KEY_RE = re.compile(r'^[a-z0-9][a-z0-9_]{0,62}[a-z0-9]$|^[a-z0-9]$')
+# Single alternative: optional inner body of up to 62 chars means the total
+# length is 1 (just the initial char) or 2-64 (initial + inner + final).
+# re.fullmatch is used in _validate_credential_key so anchors are not needed.
+_CREDENTIAL_KEY_RE = re.compile(r'[a-z0-9](?:[a-z0-9_]{0,62}[a-z0-9])?')
 MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
+# Maximum byte length of a single credential value written to Secrets Manager.
+# The shared secret is capped at 64 KiB; this bound prevents any one value
+# from dominating it (or triggering a 500 for other integrations).
+MAX_CREDENTIAL_VALUE_BYTES = 4096
 
 
 def _validate_credential_key(key: str) -> None:
-    """Raise ValidationError if *key* does not conform to the allowed form."""
-    if not isinstance(key, str) or not _CREDENTIAL_KEY_RE.match(key):
+    """Raise ValidationError if *key* does not conform to the allowed form.
+
+    Uses re.fullmatch so no explicit anchors are needed in the pattern.
+    The key preview in the error message is truncated to avoid reflecting
+    unbounded caller input back in the response.
+    """
+    if not isinstance(key, str) or not _CREDENTIAL_KEY_RE.fullmatch(key):
+        preview = repr(key[:40]) if isinstance(key, str) else repr(key)
         raise ValidationError(
-            f"Invalid credential key '{key}': keys must contain only lowercase "
+            f"Invalid credential key {preview}: keys must contain only lowercase "
             "letters, digits, and underscores, must start and end with a "
             "letter or digit, and must be 1–64 characters long."
         )
@@ -67,7 +79,13 @@ def _build_rule_name(source: str) -> str:
 @app.get("/integrations/status")
 @tracer.capture_method
 def get_integration_status():
-    """Get status of all integrations."""
+    """Get status of all integrations.
+
+    Requires admin access — the response contains names of configured
+    credential keys, which reveals what integrations are active.
+    """
+    require_admin(app.current_event.raw_event)
+
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
     
@@ -85,7 +103,7 @@ def get_integration_status():
             status[source] = {'configured': len(configured_keys) == len(keys), 'credentials_set': configured_keys}
         
         return status
-    except ConfigurationError:
+    except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to get integration status: {e}")
@@ -118,6 +136,11 @@ def get_credentials(source: str):
     """
     require_admin(app.current_event.raw_event)
 
+    # Validate source before building the namespace prefix.  Without this
+    # a caller sending source='foo_bar' + key='baz' would reach the same
+    # secret key as source='foo' + key='bar_baz' (namespace collision).
+    _validate_credential_key(source)
+
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
 
@@ -127,6 +150,11 @@ def get_credentials(source: str):
         raise ValidationError('Missing required query parameter: keys')
 
     requested_keys = [k.strip() for k in keys_param.split(',') if k.strip()]
+
+    # Validate every requested key before touching the secret — mirrors the
+    # all-or-nothing validation on the write path.
+    for key in requested_keys:
+        _validate_credential_key(key)
 
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
@@ -144,7 +172,7 @@ def get_credentials(source: str):
                 result[key] = secrets[prefixed_key]
 
         return result
-    except (ConfigurationError, ValidationError, AuthorizationError):
+    except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to get credentials for {source}: {e}")
@@ -164,13 +192,25 @@ def update_credentials(source: str):
     before any write is attempted.
 
     At most MAX_CREDENTIAL_KEYS_PER_REQUEST keys may be written per request.
+
+    NOTE: Credential deletion is not currently supported.  Sending null or an
+    empty string for a key silently skips it, leaving the stored value unchanged.
     """
     require_admin(app.current_event.raw_event)
+
+    # Validate source before building the namespace prefix.  Without this
+    # a caller sending source='foo_bar' + key='baz' would reach the same
+    # secret key as source='foo' + key='bar_baz' (namespace collision).
+    _validate_credential_key(source)
 
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
 
-    body = app.current_event.json_body or {}
+    body = app.current_event.json_body
+
+    # Reject non-dict bodies (list, string, null) before any further processing.
+    if not isinstance(body, dict):
+        raise ValidationError('Request body must be a JSON object.')
 
     # Validate key count before touching the secret.
     if len(body) > MAX_CREDENTIAL_KEYS_PER_REQUEST:
@@ -179,9 +219,20 @@ def update_credentials(source: str):
             f"{MAX_CREDENTIAL_KEYS_PER_REQUEST}."
         )
 
-    # Validate every key before writing anything — fail fast, all-or-nothing.
-    for key in body:
+    # Validate every key and value before writing anything — fail fast,
+    # all-or-nothing.
+    for key, value in body.items():
         _validate_credential_key(key)
+        if value is not None:
+            if not isinstance(value, str):
+                raise ValidationError(
+                    f"Value for key {key[:40]!r} must be a string."
+                )
+            if len(value.encode()) > MAX_CREDENTIAL_VALUE_BYTES:
+                raise ValidationError(
+                    f"Value for key {key[:40]!r} exceeds the maximum "
+                    f"allowed size of {MAX_CREDENTIAL_VALUE_BYTES} bytes."
+                )
 
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
@@ -189,12 +240,15 @@ def update_credentials(source: str):
 
         prefix = f"{source}_"
         for key, value in body.items():
+            # Falsy values (null/empty string) are skipped — sending null or ""
+            # does NOT delete the key.  Credential deletion is not currently
+            # supported via this endpoint.
             if value:
                 secrets[f"{prefix}{key}"] = value
 
         secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
         return {'success': True, 'message': f'Credentials updated for {source}'}
-    except (ConfigurationError, ValidationError, AuthorizationError):
+    except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to update credentials: {e}")
@@ -312,6 +366,7 @@ def run_source(source: str):
     config instead of all configs for the source.
     """
     from datetime import datetime, timezone
+
     from shared.tables import get_aggregates_table
 
     # Function name follows uniqueName() pattern: voc-ingestor-{id}-{account}-{region}

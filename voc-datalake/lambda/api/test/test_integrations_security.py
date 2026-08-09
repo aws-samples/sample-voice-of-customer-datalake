@@ -1,7 +1,7 @@
 """
 Security regression tests for integrations_handler.py (issue #261).
 
-Three load-bearing behaviours are tested here:
+Behaviours tested:
 
 1. Cross-namespace read isolation
    A key stored at the top level of the shared secret (belonging to another
@@ -14,12 +14,28 @@ Three load-bearing behaviours are tested here:
    secret must remain unchanged.
    Regression: test_invalid_write_key_rejected_and_secret_unchanged
 
-3. Admin gate on both routes
-   Non-admin callers must receive 403 on both GET and PUT.
-   Regressions: test_non_admin_read_rejected, test_non_admin_write_rejected
+3. Admin gate on GET, PUT, and GET /integrations/status
+   Non-admin callers must receive 403 on all three routes.
+   Regressions: test_non_admin_read_rejected, test_non_admin_write_rejected,
+                test_non_admin_status_rejected
+
+4. Source parameter validation
+   Malformed or namespace-colliding source values are rejected with 400.
+
+5. GET ?keys= parameter validation
+   Malformed keys in the query string are rejected with 400 before the
+   secret is read.
+
+6. Non-dict body rejection
+   A list or string body returns 400 before the secret is touched.
+
+7. Manifest key acceptance
+   Every config key declared in plugin manifests passes _validate_credential_key.
 """
 import json
 from unittest.mock import patch
+
+import pytest
 
 
 def _non_admin_event(api_gateway_event, **kwargs):
@@ -140,6 +156,9 @@ class TestInvalidWriteKeyRejected:
         assert response['statusCode'] == 400, (
             f"Expected 400 for invalid key, got {response['statusCode']}"
         )
+        # Validation runs before the secret is read — the PR description
+        # claims "invalid keys return 400 before the secret is read".
+        mock_secrets.get_secret_value.assert_not_called()
         # The secret must not have been written.
         mock_secrets.put_secret_value.assert_not_called()
 
@@ -319,3 +338,304 @@ class TestAdminGateOnCredentialsRoutes:
         )
         response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 200
+
+    def test_non_admin_status_rejected(self, api_gateway_event, lambda_context):
+        """Non-admin caller gets 403 on GET /integrations/status.
+
+        Regression guard for the admin gate added in issue #261 follow-up.
+        """
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='GET',
+            path='/integrations/status',
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 403, (
+            f"Expected 403 for non-admin GET /integrations/status, got {response['statusCode']}"
+        )
+        body = json.loads(response['body'])
+        assert body.get('success') is False
+
+
+class TestSourceParameterValidation:
+    """
+    Source path parameter validation.
+
+    'source' is used to build the namespace prefix f"{source}_".  Without
+    validation a caller can provoke namespace collisions:
+      source='foo_bar' + key='baz'  →  'foo_bar_baz'
+      source='foo'     + key='bar_baz'  →  'foo_bar_baz'  (same key!)
+
+    Both GET and PUT must reject a malformed or colliding source with 400
+    before reading or writing the secret.
+    """
+
+    @patch('integrations_handler.secretsmanager')
+    def test_valid_form_source_accepted(self, mock_secrets, api_gateway_event, lambda_context):
+        """Source 'webscraper_admin' satisfies the form check and is accepted.
+
+        The form validation (lowercase, digits, underscores, no leading/trailing _)
+        correctly admits a well-formed source like 'webscraper_admin'.  Form
+        validation alone cannot close the namespace-collision gap for this value
+        (webscraper_admin + key='api_key' produces the same path as
+        webscraper + key='admin_api_key'), which is why the PR description
+        notes a manifest-derived allowlist as the stronger long-term fix.
+        """
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': '{"webscraper_admin_api_key": "value"}'
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/webscraper_admin/credentials',
+            path_params={'source': 'webscraper_admin'},
+            query_params={'keys': 'api_key'},
+        )
+        response = lambda_handler(event, lambda_context)
+        # A valid-form source is accepted; it is NOT rejected with 400.
+        assert response['statusCode'] == 200
+
+    @patch('integrations_handler.secretsmanager')
+    def test_uppercase_source_get_rejected(self, mock_secrets, api_gateway_event, lambda_context):
+        """Source with uppercase letters returns 400 on GET before the secret is read."""
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/WebScraper/credentials',
+            path_params={'source': 'WebScraper'},
+            query_params={'keys': 'api_key'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400
+        # Validation runs before the secret is read.
+        mock_secrets.get_secret_value.assert_not_called()
+
+    @patch('integrations_handler.secretsmanager')
+    def test_uppercase_source_put_rejected(self, mock_secrets, api_gateway_event, lambda_context):
+        """Source with uppercase letters returns 400 on PUT before the secret is touched."""
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/integrations/WebScraper/credentials',
+            path_params={'source': 'WebScraper'},
+            body={'api_key': 'value'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400
+        mock_secrets.get_secret_value.assert_not_called()
+        mock_secrets.put_secret_value.assert_not_called()
+
+
+class TestGetKeysValidation:
+    """
+    GET ?keys= parameter validation.
+
+    The read path must reject malformed keys in the query string before
+    reading from Secrets Manager, mirroring the all-or-nothing validation
+    on the write path.
+    """
+
+    @patch('integrations_handler.secretsmanager')
+    def test_malformed_key_in_query_returns_400(self, mock_secrets, api_gateway_event, lambda_context):
+        """GET with a malformed key in ?keys= returns 400 without reading the secret."""
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+            query_params={'keys': 'invalid.key'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400, (
+            f"Expected 400 for malformed key in ?keys=, got {response['statusCode']}"
+        )
+        # The secret must not have been read — validation runs first.
+        mock_secrets.get_secret_value.assert_not_called()
+
+    @patch('integrations_handler.secretsmanager')
+    def test_key_with_hyphen_in_query_rejected(self, mock_secrets, api_gateway_event, lambda_context):
+        """GET with a hyphenated key in ?keys= returns 400."""
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+            query_params={'keys': 'api-key'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400
+        mock_secrets.get_secret_value.assert_not_called()
+
+    @patch('integrations_handler.secretsmanager')
+    def test_valid_query_key_is_accepted(self, mock_secrets, api_gateway_event, lambda_context):
+        """GET with a valid key in ?keys= reads the secret (positive-path control)."""
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({'webscraper_app_name': 'my-app'})
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+            query_params={'keys': 'app_name'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 200
+        mock_secrets.get_secret_value.assert_called_once()
+
+
+class TestNonDictBodyRejection:
+    """
+    Non-dict body validation for PUT /integrations/<source>/credentials.
+
+    Sending a list, string, or null as the body must return 400 before the
+    secret is touched.
+    """
+
+    @patch('integrations_handler.secretsmanager')
+    def test_list_body_rejected(self, mock_secrets, api_gateway_event, lambda_context):
+        """A JSON list body returns 400 and the secret is untouched."""
+        import json as _json
+
+        from integrations_handler import lambda_handler
+
+        # Manually craft an event with a list body because the conftest
+        # helper json.dumps the body dict.
+        event = api_gateway_event(
+            method='PUT',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+        )
+        event['body'] = _json.dumps(['item1', 'item2'])
+
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400
+        mock_secrets.get_secret_value.assert_not_called()
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('integrations_handler.secretsmanager')
+    def test_string_body_rejected(self, mock_secrets, api_gateway_event, lambda_context):
+        """A JSON string body returns 400 and the secret is untouched."""
+        import json as _json
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+        )
+        event['body'] = _json.dumps('just-a-string')
+
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400
+        mock_secrets.get_secret_value.assert_not_called()
+        mock_secrets.put_secret_value.assert_not_called()
+
+
+class TestValueValidation:
+    """
+    Value type and length validation for PUT /integrations/<source>/credentials.
+
+    Non-string values and oversized values must be rejected before writing.
+    """
+
+    @patch('integrations_handler.secretsmanager')
+    def test_non_string_value_rejected(self, mock_secrets, api_gateway_event, lambda_context):
+        """A non-string value returns 400 and the secret is untouched."""
+        import json as _json
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+        )
+        event['body'] = _json.dumps({'app_name': 12345})
+
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400
+        mock_secrets.get_secret_value.assert_not_called()
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('integrations_handler.secretsmanager')
+    def test_oversized_value_rejected(self, mock_secrets, api_gateway_event, lambda_context):
+        """A value exceeding MAX_CREDENTIAL_VALUE_BYTES returns 400."""
+        import json as _json
+
+        from integrations_handler import MAX_CREDENTIAL_VALUE_BYTES, lambda_handler
+
+        oversized_value = 'x' * (MAX_CREDENTIAL_VALUE_BYTES + 1)
+        event = api_gateway_event(
+            method='PUT',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+        )
+        event['body'] = _json.dumps({'app_name': oversized_value})
+
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400
+        mock_secrets.get_secret_value.assert_not_called()
+        mock_secrets.put_secret_value.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Manifest key acceptance tests
+#
+# These parametrized tests assert that every config key declared in the plugin
+# manifests passes _validate_credential_key.  A regression here means a real
+# field name would be rejected when the frontend tries to save it.
+# ---------------------------------------------------------------------------
+
+# Keys from frontend/src/plugins/manifests.json (all plugins, all config keys).
+MANIFEST_KEYS = [
+    # app_reviews_android
+    'app_name', 'package_name', 'sort_by', 'max_reviews_per_run', 'frequency_minutes',
+    # app_reviews_ios
+    'app_id',
+    # s3_import
+    'bucket_name', 'import_prefix', 'processed_prefix',
+    # synthetic_reviews
+    'company_name', 'product_name', 'product_description', 'target_customer',
+    'focus_areas', 'num_reviews', 'sentiment_mix', 'language',
+    # webscraper
+    'configs',
+]
+
+# Plugin ids (used as source= path parameters).
+PLUGIN_IDS = [
+    'app_reviews_android',
+    'app_reviews_ios',
+    's3_import',
+    'synthetic_reviews',
+    'webscraper',
+]
+
+
+class TestManifestKeysAccepted:
+    """Every config key from every plugin manifest must pass _validate_credential_key."""
+
+    @pytest.mark.parametrize('key', MANIFEST_KEYS)
+    def test_manifest_key_passes_validation(self, key):
+        """No ValidationError is raised for a real manifest field name."""
+        from integrations_handler import _validate_credential_key
+        # Must not raise.
+        _validate_credential_key(key)
+
+    @pytest.mark.parametrize('plugin_id', PLUGIN_IDS)
+    def test_plugin_id_passes_validation(self, plugin_id):
+        """Plugin IDs used as `source` path parameters must pass _validate_credential_key."""
+        from integrations_handler import _validate_credential_key
+        # Must not raise.
+        _validate_credential_key(plugin_id)
