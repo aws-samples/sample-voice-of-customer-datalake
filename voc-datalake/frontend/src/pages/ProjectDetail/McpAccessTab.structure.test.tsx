@@ -110,9 +110,12 @@ describe('McpAccessTab — two-card structure', () => {
     expect(container.querySelectorAll(CARD_SELECTOR)).toHaveLength(2)
 
     // `mockProject` carries no kiro_export_prompt, so this render exercises
-    // KiroExportSettings' EmptyState branch — stated explicitly so the card
-    // count above is known to cover that path rather than only the preview one.
-    expect(screen.getByText(enProjectDetail.kiroExport.noPrompt)).toBeInTheDocument()
+    // KiroExportSettings' EmptyState branch. Pinned by SHARED WRAPPER rather
+    // than by the global card count above: this fails specifically if EmptyState
+    // grows its own card chrome, where a count assertion would only catch it
+    // once the total happened to drift.
+    const emptyState = screen.getByText(enProjectDetail.kiroExport.noPrompt)
+    expect(cardContaining(emptyState)).toBe(cardContaining(exportHeading))
   })
 
   it('keeps the MCP card separate from the Export card', async () => {
