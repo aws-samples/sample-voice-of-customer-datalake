@@ -264,6 +264,9 @@ describe('McpAccessTab — Card 2 hides the curl snippet when it would mean "eve
     // Expand Kiro Autoseed so the snippet is on screen to begin with.
     await user.click(await screen.findByText(enProjectDetail.autoseed.title))
     expect(screen.getByText(enProjectDetail.autoseed.pasteHint)).toBeInTheDocument()
+    // Asserted in BOTH directions on purpose: proves the /curl -s/ matcher below
+    // actually matches the rendered prompt, so its absence later means something.
+    expect(screen.getByText(/curl -s/)).toBeInTheDocument()
 
     await user.click(deselectAllPersonas())
 
@@ -271,6 +274,11 @@ describe('McpAccessTab — Card 2 hides the curl snippet when it would mean "eve
     // which the API reads as "all", and text on screen can be selected by hand.
     expect(screen.queryByText(enProjectDetail.autoseed.pasteHint)).not.toBeInTheDocument()
     expect(screen.queryByText(/curl -s/)).not.toBeInTheDocument()
+
+    // The replacement text must reach the control, not just the screen.
+    expect(screen.getByRole('button', {
+      name: enProjectDetail.autoseed.copyKiroPrompt,
+    })).toHaveAccessibleDescription(enProjectDetail.export.selectAtLeastOne)
   })
 })
 

@@ -11,7 +11,7 @@ import {
   Copy, Check,
 } from 'lucide-react'
 import {
-  useState, useCallback,
+  useState, useCallback, useId,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
@@ -43,6 +43,7 @@ export default function AutoseedContent({
   // be surfaced, and copy() would write a second time and swallow that failure.
   const { markCopied, copiedKey } = useCopyToClipboard()
   const [copyError, setCopyError] = useState<string | null>(null)
+  const blockedReasonId = useId()
 
   const kiroPrompt = generateKiroPrompt(curlUrl)
 
@@ -78,6 +79,10 @@ export default function AutoseedContent({
           <button
             onClick={() => void handleCopy()}
             disabled={config.apiEndpoint === '' || !hasSelection}
+            // Only the empty-selection case has an on-screen explanation to point
+            // at; a missing apiEndpoint disables the button without one.
+            aria-describedby={hasSelection ? undefined : blockedReasonId}
+
             className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {copiedKey === 'kiro-autoseed' ? <Check size={16} /> : <Copy size={16} />}
@@ -102,7 +107,9 @@ export default function AutoseedContent({
             </p>
           </>
         ) : (
-          <p className="text-sm text-gray-500">{t('export.selectAtLeastOne')}</p>
+          <p id={blockedReasonId} className="text-sm text-gray-500">
+            {t('export.selectAtLeastOne')}
+          </p>
         )}
       </div>
     </div>
