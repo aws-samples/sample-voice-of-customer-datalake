@@ -43,11 +43,14 @@ function hasOnlyOneDoc(hasPrd: boolean, hasPrfaq: boolean): boolean {
  * Rebuild outranks the single-document note when both apply — spending money on a
  * duplicate is the more consequential surprise of the two.
  */
+/** One of the three confirm keys — not `string`, so a typo cannot compile. */
+type ConfirmKey = (typeof CONFIRM_MESSAGE)[keyof typeof CONFIRM_MESSAGE]
+
 function confirmKeyFor(
   hasPrd: boolean,
   hasPrfaq: boolean,
   hasExistingPrototype: boolean,
-): string | null {
+): ConfirmKey | null {
   if (hasExistingPrototype) return CONFIRM_MESSAGE.rebuild
   if (hasOnlyOneDoc(hasPrd, hasPrfaq)) return CONFIRM_MESSAGE[hasPrd ? 'prd' : 'prfaq']
   return null
@@ -89,7 +92,7 @@ export interface PrototypeBuildControl {
 }
 
 export function usePrototypeBuild({
-  projectId, hasPrd, hasPrfaq, hasExistingPrototype = false, onJobStarted,
+  projectId, hasPrd, hasPrfaq, hasExistingPrototype, onJobStarted,
 }: {
   readonly projectId: string
   readonly hasPrd: boolean
@@ -97,10 +100,12 @@ export function usePrototypeBuild({
   /**
    * The project already has a prototype, so this build makes an additional one.
    *
-   * Defaults to false so a caller that cannot tell gets the old behaviour rather
-   * than a confirm it has no answer for.
+   * Required, not optional-defaulting-false: this is the only thing standing between
+   * a stray second click and another multi-minute billable build, and a guard that a
+   * future call site can silently omit is not a guard. One caller today, so making
+   * it mandatory costs nothing.
    */
-  readonly hasExistingPrototype?: boolean
+  readonly hasExistingPrototype: boolean
   /** Tells the Background Jobs panel to pick the new job up. */
   readonly onJobStarted?: () => void
 }): PrototypeBuildControl {

@@ -193,7 +193,11 @@ describe('prototype card confirm gate (U12)', () => {
     expect(busyButton).toBeDisabled()
     expect(screen.queryByText(/Create a PRD or a PR-FAQ first/i)).not.toBeInTheDocument()
 
+    // Released and then awaited, so the state update it causes happens inside the
+    // test rather than after it — an unawaited release surfaces as an act warning
+    // whose timing depends on the machine.
     releaseRequest()
+    await waitFor(() => expect(buildButton()).toBeInTheDocument())
   })
 })
 

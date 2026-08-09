@@ -44,13 +44,17 @@ const prototypeDoc: ProjectDocument = {
   created_at: new Date().toISOString(),
 }
 
+// No `as ProjectJob` on a partial literal: the sibling prototype-card test argues
+// against exactly that in its own header, and a cast is what stops telling the truth
+// once the type gains a field.
 const job = (status: ProjectJob['status'], completedAt: string | undefined): ProjectJob => ({
   job_id: 'job-1',
   job_type: 'build_prototype',
   status,
+  progress: status === 'completed' ? 100 : 0,
   created_at: new Date().toISOString(),
   completed_at: completedAt,
-} as ProjectJob)
+})
 
 let queryClient: QueryClient
 

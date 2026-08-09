@@ -15,6 +15,7 @@
  * PRD/PR-FAQ where Remix needs two documents, and because it produces a new
  * artifact where Remix revises existing ones.
  */
+import clsx from 'clsx'
 import {
   Users, FileText, Search, Sparkles, Shuffle, Package, Wand2, AlertCircle, Loader2,
 } from 'lucide-react'
@@ -259,10 +260,16 @@ function prototypeStatusLine(
   // nothing else on screen to signal them, so without a live region a
   // screen-reader user never learns that a billable build failed to start —
   // and a region that mounts at the same moment as its text can be missed
-  // entirely. Polite, not assertive, because it carries the success line too.
+  // entirely.
+  //
+  // `role="status"` carries an implicit `aria-live="polite"`, so it is not repeated;
+  // polite rather than assertive because this line also carries the success
+  // acknowledgement. The margin is conditional so an empty region takes no vertical
+  // space — otherwise this card would sit lower at rest than the other five.
+  const text = prototypeStatusText(build, t)
   return (
-    <p className="text-xs mt-2 text-center" role="status" aria-live="polite">
-      {prototypeStatusText(build, t)}
+    <p className={clsx('text-xs text-center', text != null && 'mt-2')} role="status">
+      {text}
     </p>
   )
 }
