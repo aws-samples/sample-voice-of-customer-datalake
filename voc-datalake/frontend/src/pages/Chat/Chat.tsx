@@ -31,6 +31,15 @@ import {
 } from '../../store/chatStore'
 import { useConfigStore } from '../../store/configStore'
 
+/**
+ * Maximum number of history messages sent to the server.
+ * Must stay at or below the server-side cap (lambda/stream/src/schema.ts:
+ * history: z.array(…).max(50)).  If you need to raise this, update both
+ * files in the same PR.  We keep the *newest* entries so the model always
+ * sees the most recent turns.
+ */
+const MAX_HISTORY_ENTRIES = 50
+
 const suggestedQuestionKeys = [
   'suggestedQuestions.topComplaints',
   'suggestedQuestions.urgentIssues',
@@ -241,7 +250,10 @@ export default function Chat() {
     scrollToBottom()
   }, [activeConversation?.messages, streamingText, thinkingText])
 
-  // Keep latest values in refs so the streaming-finish effect doesn't need them as deps
+  // Keep latest streaming values in a ref so the finish-effect never needs
+  // them as dependencies.  activeConversationId is intentionally NOT stored
+  // here: we capture it at send time (see originConversationIdRef below) so
+  // that switching conversations mid-stream does not redirect the reply.
   const latestRef = useRef({
     streamingText,
     thinkingText,
@@ -249,7 +261,6 @@ export default function Chat() {
     sources,
     webSources,
     filters,
-    activeConversationId,
     addMessage,
     t,
   })
@@ -261,18 +272,28 @@ export default function Chat() {
       sources,
       webSources,
       filters,
-      activeConversationId,
       addMessage,
       t,
     }
   })
 
+  /**
+   * The conversation that *originated* the current stream.  Written in
+   * handleSubmit at send time and read in the finish-effect at completion
+   * time.  Because this never tracks the active conversation it is immune to
+   * the mid-stream switch bug: whatever the user does after pressing Send,
+   * the reply lands in the conversation it was sent from.
+   */
+  const originConversationIdRef = useRef<string | null>(null)
+
   // When streaming finishes, save the assistant message
   const prevStreamingRef = useRef(false)
   useEffect(() => {
     const {
-      streamingText: text, thinkingText: thinking, streamError: error, sources: src, webSources: webSrc, filters: f, activeConversationId: convId, addMessage: add, t: translate,
+      streamingText: text, thinkingText: thinking, streamError: error, sources: src, webSources: webSrc, filters: f, addMessage: add, t: translate,
     } = latestRef.current
+    // Use the origin id captured at send time — NOT the current active id.
+    const convId = originConversationIdRef.current
     if (prevStreamingRef.current && !isStreaming && convId != null && convId !== '') {
       if (text !== '') {
         add(convId, {
@@ -289,6 +310,7 @@ export default function Chat() {
           content: translate('errorPrefix', { message: error }),
         })
       }
+      originConversationIdRef.current = null
     }
     prevStreamingRef.current = isStreaming
   }, [isStreaming])
@@ -305,12 +327,17 @@ export default function Chat() {
     e.preventDefault()
     if (input.trim() === '' || isStreaming) return
 
-    // Build history from existing messages before adding the new one
+    // Build history from existing messages before adding the new one.
+    // Slice to MAX_HISTORY_ENTRIES (newest entries) so we never exceed the
+    // server-side validation cap; see the constant declaration above for the
+    // coupling note.
     const conversation = getActiveConversation()
-    const history = (conversation?.messages ?? []).map((m) => ({
-      role: m.role,
-      content: m.content,
-    }))
+    const history = (conversation?.messages ?? [])
+      .slice(-MAX_HISTORY_ENTRIES)
+      .map((m) => ({
+        role: m.role,
+        content: m.content,
+      }))
 
     // The first message materializes the conversation, which consumes any
     // draft filters the user set beforehand.
@@ -320,6 +347,11 @@ export default function Chat() {
       content: input,
       filters,
     })
+
+    // Capture the origin conversation id NOW, before any potential
+    // conversation switch.  The finish-effect reads this ref, not the
+    // (mutable) active conversation id, so the reply always lands here.
+    originConversationIdRef.current = conversationId
 
     const context = buildChatContext(days, filters)
 
