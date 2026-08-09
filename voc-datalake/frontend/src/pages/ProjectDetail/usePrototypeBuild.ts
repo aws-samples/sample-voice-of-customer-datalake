@@ -82,7 +82,11 @@ export interface PrototypeBuildControl {
   readonly error: string | null
   /** True briefly after a successful start, covering the gap before the panel refetches. */
   readonly started: boolean
-  /** State for the confirm dialog the single-source-document case needs. */
+  /**
+   * State for the confirm dialog. Open only while the reason it was opened for is
+   * still the reason that applies, so `message` is empty exactly when `isOpen` is
+   * false rather than needing its own check at the call site.
+   */
   readonly confirm: {
     readonly isOpen: boolean
     readonly message: string
@@ -114,7 +118,8 @@ export function usePrototypeBuild({
   // Lowers itself: the panel takes over, so the line must not outlive the gap.
   const started = useTransientFlag()
   const [error, setError] = useState<string | null>(null)
-  const [showConfirm, setShowConfirm] = useState(false)
+  // The question that was asked, not a bare "a dialog is open" flag — see `openKey`.
+  const [askedKey, setAskedKey] = useState<ConfirmKey | null>(null)
 
   // Two reasons to stop and ask, through the ConfirmModal pattern every other
   // guarded action uses (this began as a window.confirm, which cannot be styled):
@@ -149,18 +154,24 @@ export function usePrototypeBuild({
 
   const onClick = useCallback(() => {
     if (confirmKey != null) {
-      setShowConfirm(true)
+      setAskedKey(confirmKey)
       return
     }
     void runBuild()
   }, [confirmKey, runBuild])
 
   const onConfirm = useCallback(() => {
-    setShowConfirm(false)
+    setAskedKey(null)
     void runBuild()
   }, [runBuild])
 
-  const onCancel = useCallback(() => setShowConfirm(false), [])
+  const onCancel = useCallback(() => setAskedKey(null), [])
+
+  // The question on screen: the one the click raised, and only while it still
+  // applies. `confirmKey` is derived from live data that changes under an open dialog
+  // (documents refetch when a job completes), so a boolean open-flag beside it could
+  // disagree with the message — leaving it blank, rewritten, or re-raised unasked.
+  const openKey = askedKey != null && askedKey === confirmKey ? askedKey : null
 
   return {
     onClick,
@@ -168,9 +179,8 @@ export function usePrototypeBuild({
     error,
     started: started.isSet,
     confirm: {
-      isOpen: showConfirm,
-      // Empty only in the state where the dialog is never opened.
-      message: confirmKey == null ? '' : t(confirmKey),
+      isOpen: openKey != null,
+      message: openKey == null ? '' : t(openKey),
       onConfirm,
       onCancel,
     },
