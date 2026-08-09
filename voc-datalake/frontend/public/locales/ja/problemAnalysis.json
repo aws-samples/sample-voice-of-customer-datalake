@@ -23,7 +23,11 @@
   "stats": {
     "categories": "カテゴリ",
     "feedback": "フィードバック",
+    "loadFailed": "この期間のフィードバックを読み込めなかったため、件数は表示されません。再試行するか、期間を狭めてください。",
+    "loadingWindow": "フィードバックを読み込み中… 現在 {{total, number}} 件中 {{loaded, number}} 件。",
+    "partialWindow": "件数はこの期間の {{total, number}} 件中 {{loaded, number}} 件を対象としています。",
     "problems": "問題",
+    "retry": "再試行",
     "subcategories": "サブカテゴリ",
     "urgent": "緊急"
   },

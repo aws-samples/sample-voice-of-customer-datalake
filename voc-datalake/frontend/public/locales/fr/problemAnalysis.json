@@ -23,7 +23,11 @@
   "stats": {
     "categories": "Catégories",
     "feedback": "Retours",
+    "loadFailed": "Impossible de charger les retours pour cette période, aucun décompte n’est affiché. Réessayez ou réduisez la plage de dates.",
+    "loadingWindow": "Chargement des retours… {{loaded, number}} sur {{total, number}} pour l’instant.",
+    "partialWindow": "Les décomptes couvrent {{loaded, number}} éléments sur {{total, number}} dans cette période.",
     "problems": "Problèmes",
+    "retry": "Réessayer",
     "subcategories": "Sous-catégories",
     "urgent": "Prioritaire"
   },

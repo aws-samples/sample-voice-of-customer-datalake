@@ -23,6 +23,8 @@ import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
 import { applyResolution } from './problemResolution'
 import { useProblemResolution } from './useProblemResolution'
+import { useProblemFeedback } from './useProblemFeedback'
+import { WindowCoverageNotice } from './WindowCoverageNotice'
 import type { CategoryGroup, ProblemGroup, SubcategoryGroup } from './problemResolution'
 import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
@@ -278,11 +280,10 @@ export default function ProblemAnalysis() {
     enabled: !!config.apiEndpoint,
   })
 
-  const { data: feedbackData, isLoading } = useQuery({
-    queryKey: ['feedback-problems', dateParams],
-    queryFn: () => api.getFeedback({ ...dateParams, limit: 500 }),
-    enabled: !!config.apiEndpoint,
-  })
+  // Pages the whole window rather than asking for one oversized page: the
+  // stat cards and the tree are aggregates, and `/feedback` silently clamps
+  // `limit` to 100 (U5b). `isPartial` reports a window read only in part.
+  const feedback = useProblemFeedback(dateParams, config.apiEndpoint)
 
   // Resolved problems are shared across users (issue #66); resolving one
   // clears it from everyone's default view. All query/mutation wiring lives
@@ -301,11 +302,9 @@ export default function ProblemAnalysis() {
 
   // Group feedback by category → subcategory → problem (with similarity) → items
   const groupedData = useMemo(() => {
-    if (!feedbackData?.items) return []
-
     const categoryMap = new Map<string, Map<string, Map<string, ProblemGroup>>>()
 
-    const filteredItems = feedbackData.items
+    const filteredItems = feedback.items
       .filter(item => item.problem_summary)
       .filter(item => !showUrgentOnly || item.urgency === 'high')
       .filter(item => !selectedCategory || item.category === selectedCategory)
@@ -323,7 +322,7 @@ export default function ProblemAnalysis() {
     }
 
     return buildCategoryGroups(categoryMap)
-  }, [feedbackData, showUrgentOnly, selectedCategory, selectedSubcategory, selectedSource, similarityThreshold])
+  }, [feedback.items, showUrgentOnly, selectedCategory, selectedSubcategory, selectedSource, similarityThreshold])
 
   // Annotate problem groups with their shared resolved status and hide the
   // resolved ones unless requested; category/subcategory totals are
@@ -343,13 +342,12 @@ export default function ProblemAnalysis() {
 
   // Get unique subcategories from current data
   const allSubcategories = useMemo(() => {
-    if (!feedbackData?.items) return []
     const subcats = new Set<string>()
-    for (const item of feedbackData.items) {
+    for (const item of feedback.items) {
       if (item.subcategory) subcats.add(item.subcategory)
     }
     return Array.from(subcats).sort((a, b) => a.localeCompare(b))
-  }, [feedbackData])
+  }, [feedback.items])
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
@@ -436,10 +434,27 @@ export default function ProblemAnalysis() {
 
   // Gate on the resolved-state query too: without it, resolved problems
   // flash as unresolved for a frame and then vanish when the query lands.
-  if (isLoading || resolvedLoading) {
+  if (feedback.isLoading || resolvedLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+
+  // Nothing was read, so every aggregate below would be a zero that looks like
+  // a finding. Say the window is unknown instead of implying it is empty.
+  if (feedback.isError && feedback.items.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <WindowCoverageNotice
+          isLoadingMore={false}
+          isPartial={false}
+          hasFailed
+          loadedCount={0}
+          totalCount={0}
+          onRetry={feedback.retry}
+        />
       </div>
     )
   }
@@ -484,6 +499,16 @@ export default function ProblemAnalysis() {
           <p className="text-xl sm:text-2xl font-bold text-red-700">{totalUrgent}</p>
         </div>
       </div>
+
+      {/* Coverage of the counts above; self-hiding when the window was read in
+          full. Rationale lives in the component. */}
+      <WindowCoverageNotice
+        isLoadingMore={feedback.isLoadingMore}
+        isPartial={feedback.isPartial}
+        hasFailed={feedback.isError}
+        loadedCount={feedback.loadedCount}
+        totalCount={feedback.totalCount}
+      />
 
       {/* Filters & Controls */}
       <div className="card">

@@ -23,7 +23,11 @@
   "stats": {
     "categories": "Kategorien",
     "feedback": "Rückmeldungen",
+    "loadFailed": "Feedback für diesen Zeitraum konnte nicht geladen werden, daher werden keine Zahlen angezeigt. Erneut versuchen oder den Zeitraum eingrenzen.",
+    "loadingWindow": "Feedback wird geladen… bisher {{loaded, number}} von {{total, number}}.",
+    "partialWindow": "Die Zahlen umfassen {{loaded, number}} von {{total, number}} Einträgen in diesem Zeitraum.",
     "problems": "Probleme",
+    "retry": "Erneut versuchen",
     "subcategories": "Unterkategorien",
     "urgent": "Dringend"
   },
