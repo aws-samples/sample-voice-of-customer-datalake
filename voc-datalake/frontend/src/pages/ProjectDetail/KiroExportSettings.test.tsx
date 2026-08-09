@@ -106,6 +106,22 @@ describe('KiroExportSettings — criterion 6: shows effective instructions', () 
 })
 
 describe('KiroExportSettings — criterion 8: clearing returns to default', () => {
+  it('calls onSave with empty string when user saves whitespace-only text', async () => {
+    // Whitespace-only input is treated the same as empty: trimmed before saving
+    // so the UI does not enter a misleading "Edit" state with a blank preview.
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(<KiroExportSettings project={projectWithCustom} onSave={onSave} />)
+
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+    const textarea = screen.getByRole('textbox')
+    await user.clear(textarea)
+    await user.type(textarea, '   ')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    expect(onSave).toHaveBeenCalledWith('')
+  })
+
   it('calls onSave with empty string when user clears the textarea', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn()

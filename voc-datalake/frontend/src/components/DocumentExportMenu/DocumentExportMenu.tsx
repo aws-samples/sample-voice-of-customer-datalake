@@ -166,9 +166,12 @@ export default function DocumentExportMenu({
     const effectivePrompt = storedPrompt !== ''
       ? storedPrompt
       : (project?.kiro_default_export_prompt ?? '')
-    const sectionHeading = doc.document_type === 'prfaq'
-      ? t('documentExport.kiroSectionPrfaq')
-      : t('documentExport.kiroSectionPrd')
+    // Keep these headings as plain English to match _build_steering_file's scaffold
+    // (which always emits "## Custom Instructions", "## Personas", etc. in English).
+    // Both consumers must agree on structural markdown so a non-English user's
+    // "Copy to Kiro" clipboard output and the autoseed steering file use the
+    // same heading convention — currently English-only on both paths.
+    const sectionHeading = doc.document_type === 'prfaq' ? 'PR/FAQ Document' : 'PRD Document'
     const prdSection = `# ${doc.title}\n\n${doc.content ?? ''}`
     const fullContent = effectivePrompt === ''
       ? prdSection

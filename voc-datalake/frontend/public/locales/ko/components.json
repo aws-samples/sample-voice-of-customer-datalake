@@ -88,9 +88,7 @@
     "downloadOptions": "다운로드 옵션",
     "downloadPDF": "PDF로 다운로드",
     "downloadTXT": "TXT로 다운로드",
-    "kiroPromptTip": "팁: Export / MCP 탭에서 Kiro 프롬프트 구성",
-    "kiroSectionPrd": "PRD 문서",
-    "kiroSectionPrfaq": "PR/FAQ 문서"
+    "kiroPromptTip": "팁: Export / MCP 탭에서 Kiro 프롬프트 구성"
   },
   "errorBoundary": {
     "description": "이 페이지에서 예기치 않은 오류가 발생했습니다. 페이지를 새로 고치거나 홈으로 돌아갈 수 있으며, 앱의 나머지 부분은 영향을 받지 않습니다.",

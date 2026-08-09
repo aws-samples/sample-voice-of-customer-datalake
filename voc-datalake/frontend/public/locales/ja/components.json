@@ -88,9 +88,7 @@
     "downloadOptions": "ダウンロードオプション",
     "downloadPDF": "PDFでダウンロード",
     "downloadTXT": "TXTでダウンロード",
-    "kiroPromptTip": "ヒント：Export / MCPタブでKiroプロンプトを設定してください",
-    "kiroSectionPrd": "PRDドキュメント",
-    "kiroSectionPrfaq": "PR/FAQドキュメント"
+    "kiroPromptTip": "ヒント：Export / MCPタブでKiroプロンプトを設定してください"
   },
   "errorBoundary": {
     "description": "このページで予期しないエラーが発生しました。再読み込みするか、ホームに戻ってください。アプリの他の部分には影響ありません。",

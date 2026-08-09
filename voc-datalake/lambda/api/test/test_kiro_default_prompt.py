@@ -16,8 +16,18 @@ import pytest
 
 
 def _repo_root() -> Path:
-    # lambda/api/test/ -> voc-datalake/
-    return Path(__file__).resolve().parents[3]
+    """Return the voc-datalake repo root (4 levels above this file).
+
+    Raises AssertionError if the resolved path does not look like the repo root,
+    so a moved test file fails loudly instead of silently pytest.skip-ing the
+    cross-language uniqueness guards.
+    """
+    root = Path(__file__).resolve().parents[3]
+    assert (root / 'lambda').is_dir(), (
+        f'Unexpected repo layout: expected a lambda/ directory at {root}. '
+        f'If this test file was moved, update _repo_root() accordingly.'
+    )
+    return root
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +50,6 @@ class TestKiroDefaultPromptIsUnique:
         own copy, which would diverge from the backend constant when the wording
         changes. Test files may reference it as expected values — those are fine.
         """
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT
         # Use the first sentence as the fingerprint — distinctive enough to
         # reliably identify a duplicate but not dependent on whitespace.
         fingerprint = 'Build against the material in this workspace rather than from assumptions'
@@ -70,7 +79,6 @@ class TestKiroDefaultPromptIsUnique:
 
     def test_default_text_not_duplicated_in_other_python_files(self):
         """The constant must not be copy-pasted into other Python production files."""
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT
         fingerprint = 'Build against the material in this workspace rather than from assumptions'
         lambda_root = _repo_root() / 'lambda'
         if not lambda_root.is_dir():
@@ -105,26 +113,26 @@ class TestBuildSteeringFileUsesDefault:
     """_build_steering_file falls back to KIRO_DEFAULT_EXPORT_PROMPT."""
 
     def test_empty_kiro_export_prompt_uses_default(self):
-        from projects import _build_steering_file, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
         project = {'name': 'Test', 'kiro_export_prompt': ''}
         result = _build_steering_file(project, [], [])
         assert KIRO_DEFAULT_EXPORT_PROMPT in result
 
     def test_absent_kiro_export_prompt_uses_default(self):
-        from projects import _build_steering_file, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
         project = {'name': 'Test'}
         result = _build_steering_file(project, [], [])
         assert KIRO_DEFAULT_EXPORT_PROMPT in result
 
     def test_whitespace_only_kiro_export_prompt_uses_default(self):
-        from projects import _build_steering_file, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
         project = {'name': 'Test', 'kiro_export_prompt': '   \n\t  '}
         result = _build_steering_file(project, [], [])
         assert KIRO_DEFAULT_EXPORT_PROMPT in result
 
     def test_none_kiro_export_prompt_uses_default(self):
         """Stored None (DynamoDB NULL) must use the default, not raise AttributeError."""
-        from projects import _build_steering_file, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
         project = {'name': 'Test', 'kiro_export_prompt': None}
         # Must not raise AttributeError: 'NoneType' object has no attribute 'strip'
         result = _build_steering_file(project, [], [])
@@ -153,7 +161,7 @@ class TestBuildSteeringFileUsesCustomPrompt:
         assert custom in result
 
     def test_default_not_used_when_custom_prompt_set(self):
-        from projects import _build_steering_file, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
         custom = 'Use only TypeScript. No classes. Pure functions only.'
         project = {'name': 'Test', 'kiro_export_prompt': custom}
         result = _build_steering_file(project, [], [])
@@ -181,7 +189,7 @@ class TestCreateProjectStoresEmptyPrompt:
     @patch('projects.projects_table')
     def test_create_project_does_not_seed_default_text(self, mock_table):
         """The default text must never be written into the stored record."""
-        from projects import create_project, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, create_project
         result = create_project({'name': 'New Project'})
         item = result['project']
         assert item.get('kiro_export_prompt', '') != KIRO_DEFAULT_EXPORT_PROMPT, (
@@ -205,7 +213,7 @@ class TestGetProjectExposesDefault:
                  'kiro_export_prompt': ''},
             ]
         }
-        from projects import get_project, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, get_project
         result = get_project('p1')
         project = result['project']
         assert 'kiro_default_export_prompt' in project, (
@@ -223,7 +231,7 @@ class TestGetProjectExposesDefault:
                  'kiro_export_prompt': ''},
             ]
         }
-        from projects import get_project, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import get_project
         result = get_project('p1')
         project = result['project']
         # The stored field stays empty so the caller can tell the difference.
@@ -242,7 +250,7 @@ class TestGetProjectExposesDefault:
                  'kiro_export_prompt': custom},
             ]
         }
-        from projects import get_project, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, get_project
         result = get_project('p1')
         project = result['project']
         assert project['kiro_export_prompt'] == custom
@@ -257,7 +265,7 @@ class TestClearingPromptReturnsToDefault:
     """After clearing kiro_export_prompt the steering file uses the default again."""
 
     def test_cleared_prompt_uses_default_in_steering_file(self):
-        from projects import _build_steering_file, KIRO_DEFAULT_EXPORT_PROMPT
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
         # Simulate a project that previously had a custom prompt, then it was cleared.
         project = {'name': 'Test', 'kiro_export_prompt': ''}
         result = _build_steering_file(project, [], [])

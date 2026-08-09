@@ -88,9 +88,7 @@
     "downloadOptions": "Download-Optionen",
     "downloadPDF": "Als PDF herunterladen",
     "downloadTXT": "Als TXT herunterladen",
-    "kiroPromptTip": "Tipp: Kiro-Eingabeaufforderung im Tab Export / MCP konfigurieren",
-    "kiroSectionPrd": "PRD-Dokument",
-    "kiroSectionPrfaq": "PR/FAQ-Dokument"
+    "kiroPromptTip": "Tipp: Kiro-Eingabeaufforderung im Tab Export / MCP konfigurieren"
   },
   "errorBoundary": {
     "description": "Auf dieser Seite ist ein unerwarteter Fehler aufgetreten. Sie können sie neu laden oder zur Startseite zurückkehren — der Rest der Anwendung ist nicht betroffen.",

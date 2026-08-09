@@ -6,7 +6,7 @@
  * what _build_steering_file produces server-side.
  */
 import {
-  describe, it, expect, vi, beforeEach, afterEach,
+  describe, it, expect, vi, beforeAll, beforeEach, afterEach,
 } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -70,8 +70,13 @@ const writeTextMock = vi.fn<(text: string) => Promise<void>>().mockResolvedValue
 
 let originalWriteText: typeof navigator.clipboard.writeText
 
-beforeEach(() => {
+// Capture the original exactly once before any test can mutate it, so that
+// afterEach always restores the true original (not a previously installed mock).
+beforeAll(() => {
   originalWriteText = navigator.clipboard.writeText
+})
+
+beforeEach(() => {
   writeTextMock.mockClear()
   // Replace the clipboard write function directly on the existing mock object.
   // This avoids re-defining the entire clipboard property (which can interfere

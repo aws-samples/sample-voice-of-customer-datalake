@@ -106,7 +106,10 @@ export default function KiroExportSettings({
   const [saved, setSaved] = useState(false)
 
   const handleSave = () => {
-    onSave(prompt)
+    // Trim before saving so a whitespace-only entry is stored as '' (empty),
+    // keeping the project following the default and avoiding a misleading
+    // "Edit" button label with a visually blank preview.
+    onSave(prompt.trim())
     setIsEditing(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
