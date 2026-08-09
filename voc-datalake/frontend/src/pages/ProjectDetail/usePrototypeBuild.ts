@@ -167,17 +167,10 @@ export function usePrototypeBuild({
 
   const onCancel = useCallback(() => setAskedKey(null), [])
 
-  // The question actually on screen: the one the click raised, and only while it is
-  // still the one that applies. `confirmKey` is derived from live data — this page
-  // refetches documents whenever a job completes — so a PR-FAQ generation finishing
-  // can remove the reason to ask, or replace it with the costlier rebuild one.
-  //
-  // Comparing keys covers both, where a boolean covered neither: it cannot leave a
-  // titled modal up with an empty message, it cannot rewrite the text under the
-  // cursor so that "Build anyway" answers a question that was never displayed, and
-  // it cannot re-open on a reason the user never saw, because a flag that outlived
-  // its question stayed set. A reason that comes back comes back as the same
-  // question, which is the one still unanswered.
+  // The question on screen: the one the click raised, and only while it still
+  // applies. `confirmKey` is derived from live data that changes under an open dialog
+  // (documents refetch when a job completes), so a boolean open-flag beside it could
+  // disagree with the message — leaving it blank, rewritten, or re-raised unasked.
   const openKey = askedKey != null && askedKey === confirmKey ? askedKey : null
 
   return {
@@ -186,9 +179,6 @@ export function usePrototypeBuild({
     error,
     started: started.isSet,
     confirm: {
-      // One derivation feeding both, for the same reason `confirmKeyFor` is one
-      // function: two readings of this state could disagree, and the disagreement
-      // looks like a dialog with no question in it.
       isOpen: openKey != null,
       message: openKey == null ? '' : t(openKey),
       onConfirm,
