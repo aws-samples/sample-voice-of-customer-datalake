@@ -9,6 +9,7 @@ Public endpoint — no Cognito auth. Auth is handled by validating the Bearer to
 from the Authorization header against SHA-256 hashes in the projects table.
 """
 
+import hmac
 import json
 import re
 from datetime import datetime, timezone, timedelta
@@ -103,7 +104,11 @@ def _authenticate(event: dict) -> dict | None:
     )
 
     for item in response.get('Items', []):
-        if item.get('token_hash') == token_hash:
+        stored_hash = item.get('token_hash', '')
+        # Constant-time comparison prevents timing-based hash enumeration.
+        # Both operands must be the same type (str); encode to bytes so
+        # compare_digest can work even if one value is unexpectedly empty.
+        if hmac.compare_digest(stored_hash.encode(), token_hash.encode()):
             # Update last_used_at
             try:
                 projects_table.update_item(
@@ -289,7 +294,13 @@ def _tool_search_feedback(args: dict, _token_info: dict) -> list[dict]:
 
 @tracer.capture_method
 def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
-    """Get aggregated metrics summary."""
+    """Get aggregated metrics summary.
+
+    Mirrors the ``is_partial`` convention used by the REST metrics endpoints:
+    if any underlying DynamoDB read raises, the partial result is still returned
+    (so the readable portion is not lost), but ``is_partial`` is set to ``True``
+    and the failure is logged at WARNING level — without any token or hash.
+    """
     if not aggregates_table:
         return [{"type": "text", "text": "Aggregates table not configured"}]
 
@@ -299,6 +310,7 @@ def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
     total = 0
     sentiment_counts: dict[str, int] = {}
     category_counts: dict[str, int] = {}
+    is_partial = False
 
     for i in range(days):
         date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
@@ -309,8 +321,9 @@ def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
             item = resp.get('Item')
             if item:
                 total += int(item.get('count', 0))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to read daily_total aggregate", extra={"date": date, "error": str(exc)})
+            is_partial = True
 
         # Sentiment counts
         for sent in ['positive', 'negative', 'neutral', 'mixed']:
@@ -319,8 +332,12 @@ def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
                 item = resp.get('Item')
                 if item:
                     sentiment_counts[sent] = sentiment_counts.get(sent, 0) + int(item.get('count', 0))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Failed to read sentiment aggregate",
+                    extra={"sentiment": sent, "date": date, "error": str(exc)},
+                )
+                is_partial = True
 
     # Category breakdown from latest aggregate
     try:
@@ -333,12 +350,14 @@ def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
             cats = item.get('categories', {})
             if isinstance(cats, dict):
                 category_counts = {k: int(v) for k, v in cats.items()}
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to read category_breakdown aggregate", extra={"error": str(exc)})
+        is_partial = True
 
     summary = {
         "period_days": days,
         "total_feedback": total,
+        "is_partial": is_partial,
         "sentiment_breakdown": sentiment_counts,
         "top_categories": dict(sorted(category_counts.items(), key=lambda x: x[1], reverse=True)[:10]),
     }
@@ -483,6 +502,23 @@ TOOL_HANDLERS = {
     "get_feedback_detail": _tool_get_feedback_detail,
 }
 
+# Minimum scope required for each registered tool.
+# "read" — any valid token may call this tool.
+# "read-write" — only tokens with read-write scope may call this tool.
+#
+# Every entry in TOOL_HANDLERS MUST appear here.  The dispatch in
+# _handle_tools_call is fail-closed: a tool with no declared scope is
+# rejected rather than defaulting to allowed, so an author who adds a
+# handler without updating this table gets an immediate error at call
+# time rather than an accidentally-public endpoint.
+TOOL_SCOPE_REQUIREMENTS: dict[str, str] = {
+    "search_feedback": "read",
+    "get_metrics_summary": "read",
+    "get_project": "read",
+    "list_personas": "read",
+    "get_feedback_detail": "read",
+}
+
 
 # ============================================
 # MCP JSON-RPC protocol handling
@@ -525,15 +561,43 @@ def _handle_tools_list(req_id: Any, _params: dict) -> dict:
     return _jsonrpc_result(req_id, {"tools": MCP_TOOLS})
 
 
+def _scope_allows(token_scope: str, required_scope: str) -> bool:
+    """Return True when *token_scope* satisfies *required_scope*.
+
+    "read-write" satisfies both "read" and "read-write".
+    "read" satisfies only "read".
+    Any other value is treated as insufficient.
+    """
+    if required_scope == "read":
+        return token_scope in ("read", "read-write")
+    if required_scope == "read-write":
+        return token_scope == "read-write"
+    return False
+
+
 def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
     """Handle MCP tools/call request."""
     tool_name = params.get('name', '')
     arguments = params.get('arguments', {})
 
-    # Check scope for write operations (future-proofing)
     handler = TOOL_HANDLERS.get(tool_name)
     if not handler:
         return _jsonrpc_error(req_id, -32602, f"Unknown tool: {tool_name}")
+
+    # Scope enforcement — fail-closed: a tool with no declared requirement
+    # is rejected rather than defaulting to allowed.
+    required_scope = TOOL_SCOPE_REQUIREMENTS.get(tool_name)
+    if required_scope is None:
+        logger.error("Tool has no declared scope requirement", extra={"tool": tool_name})
+        return _jsonrpc_error(req_id, -32603, f"Tool {tool_name} has no declared scope requirement")
+
+    token_scope = token_info.get('scope', '')
+    if not _scope_allows(token_scope, required_scope):
+        logger.warning(
+            "Scope insufficient for tool",
+            extra={"tool": tool_name, "required": required_scope, "token_scope": token_scope},
+        )
+        return _jsonrpc_error(req_id, -32001, f"Forbidden: token scope '{token_scope}' cannot call '{tool_name}'")
 
     try:
         content = handler(arguments, token_info)
