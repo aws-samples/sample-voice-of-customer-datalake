@@ -70,6 +70,23 @@ def _validate_credential_key(key: str) -> None:
         )
 
 
+def _validate_source(source: str) -> None:
+    """Raise ValidationError if *source* does not conform to the allowed form.
+
+    'source' is used as a namespace prefix (f"{source}_"), so it must satisfy
+    the same character-class rules as credential keys.  The error message uses
+    'source identifier' rather than 'credential key' so it is clear which
+    input parameter is invalid when debugging a 400.
+    """
+    if not isinstance(source, str) or not _CREDENTIAL_KEY_RE.fullmatch(source):
+        preview = repr(source[:40]) if isinstance(source, str) else repr(source)
+        raise ValidationError(
+            f"Invalid source identifier {preview}: source must contain only "
+            "lowercase letters, digits, and underscores, must start and end "
+            "with a letter or digit, and must be 1–64 characters long."
+        )
+
+
 def _build_rule_name(source: str) -> str:
     """Build EventBridge rule name matching CDK's uniqueName() pattern."""
     suffix = f"-{AWS_ACCOUNT_ID}-{AWS_REGION}" if AWS_ACCOUNT_ID and AWS_REGION else ""
@@ -139,7 +156,7 @@ def get_credentials(source: str):
     # Validate source before building the namespace prefix.  Without this
     # a caller sending source='foo_bar' + key='baz' would reach the same
     # secret key as source='foo' + key='bar_baz' (namespace collision).
-    _validate_credential_key(source)
+    _validate_source(source)
 
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
@@ -201,7 +218,7 @@ def update_credentials(source: str):
     # Validate source before building the namespace prefix.  Without this
     # a caller sending source='foo_bar' + key='baz' would reach the same
     # secret key as source='foo' + key='bar_baz' (namespace collision).
-    _validate_credential_key(source)
+    _validate_source(source)
 
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')

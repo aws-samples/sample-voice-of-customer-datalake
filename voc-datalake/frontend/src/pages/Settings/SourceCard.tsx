@@ -21,6 +21,9 @@ import type { PluginManifest, ConfigField, SetupInfo, WebhookInfo } from '../../
 interface SourceCardProps {
   readonly manifest: PluginManifest
   readonly apiEndpoint: string
+  /** Whether the current user is an admin. The integration-status query is
+   *  admin-gated server-side; this flag prevents a 403 for non-admin users. */
+  readonly isAdmin: boolean
 }
 
 // ============================================
@@ -49,7 +52,7 @@ function getSaveButtonText(saveSuccess: boolean): { full: string; short: string 
 // Main Component
 // ============================================
 
-export default function SourceCard({ manifest, apiEndpoint }: SourceCardProps) {
+export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCardProps) {
   const queryClient = useQueryClient()
   const [isExpanded, setIsExpanded] = useState(false)
   const [showSecrets, setShowSecrets] = useState(false)
@@ -58,10 +61,12 @@ export default function SourceCard({ manifest, apiEndpoint }: SourceCardProps) {
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
   const [serverStatus, setServerStatus] = useState<{ enabled: boolean; loading?: boolean }>({ enabled: false })
 
+  // GET /integrations/status is admin-gated server-side; only issue the query
+  // for admin users to prevent a 403 for regular authenticated users.
   const { data: integrationStatus } = useQuery({
     queryKey: ['integration-status'],
     queryFn: () => api.getIntegrationStatus(),
-    enabled: !!apiEndpoint,
+    enabled: isAdmin && !!apiEndpoint,
   })
 
   const sourceStatus = integrationStatus?.[manifest.id]

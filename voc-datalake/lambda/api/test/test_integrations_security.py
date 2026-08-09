@@ -401,7 +401,13 @@ class TestSourceParameterValidation:
 
     @patch('integrations_handler.secretsmanager')
     def test_uppercase_source_get_rejected(self, mock_secrets, api_gateway_event, lambda_context):
-        """Source with uppercase letters returns 400 on GET before the secret is read."""
+        """Source with uppercase letters returns 400 on GET before the secret is read.
+
+        The error message must say 'source identifier' (not 'credential key') so
+        it is clear which parameter is invalid when debugging a 400.
+        """
+        import json as _json
+
         from integrations_handler import lambda_handler
 
         event = api_gateway_event(
@@ -414,10 +420,21 @@ class TestSourceParameterValidation:
         assert response['statusCode'] == 400
         # Validation runs before the secret is read.
         mock_secrets.get_secret_value.assert_not_called()
+        # Error message must identify it as a source identifier, not a key.
+        # The API returns errors under the 'error' key for ValidationError.
+        body = _json.loads(response['body'])
+        error_text = (body.get('error') or body.get('message') or '').lower()
+        assert 'source identifier' in error_text
 
     @patch('integrations_handler.secretsmanager')
     def test_uppercase_source_put_rejected(self, mock_secrets, api_gateway_event, lambda_context):
-        """Source with uppercase letters returns 400 on PUT before the secret is touched."""
+        """Source with uppercase letters returns 400 on PUT before the secret is touched.
+
+        The error message must say 'source identifier' (not 'credential key') so
+        it is clear which parameter is invalid when debugging a 400.
+        """
+        import json as _json
+
         from integrations_handler import lambda_handler
 
         event = api_gateway_event(
@@ -430,6 +447,11 @@ class TestSourceParameterValidation:
         assert response['statusCode'] == 400
         mock_secrets.get_secret_value.assert_not_called()
         mock_secrets.put_secret_value.assert_not_called()
+        # Error message must identify it as a source identifier, not a key.
+        # The API returns errors under the 'error' key for ValidationError.
+        body = _json.loads(response['body'])
+        error_text = (body.get('error') or body.get('message') or '').lower()
+        assert 'source identifier' in error_text
 
 
 class TestGetKeysValidation:
@@ -596,31 +618,44 @@ class TestValueValidation:
 # These parametrized tests assert that every config key declared in the plugin
 # manifests passes _validate_credential_key.  A regression here means a real
 # field name would be rejected when the frontend tries to save it.
+#
+# The lists are loaded dynamically from the frontend manifests.json so that
+# new plugins and fields are automatically covered without any test update.
 # ---------------------------------------------------------------------------
 
-# Keys from frontend/src/plugins/manifests.json (all plugins, all config keys).
-MANIFEST_KEYS = [
-    # app_reviews_android
-    'app_name', 'package_name', 'sort_by', 'max_reviews_per_run', 'frequency_minutes',
-    # app_reviews_ios
-    'app_id',
-    # s3_import
-    'bucket_name', 'import_prefix', 'processed_prefix',
-    # synthetic_reviews
-    'company_name', 'product_name', 'product_description', 'target_customer',
-    'focus_areas', 'num_reviews', 'sentiment_mix', 'language',
-    # webscraper
-    'configs',
-]
+import json as _json
+import pathlib as _pathlib
 
-# Plugin ids (used as source= path parameters).
-PLUGIN_IDS = [
-    'app_reviews_android',
-    'app_reviews_ios',
-    's3_import',
-    'synthetic_reviews',
-    'webscraper',
-]
+_MANIFESTS_PATH = (
+    _pathlib.Path(__file__).parents[3]  # voc-datalake/
+    / 'frontend' / 'src' / 'plugins' / 'manifests.json'
+)
+
+
+def _load_manifests():
+    """Load plugin manifests from the frontend source tree.
+
+    Falls back to an empty list if the file is absent (e.g. in a minimal CI
+    checkout that does not include the frontend), so the test module still
+    imports cleanly; the parametrized tests will simply be skipped.
+    """
+    if not _MANIFESTS_PATH.exists():
+        return []
+    return _json.loads(_MANIFESTS_PATH.read_text())
+
+
+_MANIFESTS = _load_manifests()
+
+# All unique config keys across all plugins — deduplicated because several
+# plugins share field names like 'app_name', 'sort_by', 'frequency_minutes'.
+MANIFEST_KEYS = sorted({
+    field['key']
+    for manifest in _MANIFESTS
+    for field in manifest.get('config', [])
+})
+
+# Plugin IDs used as `source=` path parameters.
+PLUGIN_IDS = [m['id'] for m in _MANIFESTS]
 
 
 class TestManifestKeysAccepted:
@@ -635,7 +670,7 @@ class TestManifestKeysAccepted:
 
     @pytest.mark.parametrize('plugin_id', PLUGIN_IDS)
     def test_plugin_id_passes_validation(self, plugin_id):
-        """Plugin IDs used as `source` path parameters must pass _validate_credential_key."""
-        from integrations_handler import _validate_credential_key
+        """Plugin IDs used as `source` path parameters must pass _validate_source."""
+        from integrations_handler import _validate_source
         # Must not raise.
-        _validate_credential_key(plugin_id)
+        _validate_source(plugin_id)

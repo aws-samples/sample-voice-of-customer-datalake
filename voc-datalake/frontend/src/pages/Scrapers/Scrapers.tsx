@@ -18,6 +18,7 @@ import { scrapersApi } from '../../api/scrapersApi'
 import ConfirmModal from '../../components/ConfirmModal'
 import { getPluginManifests, getSyntheticPlugins } from '../../plugins'
 import { useConfigStore } from '../../store/configStore'
+import { useIsAdmin } from '../../store/authStore'
 import { useManualImportStore } from '../../store/manualImportStore'
 import { AppConfigCard } from './AppConfigComponents'
 import GeneratorConfigModal from './GeneratorConfigModal'
@@ -280,6 +281,7 @@ function ScrapersContent({
 export default function Scrapers() {
   const { t } = useTranslation('scrapers')
   const { config } = useConfigStore()
+  const isAdmin = useIsAdmin()
   const { setIsModalOpen } = useManualImportStore()
   const [editingScraper, setEditingScraper] = useState<ScraperConfig | null>(null)
   const [isCreating, setIsCreating] = useState(false)
@@ -413,6 +415,7 @@ export default function Scrapers() {
 
       {selectedGenerator == null ? null : <GeneratorConfigModal
         plugin={selectedGenerator}
+        isAdmin={isAdmin}
         onClose={() => {
           setSelectedGenerator(null)
           // Refresh synthetic cards so a just-finished run shows immediately.

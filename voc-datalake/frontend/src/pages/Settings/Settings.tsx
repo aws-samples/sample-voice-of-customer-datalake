@@ -200,7 +200,7 @@ export default function Settings() {
         )}
 
         {activeTab === 'plugins' && (
-          <DataSourcesSection apiEndpoint={apiEndpoint} />
+          <DataSourcesSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
         )}
 
         {activeTab === 'categories' && (
@@ -382,9 +382,10 @@ function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
 
 interface DataSourcesSectionProps {
   readonly apiEndpoint: string
+  readonly isAdmin: boolean
 }
 
-function DataSourcesSection({ apiEndpoint }: DataSourcesSectionProps) {
+function DataSourcesSection({ apiEndpoint, isAdmin }: DataSourcesSectionProps) {
   const pluginManifests = getEnabledPlugins()
 
   return (
@@ -406,7 +407,7 @@ function DataSourcesSection({ apiEndpoint }: DataSourcesSectionProps) {
           </div>
         ) : (
           pluginManifests.map((manifest) => (
-            <SourceCard key={manifest.id} manifest={manifest} apiEndpoint={apiEndpoint} />
+            <SourceCard key={manifest.id} manifest={manifest} apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
           ))
         )}
       </div>
