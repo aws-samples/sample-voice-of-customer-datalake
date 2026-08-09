@@ -164,16 +164,27 @@ class TestScopeEnforcement:
             mcp_handler.TOOL_SCOPE_REQUIREMENTS.update(original_scopes)
 
     def test_every_registered_tool_has_scope_declaration(self):
-        """TOOL_HANDLERS and TOOL_SCOPE_REQUIREMENTS must have identical keys.
+        """TOOL_HANDLERS, TOOL_SCOPE_REQUIREMENTS, and MCP_TOOLS must all have identical keys.
 
         Adding a handler without a corresponding scope entry (or vice-versa)
         breaks this test, signalling the author that the table needs updating.
+        A tool in MCP_TOOLS without a handler returns -32602; a handler not in
+        MCP_TOOLS is silently unreachable — both are caught here.
         """
-        from mcp_handler import TOOL_HANDLERS, TOOL_SCOPE_REQUIREMENTS
+        from mcp_handler import TOOL_HANDLERS, TOOL_SCOPE_REQUIREMENTS, MCP_TOOLS
 
-        assert set(TOOL_HANDLERS.keys()) == set(TOOL_SCOPE_REQUIREMENTS.keys()), (
+        handler_keys = set(TOOL_HANDLERS.keys())
+        scope_keys = set(TOOL_SCOPE_REQUIREMENTS.keys())
+        mcp_names = {t['name'] for t in MCP_TOOLS}
+
+        assert handler_keys == scope_keys, (
             "Mismatch between TOOL_HANDLERS and TOOL_SCOPE_REQUIREMENTS keys. "
             "Every handler must have a declared scope requirement and vice-versa."
+        )
+        assert mcp_names == handler_keys, (
+            f"MCP_TOOLS names {mcp_names} must match TOOL_HANDLERS keys {handler_keys}. "
+            "A tool in MCP_TOOLS without a handler causes -32602; a handler not in "
+            "MCP_TOOLS is silently unreachable."
         )
 
     def test_read_token_rejected_for_write_tool(self):
@@ -253,17 +264,26 @@ class TestScopeEnforcement:
         assert _scope_allows("read", "unknown") is False
 
     def test_unrecognised_required_scope_logs_error(self):
-        """When TOOL_SCOPE_REQUIREMENTS contains an unrecognised value, _scope_allows
+        """When a tool has an unrecognised required_scope value, _handle_tools_call
         logs at ERROR level so the misconfiguration is surfaced in logs rather than
-        silently looking like a token permission problem.
+        silently looking like a token permission problem to the caller.
+
+        The log originates from _handle_tools_call (not the pure _scope_allows
+        predicate) so that the tool name and scope value are available together.
         """
-        import mcp_handler
+        bad_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
         with patch("mcp_handler.logger") as mock_logger:
-            result = mcp_handler._scope_allows("read-write", "write")  # "write" is not valid
-            assert result is False
-            assert mock_logger.error.called, (
-                "_scope_allows must log at ERROR for an unrecognised required_scope value"
+            result = self._call_tool(
+                tool_name="misconfigured_tool",
+                token_scope="read-write",
+                handlers_extra={"misconfigured_tool": bad_handler},
+                scopes_extra={"misconfigured_tool": "write"},  # "write" is not a valid scope
             )
+            assert result["error"]["code"] == -32003
+            assert mock_logger.error.called, (
+                "_handle_tools_call must log at ERROR for an unrecognised required_scope value"
+            )
+        bad_handler.assert_not_called()
 
 
 # ===========================================================================
@@ -279,6 +299,11 @@ class TestPartialResultReporting:
 
         The sentiment counts (from successful reads) must still appear — the
         readable portion of the answer must not be lost.
+
+        With days=1 the loop runs once, making:
+          - 1 daily_total get_item call (raises)
+          - 4 sentiment get_item calls (positive, negative, neutral, mixed)
+        = 5 total get_item calls.
         """
         call_count = 0
 
@@ -296,6 +321,9 @@ class TestPartialResultReporting:
 
         from mcp_handler import _tool_get_metrics_summary
         content = _tool_get_metrics_summary({"days": 1}, {})
+
+        # 1 daily_total (raises) + 4 sentiments = 5 get_item calls for days=1
+        assert call_count == 5, f"Expected 5 get_item calls (1 + 4 sentiments), got {call_count}"
 
         assert len(content) == 1
         payload = json.loads(content[0]["text"])
@@ -359,6 +387,11 @@ class TestPartialResultReporting:
 
         total_feedback, sentiment_breakdown, and top_categories are still
         present so a client that already reads total_feedback does not break.
+
+        With days=1 the loop runs once, making:
+          - 1 daily_total get_item call (raises)
+          - 4 sentiment get_item calls
+        = 5 total get_item calls.
         """
         call_count = 0
 
@@ -377,7 +410,84 @@ class TestPartialResultReporting:
         content = _tool_get_metrics_summary({"days": 1}, {})
         payload = json.loads(content[0]["text"])
 
+        # 1 daily_total (raises) + 4 sentiments = 5 get_item calls for days=1
+        assert call_count == 5, f"Expected 5 get_item calls (1 + 4 sentiments), got {call_count}"
+
         assert "total_feedback" in payload
         assert "sentiment_breakdown" in payload
         assert "top_categories" in payload
         assert "period_days" in payload
+
+    @patch("mcp_handler.aggregates_table", None)
+    def test_aggregates_table_not_configured_includes_is_partial(self):
+        """When aggregates_table is None, the response includes is_partial=True.
+
+        The docstring promises is_partial is always present in the response.
+        The early-exit path must honour that invariant so clients can parse
+        is_partial unconditionally without a KeyError.
+        """
+        from mcp_handler import _tool_get_metrics_summary
+        content = _tool_get_metrics_summary({"days": 1}, {})
+        assert len(content) == 1
+        payload = json.loads(content[0]["text"])
+        assert "is_partial" in payload, "is_partial must be present even on the early-exit path"
+        assert payload["is_partial"] is True
+
+
+# ===========================================================================
+# 4. Non-string token_hash type safety
+# ===========================================================================
+
+class TestTokenHashTypeSafety:
+    """_authenticate must not raise when a DynamoDB row has a non-str token_hash."""
+
+    def _make_event(self, token: str = "voc_testtoken", project_id: str = "proj-1") -> dict:
+        return {
+            "headers": {
+                "authorization": f"Bearer {token}",
+                "x-project-id": project_id,
+            }
+        }
+
+    @patch("mcp_handler.projects_table")
+    def test_non_string_token_hash_skipped(self, mock_table):
+        """A DynamoDB item with a non-str token_hash is skipped, not raised.
+
+        A malformed/migrated row (e.g. token_hash stored as Binary or Decimal)
+        must not cause an AttributeError that propagates out of _authenticate
+        and turns a single bad row into a 500 for every request in that project.
+        """
+        from decimal import Decimal
+        # Row 1: non-string hash (simulates a malformed/migrated row)
+        # Row 2: correct string hash that won't match (so _authenticate returns None)
+        mock_table.query.return_value = {
+            "Items": [
+                {"sk": "TOKEN#1", "token_hash": Decimal("12345"), "scope": "read"},
+                {"sk": "TOKEN#2", "token_hash": b"binary_bytes", "scope": "read"},
+                {"sk": "TOKEN#3", "token_hash": "correcthash_that_wont_match", "scope": "read"},
+            ]
+        }
+
+        from mcp_handler import _authenticate
+        # Must return None without raising
+        result = _authenticate(self._make_event("voc_testtoken"))
+        assert result is None, "Non-string token_hash must not raise; should return None"
+
+    @patch("mcp_handler.projects_table")
+    def test_non_string_token_hash_logs_warning(self, mock_table):
+        """A non-str token_hash row triggers a WARNING log with the type name, not the value."""
+        from decimal import Decimal
+        mock_table.query.return_value = {
+            "Items": [
+                {"sk": "TOKEN#1", "token_hash": Decimal("99"), "scope": "read"},
+            ]
+        }
+
+        from mcp_handler import _authenticate
+        with patch("mcp_handler.logger") as mock_logger:
+            _authenticate(self._make_event("voc_testtoken"))
+            assert mock_logger.warning.called, "A non-str token_hash must trigger a WARNING log"
+            # The log must include the type name but NOT the value itself
+            call_kwargs = mock_logger.warning.call_args
+            extra = call_kwargs[1].get("extra", {}) if call_kwargs[1] else {}
+            assert "type" in extra, "WARNING extra must include 'type' (the type name)"

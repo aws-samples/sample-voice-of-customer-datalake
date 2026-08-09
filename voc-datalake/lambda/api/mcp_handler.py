@@ -109,6 +109,17 @@ def _authenticate(event: dict) -> dict | None:
 
     for item in response.get('Items', []):
         stored_hash = item.get('token_hash', '')
+        # Guard against malformed/migrated rows where token_hash is stored as
+        # a non-string type (Binary, Decimal, …).  Calling .encode() on such a
+        # value would raise AttributeError and turn one bad row into a 500 for
+        # every request in that project.  Skip the row and log so an operator
+        # can clean it up, but do not expose the value itself.
+        if not isinstance(stored_hash, str):
+            logger.warning(
+                'Unexpected token_hash type in DynamoDB item; skipping row',
+                extra={'type': type(stored_hash).__name__},
+            )
+            continue
         # Constant-time comparison prevents timing-based hash enumeration.
         # Both operands must be the same type (str); encode to bytes so
         # compare_digest can work even if one value is unexpectedly empty.
@@ -306,7 +317,7 @@ def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
     and the failure is logged at WARNING level — without any token or hash.
     """
     if not aggregates_table:
-        return [{"type": "text", "text": "Aggregates table not configured"}]
+        return [{"type": "text", "text": json.dumps({"is_partial": True, "error": "Aggregates table not configured"})}]
 
     days = min(args.get('days', 7), 30)
     current_date = datetime.now(timezone.utc)
@@ -568,6 +579,9 @@ def _handle_tools_list(req_id: Any, _params: dict) -> dict:
 def _scope_allows(token_scope: str, required_scope: str) -> bool:
     """Return True when *token_scope* satisfies *required_scope*.
 
+    Pure predicate — no side effects.  Callers are responsible for logging
+    when this returns False.
+
     "read-write" satisfies both "read" and "read-write".
     "read" satisfies only "read".
     Any other value is treated as insufficient.
@@ -576,12 +590,6 @@ def _scope_allows(token_scope: str, required_scope: str) -> bool:
         return token_scope in ("read", "read-write")
     if required_scope == "read-write":
         return token_scope == "read-write"
-    # required_scope is not a recognised value — this is a server-side
-    # misconfiguration in TOOL_SCOPE_REQUIREMENTS, not a token problem.
-    logger.error(
-        "Unrecognised required_scope value in TOOL_SCOPE_REQUIREMENTS",
-        extra={"required_scope": required_scope},
-    )
     return False
 
 
@@ -603,10 +611,19 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
 
     token_scope = token_info.get('scope', '')
     if not _scope_allows(token_scope, required_scope):
-        logger.warning(
-            "Scope insufficient for tool",
-            extra={"tool": tool_name, "required": required_scope, "token_scope": token_scope},
-        )
+        # Distinguish between a valid-but-insufficient token scope and a
+        # server-side misconfiguration in TOOL_SCOPE_REQUIREMENTS.
+        _VALID_REQUIRED_SCOPES = frozenset({"read", "read-write"})
+        if required_scope not in _VALID_REQUIRED_SCOPES:
+            logger.error(
+                "Unrecognised required_scope value in TOOL_SCOPE_REQUIREMENTS",
+                extra={"tool": tool_name, "required_scope": required_scope},
+            )
+        else:
+            logger.warning(
+                "Scope insufficient for tool",
+                extra={"tool": tool_name, "required": required_scope, "token_scope": token_scope},
+            )
         return _jsonrpc_error(req_id, -32003, f"Forbidden: token scope '{token_scope}' cannot call '{tool_name}'")
 
     try:
