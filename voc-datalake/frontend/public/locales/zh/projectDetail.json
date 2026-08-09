@@ -8,6 +8,7 @@
       "custom": "自定义",
       "prd": "PRD 文档",
       "prfaq": "PR/FAQ 文档",
+      "product_report": "产品报告",
       "research": "研究"
     },
     "documents": "文档 ({{selected}}/{{total}})",

@@ -1711,26 +1711,45 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
     return '\n'.join(lines)
 
 
+# Document types that must never appear in a Kiro export payload.
+# Prototypes are generated HTML artifacts (or S3-backed rendered pages with no
+# text content) — exporting them anchors the coding agent on stale output.
+# DocumentExportMenu.tsx already returns null for S3-only prototypes; this
+# exclusion makes the two export paths agree rather than contradict each other.
+# This set is the backend authority; the frontend constant must match it
+# (enforced by test_kiro_exportable_types_lockstep.py).
+KIRO_EXPORT_EXCLUDED_TYPES: frozenset[str] = frozenset({'prototype'})
+
+
 @tracer.capture_method
 def autoseed_project(project_id: str, persona_ids: list[str] | None = None, document_ids: list[str] | None = None) -> dict:
     """Generate a Kiro autoseed payload with selected project context as files.
-    
+
     Args:
         project_id: The project to export.
         persona_ids: Optional list of persona IDs to include. None means all.
         document_ids: Optional list of document IDs to include. None means all.
+
+    Documents whose document_type is in KIRO_EXPORT_EXCLUDED_TYPES are always
+    dropped, even if their ids appear in document_ids.
     """
     project_data = get_project(project_id)
     project = project_data['project']
     all_personas = project_data['personas']
     all_documents = project_data['documents']
 
-    # Filter to selected items (None = include all)
+    # Filter to selected items (None = include all), then strip excluded types.
+    # The type filter is applied AFTER the id filter so an explicitly requested
+    # prototype id is also dropped — callers cannot bypass the exclusion.
     personas = all_personas if persona_ids is None else [
         p for p in all_personas if p.get('persona_id') in persona_ids
     ]
-    documents = all_documents if document_ids is None else [
+    candidate_docs = all_documents if document_ids is None else [
         d for d in all_documents if d.get('document_id') in document_ids
+    ]
+    documents = [
+        d for d in candidate_docs
+        if d.get('document_type') not in KIRO_EXPORT_EXCLUDED_TYPES
     ]
 
     project_name = project.get('name', 'project')

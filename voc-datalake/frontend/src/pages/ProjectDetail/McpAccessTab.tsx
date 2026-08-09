@@ -31,7 +31,10 @@ import { api } from '../../api/client'
 import { stripTrailingSlashes } from '../../api/baseUrl'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { useConfigStore } from '../../store/configStore'
-import { buildAutoseedParams, canCopyExport } from './autoseedSelection'
+import {
+  buildAutoseedParams, canCopyExport, filterExportableDocs,
+  isKiroExportableDocType, type KiroExportableDocType,
+} from './autoseedSelection'
 import AutoseedContent from './AutoseedContent'
 import CollapsibleSection from './CollapsibleSection'
 import KiroExportSettings from './KiroExportSettings'
@@ -80,22 +83,37 @@ function buildMcpConfig(baseUrl: string, projectId: string): string {
   }, null, 2)
 }
 
-type DocType = 'prd' | 'prfaq' | 'research' | 'custom'
+/**
+ * Side by side from `lg` up, stacked below. Named because both return paths
+ * (normal and token-error) must lay out identically, and takes EXACTLY two
+ * children — the token-error path wraps its two for that reason.
+ *
+ * `items-start` keeps the shorter card at its own height. Grid children need
+ * `min-w-0`: they default to `min-width: auto`, so the curl snippet's long
+ * unbroken URL would otherwise push its track past the even split.
+ */
+const TWO_COLUMN_LAYOUT = 'grid grid-cols-1 lg:grid-cols-2 gap-4 items-start'
 
-function isValidDocType(value: string): value is DocType {
-  return value === 'prd' || value === 'prfaq' || value === 'research' || value === 'custom'
-}
+/**
+ * Marks the grid so a test can count its columns without reaching through the
+ * card's utility classes. Exported because the assertion belongs to this
+ * container, and a literal duplicated in the test would drift from it.
+ */
+export const COLUMNS_TESTID = 'export-mcp-columns'
 
-function groupDocumentsByType(documents: ProjectDocument[]): Record<DocType, ProjectDocument[]> {
-  const groups: Record<DocType, ProjectDocument[]> = {
+function groupDocumentsByType(documents: ProjectDocument[]): Record<KiroExportableDocType, ProjectDocument[]> {
+  const groups: Record<KiroExportableDocType, ProjectDocument[]> = {
     prd: [],
     prfaq: [],
     research: [],
     custom: [],
+    product_report: [],
   }
   for (const doc of documents) {
-    const docType = isValidDocType(doc.document_type) ? doc.document_type : 'custom'
-    groups[docType].push(doc)
+    if (isKiroExportableDocType(doc.document_type)) {
+      groups[doc.document_type].push(doc)
+    }
+    // Non-exportable types (prototype) are silently skipped.
   }
   return groups
 }
@@ -214,7 +232,7 @@ function SharedPickers({
           onToggleAll={onToggleAllDocuments}
         >
           {Object.keys(docGroups)
-            .filter(isValidDocType)
+            .filter(isKiroExportableDocType) // narrows string[] → KiroExportableDocType[] for TS; runtime no-op (groupDocumentsByType only creates exportable-type keys)
             .filter((type) => docGroups[type].length > 0)
             .map((type) => {
               const docs = docGroups[type]
@@ -322,7 +340,8 @@ function ExportCard({
   }, [projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length, markCopied, t])
 
   return (
-    <div className="bg-white rounded-xl p-6 border">
+    // min-w-0: this is a grid child in TWO_COLUMN_LAYOUT.
+    <div className="bg-white rounded-xl p-6 border min-w-0">
       <div className="flex items-center gap-3 mb-4">
         <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
           <Download size={20} className="text-green-600" />
@@ -432,6 +451,12 @@ export default function McpAccessTab({
   const { config } = useConfigStore()
   const { t } = useTranslation('projectDetail')
 
+  // Only exportable document types appear in the picker and the payload.
+  // Prototypes are the sole exclusion — see KIRO_EXPORT_EXCLUDED_TYPES in
+  // projects.py, which this list mirrors. Product reports ARE exported: they are
+  // markdown describing the current product, which is grounding a coding agent wants.
+  const exportableDocs = useMemo(() => filterExportableDocs(documents), [documents])
+
   // ── Shared picker state (used by both cards) ──────────────────────────────
   //
   // DESELECTED ids are stored, and the selection is DERIVED from the props. The
@@ -445,8 +470,12 @@ export default function McpAccessTab({
   // that arrive after mount.
   const [deselectedPersonaIds, setDeselectedPersonaIds] = useState<Set<string>>(() => new Set())
   const [deselectedDocumentIds, setDeselectedDocumentIds] = useState<Set<string>>(() => new Set())
+  // Collapsed by default. Each section's header already states its selection as
+  // "Personas (3/4)" and carries the Select all / Deselect all control, so the
+  // count — the thing a user needs before copying — is visible without the rows.
+  // Expanding is for changing the selection, not for reading it.
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    () => new Set(['personas', 'documents']),
+    () => new Set(),
   )
 
   const selectedPersonaIds = useMemo(
@@ -454,8 +483,8 @@ export default function McpAccessTab({
     [personas, deselectedPersonaIds],
   )
   const selectedDocumentIds = useMemo(
-    () => new Set(documents.map((d) => d.document_id).filter((id) => !deselectedDocumentIds.has(id))),
-    [documents, deselectedDocumentIds],
+    () => new Set(exportableDocs.map((d) => d.document_id).filter((id) => !deselectedDocumentIds.has(id))),
+    [exportableDocs, deselectedDocumentIds],
   )
 
   // Toggling a row flips its membership in the DESELECTED set, so the checkbox
@@ -483,8 +512,8 @@ export default function McpAccessTab({
   }, [personas])
 
   const toggleAllDocuments = useCallback((select: boolean) => {
-    setDeselectedDocumentIds(select ? new Set() : new Set(documents.map((d) => d.document_id)))
-  }, [documents])
+    setDeselectedDocumentIds(select ? new Set() : new Set(exportableDocs.map((d) => d.document_id)))
+  }, [exportableDocs])
 
   const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) => {
@@ -536,14 +565,14 @@ export default function McpAccessTab({
   // none selected would emit a curl that omits the filter and makes Kiro fetch
   // everything the user deselected. Both delivery paths share one guard.
   const hasPickerSelection = canCopyExport(
-    selectedPersonaIds, personas.length, selectedDocumentIds, documents.length,
+    selectedPersonaIds, personas.length, selectedDocumentIds, exportableDocs.length,
   )
 
   // Build the autoseed curl URL from shared selection (used by Card 2)
   const apiBase = stripTrailingSlashes(config.apiEndpoint === '' ? '' : config.apiEndpoint)
   const autoseedCurlUrl = useMemo(() => {
     const { personaIds, documentIds } = buildAutoseedParams(
-      selectedPersonaIds, personas.length, selectedDocumentIds, documents.length,
+      selectedPersonaIds, personas.length, selectedDocumentIds, exportableDocs.length,
     )
     const params = new URLSearchParams()
     if (personaIds != null) params.set('persona_ids', personaIds.join(','))
@@ -551,14 +580,14 @@ export default function McpAccessTab({
     const qs = params.toString()
     const base = `${apiBase}/mcp/autoseed/${projectId}`
     return qs === '' ? base : `${base}?${qs}`
-  }, [apiBase, projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length])
+  }, [apiBase, projectId, selectedPersonaIds, selectedDocumentIds, personas.length, exportableDocs.length])
 
   // ── Card 1 — Export ───────────────────────────────────────────────────────
   const exportCard = (
     <ExportCard
       projectId={projectId}
       personas={personas}
-      documents={documents}
+      documents={exportableDocs}
       selectedPersonaIds={selectedPersonaIds}
       selectedDocumentIds={selectedDocumentIds}
       expandedSections={expandedSections}
@@ -577,33 +606,37 @@ export default function McpAccessTab({
   // ── Card 2 — MCP Access (error branch) ───────────────────────────────────
   if (isError) {
     return (
-      <div className="space-y-4">
+      <div className={TWO_COLUMN_LAYOUT} data-testid={COLUMNS_TESTID}>
         {exportCard}
-        <McpAccessErrorState />
-        <CollapsibleSection
-          title={t('autoseed.title')}
-          expanded={autoseedExpanded}
-          onToggle={() => setAutoseedExpanded((prev) => !prev)}
-        >
-          <AutoseedContent
-            personas={personas}
-            documents={documents}
-            curlUrl={autoseedCurlUrl}
-            hasSelection={hasPickerSelection}
-          />
-        </CollapsibleSection>
+        {/* Wrapped so the grid still has exactly two children: the error state
+            and the autoseed section together are the MCP column. */}
+        <div className="space-y-4 min-w-0">
+          <McpAccessErrorState />
+          <CollapsibleSection
+            title={t('autoseed.title')}
+            expanded={autoseedExpanded}
+            onToggle={() => setAutoseedExpanded((prev) => !prev)}
+          >
+            <AutoseedContent
+              personas={personas}
+              documents={exportableDocs}
+              curlUrl={autoseedCurlUrl}
+              hasSelection={hasPickerSelection}
+            />
+          </CollapsibleSection>
+        </div>
       </div>
     )
   }
 
   // ── Card 2 — MCP Access (normal branch) ──────────────────────────────────
   return (
-    <div className="space-y-4">
+    <div className={TWO_COLUMN_LAYOUT} data-testid={COLUMNS_TESTID}>
       {/* Card 1 — Export (no API token); the template editor is a section inside it */}
       {exportCard}
 
       {/* Card 2 — MCP Access (API token required) */}
-      <div className="bg-white rounded-xl p-6 border space-y-4">
+      <div className="bg-white rounded-xl p-6 border space-y-4 min-w-0">
         <McpHeader
           showCreateForm={showCreateForm}
           newlyCreatedToken={newlyCreatedToken}
@@ -673,7 +706,7 @@ export default function McpAccessTab({
         >
           <AutoseedContent
             personas={personas}
-            documents={documents}
+            documents={exportableDocs}
             curlUrl={autoseedCurlUrl}
             hasSelection={hasPickerSelection}
           />

@@ -8,6 +8,7 @@
       "custom": "Personalizado",
       "prd": "PRD",
       "prfaq": "PR/FAQ",
+      "product_report": "Informes de producto",
       "research": "Investigación"
     },
     "documents": "Documentos ({{selected}}/{{total}})",
