@@ -117,11 +117,13 @@ class TestBaseWebhookSendToQueue:
 
         mock_get_secret.return_value = {}
         mock_sqs_client = MagicMock()
-        # Return a proper SQS response so the helper can inspect Successful/Failed.
-        mock_sqs_client.send_message_batch.return_value = {
-            'Successful': [{'Id': str(i)} for i in range(10)],
-            'Failed': [],
-        }
+        # Use side_effect so each call gets a response whose Successful list
+        # matches the actual batch size (10, 5) — a single return_value would
+        # overclaim 10 successes for the last batch of 5.
+        mock_sqs_client.send_message_batch.side_effect = [
+            {'Successful': [{'Id': str(i)} for i in range(10)], 'Failed': []},
+            {'Successful': [{'Id': str(i)} for i in range(5)],  'Failed': []},
+        ]
         mock_sqs.return_value = mock_sqs_client
 
         class TestWebhook(BaseWebhook):
@@ -131,10 +133,14 @@ class TestBaseWebhookSendToQueue:
         webhook = TestWebhook()
 
         items = [{'id': f'item-{i}', 'text': f'Text {i}'} for i in range(15)]
-        with patch('_shared.sqs_utils.metrics'):
+        with patch('_shared.sqs_utils.metrics') as mock_metrics:
             webhook.send_to_queue(items)
 
         assert mock_sqs_client.send_message_batch.call_count == 2
+        # Metric must reflect the actual confirmed count (15), not 20
+        mock_metrics.add_metric.assert_called_once_with(
+            name='WebhookItemsIngested', unit='Count', value=15
+        )
 
     @patch('_shared.base_webhook.get_sqs_client')
     @patch('_shared.base_webhook.get_secret')

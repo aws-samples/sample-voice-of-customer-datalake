@@ -18,6 +18,7 @@ No metric / no call for empty list                  test_empty_items_is_no_op
 Happy path: all succeed, metric = len(items)        test_all_successful_metric_equals_item_count
 Batch size: ≤10 entries per send_message_batch call test_batches_are_at_most_ten_entries
 Mixed success+failure in one response               test_partial_batch_failure_raises_and_counts_correctly
+Failed entry missing Id field raises RuntimeError   test_missing_id_field_raises_without_index_error
 Full message body not logged (only id field)        test_personal_data_not_logged
 Return value = successfully enqueued count          test_return_value_is_enqueued_count
 """
@@ -275,6 +276,47 @@ class TestSendMessagesToQueueFailureHandling:
         # Metric must be 3 (successful), not 5 (attempted)
         assert emitted_value == 3, (
             f"Metric emitted {emitted_value} but expected 3 (the number SQS confirmed)"
+        )
+
+    def test_missing_id_field_raises_without_index_error(self):
+        """A Failed entry with no Id field must raise RuntimeError without
+        causing an IndexError or silently attributing the failure to batch[0].
+
+        Reverts-to-catch: the old ``int(failed.get('Id', 0))`` default maps a
+        missing Id to index 0, silently blaming the wrong item and potentially
+        leaving the actual failed entry untracked.  The guard introduced by
+        this fix catches the missing Id, logs an error, and appends
+        ('unknown', code) to permanent_failures so RuntimeError is still raised.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "item-0", "text": "x"}, {"id": "item-1", "text": "y"}]
+        # Simulate an SQS response that omits the Id field entirely.
+        response_with_missing_id = {
+            "Successful": [],
+            "Failed": [
+                {
+                    # No 'Id' key at all
+                    "SenderFault": True,
+                    "Code": "MessageTooLarge",
+                    "Message": "test error",
+                }
+            ],
+        }
+        sqs = _make_sqs([response_with_missing_id])
+
+        with patch("_shared.sqs_utils.metrics"), patch("_shared.sqs_utils.logger") as mock_logger, pytest.raises(RuntimeError):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+            )
+
+        # The error path must have logged the missing-Id case
+        error_calls = [str(call) for call in mock_logger.error.call_args_list]
+        assert any("missing Id" in c for c in error_calls), (
+            "Expected an error log about the missing Id field"
         )
 
     def test_partial_batch_failure_raises_and_counts_correctly(self):

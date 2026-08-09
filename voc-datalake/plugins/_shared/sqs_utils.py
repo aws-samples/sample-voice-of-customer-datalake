@@ -16,11 +16,6 @@ any items could not be enqueued so callers cannot silently report success.
 """
 
 import json
-import os
-import sys
-
-# Ensure the lambda shared module is importable when this file is used directly
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, metrics
 
@@ -94,7 +89,20 @@ def send_messages_to_queue(
             total_sent += len(resp.get("Successful", []))
 
             for failed in resp.get("Failed", []):
-                idx = int(failed.get("Id", 0))
+                raw_id = failed.get("Id")
+                if raw_id is None:
+                    # A missing Id field cannot be mapped back to an item in
+                    # the batch.  Log the full SQS entry (contains no user
+                    # data — only SQS error metadata) and treat as permanent.
+                    logger.error(
+                        "SQS Failed entry missing Id field; entry=%s label=%s",
+                        failed,
+                        log_label,
+                    )
+                    error_code = failed.get("Code", "Unknown")
+                    permanent_failures.append(("unknown", error_code))
+                    continue
+                idx = int(raw_id)
                 failed_item = batch[idx]
                 # Use the item's own id field for logging only — never log the
                 # full message body because it may contain personal data.

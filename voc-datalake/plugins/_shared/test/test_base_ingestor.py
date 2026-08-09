@@ -270,11 +270,14 @@ class TestBaseIngestorSendToQueue:
         from _shared.base_ingestor import BaseIngestor
 
         mock_sqs_client = MagicMock()
-        # Return proper Successful/Failed responses so the helper can inspect them.
-        mock_sqs_client.send_message_batch.return_value = {
-            'Successful': [{'Id': str(i)} for i in range(10)],
-            'Failed': [],
-        }
+        # Use side_effect so each call gets a response whose Successful list
+        # matches the actual batch size (10, 10, 5) — a single return_value
+        # would overclaim 10 successes for the last batch of 5.
+        mock_sqs_client.send_message_batch.side_effect = [
+            {'Successful': [{'Id': str(i)} for i in range(10)], 'Failed': []},
+            {'Successful': [{'Id': str(i)} for i in range(10)], 'Failed': []},
+            {'Successful': [{'Id': str(i)} for i in range(5)],  'Failed': []},
+        ]
         mock_sqs.return_value = mock_sqs_client
         mock_dynamo.return_value.Table.return_value = MagicMock()
         mock_get_secret.return_value = {}
@@ -285,12 +288,16 @@ class TestBaseIngestorSendToQueue:
 
         ingestor = TestIngestor()
 
-        # Send 25 items - should result in 3 batches
+        # Send 25 items - should result in 3 batches (10 + 10 + 5)
         items = [{'id': f'item-{i}', 'text': f'Text {i}'} for i in range(25)]
-        with patch('_shared.sqs_utils.metrics'):
+        with patch('_shared.sqs_utils.metrics') as mock_metrics:
             ingestor.send_to_queue(items)
 
         assert mock_sqs_client.send_message_batch.call_count == 3
+        # Metric must reflect the actual confirmed count (25), not 30
+        mock_metrics.add_metric.assert_called_once_with(
+            name='ItemsIngested', unit='Count', value=25
+        )
 
     @patch('_shared.base_ingestor.get_dynamodb_resource')
     @patch('_shared.base_ingestor.get_s3_client')
