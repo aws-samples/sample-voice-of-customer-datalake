@@ -64,6 +64,10 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
  * string at the end of the trail — so the child crumb shows the record's own name
  * once the page has loaded it, and this generic label until then.
  *
+ * Lower precedence than SEGMENT_CRUMBS: a child that has a label of its own is a
+ * route, not a record. `feedback` appears in both tables for that reason — the
+ * segment itself is the Categories crumb, its child is a feedback item.
+ *
  * `route coverage` in Breadcrumbs.test.tsx holds both tables to the real router:
  * every layout route needs a label and every `:param` route needs a stand-in, so
  * a new `/thing/:id` page cannot quietly put an id back in the header.
@@ -97,18 +101,24 @@ export function buildCrumbs(
     { label: t('common:breadcrumbs.home'), path: '/', isHome: true },
     ...pathSegments.map((segment, index) => {
       const segmentPath = '/' + pathSegments.slice(0, index + 1).join('/')
+
+      // A segment with a label of its own is a route, whatever its parent is:
+      // resolving the record branch first would label a future `/projects/new`
+      // as "Project" even with a correct entry in the table below.
+      const route = SEGMENT_CRUMBS[segment]
+      if (route !== undefined) {
+        return { label: t(route.labelKey), path: route.path ?? segmentPath, isHome: false }
+      }
+
       const record = index === 0 ? undefined : RECORD_CRUMBS[pathSegments[index - 1]]
       if (record !== undefined) {
         return { label: recordName ?? t(record.labelKey), path: segmentPath, isHome: false }
       }
-      // No entry means a route with no breadcrumb label, which is a wiring bug
-      // rather than user data — the raw segment is the most useful thing to show.
-      const route = SEGMENT_CRUMBS[segment]
-      return {
-        label: route === undefined ? segment : t(route.labelKey),
-        path: route?.path ?? segmentPath,
-        isHome: false,
-      }
+
+      // Neither: a route with no breadcrumb label, which is a wiring bug rather
+      // than user data — the raw segment is the most useful thing to show, and
+      // `route coverage` in Breadcrumbs.test.tsx keeps real routes out of here.
+      return { label: segment, path: segmentPath, isHome: false }
     }),
   ]
 }
