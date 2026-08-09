@@ -26,7 +26,7 @@
  * @module pages/ProblemAnalysis/useProblemFeedback
  */
 
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { DateRangeParams, FeedbackItem } from '../../api/client'
@@ -118,6 +118,11 @@ export function useProblemFeedback(
   // between settles, so this recomputes per page rather than per render.
   const items = useMemo(() => collectItems(data?.pages), [data])
 
+  // Stable identity so a memoized consumer isn't re-rendered by the handler.
+  const retry = useCallback(() => {
+    void refetch()
+  }, [refetch])
+
   // The walk stopped early with rows still unread: the budget ran out, or a
   // page failed. A failed page has to count here too — otherwise a mid-walk
   // error reproduces the very defect this hook exists to fix, presenting short
@@ -130,9 +135,7 @@ export function useProblemFeedback(
     isLoadingMore: isFetchingNextPage,
     loadedCount: items.length,
     isError,
-    retry: () => {
-      void refetch()
-    },
+    retry,
     ...summarizeCoverage(data?.pages, items.length, stoppedEarly),
   }
 }

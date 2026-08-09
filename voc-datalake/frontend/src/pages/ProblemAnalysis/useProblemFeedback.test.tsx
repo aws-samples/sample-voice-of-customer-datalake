@@ -5,7 +5,7 @@
  * the endpoint clamped it to 100 without saying so, and every stat card and
  * tree level was computed from that first page as if it were the whole window.
  */
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const mockGetFeedback = vi.fn()
@@ -211,7 +211,11 @@ describe('useProblemFeedback', () => {
       await waitFor(() => expect(result.current.isError).toBe(true))
 
       serveWindow(150)
-      result.current.retry()
+      // `act` keeps the state update the retry triggers inside React's batch,
+      // so the run is free of act warnings rather than merely correct.
+      await act(async () => {
+        result.current.retry()
+      })
 
       await waitFor(() => expect(result.current.loadedCount).toBe(150))
       expect(result.current.isError).toBe(false)
@@ -229,7 +233,9 @@ describe('useProblemFeedback', () => {
       expect(result.current.isPartial).toBe(false)
 
       mockGetFeedback.mockRejectedValue(new Error('boom'))
-      result.current.retry()
+      await act(async () => {
+        result.current.retry()
+      })
 
       await waitFor(() => expect(result.current.isError).toBe(true))
       expect(result.current.isPartial).toBe(false)

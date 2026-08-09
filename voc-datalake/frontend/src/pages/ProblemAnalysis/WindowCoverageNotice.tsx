@@ -58,10 +58,16 @@ export function WindowCoverageNotice({
 
   if (hasFailed && loadedCount === 0) {
     return (
-      <div role="alert" className="text-center">
+      // No alignment of its own: the caller centres this in the empty page and
+      // leaves the coverage line under the stat row left-aligned, so imposing
+      // one here would fight one of them.
+      <div role="alert">
         <p className={className}>{t('stats.loadFailed')}</p>
         {onRetry && (
+          // `type="button"` is load-bearing: the default is `submit`, which
+          // would post any form this notice were ever nested in.
           <button
+            type="button"
             onClick={onRetry}
             className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
           >
