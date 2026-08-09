@@ -649,7 +649,15 @@ export class VocCoreStack extends cdk.Stack {
       userPoolClientName: uniqueName('voc-web-client'),
       authFlows: { userPassword: true, userSrp: true },
       oAuth: {
-        flows: { authorizationCodeGrant: true, implicitCodeGrant: true },
+        flows: {
+          authorizationCodeGrant: true,
+          // implicitCodeGrant is disabled: it is deprecated in OAuth 2.1, returns
+          // tokens in the URL fragment (browser history / Referer leakage), and
+          // cannot be protected by PKCE. The app signs in via SRP
+          // (amazon-cognito-identity-js) and never uses the hosted-UI redirect
+          // flow, so nothing here depends on it.
+          implicitCodeGrant: false,
+        },
         scopes: [cognito.OAuthScope.EMAIL, cognito.OAuthScope.OPENID, cognito.OAuthScope.PROFILE],
         callbackUrls,
         logoutUrls,
