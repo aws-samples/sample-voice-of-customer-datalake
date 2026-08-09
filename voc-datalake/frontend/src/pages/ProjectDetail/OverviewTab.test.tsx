@@ -31,7 +31,6 @@ const defaultProps = {
   onRunResearch: vi.fn(),
   onRemixDocuments: vi.fn(),
   onOpenProductTool: vi.fn(),
-  onSaveKiroPrompt: vi.fn(),
 }
 
 const persona = (id: string): ProjectPersona => ({
@@ -131,14 +130,9 @@ describe('OverviewTab', () => {
     expect(remixButton).not.toBeDisabled()
   })
 
-  it('renders Kiro Export Settings card', () => {
+  it('does not render Kiro Export Settings on Overview tab (moved to Export / MCP tab)', () => {
     render(<OverviewTab {...defaultProps} />)
-    expect(screen.getByText('Kiro Export Settings')).toBeInTheDocument()
-  })
-
-  it('shows empty state when no export prompt configured', () => {
-    render(<OverviewTab {...defaultProps} />)
-    expect(screen.getByText(/No Kiro export prompt configured/)).toBeInTheDocument()
+    expect(screen.queryByText('Kiro Export Settings')).not.toBeInTheDocument()
   })
 
   // ── U8 ──────────────────────────────────────────────────────────────────────

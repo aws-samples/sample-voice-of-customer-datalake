@@ -1,6 +1,6 @@
 /**
  * Generates the Kiro autoseed prompt text for clipboard copy.
- * Single source of truth — used by both AutoseedCard and AutoseedContent.
+ * Single source of truth — used by AutoseedContent (Card 2, MCP Access section).
  */
 export function generateKiroPrompt(curlUrl: string): string {
   return `Seed my workspace with project context from VoC Data Lake.

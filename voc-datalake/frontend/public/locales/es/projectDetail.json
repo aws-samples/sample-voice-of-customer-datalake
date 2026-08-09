@@ -1,5 +1,6 @@
 {
   "autoseed": {
+    "copyFailed": "Error al copiar — inténtelo de nuevo.",
     "copyKiroPrompt": "Copiar Prompt de Kiro",
     "description": "Selecciona personas y documentos para importar a un workspace de Kiro",
     "deselectAll": "Deseleccionar todo",
@@ -85,6 +86,15 @@
       "started": "Iniciado: síguelo en Tareas en segundo plano."
     },
     "selectDocument": "Selecciona un documento"
+  },
+  "export": {
+    "copyContext": "Copiar al portapapeles",
+    "copyCopied": "¡Copiado!",
+    "copyFailed": "Error al copiar — inténtelo de nuevo.",
+    "description": "Copia el contexto del proyecto al portapapeles — sin token de API",
+    "emptyHint": "Genera personas o documentos primero para habilitar la exportación.",
+    "selectAtLeastOne": "Selecciona al menos un elemento en cada sección; de lo contrario, la exportación incluiría todo.",
+    "title": "Exportar"
   },
   "importPersona": {
     "aiImportDesc": "Claude extraerá información de persona de tu {{type}} y creará una persona estructurada con un avatar generado por IA.",
@@ -394,7 +404,7 @@
   "tabs": {
     "aiChat": "Chat IA",
     "documents": "Documentos",
-    "mcpAccess": "Acceso MCP",
+    "mcpAccess": "Exportar / MCP",
     "overview": "Descripción General",
     "personas": "Arquetipos",
     "product": "Producto"

@@ -1,5 +1,5 @@
 /**
- * Shared picker UI components used by AutoseedCard and AutoseedContent.
+ * Shared picker UI components used by the Export / MCP tab (McpAccessTab).
  */
 import {
   ChevronDown, ChevronRight,

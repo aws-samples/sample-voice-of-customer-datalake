@@ -1,128 +1,62 @@
 /**
  * AutoseedContent - Inner content for the Kiro Autoseed collapsible section.
- * Picker UI for selecting personas and documents to autoseed into a Kiro workspace.
- * Generates a Kiro prompt with curl command that includes selected IDs as query params.
+ * Displays the generated curl prompt for seeding a Kiro workspace.
+ *
+ * The curlUrl is built at the tab level from the shared persona/document
+ * selection (held in McpAccessTab) and passed in as a prop, so this component
+ * does not need its own pickers — the selection that drives Card 1 (Export) and
+ * Card 2 (MCP Access) is a single shared state rendered once above both cards.
  */
 import {
   Copy, Check,
 } from 'lucide-react'
 import {
-  useState, useCallback, useMemo,
+  useState, useCallback, useId,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { stripTrailingSlashes } from '../../api/baseUrl'
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { useConfigStore } from '../../store/configStore'
 import { generateKiroPrompt } from './generateKiroPrompt'
-import {
-  PickerSection, CheckboxItem,
-} from './PickerComponents'
 import type {
   ProjectPersona, ProjectDocument,
 } from '../../api/types'
 
 interface AutoseedContentProps {
-  readonly projectId: string
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
-}
-
-type DocType = 'prd' | 'prfaq' | 'research' | 'custom'
-
-const DOC_TYPE_LABELS: Record<DocType, string> = {
-  prd: 'PRDs',
-  prfaq: 'PR/FAQs',
-  research: 'Research',
-  custom: 'Custom',
-}
-
-function groupDocumentsByType(documents: ProjectDocument[]): Record<DocType, ProjectDocument[]> {
-  const groups: Record<DocType, ProjectDocument[]> = {
-    prd: [],
-    prfaq: [],
-    research: [],
-    custom: [],
-  }
-  for (const doc of documents) {
-    const docType = isValidDocType(doc.document_type) ? doc.document_type : 'custom'
-    groups[docType].push(doc)
-  }
-  return groups
-}
-
-function isValidDocType(value: string): value is DocType {
-  return value === 'prd' || value === 'prfaq' || value === 'research' || value === 'custom'
+  /** Pre-built autoseed curl URL from the shared selection held in McpAccessTab. */
+  readonly curlUrl: string
+  /**
+   * Whether the user has at least one persona or document selected.
+   * Passed from McpAccessTab so this component doesn't have to infer it from
+   * the URL string (which always contains at least the base path).
+   */
+  readonly hasSelection: boolean
 }
 
 export default function AutoseedContent({
-  projectId, personas, documents,
+  personas, documents, curlUrl, hasSelection,
 }: AutoseedContentProps) {
   const { config } = useConfigStore()
   const { t } = useTranslation('projectDetail')
-  const [selectedPersonaIds, setSelectedPersonaIds] = useState<Set<string>>(() => new Set(personas.map((p) => p.persona_id)))
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set(documents.map((d) => d.document_id)))
-  const [copied, setCopied] = useState(false)
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(['personas', 'documents']))
+  // markCopied, not copy: handleCopy awaits its own writeText so a rejection can
+  // be surfaced, and copy() would write a second time and swallow that failure.
+  const { markCopied, copiedKey } = useCopyToClipboard()
+  const [copyError, setCopyError] = useState<string | null>(null)
+  const blockedReasonId = useId()
 
-  const docGroups = useMemo(() => groupDocumentsByType(documents), [documents])
-
-  const togglePersona = useCallback((id: string) => {
-    setSelectedPersonaIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }, [])
-
-  const toggleDocument = useCallback((id: string) => {
-    setSelectedDocumentIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }, [])
-
-  const toggleAllPersonas = useCallback((select: boolean) => {
-    setSelectedPersonaIds(select ? new Set(personas.map((p) => p.persona_id)) : new Set())
-  }, [personas])
-
-  const toggleAllDocuments = useCallback((select: boolean) => {
-    setSelectedDocumentIds(select ? new Set(documents.map((d) => d.document_id)) : new Set())
-  }, [documents])
-
-  const toggleSection = useCallback((section: string) => {
-    setExpandedSections((prev) => {
-      const next = new Set(prev)
-      if (next.has(section)) next.delete(section)
-      else next.add(section)
-      return next
-    })
-  }, [])
-
-  const apiBase = stripTrailingSlashes(config.apiEndpoint === '' ? '' : config.apiEndpoint)
-  const hasSelection = selectedPersonaIds.size > 0 || selectedDocumentIds.size > 0
-
-  const curlUrl = useMemo(() => {
-    const params = new URLSearchParams()
-    if (selectedPersonaIds.size > 0 && selectedPersonaIds.size < personas.length) {
-      params.set('persona_ids', [...selectedPersonaIds].join(','))
-    }
-    if (selectedDocumentIds.size > 0 && selectedDocumentIds.size < documents.length) {
-      params.set('document_ids', [...selectedDocumentIds].join(','))
-    }
-    const qs = params.toString()
-    const base = `${apiBase}/mcp/autoseed/${projectId}`
-    return qs === '' ? base : `${base}?${qs}`
-  }, [apiBase, projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length])
-
-  const kiroPrompt = useMemo(() => generateKiroPrompt(curlUrl), [curlUrl])
+  const kiroPrompt = generateKiroPrompt(curlUrl)
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(kiroPrompt)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }, [kiroPrompt])
+    setCopyError(null)
+    try {
+      await navigator.clipboard.writeText(kiroPrompt)
+      markCopied('kiro-autoseed')
+    } catch (err) {
+      console.error('[AutoseedContent] clipboard write failed:', err)
+      setCopyError(t('autoseed.copyFailed'))
+    }
+  }, [kiroPrompt, markCopied, t])
 
   const isEmpty = personas.length === 0 && documents.length === 0
 
@@ -138,89 +72,45 @@ export default function AutoseedContent({
     <div>
       <p className="text-sm text-gray-500 mb-3">{t('autoseed.description')}</p>
 
-      {/* Persona picker */}
-      {personas.length > 0 && (
-        <PickerSection
-          title={t('autoseed.personas', {
-            selected: selectedPersonaIds.size,
-            total: personas.length,
-          })}
-          expanded={expandedSections.has('personas')}
-          onToggle={() => toggleSection('personas')}
-          allSelected={selectedPersonaIds.size === personas.length}
-          onToggleAll={(sel) => toggleAllPersonas(sel)}
-        >
-          {personas.map((p) => (
-            <CheckboxItem
-              key={p.persona_id}
-              id={p.persona_id}
-              label={p.name}
-              sublabel={p.tagline}
-              checked={selectedPersonaIds.has(p.persona_id)}
-              onChange={() => togglePersona(p.persona_id)}
-            />
-          ))}
-        </PickerSection>
-      )}
-
-      {/* Document picker grouped by type */}
-      {documents.length > 0 && (
-        <PickerSection
-          title={t('autoseed.documents', {
-            selected: selectedDocumentIds.size,
-            total: documents.length,
-          })}
-          expanded={expandedSections.has('documents')}
-          onToggle={() => toggleSection('documents')}
-          allSelected={selectedDocumentIds.size === documents.length}
-          onToggleAll={(sel) => toggleAllDocuments(sel)}
-        >
-          {Object.keys(docGroups)
-            .filter(isValidDocType)
-            .filter((type) => docGroups[type].length > 0)
-            .map((type) => {
-              const docs = docGroups[type]
-              return (
-                <div key={type} className="mb-2">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{DOC_TYPE_LABELS[type]}</p>
-                  {docs.map((d) => (
-                    <CheckboxItem
-                      key={d.document_id}
-                      id={d.document_id}
-                      label={d.title}
-                      sublabel={d.document_type}
-                      checked={selectedDocumentIds.has(d.document_id)}
-                      onChange={() => toggleDocument(d.document_id)}
-                    />
-                  ))}
-                </div>
-              )
-            })}
-        </PickerSection>
-      )}
-
       {/* Generated prompt */}
-      <div className="mt-4">
+      <div className="mt-2">
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-medium text-gray-700">{t('autoseed.generatedPrompt')}</p>
           <button
             onClick={() => void handleCopy()}
             disabled={config.apiEndpoint === '' || !hasSelection}
+            // Only the empty-selection case has an on-screen explanation to point
+            // at; a missing apiEndpoint disables the button without one.
+            aria-describedby={hasSelection ? undefined : blockedReasonId}
             className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {copied ? <Check size={16} /> : <Copy size={16} />}
-            {copied ? t('mcp.copied') : t('autoseed.copyKiroPrompt')}
+            {copiedKey === 'kiro-autoseed' ? <Check size={16} /> : <Copy size={16} />}
+            {copiedKey === 'kiro-autoseed' ? t('mcp.copied') : t('autoseed.copyKiroPrompt')}
           </button>
         </div>
-        <div className="bg-gray-900 rounded-lg p-4 max-h-48 overflow-y-auto">
-          <pre className="text-xs text-gray-100 whitespace-pre-wrap">{kiroPrompt}</pre>
-        </div>
-        <p className="text-xs text-gray-400 mt-2">
-          {t('autoseed.pasteHint')}
-        </p>
+        {copyError != null && (
+          <p className="text-sm text-red-600 mb-2" role="alert">{copyError}</p>
+        )}
+        {/* The snippet is SUPPRESSED, not merely uncopyable-by-button, when a
+            section is fully deselected: the curl it contains omits that section's
+            filter, and the API reads an absent filter as "all". Rendering it while
+            disabling the button would still let a user select the text by hand and
+            seed everything they had just deselected. */}
+        {hasSelection ? (
+          <>
+            <div className="bg-gray-900 rounded-lg p-4 max-h-48 overflow-y-auto">
+              <pre className="text-xs text-gray-100 whitespace-pre-wrap">{kiroPrompt}</pre>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              {t('autoseed.pasteHint')}
+            </p>
+          </>
+        ) : (
+          <p id={blockedReasonId} className="text-sm text-gray-500">
+            {t('export.selectAtLeastOne')}
+          </p>
+        )}
       </div>
     </div>
   )
 }
-
-// --- Sub-components ---

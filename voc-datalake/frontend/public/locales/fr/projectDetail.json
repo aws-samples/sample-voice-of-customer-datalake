@@ -1,5 +1,6 @@
 {
   "autoseed": {
+    "copyFailed": "Échec de la copie — veuillez réessayer.",
     "copyKiroPrompt": "Copier le prompt Kiro",
     "description": "Sélectionnez des personas et des documents à importer dans un espace de travail Kiro",
     "deselectAll": "Désélectionner tout",
@@ -85,6 +86,15 @@
       "started": "Lancé — suivez la progression dans Tâches en arrière-plan."
     },
     "selectDocument": "Sélectionner un document"
+  },
+  "export": {
+    "copyContext": "Copier dans le presse-papiers",
+    "copyCopied": "Copié !",
+    "copyFailed": "Échec de la copie — veuillez réessayer.",
+    "description": "Copier le contexte du projet dans le presse-papiers — aucun jeton API requis",
+    "emptyHint": "Générez d'abord des personas ou des documents pour activer l'export.",
+    "selectAtLeastOne": "Sélectionnez au moins un élément dans chaque section, sinon l’export inclurait tout.",
+    "title": "Exporter"
   },
   "importPersona": {
     "aiImportDesc": "Claude extraira les informations de persona de votre {{type}} et créera un persona structuré avec un avatar généré par IA.",
@@ -394,7 +404,7 @@
   "tabs": {
     "aiChat": "Chat IA",
     "documents": "Fichiers",
-    "mcpAccess": "Accès MCP",
+    "mcpAccess": "Exporter / MCP",
     "overview": "Aperçu",
     "personas": "Profils",
     "product": "Produit"

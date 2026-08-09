@@ -1,5 +1,6 @@
 {
   "autoseed": {
+    "copyFailed": "コピーに失敗しました — もう一度お試しください。",
     "copyKiroPrompt": "Kiroプロンプトをコピー",
     "description": "ペルソナとドキュメントを選択してKiroワークスペースにシードします",
     "deselectAll": "すべて選択解除",
@@ -85,6 +86,15 @@
       "started": "開始しました — バックグラウンドジョブで進行状況を確認できます。"
     },
     "selectDocument": "ドキュメントを選択"
+  },
+  "export": {
+    "copyContext": "クリップボードにコピー",
+    "copyCopied": "コピーしました！",
+    "copyFailed": "コピーに失敗しました — もう一度お試しください。",
+    "description": "プロジェクトコンテキストをクリップボードにコピー — APIトークン不要",
+    "emptyHint": "エクスポートを有効にするには、まずペルソナまたはドキュメントを生成してください。",
+    "selectAtLeastOne": "各セクションで少なくとも1件を選択してください。選択しない場合、エクスポートにすべてが含まれます。",
+    "title": "エクスポート"
   },
   "importPersona": {
     "aiImportDesc": "Claudeが{{type}}からペルソナ情報を抽出し、AI生成アバター付きの構造化ペルソナを作成します。",
@@ -389,7 +399,7 @@
   "tabs": {
     "aiChat": "AIチャット",
     "documents": "ドキュメント",
-    "mcpAccess": "MCPアクセス",
+    "mcpAccess": "エクスポート / MCP",
     "overview": "概要",
     "personas": "ペルソナ",
     "product": "製品"

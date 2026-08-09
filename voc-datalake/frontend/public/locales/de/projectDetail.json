@@ -1,5 +1,6 @@
 {
   "autoseed": {
+    "copyFailed": "Kopieren fehlgeschlagen — bitte erneut versuchen.",
     "copyKiroPrompt": "Kiro-Prompt kopieren",
     "description": "Personas und Dokumente auswählen, um sie in einen Kiro-Workspace zu übertragen",
     "deselectAll": "Alle abwählen",
@@ -85,6 +86,15 @@
       "started": "Gestartet — Verfolgen Sie den Fortschritt unter Hintergrundaufgaben."
     },
     "selectDocument": "Dokument auswählen"
+  },
+  "export": {
+    "copyContext": "In Zwischenablage kopieren",
+    "copyCopied": "Kopiert!",
+    "copyFailed": "Kopieren fehlgeschlagen — bitte erneut versuchen.",
+    "description": "Projektkontext in die Zwischenablage kopieren — kein API-Token erforderlich",
+    "emptyHint": "Zuerst Personas oder Dokumente generieren, um den Export zu aktivieren.",
+    "selectAtLeastOne": "Wählen Sie in jedem Abschnitt mindestens ein Element aus, sonst würde der Export alles enthalten.",
+    "title": "Exportieren"
   },
   "importPersona": {
     "aiImportDesc": "Claude extrahiert Persona-Informationen aus Ihrem {{type}} und erstellt eine strukturierte Persona mit einem KI-generierten Avatar.",
@@ -389,7 +399,7 @@
   "tabs": {
     "aiChat": "KI-Chat",
     "documents": "Dokumente",
-    "mcpAccess": "MCP-Zugang",
+    "mcpAccess": "Exportieren / MCP",
     "overview": "Übersicht",
     "personas": "Zielgruppen",
     "product": "Produkt"

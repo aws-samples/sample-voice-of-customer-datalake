@@ -79,7 +79,6 @@ function overviewTab(documents: ProjectDocument[]) {
       onRunResearch={vi.fn()}
       onRemixDocuments={vi.fn()}
       onOpenProductTool={vi.fn()}
-      onSaveKiroPrompt={vi.fn()}
       onJobStarted={mockJobStarted}
     />
   )

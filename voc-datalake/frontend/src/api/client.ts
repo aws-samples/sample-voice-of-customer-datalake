@@ -685,6 +685,14 @@ export const api = {
       method: 'DELETE',
     }),
 
+  /**
+   * GET /projects/{project_id}/autoseed — Cognito-session-authenticated, no
+   * API token required. Used by the Export card (Card 1) in the Export / MCP
+   * tab to copy context to clipboard.
+   */
+  autoseedProject: (projectId: string, params?: { personaIds?: string[]; documentIds?: string[] }) =>
+    import('./projectsApi').then(m => m.projectsApi.autoseedProject(projectId, params ?? {})),
+
   // Logs API
   getValidationLogs: (params?: { source?: string; days?: number; limit?: number }) => {
     const searchParams = buildSearchParams(params ?? {})

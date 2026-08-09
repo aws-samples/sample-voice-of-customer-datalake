@@ -1,5 +1,6 @@
 {
   "autoseed": {
+    "copyFailed": "Copy failed — please try again.",
     "copyKiroPrompt": "Copy Kiro Prompt",
     "description": "Select personas and documents to seed into a Kiro workspace",
     "deselectAll": "Deselect all",
@@ -85,6 +86,15 @@
       "started": "Started — track it in Background Jobs."
     },
     "selectDocument": "Select a document"
+  },
+  "export": {
+    "copyContext": "Copy to clipboard",
+    "copyCopied": "Copied!",
+    "copyFailed": "Copy failed — please try again.",
+    "description": "Copy project context to clipboard — no API token needed",
+    "emptyHint": "Generate personas or documents first to enable export.",
+    "selectAtLeastOne": "Select at least one item in each section, or the export would include everything.",
+    "title": "Export"
   },
   "importPersona": {
     "aiImportDesc": "Claude will extract persona information from your {{type}} and create a structured persona with an AI-generated avatar.",
@@ -389,7 +399,7 @@
   "tabs": {
     "aiChat": "AI Chat",
     "documents": "Documents",
-    "mcpAccess": "MCP Access",
+    "mcpAccess": "Export / MCP",
     "overview": "Overview",
     "personas": "Personas",
     "product": "Product"
