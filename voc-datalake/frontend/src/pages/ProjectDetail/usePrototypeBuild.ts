@@ -82,7 +82,11 @@ export interface PrototypeBuildControl {
   readonly error: string | null
   /** True briefly after a successful start, covering the gap before the panel refetches. */
   readonly started: boolean
-  /** State for the confirm dialog the single-source-document case needs. */
+  /**
+   * State for the confirm dialog. Open only while the reason it was opened for is
+   * still the reason that applies, so `message` is empty exactly when `isOpen` is
+   * false rather than needing its own check at the call site.
+   */
   readonly confirm: {
     readonly isOpen: boolean
     readonly message: string
@@ -114,7 +118,8 @@ export function usePrototypeBuild({
   // Lowers itself: the panel takes over, so the line must not outlive the gap.
   const started = useTransientFlag()
   const [error, setError] = useState<string | null>(null)
-  const [showConfirm, setShowConfirm] = useState(false)
+  // The question that was asked, not a bare "a dialog is open" flag — see `openKey`.
+  const [askedKey, setAskedKey] = useState<ConfirmKey | null>(null)
 
   // Two reasons to stop and ask, through the ConfirmModal pattern every other
   // guarded action uses (this began as a window.confirm, which cannot be styled):
@@ -149,18 +154,31 @@ export function usePrototypeBuild({
 
   const onClick = useCallback(() => {
     if (confirmKey != null) {
-      setShowConfirm(true)
+      setAskedKey(confirmKey)
       return
     }
     void runBuild()
   }, [confirmKey, runBuild])
 
   const onConfirm = useCallback(() => {
-    setShowConfirm(false)
+    setAskedKey(null)
     void runBuild()
   }, [runBuild])
 
-  const onCancel = useCallback(() => setShowConfirm(false), [])
+  const onCancel = useCallback(() => setAskedKey(null), [])
+
+  // The question actually on screen: the one the click raised, and only while it is
+  // still the one that applies. `confirmKey` is derived from live data — this page
+  // refetches documents whenever a job completes — so a PR-FAQ generation finishing
+  // can remove the reason to ask, or replace it with the costlier rebuild one.
+  //
+  // Comparing keys covers both, where a boolean covered neither: it cannot leave a
+  // titled modal up with an empty message, it cannot rewrite the text under the
+  // cursor so that "Build anyway" answers a question that was never displayed, and
+  // it cannot re-open on a reason the user never saw, because a flag that outlived
+  // its question stayed set. A reason that comes back comes back as the same
+  // question, which is the one still unanswered.
+  const openKey = askedKey != null && askedKey === confirmKey ? askedKey : null
 
   return {
     onClick,
@@ -168,14 +186,11 @@ export function usePrototypeBuild({
     error,
     started: started.isSet,
     confirm: {
-      // Both conditions, because `confirmKey` is derived from live data that can
-      // change while the dialog is open: a PR-FAQ generation completing turns a
-      // one-document project into a two-document one, at which point there is
-      // nothing left to confirm. Gating on `showConfirm` alone would leave the
-      // dialog up with an empty message — worse than the pre-move behaviour, which
-      // at least still had a (by then wrong) string to show.
-      isOpen: showConfirm && confirmKey != null,
-      message: confirmKey == null ? '' : t(confirmKey),
+      // One derivation feeding both, for the same reason `confirmKeyFor` is one
+      // function: two readings of this state could disagree, and the disagreement
+      // looks like a dialog with no question in it.
+      isOpen: openKey != null,
+      message: openKey == null ? '' : t(openKey),
       onConfirm,
       onCancel,
     },

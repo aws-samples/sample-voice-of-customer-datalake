@@ -99,6 +99,15 @@ function buildButton() {
   return screen.getByRole('button', { name: /build prototype/i })
 }
 
+/**
+ * The modal's confirm action, queried rather than got: the tests below assert on
+ * its ABSENCE, which is the load-bearing half of a dialog that must not be
+ * clickable once its question no longer applies.
+ */
+function confirmButton() {
+  return screen.queryByRole('button', { name: /build anyway/i })
+}
+
 describe('prototype card confirm gate (U12)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -278,7 +287,56 @@ describe('prototype card rebuild guard', () => {
 
     rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1')]))
 
+    // The role, the question and the action, so this cannot go vacuous if the
+    // shell's ARIA role ever changes: the bug being pinned was a dialog that was
+    // still THERE and still clickable, just with nothing written in it.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText(/No PR-FAQ yet/i)).not.toBeInTheDocument()
+    expect(confirmButton()).not.toBeInTheDocument()
+    expect(mockBuildPrototype).not.toHaveBeenCalled()
+  })
+
+  it('closes the confirm rather than swapping its question for a costlier one', async () => {
+    // Same refetch, a different outcome: a prototype arriving while the
+    // single-document confirm is open changes what "Build anyway" MEANS — from
+    // "build from the PRD alone" to "build a second prototype and keep the first".
+    // Rewriting the message under an open dialog would have the button answer a
+    // question the user never read, so the dialog closes and the next click asks.
+    const user = userEvent.setup()
+    const { rerender } = renderCard({ hasPrd: true, hasPrfaq: false })
+
+    await user.click(buildButton())
+    expect(screen.getByText(/No PR-FAQ yet/i)).toBeInTheDocument()
+
+    rerender(overviewTab([doc('prd', 'prd_1'), doc('prototype', 'proto_1')]))
+
+    expect(screen.queryByText(/already has a prototype/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/No PR-FAQ yet/i)).not.toBeInTheDocument()
+    expect(mockBuildPrototype).not.toHaveBeenCalled()
+  })
+
+  it('does not re-open the confirm when a later reason to ask arrives', async () => {
+    // An open flag outlives the question it was raised for: once the reason
+    // disappeared the flag stayed set, so the NEXT reason to ask put a modal back
+    // on screen that the user never asked for — one reflexive click from a
+    // multi-minute billable build. Tracking which question was asked is what makes
+    // this unreachable.
+    const user = userEvent.setup()
+    const { rerender } = renderCard({ hasPrd: true, hasPrfaq: false })
+
+    await user.click(buildButton())
+    expect(screen.getByText(/No PR-FAQ yet/i)).toBeInTheDocument()
+
+    // The reason to ask disappears: the PR-FAQ generation completes.
+    rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1')]))
+    expect(confirmButton()).not.toBeInTheDocument()
+
+    // A later job produces a prototype, which is a new reason to ask.
+    rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1'), doc('prototype', 'proto_1')]))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText(/already has a prototype/i)).not.toBeInTheDocument()
+    expect(confirmButton()).not.toBeInTheDocument()
     expect(mockBuildPrototype).not.toHaveBeenCalled()
   })
 })
