@@ -23,6 +23,8 @@
   "stats": {
     "categories": "分类",
     "feedback": "反馈",
+    "loadingWindow": "正在加载反馈… 目前 {{total}} 条中的 {{loaded}} 条。",
+    "partialWindow": "统计覆盖此时间范围内 {{total}} 条中的 {{loaded}} 条。",
     "problems": "问题",
     "subcategories": "子分类",
     "urgent": "紧急"

@@ -23,19 +23,12 @@ import { useMemo } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { DateRangeParams, FeedbackItem } from '../../api/client'
+import { FEEDBACK_PAGE_LIMIT, nextPageOffset } from '../../api/feedbackPagination'
+import type { FeedbackPage } from '../../api/feedbackPagination'
 import { matchesRatingFilter } from './types'
 import type { CategoryFiltersState } from './useCategoryFilters'
 
-const PAGE_LIMIT = 100
 export const SEARCH_MIN_CHARS = 2
-
-interface FeedbackResponse {
-  items?: FeedbackItem[]
-  count?: number
-  total?: number
-  offset?: number
-  is_partial_window?: boolean
-}
 
 export interface FeedbackListData {
   filteredFeedback: FeedbackItem[]
@@ -55,7 +48,7 @@ export interface FeedbackListData {
 function buildCommonParams(dateParams: DateRangeParams, filters: CategoryFiltersState) {
   return {
     ...dateParams,
-    limit: PAGE_LIMIT,
+    limit: FEEDBACK_PAGE_LIMIT,
     source: filters.selectedSource ?? undefined,
     sentiment: filters.sentimentFilter !== 'all' ? filters.sentimentFilter : undefined,
     // The list endpoints accept a single category; multi-select is refined client-side.
@@ -87,7 +80,7 @@ function computeEnabledQueries(
  * `total` (candidate window size) is preferred; `count` (page size) is the
  * fallback for endpoints that don't paginate (search/urgent).
  */
-function extractTotals(data: FeedbackResponse | undefined): { totalCount: number; isPartialWindow: boolean } {
+function extractTotals(data: FeedbackPage | undefined): { totalCount: number; isPartialWindow: boolean } {
   return {
     totalCount: data?.total ?? data?.count ?? 0,
     isPartialWindow: data?.is_partial_window ?? false,
@@ -141,18 +134,6 @@ export function useFeedbackListData(
   }
 }
 
-/**
- * Offset of the next `/feedback` page, or undefined when the loaded rows
- * cover the (windowed) total. `total` is the filtered candidate-window size,
- * so `loaded < total` is the correct hasMore signal (not `count < limit`).
- */
-function nextPageOffset(lastPage: FeedbackResponse): number | undefined {
-  const pageSize = lastPage.count ?? lastPage.items?.length ?? 0
-  const loaded = (lastPage.offset ?? 0) + pageSize
-  const total = lastPage.total ?? loaded
-  return pageSize > 0 && loaded < total ? loaded : undefined
-}
-
 /** The list source normalized so the hook body treats all three endpoints alike. */
 interface ActiveFeedbackSource {
   items: FeedbackItem[]
@@ -165,13 +146,13 @@ interface ActiveFeedbackSource {
 }
 
 interface SimpleQuery {
-  data: FeedbackResponse | undefined
+  data: FeedbackPage | undefined
   isLoading: boolean
 }
 
 /** Structural subset of UseInfiniteQueryResult — keeps the generics out of the hook. */
 interface InfiniteListQuery {
-  data: { pages: FeedbackResponse[] } | undefined
+  data: { pages: FeedbackPage[] } | undefined
   isLoading: boolean
   hasNextPage: boolean
   isFetchingNextPage: boolean

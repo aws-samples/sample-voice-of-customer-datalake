@@ -23,6 +23,8 @@
   "stats": {
     "categories": "Kategorien",
     "feedback": "Rückmeldungen",
+    "loadingWindow": "Feedback wird geladen… bisher {{loaded}} von {{total}}.",
+    "partialWindow": "Die Zahlen umfassen {{loaded}} von {{total}} Einträgen in diesem Zeitraum.",
     "problems": "Probleme",
     "subcategories": "Unterkategorien",
     "urgent": "Dringend"

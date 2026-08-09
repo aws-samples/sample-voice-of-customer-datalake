@@ -23,6 +23,8 @@
   "stats": {
     "categories": "카테고리",
     "feedback": "피드백",
+    "loadingWindow": "피드백 불러오는 중… 현재 {{total}}개 중 {{loaded}}개.",
+    "partialWindow": "집계는 이 기간의 {{total}}개 중 {{loaded}}개를 대상으로 합니다.",
     "problems": "문제",
     "subcategories": "하위 카테고리",
     "urgent": "긴급"

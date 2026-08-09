@@ -23,6 +23,8 @@
   "stats": {
     "categories": "カテゴリ",
     "feedback": "フィードバック",
+    "loadingWindow": "フィードバックを読み込み中… 現在 {{total}} 件中 {{loaded}} 件。",
+    "partialWindow": "件数はこの期間の {{total}} 件中 {{loaded}} 件を対象としています。",
     "problems": "問題",
     "subcategories": "サブカテゴリ",
     "urgent": "緊急"

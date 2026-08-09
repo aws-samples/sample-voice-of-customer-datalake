@@ -23,6 +23,8 @@
   "stats": {
     "categories": "Catégories",
     "feedback": "Retours",
+    "loadingWindow": "Chargement des retours… {{loaded}} sur {{total}} pour l’instant.",
+    "partialWindow": "Les décomptes couvrent {{loaded}} éléments sur {{total}} dans cette période.",
     "problems": "Problèmes",
     "subcategories": "Sous-catégories",
     "urgent": "Prioritaire"
