@@ -1,17 +1,30 @@
 /**
  * @fileoverview Tests for Breadcrumbs component.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18next'
 import { TestRouter } from '../../test/test-utils'
-import { routes } from '../../App'
+import { routes } from '../../routes'
+import { useProjectData } from '../../pages/ProjectDetail/useProjectData'
 import Breadcrumbs from './Breadcrumbs'
 import { RECORD_CRUMBS, SEGMENT_CRUMBS } from './routeCrumbs'
 import deCommon from '../../../public/locales/de/common.json'
 
 const PROJECT_ID = 'proj_20260101120000'
+
+const mockGetProject = vi.fn()
+const mockGetJobs = vi.fn()
+const mockGetProductContext = vi.fn()
+
+vi.mock('../../api/projectsApi', () => ({
+  projectsApi: {
+    getProject: (id: string) => mockGetProject(id),
+    getJobs: (id: string) => mockGetJobs(id),
+    getProductContext: (id: string) => mockGetProductContext(id),
+  },
+}))
 
 function createQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
@@ -147,6 +160,57 @@ describe('Breadcrumbs', () => {
     })
   })
 
+  /**
+   * The seeded cases above assert the crumb against a key this file supplies, so
+   * they cannot see the two things the docblock actually claims: that the header's
+   * `skipToken` observer neither issues its own request nor suppresses the page's,
+   * and that both sides agree on the key. Here the page's real hook does the
+   * fetching — the only fake is the API client — so a renamed key or a swallowed
+   * fetch fails, and the assertion covers TanStack semantics that are version
+   * sensitive rather than ours.
+   */
+  describe('handover from the page that owns the record', () => {
+    function ProjectPageProbe() {
+      const { data } = useProjectData({ id: PROJECT_ID, apiEndpoint: 'https://api.example.com' })
+      return <div data-testid="page">{data?.project.name ?? 'page loading'}</div>
+    }
+
+    beforeEach(() => {
+      mockGetProject.mockResolvedValue({
+        project: { project_id: PROJECT_ID, name: 'Checkout Friction' },
+        personas: [],
+        documents: [],
+      })
+      mockGetJobs.mockResolvedValue({ jobs: [] })
+      mockGetProductContext.mockResolvedValue({ context: {} })
+    })
+
+    it("fills the crumb from the page's fetch, and adds no request of its own", async () => {
+      const queryClient = createQueryClient()
+      render(
+        <QueryClientProvider client={queryClient}>
+          <TestRouter initialEntries={[`/projects/${PROJECT_ID}`]}>
+            <Breadcrumbs />
+            <ProjectPageProbe />
+          </TestRouter>
+        </QueryClientProvider>,
+      )
+
+      // Breadcrumbs mounts first and creates the cache entry with `skipToken`;
+      // the stand-in is what it shows until the page's own fetch lands.
+      expect(screen.getByText('Project')).toBeInTheDocument()
+
+      // Scoped to the nav: the probe renders the same string, so an unscoped
+      // query matches twice and cannot say which of the two resolved.
+      const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+      await waitFor(() => expect(within(nav).getByText('Checkout Friction')).toBeInTheDocument())
+      expect(screen.getByTestId('page')).toHaveTextContent('Checkout Friction')
+      expect(within(nav).queryByText('Project')).not.toBeInTheDocument()
+      expect(mockGetProject).toHaveBeenCalledTimes(1)
+      expect(mockGetProject).toHaveBeenCalledWith(PROJECT_ID)
+    })
+  })
+
   describe('navigation structure', () => {
     it('includes Home link as first breadcrumb', () => {
       renderWithRouter(['/categories'])
@@ -264,8 +328,16 @@ describe('Breadcrumbs', () => {
       await i18n.changeLanguage('en')
     })
 
-    it('translates static route labels', () => {
+    beforeEach(() => {
+      // The i18next singleton is shared. Vitest isolates per file today, so the
+      // beforeAll switch holds — but assert it rather than assume, since a switch
+      // to a shared pool would make every case below silently vacuous: the German
+      // assertions would fail loudly, but the "no English literal" ones would pass
+      // for the wrong reason.
       expect(i18n.language).toBe('de')
+    })
+
+    it('translates static route labels', () => {
       renderWithRouter(['/data-explorer'])
       expect(screen.getByText(de.dataExplorer)).toBeInTheDocument()
       expect(screen.queryByText('Data Explorer')).not.toBeInTheDocument()
