@@ -88,11 +88,12 @@
     "selectDocument": "문서를 선택하세요"
   },
   "export": {
-    "copyCopied": "복사됨!",
     "copyContext": "클립보드에 복사",
+    "copyCopied": "복사됨!",
     "copyFailed": "복사 실패 — 다시 시도해 주세요.",
     "description": "프로젝트 컨텍스트를 클립보드에 복사 — API 토큰 불필요",
     "emptyHint": "내보내기를 활성화하려면 먼저 페르소나 또는 문서를 생성하세요.",
+    "selectAtLeastOne": "각 섹션에서 최소 한 개를 선택하세요. 선택하지 않으면 내보내기에 전체가 포함됩니다.",
     "title": "내보내기"
   },
   "importPersona": {

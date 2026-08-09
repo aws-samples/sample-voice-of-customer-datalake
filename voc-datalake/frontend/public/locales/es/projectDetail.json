@@ -88,11 +88,12 @@
     "selectDocument": "Selecciona un documento"
   },
   "export": {
-    "copyCopied": "¡Copiado!",
     "copyContext": "Copiar al portapapeles",
+    "copyCopied": "¡Copiado!",
     "copyFailed": "Error al copiar — inténtelo de nuevo.",
     "description": "Copia el contexto del proyecto al portapapeles — sin token de API",
     "emptyHint": "Genera personas o documentos primero para habilitar la exportación.",
+    "selectAtLeastOne": "Selecciona al menos un elemento en cada sección; de lo contrario, la exportación incluiría todo.",
     "title": "Exportar"
   },
   "importPersona": {

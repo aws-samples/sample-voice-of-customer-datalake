@@ -18,12 +18,14 @@ import {
   describe, it, expect, vi, beforeAll, afterAll, beforeEach,
 } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18next'
 import McpAccessTab from './McpAccessTab'
+import { canCopyExport } from './autoseedSelection'
 import deProjectDetail from '../../../public/locales/de/projectDetail.json'
 import enProjectDetail from '../../../public/locales/en/projectDetail.json'
-import type { Project, ProjectPersona } from '../../api/types'
+import type { Project, ProjectPersona, ProjectDocument } from '../../api/types'
 
 const mockListApiTokens = vi.fn()
 const mockAutoseedProject = vi.fn()
@@ -63,7 +65,14 @@ const onePersona: ProjectPersona[] = [{
   persona_id: 'p1', name: 'Persona A', tagline: 'Tag A', created_at: '',
 }]
 
-function renderTab(personas: ProjectPersona[] = onePersona) {
+const oneDocument: ProjectDocument[] = [{
+  document_id: 'd1', title: 'Doc A', document_type: 'prd', content: '', created_at: '',
+}]
+
+function renderTab(
+  personas: ProjectPersona[] = onePersona,
+  documents: ProjectDocument[] = [],
+) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -73,7 +82,7 @@ function renderTab(personas: ProjectPersona[] = onePersona) {
         projectId="proj-123"
         project={mockProject}
         personas={personas}
-        documents={[]}
+        documents={documents}
         onSaveKiroPrompt={vi.fn()}
       />
     </QueryClientProvider>,
@@ -166,6 +175,126 @@ describe('McpAccessTab — renders translated copy under de', () => {
     })).toBeInTheDocument()
   })
 
+})
+
+describe('canCopyExport — a non-empty section with nothing selected is unsendable', () => {
+  // The rule exists because the autoseed API cannot express "none": an absent
+  // persona_ids is read as ALL, so exporting with zero selected would ship the
+  // items the user just deselected. These cases pin that reasoning.
+  const ids = (...v: string[]) => new Set(v)
+
+  it('allows the default state where everything is selected', () => {
+    expect(canCopyExport(ids('p1'), 1, ids('d1'), 1)).toBe(true)
+  })
+
+  it('allows a strict subset in one section while the other is full', () => {
+    expect(canCopyExport(ids('p1'), 2, ids('d1'), 1)).toBe(true)
+  })
+
+  it('refuses when personas exist but none are selected, even if a document is', () => {
+    // The exact bug: this state used to leave the button enabled and export
+    // every persona, because the filter was omitted rather than sent empty.
+    expect(canCopyExport(ids(), 2, ids('d1'), 1)).toBe(false)
+  })
+
+  it('refuses when documents exist but none are selected, even if a persona is', () => {
+    expect(canCopyExport(ids('p1'), 1, ids(), 3)).toBe(false)
+  })
+
+  it('ignores a section that has no items at all', () => {
+    expect(canCopyExport(ids('p1'), 1, ids(), 0)).toBe(true)
+    expect(canCopyExport(ids(), 0, ids('d1'), 1)).toBe(true)
+  })
+
+  it('refuses when the project has nothing to export', () => {
+    expect(canCopyExport(ids(), 0, ids(), 0)).toBe(false)
+  })
+})
+
+describe('McpAccessTab — export guard is enforced in the UI', () => {
+  // BOTH sections must be populated, and only ONE of them emptied. With no
+  // documents the old OR-based rule and the correct rule agree, so a test using
+  // `renderTab()` alone passes against the bug — verified by mutation.
+  // The personas section renders first, hence [0].
+  const deselectAllPersonas = () => screen.getAllByRole('button', {
+    name: enProjectDetail.autoseed.deselectAll,
+  })[0]
+
+  it('disables the copy button and says why once a whole section is deselected', async () => {
+    renderTab(onePersona, oneDocument)
+    const user = userEvent.setup()
+
+    const copyButton = await screen.findByRole('button', {
+      name: new RegExp(enProjectDetail.export.copyContext, 'i'),
+    })
+    expect(copyButton).toBeEnabled()
+
+    // Deselect every persona while the document stays selected: the state whose
+    // request would omit persona_ids and therefore mean "all personas".
+    await user.click(deselectAllPersonas())
+
+    expect(copyButton).toBeDisabled()
+    expect(screen.getByText(enProjectDetail.export.selectAtLeastOne)).toBeInTheDocument()
+  })
+
+  it('does not call the autoseed API while a whole section is deselected', async () => {
+    renderTab(onePersona, oneDocument)
+    const user = userEvent.setup()
+
+    await user.click(deselectAllPersonas())
+    await user.click(await screen.findByRole('button', {
+      name: new RegExp(enProjectDetail.export.copyContext, 'i'),
+    }))
+
+    // The billable/data-scope guard: nothing may be fetched or copied in a state
+    // whose request would silently mean "everything".
+    expect(mockAutoseedProject).not.toHaveBeenCalled()
+  })
+})
+
+describe('McpAccessTab — the export copy writes to the clipboard exactly once', () => {
+  it('does not write twice when reporting the copy as done', async () => {
+    // useCopyToClipboard.copy() writes internally. Both copy handlers await their
+    // OWN writeText so a rejection can be surfaced, so they must use the
+    // state-only markCopied(); calling copy() as well wrote a second time and
+    // swallowed that second rejection with `void`.
+    // Spy on the existing clipboard rather than stubbing `navigator` wholesale:
+    // the global setup installs its mock with defineProperty ON navigator, and
+    // replacing the whole object does not reliably reach the component in jsdom.
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
+    mockAutoseedProject.mockResolvedValue({
+      project: { name: 'p', description: '' },
+      files: [{ path: '.kiro/steering/p.md', content: 'body' }],
+    })
+
+    renderTab()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', {
+      name: new RegExp(enProjectDetail.export.copyContext, 'i'),
+    }))
+
+    await screen.findByText(enProjectDetail.export.copyCopied)
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith('body')
+  })
+
+  afterEach(() => {
+    // Restore unconditionally so a failure above cannot leak the spy.
+    vi.restoreAllMocks()
+  })
+})
+
+describe('McpAccessTab — autoseed group labels resolve', () => {
+  it('renders a translated document-type group heading, not a raw key path', async () => {
+    // McpAccessTab builds this key as a TEMPLATE LITERAL, which the i18n gate's
+    // extractor cannot see — so the gate can neither confirm the reference nor
+    // catch a deletion. A render assertion is the only check that would fail.
+    // Needs a document: the group heading is per document-type.
+    renderTab(onePersona, oneDocument)
+
+    expect(await screen.findByText(enProjectDetail.autoseed.docTypes.prd)).toBeInTheDocument()
+    expect(screen.queryByText(/autoseed\.docTypes\./)).not.toBeInTheDocument()
+  })
 })
 
 describe('projectDetail catalogue — export labels are translated, not copied', () => {

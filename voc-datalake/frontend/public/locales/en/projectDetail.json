@@ -93,6 +93,7 @@
     "copyFailed": "Copy failed — please try again.",
     "description": "Copy project context to clipboard — no API token needed",
     "emptyHint": "Generate personas or documents first to enable export.",
+    "selectAtLeastOne": "Select at least one item in each section, or the export would include everything.",
     "title": "Export"
   },
   "importPersona": {

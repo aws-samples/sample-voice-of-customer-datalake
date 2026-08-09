@@ -88,11 +88,12 @@
     "selectDocument": "Dokument auswählen"
   },
   "export": {
-    "copyCopied": "Kopiert!",
     "copyContext": "In Zwischenablage kopieren",
+    "copyCopied": "Kopiert!",
     "copyFailed": "Kopieren fehlgeschlagen — bitte erneut versuchen.",
     "description": "Projektkontext in die Zwischenablage kopieren — kein API-Token erforderlich",
     "emptyHint": "Zuerst Personas oder Dokumente generieren, um den Export zu aktivieren.",
+    "selectAtLeastOne": "Wählen Sie in jedem Abschnitt mindestens ein Element aus, sonst würde der Export alles enthalten.",
     "title": "Exportieren"
   },
   "importPersona": {

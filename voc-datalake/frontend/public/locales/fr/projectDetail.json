@@ -88,11 +88,12 @@
     "selectDocument": "Sélectionner un document"
   },
   "export": {
-    "copyCopied": "Copié !",
     "copyContext": "Copier dans le presse-papiers",
+    "copyCopied": "Copié !",
     "copyFailed": "Échec de la copie — veuillez réessayer.",
     "description": "Copier le contexte du projet dans le presse-papiers — aucun jeton API requis",
     "emptyHint": "Générez d'abord des personas ou des documents pour activer l'export.",
+    "selectAtLeastOne": "Sélectionnez au moins un élément dans chaque section, sinon l’export inclurait tout.",
     "title": "Exporter"
   },
   "importPersona": {

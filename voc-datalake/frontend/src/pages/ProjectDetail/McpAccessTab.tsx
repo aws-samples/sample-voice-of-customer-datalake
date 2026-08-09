@@ -31,6 +31,7 @@ import { api } from '../../api/client'
 import { stripTrailingSlashes } from '../../api/baseUrl'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { useConfigStore } from '../../store/configStore'
+import { buildAutoseedParams, canCopyExport } from './autoseedSelection'
 import AutoseedContent from './AutoseedContent'
 import CollapsibleSection from './CollapsibleSection'
 import KiroExportSettings from './KiroExportSettings'
@@ -97,28 +98,6 @@ function groupDocumentsByType(documents: ProjectDocument[]): Record<DocType, Pro
     groups[docType].push(doc)
   }
   return groups
-}
-
-/**
- * Builds the `personaIds` / `documentIds` filter params for the autoseed API.
- * Sends a filter only when the selection is a strict subset of all available
- * items — the server returns everything when the param is absent, which is the
- * correct behaviour for "all selected".
- */
-function buildAutoseedParams(
-  selectedPersonaIds: ReadonlySet<string>,
-  totalPersonas: number,
-  selectedDocumentIds: ReadonlySet<string>,
-  totalDocuments: number,
-): { personaIds?: string[]; documentIds?: string[] } {
-  return {
-    personaIds: selectedPersonaIds.size > 0 && selectedPersonaIds.size < totalPersonas
-      ? [...selectedPersonaIds]
-      : undefined,
-    documentIds: selectedDocumentIds.size > 0 && selectedDocumentIds.size < totalDocuments
-      ? [...selectedDocumentIds]
-      : undefined,
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -300,13 +279,24 @@ function ExportCard({
   templateEditor,
 }: ExportCardProps) {
   const { t } = useTranslation('projectDetail')
-  const { copy: markCopied, copiedKey } = useCopyToClipboard()
+  // markCopied, not copy: handleCopy awaits its own writeText so a rejection can
+  // be surfaced, and copy() would write a second time and swallow that failure.
+  const { markCopied, copiedKey } = useCopyToClipboard()
   const [copying, setCopying] = useState(false)
   const [copyError, setCopyError] = useState<string | null>(null)
   const isEmpty = personas.length === 0 && documents.length === 0
-  const hasSelection = selectedPersonaIds.size > 0 || selectedDocumentIds.size > 0
+  const canCopy = canCopyExport(
+    selectedPersonaIds, personas.length, selectedDocumentIds, documents.length,
+  )
 
   const handleCopy = useCallback(async () => {
+    // Second of two layers. The disabled button is the user-facing authority;
+    // this one makes the invariant hold even if a future caller invokes the
+    // handler directly, because exporting in that state silently includes
+    // deselected items rather than failing visibly.
+    if (!canCopyExport(selectedPersonaIds, personas.length, selectedDocumentIds, documents.length)) {
+      return
+    }
     setCopying(true)
     setCopyError(null)
     try {
@@ -321,7 +311,7 @@ function ExportCard({
       // duplicate it and diverge from the autoseed format.
       const text = payload.files.map((f) => `${f.content}`).join('\n\n')
       await navigator.clipboard.writeText(text)
-      markCopied(text, 'export')
+      markCopied('export')
     } catch (err) {
       console.error('[ExportCard] autoseed copy failed:', err)
       setCopyError(t('export.copyFailed'))
@@ -364,12 +354,17 @@ function ExportCard({
           <div className="mt-4 flex flex-col items-end gap-2">
             <button
               onClick={() => void handleCopy()}
-              disabled={!hasSelection || copying}
+              disabled={!canCopy || copying}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
               {copiedKey === 'export' ? <Check size={16} /> : <Copy size={16} />}
               {copiedKey === 'export' ? t('export.copyCopied') : t('export.copyContext')}
             </button>
+            {/* Says WHY it is disabled. Without this the button just looks broken
+                when a section has items but none of them are selected. */}
+            {!canCopy && (
+              <p className="text-sm text-gray-500">{t('export.selectAtLeastOne')}</p>
+            )}
             {copyError != null && (
               <p className="text-sm text-red-600" role="alert">{copyError}</p>
             )}
@@ -431,18 +426,35 @@ export default function McpAccessTab({
   const { t } = useTranslation('projectDetail')
 
   // ── Shared picker state (used by both cards) ──────────────────────────────
-  const [selectedPersonaIds, setSelectedPersonaIds] = useState<Set<string>>(
-    () => new Set(personas.map((p) => p.persona_id)),
-  )
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(
-    () => new Set(documents.map((d) => d.document_id)),
-  )
+  //
+  // DESELECTED ids are stored, and the selection is DERIVED from the props. The
+  // obvious shape — `useState(() => new Set(personas.map(...)))` — initialises
+  // once, so a tab that mounts while `personas`/`documents` are still loading
+  // renders every row unchecked and never resyncs. Deriving removes that bug
+  // class outright rather than syncing state to props in an effect, which this
+  // repo's `set-state-in-effect` lint rule forbids anyway.
+  //
+  // "Everything is selected" is therefore the default and stays true for items
+  // that arrive after mount.
+  const [deselectedPersonaIds, setDeselectedPersonaIds] = useState<Set<string>>(() => new Set())
+  const [deselectedDocumentIds, setDeselectedDocumentIds] = useState<Set<string>>(() => new Set())
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     () => new Set(['personas', 'documents']),
   )
 
+  const selectedPersonaIds = useMemo(
+    () => new Set(personas.map((p) => p.persona_id).filter((id) => !deselectedPersonaIds.has(id))),
+    [personas, deselectedPersonaIds],
+  )
+  const selectedDocumentIds = useMemo(
+    () => new Set(documents.map((d) => d.document_id).filter((id) => !deselectedDocumentIds.has(id))),
+    [documents, deselectedDocumentIds],
+  )
+
+  // Toggling a row flips its membership in the DESELECTED set, so the checkbox
+  // still reads as "selected" while the stored state is the complement.
   const togglePersona = useCallback((id: string) => {
-    setSelectedPersonaIds((prev) => {
+    setDeselectedPersonaIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -451,7 +463,7 @@ export default function McpAccessTab({
   }, [])
 
   const toggleDocument = useCallback((id: string) => {
-    setSelectedDocumentIds((prev) => {
+    setDeselectedDocumentIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -460,11 +472,11 @@ export default function McpAccessTab({
   }, [])
 
   const toggleAllPersonas = useCallback((select: boolean) => {
-    setSelectedPersonaIds(select ? new Set(personas.map((p) => p.persona_id)) : new Set())
+    setDeselectedPersonaIds(select ? new Set() : new Set(personas.map((p) => p.persona_id)))
   }, [personas])
 
   const toggleAllDocuments = useCallback((select: boolean) => {
-    setSelectedDocumentIds(select ? new Set(documents.map((d) => d.document_id)) : new Set())
+    setDeselectedDocumentIds(select ? new Set() : new Set(documents.map((d) => d.document_id)))
   }, [documents])
 
   const toggleSection = useCallback((section: string) => {
@@ -512,7 +524,13 @@ export default function McpAccessTab({
   const mcpConfig = buildMcpConfig(baseUrl, projectId)
 
   // Whether the user has at least one persona or document selected
-  const hasPickerSelection = selectedPersonaIds.size > 0 || selectedDocumentIds.size > 0
+  // The SAME rule as the Export card, not an OR over the two sections: the curl
+  // URL is built by the same buildAutoseedParams, so a section with items and
+  // none selected would emit a curl that omits the filter and makes Kiro fetch
+  // everything the user deselected. Both delivery paths share one guard.
+  const hasPickerSelection = canCopyExport(
+    selectedPersonaIds, personas.length, selectedDocumentIds, documents.length,
+  )
 
   // Build the autoseed curl URL from shared selection (used by Card 2)
   const apiBase = stripTrailingSlashes(config.apiEndpoint === '' ? '' : config.apiEndpoint)

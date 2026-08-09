@@ -88,11 +88,12 @@
     "selectDocument": "Selecione um documento"
   },
   "export": {
-    "copyCopied": "Copiado!",
     "copyContext": "Copiar para a área de transferência",
+    "copyCopied": "Copiado!",
     "copyFailed": "Falha ao copiar — tente novamente.",
     "description": "Copia o contexto do projeto para a área de transferência — sem token de API",
     "emptyHint": "Gere personas ou documentos primeiro para ativar a exportação.",
+    "selectAtLeastOne": "Selecione pelo menos um item em cada seção; caso contrário, a exportação incluiria tudo.",
     "title": "Exportar"
   },
   "importPersona": {

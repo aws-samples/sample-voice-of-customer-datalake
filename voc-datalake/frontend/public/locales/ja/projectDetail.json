@@ -88,11 +88,12 @@
     "selectDocument": "ドキュメントを選択"
   },
   "export": {
-    "copyCopied": "コピーしました！",
     "copyContext": "クリップボードにコピー",
+    "copyCopied": "コピーしました！",
     "copyFailed": "コピーに失敗しました — もう一度お試しください。",
     "description": "プロジェクトコンテキストをクリップボードにコピー — APIトークン不要",
     "emptyHint": "エクスポートを有効にするには、まずペルソナまたはドキュメントを生成してください。",
+    "selectAtLeastOne": "各セクションで少なくとも1件を選択してください。選択しない場合、エクスポートにすべてが含まれます。",
     "title": "エクスポート"
   },
   "importPersona": {

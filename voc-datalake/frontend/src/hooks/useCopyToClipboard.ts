@@ -31,15 +31,29 @@ export function useCopyToClipboard(timeout = 2000) {
 
   useEffect(() => () => clearTimeout(timerRef.current), [])
 
-  const copy = useCallback((text: string, key = '_') => {
-    void navigator.clipboard.writeText(text)
+  /**
+   * Show the "copied" feedback WITHOUT writing to the clipboard.
+   *
+   * For callers that need to `await` the write themselves so a rejection can be
+   * caught and surfaced. `copy()` swallows its write with `void`, so a caller
+   * that awaits its own `writeText` and *then* calls `copy()` writes twice and
+   * loses the second rejection — use this instead.
+   */
+  const markCopied = useCallback((key = '_') => {
     setCopiedKey(key)
     clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => setCopiedKey(null), timeout)
   }, [timeout])
 
+  /** Write to the clipboard and show the feedback. Fire-and-forget. */
+  const copy = useCallback((text: string, key = '_') => {
+    void navigator.clipboard.writeText(text)
+    markCopied(key)
+  }, [markCopied])
+
   return {
     copy,
+    markCopied,
     copiedKey,
   } as const
 }

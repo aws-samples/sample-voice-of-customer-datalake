@@ -88,11 +88,12 @@
     "selectDocument": "选择文档"
   },
   "export": {
-    "copyCopied": "已复制！",
     "copyContext": "复制到剪贴板",
+    "copyCopied": "已复制！",
     "copyFailed": "复制失败 — 请重试。",
     "description": "将项目上下文复制到剪贴板 — 无需 API 令牌",
     "emptyHint": "请先生成用户角色或文档以启用导出。",
+    "selectAtLeastOne": "请在每个部分中至少选择一项，否则导出将包含全部内容。",
     "title": "导出"
   },
   "importPersona": {

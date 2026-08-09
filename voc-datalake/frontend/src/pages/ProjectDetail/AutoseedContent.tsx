@@ -39,7 +39,9 @@ export default function AutoseedContent({
 }: AutoseedContentProps) {
   const { config } = useConfigStore()
   const { t } = useTranslation('projectDetail')
-  const { copy: markCopied, copiedKey } = useCopyToClipboard()
+  // markCopied, not copy: handleCopy awaits its own writeText so a rejection can
+  // be surfaced, and copy() would write a second time and swallow that failure.
+  const { markCopied, copiedKey } = useCopyToClipboard()
   const [copyError, setCopyError] = useState<string | null>(null)
 
   const kiroPrompt = generateKiroPrompt(curlUrl)
@@ -48,7 +50,7 @@ export default function AutoseedContent({
     setCopyError(null)
     try {
       await navigator.clipboard.writeText(kiroPrompt)
-      markCopied(kiroPrompt, 'kiro-autoseed')
+      markCopied('kiro-autoseed')
     } catch (err) {
       console.error('[AutoseedContent] clipboard write failed:', err)
       setCopyError(t('autoseed.copyFailed'))
