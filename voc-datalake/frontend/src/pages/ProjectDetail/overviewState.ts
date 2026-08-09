@@ -64,6 +64,19 @@ export interface OverviewStepState {
   readonly missingUpstream: boolean
 }
 
+/**
+ * Which of the two prototype source documents exist.
+ *
+ * `steps.prototype.missingUpstream` answers "can a prototype be built at all",
+ * which is all the card needs. This answers "which one is missing", which only the
+ * confirm wording needs — derived here rather than recomputed by the component so
+ * the two answers cannot drift apart.
+ */
+export interface PrototypeSources {
+  readonly hasPrd: boolean
+  readonly hasPrfaq: boolean
+}
+
 export interface OverviewState {
   readonly steps: Readonly<Record<OverviewStep, OverviewStepState>>
   /**
@@ -72,6 +85,7 @@ export interface OverviewState {
    * at work whose own inputs are ready.
    */
   readonly nextStep: OverviewStep | null
+  readonly prototypeSources: PrototypeSources
 }
 
 interface DeriveInput {
@@ -145,6 +159,7 @@ export function deriveOverviewState({
   return {
     steps,
     nextStep: pickNextStep(steps, filled),
+    prototypeSources: { hasPrd: prdCount > 0, hasPrfaq: prfaqCount > 0 },
   }
 }
 

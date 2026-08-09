@@ -65,6 +65,7 @@
       "confirmBuild": "それでも作成",
       "confirmPrdOnly": "PR-FAQ がまだありません — プロトタイプは PRD のみから作成されます。続行しますか？",
       "confirmPrfaqOnly": "PRD がまだありません — プロトタイプは PR-FAQ のみから作成されます。続行しますか？",
+      "confirmRebuild": "このプロジェクトにはすでにプロトタイプがあります。再度ビルドすると既存のものを保持したまま新しいものが追加されます。続行しますか?",
       "downloadHtml": ".html をダウンロード",
       "downloadJson": ".json をダウンロード",
       "feedbackBuilding": "修正中…",

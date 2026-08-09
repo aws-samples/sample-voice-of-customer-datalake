@@ -65,6 +65,7 @@
       "confirmBuild": "仍然创建",
       "confirmPrdOnly": "尚无 PR-FAQ — 原型将仅基于 PRD 构建。是否继续？",
       "confirmPrfaqOnly": "尚无 PRD — 原型将仅基于 PR-FAQ 构建。是否继续？",
+      "confirmRebuild": "此项目已有原型。再次构建会新增一个并保留现有原型。是否继续？",
       "downloadHtml": "下载 .html",
       "downloadJson": "下载 .json",
       "feedbackBuilding": "修订中…",

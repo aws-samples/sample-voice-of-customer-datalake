@@ -62,20 +62,19 @@ export default function OverviewTab({
 }: OverviewTabProps) {
   const { t } = useTranslation('projectDetail')
   const {
-    steps, nextStep,
+    steps, nextStep, prototypeSources,
   } = deriveOverviewState({
     personas,
     documents,
     productContext,
   })
 
-  // Only ever used to choose the confirm *wording* when exactly one of the two
-  // exists. Whether the step is available at all is `steps.prototype`, so these
-  // two cannot drift into disagreeing with the card's disabled state.
-  const hasPrd = documents.some((d) => d.document_type === 'prd')
-  const hasPrfaq = documents.some((d) => d.document_type === 'prfaq')
   const prototypeBuild = usePrototypeBuild({
-    projectId: project.project_id, hasPrd, hasPrfaq, onJobStarted,
+    projectId: project.project_id,
+    hasPrd: prototypeSources.hasPrd,
+    hasPrfaq: prototypeSources.hasPrfaq,
+    hasExistingPrototype: steps.prototype.hasOutput,
+    onJobStarted,
   })
 
   // Written out as literal t() calls rather than built from the step id: a key
@@ -112,7 +111,6 @@ export default function OverviewTab({
           buttonColor="bg-indigo-600 hover:bg-indigo-700"
           buttonIcon={<Package size={16} />}
           buttonLabel={t('overview.openProductTool')}
-          configureLabel=""
           onClick={onOpenProductTool}
         />
         <ActionCard
@@ -185,15 +183,21 @@ export default function OverviewTab({
           // No `configureLabel`: the other cards open a wizard to configure first,
           // this one starts the build (or a confirm) directly, so "Configure and"
           // would promise a step that does not exist.
-          configureLabel=""
           onClick={prototypeBuild.onClick}
           // Like remix, `missingUpstream` is a hard block here rather than a hint.
           // This is the *user-facing* authority — one derived condition, shared
           // with the state label — while the hook keeps its own guard on the same
           // condition so a caller that forgets to disable cannot start a
           // sourceless billable build. Both are verified load-bearing.
+          //
+          // `busy` also disables, but it is a SECOND reason, and this card is the
+          // only one with two. So the message has to be gated on the reason it
+          // actually describes: unconditional, it told a user with a PRD to "create
+          // a PRD" for the whole duration of every successful build.
           disabled={steps.prototype.missingUpstream || prototypeBuild.busy}
-          disabledMessage={t('documents.prototype.needsDocs')}
+          disabledMessage={steps.prototype.missingUpstream
+            ? t('documents.prototype.needsDocs')
+            : undefined}
           // The card has no room for the two lines a build needs: a failure to
           // START (everything after that belongs to the jobs panel) and a brief
           // acknowledgement covering the gap before that panel refetches.
@@ -250,6 +254,20 @@ function prototypeStatusLine(
   build: PrototypeBuildControl,
   t: TFunction,
 ): ReactNode {
+  // Always returns the region, even with nothing in it, so the <p> stays mounted
+  // across the click that fills it. Both texts appear with no focus change and
+  // nothing else on screen to signal them, so without a live region a
+  // screen-reader user never learns that a billable build failed to start —
+  // and a region that mounts at the same moment as its text can be missed
+  // entirely. Polite, not assertive, because it carries the success line too.
+  return (
+    <p className="text-xs mt-2 text-center" role="status" aria-live="polite">
+      {prototypeStatusText(build, t)}
+    </p>
+  )
+}
+
+function prototypeStatusText(build: PrototypeBuildControl, t: TFunction): ReactNode {
   // Error first, and load-bearing together with the hook never setting `started`
   // on the failure path: either one alone keeps a failure visible, and it takes
   // removing BOTH for an error to be masked by an acknowledgement.
@@ -281,7 +299,7 @@ function productContextStateLabel(state: OverviewStepState, t: TFunction): strin
 
 interface ActionCardProps {
   readonly state: OverviewStepState
-  readonly icon: React.ReactNode
+  readonly icon: ReactNode
   readonly iconBg: string
   readonly title: string
   readonly description: string
@@ -297,9 +315,14 @@ interface ActionCardProps {
    */
   readonly statusLine?: ReactNode
   readonly buttonColor: string
-  readonly buttonIcon: React.ReactNode
+  readonly buttonIcon: ReactNode
   readonly buttonLabel: string
-  readonly configureLabel: string
+  /**
+   * "Configure & " prefix for cards that open a wizard first. Omitted by cards that
+   * act directly — an empty string would read as a translated value that happens to
+   * be blank, rather than as "this card has no prefix".
+   */
+  readonly configureLabel?: string
   readonly onClick: () => void
   readonly disabled?: boolean
   readonly disabledMessage?: string
@@ -366,13 +389,16 @@ function ActionCard({
         className={`w-full py-2 text-white rounded-lg flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed ${buttonColor}`}
       >
         {buttonIcon}
-        <span className="hidden sm:inline">{configureLabel}</span>{buttonLabel}
+        {configureLabel == null ? null : <span className="hidden sm:inline">{configureLabel}</span>}{buttonLabel}
       </button>
       {hint == null ? null : <p className="text-xs text-amber-700 mt-2 text-center">{hint}</p>}
-      {/* Sits with `hint` and `disabledMessage` rather than above the button: all
-          three explain the button, and the caller owns the colour because only it
-          knows whether this line is a failure or an acknowledgement. */}
-      {statusLine == null ? null : <p className="text-xs mt-2 text-center">{statusLine}</p>}
+      {/* Rendered raw, with no wrapper of its own: it sits with `hint` and
+          `disabledMessage` because all three explain the button, but the caller
+          supplies the whole element. Only the caller knows whether the line is a
+          failure or an acknowledgement, and only the one card that starts work
+          directly needs it to be a live region — wrapping it here would put an
+          empty live region on all six cards. */}
+      {statusLine}
       {/* Pre-existing gray-400, raised with the rest: this line explains why a
           button is disabled, which is the last text on the card that should be
           hard to read. */}

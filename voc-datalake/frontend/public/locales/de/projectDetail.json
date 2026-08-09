@@ -65,6 +65,7 @@
       "confirmBuild": "Trotzdem erstellen",
       "confirmPrdOnly": "Noch kein PR-FAQ — der Prototyp wird nur aus dem PRD erstellt. Fortfahren?",
       "confirmPrfaqOnly": "Noch kein PRD — der Prototyp wird nur aus dem PR-FAQ erstellt. Fortfahren?",
+      "confirmRebuild": "Dieses Projekt hat bereits einen Prototyp. Ein weiterer Build erstellt einen neuen und behält den vorhandenen. Fortfahren?",
       "downloadHtml": ".html herunterladen",
       "downloadJson": ".json herunterladen",
       "feedbackBuilding": "Wird überarbeitet…",

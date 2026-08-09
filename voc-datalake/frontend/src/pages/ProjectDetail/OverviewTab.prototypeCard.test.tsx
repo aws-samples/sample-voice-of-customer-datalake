@@ -67,10 +67,11 @@ function doc(documentType: ProjectDocument['document_type'], id: string): Projec
  * `hasPrd`/`hasPrfaq` props become the presence of a PRD / PR-FAQ document — the
  * same condition, now derived where the rest of the grid derives its state.
  */
-function renderCard(props: { hasPrd: boolean; hasPrfaq: boolean }) {
+function renderCard(props: { hasPrd: boolean; hasPrfaq: boolean; hasPrototype?: boolean }) {
   const documents: ProjectDocument[] = []
   if (props.hasPrd) documents.push(doc('prd', 'prd_1'))
   if (props.hasPrfaq) documents.push(doc('prfaq', 'prfaq_1'))
+  if (props.hasPrototype === true) documents.push(doc('prototype', 'proto_1'))
 
   return render(
     <OverviewTab
@@ -170,6 +171,89 @@ describe('prototype card confirm gate (U12)', () => {
     // title, which never reaches a keyboard or touch user.
     expect(buildButton()).toBeDisabled()
     expect(screen.getByText(/Create a PRD or a PR-FAQ first/i)).toBeInTheDocument()
+  })
+
+  it('does not claim a document is missing while a build is in flight', async () => {
+    // Regression: this card is the only one whose `disabled` has TWO reasons
+    // (no source document, and busy), and the message was rendered
+    // unconditionally — so for the whole duration of every *successful* build it
+    // told a user who plainly had a PRD to go and create one.
+    const user = userEvent.setup()
+    let releaseRequest = () => {}
+    mockBuildPrototype.mockImplementation(() => new Promise((resolve) => {
+      releaseRequest = () => resolve({ job_id: 'job_1' })
+    }))
+    renderCard({ hasPrd: true, hasPrfaq: true })
+
+    await user.click(buildButton())
+
+    // The label becomes "Building…" while in flight, so the trigger has to be found
+    // by that name — the disabled state is real, and the point is what it *says*.
+    const busyButton = await screen.findByRole('button', { name: /building…/i })
+    expect(busyButton).toBeDisabled()
+    expect(screen.queryByText(/Create a PRD or a PR-FAQ first/i)).not.toBeInTheDocument()
+
+    releaseRequest()
+  })
+})
+
+describe('prototype card rebuild guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
+  })
+
+  it('confirms before building a second prototype, since the first is kept', async () => {
+    // The build endpoint has no existing-prototype check, so a second click starts
+    // another multi-minute billable build. Moving the control into the card grid
+    // made it more discoverable, so the accidental-spend path needed closing even
+    // though the wider "view vs rebuild" question is still open.
+    const user = userEvent.setup()
+    renderCard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
+
+    await user.click(buildButton())
+
+    expect(mockBuildPrototype).not.toHaveBeenCalled()
+    expect(screen.getByText(/already has a prototype/i)).toBeInTheDocument()
+  })
+
+  it('builds the second prototype once the rebuild is confirmed', async () => {
+    const user = userEvent.setup()
+    renderCard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
+    await user.click(buildButton())
+
+    await user.click(screen.getByRole('button', { name: /build anyway/i }))
+
+    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+  })
+
+  it('starts nothing when the rebuild is cancelled', async () => {
+    const user = userEvent.setup()
+    renderCard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
+    await user.click(buildButton())
+
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }))
+
+    expect(mockBuildPrototype).not.toHaveBeenCalled()
+  })
+
+  it('warns about the duplicate rather than the single source when both apply', async () => {
+    // Spending money on a duplicate is the more consequential surprise, so it wins
+    // over the "PR-FAQ is missing" note when a project has one document and one
+    // prototype.
+    const user = userEvent.setup()
+    renderCard({ hasPrd: true, hasPrfaq: false, hasPrototype: true })
+
+    await user.click(buildButton())
+
+    expect(screen.getByText(/already has a prototype/i)).toBeInTheDocument()
+    expect(screen.queryByText(/No PR-FAQ yet/i)).not.toBeInTheDocument()
+  })
+
+  it('reports how many prototypes exist so the card is not silent about them', () => {
+    renderCard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
+
+    expect(screen.getByText('Prototypes built: 1')).toBeInTheDocument()
   })
 })
 
