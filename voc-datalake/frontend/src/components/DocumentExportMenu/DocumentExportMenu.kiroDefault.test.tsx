@@ -32,13 +32,9 @@ vi.mock('react-markdown', () => ({
 }))
 vi.mock('remark-gfm', () => ({ default: vi.fn() }))
 
-// A SENTINEL, deliberately NOT a copy of the real backend wording. These tests
-// assert the component renders/copies whatever `kiro_default_export_prompt`
-// holds; the wording itself lives in exactly one place,
-// KIRO_DEFAULT_EXPORT_PROMPT in lambda/api/projects.py, whose uniqueness is
-// guarded by test_kiro_default_prompt.py. Copying it here would duplicate the
-// text in a second language that the guard cannot see (it skips test files), so
-// every harmless reword would break this suite.
+// A sentinel, not a copy of the real backend wording — see the rationale in
+// pages/ProjectDetail/KiroExportSettings.test.tsx. What matters here is that the
+// copied payload carries whatever `kiro_default_export_prompt` holds.
 const DEFAULT_TEXT = 'SENTINEL backend default instructions'
 const CUSTOM_TEXT = 'Use only TypeScript. Strict mode required.'
 
