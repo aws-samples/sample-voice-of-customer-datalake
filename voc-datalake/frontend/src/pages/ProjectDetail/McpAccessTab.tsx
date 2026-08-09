@@ -91,6 +91,13 @@ function buildMcpConfig(baseUrl: string, projectId: string): string {
  */
 const TWO_COLUMN_LAYOUT = 'grid grid-cols-1 lg:grid-cols-2 gap-4 items-start'
 
+/**
+ * Marks the grid so a test can count its columns without reaching through the
+ * card's utility classes. Exported because the assertion belongs to this
+ * container, and a literal duplicated in the test would drift from it.
+ */
+export const COLUMNS_TESTID = 'export-mcp-columns'
+
 type DocType = 'prd' | 'prfaq' | 'research' | 'custom'
 
 function isValidDocType(value: string): value is DocType {
@@ -593,7 +600,7 @@ export default function McpAccessTab({
   // ── Card 2 — MCP Access (error branch) ───────────────────────────────────
   if (isError) {
     return (
-      <div className={TWO_COLUMN_LAYOUT}>
+      <div className={TWO_COLUMN_LAYOUT} data-testid={COLUMNS_TESTID}>
         {exportCard}
         {/* Wrapped so the grid still has exactly two children: the error state
             and the autoseed section together are the MCP column. */}
@@ -618,7 +625,7 @@ export default function McpAccessTab({
 
   // ── Card 2 — MCP Access (normal branch) ──────────────────────────────────
   return (
-    <div className={TWO_COLUMN_LAYOUT}>
+    <div className={TWO_COLUMN_LAYOUT} data-testid={COLUMNS_TESTID}>
       {/* Card 1 — Export (no API token); the template editor is a section inside it */}
       {exportCard}
 

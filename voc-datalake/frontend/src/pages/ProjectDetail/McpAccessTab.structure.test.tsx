@@ -21,7 +21,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18next'
-import McpAccessTab from './McpAccessTab'
+import McpAccessTab, { COLUMNS_TESTID } from './McpAccessTab'
 import { canCopyExport } from './autoseedSelection'
 import deProjectDetail from '../../../public/locales/de/projectDetail.json'
 import enProjectDetail from '../../../public/locales/en/projectDetail.json'
@@ -261,11 +261,11 @@ describe('McpAccessTab — the tab body lays out as exactly two columns', () => 
   // second row at half width. Asserting the child COUNT pins that invariant
   // without coupling to the Tailwind classes that implement it — the token-error
   // path in particular has to wrap its two elements to satisfy this.
-  const columnCount = () => {
-    const card = screen.getByText(enProjectDetail.export.title).closest('div.border')
-    const grid = card?.parentElement
-    return grid == null ? null : grid.children.length
-  }
+  //
+  // Found by test id rather than by walking up from the card: reaching through
+  // `.closest('div.border')` would break for the wrong reason the day the card
+  // gains a wrapper or a nested bordered element.
+  const columnCount = () => screen.getByTestId(COLUMNS_TESTID).children.length
 
   it('gives the grid exactly two children when tokens load', async () => {
     mockListApiTokens.mockResolvedValue({ tokens: [] })

@@ -86,6 +86,9 @@ function renderTabWithData(projectId = 'proj-123') {
   )
 }
 
+/** Personas and documents — the two sections a picker can offer. */
+const PICKER_SECTION_COUNT = 2
+
 /**
  * Empties every picker section via its bulk control.
  *
@@ -95,12 +98,8 @@ function renderTabWithData(projectId = 'proj-123') {
  * query is re-run rather than holding stale handles.
  *
  * Bounded: if a regression stopped the label flipping, an unbounded loop would
- * spin to the test timeout instead of failing here with a usable message. There
- * are only ever two sections.
+ * spin to the test timeout instead of failing here with a usable message.
  */
-/** Personas and documents — the two sections a picker can offer. */
-const PICKER_SECTION_COUNT = 2
-
 async function deselectEverySection(user: ReturnType<typeof userEvent.setup>) {
   const deselectAll = () => screen.queryAllByRole('button', { name: /^Deselect all$/ })
   for (let attempt = 0; attempt <= PICKER_SECTION_COUNT; attempt += 1) {
