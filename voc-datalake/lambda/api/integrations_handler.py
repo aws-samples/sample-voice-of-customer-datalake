@@ -5,14 +5,19 @@ Manages API credentials and data source schedules.
 
 import json
 import os
+import re
 from typing import Any
 
-from shared.logging import logger, tracer
-from shared.aws import get_secrets_client
-from shared.api import create_api_resolver, api_handler
-from shared.exceptions import ConfigurationError, ServiceError, ValidationError
-
 import boto3
+from shared.api import api_handler, create_api_resolver, require_admin
+from shared.aws import get_secrets_client
+from shared.exceptions import (
+    AuthorizationError,
+    ConfigurationError,
+    ServiceError,
+    ValidationError,
+)
+from shared.logging import logger, tracer
 
 secretsmanager = get_secrets_client()
 events_client = boto3.client("events")
@@ -22,6 +27,35 @@ AWS_ACCOUNT_ID = os.environ.get("DEPLOY_ACCOUNT_ID", os.environ.get("AWS_ACCOUNT
 AWS_REGION = os.environ.get("DEPLOY_REGION", os.environ.get("AWS_REGION", ""))
 
 app = create_api_resolver()
+
+# ---------------------------------------------------------------------------
+# Credential key validation
+#
+# We validate the *form* of each key rather than an enumerated per-source
+# list, because this Lambda cannot see plugin manifests (they are resolved at
+# CDK synth time, not at runtime).  A manifest-derived allowlist is the
+# stronger fix and is tracked as a follow-up.
+#
+# Rules:
+#   • Only lowercase letters, digits, and underscores (no dots, slashes,
+#     hyphens, or other characters that could escape or re-enter a namespace).
+#   • Length: 1–64 characters.
+#   • May not start or end with an underscore (prevents confusion with
+#     namespace prefixes / internal keys).
+#   • At most MAX_CREDENTIAL_KEYS_PER_REQUEST keys per write request.
+#
+_CREDENTIAL_KEY_RE = re.compile(r'^[a-z0-9][a-z0-9_]{0,62}[a-z0-9]$|^[a-z0-9]$')
+MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
+
+
+def _validate_credential_key(key: str) -> None:
+    """Raise ValidationError if *key* does not conform to the allowed form."""
+    if not isinstance(key, str) or not _CREDENTIAL_KEY_RE.match(key):
+        raise ValidationError(
+            f"Invalid credential key '{key}': keys must contain only lowercase "
+            "letters, digits, and underscores, must start and end with a "
+            "letter or digit, and must be 1–64 characters long."
+        )
 
 
 def _build_rule_name(source: str) -> str:
@@ -73,7 +107,17 @@ def get_credentials(source: str):
 
     The caller must specify which keys to retrieve via the `keys` query
     parameter (comma-separated). Only matching keys are returned.
+
+    Requires admin access — credential management is an administrative operation.
+
+    NOTE: Whether this endpoint needs to return actual values (vs. a
+    configured/not-configured status) is an open question.  Returning only
+    presence information would be safer and would serve the Settings UI equally
+    well, but that changes the frontend contract and should be done as a
+    separate change with coordinated frontend work.
     """
+    require_admin(app.current_event.raw_event)
+
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
 
@@ -92,14 +136,15 @@ def get_credentials(source: str):
         result = {}
         for key in requested_keys:
             prefixed_key = f"{prefix}{key}"
-            if prefixed_key in secrets and secrets[prefixed_key]:
+            # Only look up the namespaced key; no unprefixed fallback.
+            # An unprefixed fallback would allow any caller to read keys
+            # belonging to other features (e.g. webscraper_api_key written
+            # by the scrapers handler as a top-level secret key).
+            if secrets.get(prefixed_key):
                 result[key] = secrets[prefixed_key]
-            elif key in secrets and secrets[key]:
-                # Fallback to unprefixed for backward compatibility
-                result[key] = secrets[key]
 
         return result
-    except ConfigurationError:
+    except (ConfigurationError, ValidationError, AuthorizationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to get credentials for {source}: {e}")
@@ -109,24 +154,47 @@ def get_credentials(source: str):
 @app.put("/integrations/<source>/credentials")
 @tracer.capture_method
 def update_credentials(source: str):
-    """Update credentials for an integration."""
+    """Update credentials for an integration.
+
+    Requires admin access — credential management is an administrative operation.
+
+    Each key in the request body must conform to the allowed form (lowercase
+    letters, digits, and underscores only; 1–64 characters; no leading/trailing
+    underscores).  Unrecognised or malformed keys are rejected with a 400 error
+    before any write is attempted.
+
+    At most MAX_CREDENTIAL_KEYS_PER_REQUEST keys may be written per request.
+    """
+    require_admin(app.current_event.raw_event)
+
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
-    
-    body = app.current_event.json_body
-    
+
+    body = app.current_event.json_body or {}
+
+    # Validate key count before touching the secret.
+    if len(body) > MAX_CREDENTIAL_KEYS_PER_REQUEST:
+        raise ValidationError(
+            f"Too many keys in request: {len(body)} exceeds the limit of "
+            f"{MAX_CREDENTIAL_KEYS_PER_REQUEST}."
+        )
+
+    # Validate every key before writing anything — fail fast, all-or-nothing.
+    for key in body:
+        _validate_credential_key(key)
+
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
-        
+
         prefix = f"{source}_"
         for key, value in body.items():
             if value:
                 secrets[f"{prefix}{key}"] = value
-        
+
         secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
         return {'success': True, 'message': f'Credentials updated for {source}'}
-    except ConfigurationError:
+    except (ConfigurationError, ValidationError, AuthorizationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to update credentials: {e}")
