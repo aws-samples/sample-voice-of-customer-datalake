@@ -11,6 +11,7 @@ import {
   useParams, useNavigate,
 } from 'react-router-dom'
 import { projectsApi } from '../../api/projectsApi'
+import { projectKey } from '../../api/projectQueryKeys'
 import { useConfigStore } from '../../store/configStore'
 import BuildPrototypeButton from './BuildPrototypeButton'
 import JobsSection from './JobsSection'
@@ -150,7 +151,7 @@ export default function ProjectDetail() {
     if (project == null) return
     void projectsApi.updateProject(project.project_id, { kiro_export_prompt: prompt })
       .then(() => {
-        return queryClient.invalidateQueries({ queryKey: ['project', id] })
+        return queryClient.invalidateQueries({ queryKey: projectKey(id) })
       })
   }, [data, queryClient, id])
 
@@ -314,7 +315,7 @@ export default function ProjectDetail() {
         onSaveAsDocument={docModal.openSaveAsModal}
         onContextSaved={handleContextSaved}
         onDocumentChanged={() => {
-          void queryClient.invalidateQueries({ queryKey: ['project', id] })
+          void queryClient.invalidateQueries({ queryKey: projectKey(id) })
         }}
         onJobStarted={handleJobStarted}
       />

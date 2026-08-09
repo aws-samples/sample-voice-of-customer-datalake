@@ -7,6 +7,7 @@ import {
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
+import { projectKey } from '../../api/projectQueryKeys'
 import { earliestPrototypeExpiry, refreshDelayMs } from '../../components/prototypeLinkLifetime'
 import type {
   PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, NoteItem,
@@ -99,10 +100,12 @@ export function useProjectData({
   const queryClient = useQueryClient()
   const isEnabled = apiEndpoint !== '' && id != null && id !== ''
 
+  // `projectKey` is shared rather than spelled here because the header reads this
+  // same entry — see api/projectQueryKeys.ts.
   const {
     data, isLoading,
   } = useQuery({
-    queryKey: ['project', id],
+    queryKey: projectKey(id),
     queryFn: () => projectsApi.getProject(id ?? ''),
     enabled: isEnabled,
   })
@@ -153,7 +156,7 @@ export function useProjectData({
       new Date(j.completed_at).getTime() > Date.now() - TEN_SECONDS,
     )
     if (completedRecently) {
-      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
     }
   }, [jobsData, id, queryClient])
 
@@ -172,7 +175,7 @@ export function useProjectData({
    * Re-arms whenever the documents change, which includes the refetch this timer
    * causes: the new URL carries a later deadline, so the next delay is computed
    * from it and the cycle continues for as long as the page is open. It is not the
-   * only protection — `['project', id]` sets no `staleTime`, so it inherits
+   * only protection — the project query sets no `staleTime`, so it inherits
    * refetch-on-window-focus and a user who tabs away and back re-signs that way.
    * This covers the case that has no user interaction to hook: a tab left focused
    * and untouched past the hour.
@@ -181,7 +184,7 @@ export function useProjectData({
     const delay = refreshDelayMs(earliestPrototypeExpiry(data?.documents ?? []), Date.now())
     if (delay == null) return
     const timer = setTimeout(() => {
-      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
     }, delay)
     return () => clearTimeout(timer)
   }, [data?.documents, id, queryClient])
@@ -347,7 +350,7 @@ export function usePersonaMutations({
     }) =>
       projectsApi.updatePersona(projectId, data.personaId, data.updates),
     onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
       if (editingPersona?.persona_id === variables.personaId) {
         setEditingPersona(null)
         setSelectedPersona(null)
@@ -358,7 +361,7 @@ export function usePersonaMutations({
   const deletePersonaMut = useMutation({
     mutationFn: (personaId: string) => projectsApi.deletePersona(projectId, personaId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
       setSelectedPersona(null)
     },
   })
@@ -416,14 +419,14 @@ export function useDocumentMutations({
         document_type: 'custom',
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
     },
   })
 
   const deleteDocMut = useMutation({
     mutationFn: (docId: string) => projectsApi.deleteDocument(projectId, docId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
       setSelectedDoc(null)
     },
   })
@@ -439,7 +442,7 @@ export function useDocumentMutations({
         content: data.content,
       }),
     onSuccess: (_result, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
       if (selectedDoc?.document_id === variables.docId) {
         setSelectedDoc({
           ...selectedDoc,

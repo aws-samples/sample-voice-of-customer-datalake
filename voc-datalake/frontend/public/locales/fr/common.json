@@ -11,9 +11,11 @@
     "dashboard": "Tableau de bord",
     "dataExplorer": "Explorateur de données",
     "feedbackForms": "Formulaires de feedback",
+    "feedbackItem": "Élément de feedback",
     "home": "Accueil",
     "prioritization": "Priorisation",
     "problems": "Analyse des problèmes",
+    "project": "Projet",
     "projects": "Projets",
     "scrapers": "Collecteurs web",
     "settings": "Paramètres"

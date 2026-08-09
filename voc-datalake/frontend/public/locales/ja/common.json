@@ -11,9 +11,11 @@
     "dashboard": "ダッシュボード",
     "dataExplorer": "データエクスプローラー",
     "feedbackForms": "フィードバックフォーム",
+    "feedbackItem": "フィードバック項目",
     "home": "ホーム",
     "prioritization": "優先順位付け",
     "problems": "問題分析",
+    "project": "プロジェクト",
     "projects": "プロジェクト",
     "scrapers": "Webスクレイパー",
     "settings": "設定"

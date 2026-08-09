@@ -1,31 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
-import { createBrowserRouter, Navigate, RouterProvider, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import Layout from './components/Layout'
-import ProtectedRoute from './components/ProtectedRoute'
-import AdminRoute from './components/AdminRoute'
 import PageLoader from './components/PageLoader'
-import RouteErrorBoundary from './components/RouteErrorBoundary'
-import Login from './pages/Login'
+import { routes } from './routes'
 import { loadRuntimeConfig, isConfigLoaded } from './runtimeConfig'
 import { useConfigStore } from './store/configStore'
 import { configureAmplify } from './lib/amplify-config'
-
-// Lazy load pages for better code splitting
-const Home = lazy(() => import('./pages/Home'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const FeedbackDetail = lazy(() => import('./pages/FeedbackDetail'))
-const Categories = lazy(() => import('./pages/Categories'))
-const ProblemAnalysis = lazy(() => import('./pages/ProblemAnalysis'))
-const Settings = lazy(() => import('./pages/Settings'))
-const Scrapers = lazy(() => import('./pages/Scrapers'))
-const Chat = lazy(() => import('./pages/Chat'))
-const Projects = lazy(() => import('./pages/Projects'))
-const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
-const Prioritization = lazy(() => import('./pages/Prioritization'))
-const FeedbackForms = lazy(() => import('./pages/FeedbackForms'))
-const DataExplorer = lazy(() => import('./pages/DataExplorer'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,59 +16,7 @@ const queryClient = new QueryClient({
   },
 })
 
-// Lazy pages share the same suspense fallback and, per issue #173, a
-// route-scoped error boundary: a render error in one page replaces only
-// that page's content — the layout and sidebar stay mounted.
-const page = (element: ReactNode) => ({
-  element: <Suspense fallback={<PageLoader />}>{element}</Suspense>,
-  errorElement: <RouteErrorBoundary />,
-})
-
-/**
- * The standalone Feedback list page was consolidated into Categories
- * (issue #198). Old links and breadcrumbs still point at `/feedback`, so
- * redirect there with the query string preserved (`?category=`, `?q=`,
- * `?source=` deep-links land pre-filtered on Categories).
- */
-function FeedbackRedirect() {
-  const location = useLocation()
-  return <Navigate to={`/categories${location.search}`} replace />
-}
-
-const router = createBrowserRouter([
-  {
-    path: '/login',
-    element: <Login />,
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/',
-    element: (
-      <ProtectedRoute>
-        <Layout />
-      </ProtectedRoute>
-    ),
-    // Catches errors thrown by Layout/ProtectedRoute themselves; page-level
-    // errors are handled by each child's errorElement so the layout survives.
-    errorElement: <RouteErrorBoundary />,
-    children: [
-      { index: true, ...page(<Home />) },
-      { path: 'dashboard', ...page(<Dashboard />) },
-      { path: 'feedback', element: <FeedbackRedirect />, errorElement: <RouteErrorBoundary /> },
-      { path: 'feedback/:id', ...page(<FeedbackDetail />) },
-      { path: 'categories', ...page(<Categories />) },
-      { path: 'problems', ...page(<ProblemAnalysis />) },
-      { path: 'chat', ...page(<Chat />) },
-      { path: 'projects', ...page(<Projects />) },
-      { path: 'projects/:id', ...page(<ProjectDetail />) },
-      { path: 'prioritization', ...page(<Prioritization />) },
-      { path: 'data-explorer', ...page(<DataExplorer />) },
-      { path: 'scrapers', ...page(<Scrapers />) },
-      { path: 'feedback-forms', ...page(<FeedbackForms />) },
-      { path: 'settings', ...page(<AdminRoute><Settings /></AdminRoute>) },
-    ],
-  },
-])
+const router = createBrowserRouter(routes)
 
 /**
  * App wrapper that loads runtime config before rendering.

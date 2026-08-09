@@ -11,9 +11,11 @@
     "dashboard": "仪表板",
     "dataExplorer": "数据浏览器",
     "feedbackForms": "反馈表单",
+    "feedbackItem": "反馈条目",
     "home": "首页",
     "prioritization": "优先级排序",
     "problems": "问题分析",
+    "project": "项目",
     "projects": "项目",
     "scrapers": "网页抓取器",
     "settings": "设置"
