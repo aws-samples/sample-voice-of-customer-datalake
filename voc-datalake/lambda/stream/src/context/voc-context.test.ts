@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { buildVocChatContext } from './voc-context.js';
+import type { SupportedLanguage } from './language.js';
 
 function createMockDocClient(responses: Record<string, unknown>[][] = []) {
   let callIndex = 0;
@@ -63,7 +64,7 @@ describe('buildVocChatContext', () => {
     const docClient = createMockDocClient();
     const ctx = await buildVocChatContext(docClient, 'agg-table', {
       message: 'hi',
-      response_language: 'es',
+      response_language: 'es' as SupportedLanguage,
     });
 
     expect(ctx.systemPrompt).toContain('Spanish');
@@ -74,7 +75,7 @@ describe('buildVocChatContext', () => {
     const docClient = createMockDocClient();
     const ctx = await buildVocChatContext(docClient, 'agg-table', {
       message: 'hi',
-      response_language: 'en',
+      response_language: 'en' as SupportedLanguage,
     });
 
     expect(ctx.systemPrompt).not.toContain('MUST respond entirely in');
@@ -104,5 +105,21 @@ describe('buildVocChatContext', () => {
 
     expect(ctx.userMessage).toContain('Active Filters');
     expect(ctx.userMessage).toContain('Source: webscraper');
+  });
+
+  it('does not interpolate an unrecognised language code into the system prompt', async () => {
+    // The schema coerces unknown codes to undefined before reaching this
+    // function, but we verify the function itself is also safe: passing
+    // undefined (the fallback value) must produce a system prompt that
+    // contains no trace of any attacker-supplied string.
+    const docClient = createMockDocClient();
+    const ctx = await buildVocChatContext(docClient, 'agg-table', {
+      message: 'hi',
+      response_language: undefined,
+    });
+
+    // The default (no language instruction) system prompt must not contain
+    // the MUST respond sentinel at all.
+    expect(ctx.systemPrompt).not.toContain('MUST respond entirely in');
   });
 });

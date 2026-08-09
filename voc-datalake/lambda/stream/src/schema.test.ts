@@ -2,7 +2,13 @@
  * Tests for Zod request validation schemas.
  */
 import { describe, it, expect } from 'vitest';
+import type { z } from 'zod';
 import { chatRequestSchema, attachmentSchema } from './schema.js';
+
+/** Returns the flattened dot-path of every issue in a failed parse result. */
+function errorPaths(result: z.SafeParseReturnType<unknown, unknown>): string[] {
+  return result.success ? [] : result.error.issues.map((i) => i.path.join('.'));
+}
 
 describe('attachmentSchema', () => {
   it('accepts a valid PNG attachment', () => {
@@ -63,6 +69,44 @@ describe('attachmentSchema', () => {
   it('rejects missing fields', () => {
     expect(attachmentSchema.safeParse({}).success).toBe(false);
     expect(attachmentSchema.safeParse({ name: 'x' }).success).toBe(false);
+  });
+
+  it('rejects attachment name exceeding 255 characters', () => {
+    const result = attachmentSchema.safeParse({
+      name: 'a'.repeat(256),
+      media_type: 'image/png',
+      data: 'abc',
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result)).toContain('name');
+  });
+
+  it('accepts attachment name at exactly 255 characters', () => {
+    const result = attachmentSchema.safeParse({
+      name: 'a'.repeat(255),
+      media_type: 'image/png',
+      data: 'abc',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects attachment data exceeding 2 800 000 characters', () => {
+    const result = attachmentSchema.safeParse({
+      name: 'big.png',
+      media_type: 'image/png',
+      data: 'a'.repeat(2_800_001),
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result)).toContain('data');
+  });
+
+  it('accepts attachment data at exactly 2 800 000 characters', () => {
+    const result = attachmentSchema.safeParse({
+      name: 'big.png',
+      media_type: 'image/png',
+      data: 'a'.repeat(2_800_000),
+    });
+    expect(result.success).toBe(true);
   });
 });
 
@@ -156,8 +200,144 @@ describe('chatRequestSchema', () => {
     const result = chatRequestSchema.safeParse({ message: 'hi', use_web_search: 'yes' });
     expect(result.success).toBe(false);
   });
+
+  it('rejects message exceeding 2 000 characters', () => {
+    const result = chatRequestSchema.safeParse({ message: 'a'.repeat(2_001) });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result)).toContain('message');
+  });
+
+  it('accepts message at exactly 2 000 characters', () => {
+    const result = chatRequestSchema.safeParse({ message: 'a'.repeat(2_000) });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects context exceeding 500 characters', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      context: 'a'.repeat(501),
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result)).toContain('context');
+  });
+
+  it('accepts context at exactly 500 characters', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      context: 'a'.repeat(500),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects project_id exceeding 128 characters', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      project_id: 'a'.repeat(129),
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result)).toContain('project_id');
+  });
+
+  it('accepts project_id at exactly 128 characters', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      project_id: 'a'.repeat(128),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a history entry content exceeding 4 000 characters', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      history: [{ role: 'user', content: 'a'.repeat(4_001) }],
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result).some((f) => f.startsWith('history'))).toBe(true);
+  });
+
+  it('accepts history entry content at exactly 4 000 characters', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      history: [{ role: 'user', content: 'a'.repeat(4_000) }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects more than 50 history entries', () => {
+    const entry = { role: 'user' as const, content: 'hi' };
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      history: Array.from({ length: 51 }, () => entry),
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result)).toContain('history');
+  });
+
+  it('rejects more than 20 selected_personas', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      selected_personas: Array.from({ length: 21 }, (_, i) => `persona-${i}`),
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result)).toContain('selected_personas');
+  });
+
+  it('rejects a selected_persona ID exceeding 128 characters', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      selected_personas: ['a'.repeat(129)],
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result).some((f) => f.startsWith('selected_personas'))).toBe(true);
+  });
+
+  it('rejects more than 20 selected_documents', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      selected_documents: Array.from({ length: 21 }, (_, i) => `doc-${i}`),
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result)).toContain('selected_documents');
+  });
+
+  it('rejects a selected_document ID exceeding 128 characters', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      selected_documents: ['a'.repeat(129)],
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result).some((f) => f.startsWith('selected_documents'))).toBe(true);
+  });
 });
 
+describe('chatRequestSchema response_language allowlist (issue #266)', () => {
+  it('accepts every supported locale', () => {
+    for (const lang of ['de', 'en', 'es', 'fr', 'ja', 'ko', 'pt', 'zh']) {
+      const result = chatRequestSchema.safeParse({ message: 'hi', response_language: lang });
+      expect(result.success).toBe(true);
+      expect(result.success && result.data.response_language).toBe(lang);
+    }
+  });
+
+  it('silently coerces an unknown locale to undefined instead of rejecting', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      response_language: 'xx-UNKNOWN',
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.response_language).toBeUndefined();
+  });
+
+  it('does not let an unrecognised code pass through to the parsed value', () => {
+    // The raw attacker string must never appear in the parsed output.
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      response_language: 'prompt-injection-attempt',
+    });
+    const parsed = result.success ? JSON.stringify(result.data) : '';
+    expect(parsed).not.toContain('prompt-injection-attempt');
+  });
+});
 
 describe('chatRequestSchema date_basis (issue #150)', () => {
   it('accepts imported and review values', () => {
