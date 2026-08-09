@@ -26,11 +26,13 @@ export function getBaseUrl(): string {
 }
 
 /**
- * Build the allowlist of trusted API origins.
+ * Build the allowlist of trusted API origins from the deployment runtime config.
  *
- * The authoritative origin is always the one from the deployment's runtime
- * config (config.json). In development, any localhost or 127.0.0.1 hostname
- * (on any port) is also trusted so developers can run the mock server locally.
+ * **Note**: the returned array contains only the origin derived from the
+ * runtime config endpoint. `localhost` / `127.0.0.1` are NOT in the returned
+ * array — localhost trust is enforced inside `isTrustedAbsoluteUrl` via a
+ * hostname comparison, not via the origins array. Reading this array and
+ * checking for a localhost entry will never find one.
  *
  * Returns an empty array when the runtime config is not loaded yet — the
  * caller treats an empty allowlist as "no origin is trusted", which is the

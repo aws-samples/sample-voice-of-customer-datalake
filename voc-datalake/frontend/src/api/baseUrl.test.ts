@@ -81,15 +81,12 @@ describe('getTrustedApiOrigins', () => {
       apiEndpoint: 'not-a-url',
       cognito: { userPoolId: '', clientId: '', region: 'us-east-1', identityPoolId: '' },
     })
-    // Config is "loaded" but the endpoint is unparseable — no origin should be
-    // added from it. Verify no entry in the result contains the bad string, and
-    // that the result is empty (in test mode DEV=true so localhost is not added
-    // here, but we test the full array shape to avoid a vacuous assertion).
+    // Config is "loaded" but the endpoint is unparseable.
+    // buildTrustedApiOrigins never adds localhost entries — that logic lives
+    // only in isTrustedAbsoluteUrl.  When the endpoint is unparseable the
+    // array must be exactly empty.
     const origins = getTrustedApiOrigins()
-    expect(origins.every(o => !o.includes('not-a-url'))).toBe(true)
-    // In non-DEV builds the array should be empty; in DEV it may include
-    // localhost entries from the trustedOrigins helper, but NOT the bad value.
-    expect(origins).not.toContain('not-a-url')
+    expect(origins).toEqual([])
   })
 })
 
