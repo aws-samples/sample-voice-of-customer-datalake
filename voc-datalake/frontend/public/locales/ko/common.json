@@ -11,9 +11,11 @@
     "dashboard": "대시보드",
     "dataExplorer": "데이터 탐색기",
     "feedbackForms": "피드백 양식",
+    "feedbackItem": "피드백 항목",
     "home": "홈",
     "prioritization": "우선순위",
     "problems": "문제 분석",
+    "project": "프로젝트",
     "projects": "프로젝트",
     "scrapers": "웹 스크레이퍼",
     "settings": "설정"

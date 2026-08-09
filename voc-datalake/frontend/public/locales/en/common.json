@@ -11,9 +11,11 @@
     "dashboard": "Dashboard",
     "dataExplorer": "Data Explorer",
     "feedbackForms": "Feedback Forms",
+    "feedbackItem": "Feedback item",
     "home": "Home",
     "prioritization": "Prioritization",
     "problems": "Problem Analysis",
+    "project": "Project",
     "projects": "Projects",
     "scrapers": "Web Scrapers",
     "settings": "Settings"

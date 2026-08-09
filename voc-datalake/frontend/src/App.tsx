@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createBrowserRouter, Navigate, RouterProvider, useLocation } from 'react-router-dom'
+import type { RouteObject } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -55,7 +56,19 @@ function FeedbackRedirect() {
   return <Navigate to={`/categories${location.search}`} replace />
 }
 
-const router = createBrowserRouter([
+/**
+ * Exported so the breadcrumb tests can hold Breadcrumbs' route tables to the
+ * real router: every layout route needs a label, and every `:param` route needs
+ * a stand-in label, or the header falls back to printing a raw path segment.
+ *
+ * This is the router's own table, deliberately not a copy — a copy in the test
+ * would agree with itself forever while the app grew routes past it. It stays
+ * next to the router that consumes it rather than moving to its own module, so
+ * fast refresh is given up for this one file: editing the app shell full-reloads
+ * anyway.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- see above.
+export const routes: RouteObject[] = [
   {
     path: '/login',
     element: <Login />,
@@ -88,7 +101,9 @@ const router = createBrowserRouter([
       { path: 'settings', ...page(<AdminRoute><Settings /></AdminRoute>) },
     ],
   },
-])
+]
+
+const router = createBrowserRouter(routes)
 
 /**
  * App wrapper that loads runtime config before rendering.

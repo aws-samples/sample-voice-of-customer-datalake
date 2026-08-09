@@ -99,6 +99,9 @@ export function useProjectData({
   const queryClient = useQueryClient()
   const isEnabled = apiEndpoint !== '' && id != null && id !== ''
 
+  // Read outside this page too: Breadcrumbs observes ['project', id] read-only
+  // (skipToken) to title the header crumb with the project's name instead of its
+  // id. Renaming this key silently returns that crumb to a generic label.
   const {
     data, isLoading,
   } = useQuery({
