@@ -83,6 +83,11 @@ function pageLength(page: FeedbackPageCursor): number {
  *
  * Also refuses a zero-length page, so a server reporting `total > loaded` while
  * returning nothing cannot spin the caller.
+ *
+ * ⚠️ Because `loaded` is the sum over `allPages`, this is **incompatible with
+ * TanStack's `maxPages`**: evicting a page shrinks that sum, rewinding the
+ * offset and re-fetching rows already seen, indefinitely. Keep every page, or
+ * track the offset outside the cache.
  */
 export function nextPageOffset(
   lastPage: FeedbackPageCursor,

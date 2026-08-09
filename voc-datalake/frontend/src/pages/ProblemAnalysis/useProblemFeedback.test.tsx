@@ -204,6 +204,36 @@ describe('useProblemFeedback', () => {
       expect(result.current.isError).toBe(false)
       expect(result.current.isPartial).toBe(false)
     })
+
+    it('recovers on retry after an outright failure', async () => {
+      mockGetFeedback.mockRejectedValueOnce(new Error('boom'))
+      const { result } = renderFeedback()
+      await waitFor(() => expect(result.current.isError).toBe(true))
+
+      serveWindow(150)
+      result.current.retry()
+
+      await waitFor(() => expect(result.current.loadedCount).toBe(150))
+      expect(result.current.isError).toBe(false)
+      expect(result.current.isPartial).toBe(false)
+    })
+
+    it('does not call a completed window partial when a later refetch fails', async () => {
+      // Raised in review: `isError` feeds `stoppedEarly`, so could a failed
+      // background refetch flag an already-complete window as short? It cannot,
+      // because a completed walk leaves `hasNextPage` false and `stoppedEarly`
+      // is gated on it. Pinned so that gate cannot be dropped.
+      serveWindow(150)
+      const { result } = renderFeedback()
+      await waitFor(() => expect(result.current.loadedCount).toBe(150))
+      expect(result.current.isPartial).toBe(false)
+
+      mockGetFeedback.mockRejectedValue(new Error('boom'))
+      result.current.retry()
+
+      await waitFor(() => expect(result.current.isError).toBe(true))
+      expect(result.current.isPartial).toBe(false)
+    })
   })
 
   describe('request volume', () => {

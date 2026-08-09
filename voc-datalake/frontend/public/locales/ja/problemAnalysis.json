@@ -27,6 +27,7 @@
     "loadingWindow": "フィードバックを読み込み中… 現在 {{total, number}} 件中 {{loaded, number}} 件。",
     "partialWindow": "件数はこの期間の {{total, number}} 件中 {{loaded, number}} 件を対象としています。",
     "problems": "問題",
+    "retry": "再試行",
     "subcategories": "サブカテゴリ",
     "urgent": "緊急"
   },

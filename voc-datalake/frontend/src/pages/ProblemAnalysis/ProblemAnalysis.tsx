@@ -453,6 +453,7 @@ export default function ProblemAnalysis() {
           hasFailed
           loadedCount={0}
           totalCount={0}
+          onRetry={feedback.retry}
         />
       </div>
     )

@@ -28,6 +28,12 @@ interface WindowCoverageNoticeProps {
   readonly hasFailed: boolean
   readonly loadedCount: number
   readonly totalCount: number
+  /**
+   * Retries the read. Required whenever `hasFailed` can be true, because the
+   * failure message tells the user to retry — an instruction with no control
+   * behind it is worse than no instruction.
+   */
+  readonly onRetry?: () => void
 }
 
 /**
@@ -41,6 +47,7 @@ export function WindowCoverageNotice({
   hasFailed,
   loadedCount,
   totalCount,
+  onRetry,
 }: WindowCoverageNoticeProps) {
   const { t } = useTranslation('problemAnalysis')
 
@@ -51,9 +58,17 @@ export function WindowCoverageNotice({
 
   if (hasFailed && loadedCount === 0) {
     return (
-      <p className={className} role="alert">
-        {t('stats.loadFailed')}
-      </p>
+      <div role="alert" className="text-center">
+        <p className={className}>{t('stats.loadFailed')}</p>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
+          >
+            {t('stats.retry')}
+          </button>
+        )}
+      </div>
     )
   }
 

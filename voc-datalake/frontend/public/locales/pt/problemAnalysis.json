@@ -27,6 +27,7 @@
     "loadingWindow": "Carregando feedback… {{loaded, number}} de {{total, number}} até agora.",
     "partialWindow": "As contagens cobrem {{loaded, number}} de {{total, number}} itens neste período.",
     "problems": "Problemas",
+    "retry": "Tentar novamente",
     "subcategories": "Subcategorias",
     "urgent": "Urgente"
   },

@@ -27,6 +27,7 @@
     "loadingWindow": "Chargement des retours… {{loaded, number}} sur {{total, number}} pour l’instant.",
     "partialWindow": "Les décomptes couvrent {{loaded, number}} éléments sur {{total, number}} dans cette période.",
     "problems": "Problèmes",
+    "retry": "Réessayer",
     "subcategories": "Sous-catégories",
     "urgent": "Prioritaire"
   },

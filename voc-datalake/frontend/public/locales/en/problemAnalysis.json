@@ -27,6 +27,7 @@
     "loadingWindow": "Loading feedback… {{loaded, number}} of {{total, number}} so far.",
     "partialWindow": "Counts cover {{loaded, number}} of {{total, number}} items in this window.",
     "problems": "Problems",
+    "retry": "Retry",
     "subcategories": "Subcategories",
     "urgent": "Urgent"
   },

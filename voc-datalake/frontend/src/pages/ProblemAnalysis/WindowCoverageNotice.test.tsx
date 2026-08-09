@@ -6,6 +6,7 @@
  * resolving fails here instead of rendering a raw key into the UI.
  */
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 import { WindowCoverageNotice } from './WindowCoverageNotice'
 
@@ -70,6 +71,25 @@ describe('WindowCoverageNotice', () => {
       render(<WindowCoverageNotice {...complete} hasFailed loadedCount={0} totalCount={0} />)
 
       expect(screen.getByRole('alert')).toHaveTextContent('Could not load feedback for this window')
+    })
+
+    it('offers the retry it tells the user to perform', async () => {
+      // The message says "Retry, or narrow the time range" — the time range
+      // lives in the app header, but retry has to come from here or the
+      // instruction points at nothing.
+      const onRetry = vi.fn()
+      const user = userEvent.setup()
+      render(<WindowCoverageNotice {...complete} hasFailed loadedCount={0} totalCount={0} onRetry={onRetry} />)
+
+      await user.click(screen.getByRole('button', { name: 'Retry' }))
+      expect(onRetry).toHaveBeenCalledOnce()
+    })
+
+    it('omits the retry control when no handler is supplied', () => {
+      render(<WindowCoverageNotice {...complete} hasFailed loadedCount={0} totalCount={0} />)
+
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+      expect(screen.queryByRole('button')).not.toBeInTheDocument()
     })
 
     it('prefers the failure message over any coverage message', () => {

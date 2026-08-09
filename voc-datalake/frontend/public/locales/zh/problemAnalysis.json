@@ -27,6 +27,7 @@
     "loadingWindow": "正在加载反馈… 目前 {{total, number}} 条中的 {{loaded, number}} 条。",
     "partialWindow": "统计覆盖此时间范围内 {{total, number}} 条中的 {{loaded, number}} 条。",
     "problems": "问题",
+    "retry": "重试",
     "subcategories": "子分类",
     "urgent": "紧急"
   },

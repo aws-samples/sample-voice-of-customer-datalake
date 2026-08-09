@@ -27,6 +27,7 @@
     "loadingWindow": "Cargando comentarios… {{loaded, number}} de {{total, number}} hasta ahora.",
     "partialWindow": "Los recuentos abarcan {{loaded, number}} de {{total, number}} elementos de este periodo.",
     "problems": "Problemas",
+    "retry": "Reintentar",
     "subcategories": "Subcategorías",
     "urgent": "Urgente"
   },

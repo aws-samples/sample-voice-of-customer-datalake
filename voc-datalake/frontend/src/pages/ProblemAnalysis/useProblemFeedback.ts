@@ -68,6 +68,8 @@ export interface ProblemFeedback {
    * callers show an error rather than zeroed aggregates.
    */
   isError: boolean
+  /** Re-reads the window from the first page. */
+  retry: () => void
 }
 
 export function useProblemFeedback(
@@ -92,7 +94,7 @@ export function useProblemFeedback(
     // count on this screen is an aggregate over all of them.
   })
 
-  const { data, hasNextPage, isFetchingNextPage, isError, fetchNextPage } = query
+  const { data, hasNextPage, isFetchingNextPage, isError, fetchNextPage, refetch } = query
   const pageCount = data?.pages.length ?? 0
   const budgetSpent = pageCount >= MAX_AUTO_PAGES
 
@@ -128,6 +130,9 @@ export function useProblemFeedback(
     isLoadingMore: isFetchingNextPage,
     loadedCount: items.length,
     isError,
+    retry: () => {
+      void refetch()
+    },
     ...summarizeCoverage(data?.pages, items.length, stoppedEarly),
   }
 }

@@ -18,10 +18,15 @@ constant directly — the same lockstep approach as
 import re
 from pathlib import Path
 
+import pytest
+
 
 def _repo_root() -> Path:
     # lambda/api/test/ -> voc-datalake/
     return Path(__file__).resolve().parents[3]
+
+
+FRONTEND_SOURCE = 'frontend/src/api/feedbackPagination.ts'
 
 
 def _read(relative: str) -> str:
@@ -31,9 +36,15 @@ def _read(relative: str) -> str:
 
 
 def _frontend_page_limit() -> int:
-    source = _read('frontend/src/api/feedbackPagination.ts')
-    match = re.search(r'export const FEEDBACK_PAGE_LIMIT = (\d+)', source)
-    assert match, 'FEEDBACK_PAGE_LIMIT not found in api/feedbackPagination.ts'
+    path = _repo_root() / FRONTEND_SOURCE
+    if not path.is_file():
+        # This is a backend test reaching across into the frontend tree. Where
+        # only the lambda sources are present (packaging, a partial checkout)
+        # there is nothing to compare, and skipping beats a failure that says
+        # nothing about the code under test.
+        pytest.skip(f'{FRONTEND_SOURCE} not present in this tree')
+    match = re.search(r'export const FEEDBACK_PAGE_LIMIT = (\d+)', path.read_text(encoding='utf-8'))
+    assert match, f'FEEDBACK_PAGE_LIMIT not found in {FRONTEND_SOURCE}'
     return int(match.group(1))
 
 
@@ -41,9 +52,19 @@ def _list_feedback_limit_bounds() -> tuple[int, int]:
     """`(default, max_val)` from the `validate_limit` call in list_feedback."""
     source = _read('lambda/api/metrics_handler.py')
     # Scope the search to the @app.get("/feedback") handler so another
-    # endpoint's limit cannot satisfy this test.
-    start = source.index('@app.get("/feedback")')
-    end = source.index('@app.get', start + 1)
+    # endpoint's limit cannot satisfy this test. The handler body ends at the
+    # next route decorator of ANY verb -- and at end-of-file if /feedback
+    # happens to be the last route, which `str.index` would turn into a
+    # ValueError rather than a readable failure.
+    marker = '@app.get("/feedback")'
+    start = source.find(marker)
+    assert start != -1, f'{marker} not found in metrics_handler.py'
+    next_route = re.search(
+        r'^@app\.(get|post|put|patch|delete|route)\(',
+        source[start + len(marker):],
+        re.MULTILINE,
+    )
+    end = start + len(marker) + (next_route.start() if next_route else len(source))
     match = re.search(
         r'limit = validate_limit\(params\.get\(.limit.\),\s*default=(\d+),\s*max_val=(\d+)\)',
         source[start:end],
