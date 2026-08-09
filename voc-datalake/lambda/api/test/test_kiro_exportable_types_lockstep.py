@@ -75,12 +75,16 @@ def _backend_excluded_types() -> frozenset[str]:
     """Read KIRO_EXPORT_EXCLUDED_TYPES from projects.py."""
     source = _read('lambda/api/projects.py')
     # Match: KIRO_EXPORT_EXCLUDED_TYPES: frozenset[str] = frozenset({...})
-    match = re.search(
+    matches = re.findall(
         r"KIRO_EXPORT_EXCLUDED_TYPES\s*[^=]*=\s*frozenset\(\{([^}]+)\}\)",
         source,
     )
-    assert match, 'KIRO_EXPORT_EXCLUDED_TYPES not found in lambda/api/projects.py'
-    raw = match.group(1)
+    assert len(matches) == 1, (
+        f"Expected exactly one KIRO_EXPORT_EXCLUDED_TYPES definition in "
+        f"lambda/api/projects.py; found {len(matches)}. If the constant "
+        f"was renamed or duplicated, update this helper accordingly."
+    )
+    raw = matches[0]
     # Extract quoted strings from the set literal
     return frozenset(re.findall(r"'([^']+)'", raw))
 

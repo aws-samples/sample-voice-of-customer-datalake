@@ -7,7 +7,7 @@
  * the filterExportableDocs change fails here with a clear message.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import McpAccessTab from './McpAccessTab'
 import type { Project, ProjectDocument, ProjectPersona } from '../../api/types'
@@ -109,6 +109,10 @@ describe('McpAccessTab — export picker excludes non-exportable document types'
 
   it('renders rows for all four exportable types when present', () => {
     renderTab(allSixDocTypes)
+
+    // Picker sections start collapsed — expand the documents section first.
+    const docsToggle = screen.getByText(/Documents \(/)
+    fireEvent.click(docsToggle)
 
     expect(screen.getByText('My PRD')).toBeInTheDocument()
     expect(screen.getByText('My PR/FAQ')).toBeInTheDocument()
