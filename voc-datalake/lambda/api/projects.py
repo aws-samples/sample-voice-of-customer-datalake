@@ -7,6 +7,21 @@ import re
 from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
 
+# Default instructions used when a project has not set its own kiro_export_prompt.
+# Kept here — ONE definition only — so both _build_steering_file and the
+# get_project response agree on the wording. Do not duplicate this text in any
+# other file (backend or frontend). The frontend reads it from the API response
+# via the kiro_default_export_prompt field.
+KIRO_DEFAULT_EXPORT_PROMPT = """\
+Build against the material in this workspace rather than from assumptions.
+
+- The personas in `.kiro/personas/` are the audience. Check each decision against their goals and frustrations, and say which persona a change serves.
+- PRDs carry scope and acceptance criteria. Treat them as the contract for what "done" means, and flag anything you cannot satisfy rather than narrowing it silently.
+- PR/FAQs carry customer-facing language. Reuse their wording in UI copy so the product says what was promised.
+- Research documents carry the evidence. Cite them when a tradeoff is contested.
+- If a requirement is missing, ask rather than inventing one. If two documents disagree, surface the conflict instead of picking one.\
+"""
+
 # Shared module imports
 from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
@@ -221,7 +236,12 @@ def get_project(project_id: str) -> dict:
     
     if not project:
         raise NotFoundError('Project metadata not found')
-    
+
+    # Expose the default so both consumers (the steering-file editor and the
+    # per-document "Copy to Kiro" action) always agree on the fallback text
+    # without duplicating the constant in the frontend bundle.
+    project['kiro_default_export_prompt'] = KIRO_DEFAULT_EXPORT_PROMPT
+
     return {
         'project': project,
         'personas': personas,
@@ -1634,7 +1654,8 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
     """Generate a Kiro steering file from project data."""
     name = project.get('name', 'Project')
     description = project.get('description', '')
-    kiro_prompt = project.get('kiro_export_prompt', '')
+    stored_prompt = project.get('kiro_export_prompt', '').strip()
+    kiro_prompt = stored_prompt if stored_prompt else KIRO_DEFAULT_EXPORT_PROMPT
 
     lines = [f'# {name} — Implementation Context', '']
     if description:
@@ -1669,12 +1690,11 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
         lines.append('Use PRDs for acceptance criteria and scope. Use PR/FAQs for customer-facing messaging.')
         lines.append('')
 
-    # Custom instructions
-    if kiro_prompt:
-        lines.append('## Custom Instructions')
-        lines.append('')
-        lines.append(kiro_prompt)
-        lines.append('')
+    # Custom instructions (always present: either the project's own or the default)
+    lines.append('## Custom Instructions')
+    lines.append('')
+    lines.append(kiro_prompt)
+    lines.append('')
 
     return '\n'.join(lines)
 

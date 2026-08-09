@@ -18,28 +18,8 @@ import {
 import { useTranslation } from 'react-i18next'
 import type { KiroExportSettingsProps } from './types'
 
-const DEFAULT_PROMPT = `# Kiro Implementation Context
-
-## Project Overview
-Implement the following PRD for [Your Project Name].
-
-## Tech Stack
-- Frontend: React + TypeScript + Tailwind CSS
-- Backend: [Your backend stack]
-- Database: [Your database]
-
-## Coding Standards
-- Follow existing code patterns in the codebase
-- Use TypeScript strict mode
-- Write unit tests for new functionality
-- Follow the project's ESLint configuration
-
-## Implementation Notes
-- [Add specific implementation guidance here]
-- [Reference relevant files or patterns]
-- [Note any constraints or requirements]`
-
-// Empty state component
+// Empty state component — shown when there is no stored override and no default
+// available yet (e.g. list-route responses that omit kiro_default_export_prompt).
 function EmptyState() {
   const { t } = useTranslation('projectDetail')
   return (
@@ -86,7 +66,6 @@ function PromptEditor({
         <textarea
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
-          placeholder={DEFAULT_PROMPT}
           rows={12}
           className="w-full px-3 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
         />
@@ -115,10 +94,14 @@ function PromptEditor({
 export default function KiroExportSettings({
   project, onSave,
 }: Readonly<KiroExportSettingsProps>) {
-  const initialPrompt = useMemo(() => project.kiro_export_prompt ?? '', [project.kiro_export_prompt])
+  const storedPrompt = useMemo(() => project.kiro_export_prompt ?? '', [project.kiro_export_prompt])
+  const defaultPrompt = project.kiro_default_export_prompt ?? ''
   const { t } = useTranslation('projectDetail')
 
-  const [prompt, setPrompt] = useState(initialPrompt)
+  // The effective prompt is the stored value if non-empty, else the default.
+  const effectivePrompt = storedPrompt !== '' ? storedPrompt : defaultPrompt
+
+  const [prompt, setPrompt] = useState(storedPrompt)
   const [isEditing, setIsEditing] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -131,7 +114,7 @@ export default function KiroExportSettings({
 
   const handleCancel = () => {
     setIsEditing(false)
-    setPrompt(project.kiro_export_prompt ?? '')
+    setPrompt(storedPrompt)
   }
 
   const renderContent = () => {
@@ -143,12 +126,12 @@ export default function KiroExportSettings({
           onPromptChange={setPrompt}
           onSave={handleSave}
           onCancel={handleCancel}
-          onUseDefault={() => setPrompt(DEFAULT_PROMPT)}
+          onUseDefault={() => setPrompt(defaultPrompt)}
         />
       )
     }
-    if (prompt !== '') {
-      return <PromptPreview prompt={prompt} />
+    if (effectivePrompt !== '') {
+      return <PromptPreview prompt={effectivePrompt} />
     }
     return <EmptyState />
   }
@@ -177,7 +160,7 @@ export default function KiroExportSettings({
             className="flex items-center gap-2 px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 rounded-lg"
           >
             <Settings size={16} />
-            {prompt === '' ? t('kiroExport.configure') : t('kiroExport.edit')}
+            {storedPrompt === '' ? t('kiroExport.configure') : t('kiroExport.edit')}
           </button>
         )}
       </div>

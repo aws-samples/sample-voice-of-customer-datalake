@@ -119,7 +119,8 @@ function KiroSection({
         {copiedKiro ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Sparkles size={16} className="flex-shrink-0" />}
         <span className="truncate">{copiedKiro ? t('documentExport.copied') : t('documentExport.copyToKiro')}</span>
       </button>
-      {(project?.kiro_export_prompt == null || project.kiro_export_prompt === '') && (
+      {(project?.kiro_export_prompt == null || project.kiro_export_prompt === '') &&
+        (project?.kiro_default_export_prompt == null || project.kiro_default_export_prompt === '') && (
         <p className="px-3 py-1 text-xs text-gray-400">
           {t('documentExport.kiroPromptTip')}
         </p>
@@ -161,11 +162,14 @@ export default function DocumentExportMenu({
   }
 
   const copyToKiro = async () => {
-    const kiroPrompt = project?.kiro_export_prompt != null && project.kiro_export_prompt !== '' ? project.kiro_export_prompt : ''
+    const storedPrompt = project?.kiro_export_prompt ?? ''
+    const effectivePrompt = storedPrompt !== ''
+      ? storedPrompt
+      : (project?.kiro_default_export_prompt ?? '')
     const prdSection = `# ${doc.title}\n\n${doc.content ?? ''}`
-    const fullContent = kiroPrompt === ''
+    const fullContent = effectivePrompt === ''
       ? prdSection
-      : `${kiroPrompt}\n\n---\n\n## PRD Document\n\n${prdSection}`
+      : `${effectivePrompt}\n\n---\n\n## PRD Document\n\n${prdSection}`
 
     await navigator.clipboard.writeText(fullContent)
     setCopiedKiro(true)
