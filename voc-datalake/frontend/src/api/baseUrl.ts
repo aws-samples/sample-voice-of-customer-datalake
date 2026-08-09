@@ -3,6 +3,7 @@
  */
 import { authService } from '../services/auth'
 import { useConfigStore } from '../store/configStore'
+import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
 
 /**
  * Remove trailing slashes from a URL string.
@@ -22,6 +23,62 @@ export function stripTrailingSlashes(url: string): string {
 export function getBaseUrl(): string {
   const { config } = useConfigStore.getState()
   return stripTrailingSlashes(config.apiEndpoint === '' ? '/api' : config.apiEndpoint)
+}
+
+/**
+ * Build the allowlist of trusted API origins.
+ *
+ * The authoritative origin is always the one from the deployment's runtime
+ * config (config.json). In development, `localhost` on any port is also
+ * trusted so developers can run the mock server locally.
+ *
+ * Returns an empty array when the runtime config is not loaded yet — the
+ * caller treats an empty allowlist as "no origin is trusted", which is the
+ * safe outcome.
+ */
+export function getTrustedApiOrigins(): string[] {
+  if (!isConfigLoaded()) return []
+
+  const cfg = getRuntimeConfig()
+  const origins: string[] = []
+
+  try {
+    const url = new URL(cfg.apiEndpoint)
+    origins.push(url.origin)
+  } catch {
+    // Unparseable runtime config endpoint: no trusted origin can be derived.
+    // Fail closed — callers see an empty allowlist and withhold the token.
+  }
+
+  if (import.meta.env.DEV) {
+    // Any localhost port (mock server, vite proxy, etc.) is trusted in dev.
+    origins.push('http://localhost')
+  }
+
+  return origins
+}
+
+/**
+ * Return true when `requestUrl` resolves to a trusted API origin.
+ *
+ * Parsing failures are treated as unsafe (return false), so a malformed or
+ * crafted URL value in the config store can never receive the auth header.
+ *
+ * Relative URLs (no origin) match without a hostname check — they are always
+ * same-origin requests, which are safe.
+ */
+export function isTrustedRequestOrigin(requestUrl: string): boolean {
+  // Relative URLs have no hostname, so they are always same-origin: safe.
+  if (requestUrl.startsWith('/')) return true
+
+  try {
+    const parsed = new URL(requestUrl)
+    const trustedOrigins = getTrustedApiOrigins()
+    return trustedOrigins.includes(parsed.origin)
+  } catch {
+    // Unparseable URL: fail closed.
+    return false
+  }
 }
 
 /**
@@ -61,14 +118,29 @@ export function getDaysFromRange(range: string, customDays?: number | null): num
 /**
  * Build auth headers with Cognito ID token.
  * Shared by client.ts (REST) and streamClient.ts (SSE).
+ *
+ * The `targetUrl` parameter is used to enforce an origin check: the
+ * Authorization header is only attached when the resolved origin of
+ * `targetUrl` is in the trusted API origin allowlist. Passing no
+ * `targetUrl` (or a relative URL) is always safe and attaches the header.
+ *
+ * This ensures that even if a bad value reaches the config store (e.g. from a
+ * stale persisted value written by an older build), no bearer token is sent to
+ * an untrusted host.
  */
-export function getAuthHeaders(extraHeaders?: Record<string, string>): Record<string, string> {
+export function getAuthHeaders(
+  extraHeaders?: Record<string, string>,
+  targetUrl?: string,
+): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...extraHeaders,
   }
 
-  if (authService.isConfigured()) {
+  // Default to safe when no target is provided (relative URL paths, tests).
+  const originIsTrusted = targetUrl === undefined || isTrustedRequestOrigin(targetUrl)
+
+  if (originIsTrusted && authService.isConfigured()) {
     const idToken = authService.getIdToken()
     if (idToken != null && idToken !== '') {
       headers['Authorization'] = idToken

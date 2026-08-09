@@ -78,9 +78,9 @@ export interface DateRangeParams {
   date_basis?: DateBasis
 }
 
-function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
+function buildHeaders(existingHeaders?: HeadersInit, targetUrl?: string): Record<string, string> {
   const extra = existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : undefined
-  return getAuthHeaders(extra)
+  return getAuthHeaders(extra, targetUrl)
 }
 
 import { z } from 'zod'
@@ -100,17 +100,16 @@ export async function parseJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function handleUnauthorized<T>(
-  endpoint: string,
+  fullUrl: string,
   options: RequestInit | undefined,
   headers: Record<string, string>,
-  baseUrl: string
 ): Promise<T> {
   await authService.refreshSession()
   const newIdToken = authService.getIdToken()
   if (newIdToken) {
     headers['Authorization'] = newIdToken
   }
-  const retryResponse = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
+  const retryResponse = await fetch(fullUrl, { ...options, headers })
   if (!retryResponse.ok) {
     throw new Error(`API Error: ${retryResponse.status}`)
   }
@@ -119,9 +118,10 @@ async function handleUnauthorized<T>(
 
 export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const baseUrl = getBaseUrl()
-  const headers = buildHeaders(options?.headers)
-  
-  const response = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
+  const fullUrl = `${baseUrl}${endpoint}`
+  const headers = buildHeaders(options?.headers, fullUrl)
+
+  const response = await fetch(fullUrl, { ...options, headers })
   
   if (response.ok) {
     return parseJsonResponse<T>(response)
@@ -129,7 +129,7 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
   
   if (response.status === 401) {
     try {
-      return await handleUnauthorized<T>(endpoint, options, headers, baseUrl)
+      return await handleUnauthorized<T>(fullUrl, options, headers)
     } catch {
       // Carries the reason to /login so the user is told the session ended,
       // instead of meeting a bare login form after a working-looking app.

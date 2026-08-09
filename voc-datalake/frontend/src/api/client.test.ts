@@ -7,11 +7,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('../store/configStore', () => ({
   useConfigStore: {
     getState: vi.fn(() => ({
-      config: { 
+      config: {
         apiEndpoint: 'https://api.example.com'
       },
     })),
   },
+}))
+
+// The origin-check in baseUrl.ts reads the runtime config to build the
+// trusted-origins allowlist. Without this mock, isConfigLoaded() returns
+// false, the allowlist is empty, and Authorization is never attached —
+// breaking every test that asserts the header is present.
+vi.mock('../runtimeConfig', () => ({
+  isConfigLoaded: vi.fn(() => true),
+  getRuntimeConfig: vi.fn(() => ({
+    apiEndpoint: 'https://api.example.com',
+    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
+  })),
 }))
 
 vi.mock('../services/auth', () => ({

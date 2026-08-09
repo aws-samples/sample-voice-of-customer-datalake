@@ -194,26 +194,60 @@ describe('Settings', () => {
   })
 
   describe('brand tab - API configuration section', () => {
-    it('displays API Configuration heading', () => {
+    it('displays API Configuration heading in development mode', () => {
+      // In vitest, import.meta.env.DEV is true by default.
       render(<Settings />, { wrapper: createWrapper() })
-      
+
+      // Assert it renders with the same query we use in the production test —
+      // this proves the query WOULD find it if present.
       expect(screen.getByText('API Configuration')).toBeInTheDocument()
     })
 
     it('shows Connected indicator when API is configured', () => {
       render(<Settings />, { wrapper: createWrapper() })
-      
+
       expect(screen.getByText(/Connected/i)).toBeInTheDocument()
     })
 
     it('expands API config when clicked', async () => {
       const user = userEvent.setup()
       render(<Settings />, { wrapper: createWrapper() })
-      
+
       // Click to expand API config
       await user.click(screen.getByText('API Configuration'))
-      
+
       expect(screen.getByPlaceholderText(/your-api-id.execute-api/i)).toBeInTheDocument()
+    })
+  })
+
+  describe('brand tab - API configuration section (production mode gate)', () => {
+    it('hides API Configuration section when import.meta.env.DEV is false', () => {
+      // @ts-expect-error - modifying read-only property for test
+      import.meta.env.DEV = false
+
+      render(<Settings />, { wrapper: createWrapper() })
+
+      // The editable endpoint field must NOT be present in a production build.
+      expect(screen.queryByText('API Configuration')).not.toBeInTheDocument()
+      // The URL input is definitely absent.
+      expect(screen.queryByPlaceholderText(/your-api-id.execute-api/i)).not.toBeInTheDocument()
+
+      // @ts-expect-error - restoring read-only property
+      import.meta.env.DEV = true
+    })
+
+    it('shows API Configuration section when import.meta.env.DEV is true', () => {
+      // Confirm positive case with the same query, proving the test is not vacuous.
+      // @ts-expect-error - modifying read-only property for test
+      import.meta.env.DEV = true
+
+      render(<Settings />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('API Configuration')).toBeInTheDocument()
+
+      // Restore (already true, but be explicit)
+      // @ts-expect-error - restoring read-only property
+      import.meta.env.DEV = true
     })
   })
 

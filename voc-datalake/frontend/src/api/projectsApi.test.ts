@@ -12,6 +12,14 @@ vi.mock('../store/configStore', () => ({
   },
 }))
 
+vi.mock('../runtimeConfig', () => ({
+  isConfigLoaded: vi.fn(() => true),
+  getRuntimeConfig: vi.fn(() => ({
+    apiEndpoint: 'https://api.example.com',
+    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
+  })),
+}))
+
 vi.mock('../services/auth', () => ({
   authService: {
     isConfigured: vi.fn(() => true),
