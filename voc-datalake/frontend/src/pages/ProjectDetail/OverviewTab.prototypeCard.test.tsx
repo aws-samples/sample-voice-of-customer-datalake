@@ -67,13 +67,9 @@ function doc(documentType: ProjectDocument['document_type'], id: string): Projec
  * `hasPrd`/`hasPrfaq` props become the presence of a PRD / PR-FAQ document — the
  * same condition, now derived where the rest of the grid derives its state.
  */
-function renderCard(props: { hasPrd: boolean; hasPrfaq: boolean; hasPrototype?: boolean }) {
-  const documents: ProjectDocument[] = []
-  if (props.hasPrd) documents.push(doc('prd', 'prd_1'))
-  if (props.hasPrfaq) documents.push(doc('prfaq', 'prfaq_1'))
-  if (props.hasPrototype === true) documents.push(doc('prototype', 'proto_1'))
-
-  return render(
+/** The tab for a given document set, so a test can re-render with a different one. */
+function overviewTab(documents: ProjectDocument[]) {
+  return (
     <OverviewTab
       project={project}
       personas={[]}
@@ -85,8 +81,17 @@ function renderCard(props: { hasPrd: boolean; hasPrfaq: boolean; hasPrototype?: 
       onOpenProductTool={vi.fn()}
       onSaveKiroPrompt={vi.fn()}
       onJobStarted={mockJobStarted}
-    />,
+    />
   )
+}
+
+function renderCard(props: { hasPrd: boolean; hasPrfaq: boolean; hasPrototype?: boolean }) {
+  const documents: ProjectDocument[] = []
+  if (props.hasPrd) documents.push(doc('prd', 'prd_1'))
+  if (props.hasPrfaq) documents.push(doc('prfaq', 'prfaq_1'))
+  if (props.hasPrototype === true) documents.push(doc('prototype', 'proto_1'))
+
+  return render(overviewTab(documents))
 }
 
 /** The build trigger, not the modal's confirm button. */
@@ -258,6 +263,23 @@ describe('prototype card rebuild guard', () => {
     renderCard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
 
     expect(screen.getByText('Prototypes built: 1')).toBeInTheDocument()
+  })
+
+  it('closes the confirm rather than emptying it when the reason to ask disappears', async () => {
+    // The confirm reason is derived from live data, and this page refetches
+    // documents whenever a job completes. So a PR-FAQ generation finishing while
+    // the single-document dialog is open removes the thing being confirmed — and
+    // gating the dialog on its own open flag alone left it up with no message.
+    const user = userEvent.setup()
+    const { rerender } = renderCard({ hasPrd: true, hasPrfaq: false })
+
+    await user.click(buildButton())
+    expect(screen.getByText(/No PR-FAQ yet/i)).toBeInTheDocument()
+
+    rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1')]))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(mockBuildPrototype).not.toHaveBeenCalled()
   })
 })
 

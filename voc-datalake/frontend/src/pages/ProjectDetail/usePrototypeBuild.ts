@@ -168,8 +168,13 @@ export function usePrototypeBuild({
     error,
     started: started.isSet,
     confirm: {
-      isOpen: showConfirm,
-      // Empty only in the state where the dialog is never opened.
+      // Both conditions, because `confirmKey` is derived from live data that can
+      // change while the dialog is open: a PR-FAQ generation completing turns a
+      // one-document project into a two-document one, at which point there is
+      // nothing left to confirm. Gating on `showConfirm` alone would leave the
+      // dialog up with an empty message — worse than the pre-move behaviour, which
+      // at least still had a (by then wrong) string to show.
+      isOpen: showConfirm && confirmKey != null,
       message: confirmKey == null ? '' : t(confirmKey),
       onConfirm,
       onCancel,
