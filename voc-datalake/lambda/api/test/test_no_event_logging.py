@@ -3,12 +3,17 @@
 This test walks every non-test Python source under lambda/ and fails on any
 of the three spellings of the defect identified in issue #245:
 
-  1. ``json.dumps(event[, ...])``
+  1. ``json.dumps(event[, ...])`` on a line that also calls a logger method
         The whole event is serialised; the output contains the caller's
         ``Authorization`` header (Cognito bearer token) in plain text.
+        Note: the guard requires both a ``logger.`` call and ``json.dumps(event...)`
+        on the same line, so legitimate event-forwarding to downstream services
+        (e.g. ``lambda_client.invoke(Payload=json.dumps(event))``) is not flagged.
 
-  2. ``f"...{event}..."`` on a line that also calls a logger method
-        The str() of the event object is interpolated into the log message.
+  2. ``f"...{event}..."`` (and common variants) on a line that also calls a
+     logger method — the str() of the event object is interpolated into the log
+     message.  Variants caught include ``{event!r}``, ``{event!s}``,
+     ``{event["key"]}``, and ``{event.method()}``.
 
   3. ``logger.<level>(event)`` / ``logger.<level>(event, ...)``
         The event is passed directly as the log-message argument.
@@ -24,6 +29,9 @@ Spellings the guard does NOT catch (documented to set honest expectations):
   * Variables aliased to something other than ``event``
     (e.g. ``evt = event; logger.info(evt)``).
   * Custom serialisers other than ``json.dumps``.
+  * Handler sources under ``plugins/`` (ingestor Lambda functions for S3/SQS
+    events) — ``_SCAN_ROOTS`` covers ``lambda/`` subdirectories only; the
+    ``plugins/`` tree is outside this guard's scope.
 """
 
 import re
@@ -78,16 +86,23 @@ def _source_files():
 # Patterns
 # ---------------------------------------------------------------------------
 
-# Pattern 1 — json.dumps(event) or json.dumps(event, ...)
+# Pattern 1 — json.dumps(event) or json.dumps(event, ...) on a logger line.
 # Matches the opening of the call; does not require a closing paren so that
 # multi-arg variants like json.dumps(event, cls=DecimalEncoder) are caught.
+# The test pairs this with _PAT_LOGGER_CALL so that legitimate event-forwarding
+# lines (e.g. Payload=json.dumps(event)) are not false-positived.
 _PAT_JSON_DUMPS_EVENT = re.compile(r'\bjson\.dumps\(\s*event\s*[,)]')
 
-# Pattern 2 — {event} inside an f-string on a line that also contains a
+# Pattern 2 — {event...} inside an f-string on a line that also contains a
 # logger call.  The two sub-patterns are checked independently so a line
 # with neither is not flagged.
+# _PAT_FSTRING_EVENT matches bare {event} as well as common variants:
+#   {event!r}, {event!s}   — conversion flags
+#   {event["key"]}         — key access ([ after event)
+#   {event.method()}       — attribute/method access (. after event)
+#   {event:...}            — format spec (: after event)
 _PAT_LOGGER_CALL = re.compile(r'\blogger\.\w+\(')
-_PAT_FSTRING_EVENT = re.compile(r'\{event\}')
+_PAT_FSTRING_EVENT = re.compile(r'\{event[}!:\[.]')
 
 # Pattern 3 — logger.<level>(event) or logger.<level>(event, ...)
 _PAT_LOGGER_EVENT_DIRECT = re.compile(r'\blogger\.\w+\(\s*event\s*[,)]')
@@ -137,21 +152,26 @@ class TestNoRawEventLogging:
     # ------------------------------------------------------------------ #
 
     def test_no_json_dumps_event(self):
-        """json.dumps(event[, ...]) must not appear in any handler source.
+        """logger.<level>(...json.dumps(event[, ...])...) must not appear in handler source.
 
         This is the canonical spelling of the defect.  The event dict
         contains the full API Gateway request including the Authorization
         header; serialising it writes the bearer token to CloudWatch.
+
+        Both a logger call and json.dumps(event...) must appear on the same line
+        for a violation to be reported.  Lines that forward the event to a
+        downstream service (e.g. ``Payload=json.dumps(event)``) are not flagged
+        because they do not also contain a logger call.
         """
         violations = []
         for path in _source_files():
             text = path.read_text(encoding='utf-8')
             for lineno, line in enumerate(text.splitlines(), 1):
-                if _PAT_JSON_DUMPS_EVENT.search(line):
+                if _PAT_LOGGER_CALL.search(line) and _PAT_JSON_DUMPS_EVENT.search(line):
                     violations.append(f'{path.relative_to(_lambda_root())}:{lineno}: {line.strip()!r}')
 
         assert not violations, (
-            'Found json.dumps(event) in handler source(s) — this writes the\n'
+            'Found logger call with json.dumps(event) in handler source(s) — this writes the\n'
             'caller\'s Authorization header (bearer token) to CloudWatch logs:\n'
             + '\n'.join(f'  {v}' for v in violations)
         )
@@ -161,7 +181,7 @@ class TestNoRawEventLogging:
     # ------------------------------------------------------------------ #
 
     def test_no_fstring_event_in_logger_calls(self):
-        """{{event}} must not be embedded in an f-string passed to a logger method.
+        """`{event}` must not be embedded in an f-string passed to a logger method.
 
         Example of the banned pattern::
 
