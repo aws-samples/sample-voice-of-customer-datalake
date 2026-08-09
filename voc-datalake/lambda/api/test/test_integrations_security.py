@@ -358,6 +358,55 @@ class TestAdminGateOnCredentialsRoutes:
         body = json.loads(response['body'])
         assert body.get('success') is False
 
+    @patch('integrations_handler.secretsmanager')
+    def test_status_reports_all_known_plugins(self, mock_secrets, api_gateway_event, lambda_context):
+        """GET /integrations/status returns an entry for every known plugin, not just webscraper.
+
+        Regression guard for the previously hardcoded webscraper-only dict.
+        If any plugin is missing, its 'Connected' badge in the Settings UI
+        will never render regardless of what is stored in Secrets Manager.
+        """
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'webscraper_configs': '[{"id": "x"}]',
+                'app_reviews_ios_app_id': '12345',
+                'app_reviews_android_package_name': 'com.example.app',
+                's3_import_bucket_name': 'my-bucket',
+                'synthetic_reviews_company_name': 'Acme Corp',
+            })
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/status',
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 200
+
+        body = json.loads(response['body'])
+        expected_plugins = {
+            'app_reviews_android',
+            'app_reviews_ios',
+            's3_import',
+            'synthetic_reviews',
+            'webscraper',
+        }
+        # Every known plugin must appear in the response.
+        missing = expected_plugins - set(body.keys())
+        assert not missing, (
+            f"GET /integrations/status is missing entries for: {missing}. "
+            "The 'Connected' badge will never render for these plugins."
+        )
+
+        # Configured plugins must be reported as configured.
+        assert body['webscraper']['configured'] is True
+        assert body['app_reviews_ios']['configured'] is True
+        assert body['app_reviews_android']['configured'] is True
+        assert body['s3_import']['configured'] is True
+        assert body['synthetic_reviews']['configured'] is True
+
 
 class TestSourceParameterValidation:
     """
@@ -635,11 +684,18 @@ _MANIFESTS_PATH = (
 def _load_manifests():
     """Load plugin manifests from the frontend source tree.
 
-    Falls back to an empty list if the file is absent (e.g. in a minimal CI
-    checkout that does not include the frontend), so the test module still
-    imports cleanly; the parametrized tests will simply be skipped.
+    Emits a warning if the file is absent (e.g. in a minimal CI checkout that
+    does not include the frontend), so the gap is visible in CI output rather
+    than silently producing zero parametrized test cases.
     """
     if not _MANIFESTS_PATH.exists():
+        import warnings
+        warnings.warn(
+            f'manifests.json not found at {_MANIFESTS_PATH}; '
+            'TestManifestKeysAccepted will collect zero test cases and the '
+            'manifest-key acceptance guard will be inactive for this run.',
+            stacklevel=1,
+        )
         return []
     return _json.loads(_MANIFESTS_PATH.read_text())
 

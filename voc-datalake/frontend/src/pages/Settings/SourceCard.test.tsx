@@ -75,7 +75,7 @@ describe('SourceCard', () => {
   describe('Header', () => {
     it('renders source name and icon', () => {
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -85,7 +85,7 @@ describe('SourceCard', () => {
 
     it('renders description when provided', () => {
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -96,7 +96,7 @@ describe('SourceCard', () => {
       mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
 
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -107,12 +107,24 @@ describe('SourceCard', () => {
 
     it('shows enabled/disabled toggle', () => {
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
       expect(screen.getByRole('checkbox')).toBeInTheDocument()
       expect(screen.getByText('Disabled')).toBeInTheDocument()
+    })
+
+    it('does not call getIntegrationStatus when isAdmin is false', async () => {
+      render(
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={false} />,
+        { wrapper: createWrapper() }
+      )
+
+      // Give the query time to fire if it were going to.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(mockGetIntegrationStatus).not.toHaveBeenCalled()
     })
   })
 
@@ -120,7 +132,7 @@ describe('SourceCard', () => {
     it('expands card when header is clicked', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -132,7 +144,7 @@ describe('SourceCard', () => {
     it('shows webhooks section when expanded', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -145,7 +157,7 @@ describe('SourceCard', () => {
     it('shows setup instructions when expanded', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -162,7 +174,7 @@ describe('SourceCard', () => {
       mockEnableSource.mockResolvedValue({ enabled: true })
 
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -179,7 +191,7 @@ describe('SourceCard', () => {
       mockDisableSource.mockResolvedValue({ enabled: false })
 
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -196,7 +208,7 @@ describe('SourceCard', () => {
 
     it('disables toggle when no API endpoint', () => {
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -208,7 +220,7 @@ describe('SourceCard', () => {
     it('renders credential fields', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -223,7 +235,7 @@ describe('SourceCard', () => {
     it('toggles password visibility', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -242,7 +254,7 @@ describe('SourceCard', () => {
       mockUpdateIntegrationCredentials.mockResolvedValue({ success: true })
 
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -260,7 +272,7 @@ describe('SourceCard', () => {
       mockUpdateIntegrationCredentials.mockResolvedValue({ success: true })
 
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -282,7 +294,7 @@ describe('SourceCard', () => {
       mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
 
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -307,7 +319,7 @@ describe('SourceCard', () => {
       mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
 
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -328,7 +340,7 @@ describe('SourceCard', () => {
       mockTestIntegration.mockResolvedValue({ success: false, message: 'Invalid credentials' })
 
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -348,7 +360,7 @@ describe('SourceCard', () => {
       mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: false } })
 
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -364,7 +376,7 @@ describe('SourceCard', () => {
     it('displays webhook URL', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com/" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com/" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -376,7 +388,7 @@ describe('SourceCard', () => {
     it('copies webhook URL to clipboard', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com/" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com/" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -394,7 +406,7 @@ describe('SourceCard', () => {
     it('shows documentation link when provided', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -419,7 +431,7 @@ describe('SourceCard', () => {
       }
 
       render(
-        <SourceCard manifest={s3Manifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={s3Manifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -433,7 +445,7 @@ describe('SourceCard', () => {
     it('applies blue color theme', async () => {
       const user = userEvent.setup()
       render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -451,7 +463,7 @@ describe('SourceCard', () => {
       }
 
       render(
-        <SourceCard manifest={orangeManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={orangeManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 
@@ -476,7 +488,7 @@ describe('SourceCard', () => {
       }
 
       render(
-        <SourceCard manifest={multilineManifest} apiEndpoint="https://api.example.com" />,
+        <SourceCard manifest={multilineManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
         { wrapper: createWrapper() }
       )
 

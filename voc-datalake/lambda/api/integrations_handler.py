@@ -105,22 +105,43 @@ def get_integration_status():
 
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
-    
+
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
-        
-        integrations = {
-            'webscraper': ['webscraper_api_key'],
-        }
-        
+
+        # Report status for all known plugin sources.  For each source, scan the
+        # shared secret for keys whose name starts with "{source}_".  This is
+        # derived dynamically so new credential keys written via PUT
+        # /integrations/<source>/credentials are automatically reflected without
+        # any code change.
+        #
+        # The strip of the namespace prefix means the frontend sees bare field
+        # names ('configs', 'app_id') rather than prefixed ones ('webscraper_configs',
+        # 'app_reviews_ios_app_id').
+        known_sources = [
+            'app_reviews_android',
+            'app_reviews_ios',
+            's3_import',
+            'synthetic_reviews',
+            'webscraper',
+        ]
+
         status = {}
-        for source, keys in integrations.items():
-            configured_keys = [k for k in keys if secrets.get(k)]
-            status[source] = {'configured': len(configured_keys) == len(keys), 'credentials_set': configured_keys}
-        
+        for source in known_sources:
+            prefix = f"{source}_"
+            configured_keys = [
+                k[len(prefix):]
+                for k, v in secrets.items()
+                if k.startswith(prefix) and v
+            ]
+            status[source] = {
+                'configured': len(configured_keys) > 0,
+                'credentials_set': configured_keys,
+            }
+
         return status
-    except (ConfigurationError, ValidationError):
+    except ConfigurationError:
         raise
     except Exception as e:
         logger.exception(f"Failed to get integration status: {e}")

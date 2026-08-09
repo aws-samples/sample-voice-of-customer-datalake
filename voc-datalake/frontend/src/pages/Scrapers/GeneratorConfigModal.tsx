@@ -174,7 +174,8 @@ export default function GeneratorConfigModal({
         <div className="p-4 border-t flex items-center gap-2">
           <button
             onClick={() => generateMutation.mutate()}
-            disabled={isBusy || !hasRequired}
+            disabled={isBusy || !hasRequired || !isAdmin}
+            title={!isAdmin ? 'Admin access required' : undefined}
             className="btn btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
