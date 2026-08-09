@@ -63,7 +63,10 @@ const defaultFakeState: FakeStreamState = {
 }
 
 // Module-level setter that tests use to drive state changes.
-let setFakeStreamState!: React.Dispatch<React.SetStateAction<FakeStreamState>>
+// Assigned during the first render of useStreamChat in a test.  Reset to
+// undefined in beforeEach so that a test that fails before rendering cannot
+// accidentally drive the previous test's state.
+let setFakeStreamState: React.Dispatch<React.SetStateAction<FakeStreamState>> | undefined
 
 const mockSendMessageImpl = vi.fn()
 const mockCancel = vi.fn()
@@ -73,7 +76,7 @@ vi.mock('../../hooks/useStreamChat', () => ({
     // Using React state makes changes observable to the component.
     // eslint-disable-next-line react-hooks/rules-of-hooks -- this IS a hook body
     const [state, setState] = React.useState<FakeStreamState>(defaultFakeState)
-    setFakeStreamState = setState
+    setFakeStreamState = setState  // capture for test use
     return {
       ...state,
       sendMessage: mockSendMessageImpl,
@@ -133,6 +136,9 @@ function createWrapper() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Reset the module-level setter so a test that never renders cannot
+  // accidentally use a stale setter from a previous test.
+  setFakeStreamState = undefined
   // Reset the real chat store before each test.
   useChatStore.setState({
     conversations: [],
@@ -158,17 +164,20 @@ describe('mid-stream conversation switch (issue #265 defect 1)', () => {
       useChatStore.setState({ activeConversationId: idA })
     })
 
+    const wrapper = createWrapper()
+    render(<Chat />, { wrapper })
+
+    // After render, setFakeStreamState is populated by the mock factory.
+    expect(setFakeStreamState).toBeDefined()
+
     // sendMessage: immediately signals isStreaming=true so we can switch
     // before "completing" the stream later.
     mockSendMessageImpl.mockImplementation(() => {
       act(() => {
-        setFakeStreamState((prev) => ({ ...prev, isStreaming: true }))
+        setFakeStreamState!((prev) => ({ ...prev, isStreaming: true }))
       })
       return Promise.resolve()
     })
-
-    const wrapper = createWrapper()
-    render(<Chat />, { wrapper })
 
     // Type and submit — this will call sendMessage which marks isStreaming.
     const input = screen.getByPlaceholderText(/Ask about your feedback/i)
@@ -185,7 +194,7 @@ describe('mid-stream conversation switch (issue #265 defect 1)', () => {
 
     // Now simulate stream completion with a reply for A.
     act(() => {
-      setFakeStreamState({
+      setFakeStreamState!({
         isStreaming: false,
         streamingText: 'The answer from conversation A',
         thinkingText: '',
@@ -211,6 +220,63 @@ describe('mid-stream conversation switch (issue #265 defect 1)', () => {
     const convB = useChatStore.getState().conversations.find((c) => c.id === idB)
     const assistantInB = convB?.messages.some((m) => m.role === 'assistant')
     expect(assistantInB).toBeFalsy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Cancel — partial reply must NOT be saved when the user clicks Stop
+// ---------------------------------------------------------------------------
+describe('cancel / Stop button (issue #265 defect 1 related)', () => {
+  it('does not add an assistant message when the user cancels a stream mid-way', async () => {
+    const user = userEvent.setup()
+
+    const id = useChatStore.getState().createConversation()
+    act(() => {
+      useChatStore.setState({ activeConversationId: id })
+    })
+
+    // sendMessage starts the stream.
+    mockSendMessageImpl.mockImplementation(() => {
+      act(() => {
+        setFakeStreamState!((prev) => ({ ...prev, isStreaming: true }))
+      })
+      return Promise.resolve()
+    })
+    // cancel simulates the finally-block: always resets isStreaming to false.
+    mockCancel.mockImplementation(() => {
+      act(() => {
+        setFakeStreamState!((prev) => ({ ...prev, isStreaming: false }))
+      })
+    })
+
+    render(<Chat />, { wrapper: createWrapper() })
+    expect(setFakeStreamState).toBeDefined()
+
+    // Send a message — streaming starts.
+    const input = screen.getByPlaceholderText(/Ask about your feedback/i)
+    await user.type(input, 'a question')
+    await user.click(screen.getByRole('button', { name: /send/i }))
+    await waitFor(() => expect(mockSendMessageImpl).toHaveBeenCalled())
+
+    // Accumulate some partial text while streaming.
+    act(() => {
+      setFakeStreamState!((prev) => ({
+        ...prev,
+        streamingText: 'partial answer that must not be saved',
+      }))
+    })
+
+    // User clicks Stop — handleCancel clears originConversationIdRef and then
+    // calls cancel() which sets isStreaming=false, firing the finish-effect.
+    await user.click(screen.getByRole('button', { name: /stop/i }))
+
+    // The finish-effect fires but origin ref is null — no assistant message saved.
+    await waitFor(() => expect(mockCancel).toHaveBeenCalled())
+
+    const conv = useChatStore.getState().conversations.find((c) => c.id === id)
+    expect(conv).toBeDefined()
+    const assistantMessages = conv!.messages.filter((m) => m.role === 'assistant')
+    expect(assistantMessages).toHaveLength(0)
   })
 })
 

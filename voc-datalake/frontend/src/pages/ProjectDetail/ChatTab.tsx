@@ -24,6 +24,7 @@ import {
   buildApiAttachments,
   ACCEPTED_TYPES,
 } from './chatTabHooks'
+import { MAX_HISTORY_ENTRIES } from '../../constants/chat'
 import type {
   ChatMessage, ActivePersonaInfo,
 } from './ChatBubbles'
@@ -246,7 +247,9 @@ export default function ChatTab({
     })
     setCurrentActivePersona(isRoundtable ? undefined : resolveActivePersona(personas, selectedPersonaIds))
 
-    const history = messages.map((m) => ({
+    // Slice to MAX_HISTORY_ENTRIES (newest) before mapping so the payload
+    // never exceeds the server-side validation cap in schema.ts (.max(50)).
+    const history = messages.slice(-MAX_HISTORY_ENTRIES).map((m) => ({
       role: m.role,
       content: m.content,
     }))

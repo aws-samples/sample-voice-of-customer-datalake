@@ -30,15 +30,7 @@ import {
   useChatStore, type ChatFilters as ChatFiltersType, type Conversation,
 } from '../../store/chatStore'
 import { useConfigStore } from '../../store/configStore'
-
-/**
- * Maximum number of history messages sent to the server.
- * Must stay at or below the server-side cap (lambda/stream/src/schema.ts:
- * history: z.array(…).max(50)).  If you need to raise this, update both
- * files in the same PR.  We keep the *newest* entries so the model always
- * sees the most recent turns.
- */
-const MAX_HISTORY_ENTRIES = 50
+import { MAX_HISTORY_ENTRIES } from '../../constants/chat'
 
 const suggestedQuestionKeys = [
   'suggestedQuestions.topComplaints',
@@ -365,6 +357,18 @@ export default function Chat() {
     setInput('')
   }
 
+  /**
+   * Cancel the in-flight stream and suppress the finish-effect save.
+   * Clearing `originConversationIdRef` before calling `cancel()` ensures that
+   * when the finish-effect fires (the `finally` block in useStreamChat always
+   * sets `isStreaming: false`) it finds a null origin and skips saving any
+   * accumulated partial text to the conversation.
+   */
+  const handleCancel = () => {
+    originConversationIdRef.current = null
+    cancel()
+  }
+
   const handleSuggestedQuestion = (question: string) => {
     setInput(question)
   }
@@ -424,7 +428,7 @@ export default function Chat() {
             {isStreaming ? (
               <button
                 type="button"
-                onClick={cancel}
+                onClick={handleCancel}
                 className="btn btn-secondary flex items-center gap-1 sm:gap-2 px-3 sm:px-4"
               >
                 <X size={16} />
