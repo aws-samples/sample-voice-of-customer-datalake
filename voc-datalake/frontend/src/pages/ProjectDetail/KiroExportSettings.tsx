@@ -44,10 +44,11 @@ function PromptPreview({ prompt }: Readonly<{ prompt: string }>) {
 
 // Editor component
 function PromptEditor({
-  prompt, saved, onPromptChange, onSave, onCancel, onUseDefault,
+  prompt, saved, defaultPrompt, onPromptChange, onSave, onCancel, onUseDefault,
 }: Readonly<{
   prompt: string
   saved: boolean
+  defaultPrompt: string
   onPromptChange: (value: string) => void
   onSave: () => void
   onCancel: () => void
@@ -63,17 +64,30 @@ function PromptEditor({
         <p className="text-xs text-gray-500 mb-2">
           {t('kiroExport.templateHint')}
         </p>
+        {/*
+          The placeholder is the backend-supplied default, so an empty textarea
+          previews the text that will actually be used. This is what makes
+          "Use default template" (which clears to '') legible rather than looking
+          like an accidental wipe. It is empty when no default is available,
+          which is also when the button below is hidden.
+        */}
         <textarea
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
+          placeholder={defaultPrompt}
           rows={12}
           className="w-full px-3 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
         />
       </div>
       <div className="flex items-center justify-between">
-        <button onClick={onUseDefault} className="text-sm text-gray-500 hover:text-gray-700">
-          {t('kiroExport.useDefault')}
-        </button>
+        {/* Wrapper keeps the save/cancel pair right-aligned when the button is hidden. */}
+        <div>
+          {defaultPrompt !== '' && (
+            <button onClick={onUseDefault} className="text-sm text-gray-500 hover:text-gray-700">
+              {t('kiroExport.useDefault')}
+            </button>
+          )}
+        </div>
         <div className="flex gap-2">
           <button onClick={onCancel} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
             {t('kiroExport.cancel')}
@@ -100,6 +114,9 @@ export default function KiroExportSettings({
 
   // The effective prompt is the stored value if non-empty, else the default.
   const effectivePrompt = storedPrompt !== '' ? storedPrompt : defaultPrompt
+  // One name for the state that the button label and the preview hint must agree
+  // on, so they cannot drift into telling the user two different things.
+  const followingDefault = storedPrompt === ''
 
   const [prompt, setPrompt] = useState(storedPrompt)
   const [isEditing, setIsEditing] = useState(false)
@@ -134,6 +151,7 @@ export default function KiroExportSettings({
         <PromptEditor
           prompt={prompt}
           saved={saved}
+          defaultPrompt={defaultPrompt}
           onPromptChange={setPrompt}
           onSave={handleSave}
           onCancel={handleCancel}
@@ -142,7 +160,17 @@ export default function KiroExportSettings({
       )
     }
     if (effectivePrompt !== '') {
-      return <PromptPreview prompt={effectivePrompt} />
+      // Say so when the previewed text is the default rather than this project's
+      // own: the Configure/Edit label alone is too easy to miss, and without this
+      // the preview reads as text the user wrote.
+      return (
+        <div className="space-y-2">
+          {followingDefault && (
+            <p className="text-xs text-gray-500">{t('kiroExport.usingDefault')}</p>
+          )}
+          <PromptPreview prompt={effectivePrompt} />
+        </div>
+      )
     }
     return <EmptyState />
   }
@@ -171,7 +199,7 @@ export default function KiroExportSettings({
             className="flex items-center gap-2 px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 rounded-lg"
           >
             <Settings size={16} />
-            {storedPrompt === '' ? t('kiroExport.configure') : t('kiroExport.edit')}
+            {followingDefault ? t('kiroExport.configure') : t('kiroExport.edit')}
           </button>
         )}
       </div>

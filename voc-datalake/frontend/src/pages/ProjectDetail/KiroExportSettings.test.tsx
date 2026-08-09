@@ -105,6 +105,49 @@ describe('KiroExportSettings — criterion 6: shows effective instructions', () 
   })
 })
 
+describe('KiroExportSettings — the previewed text is attributed', () => {
+  it('says the shown instructions are the default when there is no stored prompt', () => {
+    // Without this the preview reads as text the user wrote. The Configure/Edit
+    // label alone is too subtle to carry that distinction.
+    render(<KiroExportSettings project={projectWithDefault} onSave={vi.fn()} />)
+    expect(screen.getByText(/following the default instructions/i)).toBeInTheDocument()
+  })
+
+  it('does not claim the default is in use when the project has its own prompt', () => {
+    render(<KiroExportSettings project={projectWithCustom} onSave={vi.fn()} />)
+    expect(screen.queryByText(/following the default instructions/i)).not.toBeInTheDocument()
+  })
+
+  it('previews the default as the textarea placeholder so clearing is legible', async () => {
+    // "Use default template" clears to '', which would otherwise look like an
+    // accidental wipe. The placeholder shows the text that will actually apply.
+    const user = userEvent.setup()
+    render(<KiroExportSettings project={projectWithCustom} onSave={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+    await user.click(screen.getByRole('button', { name: /use default template/i }))
+
+    const textarea = screen.getByRole('textbox')
+    expect(textarea).toHaveValue('')
+    expect(textarea).toHaveAttribute('placeholder', DEFAULT_TEXT)
+  })
+
+  it('hides "Use default template" when no default is available', async () => {
+    // baseProject omits kiro_default_export_prompt, so the button would clear the
+    // textarea with nothing to fall back to.
+    const user = userEvent.setup()
+    const projectNoDefaultButCustom: Project = {
+      ...baseProject,
+      kiro_export_prompt: 'Custom only.',
+    }
+    render(<KiroExportSettings project={projectNoDefaultButCustom} onSave={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+
+    expect(screen.queryByRole('button', { name: /use default template/i })).not.toBeInTheDocument()
+  })
+})
+
 describe('KiroExportSettings — criterion 8: clearing returns to default', () => {
   it('calls onSave with empty string when user saves whitespace-only text', async () => {
     // Whitespace-only input is treated the same as empty: trimmed before saving

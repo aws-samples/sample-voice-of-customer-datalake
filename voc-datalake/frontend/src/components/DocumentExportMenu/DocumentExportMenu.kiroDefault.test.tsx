@@ -4,9 +4,16 @@
  *
  * "Both consumers must agree" — the prompt used in Copy to Kiro must match
  * what _build_steering_file produces server-side.
+ *
+ * Clipboard note: these tests spy on the `vi.fn()` that `test/setup.ts` already
+ * installed as `navigator.clipboard.writeText`, which is the pattern the sibling
+ * DocumentExportMenu.test.tsx uses. Nothing global is reassigned, so there is no
+ * leak into later files under `singleFork: true` and no ordering requirement
+ * between tests — setup.ts's `afterEach` -> `vi.clearAllMocks()` isolates the
+ * call history.
  */
 import {
-  describe, it, expect, vi, beforeAll, beforeEach, afterEach,
+  describe, it, expect, vi,
 } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -64,89 +71,42 @@ const projectWithNeither: Project = {
   kiro_default_export_prompt: '',
 }
 
-// Shared mock function for clipboard. Reset before each test to ensure
-// clean call history regardless of test position within the file.
-const writeTextMock = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined)
+/**
+ * Render the menu, invoke "Copy to Kiro", and return the copied text.
+ *
+ * The spy is created per call rather than in a `beforeEach` so nothing outlives
+ * the test that made it.
+ */
+async function copyToKiro(doc: ProjectDocument, project: Project): Promise<string> {
+  // Order matters: userEvent.setup() swaps in its OWN navigator.clipboard stub to
+  // back user.copy()/user.paste(), so a spy installed before it is left attached
+  // to the discarded object and records nothing. Spy after setup.
+  const user = userEvent.setup()
+  const writeTextSpy = vi.spyOn(navigator.clipboard, 'writeText')
+  render(<DocumentExportMenu document={doc} project={project} />)
 
-let originalWriteText: typeof navigator.clipboard.writeText
+  await user.click(screen.getByRole('button', { name: /download options/i }))
+  await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
 
-// Capture the original exactly once before any test can mutate it, so that
-// afterEach always restores the true original (not a previously installed mock).
-beforeAll(() => {
-  originalWriteText = navigator.clipboard.writeText
-})
-
-beforeEach(() => {
-  writeTextMock.mockClear()
-  // Replace the clipboard write function directly on the existing mock object.
-  // This avoids re-defining the entire clipboard property (which can interfere
-  // with vi.spyOn), while still giving each test a fresh call history.
-  navigator.clipboard.writeText = writeTextMock
-})
-
-afterEach(() => {
-  // Restore the original clipboard.writeText so the global is not permanently
-  // mutated for later test files in the vitest singleFork session.
-  navigator.clipboard.writeText = originalWriteText
-})
-
-// [vitest-workaround] This non-clipboard describe block MUST remain the first
-// test suite in this file. With singleFork: true, previous test files may leave
-// stale spy descriptors on navigator.clipboard.writeText. Running a non-clipboard
-// test first forces setup.ts's afterEach (which calls vi.clearAllMocks()) to
-// execute before any clipboard mock test, ensuring a clean slate.
-// TODO: remove this workaround if vitest resolves singleFork spy isolation.
-describe('DocumentExportMenu — menu renders for kiro-capable documents', () => {
-  it('[vitest-workaround] warmup test — must remain first in file to flush stale clipboard spy', async () => {
-    const user = userEvent.setup()
-    render(<DocumentExportMenu document={mockDoc} project={projectWithDefault} />)
-    await user.click(screen.getByRole('button', { name: /download options/i }))
-    expect(screen.getByRole('menuitem', { name: /copy to kiro/i })).toBeInTheDocument()
-  })
-})
+  expect(writeTextSpy).toHaveBeenCalledOnce()
+  return writeTextSpy.mock.calls[0][0]
+}
 
 describe('DocumentExportMenu — criterion 7: Copy to Kiro uses effective instructions', () => {
   it('uses the default text when the project has no stored prompt', async () => {
-    const user = userEvent.setup()
-    render(<DocumentExportMenu document={mockDoc} project={projectWithDefault} />)
-
-    await user.click(screen.getByRole('button', { name: /download options/i }))
-    await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
-
-    expect(writeTextMock).toHaveBeenCalledOnce()
-    expect(writeTextMock.mock.calls[0][0]).toContain(DEFAULT_TEXT)
+    expect(await copyToKiro(mockDoc, projectWithDefault)).toContain(DEFAULT_TEXT)
   })
 
   it('uses the project\'s own text when it has a stored prompt', async () => {
-    const user = userEvent.setup()
-    render(<DocumentExportMenu document={mockDoc} project={projectWithCustom} />)
-
-    await user.click(screen.getByRole('button', { name: /download options/i }))
-    await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
-
-    expect(writeTextMock).toHaveBeenCalledWith(
-      expect.stringContaining(CUSTOM_TEXT),
-    )
+    expect(await copyToKiro(mockDoc, projectWithCustom)).toContain(CUSTOM_TEXT)
   })
 
   it('does NOT use the default text when the project has its own stored prompt', async () => {
-    const user = userEvent.setup()
-    render(<DocumentExportMenu document={mockDoc} project={projectWithCustom} />)
-
-    await user.click(screen.getByRole('button', { name: /download options/i }))
-    await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
-
-    expect(writeTextMock.mock.calls[0][0]).not.toContain(DEFAULT_TEXT)
+    expect(await copyToKiro(mockDoc, projectWithCustom)).not.toContain(DEFAULT_TEXT)
   })
 
   it('copies just the document when no effective prompt is available', async () => {
-    const user = userEvent.setup()
-    render(<DocumentExportMenu document={mockDoc} project={projectWithNeither} />)
-
-    await user.click(screen.getByRole('button', { name: /download options/i }))
-    await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
-
-    const copiedText = writeTextMock.mock.calls[0][0]
+    const copiedText = await copyToKiro(mockDoc, projectWithNeither)
     expect(copiedText).toContain('# Test PRD')
     expect(copiedText).not.toContain(DEFAULT_TEXT)
   })
@@ -156,51 +116,35 @@ describe('DocumentExportMenu — criterion 7: Copy to Kiro uses effective instru
     // with the same effective instructions that _build_steering_file embeds in
     // the steering file. When the project follows the default (kiro_export_prompt
     // is empty), both must use kiro_default_export_prompt.
-    const user = userEvent.setup()
-    render(<DocumentExportMenu document={mockDoc} project={projectWithDefault} />)
-
-    await user.click(screen.getByRole('button', { name: /download options/i }))
-    await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
-
-    const copiedText = writeTextMock.mock.calls[0][0]
-    // The clipboard output must start with the default instructions since
-    // there is no stored override — same as what _build_steering_file produces.
+    const copiedText = await copyToKiro(mockDoc, projectWithDefault)
     expect(copiedText.startsWith(DEFAULT_TEXT)).toBe(true)
   })
 
   it('effective prompt for custom project matches what _build_steering_file uses', async () => {
-    const user = userEvent.setup()
-    render(<DocumentExportMenu document={mockDoc} project={projectWithCustom} />)
-
-    await user.click(screen.getByRole('button', { name: /download options/i }))
-    await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
-
-    expect(writeTextMock.mock.calls[0][0].startsWith(CUSTOM_TEXT)).toBe(true)
+    const copiedText = await copyToKiro(mockDoc, projectWithCustom)
+    expect(copiedText.startsWith(CUSTOM_TEXT)).toBe(true)
   })
 })
 
 describe('DocumentExportMenu — section heading matches document type', () => {
   it('uses "PRD Document" heading for prd document type', async () => {
-    const user = userEvent.setup()
-    render(<DocumentExportMenu document={mockDoc} project={projectWithCustom} />)
-
-    await user.click(screen.getByRole('button', { name: /download options/i }))
-    await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
-
-    const copiedText = writeTextMock.mock.calls[0][0]
+    const copiedText = await copyToKiro(mockDoc, projectWithCustom)
     expect(copiedText).toContain('## PRD Document')
     expect(copiedText).not.toContain('## PR/FAQ Document')
   })
 
   it('uses "PR/FAQ Document" heading for prfaq document type', async () => {
-    const user = userEvent.setup()
-    render(<DocumentExportMenu document={mockPrfaqDoc} project={projectWithCustom} />)
-
-    await user.click(screen.getByRole('button', { name: /download options/i }))
-    await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
-
-    const copiedText = writeTextMock.mock.calls[0][0]
+    const copiedText = await copyToKiro(mockPrfaqDoc, projectWithCustom)
     expect(copiedText).toContain('## PR/FAQ Document')
     expect(copiedText).not.toContain('## PRD Document')
+  })
+})
+
+describe('DocumentExportMenu — menu renders for kiro-capable documents', () => {
+  it('offers Copy to Kiro for a project that follows the default', async () => {
+    const user = userEvent.setup()
+    render(<DocumentExportMenu document={mockDoc} project={projectWithDefault} />)
+    await user.click(screen.getByRole('button', { name: /download options/i }))
+    expect(screen.getByRole('menuitem', { name: /copy to kiro/i })).toBeInTheDocument()
   })
 })

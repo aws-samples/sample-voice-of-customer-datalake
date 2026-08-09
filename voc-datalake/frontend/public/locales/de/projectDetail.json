@@ -164,7 +164,8 @@
     "templateHint": "Dieser Kontext wird PRD/PR-FAQ-Dokumenten vorangestellt, wenn \"In Kiro kopieren\" verwendet wird. Fügen Sie Ihren Tech-Stack, Coding-Standards und Implementierungshinweise hinzu.",
     "templateLabel": "Export-Prompt-Vorlage",
     "title": "Kiro-Export-Einstellungen",
-    "useDefault": "Standardvorlage verwenden"
+    "useDefault": "Standardvorlage verwenden",
+    "usingDefault": "Folgt den Standardanweisungen. Klicken Sie auf \"Konfigurieren\", um eigene zu schreiben."
   },
   "mcp": {
     "activeTokens": "Aktive Tokens ({{count}})",

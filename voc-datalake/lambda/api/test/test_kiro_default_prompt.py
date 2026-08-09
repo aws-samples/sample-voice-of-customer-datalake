@@ -12,7 +12,11 @@ Covers acceptance criteria 1–5 and 8–9 from the task specification:
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
+# The first sentence of KIRO_DEFAULT_EXPORT_PROMPT — distinctive enough to spot a
+# copy of the text, and insensitive to reflowed whitespace. Defined once so the
+# frontend and Python duplication guards cannot drift apart. Update this when the
+# constant's opening sentence changes.
+_FINGERPRINT = 'Build against the material in this workspace rather than from assumptions'
 
 
 def _repo_root() -> Path:
@@ -50,12 +54,15 @@ class TestKiroDefaultPromptIsUnique:
         own copy, which would diverge from the backend constant when the wording
         changes. Test files may reference it as expected values — those are fine.
         """
-        # Use the first sentence as the fingerprint — distinctive enough to
-        # reliably identify a duplicate but not dependent on whitespace.
-        fingerprint = 'Build against the material in this workspace rather than from assumptions'
+        fingerprint = _FINGERPRINT
         frontend_root = _repo_root() / 'frontend' / 'src'
-        if not frontend_root.is_dir():
-            pytest.skip('frontend/src not present in this tree')
+        # Assert rather than skip: a skip here would let the guard pass silently
+        # if the tree were ever laid out differently, which is exactly the case
+        # the guard exists to catch.
+        assert frontend_root.is_dir(), (
+            f'Expected the frontend source tree at {frontend_root}. Without it this '
+            f'uniqueness guard cannot check for a duplicated default prompt.'
+        )
 
         duplicates = []
         for ts_file in list(frontend_root.rglob('*.ts')) + list(frontend_root.rglob('*.tsx')):
@@ -79,10 +86,9 @@ class TestKiroDefaultPromptIsUnique:
 
     def test_default_text_not_duplicated_in_other_python_files(self):
         """The constant must not be copy-pasted into other Python production files."""
-        fingerprint = 'Build against the material in this workspace rather than from assumptions'
+        fingerprint = _FINGERPRINT
+        # No existence check needed: _repo_root() already asserts lambda/ is a dir.
         lambda_root = _repo_root() / 'lambda'
-        if not lambda_root.is_dir():
-            pytest.skip('lambda/ not present in this tree')
 
         duplicates = []
         for py_file in lambda_root.rglob('*.py'):
