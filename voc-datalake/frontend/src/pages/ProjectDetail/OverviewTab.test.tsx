@@ -152,12 +152,16 @@ describe('OverviewTab', () => {
       render(<OverviewTab {...defaultProps} />)
 
       const titles = cardTitlesInOrder()
-      expect(titles).toHaveLength(5)
+      expect(titles).toHaveLength(6)
       expect(titles[0]).toContain('Product / Service Description')
       expect(titles[1]).toContain('Generate Personas')
       expect(titles[2]).toContain('Run Research')
       expect(titles[3]).toContain('Generate PRD / PR-FAQ')
-      expect(titles[4]).toContain('Remix Documents')
+      // Prototype needs one of PRD/PR-FAQ where remix needs two documents, and it
+      // produces a new artifact where remix revises existing ones — so it sits
+      // between them rather than at the end.
+      expect(titles[4]).toContain('Clickable Prototype')
+      expect(titles[5]).toContain('Remix Documents')
     })
 
     it('carries each card position in the heading, not in a parallel hidden label', () => {
@@ -170,7 +174,8 @@ describe('OverviewTab', () => {
       const titles = cardTitlesInOrder()
       expect(titles[0]).toBe('1. Product / Service Description')
       expect(titles[2]).toBe('3. Run Research')
-      expect(titles[4]).toBe('5. Remix Documents')
+      expect(titles[4]).toBe('5. Clickable Prototype')
+      expect(titles[5]).toBe('6. Remix Documents')
     })
   })
 
@@ -236,7 +241,12 @@ describe('OverviewTab', () => {
 
       expect(screen.getByText('Not described yet')).toBeInTheDocument()
       expect(screen.getByText('Not run yet')).toBeInTheDocument()
-      expect(screen.getAllByText('None yet')).toHaveLength(2)
+      // Scoped per card rather than counted: three cards share the string "None
+      // yet", so a bare count passes while any one of them stops reporting and
+      // another starts reporting twice.
+      expect(within(cardFor('Generate Personas')).getByText('None yet')).toBeInTheDocument()
+      expect(within(cardFor('Generate PRD / PR-FAQ')).getByText('None yet')).toBeInTheDocument()
+      expect(within(cardFor('Clickable Prototype')).getByText('None yet')).toBeInTheDocument()
     })
 
     it('shows no product state at all while the context is unknown', () => {
@@ -292,7 +302,10 @@ describe('OverviewTab', () => {
         <OverviewTab
           {...defaultProps}
           personas={[persona('p1')]}
-          documents={[doc('d1', 'research'), doc('d2', 'prd')]}
+          // A prototype is now one of the recommendable steps, so "every step has
+          // output" needs one — without it the recommendation correctly points at
+          // the prototype and this test would be asserting the wrong thing.
+          documents={[doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prototype')]}
           productContext={contextWith({ product_name: 'VoC' })}
         />,
       )

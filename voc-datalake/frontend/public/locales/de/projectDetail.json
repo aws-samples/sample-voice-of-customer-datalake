@@ -61,8 +61,6 @@
     "prototype": {
       "building": "Wird erstellt…",
       "button": "Prototyp erstellen",
-      "buttonTitle": "Klickbaren HTML-Prototyp aus PRD + PR-FAQ dieses Projekts generieren",
-      "buttonTitleOne": "Klickbaren HTML-Prototyp aus dem vorhandenen Dokument (PRD oder PR-FAQ) generieren",
       "cancel": "Abbrechen",
       "confirmBuild": "Trotzdem erstellen",
       "confirmPrdOnly": "Noch kein PR-FAQ — der Prototyp wird nur aus dem PRD erstellt. Fortfahren?",
@@ -215,6 +213,7 @@
       "documents": "Ein PRD oder PR-FAQ generieren.",
       "personas": "Personas aus Ihrem Feedback generieren.",
       "product": "Beschreiben Sie Ihr Produkt oder Ihren Service.",
+      "prototype": "Erstellen Sie einen klickbaren Prototyp aus Ihren Dokumenten.",
       "remix": "Ihre Dokumente zu einer neuen Version kombinieren.",
       "research": "Recherche starten – Ihre Personas können sie fundieren."
     },
@@ -222,6 +221,8 @@
     "openProductTool": "Öffnen",
     "productDescription": "Produkt-/Service-Beschreibung",
     "productDescriptionDesc": "Beschreiben Sie das aktuelle Produkt. Fließt in die PRD- und PR/FAQ-Generierung ein.",
+    "prototype": "Klickbarer Prototyp",
+    "prototypeDesc": "Erstellen Sie einen klickbaren HTML-Prototyp aus Ihrem PRD / PR-FAQ",
     "remixDocuments": "Dokumente remixen",
     "remixDocumentsDesc": "Dokumente kombinieren und überarbeiten",
     "runResearch": "Recherche starten",
@@ -234,6 +235,8 @@
       "personasNone": "Noch keine",
       "product": "{{filled}} von {{total}} Feldern ausgefüllt",
       "productEmpty": "Noch nicht beschrieben",
+      "prototypes": "Erstellte Prototypen: {{total}}",
+      "prototypesNone": "Noch keine",
       "research": "Recherchedokumente: {{total}}",
       "researchNone": "Noch nicht ausgeführt"
     }

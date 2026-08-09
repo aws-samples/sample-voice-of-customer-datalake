@@ -61,8 +61,6 @@
     "prototype": {
       "building": "构建中…",
       "button": "构建原型",
-      "buttonTitle": "根据本项目的 PRD + PR-FAQ 生成可点击的 HTML 原型",
-      "buttonTitleOne": "根据现有文档（PRD 或 PR-FAQ）生成可点击的 HTML 原型",
       "cancel": "取消",
       "confirmBuild": "仍然创建",
       "confirmPrdOnly": "尚无 PR-FAQ — 原型将仅基于 PRD 构建。是否继续？",
@@ -215,6 +213,7 @@
       "documents": "生成 PRD 或 PR-FAQ。",
       "personas": "根据反馈生成人物角色。",
       "product": "描述您的产品或服务。",
+      "prototype": "根据您的文档创建可点击的原型。",
       "remix": "将文档重新组合为新版本。",
       "research": "运行调研——您的人物角色可以为其提供依据。"
     },
@@ -222,6 +221,8 @@
     "openProductTool": "打开",
     "productDescription": "产品/服务描述",
     "productDescriptionDesc": "描述当前产品。将用于 PRD 和 PR/FAQ 的生成。",
+    "prototype": "可点击原型",
+    "prototypeDesc": "根据您的 PRD / PR-FAQ 创建可点击的 HTML 原型",
     "remixDocuments": "重新混合文档",
     "remixDocumentsDesc": "合并和修订文档以创建新版本",
     "runResearch": "运行研究",
@@ -234,6 +235,8 @@
       "personasNone": "暂无",
       "product": "已填写 {{filled}}/{{total}} 个字段",
       "productEmpty": "尚未描述",
+      "prototypes": "已创建原型：{{total}}",
+      "prototypesNone": "暂无",
       "research": "调研文档：{{total}}",
       "researchNone": "尚未运行"
     }

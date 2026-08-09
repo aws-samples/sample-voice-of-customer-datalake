@@ -13,7 +13,6 @@ import {
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
 import { useConfigStore } from '../../store/configStore'
-import BuildPrototypeButton from './BuildPrototypeButton'
 import JobsSection from './JobsSection'
 import ProjectHeader from './ProjectHeader'
 import {
@@ -224,11 +223,6 @@ export default function ProjectDetail() {
   } = data
   const jobs = jobsData?.jobs ?? []
 
-  // Prototype builds reference the project's latest PRD and PR-FAQ: both if
-  // present, otherwise whichever one exists. Enabled once at least one exists.
-  const hasPrd = documents.some((d) => d.document_type === 'prd')
-  const hasPrfaq = documents.some((d) => d.document_type === 'prfaq')
-
   return (
     <div className="space-y-6">
       <ProjectHeader
@@ -243,14 +237,6 @@ export default function ProjectDetail() {
         personasCount={personas.length}
         documentsCount={documents.length}
         onTabChange={setActiveTab}
-        rightSlot={(
-          <BuildPrototypeButton
-            projectId={project.project_id}
-            hasPrd={hasPrd}
-            hasPrfaq={hasPrfaq}
-            onJobStarted={handleJobStarted}
-          />
-        )}
       />
 
       <WizardSection

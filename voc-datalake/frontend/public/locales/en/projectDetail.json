@@ -61,8 +61,6 @@
     "prototype": {
       "building": "Building…",
       "button": "Build Prototype",
-      "buttonTitle": "Generate a clickable HTML prototype from this project's PRD + PR-FAQ",
-      "buttonTitleOne": "Generate a clickable HTML prototype from the available document (PRD or PR-FAQ)",
       "cancel": "Cancel",
       "confirmBuild": "Build anyway",
       "confirmPrdOnly": "No PR-FAQ yet — the prototype will be built from the PRD only. Continue?",
@@ -215,6 +213,7 @@
       "documents": "Generate a PRD or PR-FAQ.",
       "personas": "Generate personas from your feedback.",
       "product": "Describe your product or service.",
+      "prototype": "Build a clickable prototype from your documents.",
       "remix": "Remix your documents into a new version.",
       "research": "Run research — your personas can ground it."
     },
@@ -222,6 +221,8 @@
     "openProductTool": "Open",
     "productDescription": "Product / Service Description",
     "productDescriptionDesc": "Describe the current product. Feeds PRD and PR/FAQ generation.",
+    "prototype": "Clickable Prototype",
+    "prototypeDesc": "Build a clickable HTML prototype from your PRD / PR-FAQ",
     "remixDocuments": "Remix Documents",
     "remixDocumentsDesc": "Combine and revise documents into new versions",
     "runResearch": "Run Research",
@@ -234,6 +235,8 @@
       "personasNone": "None yet",
       "product": "{{filled}} of {{total}} fields filled",
       "productEmpty": "Not described yet",
+      "prototypes": "Prototypes built: {{total}}",
+      "prototypesNone": "None yet",
       "research": "Research documents: {{total}}",
       "researchNone": "Not run yet"
     }

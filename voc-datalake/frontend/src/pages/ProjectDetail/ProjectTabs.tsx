@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { Tab } from './types'
-import type { ReactNode } from 'react'
 
 const TABS: readonly {
   id: Tab;
@@ -51,18 +50,16 @@ interface ProjectTabsProps {
   readonly personasCount: number
   readonly documentsCount: number
   readonly onTabChange: (tab: Tab) => void
-  // Rendered at the far right of the tab row (e.g. the Build Prototype button).
-  readonly rightSlot?: ReactNode
 }
 
 export default function ProjectTabs({
-  activeTab, personasCount, documentsCount, onTabChange, rightSlot,
+  activeTab, personasCount, documentsCount, onTabChange,
 }: ProjectTabsProps) {
   const { t } = useTranslation('projectDetail')
 
   return (
     <div className="border-b border-gray-200 -mx-4 px-4 sm:mx-0 sm:px-0">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
         <nav className="flex gap-4 sm:gap-6 min-w-max overflow-x-auto">
           {TABS.map((tab) => (
             <button
@@ -81,7 +78,6 @@ export default function ProjectTabs({
             </button>
           ))}
         </nav>
-        {rightSlot == null ? null : <div className="flex-shrink-0 py-1.5">{rightSlot}</div>}
       </div>
     </div>
   )

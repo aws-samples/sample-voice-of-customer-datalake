@@ -61,8 +61,6 @@
     "prototype": {
       "building": "作成中…",
       "button": "プロトタイプを作成",
-      "buttonTitle": "このプロジェクトの PRD + PR-FAQ からクリック可能な HTML プロトタイプを生成",
-      "buttonTitleOne": "利用可能なドキュメント（PRD または PR-FAQ）からクリック可能な HTML プロトタイプを生成",
       "cancel": "キャンセル",
       "confirmBuild": "それでも作成",
       "confirmPrdOnly": "PR-FAQ がまだありません — プロトタイプは PRD のみから作成されます。続行しますか？",
@@ -215,6 +213,7 @@
       "documents": "PRD または PR-FAQ を生成します。",
       "personas": "フィードバックからペルソナを生成します。",
       "product": "製品またはサービスを記述します。",
+      "prototype": "ドキュメントからクリック可能なプロトタイプを作成します。",
       "remix": "ドキュメントを組み合わせて新しいバージョンにします。",
       "research": "リサーチを実行します（ペルソナで根拠づけられます）。"
     },
@@ -222,6 +221,8 @@
     "openProductTool": "開く",
     "productDescription": "製品／サービス説明",
     "productDescriptionDesc": "現在の製品を記述してください。PRD と PR/FAQ の生成に反映されます。",
+    "prototype": "クリック可能なプロトタイプ",
+    "prototypeDesc": "PRD / PR-FAQ からクリック可能な HTML プロトタイプを作成します",
     "remixDocuments": "ドキュメントをリミックス",
     "remixDocumentsDesc": "ドキュメントを組み合わせて新しいバージョンに修正",
     "runResearch": "リサーチを実行",
@@ -234,6 +235,8 @@
       "personasNone": "まだありません",
       "product": "{{total}} 項目中 {{filled}} 項目入力済み",
       "productEmpty": "未記述",
+      "prototypes": "作成されたプロトタイプ: {{total}}",
+      "prototypesNone": "まだありません",
       "research": "リサーチ文書: {{total}}",
       "researchNone": "未実行"
     }

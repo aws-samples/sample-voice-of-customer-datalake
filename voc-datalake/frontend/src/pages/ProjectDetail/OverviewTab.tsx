@@ -1,21 +1,31 @@
 /**
- * OverviewTab - Project overview: the five project tools, in dependency order,
+ * OverviewTab - Project overview: the six project tools, in dependency order,
  * each reporting whether it has produced anything yet.
  *
- * The card order is Product → Personas → Research → PRD/PR-FAQ → Remix, which is
- * the order the generators can actually feed each other (see `overviewState.ts`).
- * It is not the order the cards used to appear in: PRD/PR-FAQ came *before*
- * research, so reading the grid top to bottom produced documents that had neither
- * research nor a deliberate persona selection behind them.
+ * The card order is Product → Personas → Research → PRD/PR-FAQ → Prototype →
+ * Remix, which is the order the generators can actually feed each other (see
+ * `overviewState.ts`). It is not the order the cards used to appear in: PRD/PR-FAQ
+ * came *before* research, so reading the grid top to bottom produced documents
+ * that had neither research nor a deliberate persona selection behind them.
+ *
+ * Prototype is step 5 rather than a lone button pinned to the right of the tab
+ * row, where it read as a tab-level control for something that is really the last
+ * artifact in the sequence — and where, unlike here, it could not report that a
+ * prototype already existed. It sits before Remix because it needs *one* of
+ * PRD/PR-FAQ where Remix needs two documents, and because it produces a new
+ * artifact where Remix revises existing ones.
  */
 import {
-  Users, FileText, Search, Sparkles, Shuffle, Package,
+  Users, FileText, Search, Sparkles, Shuffle, Package, Wand2, AlertCircle, Loader2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import ConfirmModal from '../../components/ConfirmModal'
 import KiroExportSettings from './KiroExportSettings'
 import {
   deriveOverviewState, type OverviewStep, type OverviewStepState,
 } from './overviewState'
+import { usePrototypeBuild, type PrototypeBuildControl } from './usePrototypeBuild'
+import type { ReactNode } from 'react'
 import type { TFunction } from 'i18next'
 import type {
   ProjectPersona, ProjectDocument, Project, ProductContext,
@@ -33,6 +43,8 @@ interface OverviewTabProps {
   readonly onRemixDocuments: () => void
   readonly onOpenProductTool: () => void
   readonly onSaveKiroPrompt: (prompt: string) => void
+  /** Tells the Background Jobs panel to pick up a started prototype build. */
+  readonly onJobStarted?: () => void
 }
 
 export default function OverviewTab({
@@ -46,6 +58,7 @@ export default function OverviewTab({
   onRemixDocuments,
   onOpenProductTool,
   onSaveKiroPrompt,
+  onJobStarted,
 }: OverviewTabProps) {
   const { t } = useTranslation('projectDetail')
   const {
@@ -56,6 +69,15 @@ export default function OverviewTab({
     productContext,
   })
 
+  // Only ever used to choose the confirm *wording* when exactly one of the two
+  // exists. Whether the step is available at all is `steps.prototype`, so these
+  // two cannot drift into disagreeing with the card's disabled state.
+  const hasPrd = documents.some((d) => d.document_type === 'prd')
+  const hasPrfaq = documents.some((d) => d.document_type === 'prfaq')
+  const prototypeBuild = usePrototypeBuild({
+    projectId: project.project_id, hasPrd, hasPrfaq, onJobStarted,
+  })
+
   // Written out as literal t() calls rather than built from the step id: a key
   // assembled at runtime is invisible to the i18n extractor, which is the exact
   // blind spot that left whole surfaces untranslated.
@@ -64,6 +86,7 @@ export default function OverviewTab({
     personas: t('overview.nextStep.personas'),
     research: t('overview.nextStep.research'),
     documents: t('overview.nextStep.documents'),
+    prototype: t('overview.nextStep.prototype'),
     remix: t('overview.nextStep.remix'),
   }
 
@@ -140,6 +163,43 @@ export default function OverviewTab({
           onClick={onGenerateDoc}
         />
         <ActionCard
+          state={steps.prototype}
+          icon={<Wand2 size={20} className="text-orange-600" />}
+          iconBg="bg-orange-100"
+          // The heading names the artifact ("Clickable Prototype") the way the
+          // product card does, so the button underneath can keep the verb — and
+          // keep the exact accessible name the tab-row button had, which is what
+          // lets the existing gate and handover tests carry over unchanged.
+          title={t('overview.prototype')}
+          description={t('overview.prototypeDesc')}
+          stateLabel={steps.prototype.hasOutput
+            ? t('overview.state.prototypes', { total: steps.prototype.count })
+            : t('overview.state.prototypesNone')}
+          buttonColor="bg-orange-500 hover:bg-orange-600"
+          buttonIcon={prototypeBuild.busy
+            ? <Loader2 size={16} className="animate-spin" />
+            : <Wand2 size={16} />}
+          buttonLabel={prototypeBuild.busy
+            ? t('documents.prototype.building')
+            : t('documents.prototype.button')}
+          // No `configureLabel`: the other cards open a wizard to configure first,
+          // this one starts the build (or a confirm) directly, so "Configure and"
+          // would promise a step that does not exist.
+          configureLabel=""
+          onClick={prototypeBuild.onClick}
+          // Like remix, `missingUpstream` is a hard block here rather than a hint.
+          // This is the *user-facing* authority — one derived condition, shared
+          // with the state label — while the hook keeps its own guard on the same
+          // condition so a caller that forgets to disable cannot start a
+          // sourceless billable build. Both are verified load-bearing.
+          disabled={steps.prototype.missingUpstream || prototypeBuild.busy}
+          disabledMessage={t('documents.prototype.needsDocs')}
+          // The card has no room for the two lines a build needs: a failure to
+          // START (everything after that belongs to the jobs panel) and a brief
+          // acknowledgement covering the gap before that panel refetches.
+          statusLine={prototypeStatusLine(prototypeBuild, t)}
+        />
+        <ActionCard
           state={steps.remix}
           icon={<Shuffle size={20} className="text-green-600" />}
           iconBg="bg-green-100"
@@ -160,8 +220,48 @@ export default function OverviewTab({
 
       {/* Kiro Export Settings */}
       <KiroExportSettings project={project} onSave={onSaveKiroPrompt} />
+
+      {/* Only reachable from the prototype card, and only when exactly one of
+          PRD/PR-FAQ exists — the build is billable, so which document it will
+          read is stated before it runs rather than after. */}
+      <ConfirmModal
+        isOpen={prototypeBuild.confirm.isOpen}
+        title={t('documents.prototype.button')}
+        message={prototypeBuild.confirm.message}
+        confirmLabel={t('documents.prototype.confirmBuild')}
+        cancelLabel={t('documents.prototype.cancel')}
+        variant="warning"
+        onConfirm={prototypeBuild.confirm.onConfirm}
+        onCancel={prototypeBuild.confirm.onCancel}
+      />
     </div>
   )
+}
+
+/**
+ * The prototype card's one extra line: a failure to start, or a brief
+ * acknowledgement that a build began.
+ *
+ * Split out rather than inlined because the card call site is already the longest
+ * in the grid, and because an error must win over an acknowledgement — a build
+ * that failed to start has not started, and showing both would say otherwise.
+ */
+function prototypeStatusLine(
+  build: PrototypeBuildControl,
+  t: TFunction,
+): ReactNode {
+  // Error first, and load-bearing together with the hook never setting `started`
+  // on the failure path: either one alone keeps a failure visible, and it takes
+  // removing BOTH for an error to be masked by an acknowledgement.
+  if (build.error != null) {
+    return (
+      <span className="inline-flex items-center gap-1 text-red-600" title={build.error}>
+        <AlertCircle size={12} /> {build.error}
+      </span>
+    )
+  }
+  if (build.started) return <span className="text-emerald-700">{t('documents.prototype.started')}</span>
+  return null
 }
 
 /**
@@ -189,6 +289,13 @@ interface ActionCardProps {
   readonly stateLabel?: string
   /** Shown when an optional upstream input is missing. Advisory, never a block. */
   readonly hint?: string
+  /**
+   * A transient line about this card's own last action — a failure to start, or an
+   * acknowledgement that something began. Only the prototype card starts work
+   * directly rather than opening a wizard, so only it has anything to report; the
+   * others leave this unset.
+   */
+  readonly statusLine?: ReactNode
   readonly buttonColor: string
   readonly buttonIcon: React.ReactNode
   readonly buttonLabel: string
@@ -206,6 +313,7 @@ function ActionCard({
   description,
   stateLabel,
   hint,
+  statusLine,
   buttonColor,
   buttonIcon,
   buttonLabel,
@@ -261,6 +369,10 @@ function ActionCard({
         <span className="hidden sm:inline">{configureLabel}</span>{buttonLabel}
       </button>
       {hint == null ? null : <p className="text-xs text-amber-700 mt-2 text-center">{hint}</p>}
+      {/* Sits with `hint` and `disabledMessage` rather than above the button: all
+          three explain the button, and the caller owns the colour because only it
+          knows whether this line is a failure or an acknowledgement. */}
+      {statusLine == null ? null : <p className="text-xs mt-2 text-center">{statusLine}</p>}
       {/* Pre-existing gray-400, raised with the rest: this line explains why a
           button is disabled, which is the last text on the card that should be
           hard to read. */}
