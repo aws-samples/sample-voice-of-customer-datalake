@@ -21,7 +21,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18next'
-import McpAccessTab from './McpAccessTab'
+import McpAccessTab, { COLUMNS_TESTID } from './McpAccessTab'
 import { canCopyExport } from './autoseedSelection'
 import deProjectDetail from '../../../public/locales/de/projectDetail.json'
 import enProjectDetail from '../../../public/locales/en/projectDetail.json'
@@ -256,6 +256,68 @@ describe('McpAccessTab — export guard is enforced in the UI', () => {
   })
 })
 
+describe('McpAccessTab — the tab body lays out as exactly two columns', () => {
+  // The layout is a two-column grid, so a THIRD sibling would silently start a
+  // second row at half width. Asserting the child COUNT pins that invariant
+  // without coupling to the Tailwind classes that implement it — the token-error
+  // path in particular has to wrap its two elements to satisfy this.
+  //
+  // Found by test id rather than by walking up from the card: reaching through
+  // `.closest('div.border')` would break for the wrong reason the day the card
+  // gains a wrapper or a nested bordered element.
+  const columnCount = () => screen.getByTestId(COLUMNS_TESTID).children.length
+
+  it('gives the grid exactly two children when tokens load', async () => {
+    mockListApiTokens.mockResolvedValue({ tokens: [] })
+    renderTab(onePersona, oneDocument)
+
+    await screen.findByText(enProjectDetail.export.title)
+    expect(columnCount()).toBe(2)
+  })
+
+  it('gives the grid exactly two children when the token request fails', async () => {
+    mockListApiTokens.mockRejectedValue(new Error('token fetch failed'))
+    renderTab(onePersona, oneDocument)
+
+    // Waits on error-branch-ONLY copy. Awaiting export.title instead would prove
+    // nothing here: the Export card renders in both branches, so the assertion
+    // could run before the rejection settled and silently check the normal
+    // branch twice.
+    await screen.findByText(enProjectDetail.mcp.notAvailable)
+    expect(columnCount()).toBe(2)
+  })
+})
+
+describe('McpAccessTab — the picker sections start collapsed', () => {
+  it('shows each selection count without rendering its rows', async () => {
+    renderTab(onePersona, oneDocument)
+
+    // The count and the bulk control are what a user needs before copying, so
+    // they must be visible with the section shut.
+    expect(await screen.findByRole('button', { name: /Personas \(1\/1\)/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Documents \(1\/1\)/ })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^Deselect all$/ })).toHaveLength(2)
+
+    // The rows themselves are not rendered until asked for.
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+  })
+
+  it('renders the rows once a section is expanded', async () => {
+    renderTab(onePersona, oneDocument)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /Personas \(1\/1\)/ }))
+
+    // Named, not counted: a bare toHaveLength(1) also passes when the personas
+    // section is shut and the DOCUMENT row is the one on screen — verified by
+    // mutation, where it went green against the old expanded-by-default state.
+    const personaRow = screen.getByRole('checkbox', { name: /Persona A/ })
+    expect(personaRow).toBeChecked()
+    // and the other section stayed shut
+    expect(screen.queryByRole('checkbox', { name: /Doc A/ })).not.toBeInTheDocument()
+  })
+})
+
 describe('McpAccessTab — Card 2 hides the curl snippet when it would mean "everything"', () => {
   it('suppresses the autoseed prompt, not just its copy button, once a section is emptied', async () => {
     renderTab(onePersona, oneDocument)
@@ -321,6 +383,13 @@ describe('McpAccessTab — autoseed group labels resolve', () => {
     // catch a deletion. A render assertion is the only check that would fail.
     // Needs a document: the group heading is per document-type.
     renderTab(onePersona, oneDocument)
+
+    // The documents picker is collapsed by default and the group heading lives in
+    // its body, so expand it the way a user would. Matched on the header's
+    // accessible name, which carries the "1/1" selection count.
+    await userEvent.setup().click(
+      await screen.findByRole('button', { name: /Documents \(1\/1\)/ }),
+    )
 
     expect(await screen.findByText(enProjectDetail.autoseed.docTypes.prd)).toBeInTheDocument()
     expect(screen.queryByText(/autoseed\.docTypes\./)).not.toBeInTheDocument()
