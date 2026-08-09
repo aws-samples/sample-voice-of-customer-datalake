@@ -6,6 +6,27 @@
  * and because both the Export card's clipboard copy and Card 2's `curl` URL build
  * their request from these functions — one definition, not two drifting copies.
  */
+import type { ProjectDocument } from '../../api/types'
+
+/**
+ * Document types that the Kiro export picker shows and the payload includes.
+ *
+ * Must stay in sync with KIRO_EXPORT_EXCLUDED_TYPES in projects.py — the
+ * lockstep test test_kiro_exportable_types_lockstep.py fails if they drift.
+ * Do NOT add 'prototype' or 'product_report' here.
+ */
+export const KIRO_EXPORTABLE_DOC_TYPES = ['prd', 'prfaq', 'research', 'custom'] as const
+
+export type KiroExportableDocType = typeof KIRO_EXPORTABLE_DOC_TYPES[number]
+
+export function isKiroExportableDocType(value: string): value is KiroExportableDocType {
+  return KIRO_EXPORTABLE_DOC_TYPES.some((t) => t === value)
+}
+
+/** Returns only the documents that are exportable to Kiro. */
+export function filterExportableDocs(documents: ProjectDocument[]): ProjectDocument[] {
+  return documents.filter((d) => isKiroExportableDocType(d.document_type))
+}
 
 /**
  * Builds the `personaIds` / `documentIds` filter params for the autoseed API.

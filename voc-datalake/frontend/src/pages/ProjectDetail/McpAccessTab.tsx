@@ -31,7 +31,10 @@ import { api } from '../../api/client'
 import { stripTrailingSlashes } from '../../api/baseUrl'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { useConfigStore } from '../../store/configStore'
-import { buildAutoseedParams, canCopyExport } from './autoseedSelection'
+import {
+  buildAutoseedParams, canCopyExport, filterExportableDocs,
+  isKiroExportableDocType, type KiroExportableDocType,
+} from './autoseedSelection'
 import AutoseedContent from './AutoseedContent'
 import CollapsibleSection from './CollapsibleSection'
 import KiroExportSettings from './KiroExportSettings'
@@ -80,11 +83,7 @@ function buildMcpConfig(baseUrl: string, projectId: string): string {
   }, null, 2)
 }
 
-type DocType = 'prd' | 'prfaq' | 'research' | 'custom'
-
-function isValidDocType(value: string): value is DocType {
-  return value === 'prd' || value === 'prfaq' || value === 'research' || value === 'custom'
-}
+type DocType = KiroExportableDocType
 
 function groupDocumentsByType(documents: ProjectDocument[]): Record<DocType, ProjectDocument[]> {
   const groups: Record<DocType, ProjectDocument[]> = {
@@ -94,8 +93,10 @@ function groupDocumentsByType(documents: ProjectDocument[]): Record<DocType, Pro
     custom: [],
   }
   for (const doc of documents) {
-    const docType = isValidDocType(doc.document_type) ? doc.document_type : 'custom'
-    groups[docType].push(doc)
+    if (isKiroExportableDocType(doc.document_type)) {
+      groups[doc.document_type].push(doc)
+    }
+    // Non-exportable types (prototype, product_report) are silently skipped.
   }
   return groups
 }
@@ -214,7 +215,7 @@ function SharedPickers({
           onToggleAll={onToggleAllDocuments}
         >
           {Object.keys(docGroups)
-            .filter(isValidDocType)
+            .filter(isKiroExportableDocType)
             .filter((type) => docGroups[type].length > 0)
             .map((type) => {
               const docs = docGroups[type]
@@ -432,6 +433,10 @@ export default function McpAccessTab({
   const { config } = useConfigStore()
   const { t } = useTranslation('projectDetail')
 
+  // Only exportable document types appear in the picker and the payload.
+  // Prototypes and product_reports are excluded from Kiro exports everywhere.
+  const exportableDocs = useMemo(() => filterExportableDocs(documents), [documents])
+
   // ── Shared picker state (used by both cards) ──────────────────────────────
   //
   // DESELECTED ids are stored, and the selection is DERIVED from the props. The
@@ -454,8 +459,8 @@ export default function McpAccessTab({
     [personas, deselectedPersonaIds],
   )
   const selectedDocumentIds = useMemo(
-    () => new Set(documents.map((d) => d.document_id).filter((id) => !deselectedDocumentIds.has(id))),
-    [documents, deselectedDocumentIds],
+    () => new Set(exportableDocs.map((d) => d.document_id).filter((id) => !deselectedDocumentIds.has(id))),
+    [exportableDocs, deselectedDocumentIds],
   )
 
   // Toggling a row flips its membership in the DESELECTED set, so the checkbox
@@ -483,8 +488,8 @@ export default function McpAccessTab({
   }, [personas])
 
   const toggleAllDocuments = useCallback((select: boolean) => {
-    setDeselectedDocumentIds(select ? new Set() : new Set(documents.map((d) => d.document_id)))
-  }, [documents])
+    setDeselectedDocumentIds(select ? new Set() : new Set(exportableDocs.map((d) => d.document_id)))
+  }, [exportableDocs])
 
   const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) => {
@@ -536,14 +541,14 @@ export default function McpAccessTab({
   // none selected would emit a curl that omits the filter and makes Kiro fetch
   // everything the user deselected. Both delivery paths share one guard.
   const hasPickerSelection = canCopyExport(
-    selectedPersonaIds, personas.length, selectedDocumentIds, documents.length,
+    selectedPersonaIds, personas.length, selectedDocumentIds, exportableDocs.length,
   )
 
   // Build the autoseed curl URL from shared selection (used by Card 2)
   const apiBase = stripTrailingSlashes(config.apiEndpoint === '' ? '' : config.apiEndpoint)
   const autoseedCurlUrl = useMemo(() => {
     const { personaIds, documentIds } = buildAutoseedParams(
-      selectedPersonaIds, personas.length, selectedDocumentIds, documents.length,
+      selectedPersonaIds, personas.length, selectedDocumentIds, exportableDocs.length,
     )
     const params = new URLSearchParams()
     if (personaIds != null) params.set('persona_ids', personaIds.join(','))
@@ -551,14 +556,14 @@ export default function McpAccessTab({
     const qs = params.toString()
     const base = `${apiBase}/mcp/autoseed/${projectId}`
     return qs === '' ? base : `${base}?${qs}`
-  }, [apiBase, projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length])
+  }, [apiBase, projectId, selectedPersonaIds, selectedDocumentIds, personas.length, exportableDocs.length])
 
   // ── Card 1 — Export ───────────────────────────────────────────────────────
   const exportCard = (
     <ExportCard
       projectId={projectId}
       personas={personas}
-      documents={documents}
+      documents={exportableDocs}
       selectedPersonaIds={selectedPersonaIds}
       selectedDocumentIds={selectedDocumentIds}
       expandedSections={expandedSections}
@@ -587,7 +592,7 @@ export default function McpAccessTab({
         >
           <AutoseedContent
             personas={personas}
-            documents={documents}
+            documents={exportableDocs}
             curlUrl={autoseedCurlUrl}
             hasSelection={hasPickerSelection}
           />
@@ -673,7 +678,7 @@ export default function McpAccessTab({
         >
           <AutoseedContent
             personas={personas}
-            documents={documents}
+            documents={exportableDocs}
             curlUrl={autoseedCurlUrl}
             hasSelection={hasPickerSelection}
           />
