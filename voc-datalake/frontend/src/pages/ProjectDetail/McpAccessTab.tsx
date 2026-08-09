@@ -313,7 +313,8 @@ function ExportCard({
         setCopied(false)
       }, 2000)
     } catch (err) {
-      setCopyError(err instanceof Error ? err.message : t('export.copyFailed'))
+      console.error('[ExportCard] autoseed copy failed:', err)
+      setCopyError(t('export.copyFailed'))
     } finally {
       setCopying(false)
     }
@@ -493,6 +494,9 @@ export default function McpAccessTab({
   const tokens = data?.tokens ?? []
   const mcpConfig = buildMcpConfig(baseUrl, projectId)
 
+  // Whether the user has at least one persona or document selected
+  const hasPickerSelection = selectedPersonaIds.size > 0 || selectedDocumentIds.size > 0
+
   // Build the autoseed curl URL from shared selection (used by Card 2)
   const apiBase = stripTrailingSlashes(config.apiEndpoint === '' ? '' : config.apiEndpoint)
   const autoseedCurlUrl = useMemo(() => {
@@ -547,6 +551,7 @@ export default function McpAccessTab({
             personas={personas}
             documents={documents}
             curlUrl={autoseedCurlUrl}
+            hasSelection={hasPickerSelection}
           />
         </CollapsibleSection>
       </div>
@@ -635,6 +640,7 @@ export default function McpAccessTab({
             personas={personas}
             documents={documents}
             curlUrl={autoseedCurlUrl}
+            hasSelection={hasPickerSelection}
           />
         </CollapsibleSection>
       </div>

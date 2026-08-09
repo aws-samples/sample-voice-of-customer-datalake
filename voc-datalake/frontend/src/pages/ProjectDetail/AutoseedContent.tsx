@@ -25,10 +25,16 @@ interface AutoseedContentProps {
   readonly documents: ProjectDocument[]
   /** Pre-built autoseed curl URL from the shared selection held in McpAccessTab. */
   readonly curlUrl: string
+  /**
+   * Whether the user has at least one persona or document selected.
+   * Passed from McpAccessTab so this component doesn't have to infer it from
+   * the URL string (which always contains at least the base path).
+   */
+  readonly hasSelection: boolean
 }
 
 export default function AutoseedContent({
-  personas, documents, curlUrl,
+  personas, documents, curlUrl, hasSelection,
 }: AutoseedContentProps) {
   const { config } = useConfigStore()
   const { t } = useTranslation('projectDetail')
@@ -51,8 +57,6 @@ export default function AutoseedContent({
       </p>
     )
   }
-
-  const hasSelection = curlUrl.length > 0
 
   return (
     <div>

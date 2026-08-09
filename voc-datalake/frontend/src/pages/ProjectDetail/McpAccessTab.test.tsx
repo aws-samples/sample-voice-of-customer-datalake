@@ -319,6 +319,12 @@ describe('McpAccessTab \u2014 ExportCard', () => {
     mockListApiTokens.mockResolvedValue({ success: true, tokens: [] })
   })
 
+  afterEach(() => {
+    // Unconditionally restore any stubbed globals (e.g. navigator.clipboard)
+    // so a failing assertion above doesn't leak the stub into the next test.
+    vi.unstubAllGlobals()
+  })
+
   it('calls autoseedProject and copies to clipboard on success', async () => {
     const user = userEvent.setup()
     const mockWriteText = vi.fn().mockResolvedValue(undefined)
@@ -336,7 +342,6 @@ describe('McpAccessTab \u2014 ExportCard', () => {
       expect(mockAutoseedProject).toHaveBeenCalledWith('proj-123', expect.any(Object))
     })
     expect(mockWriteText).toHaveBeenCalledWith('# Context')
-    vi.unstubAllGlobals()
   })
 
   it('shows error message when autoseedProject rejects', async () => {
@@ -348,7 +353,8 @@ describe('McpAccessTab \u2014 ExportCard', () => {
     await user.click(copyBtn)
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('Network error')
+      // The localized 'export.copyFailed' string is shown, not the raw error message.
+      expect(screen.getByRole('alert')).toHaveTextContent('Copy failed')
     })
   })
 
@@ -356,24 +362,19 @@ describe('McpAccessTab \u2014 ExportCard', () => {
     const user = userEvent.setup()
     renderTabWithData()
 
-    // Deselect all personas and documents by clicking "deselect all" via the
-    // PickerSection toggle-all checkbox.  We rely on the section being expanded
-    // so we can interact with it \u2014 sections start expanded by default.
-    // The "Select all / Deselect all" checkboxes in PickerSection are rendered
-    // as checkboxes inside the section header; we deselect via the personas
-    // and documents section headers.
-    // Simpler: expand the section and uncheck individual items.
-    // For this test we verify the button is enabled with data and only check
-    // the disabled-when-nothing-selected contract by unchecking everything.
-    const personaCheckboxes = screen.getAllByRole('checkbox')
-    // Uncheck all checkboxes to produce an empty selection
-    for (const cb of personaCheckboxes) {
+    // The copy button starts enabled because all items are pre-selected.
+    // Uncheck every checkbox to produce an empty selection, then verify
+    // the button becomes disabled.
+    const copyBtn = screen.getByRole('button', { name: /Copy to clipboard/i })
+    expect(copyBtn).toBeEnabled()
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    for (const cb of checkboxes) {
       if ((cb as HTMLInputElement).checked) {
         await user.click(cb)
       }
     }
 
-    const copyBtn = screen.getByRole('button', { name: /Copy to clipboard/i })
     expect(copyBtn).toBeDisabled()
   })
 })
