@@ -25,7 +25,7 @@ _MAX_BATCH_SIZE = 10
 
 
 def _split_batches(items: list[dict]) -> list[list[dict]]:
-    """Yield successive max-size slices of *items*."""
+    """Return successive max-size slices of *items* as a list."""
     return [
         items[start : start + _MAX_BATCH_SIZE]
         for start in range(0, len(items), _MAX_BATCH_SIZE)
@@ -102,11 +102,24 @@ def send_messages_to_queue(
                     error_code = failed.get("Code", "Unknown")
                     permanent_failures.append(("unknown", error_code))
                     continue
-                idx = int(raw_id)
-                failed_item = batch[idx]
+                try:
+                    idx = int(raw_id)
+                    failed_item = batch[idx]
+                except (ValueError, IndexError):
+                    logger.error(
+                        "SQS Failed entry has invalid Id %r (batch size %d); "
+                        "entry=%s label=%s",
+                        raw_id,
+                        len(batch),
+                        failed,
+                        log_label,
+                    )
+                    error_code = failed.get("Code", "Unknown")
+                    permanent_failures.append((str(raw_id), error_code))
+                    continue
                 # Use the item's own id field for logging only — never log the
                 # full message body because it may contain personal data.
-                item_id = str(failed_item.get("id", f"idx-{idx}"))
+                item_id = str(failed_item.get("id", f"idx-{raw_id}"))
                 error_code = failed.get("Code", "Unknown")
 
                 if failed.get("SenderFault", False):

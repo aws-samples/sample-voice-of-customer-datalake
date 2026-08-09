@@ -97,6 +97,18 @@ class BaseWebhook(ABC):
         any items cannot be enqueued — ensuring callers cannot silently lose
         feedback.  The ``WebhookItemsIngested`` metric reflects the actual
         enqueued count, not the attempted count.
+
+        Note — partial-failure duplicate-delivery trade-off:
+            If the helper raises ``RuntimeError`` after a partial success (some
+            items were already enqueued before the failure occurred), ``handle()``
+            catches it and returns HTTP 500.  Most webhook providers treat 500 as
+            transient and re-deliver the *entire* original payload, so items that
+            were already successfully enqueued will be sent a second time.  This
+            PR chooses "duplicate over loss" as the safer trade-off; the
+            downstream processor deduplicates on ``id`` via
+            ``check_duplicate`` / ``@idempotent_function`` when
+            ``IDEMPOTENCY_TABLE`` is configured.  Ensure ``IDEMPOTENCY_TABLE`` is
+            set in all production deployments to prevent double-processing.
         """
         send_messages_to_queue(
             self._sqs,

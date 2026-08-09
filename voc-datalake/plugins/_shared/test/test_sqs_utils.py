@@ -19,6 +19,8 @@ Happy path: all succeed, metric = len(items)        test_all_successful_metric_e
 Batch size: ≤10 entries per send_message_batch call test_batches_are_at_most_ten_entries
 Mixed success+failure in one response               test_partial_batch_failure_raises_and_counts_correctly
 Failed entry missing Id field raises RuntimeError   test_missing_id_field_raises_without_index_error
+Non-numeric Id raises RuntimeError (no ValueError) test_non_numeric_id_raises_without_value_error
+Out-of-range Id raises RuntimeError (no IndexError) test_out_of_range_id_raises_without_index_error
 Full message body not logged (only id field)        test_personal_data_not_logged
 Return value = successfully enqueued count          test_return_value_is_enqueued_count
 """
@@ -317,6 +319,94 @@ class TestSendMessagesToQueueFailureHandling:
         error_calls = [str(call) for call in mock_logger.error.call_args_list]
         assert any("missing Id" in c for c in error_calls), (
             "Expected an error log about the missing Id field"
+        )
+
+    def test_non_numeric_id_raises_without_value_error(self):
+        """A Failed entry with a non-numeric Id (e.g. 'abc') must raise
+        RuntimeError without propagating a ValueError from int(raw_id).
+
+        Reverts-to-catch: the bare ``int(raw_id)`` call raises ValueError on
+        non-numeric strings, masking the real SQS error code.  The guard wraps
+        the conversion and routes the entry to permanent_failures so RuntimeError
+        is still raised with a useful message.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "item-0", "text": "x"}]
+        response_with_bad_id = {
+            "Successful": [],
+            "Failed": [
+                {
+                    "Id": "abc",  # non-numeric — int("abc") raises ValueError
+                    "SenderFault": False,
+                    "Code": "InternalError",
+                    "Message": "test error",
+                }
+            ],
+        }
+        sqs = _make_sqs([response_with_bad_id])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            patch("_shared.sqs_utils.logger") as mock_logger,
+            pytest.raises(RuntimeError),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+            )
+
+        # The invalid-Id error path must have been logged
+        error_calls = [str(call) for call in mock_logger.error.call_args_list]
+        assert any("invalid Id" in c for c in error_calls), (
+            "Expected an error log about the invalid Id field"
+        )
+
+    def test_out_of_range_id_raises_without_index_error(self):
+        """A Failed entry whose Id is numerically valid but >= len(batch) must
+        raise RuntimeError without propagating an IndexError from batch[idx].
+
+        Reverts-to-catch: the bare ``batch[idx]`` lookup raises IndexError for
+        an out-of-range index, masking the real SQS error code.  The guard
+        routes the entry to permanent_failures so RuntimeError is raised with a
+        useful message.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "item-0", "text": "x"}]  # batch size = 1, valid idx = 0
+        response_with_out_of_range_id = {
+            "Successful": [],
+            "Failed": [
+                {
+                    "Id": "99",  # batch has only 1 item, so idx 99 is out of range
+                    "SenderFault": False,
+                    "Code": "InternalError",
+                    "Message": "test error",
+                }
+            ],
+        }
+        sqs = _make_sqs([response_with_out_of_range_id])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            patch("_shared.sqs_utils.logger") as mock_logger,
+            pytest.raises(RuntimeError),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+            )
+
+        # The invalid-Id error path must have been logged
+        error_calls = [str(call) for call in mock_logger.error.call_args_list]
+        assert any("invalid Id" in c for c in error_calls), (
+            "Expected an error log about the invalid/out-of-range Id field"
         )
 
     def test_partial_batch_failure_raises_and_counts_correctly(self):
