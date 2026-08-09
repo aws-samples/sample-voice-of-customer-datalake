@@ -61,12 +61,11 @@
     "prototype": {
       "building": "생성 중…",
       "button": "프로토타입 생성",
-      "buttonTitle": "이 프로젝트의 PRD + PR-FAQ로 클릭 가능한 HTML 프로토타입 생성",
-      "buttonTitleOne": "있는 문서(PRD 또는 PR-FAQ)로 클릭 가능한 HTML 프로토타입 생성",
       "cancel": "취소",
       "confirmBuild": "그래도 생성",
       "confirmPrdOnly": "아직 PR-FAQ가 없어 PRD만으로 프로토타입을 생성합니다. 계속할까요?",
       "confirmPrfaqOnly": "아직 PRD가 없어 PR-FAQ만으로 프로토타입을 생성합니다. 계속할까요?",
+      "confirmRebuild": "이 프로젝트에는 이미 프로토타입이 있습니다. 다시 빌드하면 기존 항목을 유지한 채 새 항목이 추가됩니다. 계속하시겠습니까?",
       "downloadHtml": "HTML 다운로드",
       "downloadJson": "JSON 다운로드",
       "feedbackBuilding": "수정 중…",
@@ -215,6 +214,7 @@
       "documents": "PRD 또는 PR-FAQ를 생성하세요.",
       "personas": "피드백에서 페르소나를 생성하세요.",
       "product": "제품 또는 서비스를 설명하세요.",
+      "prototype": "문서에서 클릭 가능한 프로토타입을 만드세요.",
       "remix": "문서를 결합해 새 버전을 만드세요.",
       "research": "리서치를 실행하세요. 페르소나로 근거를 더할 수 있습니다."
     },
@@ -222,6 +222,8 @@
     "openProductTool": "열기",
     "productDescription": "제품 / 서비스 설명",
     "productDescriptionDesc": "현재 제품을 설명합니다. PRD 및 PR/FAQ 생성에 사용됩니다.",
+    "prototype": "클릭 가능한 프로토타입",
+    "prototypeDesc": "PRD / PR-FAQ에서 클릭 가능한 HTML 프로토타입을 만듭니다",
     "remixDocuments": "문서 리믹스",
     "remixDocumentsDesc": "문서를 결합하고 수정하여 새 버전 생성",
     "runResearch": "리서치 실행",
@@ -234,6 +236,8 @@
       "personasNone": "아직 없음",
       "product": "{{total}}개 항목 중 {{filled}}개 입력됨",
       "productEmpty": "아직 설명하지 않음",
+      "prototypes": "생성된 프로토타입: {{total}}",
+      "prototypesNone": "아직 없음",
       "research": "리서치 문서: {{total}}",
       "researchNone": "아직 실행하지 않음"
     }

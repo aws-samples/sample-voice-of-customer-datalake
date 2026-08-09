@@ -26,8 +26,8 @@ import {
   PRODUCT_CONTEXT_FIELD_COUNT, countFilledProductContextFields,
 } from './productContextFields'
 
-/** The five Overview steps, in dependency order. */
-export type OverviewStep = 'product' | 'personas' | 'research' | 'documents' | 'remix'
+/** The six Overview steps, in dependency order. */
+export type OverviewStep = 'product' | 'personas' | 'research' | 'documents' | 'prototype' | 'remix'
 
 /** Remix needs two documents to combine; below that its card stays disabled. */
 export const REMIX_MIN_DOCUMENTS = 2
@@ -50,12 +50,31 @@ export interface OverviewStepState {
   /** Personas, research and documents: how many exist. */
   readonly count?: number
   /**
-   * True when the step would read better with an input that does not exist yet
-   * (research without personas, documents without either, remix without two
-   * documents to combine). A hint, never a gate for the generators: they all work
-   * without their optional inputs, just less well.
+   * True when the step's input is missing: research without personas, documents
+   * without either, prototype without a PRD or PR-FAQ, remix without two
+   * documents to combine.
+   *
+   * For the three *generators* this is a hint and never a gate — they all work
+   * without their optional inputs, just less well. For `prototype` and `remix` it
+   * IS a hard block, because neither has anything to operate on: remix has no
+   * second document to combine, and the prototype backend reads the latest PRD
+   * and/or PR-FAQ, so with neither present there is no source at all. The
+   * component decides which reading applies, per card.
    */
   readonly missingUpstream: boolean
+}
+
+/**
+ * Which of the two prototype source documents exist.
+ *
+ * `steps.prototype.missingUpstream` answers "can a prototype be built at all",
+ * which is all the card needs. This answers "which one is missing", which only the
+ * confirm wording needs — derived here rather than recomputed by the component so
+ * the two answers cannot drift apart.
+ */
+export interface PrototypeSources {
+  readonly hasPrd: boolean
+  readonly hasPrfaq: boolean
 }
 
 export interface OverviewState {
@@ -66,6 +85,7 @@ export interface OverviewState {
    * at work whose own inputs are ready.
    */
   readonly nextStep: OverviewStep | null
+  readonly prototypeSources: PrototypeSources
 }
 
 interface DeriveInput {
@@ -87,6 +107,7 @@ export function deriveOverviewState({
   const researchCount = documents.filter((d) => d.document_type === 'research').length
   const prdCount = documents.filter((d) => d.document_type === 'prd').length
   const prfaqCount = documents.filter((d) => d.document_type === 'prfaq').length
+  const prototypeCount = documents.filter((d) => d.document_type === 'prototype').length
 
   const steps = {
     product: {
@@ -116,8 +137,20 @@ export function deriveOverviewState({
       count: prdCount + prfaqCount,
       missingUpstream: personas.length === 0 && researchCount === 0,
     },
-    remix: {
+    prototype: {
       position: 5,
+      // Unlike remix, this one IS detectable: a prototype is stored with its own
+      // `document_type`, so the card can report how many exist and the step can be
+      // recommended and then stop being recommended.
+      hasOutput: prototypeCount > 0,
+      count: prototypeCount,
+      // A hard block, not a hint. The backend builds from the latest PRD and/or
+      // PR-FAQ, so with neither present there is no source — the same condition
+      // the control has always enforced, just derived in one place now.
+      missingUpstream: prdCount === 0 && prfaqCount === 0,
+    },
+    remix: {
+      position: 6,
       hasOutput: false,
       missingUpstream: documents.length < REMIX_MIN_DOCUMENTS,
     },
@@ -126,6 +159,7 @@ export function deriveOverviewState({
   return {
     steps,
     nextStep: pickNextStep(steps, filled),
+    prototypeSources: { hasPrd: prdCount > 0, hasPrfaq: prfaqCount > 0 },
   }
 }
 
@@ -133,8 +167,16 @@ export function deriveOverviewState({
  * The first step with no output, in dependency order.
  *
  * Remix is never recommended: it revises existing documents rather than
- * advancing the sequence, and unlike the others it has a hard requirement, so
- * "do this next" would be wrong as often as it was right.
+ * advancing the sequence, so "do this next" would be wrong as often as it was
+ * right. Prototype IS recommended, which is the difference between the two even
+ * though both are hard-gated — a prototype is a new artifact at the end of the
+ * sequence, and unlike a remix it is detectable, so the recommendation clears
+ * itself once one exists.
+ *
+ * Prototype can never be recommended while its own gate is closed, and this is
+ * an invariant rather than a coincidence: the gate is "no PRD and no PR-FAQ",
+ * which is exactly `documents.hasOutput === false`, and `documents` is earlier in
+ * the list — so it is returned first. Keep prototype after documents.
  *
  * While the product context is unknown the recommendation skips step 1 rather
  * than guessing. Telling someone to describe a product they already described is
@@ -145,7 +187,7 @@ function pickNextStep(
   filled: number | undefined,
 ): OverviewStep | null {
   const candidates: ReadonlyArray<OverviewStep> = filled == null
-    ? ['personas', 'research', 'documents']
-    : ['product', 'personas', 'research', 'documents']
+    ? ['personas', 'research', 'documents', 'prototype']
+    : ['product', 'personas', 'research', 'documents', 'prototype']
   return candidates.find((step) => !steps[step].hasOutput) ?? null
 }

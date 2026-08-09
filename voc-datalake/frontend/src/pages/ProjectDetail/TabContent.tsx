@@ -91,6 +91,10 @@ export default function TabContent({
         onRemixDocuments={onRemixDocuments}
         onOpenProductTool={onOpenProductTool}
         onSaveKiroPrompt={onSaveKiroPrompt}
+        // Same callback DocumentsTab uses for prototype *revisions* — the build
+        // now starts from the Overview card, so both ends of the prototype
+        // lifecycle hand off to the one jobs panel.
+        onJobStarted={onJobStarted}
       />
     )
   }

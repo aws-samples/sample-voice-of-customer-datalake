@@ -61,12 +61,11 @@
     "prototype": {
       "building": "Criando…",
       "button": "Criar protótipo",
-      "buttonTitle": "Gerar um protótipo HTML clicável a partir do PRD + PR-FAQ deste projeto",
-      "buttonTitleOne": "Gerar um protótipo HTML clicável a partir do documento disponível (PRD ou PR-FAQ)",
       "cancel": "Cancelar",
       "confirmBuild": "Criar mesmo assim",
       "confirmPrdOnly": "Ainda não há PR-FAQ — o protótipo será criado apenas a partir do PRD. Continuar?",
       "confirmPrfaqOnly": "Ainda não há PRD — o protótipo será criado apenas a partir do PR-FAQ. Continuar?",
+      "confirmRebuild": "Este projeto já tem um protótipo. Criar novamente adiciona um novo e mantém o existente. Continuar?",
       "downloadHtml": "Baixar .html",
       "downloadJson": "Baixar .json",
       "feedbackBuilding": "Revisando…",
@@ -218,6 +217,7 @@
       "documents": "Gere um PRD ou PR-FAQ.",
       "personas": "Gere personas a partir dos seus feedbacks.",
       "product": "Descreva seu produto ou serviço.",
+      "prototype": "Crie um protótipo clicável a partir dos seus documentos.",
       "remix": "Combine seus documentos em uma nova versão.",
       "research": "Execute a pesquisa — suas personas podem fundamentá-la."
     },
@@ -225,6 +225,8 @@
     "openProductTool": "Abrir",
     "productDescription": "Descrição do produto/serviço",
     "productDescriptionDesc": "Descreva o produto atual. Alimenta a geração de PRD e PR/FAQ.",
+    "prototype": "Protótipo clicável",
+    "prototypeDesc": "Crie um protótipo HTML clicável a partir do seu PRD / PR-FAQ",
     "remixDocuments": "Remixar Documentos",
     "remixDocumentsDesc": "Combinar e revisar documentos em novas versões",
     "runResearch": "Executar Pesquisa",
@@ -237,6 +239,8 @@
       "personasNone": "Nenhuma ainda",
       "product": "{{filled}} de {{total}} campos preenchidos",
       "productEmpty": "Ainda não descrito",
+      "prototypes": "Protótipos criados: {{total}}",
+      "prototypesNone": "Nenhum ainda",
       "research": "Documentos de pesquisa: {{total}}",
       "researchNone": "Ainda não executada"
     }

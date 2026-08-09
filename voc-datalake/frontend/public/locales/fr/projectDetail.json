@@ -61,12 +61,11 @@
     "prototype": {
       "building": "Création en cours…",
       "button": "Créer le prototype",
-      "buttonTitle": "Générer un prototype HTML cliquable à partir du PRD + PR-FAQ de ce projet",
-      "buttonTitleOne": "Générer un prototype HTML cliquable à partir du document disponible (PRD ou PR-FAQ)",
       "cancel": "Annuler",
       "confirmBuild": "Créer quand même",
       "confirmPrdOnly": "Pas encore de PR-FAQ — le prototype sera créé uniquement à partir du PRD. Continuer ?",
       "confirmPrfaqOnly": "Pas encore de PRD — le prototype sera créé uniquement à partir du PR-FAQ. Continuer ?",
+      "confirmRebuild": "Ce projet a déjà un prototype. Une nouvelle génération en ajoute un et conserve l’existant. Continuer ?",
       "downloadHtml": "Télécharger le .html",
       "downloadJson": "Télécharger le .json",
       "feedbackBuilding": "Révision en cours…",
@@ -218,6 +217,7 @@
       "documents": "Générez un PRD ou un PR-FAQ.",
       "personas": "Générez des personas à partir de vos retours.",
       "product": "Décrivez votre produit ou service.",
+      "prototype": "Créez un prototype cliquable à partir de vos documents.",
       "remix": "Combinez vos documents en une nouvelle version.",
       "research": "Lancez la recherche — vos personas peuvent l'étayer."
     },
@@ -225,6 +225,8 @@
     "openProductTool": "Ouvrir",
     "productDescription": "Description du produit/service",
     "productDescriptionDesc": "Décrivez le produit actuel. Alimente la génération de PRD et de PR/FAQ.",
+    "prototype": "Prototype cliquable",
+    "prototypeDesc": "Créez un prototype HTML cliquable à partir de votre PRD / PR-FAQ",
     "remixDocuments": "Remixer les documents",
     "remixDocumentsDesc": "Combiner et réviser les documents pour créer de nouvelles versions",
     "runResearch": "Lancer une recherche",
@@ -237,6 +239,8 @@
       "personasNone": "Aucun pour l'instant",
       "product": "{{filled}} champs sur {{total}} remplis",
       "productEmpty": "Pas encore décrit",
+      "prototypes": "Prototypes créés : {{total}}",
+      "prototypesNone": "Aucun pour le moment",
       "research": "Documents de recherche : {{total}}",
       "researchNone": "Pas encore lancée"
     }

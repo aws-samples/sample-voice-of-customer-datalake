@@ -32,16 +32,21 @@ const filledContext = (fields: Partial<ProductContext>): ProductContext => ({
 
 describe('deriveOverviewState', () => {
   describe('card order', () => {
-    it('numbers the steps in dependency order: product, personas, research, documents, remix', () => {
+    it('numbers the steps in dependency order: product, personas, research, documents, prototype, remix', () => {
       // Personas before research is the correction this work exists for: research
       // can read personas, personas cannot read research.
+      //
+      // Prototype before remix: both depend on documents, but prototype needs one
+      // of PRD/PR-FAQ where remix needs two documents, and prototype produces a
+      // new artifact where remix revises existing ones.
       const { steps } = deriveOverviewState({ personas: [], documents: [] })
 
       expect(steps.product.position).toBe(1)
       expect(steps.personas.position).toBe(2)
       expect(steps.research.position).toBe(3)
       expect(steps.documents.position).toBe(4)
-      expect(steps.remix.position).toBe(5)
+      expect(steps.prototype.position).toBe(5)
+      expect(steps.remix.position).toBe(6)
     })
   })
 
@@ -202,14 +207,40 @@ describe('deriveOverviewState', () => {
     })
 
     it('recommends nothing once every step has produced something', () => {
-      // Remix is deliberately never recommended: it revises rather than advances,
-      // and it is the one step with a hard requirement.
+      // Remix is deliberately never recommended: it revises rather than advances.
+      // Prototype IS, which is the difference between the two hard-gated steps —
+      // so this fixture needs a prototype document or the recommendation would
+      // correctly still point at one.
+      const state = deriveOverviewState({
+        personas: [persona('p1')],
+        documents: [doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prototype')],
+        productContext: filledContext({ product_name: 'VoC' }),
+      })
+      expect(state.nextStep).toBeNull()
+    })
+
+    it('recommends the prototype once documents exist but none has been built', () => {
       const state = deriveOverviewState({
         personas: [persona('p1')],
         documents: [doc('d1', 'research'), doc('d2', 'prd')],
         productContext: filledContext({ product_name: 'VoC' }),
       })
-      expect(state.nextStep).toBeNull()
+      expect(state.nextStep).toBe('prototype')
+    })
+
+    it('never recommends the prototype while it has nothing to build from', () => {
+      // The invariant that lets prototype be both recommendable and hard-gated:
+      // its gate is "no PRD and no PR-FAQ", which is exactly documents having no
+      // output — and documents is earlier in the list, so it wins. A reorder that
+      // put prototype first would advise work whose own button is disabled.
+      const state = deriveOverviewState({
+        personas: [persona('p1')],
+        documents: [doc('d1', 'research')],
+        productContext: filledContext({ product_name: 'VoC' }),
+      })
+
+      expect(state.steps.prototype.missingUpstream).toBe(true)
+      expect(state.nextStep).toBe('documents')
     })
 
     it('recommends the earliest gap rather than the latest', () => {

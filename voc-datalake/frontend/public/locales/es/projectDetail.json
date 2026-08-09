@@ -61,12 +61,11 @@
     "prototype": {
       "building": "Creando…",
       "button": "Crear prototipo",
-      "buttonTitle": "Generar un prototipo HTML clicable a partir del PRD + PR-FAQ de este proyecto",
-      "buttonTitleOne": "Generar un prototipo HTML clicable a partir del documento disponible (PRD o PR-FAQ)",
       "cancel": "Cancelar",
       "confirmBuild": "Crear de todos modos",
       "confirmPrdOnly": "Aún no hay PR-FAQ — el prototipo se creará solo a partir del PRD. ¿Continuar?",
       "confirmPrfaqOnly": "Aún no hay PRD — el prototipo se creará solo a partir del PR-FAQ. ¿Continuar?",
+      "confirmRebuild": "Este proyecto ya tiene un prototipo. Volver a compilar añade uno nuevo y conserva el existente. ¿Continuar?",
       "downloadHtml": "Descargar .html",
       "downloadJson": "Descargar .json",
       "feedbackBuilding": "Revisando…",
@@ -218,6 +217,7 @@
       "documents": "Genere un PRD o PR-FAQ.",
       "personas": "Genere personas a partir de sus comentarios.",
       "product": "Describa su producto o servicio.",
+      "prototype": "Cree un prototipo interactivo a partir de sus documentos.",
       "remix": "Combine sus documentos en una nueva versión.",
       "research": "Ejecute la investigación: sus personas pueden fundamentarla."
     },
@@ -225,6 +225,8 @@
     "openProductTool": "Abrir",
     "productDescription": "Descripción del producto/servicio",
     "productDescriptionDesc": "Describe el producto actual. Alimenta la generación de PRD y PR/FAQ.",
+    "prototype": "Prototipo interactivo",
+    "prototypeDesc": "Cree un prototipo HTML interactivo a partir de su PRD / PR-FAQ",
     "remixDocuments": "Remezlar Documentos",
     "remixDocumentsDesc": "Combinar y revisar documentos en nuevas versiones",
     "runResearch": "Ejecutar Investigación",
@@ -237,6 +239,8 @@
       "personasNone": "Ninguna todavía",
       "product": "{{filled}} de {{total}} campos completados",
       "productEmpty": "Aún sin describir",
+      "prototypes": "Prototipos creados: {{total}}",
+      "prototypesNone": "Ninguno todavía",
       "research": "Documentos de investigación: {{total}}",
       "researchNone": "Aún no ejecutada"
     }
