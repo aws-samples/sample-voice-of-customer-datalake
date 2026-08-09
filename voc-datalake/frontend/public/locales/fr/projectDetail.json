@@ -89,6 +89,7 @@
   "export": {
     "copyCopied": "Copié !",
     "copyContext": "Copier dans le presse-papiers",
+    "copyFailed": "Échec de la copie — veuillez réessayer.",
     "description": "Copier le contexte du projet dans le presse-papiers — aucun jeton API requis",
     "emptyHint": "Générez d'abord des personas ou des documents pour activer l'export.",
     "title": "Export"

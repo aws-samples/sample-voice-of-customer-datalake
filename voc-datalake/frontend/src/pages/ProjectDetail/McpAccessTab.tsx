@@ -251,7 +251,6 @@ function SharedPickers({
 
 interface ExportCardProps {
   readonly projectId: string
-  readonly project: Project
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
   readonly selectedPersonaIds: ReadonlySet<string>
@@ -262,12 +261,10 @@ interface ExportCardProps {
   readonly onToggleAllPersonas: (select: boolean) => void
   readonly onToggleAllDocuments: (select: boolean) => void
   readonly onToggleSection: (section: string) => void
-  readonly onSaveKiroPrompt: (prompt: string) => void
 }
 
 function ExportCard({
   projectId,
-  project,
   personas,
   documents,
   selectedPersonaIds,
@@ -278,16 +275,17 @@ function ExportCard({
   onToggleAllPersonas,
   onToggleAllDocuments,
   onToggleSection,
-  onSaveKiroPrompt,
 }: ExportCardProps) {
   const { t } = useTranslation('projectDetail')
   const [copied, setCopied] = useState(false)
   const [copying, setCopying] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const isEmpty = personas.length === 0 && documents.length === 0
   const hasSelection = selectedPersonaIds.size > 0 || selectedDocumentIds.size > 0
 
   const handleCopy = useCallback(async () => {
     setCopying(true)
+    setCopyError(null)
     try {
       // Only send persona_ids / document_ids when the selection is a strict
       // subset — the server returns all by default when the params are absent,
@@ -314,10 +312,12 @@ function ExportCard({
       setTimeout(() => {
         setCopied(false)
       }, 2000)
+    } catch (err) {
+      setCopyError(err instanceof Error ? err.message : t('export.copyFailed'))
     } finally {
       setCopying(false)
     }
-  }, [projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length])
+  }, [projectId, selectedPersonaIds, selectedDocumentIds, personas.length, documents.length, t])
 
   return (
     <div className="bg-white rounded-xl p-6 border">
@@ -349,11 +349,8 @@ function ExportCard({
             onToggleSection={onToggleSection}
           />
 
-          {/* Template editor */}
-          <KiroExportSettings project={project} onSave={onSaveKiroPrompt} />
-
           {/* Copy button */}
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex flex-col items-end gap-2">
             <button
               onClick={() => void handleCopy()}
               disabled={!hasSelection || copying}
@@ -362,6 +359,9 @@ function ExportCard({
               {copied ? <Check size={16} /> : <Copy size={16} />}
               {copied ? t('export.copyCopied') : t('export.copyContext')}
             </button>
+            {copyError != null && (
+              <p className="text-sm text-red-600" role="alert">{copyError}</p>
+            )}
           </div>
         </>
       )}
@@ -512,7 +512,6 @@ export default function McpAccessTab({
   const exportCard = (
     <ExportCard
       projectId={projectId}
-      project={project}
       personas={personas}
       documents={documents}
       selectedPersonaIds={selectedPersonaIds}
@@ -523,8 +522,13 @@ export default function McpAccessTab({
       onToggleAllPersonas={toggleAllPersonas}
       onToggleAllDocuments={toggleAllDocuments}
       onToggleSection={toggleSection}
-      onSaveKiroPrompt={onSaveKiroPrompt}
     />
+  )
+
+  // KiroExportSettings is a sibling card (not nested inside ExportCard) so its
+  // own bg-white/border wrapper doesn't create a card-inside-a-card layout.
+  const kiroSettingsCard = (
+    <KiroExportSettings project={project} onSave={onSaveKiroPrompt} />
   )
 
   // ── Card 2 — MCP Access (error branch) ───────────────────────────────────
@@ -532,6 +536,7 @@ export default function McpAccessTab({
     return (
       <div className="space-y-4">
         {exportCard}
+        {kiroSettingsCard}
         <McpAccessErrorState />
         <CollapsibleSection
           title={t('autoseed.title')}
@@ -539,7 +544,6 @@ export default function McpAccessTab({
           onToggle={() => setAutoseedExpanded((prev) => !prev)}
         >
           <AutoseedContent
-            projectId={projectId}
             personas={personas}
             documents={documents}
             curlUrl={autoseedCurlUrl}
@@ -554,6 +558,9 @@ export default function McpAccessTab({
     <div className="space-y-4">
       {/* Card 1 — Export (no API token) */}
       {exportCard}
+
+      {/* Kiro prompt template editor — sibling card, not nested inside ExportCard */}
+      {kiroSettingsCard}
 
       {/* Card 2 — MCP Access (API token required) */}
       <div className="bg-white rounded-xl p-6 border space-y-4">
@@ -625,7 +632,6 @@ export default function McpAccessTab({
           onToggle={() => setAutoseedExpanded((prev) => !prev)}
         >
           <AutoseedContent
-            projectId={projectId}
             personas={personas}
             documents={documents}
             curlUrl={autoseedCurlUrl}

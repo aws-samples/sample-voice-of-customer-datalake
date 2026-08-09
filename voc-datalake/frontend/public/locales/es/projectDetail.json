@@ -89,6 +89,7 @@
   "export": {
     "copyCopied": "¡Copiado!",
     "copyContext": "Copiar al portapapeles",
+    "copyFailed": "Error al copiar — inténtelo de nuevo.",
     "description": "Copia el contexto del proyecto al portapapeles — sin token de API",
     "emptyHint": "Genera personas o documentos primero para habilitar la exportación.",
     "title": "Export"

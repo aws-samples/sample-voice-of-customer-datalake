@@ -89,6 +89,7 @@
   "export": {
     "copyCopied": "Kopiert!",
     "copyContext": "In Zwischenablage kopieren",
+    "copyFailed": "Kopieren fehlgeschlagen — bitte erneut versuchen.",
     "description": "Projektkontext in die Zwischenablage kopieren — kein API-Token erforderlich",
     "emptyHint": "Zuerst Personas oder Dokumente generieren, um den Export zu aktivieren.",
     "title": "Export"

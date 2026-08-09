@@ -21,7 +21,6 @@ import type {
 } from '../../api/types'
 
 interface AutoseedContentProps {
-  readonly projectId: string
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
   /** Pre-built autoseed curl URL from the shared selection held in McpAccessTab. */

@@ -9,12 +9,14 @@ import type { Project } from '../../api/types'
 const mockListApiTokens = vi.fn()
 const mockCreateApiToken = vi.fn()
 const mockDeleteApiToken = vi.fn()
+const mockAutoseedProject = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
     listApiTokens: (...args: unknown[]) => mockListApiTokens(...args),
     createApiToken: (...args: unknown[]) => mockCreateApiToken(...args),
     deleteApiToken: (...args: unknown[]) => mockDeleteApiToken(...args),
+    autoseedProject: (...args: unknown[]) => mockAutoseedProject(...args),
   },
 }))
 
@@ -54,6 +56,30 @@ function renderTab(projectId = 'proj-123') {
         project={mockProject}
         personas={[]}
         documents={[]}
+        onSaveKiroPrompt={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+}
+
+const mockPersonas = [
+  { persona_id: 'p1', name: 'Persona A', tagline: 'Tag A', created_at: '' },
+  { persona_id: 'p2', name: 'Persona B', tagline: 'Tag B', created_at: '' },
+]
+
+const mockDocuments = [
+  { document_id: 'd1', title: 'Doc A', document_type: 'prd' as const, content: '', created_at: '' },
+]
+
+function renderTabWithData(projectId = 'proj-123') {
+  const qc = createQueryClient()
+  return render(
+    <QueryClientProvider client={qc}>
+      <McpAccessTab
+        projectId={projectId}
+        project={mockProject}
+        personas={mockPersonas}
+        documents={mockDocuments}
         onSaveKiroPrompt={vi.fn()}
       />
     </QueryClientProvider>
@@ -284,5 +310,70 @@ describe('McpAccessTab', () => {
     // Expand the Active Tokens section to see the loading state
     await user.click(screen.getByText('Active Tokens (0)'))
     expect(screen.getByText('Loading tokens\u2026')).toBeInTheDocument()
+  })
+})
+
+describe('McpAccessTab \u2014 ExportCard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockListApiTokens.mockResolvedValue({ success: true, tokens: [] })
+  })
+
+  it('calls autoseedProject and copies to clipboard on success', async () => {
+    const user = userEvent.setup()
+    const mockWriteText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: mockWriteText } })
+    mockAutoseedProject.mockResolvedValue({
+      project: {},
+      files: [{ path: 'steering.md', content: '# Context' }],
+    })
+    renderTabWithData()
+
+    const copyBtn = screen.getByRole('button', { name: /Copy to clipboard/i })
+    await user.click(copyBtn)
+
+    await waitFor(() => {
+      expect(mockAutoseedProject).toHaveBeenCalledWith('proj-123', expect.any(Object))
+    })
+    expect(mockWriteText).toHaveBeenCalledWith('# Context')
+    vi.unstubAllGlobals()
+  })
+
+  it('shows error message when autoseedProject rejects', async () => {
+    const user = userEvent.setup()
+    mockAutoseedProject.mockRejectedValue(new Error('Network error'))
+    renderTabWithData()
+
+    const copyBtn = screen.getByRole('button', { name: /Copy to clipboard/i })
+    await user.click(copyBtn)
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Network error')
+    })
+  })
+
+  it('disables copy button when nothing is selected (all deselected)', async () => {
+    const user = userEvent.setup()
+    renderTabWithData()
+
+    // Deselect all personas and documents by clicking "deselect all" via the
+    // PickerSection toggle-all checkbox.  We rely on the section being expanded
+    // so we can interact with it \u2014 sections start expanded by default.
+    // The "Select all / Deselect all" checkboxes in PickerSection are rendered
+    // as checkboxes inside the section header; we deselect via the personas
+    // and documents section headers.
+    // Simpler: expand the section and uncheck individual items.
+    // For this test we verify the button is enabled with data and only check
+    // the disabled-when-nothing-selected contract by unchecking everything.
+    const personaCheckboxes = screen.getAllByRole('checkbox')
+    // Uncheck all checkboxes to produce an empty selection
+    for (const cb of personaCheckboxes) {
+      if ((cb as HTMLInputElement).checked) {
+        await user.click(cb)
+      }
+    }
+
+    const copyBtn = screen.getByRole('button', { name: /Copy to clipboard/i })
+    expect(copyBtn).toBeDisabled()
   })
 })
