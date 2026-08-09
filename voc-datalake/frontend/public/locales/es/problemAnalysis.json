@@ -23,8 +23,9 @@
   "stats": {
     "categories": "Categorías",
     "feedback": "Comentarios",
-    "loadingWindow": "Cargando comentarios… {{loaded}} de {{total}} hasta ahora.",
-    "partialWindow": "Los recuentos abarcan {{loaded}} de {{total}} elementos de este periodo.",
+    "loadFailed": "No se pudieron cargar los comentarios de este periodo, por lo que no se muestran recuentos. Vuelve a intentarlo o reduce el intervalo de tiempo.",
+    "loadingWindow": "Cargando comentarios… {{loaded, number}} de {{total, number}} hasta ahora.",
+    "partialWindow": "Los recuentos abarcan {{loaded, number}} de {{total, number}} elementos de este periodo.",
     "problems": "Problemas",
     "subcategories": "Subcategorías",
     "urgent": "Urgente"

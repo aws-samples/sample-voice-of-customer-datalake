@@ -442,6 +442,22 @@ export default function ProblemAnalysis() {
     )
   }
 
+  // Nothing was read, so every aggregate below would be a zero that looks like
+  // a finding. Say the window is unknown instead of implying it is empty.
+  if (feedback.isError && feedback.items.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <WindowCoverageNotice
+          isLoadingMore={false}
+          isPartial={false}
+          hasFailed
+          loadedCount={0}
+          totalCount={0}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Header Stats */}
@@ -488,6 +504,7 @@ export default function ProblemAnalysis() {
       <WindowCoverageNotice
         isLoadingMore={feedback.isLoadingMore}
         isPartial={feedback.isPartial}
+        hasFailed={feedback.isError}
         loadedCount={feedback.loadedCount}
         totalCount={feedback.totalCount}
       />

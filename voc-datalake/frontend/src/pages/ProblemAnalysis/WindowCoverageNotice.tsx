@@ -24,26 +24,53 @@ interface WindowCoverageNoticeProps {
   readonly isLoadingMore: boolean
   /** Rows in the window were left unread, so the counts undercount. */
   readonly isPartial: boolean
+  /** A request failed. With `loadedCount` 0 this means nothing was read. */
+  readonly hasFailed: boolean
   readonly loadedCount: number
   readonly totalCount: number
 }
 
+/**
+ * Failure outranks everything, and nothing-was-read is a different statement
+ * from some-was-read: zero rows after a failure is not an empty window, it is
+ * an unknown one.
+ */
 export function WindowCoverageNotice({
   isLoadingMore,
   isPartial,
+  hasFailed,
   loadedCount,
   totalCount,
 }: WindowCoverageNoticeProps) {
   const { t } = useTranslation('problemAnalysis')
 
-  if (!isLoadingMore && !isPartial) return null
-
+  // `text-gray-600`, not a lighter grey: these carry information, so they need
+  // the audited contrast ratio.
+  const className = 'text-xs text-gray-600'
   const counts = { loaded: loadedCount, total: totalCount }
-  return (
-    // `text-gray-600`, not a lighter grey: this carries information, so it
-    // needs the audited contrast ratio.
-    <p className="text-xs text-gray-600" role="status">
-      {isLoadingMore ? t('stats.loadingWindow', counts) : t('stats.partialWindow', counts)}
-    </p>
-  )
+
+  if (hasFailed && loadedCount === 0) {
+    return (
+      <p className={className} role="alert">
+        {t('stats.loadFailed')}
+      </p>
+    )
+  }
+
+  // Progress is deliberately NOT a live region: a full walk settles a dozen
+  // times, and announcing each one talks over everything else on the page.
+  // Only the terminal states below are announced.
+  if (isLoadingMore) {
+    return <p className={className}>{t('stats.loadingWindow', counts)}</p>
+  }
+
+  if (isPartial) {
+    return (
+      <p className={className} role="status">
+        {t('stats.partialWindow', counts)}
+      </p>
+    )
+  }
+
+  return null
 }

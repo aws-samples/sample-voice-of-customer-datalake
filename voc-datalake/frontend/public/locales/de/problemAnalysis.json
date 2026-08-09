@@ -23,8 +23,9 @@
   "stats": {
     "categories": "Kategorien",
     "feedback": "Rückmeldungen",
-    "loadingWindow": "Feedback wird geladen… bisher {{loaded}} von {{total}}.",
-    "partialWindow": "Die Zahlen umfassen {{loaded}} von {{total}} Einträgen in diesem Zeitraum.",
+    "loadFailed": "Feedback für diesen Zeitraum konnte nicht geladen werden, daher werden keine Zahlen angezeigt. Erneut versuchen oder den Zeitraum eingrenzen.",
+    "loadingWindow": "Feedback wird geladen… bisher {{loaded, number}} von {{total, number}}.",
+    "partialWindow": "Die Zahlen umfassen {{loaded, number}} von {{total, number}} Einträgen in diesem Zeitraum.",
     "problems": "Probleme",
     "subcategories": "Unterkategorien",
     "urgent": "Dringend"

@@ -18,10 +18,19 @@
 import type { FeedbackItem } from './client'
 
 /**
- * Page size for `/feedback`, equal to the endpoint's `max_val`.
+ * Page size for `/feedback`, equal to the endpoint's server-side maximum.
  *
- * Do not raise this to fetch more rows — the server clamps it back to 100 and
- * says nothing. Fetch another page with `nextPageOffset` instead.
+ * Mirrors `max_val` in `lambda/api/metrics_handler.py` → `list_feedback`:
+ * `validate_limit(params.get('limit'), default=50, max_val=100)`, bounded by
+ * `validate_limit` / `validate_int` in `lambda/shared/api.py`.
+ *
+ * Do not raise this to fetch more rows — the server clamps it back and says
+ * nothing. Fetch another page with {@link nextPageOffset} instead.
+ *
+ * The two sides are kept in step by
+ * `lambda/api/test/test_feedback_page_limit_lockstep.py`, which reads this
+ * constant out of this file, so a `max_val` change fails a test rather than
+ * silently shrinking every paged read.
  */
 export const FEEDBACK_PAGE_LIMIT = 100
 
@@ -38,7 +47,6 @@ export interface FeedbackPageCursor {
   count?: number
   items?: readonly unknown[]
   total?: number
-  offset?: number
 }
 
 /**
@@ -52,6 +60,11 @@ export interface FeedbackPage extends FeedbackPageCursor {
   is_partial_window?: boolean
 }
 
+/** Rows in one page, however the response chose to report them. */
+function pageLength(page: FeedbackPageCursor): number {
+  return page.count ?? page.items?.length ?? 0
+}
+
 /**
  * Offset of the next `/feedback` page, or `undefined` once the loaded rows
  * cover the (windowed) total.
@@ -62,12 +75,21 @@ export interface FeedbackPage extends FeedbackPageCursor {
  * so `total` is a lower bound that grows as pages are read — this still
  * converges, because the bound stops growing once it exceeds the real total.
  *
- * Guards against a zero-length page so a server that reports
- * `total > loaded` while returning nothing cannot spin the caller forever.
+ * `loaded` is summed from the pages actually held, **not** taken from the
+ * response's echoed `offset`. Trusting the echo means a response that omits it
+ * collapses `loaded` to one page length and hands back the same offset forever
+ * — an endless walk over duplicate rows, capped only by the caller's own page
+ * budget, and not capped at all where paging is user-driven.
+ *
+ * Also refuses a zero-length page, so a server reporting `total > loaded` while
+ * returning nothing cannot spin the caller.
  */
-export function nextPageOffset(lastPage: FeedbackPageCursor): number | undefined {
-  const pageSize = lastPage.count ?? lastPage.items?.length ?? 0
-  const loaded = (lastPage.offset ?? 0) + pageSize
+export function nextPageOffset(
+  lastPage: FeedbackPageCursor,
+  allPages: readonly FeedbackPageCursor[]
+): number | undefined {
+  if (pageLength(lastPage) === 0) return undefined
+  const loaded = allPages.reduce((sum, page) => sum + pageLength(page), 0)
   const total = lastPage.total ?? loaded
-  return pageSize > 0 && loaded < total ? loaded : undefined
+  return loaded < total ? loaded : undefined
 }

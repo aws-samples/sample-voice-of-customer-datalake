@@ -23,8 +23,9 @@
   "stats": {
     "categories": "Categories",
     "feedback": "Feedback",
-    "loadingWindow": "Loading feedback… {{loaded}} of {{total}} so far.",
-    "partialWindow": "Counts cover {{loaded}} of {{total}} items in this window.",
+    "loadFailed": "Could not load feedback for this window, so no counts are shown. Retry, or narrow the time range.",
+    "loadingWindow": "Loading feedback… {{loaded, number}} of {{total, number}} so far.",
+    "partialWindow": "Counts cover {{loaded, number}} of {{total, number}} items in this window.",
     "problems": "Problems",
     "subcategories": "Subcategories",
     "urgent": "Urgent"

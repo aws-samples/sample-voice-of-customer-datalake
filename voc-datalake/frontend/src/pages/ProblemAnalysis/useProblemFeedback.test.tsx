@@ -51,18 +51,23 @@ function serveWindow(total: number, opts: { isPartialWindow?: boolean } = {}) {
   })
 }
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+function makeClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } })
+}
+
+function createWrapper(queryClient: QueryClient) {
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   )
 }
 
-function renderFeedback(apiEndpoint = API_ENDPOINT) {
+/**
+ * Pass an explicit `queryClient` to share a cache across two renders — a fresh
+ * client per render cannot observe caching at all.
+ */
+function renderFeedback(apiEndpoint = API_ENDPOINT, queryClient = makeClient()) {
   return renderHook(() => useProblemFeedback(DATE_PARAMS, apiEndpoint), {
-    wrapper: createWrapper(),
+    wrapper: createWrapper(queryClient),
   })
 }
 
@@ -160,20 +165,64 @@ describe('useProblemFeedback', () => {
         .mockResolvedValueOnce({
           count: 100,
           total: 500,
-          offset: 0,
           items: Array.from({ length: 100 }, (_, i) => ({ feedback_id: `f${i}` })),
         })
         .mockRejectedValue(new Error('boom'))
 
       const { result } = renderFeedback()
 
-      await waitFor(() => expect(mockGetFeedback).toHaveBeenCalledTimes(2))
       await waitFor(() => expect(result.current.isPartial).toBe(true))
 
-      const callsAfterFailure = mockGetFeedback.mock.calls.length
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      expect(mockGetFeedback.mock.calls.length).toBe(callsAfterFailure)
+      // Asserting the state that *guarantees* no further advance beats sleeping
+      // and hoping: `isError` is what disarms the auto-advance.
+      expect(result.current.isError).toBe(true)
       expect(result.current.loadedCount).toBe(100)
+      expect(mockGetFeedback).toHaveBeenCalledTimes(2)
+    })
+
+    it('reports an outright failure rather than a complete empty window', async () => {
+      // The gap the first round of tests missed: when the FIRST page rejects
+      // there is no next page, so nothing "stopped early" — yet nothing was
+      // read either. Left unflagged, the page renders zeroed stat cards that
+      // read as a finding. `isError` is what lets the caller tell "empty" from
+      // "unknown".
+      mockGetFeedback.mockRejectedValue(new Error('boom'))
+
+      const { result } = renderFeedback()
+
+      await waitFor(() => expect(result.current.isError).toBe(true))
+      expect(result.current.loadedCount).toBe(0)
+      expect(result.current.items).toEqual([])
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    it('leaves isError false on a clean complete read', async () => {
+      serveWindow(40)
+      const { result } = renderFeedback()
+
+      await waitFor(() => expect(result.current.loadedCount).toBe(40))
+      expect(result.current.isError).toBe(false)
+      expect(result.current.isPartial).toBe(false)
+    })
+  })
+
+  describe('request volume', () => {
+    it('holds the loaded window settled instead of re-walking it', async () => {
+      // Each refetch re-issues EVERY page, so the app-wide 30s staleTime plus
+      // refetch-on-focus would replay the whole walk. Pinning both here keeps
+      // that cost from creeping back in.
+      serveWindow(250)
+      const queryClient = makeClient()
+      const { result } = renderFeedback(API_ENDPOINT, queryClient)
+
+      await waitFor(() => expect(result.current.loadedCount).toBe(250))
+      const callsAfterWalk = requests.length
+
+      // A remount against the same cache, inside the staleTime window, must not
+      // re-issue a single page.
+      const remounted = renderFeedback(API_ENDPOINT, queryClient)
+      await waitFor(() => expect(remounted.result.current.loadedCount).toBe(250))
+      expect(requests.length).toBe(callsAfterWalk)
     })
   })
 

@@ -44,6 +44,12 @@ import type { FeedbackPage } from '../../api/feedbackPagination'
  */
 export const MAX_AUTO_PAGES = 20
 
+/**
+ * How long a loaded window counts as fresh — longer than the app-wide 30s
+ * default because re-walking costs one request per 100 rows.
+ */
+export const WINDOW_STALE_MS = 5 * 60 * 1000
+
 export interface ProblemFeedback {
   /** Every row loaded so far, across pages. */
   items: FeedbackItem[]
@@ -56,6 +62,12 @@ export interface ProblemFeedback {
   totalCount: number
   /** True when rows in the window were left unread, so counts undercount. */
   isPartial: boolean
+  /**
+   * A request failed. With `items` empty this means **nothing** was read, which
+   * must not be rendered as a window that legitimately contains nothing —
+   * callers show an error rather than zeroed aggregates.
+   */
+  isError: boolean
 }
 
 export function useProblemFeedback(
@@ -69,6 +81,15 @@ export function useProblemFeedback(
     initialPageParam: 0,
     getNextPageParam: nextPageOffset,
     enabled: !!apiEndpoint,
+    // A walk is one request per 100 rows, and TanStack refetches EVERY page of
+    // an infinite query — so the app-wide 30s `staleTime` plus the default
+    // refetch-on-focus would re-issue the whole walk each time the tab regains
+    // focus. Hold the window settled instead; the time range is an explicit
+    // control, so the user says when to look again.
+    staleTime: WINDOW_STALE_MS,
+    refetchOnWindowFocus: false,
+    // Deliberately NOT `maxPages`: it evicts pages from the cache, and every
+    // count on this screen is an aggregate over all of them.
   })
 
   const { data, hasNextPage, isFetchingNextPage, isError, fetchNextPage } = query
@@ -106,6 +127,7 @@ export function useProblemFeedback(
     isLoading: query.isLoading,
     isLoadingMore: isFetchingNextPage,
     loadedCount: items.length,
+    isError,
     ...summarizeCoverage(data?.pages, items.length, stoppedEarly),
   }
 }
