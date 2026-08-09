@@ -107,12 +107,13 @@ function groupDocumentsByType(documents: ProjectDocument[]): Record<KiroExportab
     prfaq: [],
     research: [],
     custom: [],
+    product_report: [],
   }
   for (const doc of documents) {
     if (isKiroExportableDocType(doc.document_type)) {
       groups[doc.document_type].push(doc)
     }
-    // Non-exportable types (prototype, product_report) are silently skipped.
+    // Non-exportable types (prototype) are silently skipped.
   }
   return groups
 }
@@ -231,7 +232,7 @@ function SharedPickers({
           onToggleAll={onToggleAllDocuments}
         >
           {Object.keys(docGroups)
-            .filter(isKiroExportableDocType)
+            .filter(isKiroExportableDocType) // narrows string[] → KiroExportableDocType[] for TS; runtime no-op (groupDocumentsByType only creates exportable-type keys)
             .filter((type) => docGroups[type].length > 0)
             .map((type) => {
               const docs = docGroups[type]

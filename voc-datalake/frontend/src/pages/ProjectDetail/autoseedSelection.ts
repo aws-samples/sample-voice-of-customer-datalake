@@ -13,9 +13,9 @@ import type { ProjectDocument } from '../../api/types'
  *
  * Must stay in sync with KIRO_EXPORT_EXCLUDED_TYPES in projects.py — the
  * lockstep test test_kiro_exportable_types_lockstep.py fails if they drift.
- * Do NOT add 'prototype' or 'product_report' here.
+ * Do NOT add 'prototype' here.
  */
-export const KIRO_EXPORTABLE_DOC_TYPES = ['prd', 'prfaq', 'research', 'custom'] as const
+export const KIRO_EXPORTABLE_DOC_TYPES = ['prd', 'prfaq', 'research', 'custom', 'product_report'] as const
 
 export type KiroExportableDocType = typeof KIRO_EXPORTABLE_DOC_TYPES[number]
 

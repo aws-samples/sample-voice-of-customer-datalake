@@ -8,6 +8,7 @@
       "custom": "커스텀",
       "prd": "PRD",
       "prfaq": "PR/FAQ",
+      "product_report": "제품 보고서",
       "research": "리서치"
     },
     "documents": "문서 ({{selected}}/{{total}})",

@@ -1,10 +1,19 @@
 /**
  * Acceptance criterion 5: the Export card's document picker renders no row for
- * a `prototype` or `product_report` document, and still renders rows for the
- * four exportable types (prd, prfaq, research, custom).
+ * a `prototype` document, and renders rows for the five exportable types
+ * (prd, prfaq, research, custom, product_report).
  *
  * This test file specifically covers the export-filter behaviour so a revert of
  * the filterExportableDocs change fails here with a clear message.
+ *
+ * NOTE: picker sections start collapsed (expandedSections = new Set()).
+ * PickerSection only renders its children when expanded. Tests that assert row
+ * presence/absence must either:
+ *   (a) expand the documents section first (fireEvent.click on the header), or
+ *   (b) assert on the section *header* being absent/present (when filterExportableDocs
+ *       produces 0 docs, SharedPickers returns null so the header is never rendered).
+ * Asserting on row text without expanding is vacuous — the rows are absent whether
+ * or not the filter is applied.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -97,17 +106,23 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('McpAccessTab — export picker excludes non-exportable document types', () => {
-  it('does not render a row for a prototype document', () => {
+  it('does not render a row for a prototype document — section header absent when prototype is only doc', () => {
+    // filterExportableDocs([prototype]) == [] → SharedPickers returns null → no header
     renderTab([makeDoc('d-proto', 'prototype', 'A Secret Prototype')])
-    expect(screen.queryByText('A Secret Prototype')).not.toBeInTheDocument()
+    // Section header would be "Documents (0/0)" if rendered, but SharedPickers returns null entirely
+    expect(screen.queryByText(/Documents \(/)).not.toBeInTheDocument()
   })
 
-  it('does not render a row for a product_report document', () => {
+  it('renders a row for a product_report document when section is expanded', () => {
+    // product_report is an exportable type — it must appear in the picker
     renderTab([makeDoc('d-report', 'product_report', 'Q4 Product Report')])
-    expect(screen.queryByText('Q4 Product Report')).not.toBeInTheDocument()
+    // Expand the documents section to see the rows
+    const docsToggle = screen.getByText(/Documents \(/)
+    fireEvent.click(docsToggle)
+    expect(screen.getByText('Q4 Product Report')).toBeInTheDocument()
   })
 
-  it('renders rows for all four exportable types when present', () => {
+  it('renders rows for all five exportable types when section is expanded', () => {
     renderTab(allSixDocTypes)
 
     // Picker sections start collapsed — expand the documents section first.
@@ -118,27 +133,31 @@ describe('McpAccessTab — export picker excludes non-exportable document types'
     expect(screen.getByText('My PR/FAQ')).toBeInTheDocument()
     expect(screen.getByText('My Research')).toBeInTheDocument()
     expect(screen.getByText('My Custom Doc')).toBeInTheDocument()
+    expect(screen.getByText('Q4 Product Report')).toBeInTheDocument()
   })
 
-  it('renders no row for prototype even when it is the only document', () => {
-    // Prototype-only project: the documents section should be absent entirely.
+  it('does not render a row for prototype even when it is the only document — section absent', () => {
+    // Prototype-only project: filterExportableDocs == [] → SharedPickers returns null
     renderTab([makeDoc('d-proto', 'prototype', 'Only Prototype')])
-    // The document picker section must not appear (no exportable docs).
-    expect(screen.queryByText('Only Prototype')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Documents \(/)).not.toBeInTheDocument()
   })
 
-  it('renders no row for product_report when mixed with exportable types', () => {
+  it('renders product_report row but not prototype row when section is expanded (mixed types)', () => {
     renderTab(allSixDocTypes)
-    // The non-exportable titles must be absent from the picker.
+    // Expand the section so rows are actually rendered
+    const docsToggle = screen.getByText(/Documents \(/)
+    fireEvent.click(docsToggle)
+    // product_report is exportable — must be visible
+    expect(screen.getByText('Q4 Product Report')).toBeInTheDocument()
+    // prototype is excluded — must be absent from the rows
     expect(screen.queryByText('A Secret Prototype')).not.toBeInTheDocument()
-    expect(screen.queryByText('Q4 Product Report')).not.toBeInTheDocument()
   })
 
-  it('prototype does not appear under the Custom group heading', () => {
+  it('prototype does not appear under any group heading — section absent when prototype is only doc', () => {
     // Before the fix, prototypes were coerced into the "custom" bucket.
-    // After the fix they are excluded entirely — the Custom heading only holds
-    // genuine custom documents.
+    // After the fix they are excluded entirely — filterExportableDocs([prototype]) == []
+    // so SharedPickers returns null, and no section header or rows appear.
     renderTab([makeDoc('d-proto', 'prototype', 'Prototype That Looked Custom')])
-    expect(screen.queryByText('Prototype That Looked Custom')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Documents \(/)).not.toBeInTheDocument()
   })
 })

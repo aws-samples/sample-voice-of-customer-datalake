@@ -2,9 +2,10 @@
 Tests for the Kiro export exclusion rules in autoseed_project.
 
 Acceptance criteria covered:
-  1. autoseed_project returns no prototype or product_report, even when explicitly requested.
-  2. prd, prfaq, research, custom ARE returned; persona selection still works.
-  3. The steering file does not mention excluded documents.
+  1. autoseed_project returns no prototype, even when explicitly requested.
+     product_report IS returned (it is not excluded).
+  2. prd, prfaq, research, custom, product_report ARE returned; persona selection still works.
+  3. The steering file does not mention excluded (prototype) documents.
   4. GET /projects/{project_id} still returns prototypes in documents.
 """
 from unittest.mock import patch
@@ -44,7 +45,7 @@ def _project_data(documents: list[dict], personas: list[dict] | None = None) -> 
 # ---------------------------------------------------------------------------
 
 class TestAutoseedExcludesNonExportableTypes:
-    """autoseed_project must never include prototype or product_report documents."""
+    """autoseed_project must never include prototype documents."""
 
     @patch('projects.get_project')
     def test_prototype_excluded_when_no_ids_filter(self, mock_get_project):
@@ -69,8 +70,8 @@ class TestAutoseedExcludesNonExportableTypes:
         )
 
     @patch('projects.get_project')
-    def test_product_report_excluded_when_no_ids_filter(self, mock_get_project):
-        """Product report is dropped even when document_ids is None."""
+    def test_product_report_included_when_no_ids_filter(self, mock_get_project):
+        """Product report IS included — it is not excluded from Kiro exports."""
         mock_get_project.return_value = _project_data([
             _make_doc('d-prfaq', 'prfaq'),
             _make_doc('d-report', 'product_report'),
@@ -83,8 +84,8 @@ class TestAutoseedExcludesNonExportableTypes:
         assert any('d-prfaq' in p for p in doc_paths), (
             f'PRFAQ should be exported; paths: {doc_paths}'
         )
-        assert not any('d-report' in p or 'product-report' in p for p in doc_paths), (
-            'product_report must not appear in Kiro export'
+        assert any('d-report' in p for p in doc_paths), (
+            f'product_report must appear in Kiro export; paths: {doc_paths}'
         )
 
     @patch('projects.get_project')
@@ -105,8 +106,8 @@ class TestAutoseedExcludesNonExportableTypes:
         )
 
     @patch('projects.get_project')
-    def test_product_report_excluded_even_when_explicitly_requested(self, mock_get_project):
-        """A caller who passes a product_report id explicitly must still be denied."""
+    def test_product_report_included_even_when_explicitly_requested(self, mock_get_project):
+        """A caller who passes a product_report id gets it back — it is exportable."""
         report_id = 'd-report'
         mock_get_project.return_value = _project_data([
             _make_doc('d-research', 'research'),
@@ -117,16 +118,15 @@ class TestAutoseedExcludesNonExportableTypes:
 
         result = autoseed_project('proj-test', document_ids=[report_id, 'd-research'])
         doc_paths = [f['path'] for f in result['files'] if f['path'].startswith('.kiro/docs/')]
-        assert all(report_id not in p for p in doc_paths), (
-            'product_report must be dropped even when its id is in document_ids'
+        assert any(report_id in p for p in doc_paths), (
+            f'product_report must be included when its id is in document_ids; paths: {doc_paths}'
         )
 
     @patch('projects.get_project')
-    def test_all_excluded_types_produce_no_doc_files(self, mock_get_project):
-        """A project with only prototypes and product_reports exports zero doc files."""
+    def test_prototype_only_project_produces_no_doc_files(self, mock_get_project):
+        """A project with only prototypes exports zero doc files."""
         mock_get_project.return_value = _project_data([
             _make_doc('d-proto', 'prototype'),
-            _make_doc('d-report', 'product_report'),
         ])
 
         from projects import autoseed_project
@@ -134,31 +134,31 @@ class TestAutoseedExcludesNonExportableTypes:
         result = autoseed_project('proj-test')
         doc_files = [f for f in result['files'] if f['path'].startswith('.kiro/docs/')]
         assert doc_files == [], (
-            f'No doc files should be emitted; got: {doc_files}'
+            f'No doc files should be emitted for prototype-only project; got: {doc_files}'
         )
 
 
 class TestAutoseedIncludesExportableTypes:
-    """All four exportable types (prd, prfaq, research, custom) are passed through."""
+    """All five exportable types (prd, prfaq, research, custom, product_report) are passed through."""
 
     @patch('projects.get_project')
-    def test_all_four_exportable_types_are_included(self, mock_get_project):
-        """prd, prfaq, research, custom all appear in the payload."""
+    def test_all_five_exportable_types_are_included(self, mock_get_project):
+        """prd, prfaq, research, custom, product_report all appear in the payload."""
         mock_get_project.return_value = _project_data([
             _make_doc('d-prd', 'prd', 'My PRD'),
             _make_doc('d-prfaq', 'prfaq', 'My PR/FAQ'),
             _make_doc('d-research', 'research', 'My Research'),
             _make_doc('d-custom', 'custom', 'My Custom'),
+            _make_doc('d-report', 'product_report', 'My Product Report'),
             _make_doc('d-proto', 'prototype', 'A Prototype'),
-            _make_doc('d-report', 'product_report', 'A Report'),
         ])
 
         from projects import autoseed_project
 
         result = autoseed_project('proj-test')
         doc_files = [f for f in result['files'] if f['path'].startswith('.kiro/docs/')]
-        assert len(doc_files) == 4, (
-            f'Expected 4 exportable docs; got {len(doc_files)}: {[f["path"] for f in doc_files]}'
+        assert len(doc_files) == 5, (
+            f'Expected 5 exportable docs; got {len(doc_files)}: {[f["path"] for f in doc_files]}'
         )
 
     @patch('projects.get_project')
@@ -200,7 +200,7 @@ class TestAutoseedIncludesExportableTypes:
 # ---------------------------------------------------------------------------
 
 class TestSteeringFileExcludesNonExportableDocs:
-    """The steering file must not mention prototype or product_report documents."""
+    """The steering file must not mention prototype documents, but must mention product_report."""
 
     @patch('projects.get_project')
     def test_steering_file_omits_prototype_title(self, mock_get_project):
@@ -225,8 +225,8 @@ class TestSteeringFileExcludesNonExportableDocs:
         )
 
     @patch('projects.get_project')
-    def test_steering_file_omits_product_report_title(self, mock_get_project):
-        """Product report title does not appear in the steering file."""
+    def test_steering_file_includes_product_report_title(self, mock_get_project):
+        """Product report title appears in the steering file — it is an exportable type."""
         mock_get_project.return_value = _project_data([
             _make_doc('d-custom', 'custom', 'My Custom Doc'),
             _make_doc('d-report', 'product_report', 'Q4 Product Report'),
@@ -239,8 +239,8 @@ class TestSteeringFileExcludesNonExportableDocs:
             f['content'] for f in result['files']
             if f['path'].startswith('.kiro/steering/')
         )
-        assert 'Q4 Product Report' not in steering, (
-            'Product report title must not appear in the steering file'
+        assert 'Q4 Product Report' in steering, (
+            'Product report title must appear in the steering file (product_report is exportable)'
         )
         assert 'My Custom Doc' in steering, (
             'Custom doc title should still appear in the steering file'

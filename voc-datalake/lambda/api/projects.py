@@ -1680,11 +1680,13 @@ def _build_steering_file(project: dict, personas: list, documents: list) -> str:
 
 
 # Document types that must never appear in a Kiro export payload.
-# Prototypes are generated HTML — exporting them anchors the model on old output.
-# Product reports are internal analytics snapshots, not implementation context.
+# Prototypes are generated HTML artifacts (or S3-backed rendered pages with no
+# text content) — exporting them anchors the coding agent on stale output.
+# DocumentExportMenu.tsx already returns null for S3-only prototypes; this
+# exclusion makes the two export paths agree rather than contradict each other.
 # This set is the backend authority; the frontend constant must match it
 # (enforced by test_kiro_exportable_types_lockstep.py).
-KIRO_EXPORT_EXCLUDED_TYPES: frozenset[str] = frozenset({'prototype', 'product_report'})
+KIRO_EXPORT_EXCLUDED_TYPES: frozenset[str] = frozenset({'prototype'})
 
 
 @tracer.capture_method

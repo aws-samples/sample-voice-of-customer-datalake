@@ -98,12 +98,16 @@ def _frontend_exportable_types() -> frozenset[str]:
     )
     source = path.read_text(encoding='utf-8')
     # Match: export const KIRO_EXPORTABLE_DOC_TYPES = ['prd', 'prfaq', ...] as const
-    match = re.search(
+    matches = re.findall(
         r"export const KIRO_EXPORTABLE_DOC_TYPES\s*=\s*\[([^\]]+)\]\s*as const",
         source,
     )
-    assert match, f'KIRO_EXPORTABLE_DOC_TYPES not found in {FRONTEND_SOURCE}'
-    raw = match.group(1)
+    assert len(matches) == 1, (
+        f'Expected exactly one KIRO_EXPORTABLE_DOC_TYPES definition in {FRONTEND_SOURCE}; '
+        f'found {len(matches)}. If the constant was renamed or duplicated, '
+        f'update FRONTEND_SOURCE in this test file.'
+    )
+    raw = matches[0]
     return frozenset(re.findall(r"'([^']+)'", raw))
 
 
@@ -141,10 +145,11 @@ class TestKiroExportableTypesLockstep:
             'prototype must be excluded from Kiro exports'
         )
 
-    def test_backend_excludes_product_report(self):
-        """Regression pin: product_report is in the excluded set."""
-        assert 'product_report' in _backend_excluded_types(), (
-            'product_report must be excluded from Kiro exports'
+    def test_backend_does_not_exclude_product_report(self):
+        """Regression pin: product_report is NOT excluded — it is an exportable type."""
+        assert 'product_report' not in _backend_excluded_types(), (
+            'product_report must not be in KIRO_EXPORT_EXCLUDED_TYPES; '
+            'it is a prose Markdown document that provides current-state product context'
         )
 
     def test_frontend_exportable_includes_prd(self):
@@ -163,14 +168,15 @@ class TestKiroExportableTypesLockstep:
         """Regression pin: custom is in the exportable set."""
         assert 'custom' in _frontend_exportable_types()
 
+    def test_frontend_exportable_includes_product_report(self):
+        """Regression pin: product_report IS in the exportable set."""
+        assert 'product_report' in _frontend_exportable_types(), (
+            'product_report must be in KIRO_EXPORTABLE_DOC_TYPES; '
+            'it is a prose Markdown document that provides current-state product context'
+        )
+
     def test_frontend_does_not_export_prototype(self):
         """Regression pin: prototype must NOT be in the exportable set."""
         assert 'prototype' not in _frontend_exportable_types(), (
             'prototype must not be in KIRO_EXPORTABLE_DOC_TYPES'
-        )
-
-    def test_frontend_does_not_export_product_report(self):
-        """Regression pin: product_report must NOT be in the exportable set."""
-        assert 'product_report' not in _frontend_exportable_types(), (
-            'product_report must not be in KIRO_EXPORTABLE_DOC_TYPES'
         )
