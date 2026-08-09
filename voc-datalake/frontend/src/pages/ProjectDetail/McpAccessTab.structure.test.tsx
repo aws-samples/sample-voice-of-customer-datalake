@@ -108,6 +108,11 @@ describe('McpAccessTab — two-card structure', () => {
     // The assertion that fails if the editor goes back to being a sibling card.
     expect(cardContaining(templateHeading)).toBe(cardContaining(exportHeading))
     expect(container.querySelectorAll(CARD_SELECTOR)).toHaveLength(2)
+
+    // `mockProject` carries no kiro_export_prompt, so this render exercises
+    // KiroExportSettings' EmptyState branch — stated explicitly so the card
+    // count above is known to cover that path rather than only the preview one.
+    expect(screen.getByText(enProjectDetail.kiroExport.noPrompt)).toBeInTheDocument()
   })
 
   it('keeps the MCP card separate from the Export card', async () => {
@@ -158,9 +163,16 @@ describe('McpAccessTab — renders translated copy under de', () => {
     })).toBeInTheDocument()
   })
 
-  it('localizes the Export card title rather than shipping the English word', () => {
-    // Guards the i18n gate's finding directly: these were byte-identical to
-    // English in all 7 non-en catalogues until they were translated.
+})
+
+describe('projectDetail catalogue — export labels are translated, not copied', () => {
+  // Renders nothing on purpose: this is a catalogue guard, not a component test,
+  // so it lives in its own describe rather than under "renders translated copy".
+  // It pins the i18n gate's finding — both values were byte-identical to English
+  // in all 7 non-en catalogues, which the gate rejects and has no allowlist for.
+  // If a locale ever legitimately shares a word with English, drop that locale
+  // from this guard rather than weakening it for all of them.
+  it('gives de its own wording for the Export card title and the tab label', () => {
     expect(deProjectDetail.export.title).not.toBe(enProjectDetail.export.title)
     expect(deProjectDetail.tabs.mcpAccess).not.toBe(enProjectDetail.tabs.mcpAccess)
   })
