@@ -10,9 +10,11 @@
  * zero stats calls until a reviewer opens one — the sliders and the prototype
  * preview are already expand-only for the same reason.
  *
- * The query key and `staleTime` match `FormCard`'s (`['form-stats', form_id]`,
- * 30s) on purpose: opening a row after visiting the Feedback Forms page reuses
- * the cached payload rather than paying for it twice.
+ * The query key and `staleTime` are shared with `FormCard` through
+ * `api/feedbackFormQueryKeys` rather than spelled the same in both places:
+ * opening a row after visiting the Feedback Forms page has to reuse the cached
+ * payload rather than pay for it twice, and two matching literals would drift
+ * without anything failing.
  *
  * This panel only displays evidence. It deliberately does not derive, suggest or
  * pre-fill any score — the reviewer reads it and moves the sliders themselves.
@@ -24,6 +26,7 @@ import { useQuery } from '@tanstack/react-query'
 import { MessageSquare, Star } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
+import { formStatsKey, FORM_STATS_STALE_TIME_MS } from '../../api/feedbackFormQueryKeys'
 import type { LinkedForm } from './formLinkUtils'
 import type { ReactElement } from 'react'
 
@@ -57,9 +60,9 @@ function LinkedFormStats({ form }: { readonly form: LinkedForm }): ReactElement 
   const {
     data, isPending, isError,
   } = useQuery({
-    queryKey: ['form-stats', form.form_id],
+    queryKey: formStatsKey(form.form_id),
     queryFn: () => api.getFeedbackFormStats(form.form_id),
-    staleTime: 30000,
+    staleTime: FORM_STATS_STALE_TIME_MS,
   })
 
   const stats = data?.stats

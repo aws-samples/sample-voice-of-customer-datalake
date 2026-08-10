@@ -18,6 +18,7 @@ import {
 } from 'react-i18next'
 import { useBlocker } from 'react-router-dom'
 import { api } from '../../api/client'
+import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
 import { projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
 import ConfirmModal from '../../components/ConfirmModal'
@@ -224,7 +225,7 @@ export default function Prioritization() {
   // part — each form's collected ratings — is fetched per form when a row is
   // expanded (see LinkedFormEvidence), not here.
   const { data: formsData } = useQuery({
-    queryKey: ['feedback-forms'],
+    queryKey: feedbackFormsKey(),
     queryFn: () => api.getFeedbackForms(),
     // Validate at the query boundary, per project convention: stored forms
     // predate the link fields, so the record on the wire can omit them

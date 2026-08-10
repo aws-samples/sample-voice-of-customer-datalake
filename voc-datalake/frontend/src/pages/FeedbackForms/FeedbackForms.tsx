@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../api/client'
+import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
 import type { LucideIcon } from 'lucide-react'
 import type { FeedbackForm } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
@@ -515,7 +516,7 @@ export default function FeedbackForms() {
   const [deleteFormId, setDeleteFormId] = useState<string | null>(null)
 
   const { data: formsData, isLoading } = useQuery({
-    queryKey: ['feedback-forms'],
+    queryKey: feedbackFormsKey(),
     queryFn: () => api.getFeedbackForms(),
     // Stored forms can predate newer fields (and fixtures can be sparse):
     // normalize once at the query boundary so FeedbackForm's declared
@@ -534,7 +535,7 @@ export default function FeedbackForms() {
     mutationFn: (form: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> & { form_id?: string }) =>
       form.form_id ? api.updateFeedbackForm(form.form_id, form) : api.createFeedbackForm(form),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['feedback-forms'] })
+      queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
       setEditingForm(null)
       setTemplateConfig(null)
     },
@@ -543,7 +544,7 @@ export default function FeedbackForms() {
   const deleteMutation = useMutation({
     mutationFn: (formId: string) => api.deleteFeedbackForm(formId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['feedback-forms'] })
+      queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
     },
   })
 
@@ -551,7 +552,7 @@ export default function FeedbackForms() {
     mutationFn: ({ formId, enabled }: { formId: string; enabled: boolean }) =>
       api.updateFeedbackForm(formId, { enabled }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['feedback-forms'] })
+      queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
     },
   })
 
