@@ -49,10 +49,11 @@ export { buildTrustedApiOrigins as getTrustedApiOrigins }
  * Parsing failures are treated as unsafe (return false), so a malformed or
  * crafted URL value in the config store can never receive the auth header.
  *
- * Path-relative URLs (`/api/...`) are always same-origin: safe.
- * Protocol-relative URLs (`//host/...`) are resolved against
- * `window.location.origin` — `//evil.example.com/...` is therefore NOT
- * treated as same-origin.
+ * Every URL is resolved against `window.location.origin` before being
+ * classified, so same-origin is determined by the resolved origin rather than
+ * by the shape of the string. Path-relative URLs (`/api/...`) resolve to the
+ * current origin and are safe; spellings that only *look* relative but resolve
+ * elsewhere — `//evil.example.com/...`, `/\evil.example.com/...` — are not.
  *
  * Delegates to {@link isTrustedOrigin} from `lib/trustedOrigins`.
  */

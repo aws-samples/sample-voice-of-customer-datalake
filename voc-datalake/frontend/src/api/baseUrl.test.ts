@@ -49,6 +49,39 @@ import { authService } from '../services/auth'
 const TRUSTED_API = 'https://abc123.execute-api.us-east-1.amazonaws.com/v1'
 const TRUSTED_ORIGIN = 'https://abc123.execute-api.us-east-1.amazonaws.com'
 
+/** The document origin these tests assume when resolving relative URLs. */
+const APP_ORIGIN = 'http://localhost:3000'
+
+/**
+ * Pin `window.location` for the duration of a suite.
+ *
+ * The origin check resolves relative URLs against the document origin, so the
+ * origin has to be a known quantity. Vitest shares one jsdom environment across
+ * files (`poolOptions.forks.singleFork`) and several other suites swap
+ * `window.location` for partial stubs, so these suites set the value they need
+ * rather than inheriting whatever ran last.
+ */
+function useAppOrigin(): void {
+  let previousLocation: Location
+
+  beforeEach(() => {
+    previousLocation = window.location
+    Object.defineProperty(window, 'location', {
+      value: { origin: APP_ORIGIN, href: `${APP_ORIGIN}/` },
+      writable: true,
+      configurable: true,
+    })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', {
+      value: previousLocation,
+      writable: true,
+      configurable: true,
+    })
+  })
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe('stripTrailingSlashes', () => {
@@ -91,6 +124,8 @@ describe('getTrustedApiOrigins', () => {
 })
 
 describe('isTrustedRequestOrigin', () => {
+  useAppOrigin()
+
   it('trusts a URL whose origin matches the deployment API', () => {
     expect(isTrustedRequestOrigin(`${TRUSTED_API}/feedback`)).toBe(true)
   })
@@ -119,9 +154,19 @@ describe('isTrustedRequestOrigin', () => {
 
   it('does NOT trust a protocol-relative URL pointing to a foreign host', () => {
     // `//evil.example.com/collect` starts with `/` but is NOT same-origin.
-    // The old `startsWith('/')` guard was a bypass — the new implementation
-    // resolves protocol-relative URLs against window.location.origin.
+    // A `startsWith('/')` classifier was a bypass — the implementation resolves
+    // the URL against window.location.origin and classifies the result.
     expect(isTrustedRequestOrigin('//evil.example.com/collect')).toBe(false)
+  })
+
+  it('does NOT trust backslash-separator URLs pointing to a foreign host', () => {
+    // Positive case so the negatives cannot pass vacuously.
+    expect(isTrustedRequestOrigin('/api/feedback')).toBe(true)
+    // `\` is a path separator for http(s) in the WHATWG URL parser, so these
+    // resolve cross-origin while still satisfying startsWith('/') and failing
+    // startsWith('//') — the exact gap a two-prefix guard leaves open.
+    expect(isTrustedRequestOrigin('/\\evil.example.com/collect')).toBe(false)
+    expect(isTrustedRequestOrigin('/\\/evil.example.com')).toBe(false)
   })
 
   it('returns false when config is not loaded (empty allowlist)', () => {
@@ -129,12 +174,14 @@ describe('isTrustedRequestOrigin', () => {
     expect(isTrustedRequestOrigin(TRUSTED_API)).toBe(false)
   })
 
-  it('returns false for an unparseable URL', () => {
-    expect(isTrustedRequestOrigin('not a url at all')).toBe(false)
+  it('returns false for a URL with no host (fail closed)', () => {
+    expect(isTrustedRequestOrigin('http://')).toBe(false)
   })
 })
 
 describe('getAuthHeaders — trusted origin', () => {
+  useAppOrigin()
+
   beforeEach(() => {
     vi.mocked(authService.isConfigured).mockReturnValue(true)
     vi.mocked(authService.getIdToken).mockReturnValue('mock-cognito-id-token')
@@ -159,6 +206,8 @@ describe('getAuthHeaders — trusted origin', () => {
 })
 
 describe('getAuthHeaders — untrusted origin', () => {
+  useAppOrigin()
+
   beforeEach(() => {
     vi.mocked(authService.isConfigured).mockReturnValue(true)
     vi.mocked(authService.getIdToken).mockReturnValue('mock-cognito-id-token')
@@ -190,8 +239,13 @@ describe('getAuthHeaders — untrusted origin', () => {
     expect(headers['Content-Type']).toBe('application/json')
   })
 
-  it('does NOT attach Authorization when the URL is unparseable', () => {
-    const headers = getAuthHeaders(undefined, 'not a url at all')
+  it('does NOT attach Authorization when the URL has no host (fail closed)', () => {
+    const headers = getAuthHeaders(undefined, 'http://')
+    expect(headers['Authorization']).toBeUndefined()
+  })
+
+  it('does NOT attach Authorization to a backslash-separator foreign URL', () => {
+    const headers = getAuthHeaders(undefined, '/\\evil.example.com/collect')
     expect(headers['Authorization']).toBeUndefined()
   })
 

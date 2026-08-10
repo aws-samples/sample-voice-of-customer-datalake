@@ -38,6 +38,39 @@ import * as runtimeConfigModule from '../runtimeConfig'
 const TRUSTED_API = 'https://abc123.execute-api.us-east-1.amazonaws.com/v1'
 const TRUSTED_ORIGIN = 'https://abc123.execute-api.us-east-1.amazonaws.com'
 
+/** The document origin these tests assume when resolving relative URLs. */
+const APP_ORIGIN = 'http://localhost:3000'
+
+/**
+ * Pin `window.location` for the duration of a suite.
+ *
+ * `isTrustedOrigin` resolves relative URLs against the document origin, so the
+ * origin has to be a known quantity here. Vitest shares one jsdom environment
+ * across files (`poolOptions.forks.singleFork`) and several other suites swap
+ * `window.location` for partial stubs, so these suites set the value they need
+ * rather than inheriting whatever ran last.
+ */
+function useAppOrigin(): void {
+  let previousLocation: Location
+
+  beforeEach(() => {
+    previousLocation = window.location
+    Object.defineProperty(window, 'location', {
+      value: { origin: APP_ORIGIN, href: `${APP_ORIGIN}/` },
+      writable: true,
+      configurable: true,
+    })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', {
+      value: previousLocation,
+      writable: true,
+      configurable: true,
+    })
+  })
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe('buildTrustedApiOrigins', () => {
@@ -85,6 +118,8 @@ describe('buildTrustedApiOrigins', () => {
 })
 
 describe('isTrustedOrigin', () => {
+  useAppOrigin()
+
   beforeEach(() => {
     vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValue(true)
     vi.mocked(runtimeConfigModule.getRuntimeConfig).mockReturnValue({
@@ -123,13 +158,53 @@ describe('isTrustedOrigin', () => {
     expect(isTrustedOrigin(prefixTrick)).toBe(false)
   })
 
-  // ── protocol-relative URLs ────────────────────────────────────────────────
+  // ── inputs that look same-origin but resolve elsewhere ────────────────────
+  //
+  // Every case below satisfies `startsWith('/')`, so each one would be trusted
+  // by a prefix-based classifier. They are rejected because classification is
+  // done on the origin the URL *resolves* to — the origin `fetch` will use.
 
   it('does NOT trust a protocol-relative URL pointing to a foreign host', () => {
     // Positive case: path-relative is still safe.
     expect(isTrustedOrigin('/api/feedback')).toBe(true)
     // //evil.example.com starts with '/' but resolves cross-origin.
     expect(isTrustedOrigin('//evil.example.com/collect')).toBe(false)
+  })
+
+  it('does NOT trust a backslash-separator URL pointing to a foreign host', () => {
+    // Positive case: a genuinely path-relative URL is still trusted, so the
+    // negative assertions below cannot pass just because everything is refused.
+    expect(isTrustedOrigin('/api/feedback')).toBe(true)
+
+    // The WHATWG URL parser normalises `\` to `/` for http(s) schemes, so each
+    // of these resolves to https://evil.example.com even though none of them
+    // starts with '//'.
+    expect(isTrustedOrigin('/\\evil.example.com/collect')).toBe(false)
+    expect(isTrustedOrigin('/\\/evil.example.com')).toBe(false)
+    expect(isTrustedOrigin('/\\\\evil.example.com/collect')).toBe(false)
+  })
+
+  it('does NOT trust mixed slash/backslash separator forms', () => {
+    expect(isTrustedOrigin('/api/feedback')).toBe(true)
+    expect(isTrustedOrigin('//\\evil.example.com/collect')).toBe(false)
+    expect(isTrustedOrigin('\\\\evil.example.com/collect')).toBe(false)
+    expect(isTrustedOrigin('\\/evil.example.com/collect')).toBe(false)
+  })
+
+  it('resolves every separator form to the origin fetch would use', () => {
+    // Documents *why* the cases above must be false: this is the classification
+    // the implementation performs, and it matches what fetch does.
+    for (const spelling of [
+      '//evil.example.com/collect',
+      '/\\evil.example.com/collect',
+      '/\\/evil.example.com',
+      '//\\evil.example.com/collect',
+      '\\\\evil.example.com/collect',
+    ]) {
+      expect(new URL(spelling, APP_ORIGIN).origin).toBe('http://evil.example.com')
+    }
+    // …whereas a genuinely path-relative URL resolves to the current origin.
+    expect(new URL('/api/feedback', APP_ORIGIN).origin).toBe(APP_ORIGIN)
   })
 
   // ── localhost in dev builds ───────────────────────────────────────────────
@@ -168,20 +243,57 @@ describe('isTrustedOrigin', () => {
   // ── error cases ───────────────────────────────────────────────────────────
 
   it('returns false for an unparseable URL (fail closed)', () => {
-    expect(isTrustedOrigin('not a url at all')).toBe(false)
+    // 'http://' has no host, so it cannot be resolved even with a base.
+    expect(isTrustedOrigin('http://')).toBe(false)
+  })
+
+  it('returns false for an opaque-origin scheme (fail closed)', () => {
+    // Positive case so the assertions below are not vacuous.
+    expect(isTrustedOrigin('/api/feedback')).toBe(true)
+    // These parse but have origin 'null', which is in no allowlist.
+    expect(isTrustedOrigin('data:text/html,steal')).toBe(false)
+    expect(isTrustedOrigin('javascript:alert(1)')).toBe(false)
+  })
+
+  it('trusts a scheme-less garbage string because it resolves same-origin', () => {
+    // 'not a url at all' has no scheme and no authority, so the URL parser
+    // resolves it as a path against the current origin — which is exactly
+    // where fetch would send it. Same-origin, therefore safe: the token can
+    // only reach our own origin.
+    expect(new URL('not a url at all', APP_ORIGIN).origin).toBe(APP_ORIGIN)
+    expect(isTrustedOrigin('not a url at all')).toBe(true)
+  })
+
+  it('refuses a relative URL when the document origin is unavailable', () => {
+    // No usable base → nothing can be classified as same-origin, so relative
+    // inputs fail closed rather than resolving against `undefined`.
+    Object.defineProperty(window, 'location', {
+      value: {},
+      writable: true,
+      configurable: true,
+    })
+    expect(isTrustedOrigin('/api/feedback')).toBe(false)
+    // An absolute URL in the allowlist needs no base and is still trusted.
+    expect(isTrustedOrigin(TRUSTED_API)).toBe(true)
   })
 
   it('returns false when config is not loaded (empty allowlist → fail closed)', () => {
-    vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValue(false)
-    // Positive case first: with config loaded it would be trusted.
-    vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValueOnce(true)
+    // Positive case, with its own explicit mock state: config loaded → trusted.
+    vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValue(true)
     expect(isTrustedOrigin(TRUSTED_API)).toBe(true)
-    // Now config is not loaded.
+  })
+
+  it('returns false for the runtime-config origin while config is not loaded', () => {
+    // Negative case, also with explicit mock state rather than relying on how
+    // many times isTrustedOrigin happens to call isConfigLoaded.
+    vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValue(false)
     expect(isTrustedOrigin(TRUSTED_API)).toBe(false)
   })
 })
 
 describe('isTrustedApiEndpoint', () => {
+  useAppOrigin()
+
   beforeEach(() => {
     vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValue(true)
     vi.mocked(runtimeConfigModule.getRuntimeConfig).mockReturnValue({
@@ -258,6 +370,25 @@ describe('isTrustedApiEndpoint', () => {
 
   it('returns false for an unparseable value (fail closed)', () => {
     expect(isTrustedApiEndpoint('not-a-url')).toBe(false)
+  })
+
+  it('returns false for a path-relative endpoint', () => {
+    // Pins the deliberate asymmetry with isTrustedOrigin, which trusts '/api'
+    // because it resolves same-origin. A *stored endpoint* is a deployment
+    // config value, so only the '' sentinel expresses "same origin"; every
+    // other relative spelling fails closed by design, not by accident.
+    expect(isTrustedApiEndpoint('')).toBe(true)
+    expect(isTrustedOrigin('/api')).toBe(true)
+    expect(isTrustedApiEndpoint('/api')).toBe(false)
+    expect(isTrustedApiEndpoint('api/v1')).toBe(false)
+  })
+
+  it('returns false for separator-trick endpoints', () => {
+    // Positive case so the negatives are meaningful.
+    expect(isTrustedApiEndpoint(TRUSTED_API)).toBe(true)
+    // Parsed with no base, so these are not absolute URLs at all → rejected.
+    expect(isTrustedApiEndpoint('//evil.example.com')).toBe(false)
+    expect(isTrustedApiEndpoint('/\\evil.example.com')).toBe(false)
   })
 
   it('returns false when config is not loaded (empty allowlist → fail closed)', () => {

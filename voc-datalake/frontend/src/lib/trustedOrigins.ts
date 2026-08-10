@@ -14,8 +14,10 @@ import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
  * Build the allowlist of trusted API origins.
  *
  * The authoritative origin is always the one from the deployment's runtime
- * config (config.json). In development, any `localhost` or `127.0.0.1` hostname
- * is also trusted so developers can run the mock server on any port.
+ * config (config.json). `localhost` / `127.0.0.1` are NOT in the returned
+ * array — localhost trust is enforced inside {@link isTrustedAbsoluteUrl} via
+ * a hostname comparison, not via the origins array. Reading this array and
+ * looking for a localhost entry will never find one.
  *
  * Returns an empty array when the runtime config is not loaded yet — the
  * caller treats an empty allowlist as "no origin is trusted", which is the
@@ -39,39 +41,58 @@ export function buildTrustedApiOrigins(): string[] {
 }
 
 /**
- * Return true when `requestUrl` originates from a trusted host.
+ * Return true when `requestUrl` resolves to a trusted host.
+ *
+ * A "same-origin reference" is decided by *resolution*, never by the shape of
+ * the string: `requestUrl` is resolved against `window.location.origin` using
+ * the same WHATWG URL parser `fetch` uses, and the resulting origin is what
+ * gets classified. Classifying on string prefixes is unsound, because several
+ * unrelated spellings look path-relative yet resolve to a foreign host:
+ *
+ *   `//evil.example.com/x`   → protocol-relative
+ *   `/\evil.example.com/x`   → backslash is a path separator for http(s)
+ *   `/\/evil.example.com`    → mixed separators
+ *
+ * All three resolve to `https://evil.example.com`, so resolving first closes
+ * the whole class instead of one spelling at a time.
  *
  * Trusts:
- *   - Relative URLs (no host) — always same-origin requests.
- *   - Protocol-relative URLs — resolved against `window.location.origin` so
- *     `//evil.example.com/...` is treated as cross-origin, not same-origin.
- *   - Absolute URLs whose origin is in the runtime-config allowlist.
+ *   - URLs that resolve to `window.location.origin` — true same-origin, which
+ *     is where genuinely path-relative inputs such as `/api/...` land.
+ *   - URLs whose resolved origin is in the runtime-config allowlist.
  *   - In dev builds: any URL whose hostname is `localhost` or `127.0.0.1`.
  *
  * Parsing failures are treated as unsafe (return false).
  */
 export function isTrustedOrigin(requestUrl: string): boolean {
-  // Protocol-relative and path-relative URLs: resolve against current origin so
-  // //evil.example.com is not treated as a same-origin path.
-  if (requestUrl.startsWith('/')) {
-    // Path-relative (single slash) → same-origin, always safe.
-    if (!requestUrl.startsWith('//')) return true
-
-    // Protocol-relative (double slash) → resolve to determine real origin.
-    try {
-      const parsed = new URL(requestUrl, window.location.origin)
-      return isTrustedAbsoluteUrl(parsed)
-    } catch {
-      return false
-    }
-  }
+  const currentOrigin = getCurrentOrigin()
 
   try {
-    const parsed = new URL(requestUrl)
+    // With no usable base, only a fully absolute URL can be classified; a
+    // relative one throws here and is refused, which is the safe outcome.
+    const parsed =
+      currentOrigin === null ? new URL(requestUrl) : new URL(requestUrl, currentOrigin)
+
+    // Genuine same-origin (where path-relative inputs resolve) is always safe.
+    if (currentOrigin !== null && parsed.origin === currentOrigin) return true
+
     return isTrustedAbsoluteUrl(parsed)
   } catch {
     return false
   }
+}
+
+/**
+ * Read the document's own origin, or `null` when it is unavailable.
+ *
+ * Resolution needs a base URL, and `window.location` is not guaranteed to
+ * supply one: a non-browser host (SSR, a worker) has no `window` at all. `null`
+ * makes that case explicit so the caller can restrict itself to absolute URLs
+ * instead of resolving against `undefined`.
+ */
+function getCurrentOrigin(): string | null {
+  const origin: unknown = globalThis.window?.location?.origin
+  return typeof origin === 'string' && origin !== '' ? origin : null
 }
 
 /** Check a fully-parsed URL against the trusted-origin allowlist. */
@@ -90,9 +111,18 @@ function isTrustedAbsoluteUrl(parsed: URL): boolean {
 /**
  * Return true when `endpoint` is safe to persist as the API endpoint.
  *
- * Empty string is always safe (it is the "not yet configured" sentinel that
- * falls back to the `/api` relative-URL path in `getBaseUrl()`).
- * Any non-empty value must resolve to a trusted host.
+ * Empty string is always safe: it is the "not yet configured" sentinel that
+ * `getBaseUrl()` maps to the same-origin `/api` path.
+ * Any non-empty value must be an absolute URL resolving to a trusted host.
+ *
+ * Note the deliberate asymmetry with {@link isTrustedOrigin}: this function
+ * parses `endpoint` with no base, so `''` is the *only* accepted same-origin
+ * spelling. Other relative forms (`'/api'`, `'api/v1'`) fail closed even
+ * though `isTrustedOrigin('/api')` is `true`, because a stored endpoint is a
+ * deployment configuration value rather than a request URL and there is no
+ * reason for it to be relative. Pinned by test:
+ * "returns false for a path-relative endpoint".
+ *
  * Unparseable values are treated as unsafe (fail closed).
  */
 export function isTrustedApiEndpoint(endpoint: string): boolean {
