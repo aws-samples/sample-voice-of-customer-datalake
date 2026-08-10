@@ -91,6 +91,35 @@ describe('normalizeFeedbackForm (issue #171)', () => {
     expect(form).toMatchObject({ brand_name: 'Acme', future_field: { nested: true } })
   })
 
+  it('defaults the validation link to unlinked on a record that predates it', () => {
+    // The schema declares project_id/document_id rather than leaving them to
+    // the loose object's passthrough, so a form persisted before the link
+    // existed reads as deliberately unlinked instead of undefined — which is
+    // what the editor's controlled selects need.
+    const form = normalizeFeedbackForm(sparseForm)
+
+    expect(form.project_id).toBe('')
+    expect(form.document_id).toBe('')
+  })
+
+  it('preserves a stored validation link so the editor can round-trip it', () => {
+    const form = normalizeFeedbackForm({
+      ...sparseForm,
+      project_id: 'proj_1',
+      document_id: 'doc_prfaq',
+    })
+
+    expect(form.project_id).toBe('proj_1')
+    expect(form.document_id).toBe('doc_prfaq')
+  })
+
+  it('degrades a wrong-typed validation link to unlinked, not to a crash', () => {
+    const form = normalizeFeedbackForm({ ...sparseForm, project_id: 7, document_id: null })
+
+    expect(form.project_id).toBe('')
+    expect(form.document_id).toBe('')
+  })
+
   it('keeps a complete record unchanged', () => {
     const complete: FeedbackForm = {
       ...defaultFormConfig,

@@ -48,6 +48,16 @@ describe('selectLinkedForms', () => {
     expect(selectLinkedForms([standalone], { project_id: 'p1', document_id: 'doc_prfaq' }, liveDocs)).toEqual([])
   })
 
+  it('matches nothing to a row with no project of its own', () => {
+    // Guards the `row.project_id === ''` short-circuit. Without it an unlinked
+    // form ('' project) would pair with an identity-less row, so a standalone
+    // website survey could surface on the page after all.
+    const standalone = form({ form_id: 'f1', name: 'Website Footer Form' })
+    const projectWide = form({ form_id: 'f2', project_id: 'p1' })
+
+    expect(selectLinkedForms([standalone, projectWide], { project_id: '', document_id: 'doc_prfaq' })).toEqual([])
+  })
+
   it('returns every form validating the same document', () => {
     const first = form({ form_id: 'f1', project_id: 'p1', document_id: 'doc_prfaq' })
     const second = form({ form_id: 'f2', project_id: 'p1', document_id: 'doc_prfaq' })
