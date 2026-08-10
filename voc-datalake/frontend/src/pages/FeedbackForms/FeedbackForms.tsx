@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../api/client'
+import type { LucideIcon } from 'lucide-react'
 import type { FeedbackForm } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import ConfirmModal from '../../components/ConfirmModal'
@@ -35,13 +36,12 @@ type FormConfigWithId = FormConfig & { form_id?: string }
 
 type EditorTabId = 'settings' | 'category' | 'validation' | 'theme'
 
-const EDITOR_TAB_IDS: readonly EditorTabId[] = ['settings', 'category', 'validation', 'theme']
-
-/** Narrow a tab id read back off the rendered list without a type assertion. */
-function isEditorTabId(value: string): value is EditorTabId {
-  // `.includes` on a readonly string-literal array needs a widened receiver;
-  // comparing element-wise keeps this assertion-free (repo bans `as`).
-  return EDITOR_TAB_IDS.some((id) => id === value)
+/** One entry in the editor's tab strip. */
+interface EditorTab {
+  readonly id: EditorTabId
+  readonly label: string
+  readonly shortLabel: string
+  readonly icon: LucideIcon
 }
 
 function stripTrailingSlashes(str: string): string {
@@ -149,20 +149,24 @@ function EditorTabBar({ activeTab, onSelect }: Readonly<{
   onSelect: (tab: EditorTabId) => void
 }>) {
   const { t } = useTranslation('feedbackForms')
-  const tabs = [
-    { id: 'settings', label: 'Form Settings', shortLabel: 'Settings', icon: Settings2 },
-    { id: 'category', label: 'Category Routing', shortLabel: 'Category', icon: Settings2 },
+  // Annotated, not inferred: with `id` typed as EditorTabId, `onSelect(tab.id)`
+  // typechecks directly, so no runtime narrowing guard is needed and a mistyped
+  // id fails to compile instead of rendering a button that silently does
+  // nothing. All four labels come from the catalogues — the keys already exist
+  // in all eight locales, and a half-translated tab strip reads worse than
+  // either extreme.
+  const tabs: readonly EditorTab[] = [
+    { id: 'settings', label: t('editor.tabs.formSettings'), shortLabel: t('editor.tabs.settings'), icon: Settings2 },
+    { id: 'category', label: t('editor.tabs.categoryRouting'), shortLabel: t('editor.tabs.category'), icon: Settings2 },
     { id: 'validation', label: t('editor.tabs.validates'), shortLabel: t('editor.tabs.validatesShort'), icon: Link2 },
-    { id: 'theme', label: 'Theme', shortLabel: 'Theme', icon: Palette },
+    { id: 'theme', label: t('editor.tabs.theme'), shortLabel: t('editor.tabs.theme'), icon: Palette },
   ]
   return (
     <div className="flex gap-1 sm:gap-2 px-3 sm:px-4 pt-3 sm:pt-4 border-b border-gray-200 overflow-x-auto">
       {tabs.map((tab) => (
         <button
           key={tab.id}
-          onClick={() => {
-            if (isEditorTabId(tab.id)) onSelect(tab.id)
-          }}
+          onClick={() => onSelect(tab.id)}
           className={clsx(
             'flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap text-sm',
             activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
