@@ -8,6 +8,7 @@ import {
   useState, useCallback, useRef, useEffect,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { MAX_SELECTED_PERSONAS } from '../../api/streamLimits'
 import { useStreamChat } from '../../hooks/useStreamChat'
 import { useProjectChatStore } from '../../store/projectChatStore'
 import {
@@ -216,7 +217,11 @@ export default function ChatTab({
     const hasAtAll = /(?:^|\s)@all(?:\s|$)/i.test(input)
     const roundtable = mentions.isRoundtable || (hasAtAll && personas.length >= 2)
     const ids = roundtable && mentions.selectedPersonaIds.length === 0
-      ? personas.map((p) => p.persona_id)
+      // @all expands to every persona on the project, and persona import appends
+      // without replacing, so this list can outgrow what the stream Lambda
+      // accepts. Clamping keeps a one-keystroke action from turning into an
+      // opaque 400 that names no field.
+      ? personas.map((p) => p.persona_id).slice(0, MAX_SELECTED_PERSONAS)
       : mentions.selectedPersonaIds
     return {
       isRoundtable: roundtable,

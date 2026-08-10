@@ -15,12 +15,14 @@ import {
   Send, Bot, Loader2, Sparkles, PanelLeftClose, PanelLeft, Brain, X,
 } from 'lucide-react'
 import {
-  useState, useRef, useEffect, type SyntheticEvent,
+  useState, useRef, useEffect, useId, type SyntheticEvent,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { getDaysFromRange } from '../../api/baseUrl'
+import { MAX_CHAT_MESSAGE_LENGTH } from '../../api/streamLimits'
+import { composerState } from './composerState'
 import ChatExportMenu from '../../components/ChatExportMenu'
 import ChatFilters from '../../components/ChatFilters'
 import ChatMessage from '../../components/ChatMessage'
@@ -189,6 +191,19 @@ function buildChatContext(days: number, filters: ChatFiltersType): string {
   return parts.join('. ')
 }
 
+/** The over-length reason, kept in its own component so Chat carries no branch. */
+function MessageTooLongNotice({
+  id, show, max,
+}: Readonly<{ id: string, show: boolean, max: number }>) {
+  const { t } = useTranslation('chat')
+  if (!show) return null
+  return (
+    <p id={id} role="status" className="mt-1 text-xs text-red-700">
+      {t('messageTooLong', { max })}
+    </p>
+  )
+}
+
 export default function Chat() {
   const {
     t, i18n,
@@ -200,6 +215,7 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [showSidebar, setShowSidebar] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messageTooLongId = useId()
 
   const {
     activeConversationId,
@@ -232,6 +248,14 @@ export default function Chat() {
     sendMessage: sendStreamMessage,
     cancel,
   } = useStreamChat()
+
+  // Must sit below useStreamChat: it reads isStreaming, and referencing that
+  // binding earlier is a TDZ error that tsc and eslint both accept.
+  // Mirrors the stream Lambda's own cap so an over-long paste is refused here,
+  // with a translated reason, instead of coming back as "Stream error: 400".
+  const {
+    isTooLong, canSubmit,
+  } = composerState(input, isStreaming)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -303,7 +327,9 @@ export default function Chat() {
 
   const handleSubmit = (e: SyntheticEvent) => {
     e.preventDefault()
-    if (input.trim() === '' || isStreaming) return
+    // Checked here as well as on the button: Enter submits the form without
+    // going through the disabled button at all.
+    if (!canSubmit) return
 
     // Build history from existing messages before adding the new one
     const conversation = getActiveConversation()
@@ -381,14 +407,23 @@ export default function Chat() {
           <ChatFilters filters={filters} onChange={handleFiltersChange} />
 
           <form onSubmit={handleSubmit} className="flex gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={t('inputPlaceholder')}
-              className="input flex-1 text-sm sm:text-base"
-              disabled={isStreaming}
-            />
+            <div className="flex-1">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={t('inputPlaceholder')}
+                className="input w-full text-sm sm:text-base"
+                disabled={isStreaming}
+                aria-invalid={isTooLong}
+                aria-describedby={isTooLong ? messageTooLongId : undefined}
+              />
+              <MessageTooLongNotice
+                id={messageTooLongId}
+                show={isTooLong}
+                max={MAX_CHAT_MESSAGE_LENGTH}
+              />
+            </div>
             {isStreaming ? (
               <button
                 type="button"
@@ -401,7 +436,7 @@ export default function Chat() {
             ) : (
               <button
                 type="submit"
-                disabled={input.trim() === ''}
+                disabled={!canSubmit}
                 className="btn btn-primary flex items-center gap-1 sm:gap-2 px-3 sm:px-4"
               >
                 <Send size={16} className="sm:w-[18px] sm:h-[18px]" />
