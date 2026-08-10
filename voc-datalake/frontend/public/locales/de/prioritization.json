@@ -46,11 +46,6 @@
     "medium": "Mittlere Priorität",
     "none": "Nicht bewertet"
   },
-  "qr": {
-    "close": "Schließen",
-    "show": "QR-Code anzeigen",
-    "title": "QR-Code"
-  },
   "scores": {
     "confidence": "Konfidenz",
     "confidenceDescription": "Sicherheit bei Auswirkungs- und MeZ-Schätzungen",

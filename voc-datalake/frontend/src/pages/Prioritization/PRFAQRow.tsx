@@ -8,9 +8,10 @@ import { format } from 'date-fns'
 import {
   ChevronDown, ChevronUp, ExternalLink, Wand2,
 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
+import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../components/PrototypeLinkActions'
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import LinkedFormEvidence from './LinkedFormEvidence'
@@ -185,6 +186,17 @@ function resolvePrototypeMode(
  * Renders a project's latest prototype under the PR/FAQ preview. Chooses the
  * iframe (HTML format) or the native JSON-spec renderer, or renders nothing
  * when there's no usable prototype.
+ *
+ * The embedded frame is 384px tall inside half a row — enough to recognise the
+ * prototype, not enough to walk a room through it — so this also offers it in a
+ * new tab. Only when there is a `prototype_url` to open: a legacy prototype is
+ * inline HTML with no address, and the blob indirection the Documents tab uses for
+ * those is not worth carrying onto a page that lists every project.
+ *
+ * The deadline is stated next to the link rather than left implied, because that
+ * URL is a signed session credential — see components/PrototypeLinkActions. The
+ * page schedules its own re-signing (`Prioritization.tsx`); without that the link
+ * below would 403 for anyone who parks a pitch on screen for an hour.
  */
 function PrototypePanel({
   prototype, t,
@@ -195,6 +207,9 @@ function PrototypePanel({
   const content = prototype?.content ?? ''
   const protoFormat = prototype?.prototype_format
   const url = prototype?.prototype_url
+  // Minted per panel: a page shows one of these per row, and a module constant
+  // would give every row's anchors the same aria-describedby target.
+  const lifetimeNoteId = useId()
   // A new (S3-only) prototype has no `content` to run `resolvePrototypeMode`'s
   // heuristics against — treat presence of `prototype_url` as HTML directly.
   const mode = useMemo(
@@ -204,12 +219,20 @@ function PrototypePanel({
   if (mode.kind === 'none') return null
   return (
     <div>
-      <div className="flex items-center justify-between mt-2">
+      <div className="flex items-center justify-between mt-2 gap-3">
         <h4 className="font-medium text-gray-900 flex items-center gap-1.5">
           <Wand2 size={14} className="text-orange-500" />
           {t('preview.prototypeTitle', { defaultValue: 'Prototype' })}
         </h4>
+        {url ? (
+          <span className="flex items-center gap-3 text-xs flex-shrink-0">
+            <PrototypeLinkActions url={url} noteId={lifetimeNoteId} />
+          </span>
+        ) : null}
       </div>
+      {/* Under the link, not beside it: this column is half a row wide, and the
+          note wraps rather than truncates — the clipped end would be the warning. */}
+      {url ? <PrototypeLinkLifetimeNote url={url} noteId={lifetimeNoteId} className="mt-1 text-xs" /> : null}
       {mode.kind === 'html' ? (
         <div className="bg-white rounded-lg border overflow-hidden mt-2 h-96">
           <HtmlPrototypeFrame url={url} html={content} title={prototype?.title} className="w-full h-full border-0" />

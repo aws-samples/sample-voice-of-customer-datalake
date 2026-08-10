@@ -113,6 +113,9 @@
   "formQrCode": {
     "accessibleName": "QR-Code für das Feedback-Formular {{formName}}",
     "caption": "Scannen, um dieses Formular auf dem Smartphone zu öffnen",
+    "close": "Schließen",
+    "show": "QR-Code anzeigen",
+    "title": "QR-Code",
     "unavailable": "QR-Code nicht verfügbar, bis der API-Endpunkt in den Einstellungen konfiguriert ist"
   },
   "personaExport": {
@@ -122,6 +125,13 @@
     "downloadPDF": "Als PDF herunterladen",
     "downloadTXT": "Als TXT herunterladen",
     "exportPersona": "Persona exportieren"
+  },
+  "prototypeLink": {
+    "downloadHtml": ".html herunterladen",
+    "linkExpired": "Link abgelaufen — Projekt neu öffnen",
+    "linkExpires": "Link gültig bis {{time}}",
+    "linkExpiryHint": "an Ihre Sitzung gebunden, kein Freigabelink",
+    "openNewTab": "In neuem Tab öffnen"
   },
   "s3Import": {
     "allSources": "Alle Quellen",

@@ -46,11 +46,6 @@
     "medium": "中优先级",
     "none": "未评分"
   },
-  "qr": {
-    "close": "关闭",
-    "show": "显示二维码",
-    "title": "二维码"
-  },
   "scores": {
     "confidence": "置信度",
     "confidenceDescription": "对影响力和上市时间估计的确定性",

@@ -113,6 +113,9 @@
   "formQrCode": {
     "accessibleName": "“{{formName}}”反馈表单的二维码",
     "caption": "扫码在手机上打开此表单",
+    "close": "关闭",
+    "show": "显示二维码",
+    "title": "二维码",
     "unavailable": "在设置中配置API端点后才能显示二维码"
   },
   "personaExport": {
@@ -122,6 +125,13 @@
     "downloadPDF": "下载为 PDF",
     "downloadTXT": "下载为 TXT",
     "exportPersona": "导出角色"
+  },
+  "prototypeLink": {
+    "downloadHtml": "下载 .html",
+    "linkExpired": "链接已过期 — 请重新打开项目",
+    "linkExpires": "链接有效期至 {{time}}",
+    "linkExpiryHint": "与您的会话绑定，非分享链接",
+    "openNewTab": "在新标签页中打开"
   },
   "s3Import": {
     "allSources": "所有来源",

@@ -46,11 +46,6 @@
     "medium": "中優先度",
     "none": "未評価"
   },
-  "qr": {
-    "close": "閉じる",
-    "show": "QRコードを表示",
-    "title": "QRコード"
-  },
   "scores": {
     "confidence": "確信度",
     "confidenceDescription": "インパクトとTTM見積もりの確実性",

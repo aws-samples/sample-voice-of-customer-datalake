@@ -97,6 +97,22 @@ describe('a feedback form QR', () => {
     expect(spy.encoded[0].level).toBe('M')
   })
 
+  it('fills the width it is given rather than rendering at a fixed small size', () => {
+    renderQr()
+
+    // The floor above is the scan MINIMUM; this is what makes the symbol as large
+    // as the dialog actually allows. Without `w-full` the SVG draws at whatever
+    // `size` says and stops there, so widening the dialog would leave the QR
+    // rattling around inside it — the exact complaint that prompted this. `h-auto`
+    // keeps it square, which is safe because `QRCodeSVG` emits a viewBox.
+    const qr = findQr()
+    expect(qr).toHaveClass('w-full')
+    expect(qr).toHaveClass('h-auto')
+    // And it is fed a generous intrinsic size, so scaling is a cap rather than a
+    // stretch: a symbol drawn at 200 and blown up to 384 is soft at the edges.
+    expect(spy.encoded[0].size).toBeGreaterThanOrEqual(320)
+  })
+
   it('says so in words instead of encoding an address that resolves nowhere', () => {
     // No endpoint configured. The alternative is a flawless, scannable symbol
     // for '/feedback-forms/form_1/iframe' — which a phone cannot resolve, and

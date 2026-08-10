@@ -113,6 +113,9 @@
   "formQrCode": {
     "accessibleName": "QR code for the {{formName}} feedback form",
     "caption": "Scan to open this form on a phone",
+    "close": "Close",
+    "show": "Show QR code",
+    "title": "QR code",
     "unavailable": "QR code unavailable until the API endpoint is configured in Settings"
   },
   "personaExport": {
@@ -122,6 +125,13 @@
     "downloadPDF": "Download as PDF",
     "downloadTXT": "Download as TXT",
     "exportPersona": "Export persona"
+  },
+  "prototypeLink": {
+    "downloadHtml": "Download .html",
+    "linkExpired": "Link expired — reopen the project",
+    "linkExpires": "Link valid until {{time}}",
+    "linkExpiryHint": "tied to your session, not a share link",
+    "openNewTab": "Open in new tab"
   },
   "s3Import": {
     "allSources": "All Sources",
