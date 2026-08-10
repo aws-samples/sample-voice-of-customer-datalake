@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18next'
 
@@ -104,6 +105,20 @@ describe('FormCard (issue #171)', () => {
     const { t } = i18n
     expect(screen.getByRole('button', { name: t('feedbackForms:card.enableForm') })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('feedbackForms:card.disableForm') })).not.toBeInTheDocument()
+  })
+
+  it('offers a scannable QR beside the public URL it already prints', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm())
+
+    await user.click(screen.getByText('Show Embed Code'))
+
+    // The address a customer pastes into a page and the address a phone scans in
+    // a meeting are the same string, built once — so both appear here together.
+    expect(screen.getByText('https://api.example.com/feedback-forms/form_1/iframe')).toBeInTheDocument()
+    expect(screen.getByRole('img', {
+      name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
+    })).toBeInTheDocument()
   })
 
   it('survives a runtime record without a theme (the #171 crash)', () => {

@@ -46,6 +46,11 @@
     "medium": "Média Prioridade",
     "none": "Não Pontuado"
   },
+  "qr": {
+    "close": "Fechar",
+    "show": "Mostrar código QR",
+    "title": "Código QR"
+  },
   "scores": {
     "confidence": "Confiança",
     "confidenceDescription": "Certeza nas estimativas de impacto e TTM",

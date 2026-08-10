@@ -8,6 +8,8 @@ import { Trash2, Copy, Check, Code, ExternalLink, ToggleLeft, ToggleRight, Edit2
 import type { FeedbackForm } from '../../api/client'
 import { api } from '../../api/client'
 import { formStatsKey, FORM_STATS_STALE_TIME_MS } from '../../api/feedbackFormQueryKeys'
+import { feedbackFormPublicUrl } from '../../api/feedbackFormUrls'
+import FormQrCode from '../../components/FormQrCode'
 import { defaultFormConfig } from './formTemplates'
 import clsx from 'clsx'
 import SubmissionsModal from './SubmissionsModal'
@@ -76,13 +78,22 @@ function FormStats({ stats, onViewSubmissions }: FormStatsProps) {
 }
 
 interface EmbedCodeSectionProps {
-  readonly iframeUrl: string
-  readonly iframeEmbed: string
+  readonly form: FeedbackForm
+  readonly apiEndpoint: string
   readonly copied: string | null
   readonly onCopy: (text: string, id: string) => void
 }
 
-function EmbedCodeSection({ iframeUrl, iframeEmbed, copied, onCopy }: EmbedCodeSectionProps) {
+function EmbedCodeSection({ form, apiEndpoint, copied, onCopy }: EmbedCodeSectionProps) {
+  // Built here, from the one shared builder, because this section is the only
+  // consumer of both spellings — and the QR below encodes the same string, so a
+  // second construction site would let the printed URL and the scanned one drift.
+  const iframeUrl = feedbackFormPublicUrl(apiEndpoint, form.form_id)
+  const iframeEmbed = `<iframe 
+  src="${iframeUrl}"
+  style="width: 100%; min-height: 400px; border: none;"
+  title="${form.name}"
+></iframe>`
   return (
     <div className="mt-3 space-y-3">
       <div>
@@ -112,6 +123,9 @@ function EmbedCodeSection({ iframeUrl, iframeEmbed, copied, onCopy }: EmbedCodeS
           <code>{iframeEmbed}</code>
         </pre>
       </div>
+      {/* Same address as the Direct Link above, as scannable modules — for the
+          room, where nobody is going to type that URL off a slide. */}
+      <FormQrCode apiEndpoint={apiEndpoint} formId={form.form_id} formName={form.name} />
     </div>
   )
 }
@@ -140,13 +154,6 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
     setCopied(id)
     setTimeout(() => setCopied(null), 2000)
   }
-
-  const iframeUrl = `${apiEndpoint}/feedback-forms/${form.form_id}/iframe`
-  const iframeEmbed = `<iframe 
-  src="${iframeUrl}"
-  style="width: 100%; min-height: 400px; border: none;"
-  title="${form.name}"
-></iframe>`
 
   return (
     <>
@@ -228,8 +235,8 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
           
           {showEmbed && (
             <EmbedCodeSection
-              iframeUrl={iframeUrl}
-              iframeEmbed={iframeEmbed}
+              form={form}
+              apiEndpoint={apiEndpoint}
               copied={copied}
               onCopy={copyToClipboard}
             />

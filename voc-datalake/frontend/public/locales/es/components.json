@@ -117,6 +117,10 @@
     "viewDetails": "Ver detalles",
     "webScraper": "Recolector web"
   },
+  "formQrCode": {
+    "accessibleName": "Código QR del formulario de opinión {{formName}}",
+    "caption": "Escanea para abrir este formulario en el móvil"
+  },
   "personaExport": {
     "copied": "¡Copiado!",
     "copyMarkdown": "Copiar como Markdown",
