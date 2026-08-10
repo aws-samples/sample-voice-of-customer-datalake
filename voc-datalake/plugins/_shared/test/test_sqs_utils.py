@@ -25,6 +25,14 @@ Negative Id raises RuntimeError (no wrong item)    test_negative_id_raises_witho
 Non-string Id raises RuntimeError (no TypeError)    test_non_string_id_type_raises_runtime_error_not_type_error
 Unaccounted entries raise instead of vanishing      test_unaccounted_entries_raise_rather_than_silently_vanish
 Unaccounted entry named in the RuntimeError         test_unaccounted_entry_is_named_in_the_error
+Metric emitted when a batch call raises mid-loop    test_metric_emitted_when_send_raises_midway
+Out-of-range Successful Id does not inflate metric  test_out_of_range_successful_id_does_not_inflate_metric
+Duplicated Successful Id does not inflate metric    test_duplicated_successful_id_does_not_inflate_metric
+Reconciliation log states entries returned          test_reconciliation_log_reports_entries_returned_not_distinct_ids
+Unmappable Id counted once, not twice               test_invalid_id_is_not_double_counted
+                                                    test_missing_id_is_not_double_counted
+ids=[] holds feedback ids, not SQS artefacts        test_invalid_id_artefact_not_reported_as_feedback_id
+Unmappable Id still escalates if fully accounted    test_unmappable_failed_id_escalates_when_nothing_unaccounted
 Full message body not logged (only id field)        test_personal_data_not_logged
 Return value = successfully enqueued count          test_return_value_is_enqueued_count
 """
@@ -305,8 +313,9 @@ class TestSendMessagesToQueueFailureHandling:
         Reverts-to-catch: the old ``int(failed.get('Id', 0))`` default maps a
         missing Id to index 0, silently blaming the wrong item and potentially
         leaving the actual failed entry untracked.  The guard introduced by
-        this fix catches the missing Id, logs an error, and appends
-        ('unknown', code) to permanent_failures so RuntimeError is still raised.
+        this fix catches the missing Id and logs an error; the submitted entry it
+        refers to is left unaccounted, so reconciliation records the real item and
+        RuntimeError is still raised.
         """
         send_messages_to_queue = _import_fn()
         items = [{"id": "item-0", "text": "x"}, {"id": "item-1", "text": "y"}]
@@ -631,6 +640,272 @@ class TestSendMessagesToQueueFailureHandling:
         mock_metrics.add_metric.assert_called_once_with(
             name="ItemsIngested", unit="Count", value=7
         )
+
+
+class TestSendMessagesToQueueMetricAccounting:
+    """The metric must equal what actually landed on the queue — never less
+    because of an exception, never more because of a malformed response."""
+
+    def test_metric_emitted_when_send_raises_midway(self):
+        """If send_message_batch raises part-way through a multi-batch send, the
+        metric must still record the items enqueued by the earlier batches.
+
+        Reverts-to-catch: with ``metrics.add_metric`` after the loop rather than
+        in a ``finally``, the exception propagates and the metric is never
+        emitted — so ten items sit on the queue while ItemsIngested records
+        nothing, making what actually landed unrecoverable from metrics.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": f"i{i}", "text": "x"} for i in range(15)]
+
+        boom = Exception("ClientError: ServiceUnavailable")
+        sqs = _make_sqs([_success_response(10), boom])
+
+        with (
+            patch("_shared.sqs_utils.metrics") as mock_metrics,
+            pytest.raises(Exception, match="ServiceUnavailable"),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                initial_delay=0,
+            )
+
+        # The 10 items enqueued by the first batch must still be counted.
+        mock_metrics.add_metric.assert_called_once_with(
+            name="ItemsIngested", unit="Count", value=10
+        )
+
+    def test_out_of_range_successful_id_does_not_inflate_metric(self):
+        """A Successful entry whose Id was never submitted must not be counted.
+
+        Reverts-to-catch: ``total_sent += len(resp["Successful"])`` credits the
+        metric for a success that never happened — 1 item submitted and
+        Successful=[{'Id': '99'}] emits value=1 while zero items were confirmed.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}]
+        sqs = _make_sqs([{"Successful": [{"Id": "99"}], "Failed": []}])
+
+        with (
+            patch("_shared.sqs_utils.metrics") as mock_metrics,
+            pytest.raises(RuntimeError, match="i0"),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                initial_delay=0,
+            )
+
+        mock_metrics.add_metric.assert_called_once_with(
+            name="ItemsIngested", unit="Count", value=0
+        )
+
+    def test_duplicated_successful_id_does_not_inflate_metric(self):
+        """A repeated Successful Id counts once, not twice.
+
+        Reverts-to-catch: counting the raw list length lets a duplicated Id
+        report two confirmations for one submitted entry, so the metric exceeds
+        the number of items that actually reached the queue.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}, {"id": "i1", "text": "y"}]
+        sqs = _make_sqs([{"Successful": [{"Id": "0"}, {"Id": "0"}], "Failed": []}])
+
+        with (
+            patch("_shared.sqs_utils.metrics") as mock_metrics,
+            pytest.raises(RuntimeError, match="i1"),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                initial_delay=0,
+            )
+
+        mock_metrics.add_metric.assert_called_once_with(
+            name="ItemsIngested", unit="Count", value=1
+        )
+
+    def test_reconciliation_log_reports_entries_returned_not_distinct_ids(self):
+        """The reconciliation log must state how many entries SQS returned, not
+        the size of the deduplicated Id set.
+
+        Reverts-to-catch: logging ``len(reported_ids)`` reports "accounted for 1
+        of 2" for a response that actually returned two Successful entries,
+        understating the discrepancy in the primary diagnostic for exactly the
+        malformed-response case reconciliation exists to surface.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}, {"id": "i1", "text": "y"}]
+        sqs = _make_sqs([{"Successful": [{"Id": "0"}, {"Id": "0"}], "Failed": []}])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            patch("_shared.sqs_utils.logger") as mock_logger,
+            pytest.raises(RuntimeError, match="i1"),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                initial_delay=0,
+            )
+
+        recon = [
+            c.args
+            for c in mock_logger.error.call_args_list
+            if "unaccounted" in str(c.args[0])
+        ]
+        assert recon, "Expected a reconciliation error log"
+        _fmt, *args = recon[0]
+        # 2 entries returned, covering 1 of 2 submitted, 1 unaccounted.
+        assert args[0] == 2, (
+            f"Expected the log to report 2 entries returned, got {args[0]}"
+        )
+        assert args[1] == 1
+        assert args[2] == 2
+        assert args[3] == 1
+
+
+class TestSendMessagesToQueueFailureCounting:
+    """Each lost item must be reported exactly once, by its own feedback id."""
+
+    def test_invalid_id_is_not_double_counted(self):
+        """An unmappable Failed Id must produce one failure, not two.
+
+        Reverts-to-catch: recording ``(str(raw_id), code)`` in the invalid-Id
+        branch *and* letting reconciliation record the real item means a 1-item
+        batch reports "2 item(s) could not be enqueued" — an inflated count in
+        the log and error an operator or alarm reasons about.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}]
+        sqs = _make_sqs([
+            {
+                "Successful": [],
+                "Failed": [
+                    {"Id": "abc", "SenderFault": True, "Code": "X", "Message": "m"}
+                ],
+            }
+        ])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            pytest.raises(RuntimeError, match=r"^1 test item\(s\)"),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+                initial_delay=0,
+            )
+
+    def test_missing_id_is_not_double_counted(self):
+        """A Failed entry with no Id must produce one failure, not two."""
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}, {"id": "i1", "text": "y"}]
+        sqs = _make_sqs([
+            {
+                "Successful": [{"Id": "0"}],
+                "Failed": [{"SenderFault": True, "Code": "X", "Message": "m"}],
+            }
+        ])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            pytest.raises(RuntimeError, match=r"^1 test item\(s\)") as exc_info,
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+                initial_delay=0,
+            )
+
+        # The real lost item is named; the 'unknown' placeholder is not used.
+        assert "i1" in str(exc_info.value)
+        assert "unknown" not in str(exc_info.value)
+
+    def test_invalid_id_artefact_not_reported_as_feedback_id(self):
+        """``ids=[...]`` must contain only real feedback ids, never the raw Id
+        artefact SQS returned.
+
+        Reverts-to-catch: appending ``str(raw_id)`` puts 'abc' beside 'i0' in the
+        error, so a reader cannot tell which entries are feedback ids and which
+        are SQS artefacts.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}]
+        sqs = _make_sqs([
+            {
+                "Successful": [],
+                "Failed": [
+                    {"Id": "abc", "SenderFault": True, "Code": "X", "Message": "m"}
+                ],
+            }
+        ])
+
+        with patch("_shared.sqs_utils.metrics"), pytest.raises(RuntimeError) as exc_info:
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+                initial_delay=0,
+            )
+
+        assert "i0" in str(exc_info.value)
+        assert "abc" not in str(exc_info.value)
+
+    def test_unmappable_failed_id_escalates_when_nothing_unaccounted(self):
+        """A reported failure must never vanish, even if the response also claims
+        every submitted entry as Successful.
+
+        Reverts-to-catch: moving the unmappable-Id bookkeeping to
+        "log only, record nothing" without the escalation guard lets a
+        self-contradictory response (all entries Successful *and* a Failed entry
+        with a bad Id) return normally, reintroducing silent loss.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}]
+        sqs = _make_sqs([
+            {
+                "Successful": [{"Id": "0"}],
+                "Failed": [
+                    {"Id": "abc", "SenderFault": True, "Code": "X", "Message": "m"}
+                ],
+            }
+        ])
+
+        with patch("_shared.sqs_utils.metrics"), pytest.raises(RuntimeError):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+                initial_delay=0,
+            )
 
 
 class TestSendMessagesToQueueRetryBehaviour:
