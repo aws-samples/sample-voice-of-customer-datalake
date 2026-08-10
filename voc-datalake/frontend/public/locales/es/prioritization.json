@@ -46,6 +46,11 @@
     "medium": "Prioridad media",
     "none": "Sin puntuar"
   },
+  "qr": {
+    "close": "Cerrar",
+    "show": "Mostrar código QR",
+    "title": "Código QR"
+  },
   "scores": {
     "confidence": "Confianza",
     "confidenceDescription": "Certeza en las estimaciones de impacto y TdC",

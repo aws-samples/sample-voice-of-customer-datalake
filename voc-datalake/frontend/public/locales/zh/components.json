@@ -110,6 +110,11 @@
     "viewDetails": "查看详情",
     "webScraper": "网页爬虫"
   },
+  "formQrCode": {
+    "accessibleName": "“{{formName}}”反馈表单的二维码",
+    "caption": "扫码在手机上打开此表单",
+    "unavailable": "在设置中配置API端点后才能显示二维码"
+  },
   "personaExport": {
     "copied": "已复制！",
     "copyMarkdown": "复制为 Markdown",

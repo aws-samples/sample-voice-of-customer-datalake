@@ -110,6 +110,11 @@
     "viewDetails": "세부정보 보기",
     "webScraper": "웹 스크래퍼"
   },
+  "formQrCode": {
+    "accessibleName": "{{formName}} 피드백 양식의 QR 코드",
+    "caption": "스캔하여 이 양식을 휴대전화에서 열기",
+    "unavailable": "설정에서 API 엔드포인트를 구성할 때까지 QR 코드를 사용할 수 없습니다"
+  },
   "personaExport": {
     "copied": "복사됨!",
     "copyMarkdown": "Markdown으로 복사",

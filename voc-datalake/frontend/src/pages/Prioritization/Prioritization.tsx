@@ -112,12 +112,14 @@ function SortControls({
 const NO_LINKED_FORMS: readonly LinkedForm[] = []
 
 function PRFAQList({
-  isLoading, prfaqs, scores, linkedFormsByDocument, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
+  isLoading, prfaqs, scores, linkedFormsByDocument, apiEndpoint, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
 }: {
   readonly isLoading: boolean
   readonly prfaqs: PRFAQWithProject[]
   readonly scores: Record<string, PrioritizationScore>
   readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
+  /** Passed through to each row's linked-form panel — see PRFAQRow. */
+  readonly apiEndpoint: string
   readonly expandedId: string | null
   readonly onToggleExpand: (id: string) => void
   readonly onUpdateScore: (docId: string, field: keyof PrioritizationScore, value: number | string) => void
@@ -143,6 +145,7 @@ function PRFAQList({
           index={index}
           score={getScore(scores, prfaq.document_id)}
           linkedForms={linkedFormsByDocument.get(prfaq.document_id) ?? NO_LINKED_FORMS}
+          apiEndpoint={apiEndpoint}
           isExpanded={expandedId === prfaq.document_id}
           onToggle={() => onToggleExpand(prfaq.document_id)}
           onUpdateScore={(field, value) => onUpdateScore(prfaq.document_id, field, value)}
@@ -333,6 +336,7 @@ export default function Prioritization() {
         prfaqs={sortedPRFAQs}
         scores={scores}
         linkedFormsByDocument={linkedFormsByDocument}
+        apiEndpoint={config.apiEndpoint}
         expandedId={expandedId}
         onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
         onUpdateScore={updateScore}

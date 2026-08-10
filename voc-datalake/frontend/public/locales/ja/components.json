@@ -110,6 +110,11 @@
     "viewDetails": "詳細を表示",
     "webScraper": "ウェブスクレイパー"
   },
+  "formQrCode": {
+    "accessibleName": "フィードバックフォーム「{{formName}}」のQRコード",
+    "caption": "スキャンしてこのフォームをスマートフォンで開きます",
+    "unavailable": "設定でAPIエンドポイントを構成するまでQRコードは利用できません"
+  },
   "personaExport": {
     "copied": "コピーしました！",
     "copyMarkdown": "Markdownとしてコピー",

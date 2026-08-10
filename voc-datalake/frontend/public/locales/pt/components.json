@@ -117,6 +117,11 @@
     "viewDetails": "Ver Detalhes",
     "webScraper": "Coletor web"
   },
+  "formQrCode": {
+    "accessibleName": "Código QR do formulário de feedback {{formName}}",
+    "caption": "Escaneie para abrir este formulário no celular",
+    "unavailable": "Código QR indisponível até que o endpoint da API seja configurado nas Configurações"
+  },
   "personaExport": {
     "copied": "Copiado!",
     "copyMarkdown": "Copiar como Markdown",

@@ -46,6 +46,11 @@
     "medium": "중간 우선순위",
     "none": "평가되지 않음"
   },
+  "qr": {
+    "close": "닫기",
+    "show": "QR 코드 표시",
+    "title": "QR 코드"
+  },
   "scores": {
     "confidence": "신뢰도",
     "confidenceDescription": "영향도 및 출시 시간 추정의 확실성",

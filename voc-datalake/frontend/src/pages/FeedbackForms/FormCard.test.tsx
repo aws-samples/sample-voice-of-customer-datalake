@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18next'
 
@@ -47,9 +48,9 @@ function buildForm(): FeedbackForm {
 
 const noop = () => undefined
 
-function renderCard(form: FeedbackForm) {
+function renderCard(form: FeedbackForm, apiEndpoint = 'https://api.example.com') {
   return render(
-    <FormCard form={form} onEdit={noop} onDelete={noop} onToggle={noop} apiEndpoint="https://api.example.com" />,
+    <FormCard form={form} onEdit={noop} onDelete={noop} onToggle={noop} apiEndpoint={apiEndpoint} />,
     { wrapper: createWrapper() },
   )
 }
@@ -104,6 +105,48 @@ describe('FormCard (issue #171)', () => {
     const { t } = i18n
     expect(screen.getByRole('button', { name: t('feedbackForms:card.enableForm') })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('feedbackForms:card.disableForm') })).not.toBeInTheDocument()
+  })
+
+  it('offers a scannable QR beside the public URL it already prints', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm())
+
+    await user.click(screen.getByText('Show Embed Code'))
+
+    // The address a customer pastes into a page and the address a phone scans in
+    // a meeting are the same string, built once — so both appear here together.
+    expect(screen.getByText('https://api.example.com/feedback-forms/form_1/iframe')).toBeInTheDocument()
+    expect(screen.getByRole('img', {
+      name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
+    })).toBeInTheDocument()
+  })
+
+  it('escapes a double quote in the form name so the embed snippet stays well formed', async () => {
+    const user = userEvent.setup()
+    renderCard({ ...buildForm(), name: 'The "Best" Form & Co' })
+
+    await user.click(screen.getByText('Show Embed Code'))
+
+    // The snippet is pasted verbatim into the customer's own page: a raw quote
+    // closes title=" early and hands them broken markup to debug.
+    const snippet = screen.getByText((_, node) => node?.tagName === 'CODE' && (node.textContent ?? '').includes('<iframe'))
+    expect(snippet.textContent).toContain('title="The &quot;Best&quot; Form &amp; Co"')
+    expect(snippet.textContent).not.toContain('title="The "Best"')
+  })
+
+  it('offers no link, snippet or QR when the endpoint cannot address the form', async () => {
+    const user = userEvent.setup()
+    // Reachable with a non-absolute endpoint: the page gate only checks for a
+    // non-empty string, so '/api' or a scheme-less paste arrives here.
+    renderCard(buildForm(), '/api')
+
+    await user.click(screen.getByText('Show Embed Code'))
+
+    expect(screen.getByText(i18n.t('feedbackForms:configureApiFirst'))).toBeInTheDocument()
+    expect(screen.queryByText(/feedback-forms\/form_1\/iframe/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('img', {
+      name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
+    })).not.toBeInTheDocument()
   })
 
   it('survives a runtime record without a theme (the #171 crash)', () => {

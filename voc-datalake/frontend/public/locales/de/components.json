@@ -110,6 +110,11 @@
     "viewDetails": "Details anzeigen",
     "webScraper": "Web-Scraper"
   },
+  "formQrCode": {
+    "accessibleName": "QR-Code für das Feedback-Formular {{formName}}",
+    "caption": "Scannen, um dieses Formular auf dem Smartphone zu öffnen",
+    "unavailable": "QR-Code nicht verfügbar, bis der API-Endpunkt in den Einstellungen konfiguriert ist"
+  },
   "personaExport": {
     "copied": "Kopiert!",
     "copyMarkdown": "Als Markdown kopieren",

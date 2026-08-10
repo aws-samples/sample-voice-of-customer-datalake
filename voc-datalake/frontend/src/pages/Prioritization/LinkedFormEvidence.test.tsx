@@ -34,8 +34,15 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
+/**
+ * Mutable so one test can drive the page with an endpoint that cannot address a
+ * form's public page. The panel itself takes the endpoint as a prop; the page is
+ * where it is read, which is exactly the seam this exercises.
+ */
+const mockConfig = vi.hoisted(() => ({ apiEndpoint: 'https://api.example.com' }))
+
 vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({ config: { apiEndpoint: 'https://api.example.com' } }),
+  useConfigStore: () => ({ config: mockConfig }),
 }))
 
 vi.mock('react-markdown', () => ({
@@ -90,9 +97,15 @@ function readMetricValue(label: string): string | null {
   return labelNode.parentElement?.firstElementChild?.textContent ?? null
 }
 
+/** How assistive technology names the QR of one form — the QR carries no text. */
+function qrName(formName: string): string {
+  return t('components:formQrCode.accessibleName', { formName })
+}
+
 describe('collected feedback on a prioritization row', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockConfig.apiEndpoint = 'https://api.example.com'
     mockGetProjects.mockResolvedValue({ projects: [project] })
     mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, prd] })
     mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
@@ -230,6 +243,106 @@ describe('collected feedback on a prioritization row', () => {
       expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
     })
     expect(mockGetFeedbackFormStats).not.toHaveBeenCalled()
+  })
+
+  it('keeps the QR out of the row until it is asked for', async () => {
+    mockGetFeedbackForms.mockResolvedValue({
+      forms: [{ form_id: 'form_1', name: 'PR/FAQ concept test', project_id: 'p1', document_id: 'doc_prfaq' }],
+    })
+
+    await expandRow('Feature A PR/FAQ')
+
+    await waitFor(() => {
+      expect(screen.getByText('PR/FAQ concept test')).toBeInTheDocument()
+    })
+    // A QR needs ~200px to scan, and a pitch discusses one artifact at a time —
+    // the row's resting state stays the count and the average it shipped with.
+    expect(screen.getByText('12')).toBeInTheDocument()
+    expect(screen.getByText('3.2')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: qrName('PR/FAQ concept test') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('opens a scannable QR for the linked form, and closes it again', async () => {
+    mockGetFeedbackForms.mockResolvedValue({
+      forms: [{ form_id: 'form_1', name: 'PR/FAQ concept test', project_id: 'p1', document_id: 'doc_prfaq' }],
+    })
+    const user = userEvent.setup()
+
+    await expandRow('Feature A PR/FAQ')
+    await waitFor(() => {
+      expect(screen.getByText('PR/FAQ concept test')).toBeInTheDocument()
+    })
+    // A button, so it is reachable and operable from the keyboard.
+    await user.click(screen.getByRole('button', { name: t('prioritization:qr.show') }))
+
+    const dialog = screen.getByRole('dialog')
+    // Named, not an anonymous overlay — and the QR inside it names its form.
+    expect(dialog).toHaveAccessibleName(t('prioritization:qr.title'))
+    expect(screen.getByRole('img', { name: qrName('PR/FAQ concept test') })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('spends no extra request on the QR beyond what the row already fetched', async () => {
+    mockGetFeedbackForms.mockResolvedValue({
+      forms: [{ form_id: 'form_1', name: 'PR/FAQ concept test', project_id: 'p1', document_id: 'doc_prfaq' }],
+    })
+    const user = userEvent.setup()
+
+    await expandRow('Feature A PR/FAQ')
+    await waitFor(() => {
+      expect(mockGetFeedbackFormStats).toHaveBeenCalledTimes(1)
+    })
+    const formsListCalls = mockGetFeedbackForms.mock.calls.length
+
+    await user.click(screen.getByRole('button', { name: t('prioritization:qr.show') }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+    // The row already holds the form object; the QR is derived from its id. A
+    // fetch here would be paid on a page that is already N+1 on project reads.
+    expect(mockGetFeedbackFormStats).toHaveBeenCalledTimes(1)
+    expect(mockGetFeedbackForms.mock.calls.length).toBe(formsListCalls)
+  })
+
+  it('says why there is no QR when the endpoint cannot address the form', async () => {
+    // A scheme-less paste: non-empty, so the page's queries run and the row is
+    // fully populated, but nothing built from it opens on a phone.
+    mockConfig.apiEndpoint = 'api.example.com'
+    mockGetFeedbackForms.mockResolvedValue({
+      forms: [{ form_id: 'form_1', name: 'PR/FAQ concept test', project_id: 'p1', document_id: 'doc_prfaq' }],
+    })
+    const user = userEvent.setup()
+
+    await expandRow('Feature A PR/FAQ')
+    await waitFor(() => {
+      expect(screen.getByText('PR/FAQ concept test')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: t('prioritization:qr.show') }))
+
+    // The dialog opens and explains itself rather than presenting a symbol that
+    // scans perfectly and opens nothing.
+    expect(screen.getByText(t('components:formQrCode.unavailable'))).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: qrName('PR/FAQ concept test') })).not.toBeInTheDocument()
+  })
+
+  it('withholds the QR when the linked form no longer exists', async () => {
+    mockGetFeedbackForms.mockResolvedValue({
+      forms: [{ form_id: 'form_gone', name: 'Deleted form', project_id: 'p1', document_id: 'doc_prfaq' }],
+    })
+    mockGetFeedbackFormStats.mockRejectedValue(new Error('Form not found'))
+
+    await expandRow('Feature A PR/FAQ')
+
+    await waitFor(() => {
+      expect(screen.getByText(t('prioritization:evidence.unavailable'))).toBeInTheDocument()
+    })
+    // Its public page is gone too, so a QR would send the room to a 404.
+    expect(screen.queryByRole('button', { name: t('prioritization:qr.show') })).not.toBeInTheDocument()
   })
 
   it('renders the row when the forms list request fails', async () => {
