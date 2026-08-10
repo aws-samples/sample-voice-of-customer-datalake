@@ -2,10 +2,12 @@
  * @fileoverview Regression tests for the history payload ChatTab sends.
  *
  * Project chat posts to the same `/chat/stream` endpoint as VOC chat, so the
- * same server cap and the same Bedrock Converse shape rules apply.  Roundtable
- * mode makes this path harder than the VOC one: `buildRoundtableMessages`
- * stores one assistant message *per persona*, so the stored list contains runs
- * of consecutive assistant turns that Bedrock would reject.
+ * same server window and the same Bedrock Converse shape rules apply.
+ * Roundtable mode makes this path harder than the VOC one:
+ * `buildRoundtableMessages` stores one assistant message *per persona*, so the
+ * stored list contains runs of consecutive assistant turns that Bedrock would
+ * reject — and those runs carry an `activePersona` that has to survive the merge
+ * that repairs them, or several personas end up speaking with one voice.
  */
 import {
   describe, it, expect, vi, beforeAll, afterAll, beforeEach,
@@ -86,14 +88,17 @@ describe('ChatTab history payload', () => {
           {
             role: 'assistant',
             content: 'persona A says',
+            activePersona: { name: 'Priya, CFO' },
           },
           {
             role: 'assistant',
             content: 'persona B says',
+            activePersona: { name: 'Sam, PM' },
           },
           {
             role: 'assistant',
             content: 'persona C says',
+            activePersona: { name: 'Dana, Eng' },
           },
           {
             role: 'user',
@@ -102,6 +107,7 @@ describe('ChatTab history payload', () => {
           {
             role: 'assistant',
             content: 'pricing answer',
+            activePersona: { name: 'Priya, CFO' },
           },
         ],
       },
@@ -116,6 +122,65 @@ describe('ChatTab history payload', () => {
     expect(history[1].content).toContain('persona A says')
     expect(history[1].content).toContain('persona B says')
     expect(history[1].content).toContain('persona C says')
+    // Nor may attribution be dropped: a roundtable exists to surface
+    // disagreement, and a merged turn with the names stripped reads as one
+    // speaker contradicting itself.  The store holds the name, so it must reach
+    // the model.
+    expect(history[1].content).toContain('Priya, CFO')
+    expect(history[1].content).toContain('Sam, PM')
+    expect(history[1].content).toContain('Dana, Eng')
+    // Each name must sit on its own contribution rather than being collected at
+    // the top, so the model can tell who said what.
+    expect(history[1].content).toContain('Sam, PM: persona B says')
+  })
+
+  it('leaves a message with no persona unprefixed', async () => {
+    // Single-persona project chat and any pre-existing stored message carry no
+    // `activePersona`, so attribution must be additive: no stray separator, and
+    // no 'undefined:' leaking into the payload.
+    useProjectChatStore.setState({
+      messagesByProject: {
+        proj_history: [
+          {
+            role: 'user',
+            content: 'a question',
+          },
+          {
+            role: 'assistant',
+            content: 'an unattributed answer',
+          },
+        ],
+      },
+    })
+
+    await sendAQuestion()
+
+    const history = sentHistory()
+    expect(history[1].content).toBe('an unattributed answer')
+  })
+
+  it('does not prefix a user turn even when one carries a persona', async () => {
+    // `activePersona` is only meaningful on an assistant turn.  Prefixing a user
+    // turn would put words in the user's mouth, so the guard is on role too.
+    useProjectChatStore.setState({
+      messagesByProject: {
+        proj_history: [
+          {
+            role: 'user',
+            content: 'a question',
+            activePersona: { name: 'Priya, CFO' },
+          },
+          {
+            role: 'assistant',
+            content: 'an answer',
+          },
+        ],
+      },
+    })
+
+    await sendAQuestion()
+
+    expect(sentHistory()[0].content).toBe('a question')
   })
 
   it('caps a long project conversation and keeps it starting with a user turn', async () => {
