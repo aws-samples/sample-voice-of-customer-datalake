@@ -69,8 +69,48 @@ export interface SynthResult {
    * template structure it is actually asserting about.
    */
   canonicalTemplate(stackName: string): string;
-  /** Everything cdk-nag and CDK reported: warnings, errors, info. */
-  annotations: Array<{ stack: string; type: string; data: string }>;
+  /**
+   * Every diagnostic CDK and cdk-nag reported: warnings, errors and info.
+   *
+   * Read from the per-stack `<stack>.metadata.json` files, NOT from
+   * `manifest.json`'s `artifacts[*].metadata`. Cloud assembly manifest v54
+   * moved stack metadata out of the manifest into those side files, leaving the
+   * manifest key absent — which silently emptied this list and made every
+   * "synthesizes with zero warnings" assertion vacuous. `readsRealAnnotations`
+   * below keeps that from recurring undetected.
+   */
+  annotations: SynthAnnotation[];
+  /**
+   * Whether the collector found ANY annotation at all, of any type.
+   *
+   * A synth always emits `aws:cdk:logicalId` and `aws:cdk:creationStack`
+   * entries, so `false` here means the collector is reading the wrong place
+   * again rather than that the app is clean. Asserted by
+   * lib/test-support/synth-app.test.ts, so a zero-warnings check can never pass
+   * merely because nothing was parsed.
+   */
+  readsRealAnnotations: boolean;
+}
+
+/** One CDK or cdk-nag annotation, located by the construct path that raised it. */
+export interface SynthAnnotation {
+  /** Stack artifact id the annotation belongs to. */
+  stack: string;
+  /** Construct path that raised it, e.g. `/VocApiStack/Role/DefaultPolicy/Resource`. */
+  path: string;
+  /** `aws:cdk:warning`, `aws:cdk:error`, `aws:cdk:info`, `aws:cdk:logicalId`, … */
+  type: string;
+  /** The message, or a JSON rendering of a non-string payload. */
+  data: string;
+}
+
+/** Annotation types a clean synth must not produce. */
+export const DIAGNOSTIC_ANNOTATION_TYPES = ['aws:cdk:warning', 'aws:cdk:error', 'aws:cdk:info'] as const;
+
+/** The diagnostics (warnings/errors/info) among `annotations`. */
+export function diagnostics(result: SynthResult): SynthAnnotation[] {
+  const types: readonly string[] = DIAGNOSTIC_ANNOTATION_TYPES;
+  return result.annotations.filter((annotation) => types.includes(annotation.type));
 }
 
 /** Thrown when `bin/voc-datalake.ts` exits non-zero (a synth-time guard firing). */
@@ -85,15 +125,21 @@ export class SynthFailure extends Error {
 export function synthApp(context: Record<string, unknown> = {}): SynthResult {
   const outdir = mkdtempSync(join(tmpdir(), 'voc-synth-'));
   try {
+    // `ts-node/register` is a documented entry point; `ts-node/dist/bin` is
+    // ts-node's internal file layout, and a minor release that reorganizes
+    // dist/ would break both synth suites with a module-resolution error that
+    // says nothing about the real cause. TS_NODE_PREFER_TS_EXTS is the env-var
+    // form of the `--prefer-ts-exts` flag the bin shim used to take.
     execFileSync(
       process.execPath,
-      [require.resolve('ts-node/dist/bin'), '--prefer-ts-exts', join(PROJECT_ROOT, 'bin', 'voc-datalake.ts')],
+      ['-r', require.resolve('ts-node/register'), join(PROJECT_ROOT, 'bin', 'voc-datalake.ts')],
       {
         cwd: PROJECT_ROOT,
         encoding: 'utf8',
         stdio: 'pipe',
         env: {
           ...process.env,
+          TS_NODE_PREFER_TS_EXTS: 'true',
           CDK_OUTDIR: outdir,
           CDK_DEFAULT_ACCOUNT: SYNTH_ACCOUNT,
           CDK_DEFAULT_REGION: SYNTH_REGION,
@@ -114,26 +160,63 @@ function describeExecError(error: unknown): string {
   return parts.join('\n');
 }
 
-function readAssembly(outdir: string): SynthResult {
+/**
+ * Every annotation in the assembly, gathered from the per-stack
+ * `<stack>.metadata.json` files.
+ *
+ * Shape of one of those files (cloud assembly manifest v54):
+ *
+ *   { "/VocApiStack/Role/DefaultPolicy/Resource": [
+ *       { "type": "aws:cdk:error", "data": "AwsSolutions-IAM5[...]: ..." } ] }
+ *
+ * Both `manifest.json` (v53 and earlier) and these files are read, so the
+ * collector survives the manifest version moving in either direction — the
+ * failure mode being fixed here is precisely that it silently found nothing.
+ */
+function readAnnotations(outdir: string): SynthAnnotation[] {
+  const annotations: SynthAnnotation[] = [];
+
+  const collect = (stack: string, metadata: unknown): void => {
+    if (!isRecord(metadata)) return;
+    for (const [path, entries] of Object.entries(metadata)) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        if (!isRecord(entry) || typeof entry.type !== 'string') continue;
+        const data = typeof entry.data === 'string' ? entry.data : JSON.stringify(entry.data ?? null);
+        annotations.push({ stack, path, type: entry.type, data });
+      }
+    }
+  };
+
   const manifest: unknown = JSON.parse(readFileSync(join(outdir, 'manifest.json'), 'utf8'));
   const artifacts = isRecord(manifest) && isRecord(manifest.artifacts) ? manifest.artifacts : {};
+  for (const [stack, artifact] of Object.entries(artifacts)) {
+    if (isRecord(artifact)) collect(stack, artifact.metadata);
+  }
 
+  const suffix = '.metadata.json';
+  for (const entry of readdirSync(outdir).filter((file) => file.endsWith(suffix))) {
+    const stack = entry.slice(0, -suffix.length);
+    collect(stack, JSON.parse(readFileSync(join(outdir, entry), 'utf8')));
+  }
+
+  return annotations;
+}
+
+/**
+ * Read an already-synthesized cloud assembly.
+ *
+ * Exported so lib/test-support/synth-app.test.ts can point the collector at an
+ * assembly whose findings it KNOWS about, which is the only way to tell "this
+ * app is clean" apart from "this collector parses nothing".
+ */
+export function readAssembly(outdir: string): SynthResult {
   const stackNames = readdirSync(outdir)
     .filter((entry) => entry.endsWith('.template.json'))
     .map((entry) => entry.slice(0, -'.template.json'.length))
     .sort();
 
-  const annotations: SynthResult['annotations'] = [];
-  for (const [stack, artifact] of Object.entries(artifacts)) {
-    if (!isRecord(artifact) || !isRecord(artifact.metadata)) continue;
-    for (const entries of Object.values(artifact.metadata)) {
-      if (!Array.isArray(entries)) continue;
-      for (const entry of entries) {
-        if (!isRecord(entry) || typeof entry.type !== 'string') continue;
-        annotations.push({ stack, type: entry.type, data: JSON.stringify(entry.data ?? null) });
-      }
-    }
-  }
+  const annotations = readAnnotations(outdir);
 
   const raw = (stackName: string): string =>
     readFileSync(join(outdir, `${stackName}.template.json`), 'utf8');
@@ -142,6 +225,7 @@ function readAssembly(outdir: string): SynthResult {
     outdir,
     stackNames,
     annotations,
+    readsRealAnnotations: annotations.length > 0,
     template: (stackName) => {
       const parsed: unknown = JSON.parse(raw(stackName));
       if (!isRecord(parsed)) throw new Error(`${stackName}: template is not an object`);

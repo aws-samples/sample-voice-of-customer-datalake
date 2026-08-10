@@ -30,7 +30,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { nameInventory } from './test-support/name-inventory';
-import { BASELINE_PATH, synthApp, type Baseline } from './test-support/synth-app';
+import { BASELINE_PATH, diagnostics, synthApp, type Baseline } from './test-support/synth-app';
 
 const PROJECT_ROOT = join(__dirname, '..');
 
@@ -101,8 +101,12 @@ describe('the default (no deploymentPrefix) synth', () => {
 
   it('synthesizes with zero warnings', () => {
     // A clean `cdk synth` prints nothing; a new synth or cdk-nag warning is a
-    // regression, not noise.
-    const warnings = synthed.annotations.filter((a) => /warning|error/.test(a.type));
-    expect(warnings, JSON.stringify(warnings, null, 2)).toEqual([]);
+    // regression, not noise. `readsRealAnnotations` first, because an empty
+    // annotation list would otherwise read as "clean" whether the synth was
+    // clean or the collector was looking in the wrong place
+    // (lib/test-support/synth-app.test.ts pins the collector itself).
+    expect(synthed.readsRealAnnotations, 'the annotation collector found nothing at all').toBe(true);
+    const found = diagnostics(synthed);
+    expect(found, JSON.stringify(found, null, 2)).toEqual([]);
   });
 });

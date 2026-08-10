@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { nameInventory } from './test-support/name-inventory';
-import { SynthFailure, synthApp, SYNTH_ACCOUNT, SYNTH_REGION } from './test-support/synth-app';
+import { diagnostics, SynthFailure, synthApp, SYNTH_ACCOUNT, SYNTH_REGION } from './test-support/synth-app';
 
 /**
  * Short on purpose. The tightest budget in the app is the
@@ -162,9 +162,17 @@ describe('a prefixed deployment', () => {
   it('synthesizes with zero warnings', () => {
     // Notably this covers the cdk-nag suppressions, whose `appliesTo` regexes
     // quote the concrete ARN: a hardcoded `voc-ingestor-` there silently stops
-    // matching under a prefix and leaves a fresh IAM5 warning behind.
-    const warnings = prefixed.annotations.filter((a) => /warning|error/.test(a.type));
-    expect(warnings, JSON.stringify(warnings, null, 2)).toEqual([]);
+    // matching under a prefix and leaves a fresh IAM5 finding behind (at
+    // severity `aws:cdk:error`, not warning).
+    //
+    // The collector this reads is itself guarded — see
+    // lib/test-support/synth-app.test.ts. It has to be: an empty annotation
+    // list is indistinguishable from a clean synth, and that is exactly how
+    // this assertion previously passed while four IAM5 errors were being
+    // emitted.
+    expect(prefixed.readsRealAnnotations, 'the annotation collector found nothing at all').toBe(true);
+    const found = diagnostics(prefixed);
+    expect(found, JSON.stringify(found, null, 2)).toEqual([]);
   });
 });
 
