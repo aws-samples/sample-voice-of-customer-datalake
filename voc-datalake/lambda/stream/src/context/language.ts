@@ -2,33 +2,58 @@
  * Shared language-instruction helper.
  *
  * Single source of truth for:
- *   - the supported locale set (aligned with the eight shipped UI catalogues)
+ *   - the set of languages the model may be asked to ANSWER in
  *   - the human-readable language names used in model system prompts
  *   - `isSupportedLanguage`, the ONE runtime membership test for the allowlist
  *   - the `getLanguageInstruction` function consumed by both voc-context.ts and
  *     persona-prompt.ts
  *
- * The extra codes previously listed only in voc-context.ts (it, nl, ru, ar, hi,
- * sv, pl, tr) had no UI catalogue behind them.  They are intentionally omitted
- * from SUPPORTED_LANGUAGES so that `response_language` validation in schema.ts
- * can use this set as the single allowlist.  An unrecognised locale is silently
- * treated as English (the no-instruction case) rather than rejected — older or
- * third-party clients degrade gracefully.
+ * ## This is NOT the shipped-UI-catalogue list, and the distinction matters
+ *
+ * The frontend's own `i18n/languages.ts` decides which languages the *interface*
+ * is translated into (currently eight). This list decides which languages the
+ * *model* may be told to reply in — a different question, because the model
+ * answers fluently in languages we have no UI translation for.
+ *
+ * Conflating the two is how `it, nl, ru, ar, hi, sv, pl, tr` were dropped: they
+ * were removed for having no UI catalogue, which silently forced English on any
+ * API client that asked for them, even though nothing about safety required it.
+ * Safety comes from interpolating a name from LANGUAGE_NAMES below and never the
+ * caller's own string — so extending this list costs nothing and is purely a
+ * coverage decision. They are restored here.
+ *
+ * An unrecognised locale is still silently treated as English (the
+ * no-instruction case) rather than rejected, so older clients degrade gracefully.
+ * Region and script subtags (`pt-BR`, `zh-Hans`) are not accepted; a caller
+ * wanting those needs the base code today.
  */
 
-/** Locale codes that have a shipped UI catalogue and are accepted by the API. */
-export const SUPPORTED_LANGUAGES = ['de', 'en', 'es', 'fr', 'ja', 'ko', 'pt', 'zh'] as const;
+/** Language codes the model may be asked to answer in. */
+export const SUPPORTED_LANGUAGES = [
+  'ar', 'de', 'en', 'es', 'fr', 'hi', 'it', 'ja',
+  'ko', 'nl', 'pl', 'pt', 'ru', 'sv', 'tr', 'zh',
+] as const;
 
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
+// Keyed by the type, so adding a code above without naming it here is a compile
+// error rather than a silently unnamed language.
 const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
+  ar: 'Arabic',
   de: 'German',
   en: 'English',
   es: 'Spanish',
   fr: 'French',
+  hi: 'Hindi',
+  it: 'Italian',
   ja: 'Japanese',
   ko: 'Korean',
+  nl: 'Dutch',
+  pl: 'Polish',
   pt: 'Portuguese',
+  ru: 'Russian',
+  sv: 'Swedish',
+  tr: 'Turkish',
   zh: 'Chinese',
 };
 

@@ -48,9 +48,12 @@
  * exceeds the API Gateway request-payload limit, so the transport refuses first.
  * It is kept as a sanity bound only.
  *
- * `response_language` is constrained to SUPPORTED_LANGUAGES (the eight locales
- * that have a shipped UI catalogue).  Unrecognised values are silently coerced to
- * `undefined` so that older clients degrade to English instead of receiving a 400.
+ * `response_language` is constrained to SUPPORTED_LANGUAGES — the languages the
+ * model may be asked to answer in, which is deliberately WIDER than the set the UI
+ * is translated into. Safety here comes from interpolating a name from that
+ * module's table rather than the caller's own string, so the list's size is a
+ * coverage decision and not a security one. Unrecognised values are silently
+ * coerced to `undefined`, so older clients degrade to English rather than 400.
  */
 import { z } from 'zod';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from './context/language.js';
