@@ -43,44 +43,12 @@ import {
 } from './baseUrl'
 import * as runtimeConfigModule from '../runtimeConfig'
 import { authService } from '../services/auth'
+import { useAppOrigin } from '@test/location'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const TRUSTED_API = 'https://abc123.execute-api.us-east-1.amazonaws.com/v1'
 const TRUSTED_ORIGIN = 'https://abc123.execute-api.us-east-1.amazonaws.com'
-
-/** The document origin these tests assume when resolving relative URLs. */
-const APP_ORIGIN = 'http://localhost:3000'
-
-/**
- * Pin `window.location` for the duration of a suite.
- *
- * The origin check resolves relative URLs against the document origin, so the
- * origin has to be a known quantity. Vitest shares one jsdom environment across
- * files (`poolOptions.forks.singleFork`) and several other suites swap
- * `window.location` for partial stubs, so these suites set the value they need
- * rather than inheriting whatever ran last.
- */
-function useAppOrigin(): void {
-  let previousLocation: Location
-
-  beforeEach(() => {
-    previousLocation = window.location
-    Object.defineProperty(window, 'location', {
-      value: { origin: APP_ORIGIN, href: `${APP_ORIGIN}/` },
-      writable: true,
-      configurable: true,
-    })
-  })
-
-  afterEach(() => {
-    Object.defineProperty(window, 'location', {
-      value: previousLocation,
-      writable: true,
-      configurable: true,
-    })
-  })
-}
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 

@@ -38,6 +38,7 @@ vi.mock('../services/auth', () => ({
 
 import { api, getDaysFromRange, getDateRangeParams, ALL_TIME_DAYS } from './client'
 import { authService } from '../services/auth'
+import * as runtimeConfig from '../runtimeConfig'
 import { SESSION_EXPIRED_PATH, resetSessionExpiryForTests } from '../services/sessionExpiry'
 
 describe('API Client', () => {
@@ -143,6 +144,68 @@ describe('API Client', () => {
 
       expect(authService.refreshSession).toHaveBeenCalled()
       expect(global.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    /**
+     * The 401 retry must re-run the origin check, not just re-send the token.
+     *
+     * `handleUnauthorized` rebuilds headers through `buildHeaders(…, fullUrl)`
+     * so a server that answers the first (unauthenticated) request with 401
+     * cannot collect the refreshed token on the second. These two cases pin
+     * that: the trusted one proves the retry does carry the fresh token, so
+     * the untrusted one cannot pass just because the header stopped being
+     * attached at all.
+     *
+     * Both fail if `handleUnauthorized` goes back to writing
+     * `authService.getIdToken()` into a mutated headers object.
+     */
+    it('carries the refreshed token on the retry when the origin is trusted', async () => {
+      ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        ;(authService.getIdToken as ReturnType<typeof vi.fn>).mockReturnValue('fresh-token')
+        return Promise.resolve(undefined)
+      })
+      ;(global.fetch as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ ok: false, status: 401 })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ count: 0, items: [] }) })
+
+      await api.getFeedback({ days: 7 })
+
+      // Rebuilt headers re-read the token, so the retry carries the new one
+      // rather than the one that just 401'd.
+      const [, retryInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[1]
+      expect(retryInit.headers['Authorization']).toBe('fresh-token')
+    })
+
+    it('does NOT attach Authorization on the retry when the origin is untrusted', async () => {
+      // The deployment's real endpoint is elsewhere, so the configured base URL
+      // (https://api.example.com — e.g. a stale persisted value) is foreign.
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        apiEndpoint: 'https://deployment.example.com/v1',
+        cognito: {
+          userPoolId: 'pool-1',
+          clientId: 'client-1',
+          region: 'us-east-1',
+          identityPoolId: 'id-pool',
+        },
+      })
+      ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        ;(authService.getIdToken as ReturnType<typeof vi.fn>).mockReturnValue('fresh-token')
+        return Promise.resolve(undefined)
+      })
+      ;(global.fetch as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ ok: false, status: 401 })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ count: 0, items: [] }) })
+
+      await api.getFeedback({ days: 7 })
+
+      expect(global.fetch).toHaveBeenCalledTimes(2)
+      const [, firstInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      const [, retryInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[1]
+      // Withheld on the first request…
+      expect(firstInit.headers['Authorization']).toBeUndefined()
+      // …and still withheld after the refresh, which is the property the
+      // rebuilt headers exist to guarantee.
+      expect(retryInit.headers['Authorization']).toBeUndefined()
     })
 
     it('signs out and redirects with a reason when refresh fails', async () => {

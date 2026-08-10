@@ -123,21 +123,19 @@ function isTrustedAbsoluteUrl(parsed: URL): boolean {
  * reason for it to be relative. Pinned by test:
  * "returns false for a path-relative endpoint".
  *
+ * The base-less parse is the *only* intended difference from
+ * {@link isTrustedOrigin}: the classification itself is delegated to
+ * {@link isTrustedAbsoluteUrl}, so what "trusted" means is decided in exactly
+ * one place. Re-implementing the localhost/allowlist rules here would let the
+ * two decisions drift — the same defect that motivated extracting this module.
+ *
  * Unparseable values are treated as unsafe (fail closed).
  */
 export function isTrustedApiEndpoint(endpoint: string): boolean {
   if (endpoint === '') return true
   try {
-    const url = new URL(endpoint)
-    // In dev, any localhost port is allowed.
-    if (import.meta.env.DEV) {
-      if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-        return true
-      }
-    }
-    const origins = buildTrustedApiOrigins()
-    // Empty allowlist (config not yet loaded) → fail closed.
-    return origins.length > 0 && origins.includes(url.origin)
+    // Parsed with no base: relative forms throw and fail closed by design.
+    return isTrustedAbsoluteUrl(new URL(endpoint))
   } catch {
     return false
   }
