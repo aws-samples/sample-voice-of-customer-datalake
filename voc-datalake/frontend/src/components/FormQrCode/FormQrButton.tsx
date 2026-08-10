@@ -88,7 +88,11 @@ export default function FormQrButton({
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
         ariaLabelledBy={headingId}
-        panelClassName="max-w-xs"
+        // Wide enough for the symbol at its intrinsic size rather than trimming it
+        // to fit: the QR is the entire content of this dialog, and one that has to
+        // be squinted at from a seat defeats the point. `ModalShell`'s panel is
+        // `w-full` under this cap, so a narrow viewport still shrinks both together.
+        panelClassName="max-w-md"
       >
         <div className="p-4 space-y-3">
           <h3 id={headingId} className="font-medium text-gray-900 text-center">

@@ -30,13 +30,21 @@ import { feedbackFormPublicUrl } from '../../api/feedbackFormUrls'
 import type { ReactElement } from 'react'
 
 /**
- * Rendered edge, in CSS pixels.
+ * Intrinsic edge, in CSS pixels — and the widest this is ever drawn.
  *
- * A phone camera a few metres from a projected screen needs roughly this much
- * before it resolves the modules, which is the entire point of the feature — a
- * QR too small to scan from a seat is decoration.
+ * A phone camera a few metres from a projected screen needs as much symbol as it
+ * can get, which is the entire point of the feature: a QR too small to scan from a
+ * seat is decoration. So this is sized for the room, and the dialog around it is
+ * widened to match rather than the symbol being trimmed to fit a narrow panel.
+ *
+ * It is an upper bound rather than a fixed size because `w-full h-auto` below lets
+ * CSS scale the symbol down inside a container narrower than this — a phone held in
+ * portrait, most obviously. That is lossless: `QRCodeSVG` emits a
+ * `viewBox="0 0 modules modules"`, so the rendered edge is independent of the module
+ * grid and CSS width wins over the SVG's own width attribute. Scaling a canvas
+ * would have meant resampling, which is the reason this component renders SVG.
  */
-const QR_SIZE_PX = 200
+const QR_SIZE_PX = 384
 
 /**
  * Quiet zone, in modules. The QR specification requires 4, and the library
@@ -86,7 +94,10 @@ export default function FormQrCode({
         level={QR_ERROR_CORRECTION}
         marginSize={QR_MARGIN_MODULES}
         title={t('formQrCode.accessibleName', { formName })}
-        className="bg-white"
+        // Fluid up to QR_SIZE_PX rather than fixed at it: `w-full` lets a narrow
+        // container (a phone in portrait) scale the symbol down instead of
+        // overflowing the dialog, and `h-auto` keeps it square via the viewBox.
+        className="bg-white w-full h-auto"
       />
       <p className="text-xs text-gray-500 text-center">{t('formQrCode.caption')}</p>
     </div>
