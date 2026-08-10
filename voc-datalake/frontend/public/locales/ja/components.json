@@ -112,7 +112,8 @@
   },
   "formQrCode": {
     "accessibleName": "フィードバックフォーム「{{formName}}」のQRコード",
-    "caption": "スキャンしてこのフォームをスマートフォンで開きます"
+    "caption": "スキャンしてこのフォームをスマートフォンで開きます",
+    "unavailable": "設定でAPIエンドポイントを構成するまでQRコードは利用できません"
   },
   "personaExport": {
     "copied": "コピーしました！",

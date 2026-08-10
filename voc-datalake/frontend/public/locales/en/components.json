@@ -112,7 +112,8 @@
   },
   "formQrCode": {
     "accessibleName": "QR code for the {{formName}} feedback form",
-    "caption": "Scan to open this form on a phone"
+    "caption": "Scan to open this form on a phone",
+    "unavailable": "QR code unavailable until the API endpoint is configured in Settings"
   },
   "personaExport": {
     "copied": "Copied!",

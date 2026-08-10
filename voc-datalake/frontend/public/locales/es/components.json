@@ -119,7 +119,8 @@
   },
   "formQrCode": {
     "accessibleName": "Código QR del formulario de opinión {{formName}}",
-    "caption": "Escanea para abrir este formulario en el móvil"
+    "caption": "Escanea para abrir este formulario en el móvil",
+    "unavailable": "Código QR no disponible hasta que se configure el endpoint de la API en Configuración"
   },
   "personaExport": {
     "copied": "¡Copiado!",

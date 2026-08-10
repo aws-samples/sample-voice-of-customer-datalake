@@ -112,7 +112,8 @@
   },
   "formQrCode": {
     "accessibleName": "“{{formName}}”反馈表单的二维码",
-    "caption": "扫码在手机上打开此表单"
+    "caption": "扫码在手机上打开此表单",
+    "unavailable": "在设置中配置API端点后才能显示二维码"
   },
   "personaExport": {
     "copied": "已复制！",

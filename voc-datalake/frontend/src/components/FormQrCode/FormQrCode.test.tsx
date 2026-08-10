@@ -16,6 +16,7 @@ const spy = vi.hoisted(() => ({
     value: string | string[]
     size?: number
     marginSize?: number
+    level?: string
   }>(),
 }))
 
@@ -25,7 +26,9 @@ vi.mock('qrcode.react', async (importOriginal) => {
   return {
     ...actual,
     QRCodeSVG: (props: ComponentProps<typeof Real>) => {
-      spy.encoded.push({ value: props.value, size: props.size, marginSize: props.marginSize })
+      spy.encoded.push({
+        value: props.value, size: props.size, marginSize: props.marginSize, level: props.level,
+      })
       return <Real {...props} />
     },
   }
@@ -35,9 +38,9 @@ import FormQrCode from './FormQrCode'
 
 const { t } = i18n
 
-function renderQr(formId = 'form_1') {
+function renderQr(formId = 'form_1', apiEndpoint = 'https://api.example.com') {
   return render(
-    <FormQrCode apiEndpoint="https://api.example.com" formId={formId} formName="Website Feedback" />,
+    <FormQrCode apiEndpoint={apiEndpoint} formId={formId} formName="Website Feedback" />,
   )
 }
 
@@ -79,14 +82,37 @@ describe('a feedback form QR', () => {
     expect(spy.encoded[0].value).toBe('https://api.example.com/feedback-forms/form_42/iframe')
   })
 
-  it('renders large enough, with the quiet zone, to scan from across a room', () => {
+  it('renders large enough, with the quiet zone and the error correction, to scan from across a room', () => {
     renderQr()
 
-    // Both are scan requirements rather than styling: below roughly 200px a
-    // phone a few metres from a projector cannot resolve the modules, and the
+    // All three are scan requirements rather than styling: below roughly 200px a
+    // phone a few metres from a projector cannot resolve the modules, the
     // library defaults the quiet zone to 0 modules, which leaves a scanner
-    // unable to find the symbol's edges against a busy card.
+    // unable to find the symbol's edges against a busy card, and 'M' is what
+    // recovers a symbol partly lost to glare or a head in the way. Dropping to
+    // the library's cheaper 'L' would still render a valid QR — and fail in the
+    // room, which is the only place anyone would find out.
     expect(spy.encoded[0].size).toBeGreaterThanOrEqual(200)
     expect(spy.encoded[0].marginSize).toBeGreaterThanOrEqual(4)
+    expect(spy.encoded[0].level).toBe('M')
+  })
+
+  it('says so in words instead of encoding an address that resolves nowhere', () => {
+    // No endpoint configured. The alternative is a flawless, scannable symbol
+    // for '/feedback-forms/form_1/iframe' — which a phone cannot resolve, and
+    // which looks exactly like a working QR to everyone in the room.
+    renderQr('form_1', '')
+
+    expect(spy.encoded).toHaveLength(0)
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(screen.getByText(t('components:formQrCode.unavailable'))).toBeInTheDocument()
+  })
+
+  it('encodes nothing for an endpoint that is not an absolute address', () => {
+    // '/api' is the relative base the app itself fetches against quite happily.
+    renderQr('form_1', '/api')
+
+    expect(spy.encoded).toHaveLength(0)
+    expect(screen.getByText(t('components:formQrCode.unavailable'))).toBeInTheDocument()
   })
 })

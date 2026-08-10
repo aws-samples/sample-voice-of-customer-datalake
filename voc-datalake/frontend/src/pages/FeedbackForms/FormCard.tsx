@@ -77,22 +77,43 @@ function FormStats({ stats, onViewSubmissions }: FormStatsProps) {
   )
 }
 
+/**
+ * A form name safe to sit inside a double-quoted HTML attribute.
+ *
+ * The snippet below is pasted verbatim into a customer's own page, so a name
+ * containing a double quote closes `title="` early and hands them broken markup
+ * to debug. `&` is escaped first, or the `&` this very substitution introduces
+ * would be escaped a second time.
+ */
+function escapeAttributeValue(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
+}
+
 interface EmbedCodeSectionProps {
-  readonly form: FeedbackForm
+  /** Just the two fields the snippets need — not the whole form record. */
+  readonly formId: string
+  readonly formName: string
   readonly apiEndpoint: string
   readonly copied: string | null
   readonly onCopy: (text: string, id: string) => void
 }
 
-function EmbedCodeSection({ form, apiEndpoint, copied, onCopy }: EmbedCodeSectionProps) {
+function EmbedCodeSection({ formId, formName, apiEndpoint, copied, onCopy }: EmbedCodeSectionProps) {
+  const { t } = useTranslation('feedbackForms')
   // Built here, from the one shared builder, because this section is the only
   // consumer of both spellings — and the QR below encodes the same string, so a
   // second construction site would let the printed URL and the scanned one drift.
-  const iframeUrl = feedbackFormPublicUrl(apiEndpoint, form.form_id)
+  const iframeUrl = feedbackFormPublicUrl(apiEndpoint, formId)
+  if (iframeUrl === null) {
+    // Without an addressable endpoint the link, the snippet and the QR are all
+    // equally dead, so say the one useful thing once instead of printing three
+    // broken artifacts for a customer to paste into their site.
+    return <p className="mt-3 text-xs text-gray-500">{t('configureApiFirst')}</p>
+  }
   const iframeEmbed = `<iframe 
   src="${iframeUrl}"
   style="width: 100%; min-height: 400px; border: none;"
-  title="${form.name}"
+  title="${escapeAttributeValue(formName)}"
 ></iframe>`
   return (
     <div className="mt-3 space-y-3">
@@ -125,7 +146,7 @@ function EmbedCodeSection({ form, apiEndpoint, copied, onCopy }: EmbedCodeSectio
       </div>
       {/* Same address as the Direct Link above, as scannable modules — for the
           room, where nobody is going to type that URL off a slide. */}
-      <FormQrCode apiEndpoint={apiEndpoint} formId={form.form_id} formName={form.name} />
+      <FormQrCode apiEndpoint={apiEndpoint} formId={formId} formName={formName} />
     </div>
   )
 }
@@ -235,7 +256,8 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
           
           {showEmbed && (
             <EmbedCodeSection
-              form={form}
+              formId={form.form_id}
+              formName={form.name}
               apiEndpoint={apiEndpoint}
               copied={copied}
               onCopy={copyToClipboard}

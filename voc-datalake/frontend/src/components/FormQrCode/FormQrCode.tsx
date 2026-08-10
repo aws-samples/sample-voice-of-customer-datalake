@@ -10,6 +10,11 @@
  * Takes the endpoint and the form id, NOT a URL: `feedbackFormPublicUrl` is the
  * only place a form's public address is built, and accepting a ready-made string
  * would invite a second construction site whose drift nothing on screen reveals.
+ * It also decides when there is no address to encode at all, which is why this
+ * component has a second thing it can render: an endpoint that resolves nowhere
+ * would otherwise produce a flawless, scannable symbol for an address that does
+ * not exist, and no viewer could tell. Saying so is the whole guard — a room
+ * pointing phones at a dead QR gets no error message.
  *
  * Encoded in the browser as SVG. Crisp when projected (a canvas at these sizes
  * is not), no third-party image service — that would ship form URLs to an
@@ -64,6 +69,13 @@ export default function FormQrCode({
 }): ReactElement {
   const { t } = useTranslation('components')
   const url = feedbackFormPublicUrl(apiEndpoint, formId)
+  // A QR cannot report its own failure: whatever it encodes, it looks like a QR
+  // and scans like one, so an unusable endpoint would reach the room as a symbol
+  // that resolves to nothing. `feedbackFormPublicUrl` decides — the only thing
+  // left to do here is say it in words rather than draw it.
+  if (url === null) {
+    return <p className="text-xs text-gray-500 text-center">{t('formQrCode.unavailable')}</p>
+  }
   return (
     <div className="flex flex-col items-center gap-2">
       {/* `title` becomes the SVG's <title>, which is what assistive tech
