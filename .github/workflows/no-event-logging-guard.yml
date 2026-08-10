@@ -1,0 +1,47 @@
+# Runs the raw-event logging guard (issue #245) on every pull request.
+#
+# Deliberately narrow: this executes ONE test file, not the backend suite.
+# The guard depends only on `re` and `pathlib`, so it needs no application
+# dependencies and no Lambda layer build, and it finishes in well under a
+# second.  The rest of the suite currently cannot run in a bare environment
+# (it needs pydantic, aws_xray_sdk and the built layers), so attempting it
+# here would produce a permanently red, ignored check — which is worse than
+# no check at all.
+#
+# Widening this workflow to the full suite is tracked separately; see the
+# `Gates` section of the repository README before doing so.
+name: no-event-logging guard
+
+on:
+  pull_request:
+  push:
+    branches:
+      - development
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: raw Lambda event is not logged
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install pytest
+        run: python -m pip install --disable-pip-version-check pytest
+
+      # -o addopts="": pytest.ini's addopts enables pytest-cov for the whole
+      # backend suite.  pytest-cov is not installed here (and is not wanted for
+      # one stdlib-only file), and pytest treats the unknown --cov flags as a
+      # usage error, so the defaults must be cleared rather than just disabling
+      # the plugin with -p no:cov.
+      - name: Run guard
+        working-directory: voc-datalake
+        run: >-
+          python -m pytest lambda/api/test/test_no_event_logging.py
+          -o addopts="" -p no:cacheprovider --no-header -q

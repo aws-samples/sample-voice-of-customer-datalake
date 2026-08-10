@@ -630,18 +630,18 @@ def api_generate_product_report(project_id: str):
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler for projects API."""
     try:
-        # Do NOT log the raw event here: the serialised payload carries the
-        # caller's Authorization header (Cognito bearer token) and the full
-        # request body.  Powertools' @logger.inject_lambda_context already
-        # attaches request-id, function name, and cold-start flag — no
-        # diagnostic value is lost.  (issue #245)
-
-        # Normal API Gateway request
+        # Never log the raw event or the resolved result here (issue #245).
+        # The event carries the caller's Authorization header (Cognito bearer
+        # token) and request body; the result carries user-generated content
+        # (project text, verbatims, persona data).  Powertools'
+        # @logger.inject_lambda_context already attaches request-id, function
+        # name and cold-start, so only the status code is added below.
+        # Status code alone is not sensitive, so this stays at INFO to keep the
+        # per-invocation completion signal that LOG_LEVEL=INFO would drop at
+        # DEBUG — it is the absence of the body, not the log level, that
+        # protects the data.
         result = app.resolve(event, context)
-        # Do NOT log the full response body here: it may contain user-generated
-        # content (project text, verbatims, persona data).  Status code is
-        # sufficient for operational monitoring.  (issue #245)
-        logger.debug("Returning response", extra={"status_code": result.get("statusCode")})
+        logger.info("Returning response", extra={"status_code": result.get("statusCode")})
         return result
         
     except Exception as e:
