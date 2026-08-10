@@ -6,6 +6,8 @@
  * cleared on purpose, and a form that validates nothing keeps saving exactly the
  * payload it did before these fields existed.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -244,5 +246,111 @@ describe('validation link in the form editor', () => {
     await waitFor(() => {
       expect(documentSelect()).toBeDisabled()
     })
+  })
+
+  it('does not call an intact link unavailable while the project detail is still loading', async () => {
+    // The document list is empty on the first render of EVERY linked form, so
+    // deciding "missing" from an empty list alarms the admin about a link that
+    // is perfectly fine. The stored id must still be the select's value — Save
+    // has to round-trip it either way — but under a neutral label.
+    let resolveDetail: (detail: unknown) => void = () => {}
+    mockGetProject.mockImplementation(() => new Promise((resolve) => {
+      resolveDetail = resolve
+    }))
+
+    await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(documentSelect()).toHaveValue('doc_prfaq')
+    })
+    expect(
+      screen.queryByText(t('feedbackForms:editor.validationUnknownDocument')),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText(t('feedbackForms:editor.validationLoadingLink'))).toBeInTheDocument()
+
+    resolveDetail({
+      project_id: 'p1',
+      documents: [
+        { document_id: 'doc_prfaq', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '' },
+      ],
+    })
+
+    // Once it lands, the real title replaces the placeholder and no "missing"
+    // label ever appeared.
+    await waitFor(() => {
+      expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+    })
+    expect(
+      screen.queryByText(t('feedbackForms:editor.validationLoadingLink')),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(t('feedbackForms:editor.validationUnknownDocument')),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps a link whose project no longer exists rather than showing it as unlinked', async () => {
+    // Symmetric to the stale document: the id is still in formData, so showing
+    // "-- Not linked --" tells the admin the form is unlinked while Save
+    // persists the link anyway.
+    mockGetFeedbackForms.mockResolvedValue({
+      forms: [{ ...linkedForm, project_id: 'p_deleted' }],
+    })
+
+    const user = await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(projectSelect()).toHaveValue('p_deleted')
+    })
+    expect(screen.getByText(t('feedbackForms:editor.validationUnknownProject'))).toBeInTheDocument()
+
+    await user.click(screen.getByText('Save Changes'))
+    await waitFor(() => {
+      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
+    })
+    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({ project_id: 'p_deleted' })
+  })
+
+  it('does not call an intact project link unavailable while the project list loads', async () => {
+    let resolveProjects: (projects: unknown) => void = () => {}
+    mockGetProjects.mockImplementation(() => new Promise((resolve) => {
+      resolveProjects = resolve
+    }))
+
+    await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(projectSelect()).toHaveValue('p1')
+    })
+    expect(
+      screen.queryByText(t('feedbackForms:editor.validationUnknownProject')),
+    ).not.toBeInTheDocument()
+
+    resolveProjects({
+      projects: [
+        { project_id: 'p1', name: 'Project One', status: 'active', created_at: '', updated_at: '', persona_count: 0, document_count: 1 },
+      ],
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Project One')).toBeInTheDocument()
+    })
+    expect(
+      screen.queryByText(t('feedbackForms:editor.validationUnknownProject')),
+    ).not.toBeInTheDocument()
+  })
+
+  it('reuses the shared project query keys so the cache is not split', async () => {
+    // A literal key here would still work — it would just address a separate
+    // cache entry and miss Projects.tsx's invalidations. Nothing observable
+    // fails, hence this test.
+    const source = readFileSync(
+      join(__dirname, 'ValidationLinkPicker.tsx'), 'utf-8',
+    )
+
+    expect(source).toContain("from '../../api/projectQueryKeys'")
+    expect(source).toContain('queryKey: projectKey(')
+    expect(source).toContain('queryKey: projectsKey()')
+    expect(source, 'query keys must come from the shared helper, not literals')
+      .not.toMatch(/queryKey: \['project/)
   })
 })

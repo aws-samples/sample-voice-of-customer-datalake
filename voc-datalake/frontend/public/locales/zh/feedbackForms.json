@@ -75,11 +75,13 @@
     "validationDescription": "可选择记录此表单收集的反馈针对哪个项目，以及哪个 PRD 或 PR/FAQ。收集到的评分随后会显示在优先级排序页面上该文档的旁边。对于网站调查等独立表单，请将两项留空。",
     "validationDocumentHint": "保留为整个项目，可在文档重新生成后仍保持关联。",
     "validationDocumentLabel": "文档（可选）",
+    "validationLoadingLink": "正在加载关联信息…",
     "validationNoProject": "-- 未关联 --",
     "validationProjectHint": "清空项目将解除此表单的关联。",
     "validationProjectLabel": "项目",
     "validationTitle": "此表单验证的内容",
     "validationUnknownDocument": "已关联的文档（不再可用）",
+    "validationUnknownProject": "已关联的项目（不再可用）",
     "validationWholeProject": "-- 整个项目 --"
   },
   "empty": {

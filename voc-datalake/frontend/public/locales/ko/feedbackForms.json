@@ -75,11 +75,13 @@
     "validationDescription": "이 양식이 어떤 프로젝트의, 어떤 PRD 또는 PR/FAQ에 대한 피드백을 수집하는지 선택적으로 기록할 수 있습니다. 수집된 평점은 우선순위 지정 페이지의 해당 문서 옆에 표시됩니다. 웹사이트 설문처럼 독립적인 양식이라면 두 항목을 비워 두세요.",
     "validationDocumentHint": "프로젝트 전체로 두면 문서를 다시 생성해도 연결이 유지됩니다.",
     "validationDocumentLabel": "문서(선택 사항)",
+    "validationLoadingLink": "연결 정보를 불러오는 중…",
     "validationNoProject": "-- 연결되지 않음 --",
     "validationProjectHint": "프로젝트를 비우면 이 양식의 연결이 해제됩니다.",
     "validationProjectLabel": "프로젝트",
     "validationTitle": "이 양식이 검증하는 대상",
     "validationUnknownDocument": "연결된 문서(더 이상 사용할 수 없음)",
+    "validationUnknownProject": "연결된 프로젝트(더 이상 사용할 수 없음)",
     "validationWholeProject": "-- 프로젝트 전체 --"
   },
   "empty": {

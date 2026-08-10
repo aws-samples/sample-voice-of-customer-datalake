@@ -18,6 +18,7 @@ import {
 } from 'react-i18next'
 import { useBlocker } from 'react-router-dom'
 import { api } from '../../api/client'
+import { projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
 import ConfirmModal from '../../components/ConfirmModal'
 import { useConfigStore } from '../../store/configStore'
@@ -197,7 +198,7 @@ export default function Prioritization() {
   const {
     data: projectsData, isLoading: loadingProjects,
   } = useQuery({
-    queryKey: ['projects'],
+    queryKey: projectsKey(),
     queryFn: () => projectsApi.getProjects(),
     enabled: config.apiEndpoint.length > 0,
   })
