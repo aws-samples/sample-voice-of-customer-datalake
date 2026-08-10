@@ -38,6 +38,8 @@ export const MAX_CHAT_CONTEXT_LENGTH = 500
  * There is deliberately no document counterpart. The server caps both arrays, but
  * documents are only ever chosen one @-mention at a time, and an explicit selection
  * is not clamped — silently dropping documents someone picked by hand would be
- * worse than the error. An unused mirror would be a constant with no consumer.
+ * worse than the error. So a document mirror would have no caller at all, unlike
+ * MAX_CHAT_CONTEXT_LENGTH above, which earns its place by being the number the
+ * lockstep test and buildChatContext's bound are both checked against.
  */
 export const MAX_SELECTED_PERSONAS = 20

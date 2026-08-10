@@ -14,10 +14,6 @@ import { describe, expect, it } from 'vitest'
 import type { ChatFilters } from '../../store/chatStore'
 import { MAX_CHAT_CONTEXT_LENGTH } from '../../api/streamLimits'
 import { buildChatContext, MAX_FILTER_VALUE_LENGTH } from './chatContext'
-
-
-
-
 /**
  * Pathological, not merely long. `category` comes from the tenant's configured
  * category list and nothing validates its length, so the bound has to hold for a
@@ -80,9 +76,9 @@ describe('buildChatContext', () => {
 
   it('cuts a value one character over the cap to exactly the cap', () => {
     const overCap = 'c'.repeat(MAX_FILTER_VALUE_LENGTH + 1)
-    const context = buildChatContext(7, { category: overCap })
-    expect(context).toBe(`Time range: last 7 days. Category: ${'c'.repeat(MAX_FILTER_VALUE_LENGTH)}`)
-    expect(context).not.toContain(overCap)
+    expect(buildChatContext(7, { category: overCap })).toBe(
+      `Time range: last 7 days. Category: ${'c'.repeat(MAX_FILTER_VALUE_LENGTH)}`,
+    )
   })
 
   it('emits one clause per filter, so the length cannot grow without a schema change', () => {
