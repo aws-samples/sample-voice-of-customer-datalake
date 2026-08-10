@@ -692,6 +692,136 @@ class TestBaseIngestorRun:
     @patch('_shared.base_ingestor.get_sqs_client')
     @patch('_shared.base_ingestor.get_secret')
     @patch('_shared.base_ingestor.emit_audit_event')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_run_raises_and_does_not_advance_watermark_on_contradictory_response(
+        self, mock_audit, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """A response claiming an entry as both Successful and Failed must raise
+        out of run() rather than reporting success.
+
+        Reverts-to-catch: trusting the Successful side and discarding the Failed
+        entry makes run() return ``{'status': 'success', 'items_processed': 3}``,
+        fire ``record_success()`` and advance the watermark past feedback SQS
+        explicitly reported as failed — so the item is never re-fetched and the
+        loss is permanent.  This is the caller-level consequence that decides the
+        direction; inside the helper the choice looks like bookkeeping.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs_client = MagicMock()
+        # Entry 2 is claimed in BOTH lists, with SenderFault=true so it is a
+        # permanent failure rather than something a retry could resolve.
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}, {'Id': '1'}, {'Id': '2'}],
+            'Failed': [
+                {
+                    'Id': '2',
+                    'SenderFault': True,
+                    'Code': 'InvalidMessageContents',
+                    'Message': 'malformed',
+                }
+            ],
+        }
+        mock_sqs.return_value = mock_sqs_client
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield {'id': '1', 'text': 'Review 1', 'created_at': '2025-01-01T00:00:00Z'}
+                yield {'id': '2', 'text': 'Review 2', 'created_at': '2025-01-01T01:00:00Z'}
+                yield {'id': '3', 'text': 'Review 3', 'created_at': '2025-01-01T02:00:00Z'}
+
+        ingestor = TestIngestor()
+        ingestor.circuit_breaker = MagicMock()
+        ingestor.circuit_breaker.is_open.return_value = False
+        ingestor.set_watermark = MagicMock()
+
+        with patch('_shared.sqs_utils.metrics'), pytest.raises(RuntimeError):
+            ingestor.run()
+
+        ingestor.set_watermark.assert_not_called()
+        ingestor.circuit_breaker.record_success.assert_not_called()
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.emit_audit_event')
+    @patch('_shared.base_ingestor.AGGREGATES_TABLE', 'voc-aggregates-test')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_run_records_error_status_with_the_confirmed_count_when_enqueue_raises(
+        self, mock_audit, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """When the enqueue raises, the SOURCE_RUN record must be written as
+        'error' carrying the count confirmed *before* the failure.
+
+        Nothing else in this suite asserts the error-path status write, so a
+        change that skipped it — or that let the exception escape before it —
+        would leave a manual run displaying 'running' for ever.
+
+        Reverts-to-catch: reporting ``len(items)`` instead of the value
+        ``send_to_queue`` returned writes 150 for a run in which only 100 items
+        reached the queue, which is the attempted-vs-confirmed conflation this PR
+        exists to remove, one level up from the helper.
+
+        Known limitation, deliberately not tested here: ``items_found`` on this
+        path is a *lower* bound.  Batches confirmed inside the raising
+        ``send_to_queue`` call are counted by the ``ItemsIngested`` metric but not
+        by run()'s accumulator, which only advances when that call returns.  The
+        metric is the authoritative count of what landed; the watermark is not
+        advanced either way, so nothing is lost by the under-report.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs.return_value = MagicMock()
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                for i in range(150):
+                    yield {
+                        'id': str(i),
+                        'text': f'Review {i}',
+                        'created_at': '2025-01-01T00:00:00Z',
+                    }
+
+        ingestor = TestIngestor(execution_id='exec-1')
+        ingestor.circuit_breaker = MagicMock()
+        ingestor.circuit_breaker.is_open.return_value = False
+        ingestor.set_watermark = MagicMock()
+        # First batch of 100 is confirmed; the trailing 50 are rejected.
+        ingestor.send_to_queue = MagicMock(
+            side_effect=[100, RuntimeError('50 ingestor item(s) could not be enqueued')]
+        )
+
+        with pytest.raises(RuntimeError):
+            ingestor.run()
+
+        error_writes = [
+            call.kwargs['ExpressionAttributeValues']
+            for call in mock_table.update_item.call_args_list
+            if call.kwargs.get('ExpressionAttributeValues', {}).get(':status') == 'error'
+        ]
+        assert len(error_writes) == 1, (
+            f'Expected exactly one error status write, got {len(error_writes)}'
+        )
+        assert error_writes[0][':items_found'] == 100
+        assert error_writes[0][':errors'] == [
+            '50 ingestor item(s) could not be enqueued'
+        ]
+        ingestor.set_watermark.assert_not_called()
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.emit_audit_event')
     def test_records_failure_on_exception(
         self, mock_audit, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
     ):
