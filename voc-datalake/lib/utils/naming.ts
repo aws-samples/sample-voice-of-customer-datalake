@@ -137,11 +137,24 @@ export class DeploymentNaming {
   }
 
   /**
-   * Namespace a bare name: stack ids, CloudFormation export names and the
-   * wildcard ARNs that must not reach across deployments.
+   * Namespace a name: stack ids, CloudFormation export names, physical resource
+   * names and the wildcard ARNs that must not reach across deployments.
+   *
+   * For a PATH-SHAPED name the prefix lands on the `voc` segment, not at the
+   * very front — `/aws/lambda/voc-x` becomes `/aws/lambda/stg-voc-x`, not
+   * `stg-/aws/lambda/voc-x`. Two reasons, and the second is the load-bearing
+   * one: `/aws/...` is a namespace CloudWatch and the console understand, and
+   * the api-stack log groups are built as `/aws/lambda/${uniqueName(base)}`,
+   * which already puts the prefix there. Prefixing the front instead would give
+   * two different shapes for the same kind of resource in the same deployment.
    */
   prefixed(name: string): string {
-    return this.prefix ? `${this.prefix}-${name}` : name;
+    if (!this.prefix) return name;
+    const segments = name.split('/');
+    const target = segments.findIndex((segment) => segment.startsWith('voc'));
+    if (target === -1) return `${this.prefix}-${name}`;
+    segments[target] = `${this.prefix}-${segments[target]}`;
+    return segments.join('/');
   }
 
   /**

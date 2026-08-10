@@ -76,21 +76,29 @@ class CircuitBreaker:
         except Exception as e:
             logger.warning(f"Failed to record failure in circuit breaker: {e}")
 
+    def _schedule_rule_name(self) -> str:
+        """This plugin's EventBridge schedule rule name.
+
+        Read from INGEST_SCHEDULE_RULE_NAME when CDK supplied it, which it does
+        only where the derivation below would be wrong — i.e. on a deployment
+        that carries a `deploymentPrefix`. This keeps the code unaware that
+        prefixes exist, and keeps the unprefixed template unchanged. Getting the
+        name wrong means DisableRule targets a rule that does not exist, so a
+        repeatedly failing plugin keeps hammering the source: the exact thing
+        this breaker exists to stop, failing silently.
+        """
+        resolved = os.environ.get("INGEST_SCHEDULE_RULE_NAME", "")
+        if resolved:
+            return resolved
+        # Match CDK's uniqueName() pattern: {base}-{account}-{region}
+        account_id = os.environ.get("DEPLOY_ACCOUNT_ID", os.environ.get("AWS_ACCOUNT_ID", ""))
+        region = os.environ.get("DEPLOY_REGION", os.environ.get("AWS_REGION", ""))
+        suffix = f"-{account_id}-{region}" if account_id and region else ""
+        return f"voc-ingest-{self.plugin_id}-schedule{suffix}"
+
     def _trip_breaker(self, failure_count: int, last_error: str) -> None:
         """Disable the plugin schedule."""
-        # This ingestor's own schedule rule name, as resolved by CDK. Present
-        # only when it would differ from the derivation below (i.e. on a
-        # prefixed deployment), so this code stays unaware that deployment
-        # prefixes exist. Getting it wrong means DisableRule targets a name that
-        # does not exist and a failing plugin keeps hammering the source, which
-        # is the whole thing the breaker exists to stop.
-        rule_name = os.environ.get("INGEST_SCHEDULE_RULE_NAME", "")
-        if not rule_name:
-            # Match CDK's uniqueName() pattern: {base}-{account}-{region}
-            account_id = os.environ.get("DEPLOY_ACCOUNT_ID", os.environ.get("AWS_ACCOUNT_ID", ""))
-            region = os.environ.get("DEPLOY_REGION", os.environ.get("AWS_REGION", ""))
-            suffix = f"-{account_id}-{region}" if account_id and region else ""
-            rule_name = f"voc-ingest-{self.plugin_id}-schedule{suffix}"
+        rule_name = self._schedule_rule_name()
 
         try:
             if HAS_EVENTBRIDGE:
