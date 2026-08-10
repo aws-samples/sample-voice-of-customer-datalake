@@ -30,7 +30,6 @@ import { api } from '../../api/client'
 import { formStatsKey, FORM_STATS_STALE_TIME_MS } from '../../api/feedbackFormQueryKeys'
 import FormQrCode from '../../components/FormQrCode'
 import ModalShell from '../../components/ModalShell'
-import { useConfigStore } from '../../store/configStore'
 import type { LinkedForm } from './formLinkUtils'
 import type { ReactElement } from 'react'
 
@@ -64,10 +63,21 @@ function EvidenceMetric({
  *
  * No request is made here: `form` is already in hand from the forms list the
  * page fetched once, and the QR is derived from `form_id` alone.
+ *
+ * The endpoint arrives as a prop rather than out of the config store, the way
+ * `FormCard` already receives it. A store subscription here would make this
+ * component re-render for every unrelated config change (time range, date basis,
+ * brand) on a page that renders one of these per linked form per row, and it
+ * would make the component impossible to render without a store — this file's own
+ * tests reach it only through the whole page for exactly that reason.
  */
-function LinkedFormQrButton({ form }: { readonly form: LinkedForm }): ReactElement {
+function LinkedFormQrButton({
+  form, apiEndpoint,
+}: {
+  readonly form: LinkedForm
+  readonly apiEndpoint: string
+}): ReactElement {
   const { t } = useTranslation('prioritization')
-  const { config } = useConfigStore()
   const [isOpen, setIsOpen] = useState(false)
   // Names the dialog after the heading it already shows, so the accessible name
   // cannot drift from what is on screen. `useId` because a document can have
@@ -94,7 +104,12 @@ function LinkedFormQrButton({ form }: { readonly form: LinkedForm }): ReactEleme
             {t('qr.title')}
           </h3>
           <p className="text-sm text-gray-600 text-center truncate">{form.name}</p>
-          <FormQrCode apiEndpoint={config.apiEndpoint} formId={form.form_id} formName={form.name} />
+          <FormQrCode apiEndpoint={apiEndpoint} formId={form.form_id} formName={form.name} />
+          {/* Not a duplicate of anything the shell provides: `ModalShell` renders
+              the overlay, the panel and these children, and nothing else — its
+              own dismissal affordances are Escape and an overlay click, neither
+              of which is visible. This is also the panel's first focusable, so it
+              is where the shell puts focus on open. */}
           <button
             type="button"
             onClick={() => setIsOpen(false)}
@@ -114,7 +129,12 @@ function LinkedFormQrButton({ form }: { readonly form: LinkedForm }): ReactEleme
  * Its own component, so each form owns its own `useQuery` — a hook cannot be
  * called in a loop, and several forms can validate the same document.
  */
-function LinkedFormStats({ form }: { readonly form: LinkedForm }): ReactElement {
+function LinkedFormStats({
+  form, apiEndpoint,
+}: {
+  readonly form: LinkedForm
+  readonly apiEndpoint: string
+}): ReactElement {
   const { t } = useTranslation('prioritization')
   const {
     data, isPending, isError,
@@ -159,7 +179,7 @@ function LinkedFormStats({ form }: { readonly form: LinkedForm }): ReactElement 
           {/* Inside this branch, so a form whose stats read failed offers no QR:
               that is how a deleted form presents here, and its public page is
               gone too, so the QR would send the room to a 404. */}
-          <LinkedFormQrButton form={form} />
+          <LinkedFormQrButton form={form} apiEndpoint={apiEndpoint} />
         </>
       )}
     </div>
@@ -171,11 +191,14 @@ function LinkedFormStats({ form }: { readonly form: LinkedForm }): ReactElement 
  *
  * @param forms every form that validates this row's document — possibly none,
  *   possibly several.
+ * @param apiEndpoint the configured API base, threaded down from the page rather
+ *   than read from the store here, so nothing in this file needs one to render.
  */
 export default function LinkedFormEvidence({
-  forms,
+  forms, apiEndpoint,
 }: {
   readonly forms: readonly LinkedForm[]
+  readonly apiEndpoint: string
 }): ReactElement {
   const { t } = useTranslation('prioritization')
   return (
@@ -185,7 +208,9 @@ export default function LinkedFormEvidence({
         <p className="text-sm text-gray-500">{t('evidence.noLinkedForm')}</p>
       ) : (
         <div className="space-y-2">
-          {forms.map((form) => <LinkedFormStats key={form.form_id} form={form} />)}
+          {forms.map((form) => (
+            <LinkedFormStats key={form.form_id} form={form} apiEndpoint={apiEndpoint} />
+          ))}
         </div>
       )}
     </div>

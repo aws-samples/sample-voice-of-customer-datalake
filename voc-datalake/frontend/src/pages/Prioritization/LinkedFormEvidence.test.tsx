@@ -34,8 +34,15 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
+/**
+ * Mutable so one test can drive the page with an endpoint that cannot address a
+ * form's public page. The panel itself takes the endpoint as a prop; the page is
+ * where it is read, which is exactly the seam this exercises.
+ */
+const mockConfig = vi.hoisted(() => ({ apiEndpoint: 'https://api.example.com' }))
+
 vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({ config: { apiEndpoint: 'https://api.example.com' } }),
+  useConfigStore: () => ({ config: mockConfig }),
 }))
 
 vi.mock('react-markdown', () => ({
@@ -98,6 +105,7 @@ function qrName(formName: string): string {
 describe('collected feedback on a prioritization row', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockConfig.apiEndpoint = 'https://api.example.com'
     mockGetProjects.mockResolvedValue({ projects: [project] })
     mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, prd] })
     mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
@@ -299,6 +307,27 @@ describe('collected feedback on a prioritization row', () => {
     // fetch here would be paid on a page that is already N+1 on project reads.
     expect(mockGetFeedbackFormStats).toHaveBeenCalledTimes(1)
     expect(mockGetFeedbackForms.mock.calls.length).toBe(formsListCalls)
+  })
+
+  it('says why there is no QR when the endpoint cannot address the form', async () => {
+    // A scheme-less paste: non-empty, so the page's queries run and the row is
+    // fully populated, but nothing built from it opens on a phone.
+    mockConfig.apiEndpoint = 'api.example.com'
+    mockGetFeedbackForms.mockResolvedValue({
+      forms: [{ form_id: 'form_1', name: 'PR/FAQ concept test', project_id: 'p1', document_id: 'doc_prfaq' }],
+    })
+    const user = userEvent.setup()
+
+    await expandRow('Feature A PR/FAQ')
+    await waitFor(() => {
+      expect(screen.getByText('PR/FAQ concept test')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: t('prioritization:qr.show') }))
+
+    // The dialog opens and explains itself rather than presenting a symbol that
+    // scans perfectly and opens nothing.
+    expect(screen.getByText(t('components:formQrCode.unavailable'))).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: qrName('PR/FAQ concept test') })).not.toBeInTheDocument()
   })
 
   it('withholds the QR when the linked form no longer exists', async () => {

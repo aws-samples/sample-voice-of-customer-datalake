@@ -114,11 +114,12 @@ function PRFAQRowHeader({
 }
 
 function PRFAQRowExpanded({
-  prfaq, score, linkedForms, onUpdateScore,
+  prfaq, score, linkedForms, apiEndpoint, onUpdateScore,
 }: {
   readonly prfaq: PRFAQWithProject
   readonly score: PrioritizationScore
   readonly linkedForms: readonly LinkedForm[]
+  readonly apiEndpoint: string
   readonly onUpdateScore: (field: keyof PrioritizationScore, value: number | string) => void
 }) {
   const { t } = useTranslation('prioritization')
@@ -138,7 +139,7 @@ function PRFAQRowExpanded({
           {/* Ratings already collected about this document, beside the sliders
               that score it. Mounted here (expand-only) because the stats read is
               expensive per form — see LinkedFormEvidence. */}
-          <LinkedFormEvidence forms={linkedForms} />
+          <LinkedFormEvidence forms={linkedForms} apiEndpoint={apiEndpoint} />
         </div>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -223,13 +224,19 @@ function PrototypePanel({
 }
 
 export default function PRFAQRow({
-  prfaq, index, score, linkedForms, isExpanded, onToggle, onUpdateScore,
+  prfaq, index, score, linkedForms, apiEndpoint, isExpanded, onToggle, onUpdateScore,
 }: {
   readonly prfaq: PRFAQWithProject
   readonly index: number
   readonly score: PrioritizationScore
   /** Forms that validate this document — see formLinkUtils.selectLinkedForms. */
   readonly linkedForms: readonly LinkedForm[]
+  /**
+   * The configured API base, needed only to address a linked form's public page
+   * in `LinkedFormEvidence`. Threaded rather than read from the store there, so
+   * that panel and its QR stay renderable without one.
+   */
+  readonly apiEndpoint: string
   readonly isExpanded: boolean
   readonly onToggle: () => void
   readonly onUpdateScore: (field: keyof PrioritizationScore, value: number | string) => void
@@ -241,7 +248,7 @@ export default function PRFAQRow({
   return (
     <div className="bg-white rounded-lg border shadow-sm">
       <PRFAQRowHeader prfaq={prfaq} index={index} priority={priority} score={score} isExpanded={isExpanded} onToggle={onToggle} />
-      {isExpanded ? <PRFAQRowExpanded prfaq={prfaq} score={score} linkedForms={linkedForms} onUpdateScore={onUpdateScore} /> : null}
+      {isExpanded ? <PRFAQRowExpanded prfaq={prfaq} score={score} linkedForms={linkedForms} apiEndpoint={apiEndpoint} onUpdateScore={onUpdateScore} /> : null}
     </div>
   )
 }
