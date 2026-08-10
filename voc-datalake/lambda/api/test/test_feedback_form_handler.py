@@ -32,6 +32,7 @@ _WIDGET_CONFIG_READ = re.compile(r'(?:this\.config|\bconfig|\bc)\.([a-z_]+)\b')
 # so that spelling flags the one assignment it means to allow.
 _WIDGET_C_ASSIGNMENT = re.compile(r'(?<![.\w])c\s*=(?!=)\s*([^;,\n]+)')
 
+
 def _widget_code_lines(source: str) -> list[str]:
     """The widget's lines with comment-ONLY lines dropped, nothing rewritten.
 
@@ -44,10 +45,21 @@ def _widget_code_lines(source: str) -> list[str]:
     literal — truncating the rest of that line and silently dropping any config
     read after it. That is an UNDER-collection, i.e. fail-open in the opposite
     direction: a field genuinely dropped from `item_to_widget_config` would stop
-    failing the test. Dropping only comment-only lines cannot truncate anything.
+    failing the test.
 
-    Residue, deliberately accepted: a trailing comment on a code line is kept, so a
-    `config.x` mentioned there is collected. That is the loud direction.
+    Exactly what this does and does not handle, since a guard that overstates
+    itself is the thing being fixed here:
+
+    - Comment-only lines and block-comment bodies are dropped. Nothing is
+      rewritten, so no line is ever truncated mid-way.
+    - A trailing comment on a code line is KEPT, so a `config.x` mentioned there is
+      collected. Loud direction — it can only fail the test, never weaken it.
+    - `/* note */ config.foo` and `*/ config.foo` are dropped whole, because the
+      line starts with a comment token. That is still the quiet direction, just far
+      narrower than the substitution it replaced; the widget has no such line, and
+      the alternative is a tokenizer.
+    - A block opened mid-line (`init(); /* note`) is not detected, so its body
+      lines are kept and may over-collect. Loud direction again.
     """
     kept: list[str] = []
     in_block = False
