@@ -327,3 +327,51 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     expect(synthCoreTemplate().toJSON()).toEqual(synthCoreTemplate().toJSON());
   });
 });
+
+/**
+ * Regression guard for issue #252: the implicit OAuth grant was enabled
+ * alongside authorization-code grant. The implicit grant returns tokens
+ * in the URL fragment (browser history / Referer leakage) and cannot be
+ * protected by PKCE — OAuth 2.1 drops it entirely.
+ *
+ * The application signs in via SRP (amazon-cognito-identity-js) and never
+ * uses the hosted-UI redirect flow, so disabling it is safe. A repository-
+ * wide search at the time of writing found core-stack.ts to be the only
+ * file referencing the implicit flow or the hosted-UI domain.
+ *
+ * Tests here assert the flow set POSITIVELY — the code flow present AND the
+ * implicit flow absent — so that (a) neither assertion is vacuous and (b) a
+ * silent re-enable of implicitCodeGrant causes a test failure.
+ */
+describe('VocCoreStack Cognito OAuth flow set (issue #252)', () => {
+  /**
+   * Parse the AllowedOAuthFlows array from the synthesized UserPoolClient.
+   * AllowedOAuthFlows is typed `unknown` by Template.toJSON(), so we
+   * validate the shape with Zod to surface CDK property renames as schema
+   * errors rather than silent `undefined` values that pass every assertion.
+   */
+  const UserPoolClientSchema = z.object({
+    AllowedOAuthFlows: z.array(z.string()),
+  });
+
+  function allowedOAuthFlows(): string[] {
+    const clients = Object.values(synthCoreTemplate().findResources('AWS::Cognito::UserPoolClient'));
+    expect(clients, 'expected exactly one UserPoolClient').toHaveLength(1);
+    return UserPoolClientSchema.parse(clients[0].Properties).AllowedOAuthFlows;
+  }
+
+  it('enables the authorization-code flow ("code")', () => {
+    // Authorization-code grant with PKCE is the recommended flow for browser
+    // clients. It must stay present so the hosted-UI path remains available
+    // for future use.
+    expect(allowedOAuthFlows()).toContain('code');
+  });
+
+  it('does NOT enable the implicit flow ("implicit")', () => {
+    // The implicit grant returns tokens directly in the redirect URL fragment,
+    // which leaks them into browser history and via the Referer header, and
+    // it cannot be protected with PKCE. OAuth 2.1 removes it. The app uses
+    // SRP sign-in exclusively, so nothing depends on this flow.
+    expect(allowedOAuthFlows()).not.toContain('implicit');
+  });
+});
