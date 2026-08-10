@@ -17,7 +17,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { projectKey, projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
-import type { Project, ProjectDocument } from '../../api/types'
+import { isScorable } from '../Prioritization/prioritizationUtils'
+import type { Project } from '../../api/types'
 import type { ReactElement } from 'react'
 
 /** The link, as the editor holds it. '' on either field means "not set". */
@@ -27,35 +28,67 @@ export interface ValidationLink {
 }
 
 /**
- * Document types worth validating with a feedback form: the same two the
- * Prioritization page scores. Anything else (research notes, prototypes) is not
- * a proposal a reviewer scores, so linking a form to it would show ratings on no
- * row at all.
- */
-const LINKABLE_DOCUMENT_TYPES: ReadonlySet<ProjectDocument['document_type']> = new Set(['prd', 'prfaq'])
-
-/**
  * Whether a select needs an extra option to hold an id that its fetched list
  * does not offer, and how to label it.
  *
+ * Every state here exists to avoid printing something untrue next to a link the
+ * admin is about to Save. The stored id stays the select's value in all of them
+ * — Save has to round-trip it either way — only the label differs.
+ *
  * - `null`  — nothing stored, or the stored id is in the list: no extra option.
- * - `'pending'` — stored, absent from the list, but the list has not arrived
- *   yet. The option must still exist so the select keeps the stored value and
- *   Save round-trips it, but it must NOT claim the link is broken: on the first
- *   render of every intact link the list is still empty, and labelling that
- *   "no longer available" tells the admin their link is gone when it is fine.
- * - `'missing'` — the list has resolved and genuinely does not contain the id
- *   (a regenerated document, a deleted project). Only then is the alarming
- *   label the truth.
+ * - `'pending'` — stored, absent from the list, and the list is still on its
+ *   way. On the first render of EVERY intact link the list is empty, so
+ *   labelling that "no longer available" tells the admin their link is gone
+ *   when it is fine.
+ * - `'unverified'` — the list will never arrive: the request was rejected, or
+ *   there is no API endpoint configured so it was never made. "Loading" is
+ *   false (nothing is loading) and "no longer available" is false too (nobody
+ *   managed to look), so the label says only that it could not be checked.
+ * - `'missing'` — the list resolved and genuinely does not contain the id (a
+ *   regenerated document, a deleted project). Only then is the alarming label
+ *   the truth.
  */
-type StoredOptionState = 'pending' | 'missing' | null
+type StoredOptionState = 'pending' | 'unverified' | 'missing' | null
 
 function storedOptionState(
-  storedId: string, availableIds: readonly string[], listHasResolved: boolean,
+  storedId: string,
+  availableIds: readonly string[],
+  list: { readonly resolved: boolean; readonly canResolve: boolean },
 ): StoredOptionState {
   if (storedId === '') return null
   if (availableIds.includes(storedId)) return null
-  return listHasResolved ? 'missing' : 'pending'
+  if (list.resolved) return 'missing'
+  return list.canResolve ? 'pending' : 'unverified'
+}
+
+/**
+ * The label for one non-null state.
+ *
+ * A helper taking `t` rather than nested ternaries in the JSX (three states in
+ * two selects is four branches of markup, and this editor is already at the
+ * repo's complexity ceiling) — and rather than a key lookup table, so that every
+ * key stays a literal argument to `t()`. `scripts/i18n-check.mjs` only sees keys
+ * written that way or as an `xKey: 'ns:key'` data property; a key held in a plain
+ * map is reported unreferenced and is then a candidate for deletion in a cleanup
+ * pass, which would leave this select rendering a raw key path.
+ *
+ * Shaped as one function because `pending` is deliberately the same sentence for
+ * both selects; only the other two name which thing is linked.
+ */
+function storedOptionLabel(
+  state: Exclude<StoredOptionState, null>,
+  select: 'project' | 'document',
+  t: (key: string) => string,
+): string {
+  if (state === 'pending') return t('editor.validationLoadingLink')
+  if (select === 'project') {
+    return state === 'missing'
+      ? t('editor.validationUnknownProject')
+      : t('editor.validationUnverifiedProject')
+  }
+  return state === 'missing'
+    ? t('editor.validationUnknownDocument')
+    : t('editor.validationUnverifiedDocument')
 }
 
 export default function ValidationLinkPicker({
@@ -73,7 +106,9 @@ export default function ValidationLinkPicker({
   // Breadcrumbs). Spelling them here would silently address a separate cache
   // entry the day either is renamed — the picker would keep working and just
   // re-fetch, and miss the invalidations Projects.tsx fires on mutate.
-  const { data: projectsData, isSuccess: projectsResolved } = useQuery({
+  const {
+    data: projectsData, isSuccess: projectsResolved, isError: projectsFailed,
+  } = useQuery({
     queryKey: projectsKey(),
     queryFn: () => projectsApi.getProjects(),
     enabled,
@@ -82,14 +117,19 @@ export default function ValidationLinkPicker({
 
   // Only the selected project's documents are fetched — the picker never needs
   // the whole corpus, and the query is skipped entirely while unlinked.
-  const { data: projectDetail, isSuccess: detailResolved } = useQuery({
+  const {
+    data: projectDetail, isSuccess: detailResolved, isError: detailFailed,
+  } = useQuery({
     queryKey: projectKey(value.project_id),
     queryFn: () => projectsApi.getProject(value.project_id),
     enabled: enabled && value.project_id !== '',
   })
-  const documents = (projectDetail?.documents ?? []).filter(
-    (doc) => LINKABLE_DOCUMENT_TYPES.has(doc.document_type),
-  )
+  // `isScorable` rather than a local set of types: it reads SCORABLE_TYPE_META,
+  // which documents itself as the single source of truth for which document
+  // types the Prioritization page scores. A form can only show its ratings on a
+  // row that exists, so "linkable here" and "scorable there" are the same
+  // question and must not be answerable twice.
+  const documents = (projectDetail?.documents ?? []).filter(isScorable)
 
   // A stored id whose record no longer exists (a regenerated document, a
   // deleted project) must not silently vanish from the control: showing ''
@@ -97,10 +137,12 @@ export default function ValidationLinkPicker({
   // are gated on the corresponding query having RESOLVED, because until it does
   // the list is empty and every intact link looks missing.
   const storedDocument = storedOptionState(
-    value.document_id, documents.map((doc) => doc.document_id), detailResolved,
+    value.document_id, documents.map((doc) => doc.document_id),
+    { resolved: detailResolved, canResolve: enabled && !detailFailed },
   )
   const storedProject = storedOptionState(
-    value.project_id, projects.map((project) => project.project_id), projectsResolved,
+    value.project_id, projects.map((project) => project.project_id),
+    { resolved: projectsResolved, canResolve: enabled && !projectsFailed },
   )
 
   return (
@@ -126,9 +168,7 @@ export default function ValidationLinkPicker({
             <option value="">{t('editor.validationNoProject')}</option>
             {storedProject === null ? null : (
               <option value={value.project_id}>
-                {storedProject === 'missing'
-                  ? t('editor.validationUnknownProject')
-                  : t('editor.validationLoadingLink')}
+                {storedOptionLabel(storedProject, 'project', t)}
               </option>
             )}
             {projects.map((project) => (
@@ -152,9 +192,7 @@ export default function ValidationLinkPicker({
             <option value="">{t('editor.validationWholeProject')}</option>
             {storedDocument === null ? null : (
               <option value={value.document_id}>
-                {storedDocument === 'missing'
-                  ? t('editor.validationUnknownDocument')
-                  : t('editor.validationLoadingLink')}
+                {storedOptionLabel(storedDocument, 'document', t)}
               </option>
             )}
             {documents.map((doc) => (

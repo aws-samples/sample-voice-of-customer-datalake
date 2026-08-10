@@ -14,6 +14,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import i18n from 'i18next'
+import { SCORABLE_TYPE_META } from '../Prioritization/prioritizationUtils'
 
 const mockGetFeedbackForms = vi.fn()
 const mockUpdateFeedbackForm = vi.fn()
@@ -352,5 +353,86 @@ describe('validation link in the form editor', () => {
     expect(source).toContain('queryKey: projectsKey()')
     expect(source, 'query keys must come from the shared helper, not literals')
       .not.toMatch(/queryKey: \['project/)
+  })
+
+  it('offers every document type the Prioritization page scores', async () => {
+    // Lockstep, not a restatement of the test above: SCORABLE_TYPE_META
+    // documents itself as the single source of truth for which types are
+    // scorable, and a form can only show its ratings on a row that exists. A
+    // third type added there must become linkable here with no second edit —
+    // this fails if the picker ever hardcodes its own narrower list again.
+    const scorableTypes = Object.keys(SCORABLE_TYPE_META)
+    expect(scorableTypes.length, 'nothing is scorable — fixture is broken')
+      .toBeGreaterThan(0)
+
+    mockGetProject.mockResolvedValue({
+      project_id: 'p1',
+      documents: scorableTypes.map((type) => ({
+        document_id: `doc_${type}`,
+        document_type: type,
+        title: `Doc ${type}`,
+        content: '',
+        created_at: '',
+      })),
+    })
+
+    await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(screen.getByText(`Doc ${scorableTypes[0]}`)).toBeInTheDocument()
+    })
+    for (const type of scorableTypes) {
+      expect(
+        screen.getByText(`Doc ${type}`),
+        `${type} is scorable on Prioritization but the picker will not link to it`,
+      ).toBeInTheDocument()
+    }
+  })
+
+  it('does not claim to be loading when the project list request fails', async () => {
+    // A rejected query is not "loading" and it is not "no longer available"
+    // either — nobody managed to look. Saying either is a false statement next
+    // to a link the admin is about to Save.
+    mockGetProjects.mockRejectedValue(new Error('projects unavailable'))
+
+    const user = await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(t('feedbackForms:editor.validationUnverifiedProject')),
+      ).toBeInTheDocument()
+    })
+    expect(projectSelect()).toHaveValue('p1')
+    expect(
+      screen.queryByText(t('feedbackForms:editor.validationLoadingLink')),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(t('feedbackForms:editor.validationUnknownProject')),
+    ).not.toBeInTheDocument()
+
+    // And the link still round-trips: a failed lookup must not clear it.
+    await user.click(screen.getByText('Save Changes'))
+    await waitFor(() => {
+      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
+    })
+    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({
+      project_id: 'p1', document_id: 'doc_prfaq',
+    })
+  })
+
+  it('does not claim to be loading when the project detail request fails', async () => {
+    mockGetProject.mockRejectedValue(new Error('detail unavailable'))
+
+    await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(t('feedbackForms:editor.validationUnverifiedDocument')),
+      ).toBeInTheDocument()
+    })
+    expect(documentSelect()).toHaveValue('doc_prfaq')
+    expect(
+      screen.queryByText(t('feedbackForms:editor.validationUnknownDocument')),
+    ).not.toBeInTheDocument()
   })
 })

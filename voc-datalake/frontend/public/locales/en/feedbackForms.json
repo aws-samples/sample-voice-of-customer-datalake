@@ -82,6 +82,8 @@
     "validationTitle": "What This Form Validates",
     "validationUnknownDocument": "Linked document (no longer available)",
     "validationUnknownProject": "Linked project (no longer available)",
+    "validationUnverifiedDocument": "Linked document (could not be checked)",
+    "validationUnverifiedProject": "Linked project (could not be checked)",
     "validationWholeProject": "-- Whole project --"
   },
   "empty": {

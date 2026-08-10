@@ -82,6 +82,8 @@
     "validationTitle": "O Que Este Formulário Valida",
     "validationUnknownDocument": "Documento vinculado (não mais disponível)",
     "validationUnknownProject": "Projeto vinculado (não mais disponível)",
+    "validationUnverifiedDocument": "Documento vinculado (não foi possível verificar)",
+    "validationUnverifiedProject": "Projeto vinculado (não foi possível verificar)",
     "validationWholeProject": "-- Projeto inteiro --"
   },
   "empty": {

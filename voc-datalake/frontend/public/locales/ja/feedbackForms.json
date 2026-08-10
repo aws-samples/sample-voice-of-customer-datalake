@@ -82,6 +82,8 @@
     "validationTitle": "このフォームが検証する対象",
     "validationUnknownDocument": "リンク済みドキュメント（現在利用できません）",
     "validationUnknownProject": "リンク済みプロジェクト（現在利用できません）",
+    "validationUnverifiedDocument": "リンク済みドキュメント（確認できません）",
+    "validationUnverifiedProject": "リンク済みプロジェクト（確認できません）",
     "validationWholeProject": "-- プロジェクト全体 --"
   },
   "empty": {

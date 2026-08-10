@@ -82,6 +82,8 @@
     "validationTitle": "Ce que ce formulaire valide",
     "validationUnknownDocument": "Document lié (plus disponible)",
     "validationUnknownProject": "Projet lié (plus disponible)",
+    "validationUnverifiedDocument": "Document lié (vérification impossible)",
+    "validationUnverifiedProject": "Projet lié (vérification impossible)",
     "validationWholeProject": "-- Tout le projet --"
   },
   "empty": {

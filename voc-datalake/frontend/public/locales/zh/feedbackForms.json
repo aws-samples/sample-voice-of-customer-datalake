@@ -82,6 +82,8 @@
     "validationTitle": "此表单验证的内容",
     "validationUnknownDocument": "已关联的文档（不再可用）",
     "validationUnknownProject": "已关联的项目（不再可用）",
+    "validationUnverifiedDocument": "已关联的文档（无法验证）",
+    "validationUnverifiedProject": "已关联的项目（无法验证）",
     "validationWholeProject": "-- 整个项目 --"
   },
   "empty": {
