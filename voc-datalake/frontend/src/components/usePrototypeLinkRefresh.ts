@@ -46,10 +46,14 @@ import type { ProjectDocument } from '../api/types'
  *   so it is held in a ref: the effect must re-arm when the DEADLINE moves and not
  *   when a caller's inline arrow gets a new identity, or a page that re-renders per
  *   keystroke would rebuild the timer on every one.
+ * @param refreshScope what `onRefresh` refreshes — the project id on a detail page,
+ *   a fixed key for a page that always reads the same set. Required, and required
+ *   for correctness rather than tidiness: see the effect below.
  */
 export function usePrototypeLinkRefresh(
   documents: ReadonlyArray<Pick<ProjectDocument, 'document_type' | 'prototype_url'>> | undefined,
   onRefresh: () => void,
+  refreshScope: string | undefined,
 ): void {
   const onRefreshRef = useRef(onRefresh)
   useEffect(() => {
@@ -62,10 +66,20 @@ export function usePrototypeLinkRefresh(
   // scan is a filter over a handful of documents — cheaper than memoising it.
   const expiresAt = earliestPrototypeExpiry(documents ?? [])
 
+  // `refreshScope` is in the deps as well as the deadline, and it is not redundant.
+  // The deadline alone leaves one hole: two scopes whose earliest deadlines are
+  // numerically EQUAL — which is not exotic, since the API mints every signature in
+  // a response from one clock and an `Expires` is whole seconds. Navigating between
+  // two such projects would not change `expiresAt`, so the effect would not re-run,
+  // and the timer armed for the first would survive into the second and fire against
+  // it (the ref means it invalidates the second's key, so the damage is one needless
+  // refetch rather than a wrong one). Scoping the effect makes that unreachable
+  // instead of merely cheap: a navigation always discards the old timer and arms a
+  // new one, which is the property `useProjectData` had before this was extracted.
   useEffect(() => {
     const delay = refreshDelayMs(expiresAt, Date.now())
     if (delay == null) return
     const timer = setTimeout(() => onRefreshRef.current(), delay)
     return () => clearTimeout(timer)
-  }, [expiresAt])
+  }, [expiresAt, refreshScope])
 }

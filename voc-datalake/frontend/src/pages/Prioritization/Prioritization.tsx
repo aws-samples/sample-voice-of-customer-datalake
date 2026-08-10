@@ -241,14 +241,30 @@ export default function Prioritization() {
    *
    * Invalidated by prefix, not with the full `[key, projectIds]`, so it still
    * matches when the project list has changed underneath.
+   *
+   * That prefix invalidation re-reads EVERY project off whichever single deadline
+   * falls soonest, so one prototype nearing expiry costs N project reads. Correct
+   * and cheap at this page's scale — the same fan-out it already performs on mount,
+   * once an hour, for a list of projects one team can prioritise in a sitting — and
+   * it is what keeps every row's link live off one timer. It is the wrong shape if
+   * the fan-out is ever paginated or the project count grows by an order of
+   * magnitude: at that point the refresh belongs per row, next to the row that owns
+   * the link, rather than here.
+   *
+   * Not memoised: the flattened array is consumed inside the hook by
+   * `earliestPrototypeExpiry`, which reduces it to a number before anything can
+   * depend on its identity. A `useMemo` would stabilise a reference nothing holds.
    */
-  const allDocuments = useMemo(
-    () => (allProjectDetails ?? []).flatMap((detail) => detail.documents ?? []),
-    [allProjectDetails],
+  usePrototypeLinkRefresh(
+    (allProjectDetails ?? []).flatMap((detail) => detail.documents ?? []),
+    () => {
+      void queryClient.invalidateQueries({ queryKey: [ALL_PROJECT_DETAILS_KEY] })
+    },
+    // A constant, because this page has exactly one scope: it always reads all
+    // projects, and the invalidation above is by prefix and so does not vary. The
+    // parameter exists for the detail page, which navigates between scopes.
+    ALL_PROJECT_DETAILS_KEY,
   )
-  usePrototypeLinkRefresh(allDocuments, () => {
-    void queryClient.invalidateQueries({ queryKey: [ALL_PROJECT_DETAILS_KEY] })
-  })
 
   const { data: savedScores } = useQuery({
     queryKey: ['prioritization-scores'],

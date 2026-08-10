@@ -169,9 +169,16 @@ export function useProjectData({
    * replacement so the cycle continues — lives in `usePrototypeLinkRefresh`, which
    * the Prioritization page shares.
    */
-  usePrototypeLinkRefresh(data?.documents, () => {
-    void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-  })
+  usePrototypeLinkRefresh(
+    data?.documents,
+    () => {
+      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
+    },
+    // `id` is what this refresh is scoped to, and passing it keeps the guarantee the
+    // inlined version had: a timer cannot outlive the project it was armed for, not
+    // even when the next project's deadline happens to match to the second.
+    id,
+  )
 
   return {
     data,
