@@ -7,7 +7,8 @@ import { z } from 'zod';
 import { signCloudFrontUrl } from '../lib/cloudfront-signing.js';
 import { ConfigurationError, NotFoundError } from '../lib/errors.js';
 import { fetchRecentFeedback } from './recent-feedback.js';
-import { buildSinglePersonaPrompt, getLanguageInstruction } from './persona-prompt.js';
+import { buildSinglePersonaPrompt } from './persona-prompt.js';
+import { getLanguageInstruction } from './language.js';
 import type { SupportedLanguage } from './language.js';
 
 // ── Avatar URL helpers ──

@@ -192,7 +192,9 @@ async function runConversationLoop(
     messages,
     systemPrompt,
     tools: tools.length > 0 ? tools : undefined,
-    maxTokens: 16000,
+    // maxTokens intentionally omitted: converseStream's DEFAULT_MAX_OUTPUT_TOKENS
+    // is the single source, and history-budget.ts derives the longest replayed
+    // turn from it. Passing the same literal here let the two drift.
     thinkingBudget: 5000,
     modelId,
   });

@@ -10,10 +10,13 @@ import {
   type ConverseStreamOutput,
 } from '@aws-sdk/client-bedrock-runtime';
 import { usesAdaptiveThinking } from './model-override.js';
+import { MAX_OUTPUT_TOKENS } from '../history-budget.js';
 
 // Fallback when no per-surface override is configured and no env is set.
 // The 'chat' surface default is Sonnet 5 (kept in sync with model_config.py).
 const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'global.anthropic.claude-sonnet-5';
+
+
 
 const clientHolder: { instance: BedrockRuntimeClient | null } = { instance: null };
 
@@ -44,7 +47,7 @@ export async function* converseStream(
     messages,
     systemPrompt,
     tools,
-    maxTokens = 16000,
+    maxTokens = MAX_OUTPUT_TOKENS,
     thinkingBudget = 5000,
     modelId,
   } = params;

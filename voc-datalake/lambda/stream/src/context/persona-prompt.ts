@@ -3,15 +3,12 @@
  * that module inside its size budget. The type-only import back into
  * project-context is erased at compile time, so there is no runtime cycle.
  *
- * `getLanguageInstruction` is re-exported from the canonical language module so
- * that project-context.ts has a single import point and does not need to know
- * where the helper lives.
+ * `getLanguageInstruction` lives in ./language.js; consumers import it from there
+ * directly rather than through a re-export here.
  */
 import type { ProjectItem } from './project-context.js';
 import { getLanguageInstruction } from './language.js';
 import type { SupportedLanguage } from './language.js';
-
-export { getLanguageInstruction } from './language.js';
 
 /** The persona's identity block: who they are, what drives them, how to speak. */
 function personaIdentitySection(projectName: string, persona: ProjectItem): string {

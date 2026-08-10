@@ -3,7 +3,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { z } from 'zod';
-import { chatRequestSchema, attachmentSchema } from './schema.js';
+import { chatRequestSchema, attachmentSchema, MAX_MESSAGE_LENGTH } from './schema.js';
+import { MAX_HISTORY_CONTENT_LENGTH, TRUNCATION_MARKER } from './history-budget.js';
 
 /** Returns the flattened dot-path of every issue in a failed parse result. */
 function errorPaths(result: z.SafeParseReturnType<unknown, unknown>): string[] {
@@ -201,14 +202,21 @@ describe('chatRequestSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects message exceeding 2 000 characters', () => {
-    const result = chatRequestSchema.safeParse({ message: 'a'.repeat(2_001) });
+  it('rejects message exceeding the cap', () => {
+    const result = chatRequestSchema.safeParse({ message: 'a'.repeat(MAX_MESSAGE_LENGTH + 1) });
     expect(result.success).toBe(false);
     expect(errorPaths(result)).toContain('message');
   });
 
-  it('accepts message at exactly 2 000 characters', () => {
-    const result = chatRequestSchema.safeParse({ message: 'a'.repeat(2_000) });
+  it('accepts message at exactly the cap', () => {
+    const result = chatRequestSchema.safeParse({ message: 'a'.repeat(MAX_MESSAGE_LENGTH) });
+    expect(result.success).toBe(true);
+  });
+
+  // The old 2 000-char cap was ~300 words, which refused a pasted review or
+  // support thread — a normal input for an analytics tool.
+  it('accepts a pasted excerpt of several thousand characters', () => {
+    const result = chatRequestSchema.safeParse({ message: 'a'.repeat(5_000) });
     expect(result.success).toBe(true);
   });
 
@@ -246,31 +254,44 @@ describe('chatRequestSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects a history entry content exceeding 4 000 characters', () => {
+  // History carries text this service generated, so it is clamped rather than
+  // rejected. The regression these guard is the one that mattered most: a single
+  // long assistant answer used to make every LATER message in the conversation
+  // fail validation, with no field named in the error.
+  it('accepts a follow-up whose history replays an answer longer than the old 4 000-char cap', () => {
     const result = chatRequestSchema.safeParse({
-      message: 'hi',
-      history: [{ role: 'user', content: 'a'.repeat(4_001) }],
-    });
-    expect(result.success).toBe(false);
-    expect(errorPaths(result).some((f) => f.startsWith('history'))).toBe(true);
-  });
-
-  it('accepts history entry content at exactly 4 000 characters', () => {
-    const result = chatRequestSchema.safeParse({
-      message: 'hi',
-      history: [{ role: 'user', content: 'a'.repeat(4_000) }],
+      message: 'and what about last week?',
+      history: [
+        { role: 'user', content: 'summarise the urgent issues' },
+        { role: 'assistant', content: 'a'.repeat(20_000) },
+      ],
     });
     expect(result.success).toBe(true);
   });
 
-  it('rejects more than 50 history entries', () => {
-    const entry = { role: 'user' as const, content: 'hi' };
+  it('truncates a turn longer than the model can emit instead of rejecting it', () => {
     const result = chatRequestSchema.safeParse({
       message: 'hi',
-      history: Array.from({ length: 51 }, () => entry),
+      history: [{ role: 'assistant', content: 'a'.repeat(MAX_HISTORY_CONTENT_LENGTH + 5_000) }],
     });
-    expect(result.success).toBe(false);
-    expect(errorPaths(result)).toContain('history');
+    expect(result.success).toBe(true);
+    const entry = result.data?.history?.[0];
+    expect(entry?.content).toHaveLength(MAX_HISTORY_CONTENT_LENGTH);
+    expect(entry?.content.endsWith(TRUNCATION_MARKER)).toBe(true);
+  });
+
+  it('accepts a conversation past the 50-turn window, keeping the most recent turns', () => {
+    const history = Array.from({ length: 60 }, (_, i) => ({
+      role: 'user' as const, content: `turn-${i}`,
+    }));
+    const result = chatRequestSchema.safeParse({
+      message: 'hi', history,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.history).toHaveLength(50);
+    // The window ends at the newest turn, so turn-59 survives and turn-0 does not.
+    expect(result.data?.history?.at(-1)?.content).toBe('turn-59');
+    expect(result.data?.history?.[0]?.content).toBe('turn-10');
   });
 
   it('rejects more than 20 selected_personas', () => {
