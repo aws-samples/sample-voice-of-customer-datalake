@@ -13,14 +13,19 @@
 /**
  * Maximum number of history messages sent to the streaming server.
  *
- * Must stay at or below the server-side cap defined in
- * `lambda/stream/src/schema.ts` (`history: z.array(…).max(50)`).
- * If the server cap is raised, update both files in the same PR.
- * We keep the *newest* entries so the model always sees the most
- * recent turns.
+ * Mirrors the server's own sliding window, `MAX_HISTORY_ENTRIES` in
+ * `lambda/stream/src/history-budget.ts`, and must stay at or below it. We keep
+ * the *newest* entries, which is what the server keeps too.
  *
- * `constants/chat.test.ts` reads the server schema and fails if this value
- * ever exceeds it, so the coupling is checked rather than merely documented.
+ * The server clamps rather than rejects above the window, so exceeding it is
+ * silent truncation instead of a 400 — but still worth avoiding, because the
+ * server's slice does no shape repair. Trimming the oldest turns there could
+ * leave the list starting on an assistant turn, which is exactly the shape
+ * {@link buildHistory} exists to prevent. Capping here keeps the repaired list
+ * the one the model sees.
+ *
+ * `constants/chat.test.ts` reads that constant from source and fails if this
+ * value ever exceeds it, so the coupling is checked rather than documented.
  */
 export const MAX_HISTORY_ENTRIES = 50
 

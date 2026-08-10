@@ -13,33 +13,45 @@ import { describe, it, expect } from 'vitest'
 import { MAX_HISTORY_ENTRIES, buildHistory, type HistoryEntry } from './chat'
 
 /**
- * Matches `history: z.array(<element>).max(N)` and captures N.
+ * Where the server's history window now lives.
  *
- * The `z.array(...)` argument is matched with *balanced* parens (two nesting
- * levels, which covers `z.object({ … z.enum([…]) })`) rather than a lazy
- * `[\s\S]*?`.  A lazy match stops at the first `.max(` after `z.array(`, which
- * need not be the array's own: an element schema spelled
- * `content: z.string().max(4000)` would make the extractor report 4000, and a
- * `history` that lost its cap entirely would silently borrow a later field's
- * number.  Either way the coupling assertion below would pass while the real
- * cap had moved — the exact drift it exists to catch.
+ * It used to be a literal `.max(50)` on the array in `schema.ts`, which this
+ * file parsed with a balanced-paren pattern.  `development` since moved it to a
+ * named constant in `history-budget.ts` and changed the array bound to
+ * `.max(MAX_HISTORY_ARRAY)` — an order of magnitude higher, and a *rejection*
+ * that no real conversation reaches.  The number the client actually has to
+ * agree with is the window, so that is what this reads.
  *
- * Still tolerant of a formatter wrapping `.max(N)` onto its own line and of a
- * padded argument, so a backend-only refactor that leaves the cap alone cannot
- * red this suite.
+ * This is also why the reader is now a named-constant match rather than a
+ * schema-shape match: there is no numeric literal on the array to misread, so
+ * the whole class of "matched the wrong `.max()`" defect is gone by
+ * construction rather than by a cleverer regex.  Same approach as the
+ * neighbouring `api/streamLimits.lockstep.test.ts`.
  */
-const SERVER_CAP_PATTERN
-  = /history:\s*z\s*\.array\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)\s*\.max\(\s*(\d+)\s*\)/
+const BUDGET_PATH = path.join(__dirname, '../../../lambda/stream/src/history-budget.ts')
 
 /**
- * Pull the `history` cap out of the server schema source.
+ * Matches `MAX_HISTORY_ENTRIES = 50`, tolerating the numeric separators the
+ * stream package uses elsewhere (`16_000`).
  *
- * Returns null when the shape is genuinely unrecognisable, which the caller
- * turns into a loud failure.
+ * Anchored on the whole identifier so a *different* constant whose name merely
+ * starts with it cannot be borrowed, and it requires digits: a value derived
+ * from another constant (`MAX_HISTORY_ARRAY = MAX_HISTORY_ENTRIES * 10`) yields
+ * no match rather than a wrong number.  Null is the safe direction — the caller
+ * turns it into a loud, diagnosable failure.
  */
-function extractServerCap(source: string): number | null {
-  const match = SERVER_CAP_PATTERN.exec(source)
-  return match === null ? null : Number(match[1])
+const SERVER_WINDOW_PATTERN = /\bMAX_HISTORY_ENTRIES\s*=\s*([0-9_]+)/
+
+/**
+ * Pull the server's history window out of `history-budget.ts`.
+ *
+ * Returns null when the constant is absent or no longer a literal, which the
+ * caller turns into a loud failure rather than a vacuous pass.
+ */
+function extractServerWindow(source: string): number | null {
+  const match = SERVER_WINDOW_PATTERN.exec(source)
+  if (match?.[1] === undefined) return null
+  return Number(match[1].replaceAll('_', ''))
 }
 
 /** Alternating user/assistant conversation of the given length, user first. */
@@ -50,62 +62,71 @@ function alternating(total: number): HistoryEntry[] {
   }))
 }
 
-describe('extractServerCap', () => {
+describe('extractServerWindow', () => {
   // The extractor is unit-tested so the coupling assertion below cannot fail
-  // for a spelling change that leaves the cap itself untouched — and, just as
-  // importantly, cannot *pass* by reading a `.max()` that is not the array's.
+  // for a spelling change that leaves the window itself untouched — and, just
+  // as importantly, cannot *pass* by reading a number that is not the window.
   it.each([
-    ['bare identifier element', '  history: z.array(historyMessageSchema).max(50).optional(),'],
+    ['a plain declaration', 'export const MAX_HISTORY_ENTRIES = 50;'],
+    ['a padded declaration', 'export const MAX_HISTORY_ENTRIES  =  50 ;'],
+    ['no export keyword', 'const MAX_HISTORY_ENTRIES = 50'],
     [
-      'inlined element whose own fields carry .max()',
-      '  history: z.array(z.object({ role: z.enum(["user", "assistant"]), '
-      + 'content: z.string().min(1).max(4000) })).max(50),',
+      'a preceding constant that is not the window',
+      'export const MAX_HISTORY_CONTENT_LENGTH = 64000;\n'
+      + 'export const MAX_HISTORY_ENTRIES = 50;',
     ],
-    ['.max() wrapped onto its own line', '  history: z\n    .array(historyMessageSchema)\n    .max(50)\n    .optional(),'],
-    ['padded argument', '  history: z.array(historyMessageSchema).max( 50 ),'],
-  ])('reads the array cap, not an inner one, from a %s', (_label, source) => {
-    expect(extractServerCap(source)).toBe(50)
+  ])('reads the window from %s', (_label, source) => {
+    expect(extractServerWindow(source)).toBe(50)
   })
 
-  it('reads a lowered array cap even when an inner .max() is larger', () => {
-    // The drift case that matters: if the server tightens the cap to 20 while
-    // the element schema still has `.max(4000)`, a lazy pattern reports 4000
-    // and `MAX_HISTORY_ENTRIES (50) <= 4000` passes — green on precisely the
-    // regression this coupling check was added to catch.
-    const source = '  history: z.array(z.object({ content: z.string().min(1).max(4000) })).max(20),'
-    expect(extractServerCap(source)).toBe(20)
+  it('tolerates the numeric separators the stream package uses', () => {
+    expect(extractServerWindow('export const MAX_HISTORY_ENTRIES = 1_000;')).toBe(1000)
   })
 
-  it('returns null when there is no history cap to read', () => {
-    expect(extractServerCap('history: z.array(historyMessageSchema).optional(),')).toBeNull()
+  it('returns null when the constant is absent', () => {
+    // The loud direction. A renamed or deleted constant must red this suite
+    // rather than let the coupling assertion pass vacuously forever.
+    expect(extractServerWindow('export const MAX_HISTORY_ARRAY = 500;')).toBeNull()
   })
 
-  it('returns null rather than borrowing a later field\'s cap', () => {
-    // An uncapped `history` is the maximally dangerous state, so it must fail
-    // loudly instead of silently reading an unrelated field's number.
-    const source = '  history: z.array(historyMessageSchema).optional(),\n'
-      + '  budget: z.number().max(8192).optional(),'
-    expect(extractServerCap(source)).toBeNull()
+  it('returns null when the window stops being a literal', () => {
+    // `MAX_HISTORY_ENTRIES = SOMETHING * 10` cannot be read by a regex, so it
+    // must fail loudly instead of reporting a fragment of the expression.
+    expect(extractServerWindow('const MAX_HISTORY_ENTRIES = BASE * 10;')).toBeNull()
+  })
+
+  it('does not borrow a longer identifier that merely starts with the name', () => {
+    // Without the \b...whole-word anchoring, `MAX_HISTORY_ENTRIES_LEGACY` would
+    // satisfy the pattern and report a number the server does not use.
+    expect(extractServerWindow('const MAX_HISTORY_ENTRIES_LEGACY = 999;')).toBeNull()
   })
 })
 
-describe('MAX_HISTORY_ENTRIES vs the server cap', () => {
-  it('never exceeds the `.max(N)` on the server history schema', () => {
-    // Parsed from source rather than imported: schema.ts belongs to a separate
-    // tsconfig project (lambda/stream) that the frontend does not build.
-    const schemaPath = path.join(__dirname, '../../../lambda/stream/src/schema.ts')
-    const source = fs.readFileSync(schemaPath, 'utf8')
-    const serverCap = extractServerCap(source)
+describe('MAX_HISTORY_ENTRIES vs the server window', () => {
+  it('never exceeds the window the server keeps', () => {
+    // Parsed from source rather than imported: history-budget.ts belongs to a
+    // separate tsconfig project (lambda/stream) the frontend does not build.
+    //
+    // Note the server now CLAMPS to this window (`clampHistoryToBudget`) rather
+    // than rejecting above it, so exceeding it is no longer a 400 — it is
+    // silent truncation of the oldest turns. That is a weaker failure but not a
+    // harmless one: sending more than the server keeps means the client's own
+    // shape repair is applied to entries the server then discards, and the
+    // *server's* slice has no such repair, so it can hand Bedrock a list
+    // starting on an assistant turn. Staying at or under the window keeps the
+    // repaired list the one the model actually sees.
+    const source = fs.readFileSync(BUDGET_PATH, 'utf8')
+    const serverWindow = extractServerWindow(source)
 
-    // Fail loudly, and diagnosably, if the schema shape changed beyond what
-    // extractServerCap understands — a silently unmatched pattern would make
+    // Fail loudly, and diagnosably, if the constant moved beyond what
+    // extractServerWindow understands — a silently unmatched pattern would make
     // this test pass vacuously forever.
     expect(
-      serverCap,
-      `Could not read the history cap from ${schemaPath}. If the schema was `
-      + 'restructured, update extractServerCap to match.',
+      serverWindow,
+      `Could not read MAX_HISTORY_ENTRIES from ${BUDGET_PATH}. If it was renamed, `
+      + 'moved, or is no longer a numeric literal, update extractServerWindow to match.',
     ).not.toBeNull()
-    expect(MAX_HISTORY_ENTRIES).toBeLessThanOrEqual(Number(serverCap))
+    expect(MAX_HISTORY_ENTRIES).toBeLessThanOrEqual(Number(serverWindow))
   })
 })
 
