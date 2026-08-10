@@ -81,7 +81,7 @@ type DetailWithDocuments = Pick<Partial<ProjectDetail>, 'documents'>
  * aligns them.
  */
 export function collectProjectDocumentIds(
-  allProjectDetails: readonly DetailWithDocuments[] | undefined,
+  allProjectDetails: readonly (DetailWithDocuments | undefined)[] | undefined,
   projects: readonly Project[] | undefined,
 ): Map<string, Set<string>> {
   const byProject = new Map<string, Set<string>>()
@@ -89,6 +89,10 @@ export function collectProjectDocumentIds(
   for (const [index, detail] of allProjectDetails.entries()) {
     const project = projects[index]
     if (!project) continue
+    // A detail can be absent even when the array is not: a caller mapping
+    // `useQueries().map((q) => q.data)` yields undefined for every entry still
+    // loading, and dereferencing that would throw mid-load.
+    if (!detail) continue
     byProject.set(project.project_id, new Set((detail.documents ?? []).map((doc) => doc.document_id)))
   }
   return byProject
@@ -139,6 +143,12 @@ export function buildLinkedFormsByDocument(
 ): Map<string, LinkedForm[]> {
   const byDocument = new Map<string, LinkedForm[]>()
   for (const row of rows) {
+    // Keyed by document_id alone even though the value was computed from
+    // (project_id, document_id): document ids are server-minted and globally
+    // unique, and this is already the key `scores`/`getScore` in
+    // prioritizationUtils.ts and `expandedId` in Prioritization.tsx are
+    // addressed by. A composite key here would have to be unpacked at every
+    // one of those read sites for no gain.
     byDocument.set(
       row.document_id,
       selectLinkedForms(forms, row, documentIdsByProject.get(row.project_id)),

@@ -204,9 +204,19 @@ const mockFeedbackForms = [
     form_id: 'form_4', name: 'Checkout Survey', enabled: true,
     title: 'How was checkout?', theme: { primary_color: '#F97316' },
     created_at: new Date().toISOString(),
-    // A second form validating the SAME document as form_2, with a null average
-    // in mockFormStats below: one expanded row therefore exercises both the
-    // several-forms-per-document case and the ratings-disabled rendering.
+    // Deliberately keeps its healthy 4.6 average below: it is the only 4.x card
+    // in the /feedback-forms grid, so repurposing it as the null-average case
+    // would have cost that grid its "healthy ratings" appearance.
+    project_id: '', document_id: '',
+  },
+  // A second form validating the SAME document as form_2, with a null average in
+  // mockFormStats below: one expanded Prioritization row therefore exercises
+  // both the several-forms-per-document case and the ratings-disabled rendering.
+  {
+    form_id: 'form_5', name: 'PR/FAQ Concept Test', enabled: true,
+    title: 'Would you use this?', theme: mockFormTheme('#8B5CF6'),
+    rating_enabled: false,
+    created_at: new Date().toISOString(),
     project_id: 'proj_1', document_id: 'prfaq_1',
   },
 ];
@@ -214,7 +224,8 @@ const mockFormStats = {
   form_1: { total_submissions: 234, avg_rating: 4.2, rating_count: 180 },
   form_2: { total_submissions: 567, avg_rating: 3.8, rating_count: 512 },
   form_3: { total_submissions: 89, avg_rating: null, rating_count: 0 },
-  form_4: { total_submissions: 41, avg_rating: null, rating_count: 0 },
+  form_4: { total_submissions: 41, avg_rating: 4.6, rating_count: 38 },
+  form_5: { total_submissions: 27, avg_rating: null, rating_count: 0 },
 };
 
 // Mock Cognito users (issue #177) — stateful so create/enable/disable/delete

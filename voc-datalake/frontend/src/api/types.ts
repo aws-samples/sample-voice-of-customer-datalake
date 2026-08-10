@@ -413,7 +413,15 @@ export interface S3ImportFile {
   status: 'pending' | 'processed'
 }
 
-/** Shared form configuration fields used by both FeedbackFormConfig and FeedbackForm. */
+/**
+ * Shared form configuration fields used by both FeedbackFormConfig and FeedbackForm.
+ *
+ * Only fields safe to publish belong here: FeedbackFormConfig extends this and
+ * is the body of the UNAUTHENTICATED widget config route. Internal identifiers
+ * — the project_id/document_id a form validates, for instance — go on
+ * FeedbackForm instead. `feedbackFormTypes.test.ts` asserts that boundary over
+ * this declaration.
+ */
 interface FeedbackFormFields {
   title: string
   description: string

@@ -18,7 +18,15 @@ import { describe, it, expect } from 'vitest'
 
 const LINK_FIELDS = ['project_id', 'document_id']
 
-/** The body of one `interface X { ... }` declaration in types.ts. */
+/**
+ * The body of one `interface X { ... }` declaration in types.ts, with comments
+ * stripped.
+ *
+ * The assertions below are about what an interface *declares*. A comment inside
+ * `FeedbackFormFields` that merely mentions `project_id` — to record why it is
+ * deliberately absent, say — declares nothing, and failing on it would punish
+ * exactly the documentation that keeps this invariant understood.
+ */
 function interfaceBody(source: string, name: string): string {
   const start = source.indexOf(`interface ${name} `)
   expect(start, `interface ${name} not found — was it renamed?`).toBeGreaterThanOrEqual(0)
@@ -26,6 +34,8 @@ function interfaceBody(source: string, name: string): string {
   const close = source.indexOf('\n}', open)
   expect(close, `interface ${name} is not brace-delimited as expected`).toBeGreaterThan(open)
   return source.slice(open, close)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '')
 }
 
 describe('feedback form type boundary', () => {
