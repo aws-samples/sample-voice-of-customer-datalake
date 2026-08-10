@@ -267,12 +267,17 @@ function PrototypeFeedbackButton({
 // prototypes use plain <a href> links to their stable CDN URL instead.
 
 function LegacyHtmlActions({
-  html, safeName, t,
+  html, safeName,
 }: {
   readonly html: string
   readonly safeName: string
-  readonly t: TFunc
 }) {
+  // Reads `components` rather than taking this page's `projectDetail` `t`, because
+  // the labels below are the SAME two labels `PrototypeLinkActions` renders for the
+  // non-legacy branch a few lines down. They were a `projectDetail` copy of them,
+  // which is how one branch of one control ends up worded differently from the
+  // other in seven translations and nobody notices.
+  const { t } = useTranslation('components')
   const onDownloadHtml = useCallback(() => {
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
     const blobUrl = URL.createObjectURL(blob)
@@ -293,10 +298,10 @@ function LegacyHtmlActions({
   return (
     <>
       <button onClick={onOpenInNewTab} className="text-blue-600 hover:underline">
-        {t('documents.prototype.openNewTab', { defaultValue: 'Open in new tab' })}
+        {t('prototypeLink.openNewTab')}
       </button>
       <button onClick={onDownloadHtml} className="text-blue-600 hover:underline">
-        {t('documents.prototype.downloadHtml', { defaultValue: 'Download .html' })}
+        {t('prototypeLink.downloadHtml')}
       </button>
     </>
   )
@@ -366,7 +371,9 @@ function PrototypeView({
               <PrototypeLinkActions url={url} noteId={lifetimeNoteId} downloadName={safeName} />
             ) : (
               // Legacy prototypes only have inline `content` — fall back to blobbing it.
-              <LegacyHtmlActions html={html} safeName={safeName} t={t} />
+              // No `t`: it reads the same shared `components` labels the branch above
+              // does, so the two spellings of one control cannot drift apart.
+              <LegacyHtmlActions html={html} safeName={safeName} />
             )}
           </div>
         </div>

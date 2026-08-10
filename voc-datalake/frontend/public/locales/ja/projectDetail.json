@@ -78,7 +78,6 @@
       "feedbackSubmit": "再生成",
       "feedbackTitle": "フィードバックを与えてこのプロトタイプを再生成",
       "needsDocs": "プロトタイプ作成を有効にするには、まず PRD または PR-FAQ を作成してください",
-      "openNewTab": "新しいタブで開く",
       "previewLabel": "ライブプレビュー",
       "rawLabel": "生の出力（解析失敗 — 再生成してください）",
       "started": "開始しました — バックグラウンドジョブで進行状況を確認できます。"

@@ -78,7 +78,6 @@
       "feedbackSubmit": "Regenerate",
       "feedbackTitle": "Give feedback to regenerate this prototype",
       "needsDocs": "Create a PRD or a PR-FAQ first to enable prototype build",
-      "openNewTab": "Open in new tab",
       "previewLabel": "Live preview",
       "rawLabel": "Raw output (parse failed — please regenerate)",
       "started": "Started — track it in Background Jobs."

@@ -68,9 +68,17 @@ export default function FormQrButton({
   const headingId = useId()
   return (
     <>
+      {/* `aria-haspopup="dialog"` because this opens `ModalShell`, not a page or a
+          disclosure. Without it the trigger announces as a plain button and a
+          screen-reader user learns they are in a dialog only after focus has
+          already moved there — the difference between choosing to open it and
+          discovering they did. `aria-expanded` would be the wrong companion: it
+          belongs to disclosures that reveal adjacent content, and the dialog is
+          not adjacent, it is modal and unmounted until asked for. */}
       <button
         type="button"
         onClick={() => setIsOpen(true)}
+        aria-haspopup="dialog"
         className={clsx('inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700', className)}
       >
         <QrCode size={14} />

@@ -255,9 +255,13 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
 
         <div className="border-t pt-4">
           <div className="flex flex-wrap items-center gap-4">
+            {/* Translated because it sits immediately beside the QR trigger, which
+                is: one row, two controls, and only one of them in the reader's
+                language reads as a bug rather than as a gap. The keys already
+                existed in all eight catalogues — they were simply never wired up. */}
             <button onClick={() => setShowEmbed(!showEmbed)} className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700">
               <Code size={16} />
-              {showEmbed ? 'Hide Embed Code' : 'Show Embed Code'}
+              {showEmbed ? t('card.hideEmbedCode') : t('card.showEmbedCode')}
             </button>
             {/* Beside the embed disclosure rather than inside it: a facilitator
                 wanting a QR for a room is not looking for an iframe snippet. Same

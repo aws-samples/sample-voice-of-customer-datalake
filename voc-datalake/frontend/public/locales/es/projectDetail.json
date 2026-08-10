@@ -78,7 +78,6 @@
       "feedbackSubmit": "Regenerar",
       "feedbackTitle": "Da feedback para regenerar este prototipo",
       "needsDocs": "Crea primero un PRD o un PR-FAQ para habilitar la creación del prototipo",
-      "openNewTab": "Abrir en una pestaña nueva",
       "previewLabel": "Vista previa en vivo",
       "rawLabel": "Salida sin procesar (falló el análisis — regenera, por favor)",
       "started": "Iniciado: síguelo en Tareas en segundo plano."

@@ -78,7 +78,6 @@
       "feedbackSubmit": "重新生成",
       "feedbackTitle": "提供反馈以重新生成此原型",
       "needsDocs": "请先创建 PRD 或 PR-FAQ 以启用原型构建",
-      "openNewTab": "在新标签页中打开",
       "previewLabel": "实时预览",
       "rawLabel": "原始输出（解析失败 — 请重新生成）",
       "started": "已开始 — 可在后台任务中查看进度。"
