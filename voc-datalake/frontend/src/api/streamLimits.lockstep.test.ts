@@ -18,8 +18,11 @@ import {
   MAX_CHAT_MESSAGE_LENGTH, MAX_SELECTED_DOCUMENTS, MAX_SELECTED_PERSONAS,
 } from './streamLimits'
 
-// Literal path: the security lint rule forbids a computed argument here, and a
-// literal also means a moved schema fails loudly rather than silently passing.
+// Relative to the frontend package root, which is where vitest runs. A literal
+// because the security lint rule forbids a computed argument — and because both
+// failure modes are loud: a moved schema or a wrong working directory throws
+// ENOENT while this module is being imported, rather than quietly passing.
+// (import.meta.url is not usable here: it is not a file: URL under this config.)
 const SCHEMA_SOURCE = readFileSync('../lambda/stream/src/schema.ts', 'utf8')
 
 /**
