@@ -2,7 +2,33 @@
 Tests for feedback_form_handler.py - /feedback-forms/* endpoints.
 """
 import json
+import re
+from pathlib import Path
 from unittest.mock import patch
+
+WIDGET_SOURCE = Path(__file__).resolve().parents[1] / 'static' / 'feedback-widget.js'
+
+# How the widget reaches its config: `config.x` in the fetch callback,
+# `this.config.x`, and `c.x` after `var c = this.config`.
+_WIDGET_CONFIG_READ = re.compile(r'(?:this\.config|\bconfig|\bc)\.([a-z_]+)')
+
+
+def _fields_the_widget_reads() -> set[str]:
+    """Config field names read by static/feedback-widget.js, read off the widget.
+
+    Derived rather than hand-listed. The list this replaced had already drifted:
+    it claimed the widget reads `custom_fields`, which appears nowhere in the
+    widget, so it asserted a dependency that does not exist while a genuinely new
+    read would have gone unnoticed.
+
+    Errs wide, which is the safe direction: if `c` is ever aliased to something
+    other than the config this over-collects and the assertion fails loudly
+    instead of quietly passing.
+    """
+    source = WIDGET_SOURCE.read_text(encoding='utf-8')
+    fields = set(_WIDGET_CONFIG_READ.findall(source))
+    assert fields, f'found no config reads in {WIDGET_SOURCE.name} — did it move?'
+    return fields
 
 
 class TestListForms:
@@ -680,13 +706,12 @@ class TestPublicConfigDoesNotLeakTheLink:
 
         body = json.loads(feedback_form_handler.lambda_handler(event, lambda_context)['body'])
 
-        # Field names read by lambda/api/static/feedback-widget.js.
-        for field in (
-            'enabled', 'title', 'description', 'question', 'rating_enabled',
-            'rating_type', 'rating_max', 'placeholder', 'collect_name',
-            'collect_email', 'success_message', 'theme', 'custom_fields',
-        ):
-            assert field in body['config'], f'widget reads config.{field}'
+        read_by_widget = _fields_the_widget_reads()
+        missing = sorted(read_by_widget - set(body['config']))
+        assert not missing, (
+            f'the widget reads config.{missing} but the public projection no '
+            'longer serves it.'
+        )
 
 
 class TestValidationLinkBoundary:
@@ -789,6 +814,19 @@ class TestValidationLinkBoundary:
         invariant is asserted over the actual tuples rather than left to review.
         """
         link_fields = set(feedback_form_handler.LINK_FIELDS)
+        updatable = set(feedback_form_handler.UPDATABLE_FIELDS)
 
-        assert link_fields <= set(feedback_form_handler.UPDATABLE_FIELDS)
+        assert link_fields <= updatable
         assert link_fields <= set(feedback_form_handler.DEFAULT_FORM_CONFIG)
+
+        # The direction the docstring is about, and the one the two assertions
+        # above do NOT cover: a writable identifier that nobody validates. Keyed
+        # off the `_id` suffix, because being an identifier another surface
+        # matches on is exactly what earns a field validation here; a writable
+        # free-text field is out of scope and stays out.
+        writable_identifiers = {field for field in updatable if field.endswith('_id')}
+        assert writable_identifiers <= link_fields, (
+            f'{sorted(writable_identifiers - link_fields)} can be written by a '
+            'PUT but is absent from LINK_FIELDS, so validate_link_fields never '
+            'sees it.'
+        )

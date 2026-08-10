@@ -61,12 +61,30 @@ def _declared_config_fields() -> set[str]:
 
     fields: set[str] = set()
     for name in ('FeedbackFormConfig', 'FeedbackFormFields'):
+        declared_here = set()
         for line in _interface_body(source, name).split('\n'):
             # Top-level members are indented exactly two spaces; anything deeper
             # belongs to a nested object literal.
-            match = re.fullmatch(r'  (\w+)\??:.*', line.rstrip())
+            #
+            # `readonly` is matched explicitly rather than left out: a member the
+            # pattern fails to recognise drops out of `declared`, and in the
+            # "declared but not served" direction that makes the comparison below
+            # PASS — i.e. the extractor fails OPEN on exactly one of the two
+            # drifts this test exists to catch. (Proven by probe: marking one
+            # served member `readonly` and removing it from the dict passed.)
+            match = re.fullmatch(r'  (?:readonly )?(\w+)\??:.*', line.rstrip())
             if match:
-                fields.add(match.group(1))
+                declared_here.add(match.group(1))
+        # An empty result means the extractor stopped recognising members — a
+        # reformat, a modifier it does not know — not that the interface is
+        # empty. Left unchecked that also fails open, silently.
+        assert declared_here, (
+            f'extracted no members from interface {name} in {TYPES_SOURCE}. '
+            'The declaration was probably reformatted, or a member modifier '
+            'this parser does not handle was introduced. Fix the pattern — an '
+            'empty set would make the comparison below vacuous.'
+        )
+        fields |= declared_here
     return fields
 
 
@@ -84,7 +102,11 @@ class TestWidgetConfigTypeLockstep:
             'The first publishes a field on an UNAUTHENTICATED route that no '
             'reviewer of types.ts saw; the second makes the frontend read '
             'undefined from a field the compiler swears exists. Change both, or '
-            'neither.'
+            'neither.\n'
+            f'If neither list looks wrong, {TYPES_SOURCE} was probably '
+            'reformatted: this assertion reads the TypeScript declaration as '
+            'text, so a member reflowed onto a continuation line or given a '
+            'modifier stops being recognised.'
         )
 
     def test_the_link_fields_are_in_neither(self, feedback_form_handler):
