@@ -18,10 +18,24 @@ const PROJECT_ROOT = join(__dirname, '..', '..');
 const UPDATE_ENV_SH = join(PROJECT_ROOT, 'frontend', 'scripts', 'update-env.sh');
 const RUNTIME_CONFIG_TS = join(PROJECT_ROOT, 'frontend', 'src', 'runtimeConfig.ts');
 
-/** Stack ids the CDK app actually constructs: `new XStack(app, 'Id', ...)`. */
+/**
+ * Stack ids the CDK app actually constructs. Two accepted shapes:
+ *
+ *   new XStack(app, 'Id', ...)           — a bare literal
+ *   new XStack(app, stackId('Id'), ...)  — namespaced by deploymentPrefix
+ *
+ * The second exists because a deployment prefix has to reach the stack id too:
+ * without it, a second deploy into the same account and region UPDATES the
+ * first deployment's stacks instead of creating new ones. The BASE id is what
+ * this guard cares about — that is what `cdk deploy <Stack>` and update-env.sh
+ * name for the default (unprefixed) deployment, and a prefixed deployment
+ * passes `-c deploymentPrefix=...` to both.
+ */
 function declaredStackIds(): Set<string> {
   const source = readFileSync(join(PROJECT_ROOT, 'bin', 'voc-datalake.ts'), 'utf8');
-  const ids = [...source.matchAll(/new\s+\w+\s*\(\s*app\s*,\s*'([^']+)'/g)].map((m) => m[1]);
+  const ids = [
+    ...source.matchAll(/new\s+\w+\s*\(\s*app\s*,\s*(?:stackId\(\s*)?'([^']+)'/g),
+  ].map((m) => m[1]);
   return new Set(ids);
 }
 

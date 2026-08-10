@@ -22,14 +22,14 @@ import {
   capitalize,
   type PluginManifest,
 } from '../plugin-loader';
-import { uniqueName } from '../utils/naming';
 import { NagSuppressions } from 'cdk-nag';
 import { apiSecretsSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
 import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
+import { VocStack, VocStackProps } from '../utils/voc-stack';
 
-export interface VocIngestionStackProps extends cdk.StackProps {
+export interface VocIngestionStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;
   watermarksTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
@@ -45,7 +45,7 @@ export interface VocIngestionStackProps extends cdk.StackProps {
   frontendDomain?: string;
 }
 
-export class VocIngestionStack extends cdk.Stack {
+export class VocIngestionStack extends VocStack {
   public readonly ingestionLambdas: Map<string, lambda.Function> = new Map();
   public readonly processingQueue: sqs.Queue;
   public readonly secretsArn: string;
@@ -155,7 +155,7 @@ export class VocIngestionStack extends cdk.Stack {
     corsAllowedOrigins: string[]
   ): s3.Bucket {
     return new s3.Bucket(this, 'S3ImportBucket', {
-      bucketName: uniqueName('voc-import'),
+      bucketName: this.uniqueName('voc-import'),
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: kmsKey,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -195,7 +195,7 @@ export class VocIngestionStack extends cdk.Stack {
     };
 
     const secret = new secretsmanager.Secret(this, 'VocApiSecrets', {
-      secretName: uniqueName('voc-datalake/api-credentials'),
+      secretName: this.uniqueName('voc-datalake/api-credentials'),
       description: 'API credentials for VoC data sources',
       generateSecretString: {
         secretStringTemplate: JSON.stringify({
@@ -213,7 +213,7 @@ export class VocIngestionStack extends cdk.Stack {
 
   private createDLQ(kmsKey: kms.Key): sqs.Queue {
     const dlq = new sqs.Queue(this, 'ProcessingDLQ', {
-      queueName: uniqueName('voc-processing-dlq'),
+      queueName: this.uniqueName('voc-processing-dlq'),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
       retentionPeriod: cdk.Duration.days(14),
@@ -237,7 +237,7 @@ export class VocIngestionStack extends cdk.Stack {
 
   private createProcessingQueue(kmsKey: kms.Key, dlq: sqs.Queue): sqs.Queue {
     const queue = new sqs.Queue(this, 'ProcessingQueue', {
-      queueName: uniqueName('voc-processing-queue'),
+      queueName: this.uniqueName('voc-processing-queue'),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
       visibilityTimeout: cdk.Duration.minutes(6),
@@ -358,11 +358,28 @@ export class VocIngestionStack extends cdk.Stack {
     const infra = plugin.infrastructure.ingestor;
     if (!infra?.enabled) return;
 
+    // Parse schedule from manifest
+    const schedule = this.parseSchedule(infra.schedule);
+
+    // The rule name is needed twice: on the Rule below, and — under a
+    // deployment prefix — by the circuit breaker inside the ingestor, which
+    // disables its own schedule when a plugin keeps failing. It derives the
+    // name from DEPLOY_ACCOUNT_ID/DEPLOY_REGION today, which is right without a
+    // prefix and silently wrong with one (it would call DisableRule on a name
+    // that does not exist, leaving a failing plugin hammering the source), so
+    // pass the resolved name down instead. Built only when a rule actually
+    // exists, so an unscheduled plugin cannot spend name-length budget on a
+    // rule the app never creates.
+    const scheduleRuleName = schedule
+      ? this.uniqueName(`voc-ingest-${plugin.id}-schedule`)
+      : undefined;
+
     // Build environment - some plugins need extra tables
     const lambdaEnv: Record<string, string> = {
       ...commonEnv,
       SOURCE_PLATFORM: plugin.id,
       PLUGIN_ID: plugin.id,
+      ...(scheduleRuleName ? this.prefixOnlyEnv({ INGEST_SCHEDULE_RULE_NAME: scheduleRuleName }) : {}),
     };
 
     // All plugins need aggregates table for run status tracking
@@ -371,14 +388,11 @@ export class VocIngestionStack extends cdk.Stack {
     // Bundle plugin code from plugins/ directory
     const ingestorCode = this.bundlePluginCode(plugin.id, allPluginIds);
 
-    // Parse schedule from manifest
-    const schedule = this.parseSchedule(infra.schedule);
-
     // Bedrock-capable plugins get a dedicated, scoped role; all others share the common role.
     const role = infra.bedrock === true ? this.createBedrockIngestorRole(plugin.id) : ingestionRole;
 
     const fn = new lambda.Function(this, `Ingestor${capitalize(plugin.id)}`, {
-      functionName: uniqueName(`voc-ingestor-${plugin.id}`),
+      functionName: this.uniqueName(`voc-ingestor-${plugin.id}`),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -389,16 +403,18 @@ export class VocIngestionStack extends cdk.Stack {
       environment: lambdaEnv,
       layers: [dependenciesLayer],
       logGroup: new logs.LogGroup(this, `IngestorLogs${capitalize(plugin.id)}`, {
-        logGroupName: uniqueName(`/aws/lambda/voc-ingestor-${plugin.id}`),
+        logGroupName: this.uniqueName(`/aws/lambda/voc-ingestor-${plugin.id}`),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
 
-    // Create schedule rule if schedule is defined
-    if (schedule) {
+    // Create schedule rule if schedule is defined.
+    // NOTE the rule name is built HERE, by hand — it does not come from any
+    // shared construct — so a change to uniqueName() alone would miss it.
+    if (schedule && scheduleRuleName) {
       new events.Rule(this, `Schedule${capitalize(plugin.id)}`, {
-        ruleName: uniqueName(`voc-ingest-${plugin.id}-schedule`),
+        ruleName: scheduleRuleName,
         schedule,
         targets: [new targets.LambdaFunction(fn, { retryAttempts: 2 })],
         enabled: false, // Disabled by default - enable via Settings UI

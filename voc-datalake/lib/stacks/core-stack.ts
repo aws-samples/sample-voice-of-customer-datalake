@@ -13,12 +13,12 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Construct } from 'constructs';
-import { uniqueName } from '../utils/naming';
 import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
 import { NagSuppressions } from 'cdk-nag';
 import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions } from '../utils/nag-suppressions';
+import { VocStack, VocStackProps } from '../utils/voc-stack';
 
-export interface VocCoreStackProps extends cdk.StackProps {
+export interface VocCoreStackProps extends VocStackProps {
   brandName: string;
 }
 
@@ -34,7 +34,7 @@ export interface VocCoreStackProps extends cdk.StackProps {
  * - CloudFront distributions (avatars CDN, frontend hosting)
  * - Cognito User Pool + Client
  */
-export class VocCoreStack extends cdk.Stack {
+export class VocCoreStack extends VocStack {
   // Storage exports
   public readonly feedbackTable: dynamodb.Table;
   public readonly aggregatesTable: dynamodb.Table;
@@ -86,7 +86,7 @@ export class VocCoreStack extends cdk.Stack {
     // KMS KEY
     // ============================================
     this.kmsKey = new kms.Key(this, 'VocKmsKey', {
-      alias: uniqueName('voc-datalake-key'),
+      alias: this.uniqueName('voc-datalake-key'),
       description: 'KMS key for VoC Data Lake encryption',
       enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -96,7 +96,7 @@ export class VocCoreStack extends cdk.Stack {
     // S3 BUCKETS
     // ============================================
     this.accessLogsBucket = new s3.Bucket(this, 'AccessLogsBucket', {
-      bucketName: uniqueName('voc-access-logs'),
+      bucketName: this.uniqueName('voc-access-logs'),
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
@@ -108,7 +108,7 @@ export class VocCoreStack extends cdk.Stack {
     });
 
     this.rawDataBucket = new s3.Bucket(this, 'RawDataBucket', {
-      bucketName: uniqueName('voc-raw-data'),
+      bucketName: this.uniqueName('voc-raw-data'),
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: this.kmsKey,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -133,7 +133,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Frontend hosting bucket
     this.websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
-      bucketName: uniqueName('voc-frontend'),
+      bucketName: this.uniqueName('voc-frontend'),
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -255,14 +255,14 @@ export class VocCoreStack extends cdk.Stack {
     // RSA-SHA1. CloudFormation still owns the PublicKey and KeyGroup below, so
     // their create/update/delete ordering is not hand-rolled.
     const cdnSigningSecret = new secretsmanager.Secret(this, 'CdnSigningKeySecret', {
-      secretName: uniqueName('voc-cdn-signing-key'),
+      secretName: this.uniqueName('voc-cdn-signing-key'),
       description: 'RSA private key that signs CloudFront URLs for /avatars/* and /prototypes/*',
       encryptionKey: this.kmsKey,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
     const cdnSigningKeysLambda = new lambda.Function(this, 'CdnSigningKeysLambda', {
-      functionName: uniqueName('voc-cdn-signing-keys'),
+      functionName: this.uniqueName('voc-cdn-signing-keys'),
       runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64,
       handler: 'cdn_signing_keys.handler',
@@ -418,7 +418,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Feedback Table
     this.feedbackTable = new dynamodb.Table(this, 'FeedbackTable', {
-      tableName: uniqueName('voc-feedback'),
+      tableName: this.uniqueName('voc-feedback'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -460,7 +460,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Aggregates Table
     this.aggregatesTable = new dynamodb.Table(this, 'AggregatesTable', {
-      tableName: uniqueName('voc-aggregates'),
+      tableName: this.uniqueName('voc-aggregates'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -480,7 +480,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Watermarks Table
     this.watermarksTable = new dynamodb.Table(this, 'WatermarksTable', {
-      tableName: uniqueName('voc-watermarks'),
+      tableName: this.uniqueName('voc-watermarks'),
       partitionKey: { name: 'source', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
@@ -491,7 +491,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Projects Table
     this.projectsTable = new dynamodb.Table(this, 'ProjectsTable', {
-      tableName: uniqueName('voc-projects'),
+      tableName: this.uniqueName('voc-projects'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -510,7 +510,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Jobs Table
     this.jobsTable = new dynamodb.Table(this, 'JobsTable', {
-      tableName: uniqueName('voc-jobs'),
+      tableName: this.uniqueName('voc-jobs'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -530,7 +530,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Conversations Table
     this.conversationsTable = new dynamodb.Table(this, 'ConversationsTable', {
-      tableName: uniqueName('voc-conversations'),
+      tableName: this.uniqueName('voc-conversations'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -543,7 +543,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Idempotency Table
     this.idempotencyTable = new dynamodb.Table(this, 'IdempotencyTable', {
-      tableName: uniqueName('voc-idempotency'),
+      tableName: this.uniqueName('voc-idempotency'),
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
@@ -592,7 +592,7 @@ export class VocCoreStack extends cdk.Stack {
     const omitUsernameConfigRaw = this.node.tryGetContext('omitUserPoolUsernameConfiguration');
     const omitUsernameConfig = omitUsernameConfigRaw === true || omitUsernameConfigRaw === 'true';
     this.userPool = new cognito.UserPool(this, 'VocUserPool', {
-      userPoolName: uniqueName('voc-user-pool'),
+      userPoolName: this.uniqueName('voc-user-pool'),
       selfSignUpEnabled: false,
       signInAliases: { email: true, username: true },
       ...(omitUsernameConfig ? {} : { signInCaseSensitive: false }),
@@ -646,7 +646,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // User Pool Client
     this.userPoolClient = this.userPool.addClient('VocWebClient', {
-      userPoolClientName: uniqueName('voc-web-client'),
+      userPoolClientName: this.uniqueName('voc-web-client'),
       authFlows: { userPassword: true, userSrp: true },
       oAuth: {
         flows: {
@@ -670,7 +670,7 @@ export class VocCoreStack extends cdk.Stack {
     });
 
     // User Pool Domain
-    const domainPrefix = uniqueName('voc');
+    const domainPrefix = this.uniqueName('voc');
     this.userPoolDomain = this.userPool.addDomain('VocUserPoolDomain', {
       cognitoDomain: { domainPrefix },
     });
@@ -701,7 +701,7 @@ export class VocCoreStack extends cdk.Stack {
     //    creation, no password reset, no fresh password minted. All resource
     //    properties are deterministic, so the template no longer churns.
     const adminBootstrapLambda = new lambda.Function(this, 'AdminBootstrapLambda', {
-      functionName: uniqueName('voc-admin-bootstrap'),
+      functionName: this.uniqueName('voc-admin-bootstrap'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'index.handler',
@@ -797,7 +797,7 @@ export class VocCoreStack extends cdk.Stack {
       }
 
       const modelPinLambda = new lambda.Function(this, 'ModelPinLambda', {
-        functionName: uniqueName('voc-model-pin'),
+        functionName: this.uniqueName('voc-model-pin'),
         runtime: lambda.Runtime.PYTHON_3_14,
         architecture: lambda.Architecture.ARM_64,
         handler: 'index.handler',
@@ -863,7 +863,7 @@ export class VocCoreStack extends cdk.Stack {
     // COGNITO IDENTITY POOL (for AWS IAM authentication)
     // ============================================
     this.identityPool = new cognito.CfnIdentityPool(this, 'VocIdentityPool', {
-      identityPoolName: uniqueName('voc-identity-pool'),
+      identityPoolName: this.uniqueName('voc-identity-pool'),
       allowUnauthenticatedIdentities: false,
       cognitoIdentityProviders: [{
         clientId: this.userPoolClient.userPoolClientId,
@@ -892,7 +892,7 @@ export class VocCoreStack extends cdk.Stack {
     // Use wildcard to avoid circular dependency (specific Lambda is in ApiStack)
     this.authenticatedRole.addToPolicy(new iam.PolicyStatement({
       actions: ['lambda:InvokeFunctionUrl', 'lambda:InvokeFunction'],
-      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*voc-chat-stream*`],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*${this.prefixed('voc-chat-stream')}*`],
     }));
 
     // Suppress wildcard warning - necessary to avoid circular dependency
@@ -963,7 +963,13 @@ export class VocCoreStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'WebsiteURL', { value: `https://${this.frontendDomainName}`, description: 'CloudFront Distribution URL' });
     new cdk.CfnOutput(this, 'WebsiteBucketName', { value: this.websiteBucket.bucketName, description: 'S3 Bucket Name' });
     new cdk.CfnOutput(this, 'DistributionId', { value: this.frontendDistribution.distributionId, description: 'CloudFront Distribution ID' });
-    new cdk.CfnOutput(this, 'DistributionDomainName', { value: this.frontendDomainName, description: 'CloudFront Distribution Domain Name', exportName: 'VocFrontendDomainName' });
+    // The app's ONLY hand-written export name, and therefore the only one the
+    // deployment prefix has to namespace by hand: CloudFormation export names
+    // are unique per account and region, so an unprefixed literal collides
+    // between two copies before any resource name does. (CDK's automatic
+    // cross-stack exports are already namespaced, because it derives them from
+    // the stack name, which the prefix covers.)
+    new cdk.CfnOutput(this, 'DistributionDomainName', { value: this.frontendDomainName, description: 'CloudFront Distribution Domain Name', exportName: this.prefixed('VocFrontendDomainName') });
 
     // Auth outputs
     new cdk.CfnOutput(this, 'UserPoolId', { value: this.userPool.userPoolId, description: 'Cognito User Pool ID' });

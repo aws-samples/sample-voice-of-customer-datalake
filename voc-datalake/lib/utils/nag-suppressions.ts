@@ -165,16 +165,24 @@ export const bedrockModelSuppressions: NagPackSuppression[] = [
 ];
 
 // Dynamic plugin system - Lambda and EventBridge wildcards
-export const pluginSystemSuppressions: NagPackSuppression[] = [
+//
+// A FUNCTION of the deployment prefix, not a constant: the findings these
+// suppress quote the concrete resource ARN, so under `-c deploymentPrefix=stg`
+// the ARN reads `function:stg-voc-ingestor-*` and a hardcoded `voc-ingestor-`
+// regex silently stops matching — leaving a fresh AwsSolutions-IAM5 warning on
+// every prefixed synth. With no prefix the strings are unchanged.
+export function pluginSystemSuppressions(deploymentPrefix?: string): NagPackSuppression[] {
+  const p = deploymentPrefix ? `${deploymentPrefix}-` : '';
+  return [
   {
     id: 'AwsSolutions-IAM5',
     reason: 'Plugin system requires wildcards for dynamic Lambda function names and EventBridge rules created at runtime',
     appliesTo: [
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-ingestor-\*/' },
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-ingestor-webscraper-\*/' },
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-manual-import-processor-\*/' },
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-projects-api-\*/' },
-      { regex: '/Resource::arn:aws:events:.*:.*:rule.voc-ingest-.*-schedule/' },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-ingestor-\*/` },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-ingestor-webscraper-\*/` },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-manual-import-processor-\*/` },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-projects-api-\*/` },
+      { regex: `/Resource::arn:aws:events:.*:.*:rule.${p}voc-ingest-.*-schedule/` },
     ],
   },
   {
@@ -189,7 +197,8 @@ export const pluginSystemSuppressions: NagPackSuppression[] = [
       { regex: '/Resource::<.*PersonaImporterJob.*\.Arn>:\*/' },
     ],
   },
-];
+  ];
+}
 
 // CDK deployment assets
 export const cdkAssetsSuppressions: NagPackSuppression[] = [

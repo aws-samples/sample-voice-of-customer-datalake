@@ -278,7 +278,7 @@ export class BedrockModelAccess extends Construct {
     // Suppress CDK custom resource Lambda runtime warnings for Provider
     NagSuppressions.addResourceSuppressions(
       modelAgreementProvider,
-      [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions, ...pluginSystemSuppressions],
+      [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions, ...pluginSystemSuppressions()],
       true
     );
     

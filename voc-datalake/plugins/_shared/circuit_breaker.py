@@ -78,11 +78,19 @@ class CircuitBreaker:
 
     def _trip_breaker(self, failure_count: int, last_error: str) -> None:
         """Disable the plugin schedule."""
-        # Match CDK's uniqueName() pattern: {base}-{account}-{region}
-        account_id = os.environ.get("DEPLOY_ACCOUNT_ID", os.environ.get("AWS_ACCOUNT_ID", ""))
-        region = os.environ.get("DEPLOY_REGION", os.environ.get("AWS_REGION", ""))
-        suffix = f"-{account_id}-{region}" if account_id and region else ""
-        rule_name = f"voc-ingest-{self.plugin_id}-schedule{suffix}"
+        # This ingestor's own schedule rule name, as resolved by CDK. Present
+        # only when it would differ from the derivation below (i.e. on a
+        # prefixed deployment), so this code stays unaware that deployment
+        # prefixes exist. Getting it wrong means DisableRule targets a name that
+        # does not exist and a failing plugin keeps hammering the source, which
+        # is the whole thing the breaker exists to stop.
+        rule_name = os.environ.get("INGEST_SCHEDULE_RULE_NAME", "")
+        if not rule_name:
+            # Match CDK's uniqueName() pattern: {base}-{account}-{region}
+            account_id = os.environ.get("DEPLOY_ACCOUNT_ID", os.environ.get("AWS_ACCOUNT_ID", ""))
+            region = os.environ.get("DEPLOY_REGION", os.environ.get("AWS_REGION", ""))
+            suffix = f"-{account_id}-{region}" if account_id and region else ""
+            rule_name = f"voc-ingest-{self.plugin_id}-schedule{suffix}"
 
         try:
             if HAS_EVENTBRIDGE:
