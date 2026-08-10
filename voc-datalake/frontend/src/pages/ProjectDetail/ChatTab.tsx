@@ -151,6 +151,8 @@ function ChatInputSection({
             onClick={handleSend}
             disabled={!hasInput}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 hover:bg-blue-700"
+            title={t('chat.send')}
+            aria-label={t('chat.send')}
           >
             <Send size={18} />
           </button>

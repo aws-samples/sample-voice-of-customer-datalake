@@ -29,6 +29,7 @@
     "mentionHint": "输入 <at> 提及人物角色，<atAll> 提及圆桌讨论，或 <hash> 提及文档",
     "projectAiChat": "项目 AI 聊天",
     "roundtable": "🎙️ 圆桌讨论：全部 {{count}} 个人物角色",
+    "send": "发送消息",
     "startConversation": "开始对话",
     "stop": "停止",
     "tryExample": "尝试：\"@all 你们对我们的入门流程有什么看法？\"",

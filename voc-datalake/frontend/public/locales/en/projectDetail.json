@@ -29,6 +29,7 @@
     "mentionHint": "Type <at> for personas, <atAll> for roundtable, or <hash> for documents",
     "projectAiChat": "Project AI Chat",
     "roundtable": "🎙️ Roundtable: all {{count}} personas",
+    "send": "Send message",
     "startConversation": "Start a conversation",
     "stop": "Stop",
     "tryExample": "Try: \"@all What do you think about our onboarding flow?\"",

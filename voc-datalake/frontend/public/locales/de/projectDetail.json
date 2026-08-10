@@ -29,6 +29,7 @@
     "mentionHint": "Tippen Sie <at> für Personas, <atAll> für Roundtable oder <hash> für Dokumente",
     "projectAiChat": "Projekt-KI-Chat",
     "roundtable": "🎙️ Roundtable: alle {{count}} Personas",
+    "send": "Nachricht senden",
     "startConversation": "Konversation starten",
     "stop": "Stopp",
     "tryExample": "Versuchen Sie: \"@all Was denkt ihr über unseren Onboarding-Flow?\"",

@@ -80,7 +80,9 @@ async function sendAQuestion(): Promise<void> {
   const user = userEvent.setup()
   render(<ChatTab {...defaultProps} />)
   await user.type(screen.getByPlaceholderText(/Ask/i), 'next question')
-  await user.click(screen.getByRole('button', { name: '' }))
+  // Queried by accessible name, not by its absence: `{ name: '' }` matched the
+  // send button only because it was the one icon-only button without a label.
+  await user.click(screen.getByRole('button', { name: /send/i }))
   await waitFor(() => expect(mockSendMessage).toHaveBeenCalled())
 }
 

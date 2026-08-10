@@ -364,18 +364,48 @@ describe('cancel / Stop button (issue #265 defect 1 related)', () => {
     await user.click(screen.getByRole('button', { name: /stop/i }))
     await waitFor(() => expect(mockCancel).toHaveBeenCalled())
 
-    // Second question from the same conversation.
+    // Second question from the same conversation, this one answered.  The
+    // payload here is empty (the store holds only the cancelled turn, which is
+    // dropped), so it cannot pin anything on its own — the third send below is
+    // what carries the assertions.
     await user.type(screen.getByPlaceholderText(/Ask about your feedback/i), 'second question')
     await user.click(screen.getByRole('button', { name: /send/i }))
     await waitFor(() => expect(mockSendMessageImpl).toHaveBeenCalledTimes(2))
 
-    const history = sentHistory(1)
-    // The unanswered "first question" must not be in the payload.
-    expect(history.some((m) => m.content === 'first question')).toBe(false)
+    // Let the second stream finish so an assistant reply is stored.
+    act(() => {
+      getSetState()({
+        ...defaultFakeState,
+        isStreaming: false,
+        streamingText: 'reply to second',
+      })
+    })
+    await waitFor(() => {
+      const conv = useChatStore.getState().conversations.find((c) => c.id === id)
+      expect(conv?.messages.filter((m) => m.role === 'assistant')).toHaveLength(1)
+    })
+
+    // Third question.  Now the store is [user cancelled, user second,
+    // assistant reply], which is the shape that exposes a merge-before-drop
+    // builder: it would fuse the cancelled question onto the second one rather
+    // than dropping it.
+    await user.type(screen.getByPlaceholderText(/Ask about your feedback/i), 'third question')
+    await user.click(screen.getByRole('button', { name: /send/i }))
+    await waitFor(() => expect(mockSendMessageImpl).toHaveBeenCalledTimes(3))
+
+    const history = sentHistory(2)
+    // Guard against silently degrading to the empty case, where every
+    // assertion below would pass vacuously.
+    expect(history.length).toBeGreaterThan(0)
+    // The cancelled question must be gone entirely — checked as a substring,
+    // because a same-role merge would concatenate it into another entry rather
+    // than leave it as one.
+    expect(history.some((m) => m.content.includes('first question'))).toBe(false)
+    expect(history.some((m) => m.content.includes('second question'))).toBe(true)
     expect(hasAdjacentSameRole(history)).toBe(false)
-    // The last entry, if any, must not be a user turn — the new message is
-    // appended server-side and would otherwise follow a user turn.
-    if (history.length > 0) expect(history[history.length - 1].role).toBe('assistant')
+    // The new message is appended server-side, so the payload must not already
+    // end on a user turn.
+    expect(history[history.length - 1].role).toBe('assistant')
   })
 })
 

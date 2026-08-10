@@ -29,6 +29,7 @@
     "mentionHint": "Escribe <at> para personas, <atAll> para mesa redonda, o <hash> para documentos",
     "projectAiChat": "Chat IA del Proyecto",
     "roundtable": "🎙️ Mesa redonda: todas {{count}} personas",
+    "send": "Enviar mensaje",
     "startConversation": "Inicia una conversación",
     "stop": "Detener",
     "tryExample": "Prueba: \"@all ¿Qué opinan sobre nuestro flujo de incorporación?\"",

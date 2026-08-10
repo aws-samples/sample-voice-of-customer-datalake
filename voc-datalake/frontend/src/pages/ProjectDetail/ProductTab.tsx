@@ -28,6 +28,7 @@ import {
   countFilledProductContextFields, emptyProductContext,
 } from './productContextFields'
 import { useTransientFlag } from './useTransientFlag'
+import { buildHistory, MAX_INTERVIEW_HISTORY_ENTRIES } from '../../constants/chat'
 import {
   SelectField, TextAreaField, TextField,
 } from './ProductFormFields'
@@ -405,7 +406,11 @@ function InterviewChat({
     try {
       const r = await projectsApi.productContextInterview(projectId, {
         message,
-        history: nextHistory.slice(-12),
+        // Prior turns only: the server appends `message` itself, so sending
+        // nextHistory here would repeat it and produce two user turns in a
+        // row.  buildHistory also drops the assistant-only greeting, which
+        // Bedrock rejects as a leading non-user turn.
+        history: buildHistory(history, MAX_INTERVIEW_HISTORY_ENTRIES),
         response_language: language,
       })
       setHistory([...nextHistory, { role: 'assistant', content: decode(r.assistant_message) }])
