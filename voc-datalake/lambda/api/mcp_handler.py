@@ -17,6 +17,7 @@ from typing import Any
 
 from aws_lambda_powertools import Logger, Tracer, Metrics
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 from shared.aws import get_dynamodb_resource
 from shared.api import DecimalEncoder, validate_date_basis
@@ -69,6 +70,30 @@ def _cors_response(body: dict, status_code: int = 200) -> dict:
 # Token authentication
 # ============================================
 
+# DynamoDB error codes that mean "the lookup could not be performed right now".
+# The token may well be valid, so these are reported as an authentication
+# failure (401) — a retry can succeed.
+_RETRYABLE_DYNAMODB_ERRORS: frozenset[str] = frozenset({
+    'ProvisionedThroughputExceededException',
+    'ThrottlingException',
+    'ThrottlingException.TooManyRequests',
+    'RequestLimitExceeded',
+    'InternalServerError',
+    'ServiceUnavailable',
+    'TransactionConflictException',
+})
+
+
+class AuthBackendUnavailable(Exception):
+    """The token store could not be consulted because of a server-side fault.
+
+    Raised for *permanent* faults — a missing/misnamed table
+    (``ResourceNotFoundException``), an IAM ``AccessDeniedException``, … — so
+    the caller can answer with a server error instead of telling the client
+    that its token is invalid.  Retrying cannot fix these, and reporting them
+    as 401 sends operators to re-mint tokens for a configuration problem.
+    """
+
 
 @tracer.capture_method
 def _authenticate(event: dict) -> dict | None:
@@ -77,6 +102,11 @@ def _authenticate(event: dict) -> dict | None:
 
     Returns the token DynamoDB item (with project_id, scope, etc.) on success,
     or None if authentication fails.
+
+    Raises:
+        AuthBackendUnavailable: the token store could not be consulted because
+            of a permanent server-side fault.  Callers must answer with a
+            server error, not a 401 — the credential was never checked.
     """
     headers = event.get('headers', {})
     # API Gateway lowercases header names in proxy mode
@@ -103,9 +133,23 @@ def _authenticate(event: dict) -> dict | None:
                 Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('TOKEN#')
             ),
         )
-    except Exception as exc:
-        logger.warning('Failed to query tokens for authentication', extra={'error': str(exc)})
-        return None
+    except ClientError as exc:
+        # A throttle or transient service fault: the token may be fine, so a
+        # 401 (with a retry) is an acceptable answer.  A permanent fault —
+        # missing table, AccessDenied — is a server problem and must not be
+        # reported to the client as "your token is invalid".
+        error_code = exc.response.get('Error', {}).get('Code', '')
+        if error_code in _RETRYABLE_DYNAMODB_ERRORS:
+            logger.warning(
+                'Token lookup temporarily unavailable',
+                extra={'error_code': error_code},
+            )
+            return None
+        logger.exception(
+            'Token lookup failed with a permanent error; reporting a server error',
+            extra={'error_code': error_code},
+        )
+        raise AuthBackendUnavailable(error_code or 'ClientError') from exc
 
     for item in response.get('Items', []):
         stored_hash = item.get('token_hash', '')
@@ -307,6 +351,26 @@ def _tool_search_feedback(args: dict, _token_info: dict) -> list[dict]:
     return [{"type": "text", "text": json.dumps(results, indent=2, cls=DecimalEncoder)}]
 
 
+_DEFAULT_METRICS_DAYS = 7
+_MAX_METRICS_DAYS = 30
+
+
+def _resolve_days(raw: Any) -> int:
+    """Coerce and clamp a caller-supplied ``days`` argument to 1..30.
+
+    Pure helper.  A missing or non-numeric value falls back to the default
+    rather than raising, so ``period_days`` is always an ``int`` inside the
+    advertised range regardless of what the client sent.
+    """
+    if raw is None:
+        return _DEFAULT_METRICS_DAYS
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_METRICS_DAYS
+    return max(1, min(days, _MAX_METRICS_DAYS))
+
+
 @tracer.capture_method
 def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
     """Get aggregated metrics summary.
@@ -316,17 +380,22 @@ def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
     (so the readable portion is not lost), but ``is_partial`` is set to ``True``
     and the failure is logged at WARNING level — without any token or hash.
     """
+    # Resolve `days` once, before the early exit, so both paths report the same
+    # window.  The value is caller-supplied and echoed back as `period_days`,
+    # so coerce it as well as clamp it: `inputSchema` declares "integer" but
+    # nothing enforces that server-side, and `min()` against a str raises.
+    days = _resolve_days(args.get('days'))
+
     if not aggregates_table:
         return [{"type": "text", "text": json.dumps({
             "is_partial": True,
             "error": "Aggregates table not configured",
-            "period_days": args.get("days", 7),
+            "period_days": days,
             "total_feedback": 0,
             "sentiment_breakdown": {},
             "top_categories": {},
         })}]
 
-    days = min(args.get('days', 7), 30)
     current_date = datetime.now(timezone.utc)
 
     total = 0
@@ -546,6 +615,20 @@ TOOL_SCOPE_REQUIREMENTS: dict[str, str] = {
 # change instead of three.
 _VALID_REQUIRED_SCOPES: frozenset[str] = frozenset({"read", "read-write"})
 
+# Scope assumed for a token row that has no ``scope`` attribute at all.
+#
+# ``scope`` has been validated to be exactly "read" or "read-write" at mint
+# time (projects_handler.api_create_token) but that only constrains *newly*
+# minted rows; it says nothing about rows already sitting in a deployed table.
+# The token *list* path (projects_handler.api_list_tokens) already resolves a
+# missing scope to "read", so the MCP Access tab displays such a row as a
+# working read token.  Defaulting to "read" here as well keeps enforcement and
+# presentation in agreement: a scope-less row behaves exactly as the UI says
+# it does, instead of being shown as usable and then refused on every call.
+# "read" is also the least-privilege choice — it grants nothing beyond what
+# every valid token already has.
+DEFAULT_TOKEN_SCOPE = "read"
+
 
 # ============================================
 # MCP JSON-RPC protocol handling
@@ -622,20 +705,27 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
         logger.error("Tool has no declared scope requirement", extra={"tool": tool_name})
         return _jsonrpc_error(req_id, -32603, f"Tool {tool_name} has no declared scope requirement")
 
-    token_scope = token_info.get('scope', '')
+    # A token row with no `scope` attribute predates the field; treat it as
+    # DEFAULT_TOKEN_SCOPE so enforcement agrees with the list path that the
+    # MCP Access tab renders.  See DEFAULT_TOKEN_SCOPE for the rationale.
+    token_scope = token_info.get('scope') or DEFAULT_TOKEN_SCOPE
     if not _scope_allows(token_scope, required_scope):
-        # Distinguish between a valid-but-insufficient token scope and a
-        # server-side misconfiguration in TOOL_SCOPE_REQUIREMENTS.
+        # An unrecognised required_scope is a server-side misconfiguration in
+        # TOOL_SCOPE_REQUIREMENTS, not a client permission problem: report it
+        # as an internal error (like the missing-declaration case above) so the
+        # caller is not told that its most-privileged token is insufficient.
         if required_scope not in _VALID_REQUIRED_SCOPES:
             logger.error(
                 "Unrecognised required_scope value in TOOL_SCOPE_REQUIREMENTS",
                 extra={"tool": tool_name, "required_scope": required_scope},
             )
-        else:
-            logger.warning(
-                "Scope insufficient for tool",
-                extra={"tool": tool_name, "required": required_scope, "token_scope": token_scope},
+            return _jsonrpc_error(
+                req_id, -32603, f"Tool {tool_name} has an invalid scope requirement"
             )
+        logger.warning(
+            "Scope insufficient for tool",
+            extra={"tool": tool_name, "required": required_scope, "token_scope": token_scope},
+        )
         return _jsonrpc_error(req_id, -32003, f"Forbidden: token scope '{token_scope}' cannot call '{tool_name}'")
 
     try:
@@ -687,7 +777,13 @@ def _handle_autoseed(event: dict) -> dict:
             headers['x-project-id'] = project_id
             event['headers'] = headers
 
-    token_info = _authenticate(event)
+    try:
+        token_info = _authenticate(event)
+    except AuthBackendUnavailable:
+        # A server-side fault in the token store, not a bad credential.
+        return _cors_response(
+            {'message': 'Token store unavailable'}, status_code=500
+        )
     if not token_info:
         return _cors_response({'message': 'Unauthorized'}, status_code=401)
 
@@ -765,7 +861,17 @@ def lambda_handler(event: dict, context: Any) -> dict:
 
     # All other methods require authentication
     if method in MCP_AUTH_METHODS:
-        token_info = _authenticate(event)
+        try:
+            token_info = _authenticate(event)
+        except AuthBackendUnavailable:
+            # The token store could not be consulted because of a server-side
+            # fault (missing table, AccessDenied, …).  Answering 401 here would
+            # send operators to re-mint tokens for a configuration problem, so
+            # report it honestly as an internal error instead.
+            return _cors_response(
+                _jsonrpc_error(req_id, -32603, "Internal error: token store unavailable"),
+                status_code=500,
+            )
         if not token_info:
             return _cors_response(
                 _jsonrpc_error(req_id, -32001, "Unauthorized: invalid or missing API token"),
