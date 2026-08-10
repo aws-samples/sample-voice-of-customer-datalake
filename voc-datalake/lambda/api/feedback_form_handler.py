@@ -62,6 +62,14 @@ DEFAULT_FORM_CONFIG = {
     'custom_fields': [],
     'category': '',
     'subcategory': '',
+    # Optional link to the artefact this form validates (issue: prioritization
+    # evidence). Empty string means "validates nothing in particular" — the
+    # standalone website-survey case, which must keep behaving exactly as it
+    # did before these fields existed. `project_id` is the durable half of the
+    # link: regenerating a document mints a new document_id, so readers match
+    # on project first and treat document_id as a refinement.
+    'project_id': '',
+    'document_id': '',
 }
 
 # Fields that can be updated via PUT
@@ -69,7 +77,7 @@ UPDATABLE_FIELDS = [
     'name', 'enabled', 'title', 'description', 'question', 'placeholder',
     'rating_enabled', 'rating_type', 'rating_max', 'submit_button_text',
     'success_message', 'theme', 'collect_email', 'collect_name',
-    'custom_fields', 'category', 'subcategory'
+    'custom_fields', 'category', 'subcategory', 'project_id', 'document_id'
 ]
 
 
@@ -115,9 +123,44 @@ def item_to_form(item: dict) -> dict:
         'custom_fields': item.get('custom_fields', []),
         'category': item.get('category', ''),
         'subcategory': item.get('subcategory', ''),
+        # Optional validation link — authenticated callers only. Deliberately
+        # absent from item_to_widget_config below.
+        'project_id': item.get('project_id', ''),
+        'document_id': item.get('document_id', ''),
         'brand_name': item.get('brand_name', ''),
         'created_at': item.get('created_at', ''),
         'updated_at': item.get('updated_at', ''),
+    }
+
+
+def item_to_widget_config(item: dict) -> dict:
+    """Convert DynamoDB item to the PUBLIC widget config response.
+
+    Deliberately a separate, narrower projection from `item_to_form` rather
+    than "item_to_form minus a few keys": `GET /feedback-forms/<id>/config` is
+    unauthenticated and fetched by the widget from the customer's own website,
+    so every field here is one someone chose to publish. Adding a field to
+    `item_to_form` must not leak it; it has to be added here too, on purpose.
+
+    Mirrors `FeedbackFormConfig` in frontend/src/api/types.ts — the rendering
+    fields the widget reads plus `enabled` and `brand_name`.
+    """
+    return {
+        'enabled': item.get('enabled', False),
+        'title': item.get('title', ''),
+        'description': item.get('description', ''),
+        'question': item.get('question', ''),
+        'placeholder': item.get('placeholder', ''),
+        'rating_enabled': item.get('rating_enabled', True),
+        'rating_type': item.get('rating_type', 'stars'),
+        'rating_max': int(item.get('rating_max', 5)),
+        'submit_button_text': item.get('submit_button_text', ''),
+        'success_message': item.get('success_message', ''),
+        'theme': item.get('theme', {}),
+        'collect_email': item.get('collect_email', False),
+        'collect_name': item.get('collect_name', False),
+        'custom_fields': item.get('custom_fields', []),
+        'brand_name': item.get('brand_name', ''),
     }
 
 
@@ -299,8 +342,9 @@ def get_form_config_by_id(form_id: str):
         
         if not item:
             raise NotFoundError('Form not found')
-        
-        return {'success': True, 'config': item_to_form(item)}
+
+        # Narrower projection than item_to_form on purpose: this route is public.
+        return {'success': True, 'config': item_to_widget_config(item)}
     except NotFoundError:
         raise
     except Exception as e:

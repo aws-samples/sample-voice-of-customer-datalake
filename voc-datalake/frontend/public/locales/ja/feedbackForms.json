@@ -67,9 +67,20 @@
       "categoryRouting": "カテゴリルーティング",
       "formSettings": "フォーム設定",
       "settings": "設定",
-      "theme": "テーマ"
+      "theme": "テーマ",
+      "validates": "検証対象",
+      "validatesShort": "検証"
     },
-    "textColor": "テキスト色"
+    "textColor": "テキスト色",
+    "validationDescription": "このフォームがどのプロジェクトの、どのPRDまたはPR/FAQについてフィードバックを集めるのかを任意で記録できます。収集した評価は優先順位付けページの該当ドキュメントの横に表示されます。ウェブサイトのアンケートなど単独のフォームでは両方を空のままにしてください。",
+    "validationDocumentHint": "プロジェクト全体のままにすると、ドキュメントを再生成してもリンクが維持されます。",
+    "validationDocumentLabel": "ドキュメント（任意）",
+    "validationNoProject": "-- リンクなし --",
+    "validationProjectHint": "プロジェクトを空にするとこのフォームのリンクが解除されます。",
+    "validationProjectLabel": "プロジェクト",
+    "validationTitle": "このフォームが検証する対象",
+    "validationUnknownDocument": "リンク済みドキュメント（現在利用できません）",
+    "validationWholeProject": "-- プロジェクト全体 --"
   },
   "empty": {
     "createButton": "最初のフォームを作成",

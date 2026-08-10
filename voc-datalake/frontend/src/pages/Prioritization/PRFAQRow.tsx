@@ -13,11 +13,13 @@ import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
+import LinkedFormEvidence from './LinkedFormEvidence'
 import {
   calculatePriorityScore, getPriorityLabel, SCORABLE_TYPE_META,
 } from './prioritizationUtils'
 import ScoreSlider from './ScoreSlider'
 import type { PRFAQWithProject } from './prioritizationUtils'
+import type { LinkedForm } from './formLinkUtils'
 import type {
   PrioritizationScore, ProjectDocument,
 } from '../../api/types'
@@ -112,10 +114,11 @@ function PRFAQRowHeader({
 }
 
 function PRFAQRowExpanded({
-  prfaq, score, onUpdateScore,
+  prfaq, score, linkedForms, onUpdateScore,
 }: {
   readonly prfaq: PRFAQWithProject
   readonly score: PrioritizationScore
+  readonly linkedForms: readonly LinkedForm[]
   readonly onUpdateScore: (field: keyof PrioritizationScore, value: number | string) => void
 }) {
   const { t } = useTranslation('prioritization')
@@ -132,6 +135,10 @@ function PRFAQRowExpanded({
             <label className="text-sm font-medium text-gray-700">{t('notes.label')}</label>
             <textarea value={score.notes} onChange={(e) => onUpdateScore('notes', e.target.value)} placeholder={t('notes.placeholder')} rows={2} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
           </div>
+          {/* Ratings already collected about this document, beside the sliders
+              that score it. Mounted here (expand-only) because the stats read is
+              expensive per form — see LinkedFormEvidence. */}
+          <LinkedFormEvidence forms={linkedForms} />
         </div>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -216,11 +223,13 @@ function PrototypePanel({
 }
 
 export default function PRFAQRow({
-  prfaq, index, score, isExpanded, onToggle, onUpdateScore,
+  prfaq, index, score, linkedForms, isExpanded, onToggle, onUpdateScore,
 }: {
   readonly prfaq: PRFAQWithProject
   readonly index: number
   readonly score: PrioritizationScore
+  /** Forms that validate this document — see formLinkUtils.selectLinkedForms. */
+  readonly linkedForms: readonly LinkedForm[]
   readonly isExpanded: boolean
   readonly onToggle: () => void
   readonly onUpdateScore: (field: keyof PrioritizationScore, value: number | string) => void
@@ -232,7 +241,7 @@ export default function PRFAQRow({
   return (
     <div className="bg-white rounded-lg border shadow-sm">
       <PRFAQRowHeader prfaq={prfaq} index={index} priority={priority} score={score} isExpanded={isExpanded} onToggle={onToggle} />
-      {isExpanded ? <PRFAQRowExpanded prfaq={prfaq} score={score} onUpdateScore={onUpdateScore} /> : null}
+      {isExpanded ? <PRFAQRowExpanded prfaq={prfaq} score={score} linkedForms={linkedForms} onUpdateScore={onUpdateScore} /> : null}
     </div>
   )
 }

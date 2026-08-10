@@ -17,6 +17,14 @@
     "wrongTypeDescription": "Sus proyectos tienen documentos, pero ninguno es PRD ni PR/FAQ. Abra un proyecto y genere un PRD o PR/FAQ para puntuarlo aquí.",
     "wrongTypeTitle": "No hay documentos puntuables"
   },
+  "evidence": {
+    "avgRating": "Valoración media",
+    "noLinkedForm": "Ningún formulario de comentarios está vinculado a este documento.",
+    "noRatings": "Sin valoraciones recopiladas",
+    "submissions": "Respuestas",
+    "title": "Comentarios recopilados",
+    "unavailable": "Valoraciones no disponibles"
+  },
   "framework": {
     "description": "Puntúe cada documento en: <strong>Impacto</strong>, <strong>Tiempo de comercialización</strong>, <strong>Ajuste estratégico</strong> y <strong>Confianza</strong>.",
     "title": "Marco de priorización"

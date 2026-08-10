@@ -451,6 +451,20 @@ export interface FeedbackForm extends FeedbackFormFields {
   enabled: boolean
   category: string
   subcategory: string
+  // Optional link to the artefact this form validates. Declared here rather
+  // than on FeedbackFormFields ON PURPOSE: FeedbackFormFields is shared with
+  // FeedbackFormConfig, which is the response of the UNAUTHENTICATED widget
+  // config route served to customers' own websites. These are internal
+  // identifiers and must never appear there.
+  //
+  // Optional in the type as well as at rest: absent or '' both mean
+  // "validates nothing" — the standalone website-survey case, and the shape
+  // every form template and every record persisted before this field existed
+  // still has. project_id is the durable half of the link: regenerating a
+  // document mints a new document_id, so readers match on project first and
+  // treat document_id as a refinement.
+  project_id?: string
+  document_id?: string
   created_at: string
   updated_at: string
 }

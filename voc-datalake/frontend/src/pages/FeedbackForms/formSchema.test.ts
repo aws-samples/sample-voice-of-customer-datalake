@@ -99,6 +99,10 @@ describe('normalizeFeedbackForm (issue #171)', () => {
       enabled: true,
       category: 'delivery',
       subcategory: 'late',
+      // Complete means complete: the schema fills these in when absent, so a
+      // record omitting them is not what this test claims to cover.
+      project_id: 'proj_1',
+      document_id: 'doc_1',
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-02-01T00:00:00Z',
       theme: { primary_color: '#111111', background_color: '#222222', text_color: '#333333', border_radius: '4px' },
