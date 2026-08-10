@@ -26,9 +26,14 @@ Two kinds of self-contradictory response get an explicit policy:
 
 * An entry claimed in **both** lists is treated as **failed**.  The directions are
   not symmetric — trusting ``Successful`` would let the caller report success and
-  advance its watermark past feedback SQS explicitly reported as failed, losing
-  it for good, whereas trusting ``Failed`` costs at worst one duplicate delivery,
-  which the processor deduplicates on ``IDEMPOTENCY_TABLE``.
+  advance its watermark past feedback SQS explicitly reported as failed, losing it
+  for good, whereas trusting ``Failed`` costs at most a re-delivery of a message
+  SQS may already have accepted.  That re-delivery is deduplicated downstream
+  **when ``IDEMPOTENCY_TABLE`` is configured**, as it is by default
+  (``lib/stacks/processing-stack-consolidated.ts`` sets it unconditionally); with
+  it unset the processor logs "duplicate protection disabled" and the item is
+  processed twice.  So the trade-off is double-processing, which is recoverable
+  and loudly degraded, against a lost item, which is neither.
 * A ``Failed`` entry whose ``Id`` cannot be mapped back to a submitted entry is
   first paired with an entry the response left unaccounted for (already recorded
   as failed).  Any remainder is reported as a count of *unattributable failures*,
@@ -239,8 +244,10 @@ def send_messages_to_queue(
                         # advance its watermark past feedback SQS explicitly
                         # reported as failed — permanent loss, and the exact
                         # class this helper exists to close.  Trusting Failed
-                        # costs at worst one duplicate delivery, which the
-                        # processor deduplicates on IDEMPOTENCY_TABLE.
+                        # costs at most a re-delivery, which is deduplicated
+                        # downstream when IDEMPOTENCY_TABLE is configured (the
+                        # default) and processed twice when it is not — see the
+                        # module docstring.
                         # Withdrawing the count is safe to do exactly once
                         # because the repeated-Id guard above has already
                         # returned for any later mention of this index.
@@ -396,8 +403,9 @@ def send_messages_to_queue(
                 unattributable_ids,
             )
             parts.append(
-                f"{len(unattributable_ids)} failure(s) could not be attributed "
-                f"to a submitted entry; unusable Id(s)={unattributable_ids}"
+                f"{len(unattributable_ids)} {log_label} failure(s) could not be "
+                f"attributed to a submitted entry; "
+                f"unusable Id(s)={unattributable_ids}"
             )
         raise RuntimeError("; ".join(parts))
 

@@ -1054,7 +1054,9 @@ class TestSendMessagesToQueueFailureCounting:
         # them as items claimed "2 test item(s) could not be enqueued" for a
         # 1-item batch — a count no operator or alarm can act on.  They are
         # counted as what they are, and no placeholder identity is invented.
-        assert "2 failure(s) could not be attributed" in message
+        # The label is part of the message so an exception surfaced without its
+        # accompanying log line can still be attributed to a call path.
+        assert "2 test failure(s) could not be attributed" in message
         assert "item(s) could not be enqueued" not in message
         assert "unknown" not in message
         assert "abc" in message and "def" in message
@@ -1109,7 +1111,7 @@ class TestSendMessagesToQueueFailureCounting:
         message = str(exc_info.value)
         # The one real item, named once; the surplus anomalies counted apart.
         assert "ids=['i0']" in message
-        assert "2 failure(s) could not be attributed" in message
+        assert "2 test failure(s) could not be attributed" in message
         assert "unknown" not in message
 
     def test_unmappable_ids_across_retry_rounds_do_not_inflate_the_item_count(self):
