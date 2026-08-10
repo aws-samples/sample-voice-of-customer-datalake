@@ -117,7 +117,13 @@ def validate_link_fields(body: dict) -> None:
 
 
 def build_form_item(body: dict, form_id: str | None = None) -> dict:
-    """Build DynamoDB item from request body with defaults."""
+    """Build DynamoDB item from request body with defaults.
+
+    Validates the link fields here rather than leaving it to the caller: this is
+    the only way a new record is constructed, so a future second caller cannot
+    reach the table with an unvalidated link by forgetting a line.
+    """
+    validate_link_fields(body)
     now = datetime.now(timezone.utc).isoformat()
     fid = form_id or str(uuid.uuid4())[:8]
     
@@ -276,7 +282,7 @@ def list_forms():
 def create_form():
     """Create a new feedback form."""
     body = app.current_event.json_body or {}
-    validate_link_fields(body)
+    # Link fields are validated inside build_form_item, structurally.
     item = build_form_item(body)
     
     try:

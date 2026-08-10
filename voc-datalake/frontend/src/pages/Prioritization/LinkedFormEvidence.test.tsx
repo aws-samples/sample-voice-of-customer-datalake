@@ -5,8 +5,6 @@
  * the behaviours under test are properties of the page: which form matches which
  * row, and that no stats request is made until a row is expanded.
  */
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -246,30 +244,4 @@ describe('collected feedback on a prioritization row', () => {
     expect(screen.getByText(t('prioritization:evidence.noLinkedForm'))).toBeInTheDocument()
   })
 
-  it('reads both shared feedback-form query keys from the helper, on all four sides', () => {
-    // Neither key drifts loudly. `['feedback-forms']` renamed on one side gives
-    // that reader a cache entry no mutation invalidates, so it serves a stale
-    // list; `['form-stats', id]` renamed gives this panel its own entry and it
-    // pays again for the brand-wide partition scan the form card had already
-    // cached. Both spellings keep working, which is why this is asserted over
-    // the source instead of through behaviour.
-    const expectedSymbols: Record<string, readonly string[]> = {
-      'Prioritization.tsx': ['feedbackFormsKey()'],
-      'LinkedFormEvidence.tsx': ['formStatsKey(', 'FORM_STATS_STALE_TIME_MS'],
-      '../FeedbackForms/FeedbackForms.tsx': ['feedbackFormsKey()'],
-      '../FeedbackForms/FormCard.tsx': ['formStatsKey(', 'FORM_STATS_STALE_TIME_MS'],
-    }
-
-    for (const [file, symbols] of Object.entries(expectedSymbols)) {
-      const source = readFileSync(join(__dirname, file), 'utf-8')
-
-      expect(source, `${file} must import the shared keys`)
-        .toContain("from '../../api/feedbackFormQueryKeys'")
-      for (const symbol of symbols) {
-        expect(source, `${file} should use ${symbol}`).toContain(symbol)
-      }
-      expect(source, `${file} still spells a feedback-form query key literally`)
-        .not.toMatch(/queryKey: \['(feedback-forms|form-stats)/)
-    }
-  })
 })

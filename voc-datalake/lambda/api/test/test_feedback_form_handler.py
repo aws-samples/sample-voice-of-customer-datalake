@@ -6,11 +6,27 @@ import re
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 WIDGET_SOURCE = Path(__file__).resolve().parents[1] / 'static' / 'feedback-widget.js'
 
 # How the widget reaches its config: `config.x` in the fetch callback,
-# `this.config.x`, and `c.x` after `var c = this.config`.
-_WIDGET_CONFIG_READ = re.compile(r'(?:this\.config|\bconfig|\bc)\.([a-z_]+)')
+# `this.config.x`, and `c.x` after the `var c = this.config` alias.
+#
+# The trailing \b is load-bearing rather than tidy: without it a camelCase DOM
+# property (`c.appendChild`) matches partially and contributes a bogus field name
+# (`append`), which fails the assertion below for a reason that has nothing to do
+# with the projection. With it, such a property yields no match at all.
+_WIDGET_CONFIG_READ = re.compile(r'(?:this\.config|\bconfig|\bc)\.([a-z_]+)\b')
+
+# Every `c = ...` assignment, with its right-hand side captured. `c` is a single
+# letter, so the read pattern above is only safe while `c` means the config and
+# nothing else in this file.
+#
+# Deliberately captures the RHS instead of using `\bc\s*=\s*(?!this\.config)`:
+# `\s*` backtracks to zero width, which lets the negative lookahead land on the
+# space and succeed, so that spelling flags the one assignment it means to allow.
+_WIDGET_C_ASSIGNMENT = re.compile(r'\bc\s*=\s*([^;,\n]+)')
 
 
 def _fields_the_widget_reads() -> set[str]:
@@ -21,11 +37,29 @@ def _fields_the_widget_reads() -> set[str]:
     widget, so it asserted a dependency that does not exist while a genuinely new
     read would have gone unnoticed.
 
-    Errs wide, which is the safe direction: if `c` is ever aliased to something
-    other than the config this over-collects and the assertion fails loudly
-    instead of quietly passing.
+    Over-collecting is NOT harmless here, which is why the two assertions below
+    exist. The caller subtracts this set from the served payload, so a bogus name
+    fails the test — and the obvious way to "fix" a red test that names a field
+    the widget does not read is to add that field to the public projection, i.e.
+    to publish something on an unauthenticated route. The assumptions are
+    therefore asserted rather than hoped for.
     """
     source = WIDGET_SOURCE.read_text(encoding='utf-8')
+
+    # `c` must mean the config and nothing else, or `c.style` on a DOM node would
+    # be collected as a config field.
+    c_assignments = [rhs.strip() for rhs in _WIDGET_C_ASSIGNMENT.findall(source)]
+    assert c_assignments, (
+        f'{WIDGET_SOURCE.name} no longer aliases the config to `c` — the read '
+        'pattern below expects it. Update both together.'
+    )
+    stray = [rhs for rhs in c_assignments if rhs != 'this.config']
+    assert not stray, (
+        f'{WIDGET_SOURCE.name} assigns `c` to {stray}, not just this.config. '
+        'This derivation reads `c.<field>` as a config access, so that variable '
+        'would be collected as a field name; rename it or narrow the pattern.'
+    )
+
     fields = set(_WIDGET_CONFIG_READ.findall(source))
     assert fields, f'found no config reads in {WIDGET_SOURCE.name} — did it move?'
     return fields
@@ -805,6 +839,25 @@ class TestValidationLinkBoundary:
         response = feedback_form_handler.lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 200
+
+    def test_the_record_constructor_itself_rejects_a_bad_link(self, feedback_form_handler):
+        """Validation is structural, not a line the route remembers to call.
+
+        build_form_item is the only way a new record is constructed, so a future
+        second caller cannot reach the table with an unvalidated link by omitting
+        a call. Asserted against the function directly, with no route involved.
+        """
+        # Taken off the module under test rather than imported directly: the
+        # sys.path insert that makes `shared` importable lives in the fixture.
+        validation_error = feedback_form_handler.ValidationError
+
+        for bad in ({'project_id': 123}, {'document_id': 'x' * 129}):
+            with pytest.raises(validation_error):
+                feedback_form_handler.build_form_item(bad)
+
+        # And a link-free body still builds, so the guard cannot have become
+        # "reject everything".
+        assert feedback_form_handler.build_form_item({'name': 'ok'})['name'] == 'ok'
 
     def test_every_link_field_is_updatable_and_validated(self, feedback_form_handler):
         """The validated set must not drift from the writable set.
