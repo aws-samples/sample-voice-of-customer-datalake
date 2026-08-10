@@ -246,6 +246,48 @@ describe('Settings', () => {
 
       expect(screen.getByText('API Configuration')).toBeInTheDocument()
     })
+
+    /**
+     * The claim of the fix, asserted end-to-end rather than inferred from three
+     * files: in a production build there is no path from user input to a
+     * persisted endpoint, because the only control that could originate one is
+     * not rendered.
+     *
+     * The layers below this still matter — a stale value persisted by a pre-fix
+     * build reaches `setConfig` and `getAuthHeaders` without passing through
+     * any UI — so this is not an argument that layer 2 is dead code.
+     */
+    it('offers no control that can originate an endpoint in a production build', async () => {
+      vi.stubEnv('DEV', false)
+      const user = userEvent.setup()
+
+      render(<Settings />, { wrapper: createWrapper() })
+
+      // No editable endpoint control is rendered, nor the disclosure that
+      // reveals one. Asserting the disclosure matters: the section is collapsed
+      // by default when an endpoint is already set, so checking only for the
+      // input would pass even with the gate removed.
+      expect(screen.queryByText('API Configuration')).not.toBeInTheDocument()
+      expect(screen.queryByPlaceholderText(/your-api-id.execute-api/i)).not.toBeInTheDocument()
+      expect(document.querySelector('input[type="url"]')).toBeNull()
+
+      // Saving brand fields still works and carries only the endpoint the app
+      // already held — never a user-originated one.
+      await user.click(screen.getByRole('button', { name: /Save Changes/i }))
+
+      await waitFor(() => {
+        expect(mockSetConfig).toHaveBeenCalled()
+      })
+      // Only the writes that carry an endpoint are relevant; brand-only writes
+      // omit the field entirely and leave the persisted value untouched.
+      const writtenEndpoints = mockSetConfig.mock.calls
+        .map(([written]) => written.apiEndpoint)
+        .filter((endpoint: unknown) => endpoint !== undefined)
+      expect(writtenEndpoints.length).toBeGreaterThan(0)
+      expect(writtenEndpoints).toEqual(
+        writtenEndpoints.map(() => 'https://api.example.com'),
+      )
+    })
   })
 
   describe('brand tab - brand configuration section', () => {
