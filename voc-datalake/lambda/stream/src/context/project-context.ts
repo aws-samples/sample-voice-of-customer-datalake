@@ -7,7 +7,9 @@ import { z } from 'zod';
 import { signCloudFrontUrl } from '../lib/cloudfront-signing.js';
 import { ConfigurationError, NotFoundError } from '../lib/errors.js';
 import { fetchRecentFeedback } from './recent-feedback.js';
-import { buildSinglePersonaPrompt, getLanguageInstruction } from './persona-prompt.js';
+import { buildSinglePersonaPrompt } from './persona-prompt.js';
+import { getLanguageInstruction } from './language.js';
+import type { SupportedLanguage } from './language.js';
 
 // ── Avatar URL helpers ──
 
@@ -235,7 +237,7 @@ function assembleSystemPrompt(
   feedbackSection: string,
   selectedDocumentIds: string[],
   documents: ProjectItem[],
-  responseLanguage?: string,
+  responseLanguage?: SupportedLanguage,
 ): string {
   const parts: string[] = [
     `You are an AI product research assistant working on the project "${projectName}".\n\n`,
@@ -315,7 +317,7 @@ export async function buildProjectChatContext(
   message: string,
   selectedPersonaIds: string[] = [],
   selectedDocumentIds: string[] = [],
-  responseLanguage?: string,
+  responseLanguage?: SupportedLanguage,
 ): Promise<ProjectChatContext> {
   if (!projectsTable) {
     throw new ConfigurationError('Projects table not configured');
@@ -385,7 +387,7 @@ export async function buildRoundtableContext(
   message: string,
   selectedPersonaIds: string[] = [],
   selectedDocumentIds: string[] = [],
-  responseLanguage?: string,
+  responseLanguage?: SupportedLanguage,
 ): Promise<RoundtableContext> {
   if (!projectsTable) {
     throw new ConfigurationError('Projects table not configured');

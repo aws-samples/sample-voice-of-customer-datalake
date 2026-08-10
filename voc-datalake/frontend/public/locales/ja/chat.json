@@ -24,6 +24,7 @@
     "reasoning": "推論",
     "relatedFeedback": "関連フィードバック:"
   },
+  "messageTooLong": "メッセージが長すぎます。{{max}} 文字以内に短くしてください。",
   "showHistory": "履歴を表示",
   "sidebar": {
     "clearAll": "すべての会話をクリア",
