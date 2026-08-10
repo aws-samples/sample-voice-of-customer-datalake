@@ -16,10 +16,33 @@
  */
 import type { ChatFilters } from '../../store/chatStore'
 
+/**
+ * Per-value bound, which is what makes the total provable rather than assumed.
+ *
+ * Filter values are NOT all code-bounded: `category` comes from the tenant's
+ * configured category list and `settings_handler.py` validates its length nowhere,
+ * so a 450-char configured category would otherwise push `context` past the
+ * server's 500 and produce an untranslated 400.
+ *
+ * Worst case with this bound: 25 (time range) + 130 + 132 + 133 = 420 < 500, and
+ * `chatContext.test.ts` asserts it against a pathologically long value. 120 is far
+ * above any real category, source or sentiment, so realistic values are untouched.
+ */
+const MAX_FILTER_VALUE_LENGTH = 120
+
+/**
+ * Truncate rather than reject. These clauses are hints for the model, and a
+ * silently shortened hint is a better outcome than a 400 the user cannot read;
+ * only an absurd value is affected at all.
+ */
+function clause(label: string, value: string): string {
+  return `${label}: ${value.slice(0, MAX_FILTER_VALUE_LENGTH)}`
+}
+
 export function buildChatContext(days: number, filters: ChatFilters): string {
   const parts = [`Time range: last ${days} days`]
-  if (filters.source != null && filters.source !== '') parts.push(`Source: ${filters.source}`)
-  if (filters.category != null && filters.category !== '') parts.push(`Category: ${filters.category}`)
-  if (filters.sentiment != null && filters.sentiment !== '') parts.push(`Sentiment: ${filters.sentiment}`)
+  if (filters.source != null && filters.source !== '') parts.push(clause('Source', filters.source))
+  if (filters.category != null && filters.category !== '') parts.push(clause('Category', filters.category))
+  if (filters.sentiment != null && filters.sentiment !== '') parts.push(clause('Sentiment', filters.sentiment))
   return parts.join('. ')
 }

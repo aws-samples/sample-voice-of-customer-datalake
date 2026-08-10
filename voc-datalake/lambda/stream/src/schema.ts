@@ -13,14 +13,18 @@
  * long answer into a 400 on every later message in that conversation. See
  * history-budget.ts for the reasoning and the derivation.
  *
- * **Code-authored and bounded by construction** REJECTS, with no client mirror.
- * `context` is the case: `buildChatContext()` serialises at most four short
- * clauses from three single-valued filters (`ChatFilters` has no multi-select and
- * no free-text search), so 500 is unreachable from the UI. Clamping would be
- * wrong here — exceeding it means OUR code changed shape, and silently truncating
- * would hide that, whereas a rejection surfaces it. If `context` ever becomes
- * user-influenced or multi-valued it moves to the first policy and needs a
- * client-side mirror.
+ * **Bounded by construction on the client** REJECTS here, with no i18n message,
+ * because reaching it would be a bug rather than user input. `context` is the
+ * case: `buildChatContext()` emits at most four clauses from three single-valued
+ * filters AND caps each value, so its output is provably under 500 for filter
+ * values of any length — `frontend/src/pages/Chat/chatContext.test.ts` asserts that
+ * against a 10 000-char value.
+ *
+ * The per-value cap is load-bearing, not decoration: `category` comes from the
+ * tenant's configured list and its length is validated nowhere, so "short by
+ * nature" was an assumption about data, not a property of the code. If `context`
+ * ever becomes multi-valued, or the client cap is removed, it moves to the first
+ * policy and needs a client-side mirror with a translated message.
  *
  *   message          8 000 chars  — typed OR pasted; see below
  *   context          500 chars    — filter hints ("Source: x. Category: y.")

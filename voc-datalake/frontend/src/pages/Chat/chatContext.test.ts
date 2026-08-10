@@ -17,8 +17,13 @@ import { buildChatContext } from './chatContext'
 /** Mirrors MAX_CONTEXT_LENGTH in lambda/stream/src/schema.ts. */
 const SERVER_CONTEXT_CAP = 500
 
-/** Longest plausible single filter value: a long category or source name. */
-const LONG_VALUE = 'a'.repeat(120)
+/**
+ * Pathological, not merely long. `category` comes from the tenant's configured
+ * category list and nothing validates its length, so the bound has to hold for a
+ * value of any size — that was the hole in the previous version of this test,
+ * which assumed 120 chars was a worst case.
+ */
+const ABSURD_VALUE = 'a'.repeat(10_000)
 
 describe('buildChatContext', () => {
   it('includes the time range with no filters set', () => {
@@ -41,13 +46,27 @@ describe('buildChatContext', () => {
     expect(buildChatContext(7, filters)).toBe('Time range: last 7 days. Sentiment: positive')
   })
 
-  it('stays well inside the server cap even with implausibly long filter values', () => {
-    // Every filter set, each value far longer than any real category or source.
+  it('stays inside the server cap for filter values of ANY length', () => {
+    // Every filter set to a value orders of magnitude beyond anything real. The
+    // bound must come from the code, not from an assumption about the data: a
+    // tenant can configure a category name of any length.
     const filters: ChatFilters = {
-      source: LONG_VALUE, category: LONG_VALUE, sentiment: LONG_VALUE, useWebSearch: true,
+      source: ABSURD_VALUE, category: ABSURD_VALUE, sentiment: ABSURD_VALUE, useWebSearch: true,
     }
     const context = buildChatContext(365, filters)
     expect(context.length).toBeLessThan(SERVER_CONTEXT_CAP)
+  })
+
+  it('leaves realistic filter values untouched', () => {
+    // Truncation must be invisible in practice — it only exists for absurd values.
+    const filters: ChatFilters = {
+      source: 'webscraper',
+      category: 'delivery and fulfilment experience',
+      sentiment: 'negative',
+    }
+    const context = buildChatContext(7, filters)
+    expect(context).toContain('Category: delivery and fulfilment experience')
+    expect(context).not.toContain('...')
   })
 
   it('emits one clause per filter, so the length cannot grow without a schema change', () => {

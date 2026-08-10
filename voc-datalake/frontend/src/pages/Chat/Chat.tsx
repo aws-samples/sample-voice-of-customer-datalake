@@ -184,8 +184,6 @@ function SidebarSection({
   )
 }
 
-
-
 /** The over-length reason, kept in its own component so Chat carries no branch. */
 function MessageTooLongNotice({
   id, show, max,
