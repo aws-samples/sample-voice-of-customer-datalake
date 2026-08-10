@@ -23,10 +23,21 @@ _WIDGET_CONFIG_READ = re.compile(r'(?:this\.config|\bconfig|\bc)\.([a-z_]+)\b')
 # letter, so the read pattern above is only safe while `c` means the config and
 # nothing else in this file.
 #
-# Deliberately captures the RHS instead of using `\bc\s*=\s*(?!this\.config)`:
-# `\s*` backtracks to zero width, which lets the negative lookahead land on the
-# space and succeed, so that spelling flags the one assignment it means to allow.
-_WIDGET_C_ASSIGNMENT = re.compile(r'\bc\s*=\s*([^;,\n]+)')
+# `(?<![.\w])` excludes a property named `c` (`foo.c = 1`) and `(?!=)` excludes a
+# comparison (`c === x`), either of which would otherwise be reported as a stray
+# alias — a failure with nothing to do with the projection under test.
+#
+# Captures the RHS instead of using `\bc\s*=\s*(?!this\.config)`: `\s*` backtracks
+# to zero width, which lets that negative lookahead land on the space and succeed,
+# so that spelling flags the one assignment it means to allow.
+_WIDGET_C_ASSIGNMENT = re.compile(r'(?<![.\w])c\s*=(?!=)\s*([^;,\n]+)')
+
+# Comments are stripped before scanning: a `config.x` inside a docblock is not a
+# read, and collecting it would fail the assertion below in the one direction that
+# tempts a reader to widen the public projection. Same approach as
+# `_interface_body` in test_widget_config_type_lockstep.py.
+_JS_BLOCK_COMMENT = re.compile(r'/\*[\s\S]*?\*/')
+_JS_LINE_COMMENT = re.compile(r'//[^\n]*')
 
 
 def _fields_the_widget_reads() -> set[str]:
@@ -44,7 +55,8 @@ def _fields_the_widget_reads() -> set[str]:
     to publish something on an unauthenticated route. The assumptions are
     therefore asserted rather than hoped for.
     """
-    source = WIDGET_SOURCE.read_text(encoding='utf-8')
+    raw = WIDGET_SOURCE.read_text(encoding='utf-8')
+    source = _JS_LINE_COMMENT.sub('', _JS_BLOCK_COMMENT.sub('', raw))
 
     # `c` must mean the config and nothing else, or `c.style` on a DOM node would
     # be collected as a config field.
@@ -851,7 +863,12 @@ class TestValidationLinkBoundary:
         # sys.path insert that makes `shared` importable lives in the fixture.
         validation_error = feedback_form_handler.ValidationError
 
-        for bad in ({'project_id': 123}, {'document_id': 'x' * 129}):
+        # Length derived from the cap, like the neighbouring tests: a hardcoded
+        # 129 would quietly become a VALID length the day the cap is raised, and
+        # this case would then assert nothing.
+        too_long = 'x' * (feedback_form_handler.LINK_FIELD_MAX_LENGTH + 1)
+
+        for bad in ({'project_id': 123}, {'document_id': too_long}):
             with pytest.raises(validation_error):
                 feedback_form_handler.build_form_item(bad)
 

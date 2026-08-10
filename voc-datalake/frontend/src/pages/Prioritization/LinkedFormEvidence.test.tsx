@@ -243,5 +243,4 @@ describe('collected feedback on a prioritization row', () => {
     })
     expect(screen.getByText(t('prioritization:evidence.noLinkedForm'))).toBeInTheDocument()
   })
-
 })
