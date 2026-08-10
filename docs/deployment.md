@@ -240,6 +240,56 @@ cdk deploy --all --require-approval never
 A clean `cdk synth`/`cdk deploy` prints **zero warnings** — treat any new
 warning as a regression to investigate rather than noise to ignore.
 
+### Two Deployments in One Account and Region
+
+Every physical name is `{base}-{account}-{region}`, which keeps two AWS accounts
+apart but **not** two deployments inside one account and region — those resolve
+to identical names, so a second deploy would update the first deployment's
+stacks. `-c deploymentPrefix=<prefix>` supplies the missing dimension, so a
+staging copy can sit beside a demo copy in one account:
+
+```bash
+# the original deployment — unchanged, no flag, nothing to migrate
+npm run deploy:infra
+
+# a second, fully independent copy
+cd voc-datalake
+cdk deploy --all -c deploymentPrefix=b --require-approval never
+```
+
+The prefix reaches stack names (`b-VocCoreStack`), every physical resource name
+(`b-voc-feedback-<account>-<region>`), all CloudFormation exports, and the IAM
+wildcards that would otherwise let one copy invoke the other's ingestors. Pass
+the same flag on **every** command for that deployment — `cdk deploy`,
+`cdk diff`, `cdk destroy` — and to the frontend env script
+(`CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack`).
+
+Two things to know before using it:
+
+- **It is opt-in, and it must stay that way for an existing deployment.**
+  Renaming a DynamoDB table, S3 bucket or Cognito user pool is a
+  CloudFormation *replacement*, not a rename: adding the flag to a deployment
+  that was created without it would leave the old data behind in orphaned
+  resources. There is deliberately no `deploymentPrefix` in
+  `cdk.context.json` — it is a per-deployment CLI flag, not project config.
+  With no flag the synthesized templates are byte-identical to a build from
+  before the flag existed, which `lib/app-baseline.test.ts` enforces.
+- **Keep the prefix short.** Lambda function, IAM role and EventBridge rule
+  names cap at 64 characters, and with all plugins enabled the longest name the
+  app generates (`voc-ingest-app_reviews_android-schedule` plus
+  `-<account>-<region>`) already uses 62 of them. Synth fails immediately with
+  the offending resource and the exact remaining budget:
+
+  ```
+  [staging-VocIngestionStack] deploymentPrefix "staging" makes
+  "staging-voc-ingest-app_reviews_android-schedule-<account>-<region>" 70
+  characters, over the 64-character limit for Lambda function, IAM role and
+  EventBridge rule names. Use a prefix of at most 1 character, or shorten the
+  resource name (e.g. disable the plugin that owns it).
+  ```
+
+  Disabling unused plugins in `pluginStatus` widens the budget.
+
 ### Stack Deployment Order
 
 Due to dependencies, stacks should be deployed in this order:
