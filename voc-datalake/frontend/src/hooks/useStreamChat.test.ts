@@ -18,11 +18,16 @@ vi.mock('../api/streamClient', () => ({
 }))
 
 import { streamVocChat } from '../api/streamClient'
+import type { StreamEvent } from '../api/streamClient'
 
-/** Build an async generator that yields the given events then returns. */
-async function* makeStream(
-  events: Array<{ type: string; error?: string; content?: string }>
-) {
+/**
+ * Build an async generator that yields the given events then returns.
+ *
+ * Typed as `AsyncGenerator<StreamEvent>` so `vi.mocked(streamVocChat)` accepts
+ * the value directly — the alternative would be an `as` cast on the mock,
+ * which the repo bans.
+ */
+async function* makeStream(events: StreamEvent[]): AsyncGenerator<StreamEvent> {
   for (const event of events) yield event
 }
 
@@ -32,7 +37,7 @@ describe('useStreamChat — error event field mapping (issue #265 defect 2)', ()
     // so the reason was always missing and "Unknown error" was shown.
     const distinctMessage = 'History exceeds the 50-message server limit'
 
-    ;(streamVocChat as ReturnType<typeof vi.fn>).mockReturnValue(
+    vi.mocked(streamVocChat).mockReturnValue(
       makeStream([{ type: 'error', error: distinctMessage }])
     )
 
@@ -53,7 +58,7 @@ describe('useStreamChat — error event field mapping (issue #265 defect 2)', ()
     // surface something meaningful rather than "Unknown error".
     const fallbackMessage = 'A content-only error'
 
-    ;(streamVocChat as ReturnType<typeof vi.fn>).mockReturnValue(
+    vi.mocked(streamVocChat).mockReturnValue(
       makeStream([{ type: 'error', content: fallbackMessage }])
     )
 
@@ -67,7 +72,7 @@ describe('useStreamChat — error event field mapping (issue #265 defect 2)', ()
   })
 
   it('falls back to "Unknown error" when neither field is present', async () => {
-    ;(streamVocChat as ReturnType<typeof vi.fn>).mockReturnValue(
+    vi.mocked(streamVocChat).mockReturnValue(
       makeStream([{ type: 'error' }])
     )
 

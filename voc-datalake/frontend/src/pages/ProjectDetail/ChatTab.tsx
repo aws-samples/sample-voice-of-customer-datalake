@@ -24,7 +24,7 @@ import {
   buildApiAttachments,
   ACCEPTED_TYPES,
 } from './chatTabHooks'
-import { MAX_HISTORY_ENTRIES } from '../../constants/chat'
+import { buildHistory } from '../../constants/chat'
 import type {
   ChatMessage, ActivePersonaInfo,
 } from './ChatBubbles'
@@ -247,12 +247,13 @@ export default function ChatTab({
     })
     setCurrentActivePersona(isRoundtable ? undefined : resolveActivePersona(personas, selectedPersonaIds))
 
-    // Slice to MAX_HISTORY_ENTRIES (newest) before mapping so the payload
-    // never exceeds the server-side validation cap in schema.ts (.max(50)).
-    const history = messages.slice(-MAX_HISTORY_ENTRIES).map((m) => ({
+    // buildHistory caps the payload to the server-side validation limit and
+    // repairs the shape Bedrock requires.  Roundtable mode stores one
+    // assistant message per persona, so the same-role merge matters here.
+    const history = buildHistory(messages.map((m) => ({
       role: m.role,
       content: m.content,
-    }))
+    })))
     void sendStreamMessage(chatInput, {
       projectId,
       selectedPersonas: selectedPersonaIds,

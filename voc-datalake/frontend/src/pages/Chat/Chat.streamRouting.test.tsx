@@ -5,7 +5,8 @@
  *   - Defect 1: reply must land in the conversation it was sent from, even
  *     when the user switches away mid-stream.
  *   - Defect 3 (pairing): long conversations must be sliced before sending
- *     so the payload never exceeds the server's 50-entry history cap.
+ *     so the payload never exceeds the server's 50-entry history cap, and the
+ *     sliced payload must still be a valid Bedrock Converse message list.
  */
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -68,6 +69,18 @@ const defaultFakeState: FakeStreamState = {
 // accidentally drive the previous test's state.
 let setFakeStreamState: React.Dispatch<React.SetStateAction<FakeStreamState>> | undefined
 
+/**
+ * Accessor for the captured setter that throws when it is unset, so a test
+ * driving the fake before rendering fails with a clear message instead of a
+ * non-null assertion silently dereferencing `undefined`.
+ */
+function getSetState(): React.Dispatch<React.SetStateAction<FakeStreamState>> {
+  if (setFakeStreamState === undefined) {
+    throw new Error('setFakeStreamState is unset — render <Chat /> before driving stream state')
+  }
+  return setFakeStreamState
+}
+
 const mockSendMessageImpl = vi.fn()
 const mockCancel = vi.fn()
 
@@ -120,6 +133,41 @@ import Chat from './Chat'
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
+
+interface SentHistoryEntry {
+  role: string
+  content: string
+}
+
+function isHistoryEntry(value: unknown): value is SentHistoryEntry {
+  if (typeof value !== 'object' || value === null) return false
+  const record: Record<string, unknown> = { ...value }
+  return typeof record.role === 'string' && typeof record.content === 'string'
+}
+
+/**
+ * Read the `history` array that the component passed to `sendMessage`.
+ * Validated with a type guard rather than an `as` cast so a change to the
+ * payload shape fails here instead of being silently asserted away.
+ */
+function sentHistory(callIndex = 0): SentHistoryEntry[] {
+  const call: unknown[] | undefined = mockSendMessageImpl.mock.calls[callIndex]
+  if (call === undefined) throw new Error(`sendMessage was not called ${callIndex + 1} time(s)`)
+  const options: unknown = call[1]
+  if (typeof options !== 'object' || options === null || !('history' in options)) {
+    throw new Error('sendMessage options did not include a history field')
+  }
+  const { history } = options
+  if (!Array.isArray(history) || !history.every(isHistoryEntry)) {
+    throw new Error('history was not an array of {role, content} entries')
+  }
+  return history
+}
+
+/** Role pairs that would make Bedrock Converse reject the request. */
+function hasAdjacentSameRole(history: readonly SentHistoryEntry[]): boolean {
+  return history.some((entry, i) => i > 0 && entry.role === history[i - 1].role)
+}
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -174,7 +222,7 @@ describe('mid-stream conversation switch (issue #265 defect 1)', () => {
     // before "completing" the stream later.
     mockSendMessageImpl.mockImplementation(() => {
       act(() => {
-        setFakeStreamState!((prev) => ({ ...prev, isStreaming: true }))
+        getSetState()((prev) => ({ ...prev, isStreaming: true }))
       })
       return Promise.resolve()
     })
@@ -194,7 +242,7 @@ describe('mid-stream conversation switch (issue #265 defect 1)', () => {
 
     // Now simulate stream completion with a reply for A.
     act(() => {
-      setFakeStreamState!({
+      getSetState()({
         isStreaming: false,
         streamingText: 'The answer from conversation A',
         thinkingText: '',
@@ -217,9 +265,12 @@ describe('mid-stream conversation switch (issue #265 defect 1)', () => {
     // It must NOT also land in conversation B.  This assertion is what the
     // bug broke — replies were saved to whichever conversation was active at
     // completion time, not at send time.
+    // Assert B exists first: `convB?.messages.some(...)` would be `undefined`
+    // (and therefore falsy) if B had never been created, so a bare
+    // toBeFalsy() could pass for entirely the wrong reason.
     const convB = useChatStore.getState().conversations.find((c) => c.id === idB)
-    const assistantInB = convB?.messages.some((m) => m.role === 'assistant')
-    expect(assistantInB).toBeFalsy()
+    expect(convB).toBeDefined()
+    expect(convB?.messages.filter((m) => m.role === 'assistant')).toHaveLength(0)
   })
 })
 
@@ -238,14 +289,14 @@ describe('cancel / Stop button (issue #265 defect 1 related)', () => {
     // sendMessage starts the stream.
     mockSendMessageImpl.mockImplementation(() => {
       act(() => {
-        setFakeStreamState!((prev) => ({ ...prev, isStreaming: true }))
+        getSetState()((prev) => ({ ...prev, isStreaming: true }))
       })
       return Promise.resolve()
     })
     // cancel simulates the finally-block: always resets isStreaming to false.
     mockCancel.mockImplementation(() => {
       act(() => {
-        setFakeStreamState!((prev) => ({ ...prev, isStreaming: false }))
+        getSetState()((prev) => ({ ...prev, isStreaming: false }))
       })
     })
 
@@ -260,7 +311,7 @@ describe('cancel / Stop button (issue #265 defect 1 related)', () => {
 
     // Accumulate some partial text while streaming.
     act(() => {
-      setFakeStreamState!((prev) => ({
+      getSetState()((prev) => ({
         ...prev,
         streamingText: 'partial answer that must not be saved',
       }))
@@ -275,8 +326,56 @@ describe('cancel / Stop button (issue #265 defect 1 related)', () => {
 
     const conv = useChatStore.getState().conversations.find((c) => c.id === id)
     expect(conv).toBeDefined()
-    const assistantMessages = conv!.messages.filter((m) => m.role === 'assistant')
-    expect(assistantMessages).toHaveLength(0)
+    expect(conv?.messages.filter((m) => m.role === 'assistant')).toHaveLength(0)
+  })
+
+  it('never sends two consecutive user turns after a cancelled stream', async () => {
+    // handleCancel deliberately discards the partial reply, which leaves the
+    // conversation ending in an unanswered user turn.  buildHistory must drop
+    // that trailing turn, otherwise the next request contains [user, user] and
+    // Bedrock rejects it with a turn-alternation ValidationException — the very
+    // "Unknown error" class this PR set out to remove.
+    const user = userEvent.setup()
+
+    const id = useChatStore.getState().createConversation()
+    act(() => {
+      useChatStore.setState({ activeConversationId: id })
+    })
+
+    mockSendMessageImpl.mockImplementation(() => {
+      act(() => {
+        getSetState()((prev) => ({ ...prev, isStreaming: true }))
+      })
+      return Promise.resolve()
+    })
+    mockCancel.mockImplementation(() => {
+      act(() => {
+        getSetState()((prev) => ({ ...prev, isStreaming: false }))
+      })
+    })
+
+    render(<Chat />, { wrapper: createWrapper() })
+
+    // First question, then Stop before any reply is stored.
+    const input = screen.getByPlaceholderText(/Ask about your feedback/i)
+    await user.type(input, 'first question')
+    await user.click(screen.getByRole('button', { name: /send/i }))
+    await waitFor(() => expect(mockSendMessageImpl).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: /stop/i }))
+    await waitFor(() => expect(mockCancel).toHaveBeenCalled())
+
+    // Second question from the same conversation.
+    await user.type(screen.getByPlaceholderText(/Ask about your feedback/i), 'second question')
+    await user.click(screen.getByRole('button', { name: /send/i }))
+    await waitFor(() => expect(mockSendMessageImpl).toHaveBeenCalledTimes(2))
+
+    const history = sentHistory(1)
+    // The unanswered "first question" must not be in the payload.
+    expect(history.some((m) => m.content === 'first question')).toBe(false)
+    expect(hasAdjacentSameRole(history)).toBe(false)
+    // The last entry, if any, must not be a user turn — the new message is
+    // appended server-side and would otherwise follow a user turn.
+    if (history.length > 0) expect(history[history.length - 1].role).toBe('assistant')
   })
 })
 
@@ -309,20 +408,48 @@ describe('history cap (issue #265 defect 3 pairing)', () => {
 
     await waitFor(() => expect(mockSendMessageImpl).toHaveBeenCalled())
 
-    // The second argument to sendMessage is the options object; history is on it.
-    const options = mockSendMessageImpl.mock.calls[0][1] as {
-      history?: Array<{ role: string; content: string }>
-    }
-    expect(options.history).toBeDefined()
-    // Must not exceed the server-side cap (schema.ts: .max(50)).
-    expect(options.history!.length).toBeLessThanOrEqual(50)
-    // Exactly 50: the 60-message conversation sliced to the cap.
-    expect(options.history!.length).toBe(50)
-    // The slice keeps the NEWEST entries — the last entry before the new
+    const history = sentHistory()
+    // Exactly 50: the 60-message conversation capped to the server limit
+    // (schema.ts: .max(50)).
+    expect(history).toHaveLength(50)
+    // The cap keeps the NEWEST entries — the last entry before the new
     // question is message 59 (index 59 in the original).
-    const last = options.history![options.history!.length - 1]
-    expect(last.content).toBe('message 59')
+    expect(history[history.length - 1].content).toBe('message 59')
   })
+
+  it.each([51, 61])(
+    'sends a history starting with a user turn for a %i-message conversation',
+    async (total) => {
+      // slice(-50) alone lands on an assistant turn whenever total - 50 is
+      // odd, and Bedrock Converse requires the list to start with a user turn.
+      const user = userEvent.setup()
+
+      const id = useChatStore.getState().createConversation()
+      for (let i = 0; i < total; i++) {
+        useChatStore.getState().addMessage(id, {
+          role: i % 2 === 0 ? 'user' : 'assistant',
+          content: `message ${i}`,
+        })
+      }
+      act(() => {
+        useChatStore.setState({ activeConversationId: id })
+      })
+
+      mockSendMessageImpl.mockResolvedValue(undefined)
+
+      render(<Chat />, { wrapper: createWrapper() })
+
+      await user.type(screen.getByPlaceholderText(/Ask about your feedback/i), 'new question')
+      await user.click(screen.getByRole('button', { name: /send/i }))
+      await waitFor(() => expect(mockSendMessageImpl).toHaveBeenCalled())
+
+      const history = sentHistory()
+      expect(history.length).toBeLessThanOrEqual(50)
+      expect(history.length).toBeGreaterThan(0)
+      expect(history[0].role).toBe('user')
+      expect(hasAdjacentSameRole(history)).toBe(false)
+    },
+  )
 
   it('sends all history when the conversation is within the cap', async () => {
     const user = userEvent.setup()
@@ -348,9 +475,6 @@ describe('history cap (issue #265 defect 3 pairing)', () => {
 
     await waitFor(() => expect(mockSendMessageImpl).toHaveBeenCalled())
 
-    const options = mockSendMessageImpl.mock.calls[0][1] as {
-      history?: Array<{ role: string; content: string }>
-    }
-    expect(options.history!.length).toBe(10)
+    expect(sentHistory()).toHaveLength(10)
   })
 })

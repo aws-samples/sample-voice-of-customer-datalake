@@ -30,7 +30,7 @@ import {
   useChatStore, type ChatFilters as ChatFiltersType, type Conversation,
 } from '../../store/chatStore'
 import { useConfigStore } from '../../store/configStore'
-import { MAX_HISTORY_ENTRIES } from '../../constants/chat'
+import { buildHistory } from '../../constants/chat'
 
 const suggestedQuestionKeys = [
   'suggestedQuestions.topComplaints',
@@ -320,16 +320,16 @@ export default function Chat() {
     if (input.trim() === '' || isStreaming) return
 
     // Build history from existing messages before adding the new one.
-    // Slice to MAX_HISTORY_ENTRIES (newest entries) so we never exceed the
-    // server-side validation cap; see the constant declaration above for the
-    // coupling note.
+    // buildHistory caps the length to the server's validation limit and
+    // repairs the shape (leading assistant turn, trailing unanswered user
+    // turn, same-role runs) so Bedrock never rejects the request.
     const conversation = getActiveConversation()
-    const history = (conversation?.messages ?? [])
-      .slice(-MAX_HISTORY_ENTRIES)
-      .map((m) => ({
+    const history = buildHistory(
+      (conversation?.messages ?? []).map((m) => ({
         role: m.role,
         content: m.content,
-      }))
+      })),
+    )
 
     // The first message materializes the conversation, which consumes any
     // draft filters the user set beforehand.
