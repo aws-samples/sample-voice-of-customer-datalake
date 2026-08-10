@@ -4,7 +4,7 @@
 import clsx from 'clsx'
 import { format } from 'date-fns'
 import {
-  FileText, Pencil, Trash2, Loader2, Wand2, AlertCircle, Clock,
+  FileText, Pencil, Trash2, Loader2, Wand2, AlertCircle,
 } from 'lucide-react'
 import { useCallback, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -13,10 +13,9 @@ import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
 import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
+import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../components/PrototypeLinkActions'
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
-import { signedUrlExpiresAt, formatExpiry } from '../../components/prototypeLinkLifetime'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
-import { useDeadlinePassed } from '../../components/useDeadlinePassed'
 import type {
   ProjectDocument, Project,
 } from '../../api/types'
@@ -268,12 +267,17 @@ function PrototypeFeedbackButton({
 // prototypes use plain <a href> links to their stable CDN URL instead.
 
 function LegacyHtmlActions({
-  html, safeName, t,
+  html, safeName,
 }: {
   readonly html: string
   readonly safeName: string
-  readonly t: TFunc
 }) {
+  // Reads `components` rather than taking this page's `projectDetail` `t`, because
+  // the labels below are the SAME two labels `PrototypeLinkActions` renders for the
+  // non-legacy branch a few lines down. They were a `projectDetail` copy of them,
+  // which is how one branch of one control ends up worded differently from the
+  // other in seven translations and nobody notices.
+  const { t } = useTranslation('components')
   const onDownloadHtml = useCallback(() => {
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
     const blobUrl = URL.createObjectURL(blob)
@@ -294,88 +298,21 @@ function LegacyHtmlActions({
   return (
     <>
       <button onClick={onOpenInNewTab} className="text-blue-600 hover:underline">
-        {t('documents.prototype.openNewTab', { defaultValue: 'Open in new tab' })}
+        {t('prototypeLink.openNewTab')}
       </button>
       <button onClick={onDownloadHtml} className="text-blue-600 hover:underline">
-        {t('documents.prototype.downloadHtml', { defaultValue: 'Download .html' })}
+        {t('prototypeLink.downloadHtml')}
       </button>
     </>
   )
 }
 
-// ── How long this prototype link lasts ──────────────────────────────────────
-// The URL is a signed, session-scoped credential, not a durable share link, and
-// until now nothing said so: a reviewer would copy it out of "Open in new tab",
-// pass it on, and it would die inside the hour with no explanation at either end.
-//
-// The deadline is read off the URL's own `Expires` rather than from a TTL constant
-// mirrored on this side. The signer's TTL is a Python-side fallback
-// (CDN_SIGNED_URL_TTL_SECONDS is not set in the stack), so a number hardcoded here
-// would be a guess that silently diverges the day it is configured.
-
-function LinkLifetimeNote({
-  url, t, locale, noteId,
-}: {
-  readonly url: string
-  readonly t: TFunc
-  readonly locale: string
-  /**
-   * Minted with `useId` by the caller, which also puts it on the anchors'
-   * `aria-describedby` — so the warning reaches a screen-reader user at the moment they
-   * are about to activate the link, not only someone who happens to hover it. Generated
-   * rather than a module constant so two prototype panes on one screen cannot collide.
-   */
-  readonly noteId: string
-}) {
-  const expiresAt = signedUrlExpiresAt(url)
-
-  // Flips itself at the deadline via a single timer, so the label cannot keep
-  // promising a window that has already closed. Reading `Date.now()` here instead
-  // would be impure (eslint's react-hooks/purity), and sampling it once in state
-  // would freeze the answer for as long as the pane stays mounted.
-  const expired = useDeadlinePassed(expiresAt)
-
-  // Only decides whether the deadline falls on today's date, which does not change
-  // meaningfully within a one-hour window — and if the page is open across midnight,
-  // a sample from before it errs toward SHOWING the date, which is the safe way to be
-  // wrong. Hooks precede the guard below because they cannot be conditional.
-  const [sampledNow] = useState(() => Date.now())
-
-  // No readable deadline — an unsigned or malformed URL. Say nothing rather than
-  // invent a window: a wrong expiry is worse than none.
-  if (expiresAt == null) return null
-
-  return (
-    <span
-      id={noteId}
-      className={clsx('inline-flex items-start gap-1', expired ? 'text-amber-700' : 'text-gray-400')}
-    >
-      <Clock size={11} className="flex-shrink-0 mt-0.5" />
-      {/* Wraps rather than truncates. Under `truncate` the clipped end was the hint —
-          i.e. the sentence this label exists for — so a narrow pane silently put the
-          warning back out of sight for sighted users. */}
-      <span>
-        {expired
-          ? t('documents.prototype.linkExpired', { defaultValue: 'Link expired — reopen the project' })
-          : t('documents.prototype.linkExpires', {
-            time: formatExpiry(expiresAt, sampledNow, locale),
-            defaultValue: 'Link valid until {{time}}',
-          })}
-        {' · '}
-        {/* Visible rather than a `title`: this warning is the whole point of the
-            label, and a tooltip is hover-only — invisible on touch, and announced
-            inconsistently. */}
-        {t('documents.prototype.linkExpiryHint', {
-          defaultValue: 'tied to your session, not a share link',
-        })}
-      </span>
-    </span>
-  )
-}
-
 // ── Prototype view: render the JSON spec natively (no iframe) ────────────────
 // PrototypeRenderer/parsePrototypeSpec moved to components/PrototypeRenderer
-// so the Prioritization page can reuse it.
+// so the Prioritization page can reuse it. The prototype's open/download anchors
+// and the note saying how long they last moved to components/PrototypeLinkActions
+// for the same reason — that page now offers "Open in new tab" too, and the reason
+// these must stay anchors is documented there rather than rediscovered per page.
 
 function PrototypeView({
   projectId, documentId, html, url, title, prototypeFormat, onJobStarted,
@@ -388,15 +325,13 @@ function PrototypeView({
   readonly prototypeFormat?: string
   readonly onJobStarted?: () => void
 }) {
-  const { t, i18n } = useTranslation('projectDetail')
+  const { t } = useTranslation('projectDetail')
+  // Shared by the lifetime note and the anchors that describe themselves with it.
+  // `useId` rather than a constant so two prototype panes cannot collide.
   const lifetimeNoteId = useId()
 
   const isHtml = prototypeFormat === 'html' || Boolean(url) || (prototypeFormat === undefined && looksLikeHtmlDocument(html))
   const spec = useMemo(() => (isHtml ? null : parsePrototypeSpec(html)), [isHtml, html])
-
-  // Whether the lifetime note will actually render, so `aria-describedby` below
-  // points at an element that exists rather than dangling on an id that does not.
-  const hasLifetimeNote = signedUrlExpiresAt(url) != null
 
   const safeName = title.replace(/[^\w\-가-힣]+/g, '_')
   const onDownload = useCallback(() => {
@@ -419,7 +354,7 @@ function PrototypeView({
             <span className="flex-shrink-0">{t('documents.prototype.previewLabel', { defaultValue: 'Live preview' })}</span>
             {/* Only signed CDN prototypes have a lifetime to report; legacy inline
                 ones are rendered from `content` and never expire. */}
-            {url ? <LinkLifetimeNote url={url} t={t} locale={i18n.language} noteId={lifetimeNoteId} /> : null}
+            {url ? <PrototypeLinkLifetimeNote url={url} noteId={lifetimeNoteId} /> : null}
           </span>
           <div className="flex items-center gap-3 flex-shrink-0">
             <PrototypeFeedbackButton
@@ -431,29 +366,14 @@ function PrototypeView({
             />
             {url ? (
               // New prototypes are served from a stable, same-origin CDN URL —
-              // plain links, no Blob/createObjectURL indirection needed.
-              <>
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline"
-                  aria-describedby={hasLifetimeNote ? lifetimeNoteId : undefined}
-                >
-                  {t('documents.prototype.openNewTab', { defaultValue: 'Open in new tab' })}
-                </a>
-                <a
-                  href={url}
-                  download={`${safeName}.html`}
-                  className="text-blue-600 hover:underline"
-                  aria-describedby={hasLifetimeNote ? lifetimeNoteId : undefined}
-                >
-                  {t('documents.prototype.downloadHtml', { defaultValue: 'Download .html' })}
-                </a>
-              </>
+              // plain links, no Blob/createObjectURL indirection needed. Shared with
+              // the Prioritization row, which offers the open half of this.
+              <PrototypeLinkActions url={url} noteId={lifetimeNoteId} downloadName={safeName} />
             ) : (
               // Legacy prototypes only have inline `content` — fall back to blobbing it.
-              <LegacyHtmlActions html={html} safeName={safeName} t={t} />
+              // No `t`: it reads the same shared `components` labels the branch above
+              // does, so the two spellings of one control cannot drift apart.
+              <LegacyHtmlActions html={html} safeName={safeName} />
             )}
           </div>
         </div>

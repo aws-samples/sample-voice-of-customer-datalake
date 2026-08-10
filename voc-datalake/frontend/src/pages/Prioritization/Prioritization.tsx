@@ -18,9 +18,15 @@ import {
 } from 'react-i18next'
 import { useBlocker } from 'react-router-dom'
 import { api } from '../../api/client'
+import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
+import { projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
 import ConfirmModal from '../../components/ConfirmModal'
+import { usePrototypeLinkRefresh } from '../../components/usePrototypeLinkRefresh'
 import { useConfigStore } from '../../store/configStore'
+import {
+  buildLinkedFormsByDocument, collectProjectDocumentIds, normalizeLinkedForms,
+} from './formLinkUtils'
 import PRFAQRow from './PRFAQRow'
 import {
   calculatePriorityScore, getScore, collectPRFAQs, comparePRFAQs, isScorable,
@@ -28,6 +34,7 @@ import {
 import type {
   PRFAQWithProject, SortField, SortDirection,
 } from './prioritizationUtils'
+import type { LinkedForm } from './formLinkUtils'
 import type {
   Project, PrioritizationScore,
 } from '../../api/types'
@@ -103,12 +110,28 @@ function SortControls({
   )
 }
 
+const NO_LINKED_FORMS: readonly LinkedForm[] = []
+
+/**
+ * Query key root for the fan-out project read.
+ *
+ * A constant rather than two literals because it is now both fetched and
+ * invalidated (see the prototype re-sign below) — spelled twice, a rename would
+ * leave the invalidation matching nothing, and nothing would fail: the page keeps
+ * working and the prototype links quietly stop being refreshed. Stays private to
+ * this page per the rule in api/projectQueryKeys.
+ */
+const ALL_PROJECT_DETAILS_KEY = 'all-project-details'
+
 function PRFAQList({
-  isLoading, prfaqs, scores, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
+  isLoading, prfaqs, scores, linkedFormsByDocument, apiEndpoint, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
 }: {
   readonly isLoading: boolean
   readonly prfaqs: PRFAQWithProject[]
   readonly scores: Record<string, PrioritizationScore>
+  readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
+  /** Passed through to each row's linked-form panel — see PRFAQRow. */
+  readonly apiEndpoint: string
   readonly expandedId: string | null
   readonly onToggleExpand: (id: string) => void
   readonly onUpdateScore: (docId: string, field: keyof PrioritizationScore, value: number | string) => void
@@ -133,6 +156,8 @@ function PRFAQList({
           prfaq={prfaq}
           index={index}
           score={getScore(scores, prfaq.document_id)}
+          linkedForms={linkedFormsByDocument.get(prfaq.document_id) ?? NO_LINKED_FORMS}
+          apiEndpoint={apiEndpoint}
           isExpanded={expandedId === prfaq.document_id}
           onToggle={() => onToggleExpand(prfaq.document_id)}
           onUpdateScore={(field, value) => onUpdateScore(prfaq.document_id, field, value)}
@@ -189,7 +214,7 @@ export default function Prioritization() {
   const {
     data: projectsData, isLoading: loadingProjects,
   } = useQuery({
-    queryKey: ['projects'],
+    queryKey: projectsKey(),
     queryFn: () => projectsApi.getProjects(),
     enabled: config.apiEndpoint.length > 0,
   })
@@ -200,14 +225,63 @@ export default function Prioritization() {
   const {
     data: allProjectDetails, isLoading: loadingDetails,
   } = useQuery({
-    queryKey: ['all-project-details', projectIds],
+    queryKey: [ALL_PROJECT_DETAILS_KEY, projectIds],
     queryFn: () => Promise.all(projectIds.map((id) => projectsApi.getProject(id))),
     enabled: projectIds.length > 0,
   })
 
+  /**
+   * Re-sign the prototype links before they lapse.
+   *
+   * This read is where every prototype URL on the page comes from, and the API
+   * mints a fresh signature on every project read — so refetching it IS the
+   * re-sign. Without this the row's "Open in new tab" would 403 for anyone who
+   * parks a pitch on screen past the signature's ~1h life: it is a plain anchor by
+   * necessity, so nothing can fetch a replacement at click time.
+   *
+   * Invalidated by prefix, not with the full `[key, projectIds]`, so it still
+   * matches when the project list has changed underneath.
+   *
+   * That prefix invalidation re-reads EVERY project off whichever single deadline
+   * falls soonest, so one prototype nearing expiry costs N project reads. Correct
+   * and cheap at this page's scale — the same fan-out it already performs on mount,
+   * once an hour, for a list of projects one team can prioritise in a sitting — and
+   * it is what keeps every row's link live off one timer. It is the wrong shape if
+   * the fan-out is ever paginated or the project count grows by an order of
+   * magnitude: at that point the refresh belongs per row, next to the row that owns
+   * the link, rather than here.
+   *
+   * Not memoised: the flattened array is consumed inside the hook by
+   * `earliestPrototypeExpiry`, which reduces it to a number before anything can
+   * depend on its identity. A `useMemo` would stabilise a reference nothing holds.
+   */
+  usePrototypeLinkRefresh(
+    (allProjectDetails ?? []).flatMap((detail) => detail.documents ?? []),
+    () => {
+      void queryClient.invalidateQueries({ queryKey: [ALL_PROJECT_DETAILS_KEY] })
+    },
+    // A constant, because this page has exactly one scope: it always reads all
+    // projects, and the invalidation above is by prefix and so does not vary. The
+    // parameter exists for the detail page, which navigates between scopes.
+    ALL_PROJECT_DETAILS_KEY,
+  )
+
   const { data: savedScores } = useQuery({
     queryKey: ['prioritization-scores'],
     queryFn: () => api.getPrioritizationScores(),
+    enabled: config.apiEndpoint.length > 0,
+  })
+
+  // One list read to learn WHICH forms validate which document. The expensive
+  // part — each form's collected ratings — is fetched per form when a row is
+  // expanded (see LinkedFormEvidence), not here.
+  const { data: formsData } = useQuery({
+    queryKey: feedbackFormsKey(),
+    queryFn: () => api.getFeedbackForms(),
+    // Validate at the query boundary, per project convention: stored forms
+    // predate the link fields, so the record on the wire can omit them
+    // entirely — an unlinked form must read as "not linked", not crash the page.
+    select: (data) => normalizeLinkedForms(data.forms ?? []),
     enabled: config.apiEndpoint.length > 0,
   })
 
@@ -233,6 +307,17 @@ export default function Prioritization() {
     const sorted = [...allPRFAQs].sort((a, b) => comparePRFAQs(a, b, scores, sortField))
     return sortDirection === 'desc' ? sorted.reverse() : sorted
   }, [allPRFAQs, scores, sortField, sortDirection])
+
+  // Which forms validate which row. Pure bookkeeping over data already fetched;
+  // no per-row request happens here.
+  const linkedFormsByDocument = useMemo(
+    () => buildLinkedFormsByDocument(
+      formsData ?? [],
+      allPRFAQs,
+      collectProjectDocumentIds(allProjectDetails, projects),
+    ),
+    [formsData, allPRFAQs, allProjectDetails, projects],
+  )
 
   const saveMutation = useMutation({
     mutationFn: () => api.patchPrioritizationScores(localEdits),
@@ -298,6 +383,8 @@ export default function Prioritization() {
         isLoading={isLoading}
         prfaqs={sortedPRFAQs}
         scores={scores}
+        linkedFormsByDocument={linkedFormsByDocument}
+        apiEndpoint={config.apiEndpoint}
         expandedId={expandedId}
         onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
         onUpdateScore={updateScore}

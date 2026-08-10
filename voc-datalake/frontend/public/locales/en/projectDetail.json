@@ -78,11 +78,7 @@
       "feedbackPlaceholder": "e.g. Change this to the admin dashboard view — show approvals, user management, and metrics instead of the end-user screens.",
       "feedbackSubmit": "Regenerate",
       "feedbackTitle": "Give feedback to regenerate this prototype",
-      "linkExpired": "Link expired — reopen the project",
-      "linkExpires": "Link valid until {{time}}",
-      "linkExpiryHint": "tied to your session, not a share link",
       "needsDocs": "Create a PRD or a PR-FAQ first to enable prototype build",
-      "openNewTab": "Open in new tab",
       "previewLabel": "Live preview",
       "rawLabel": "Raw output (parse failed — please regenerate)",
       "started": "Started — track it in Background Jobs."

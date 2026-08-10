@@ -78,11 +78,7 @@
       "feedbackPlaceholder": "例如：把这个改成管理员仪表板视图 — 显示审批、用户管理和指标，而不是最终用户界面。",
       "feedbackSubmit": "重新生成",
       "feedbackTitle": "提供反馈以重新生成此原型",
-      "linkExpired": "链接已过期 — 请重新打开项目",
-      "linkExpires": "链接有效期至 {{time}}",
-      "linkExpiryHint": "与您的会话绑定，非分享链接",
       "needsDocs": "请先创建 PRD 或 PR-FAQ 以启用原型构建",
-      "openNewTab": "在新标签页中打开",
       "previewLabel": "实时预览",
       "rawLabel": "原始输出（解析失败 — 请重新生成）",
       "started": "已开始 — 可在后台任务中查看进度。"

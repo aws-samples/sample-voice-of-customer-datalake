@@ -1,6 +1,7 @@
 """Tests for base_ingestor.py - Base class for all ingestors."""
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestBaseIngestorInit:
@@ -267,23 +268,40 @@ class TestBaseIngestorSendToQueue:
     ):
         """Sends items to SQS in batches of 10."""
         from _shared.base_ingestor import BaseIngestor
-        
+
         mock_sqs_client = MagicMock()
+        # Use a callable side_effect that derives Successful from the actual
+        # Entries passed.  This is correct for any batch size and any number of
+        # calls — an unexpected extra call (e.g. a retry round) raises
+        # AttributeError rather than a confusing StopIteration, and the mock
+        # never overclaims successes for a short final batch.
+        def _batch_success(**kwargs):
+            return {
+                'Successful': [{'Id': e['Id']} for e in kwargs['Entries']],
+                'Failed': [],
+            }
+        mock_sqs_client.send_message_batch.side_effect = _batch_success
         mock_sqs.return_value = mock_sqs_client
         mock_dynamo.return_value.Table.return_value = MagicMock()
         mock_get_secret.return_value = {}
-        
+
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
                 yield from []
-        
+
         ingestor = TestIngestor()
-        
-        # Send 25 items - should result in 3 batches
+
+        # Send 25 items - should result in 3 batches (10 + 10 + 5)
         items = [{'id': f'item-{i}', 'text': f'Text {i}'} for i in range(25)]
-        ingestor.send_to_queue(items)
-        
+        with patch('_shared.sqs_utils.metrics') as mock_metrics:
+            result = ingestor.send_to_queue(items)
+
         assert mock_sqs_client.send_message_batch.call_count == 3
+        assert result == 25
+        # Metric must reflect the actual confirmed count (25), not 30
+        mock_metrics.add_metric.assert_called_once_with(
+            name='ItemsIngested', unit='Count', value=25
+        )
 
     @patch('_shared.base_ingestor.get_dynamodb_resource')
     @patch('_shared.base_ingestor.get_s3_client')
@@ -294,20 +312,153 @@ class TestBaseIngestorSendToQueue:
     ):
         """Does not call SQS when items list is empty."""
         from _shared.base_ingestor import BaseIngestor
-        
+
         mock_sqs_client = MagicMock()
         mock_sqs.return_value = mock_sqs_client
         mock_dynamo.return_value.Table.return_value = MagicMock()
         mock_get_secret.return_value = {}
-        
+
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
                 yield from []
-        
+
         ingestor = TestIngestor()
-        ingestor.send_to_queue([])
-        
+        with patch('_shared.sqs_utils.metrics'):
+            ingestor.send_to_queue([])
+
         mock_sqs_client.send_message_batch.assert_not_called()
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    def test_raises_when_sqs_reports_failed_entries(
+        self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """send_to_queue raises RuntimeError when SQS returns Failed entries.
+
+        Reverts-to-catch: discarding the send_message_batch response (the
+        original defect) means no exception is raised and the feedback is
+        silently lost.  This test fails against the old code.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [],
+            'Failed': [
+                {
+                    'Id': '0',
+                    'SenderFault': True,
+                    'Code': 'MessageTooLarge',
+                    'Message': 'Message too large',
+                }
+            ],
+        }
+        mock_sqs.return_value = mock_sqs_client
+        mock_dynamo.return_value.Table.return_value = MagicMock()
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield from []
+
+        ingestor = TestIngestor()
+        items = [{'id': 'item-abc', 'text': 'Some feedback'}]
+
+        with patch('_shared.sqs_utils.metrics'), pytest.raises(RuntimeError):
+            ingestor.send_to_queue(items)
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    def test_metric_uses_actual_enqueued_count(
+        self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """ItemsIngested metric equals the confirmed-enqueued count, not the
+        attempted count.
+
+        Reverts-to-catch: emitting len(items) regardless of the response was
+        the original bug; this test would then see value=2 instead of value=1.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs_client = MagicMock()
+        # 2 items submitted, 1 succeeds, 1 fails permanently
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}],
+            'Failed': [
+                {
+                    'Id': '1',
+                    'SenderFault': True,
+                    'Code': 'MessageTooLarge',
+                    'Message': 'Too large',
+                }
+            ],
+        }
+        mock_sqs.return_value = mock_sqs_client
+        mock_dynamo.return_value.Table.return_value = MagicMock()
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield from []
+
+        ingestor = TestIngestor()
+        items = [{'id': '0', 'text': 'ok'}, {'id': '1', 'text': 'x' * 300_000}]
+
+        with patch('_shared.sqs_utils.metrics') as mock_metrics, pytest.raises(RuntimeError):
+            ingestor.send_to_queue(items)
+
+        mock_metrics.add_metric.assert_called_once_with(
+            name='ItemsIngested', unit='Count', value=1
+        )
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.emit_audit_event')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_run_propagates_sqs_failure(
+        self, mock_audit, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """run() must raise (not return success) when send_to_queue fails.
+
+        Reverts-to-catch: swallowing the RuntimeError from send_to_queue
+        would return {"status": "success"} even though items were lost.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [],
+            'Failed': [
+                {
+                    'Id': '0',
+                    'SenderFault': True,
+                    'Code': 'MessageTooLarge',
+                    'Message': 'Too large',
+                }
+            ],
+        }
+        mock_sqs.return_value = mock_sqs_client
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield {'id': '1', 'text': 'Some feedback', 'created_at': '2025-01-01T00:00:00Z'}
+
+        ingestor = TestIngestor()
+        ingestor.circuit_breaker = MagicMock()
+        ingestor.circuit_breaker.is_open.return_value = False
+
+        with patch('_shared.sqs_utils.metrics'), pytest.raises(RuntimeError):
+            ingestor.run()
 
 
 class TestBaseIngestorRun:
@@ -324,27 +475,33 @@ class TestBaseIngestorRun:
     ):
         """Fetches, normalizes, and queues items successfully."""
         from _shared.base_ingestor import BaseIngestor
-        
+
         mock_sqs_client = MagicMock()
+        # Return a proper SQS response so the helper can inspect Successful/Failed.
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}, {'Id': '1'}],
+            'Failed': [],
+        }
         mock_sqs.return_value = mock_sqs_client
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}
         mock_dynamo.return_value.Table.return_value = mock_table
         mock_get_secret.return_value = {}
-        
+
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
                 yield {'id': '1', 'text': 'Review 1', 'created_at': '2025-01-01T00:00:00Z'}
                 yield {'id': '2', 'text': 'Review 2', 'created_at': '2025-01-01T01:00:00Z'}
-        
+
         ingestor = TestIngestor()
-        
+
         # Mock circuit breaker
         ingestor.circuit_breaker = MagicMock()
         ingestor.circuit_breaker.is_open.return_value = False
-        
-        result = ingestor.run()
-        
+
+        with patch('_shared.sqs_utils.metrics'):
+            result = ingestor.run()
+
         assert result['status'] == 'success'
         assert result['items_processed'] == 2
         mock_sqs_client.send_message_batch.assert_called()
@@ -376,6 +533,289 @@ class TestBaseIngestorRun:
         
         assert result['status'] == 'skipped'
         assert result['reason'] == 'circuit_breaker_open'
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.emit_audit_event')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_run_items_processed_uses_confirmed_count(
+        self, mock_audit, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """run() items_processed must equal the confirmed-enqueued count returned
+        by send_to_queue, not len(items).
+
+        Reverts-to-catch: if run() uses ``total_processed += len(items)`` instead
+        of ``total_processed += self.send_to_queue(items)``, then even a partial
+        failure that silently drops items would still report the full attempt count
+        as success — exactly the bug this PR was opened to fix.
+
+        send_to_queue is patched to return a value lower than the number of
+        fetched items, which isolates the accumulator in run() without relying on
+        an SQS response shape that cannot occur in production (SQS accounts for
+        every submitted entry in either Successful or Failed).
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs.return_value = MagicMock()
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield {'id': '1', 'text': 'Review 1', 'created_at': '2025-01-01T00:00:00Z'}
+                yield {'id': '2', 'text': 'Review 2', 'created_at': '2025-01-01T01:00:00Z'}
+                yield {'id': '3', 'text': 'Review 3', 'created_at': '2025-01-01T02:00:00Z'}
+
+        ingestor = TestIngestor()
+        ingestor.circuit_breaker = MagicMock()
+        ingestor.circuit_breaker.is_open.return_value = False
+
+        with patch.object(TestIngestor, 'send_to_queue', return_value=2):
+            result = ingestor.run()
+
+        assert result['status'] == 'success'
+        # Must reflect the count send_to_queue confirmed (2), not the 3 attempted
+        assert result['items_processed'] == 2
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.emit_audit_event')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_run_raises_and_does_not_advance_watermark_on_partial_failure(
+        self, mock_audit, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """A genuinely partial SQS failure (2 Successful + 1 Failed) must
+        propagate RuntimeError out of run(), leaving the watermark unadvanced.
+
+        Reverts-to-catch: if the Failed list is ignored (the original defect),
+        run() returns success, ``record_success()`` fires and the watermark is
+        advanced past the item that was never enqueued — making the loss
+        permanent because the next run never re-fetches it.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs_client = MagicMock()
+        # SQS accounts for all 3 entries: 2 confirmed, 1 explicitly failed with
+        # SenderFault=True so it is never retried.
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}, {'Id': '1'}],
+            'Failed': [
+                {
+                    'Id': '2',
+                    'SenderFault': True,
+                    'Code': 'InvalidMessageContents',
+                    'Message': 'malformed',
+                }
+            ],
+        }
+        mock_sqs.return_value = mock_sqs_client
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield {'id': '1', 'text': 'Review 1', 'created_at': '2025-01-01T00:00:00Z'}
+                yield {'id': '2', 'text': 'Review 2', 'created_at': '2025-01-01T01:00:00Z'}
+                yield {'id': '3', 'text': 'Review 3', 'created_at': '2025-01-01T02:00:00Z'}
+
+        ingestor = TestIngestor()
+        ingestor.circuit_breaker = MagicMock()
+        ingestor.circuit_breaker.is_open.return_value = False
+        ingestor.set_watermark = MagicMock()
+
+        with patch('_shared.sqs_utils.metrics'), pytest.raises(RuntimeError):
+            ingestor.run()
+
+        # The watermark must NOT be advanced past an item that never reached SQS
+        ingestor.set_watermark.assert_not_called()
+        ingestor.circuit_breaker.record_success.assert_not_called()
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.emit_audit_event')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_run_raises_and_does_not_advance_watermark_on_unaccounted_entry(
+        self, mock_audit, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """A response that accounts for fewer entries than were submitted must
+        raise out of run() rather than reporting success and advancing the
+        watermark.
+
+        Reverts-to-catch: without the Successful+Failed reconciliation in
+        ``send_messages_to_queue``, run() returns ``{'status': 'success',
+        'items_processed': 2}``, ``record_success()`` fires and the watermark
+        advances to '3' — the unaccounted item is lost permanently.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs_client = MagicMock()
+        # 3 entries submitted, only 2 accounted for — one vanished.
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}, {'Id': '1'}],
+            'Failed': [],
+        }
+        mock_sqs.return_value = mock_sqs_client
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield {'id': '1', 'text': 'Review 1', 'created_at': '2025-01-01T00:00:00Z'}
+                yield {'id': '2', 'text': 'Review 2', 'created_at': '2025-01-01T01:00:00Z'}
+                yield {'id': '3', 'text': 'Review 3', 'created_at': '2025-01-01T02:00:00Z'}
+
+        ingestor = TestIngestor()
+        ingestor.circuit_breaker = MagicMock()
+        ingestor.circuit_breaker.is_open.return_value = False
+        ingestor.set_watermark = MagicMock()
+
+        with patch('_shared.sqs_utils.metrics'), pytest.raises(RuntimeError):
+            ingestor.run()
+
+        ingestor.set_watermark.assert_not_called()
+        ingestor.circuit_breaker.record_success.assert_not_called()
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.emit_audit_event')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_run_raises_and_does_not_advance_watermark_on_contradictory_response(
+        self, mock_audit, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """A response claiming an entry as both Successful and Failed must raise
+        out of run() rather than reporting success.
+
+        Reverts-to-catch: trusting the Successful side and discarding the Failed
+        entry makes run() return ``{'status': 'success', 'items_processed': 3}``,
+        fire ``record_success()`` and advance the watermark past feedback SQS
+        explicitly reported as failed — so the item is never re-fetched and the
+        loss is permanent.  This is the caller-level consequence that decides the
+        direction; inside the helper the choice looks like bookkeeping.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs_client = MagicMock()
+        # Entry 2 is claimed in BOTH lists, with SenderFault=true so it is a
+        # permanent failure rather than something a retry could resolve.
+        mock_sqs_client.send_message_batch.return_value = {
+            'Successful': [{'Id': '0'}, {'Id': '1'}, {'Id': '2'}],
+            'Failed': [
+                {
+                    'Id': '2',
+                    'SenderFault': True,
+                    'Code': 'InvalidMessageContents',
+                    'Message': 'malformed',
+                }
+            ],
+        }
+        mock_sqs.return_value = mock_sqs_client
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield {'id': '1', 'text': 'Review 1', 'created_at': '2025-01-01T00:00:00Z'}
+                yield {'id': '2', 'text': 'Review 2', 'created_at': '2025-01-01T01:00:00Z'}
+                yield {'id': '3', 'text': 'Review 3', 'created_at': '2025-01-01T02:00:00Z'}
+
+        ingestor = TestIngestor()
+        ingestor.circuit_breaker = MagicMock()
+        ingestor.circuit_breaker.is_open.return_value = False
+        ingestor.set_watermark = MagicMock()
+
+        with patch('_shared.sqs_utils.metrics'), pytest.raises(RuntimeError):
+            ingestor.run()
+
+        ingestor.set_watermark.assert_not_called()
+        ingestor.circuit_breaker.record_success.assert_not_called()
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.emit_audit_event')
+    @patch('_shared.base_ingestor.AGGREGATES_TABLE', 'voc-aggregates-test')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_run_records_error_status_with_the_confirmed_count_when_enqueue_raises(
+        self, mock_audit, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """When the enqueue raises, the SOURCE_RUN record must be written as
+        'error' carrying the count confirmed *before* the failure.
+
+        Nothing else in this suite asserts the error-path status write, so a
+        change that skipped it — or that let the exception escape before it —
+        would leave a manual run displaying 'running' for ever.
+
+        Reverts-to-catch: reporting ``len(items)`` instead of the value
+        ``send_to_queue`` returned writes 150 for a run in which only 100 items
+        reached the queue, which is the attempted-vs-confirmed conflation this PR
+        exists to remove, one level up from the helper.
+
+        Known limitation, deliberately not tested here: ``items_found`` on this
+        path is a *lower* bound.  Batches confirmed inside the raising
+        ``send_to_queue`` call are counted by the ``ItemsIngested`` metric but not
+        by run()'s accumulator, which only advances when that call returns.  The
+        metric is the authoritative count of what landed; the watermark is not
+        advanced either way, so nothing is lost by the under-report.
+        """
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_sqs.return_value = MagicMock()
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_get_secret.return_value = {}
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                for i in range(150):
+                    yield {
+                        'id': str(i),
+                        'text': f'Review {i}',
+                        'created_at': '2025-01-01T00:00:00Z',
+                    }
+
+        ingestor = TestIngestor(execution_id='exec-1')
+        ingestor.circuit_breaker = MagicMock()
+        ingestor.circuit_breaker.is_open.return_value = False
+        ingestor.set_watermark = MagicMock()
+        # First batch of 100 is confirmed; the trailing 50 are rejected.
+        ingestor.send_to_queue = MagicMock(
+            side_effect=[100, RuntimeError('50 ingestor item(s) could not be enqueued')]
+        )
+
+        with pytest.raises(RuntimeError):
+            ingestor.run()
+
+        error_writes = [
+            call.kwargs['ExpressionAttributeValues']
+            for call in mock_table.update_item.call_args_list
+            if call.kwargs.get('ExpressionAttributeValues', {}).get(':status') == 'error'
+        ]
+        assert len(error_writes) == 1, (
+            f'Expected exactly one error status write, got {len(error_writes)}'
+        )
+        assert error_writes[0][':items_found'] == 100
+        assert error_writes[0][':errors'] == [
+            '50 ingestor item(s) could not be enqueued'
+        ]
+        ingestor.set_watermark.assert_not_called()
 
     @patch('_shared.base_ingestor.get_dynamodb_resource')
     @patch('_shared.base_ingestor.get_s3_client')

@@ -67,9 +67,24 @@
       "categoryRouting": "Category Routing",
       "formSettings": "Form Settings",
       "settings": "Settings",
-      "theme": "Theme"
+      "theme": "Theme",
+      "validates": "Validates",
+      "validatesShort": "Validates"
     },
-    "textColor": "Text Color"
+    "textColor": "Text Color",
+    "validationDescription": "Optionally record which project — and which PRD or PR/FAQ — this form collects feedback about. The ratings it gathers then appear next to that document on the Prioritization page. Leave both empty for a standalone form such as a website survey.",
+    "validationDocumentHint": "Leave on the whole project to keep the link when a document is regenerated.",
+    "validationDocumentLabel": "Document (Optional)",
+    "validationLoadingLink": "Loading link…",
+    "validationNoProject": "-- Not linked --",
+    "validationProjectHint": "Clearing the project unlinks this form.",
+    "validationProjectLabel": "Project",
+    "validationTitle": "What This Form Validates",
+    "validationUnknownDocument": "Linked document (no longer available)",
+    "validationUnknownProject": "Linked project (no longer available)",
+    "validationUnverifiedDocument": "Linked document (could not be checked)",
+    "validationUnverifiedProject": "Linked project (could not be checked)",
+    "validationWholeProject": "-- Whole project --"
   },
   "empty": {
     "createButton": "Create Your First Form",

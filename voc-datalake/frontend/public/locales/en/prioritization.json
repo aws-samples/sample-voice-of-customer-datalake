@@ -17,6 +17,14 @@
     "wrongTypeDescription": "Your projects have documents, but none are PRDs or PR/FAQs. Open a project and generate a PRD or PR/FAQ to score it here.",
     "wrongTypeTitle": "No Scorable Documents"
   },
+  "evidence": {
+    "avgRating": "Avg Rating",
+    "noLinkedForm": "No feedback form is linked to this document.",
+    "noRatings": "No ratings collected",
+    "submissions": "Submissions",
+    "title": "Collected Feedback",
+    "unavailable": "Ratings unavailable"
+  },
   "framework": {
     "description": "Score each document on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.",
     "title": "Prioritization Framework"

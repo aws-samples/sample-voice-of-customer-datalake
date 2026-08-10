@@ -179,6 +179,9 @@ const mockFeedbackForms = [
     submit_button_text: 'Submit Feedback', success_message: 'Thank you for your feedback!',
     theme: mockFormTheme('#3B82F6'), collect_email: false, collect_name: false, custom_fields: [],
     category: 'website', subcategory: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    // Validates nothing: a standalone website survey. Must stay off every
+    // Prioritization row.
+    project_id: '', document_id: '',
   },
   {
     form_id: 'form_2', name: 'Post-Purchase Survey', enabled: true,
@@ -188,8 +191,12 @@ const mockFeedbackForms = [
     submit_button_text: 'Submit', success_message: 'Thanks for rating your experience!',
     theme: mockFormTheme('#22C55E'), collect_email: true, collect_name: false, custom_fields: [],
     category: 'delivery', subcategory: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    // Linked to proj_1's PR/FAQ: its stats appear on that document's row in
+    // Prioritization once the row is expanded.
+    project_id: 'proj_1', document_id: 'prfaq_1',
   },
-  // Sparse legacy record: only identity fields on the wire.
+  // Sparse legacy record: only identity fields on the wire — no link fields at
+  // all, exercising the "persisted before the link existed" path.
   { form_id: 'form_3', name: 'Support Feedback', enabled: false, created_at: new Date().toISOString() },
   // Partial theme: exercises the deep-merge branch (set color survives,
   // missing theme keys default) rather than the fully-missing-theme branch.
@@ -197,6 +204,20 @@ const mockFeedbackForms = [
     form_id: 'form_4', name: 'Checkout Survey', enabled: true,
     title: 'How was checkout?', theme: { primary_color: '#F97316' },
     created_at: new Date().toISOString(),
+    // Deliberately keeps its healthy 4.6 average below: it is the only 4.x card
+    // in the /feedback-forms grid, so repurposing it as the null-average case
+    // would have cost that grid its "healthy ratings" appearance.
+    project_id: '', document_id: '',
+  },
+  // A second form validating the SAME document as form_2, with a null average in
+  // mockFormStats below: one expanded Prioritization row therefore exercises
+  // both the several-forms-per-document case and the ratings-disabled rendering.
+  {
+    form_id: 'form_5', name: 'PR/FAQ Concept Test', enabled: true,
+    title: 'Would you use this?', theme: mockFormTheme('#8B5CF6'),
+    rating_enabled: false,
+    created_at: new Date().toISOString(),
+    project_id: 'proj_1', document_id: 'prfaq_1',
   },
 ];
 const mockFormStats = {
@@ -204,6 +225,7 @@ const mockFormStats = {
   form_2: { total_submissions: 567, avg_rating: 3.8, rating_count: 512 },
   form_3: { total_submissions: 89, avg_rating: null, rating_count: 0 },
   form_4: { total_submissions: 41, avg_rating: 4.6, rating_count: 38 },
+  form_5: { total_submissions: 27, avg_rating: null, rating_count: 0 },
 };
 
 // Mock Cognito users (issue #177) — stateful so create/enable/disable/delete

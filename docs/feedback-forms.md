@@ -42,6 +42,14 @@ The VoC platform provides a customizable feedback form system that:
 | `subcategory` | Pre-assign subcategory |
 | `success_message` | Message shown after submission |
 | `theme` | Color and styling options |
+| `project_id` | Optional. The project this form collects feedback about. Empty string means the form validates nothing in particular — a standalone website survey. |
+| `document_id` | Optional. A specific PRD or PR/FAQ within that project. Empty string means the whole project, which is also what keeps the link alive across a regeneration (regenerating a document mints a new `document_id`). |
+
+`project_id` and `document_id` are internal identifiers. They exist so the
+Prioritization page can show the ratings a form collected next to the document
+being scored. Both are accepted by `POST`/`PUT` and returned by
+`GET /feedback-forms/{id}`, but deliberately **never** by the public config
+endpoint — see the note in [API Endpoints](#api-endpoints).
 
 ## Embedding Forms
 
@@ -104,7 +112,7 @@ Customize the form appearance:
 | GET | `/feedback-forms/{id}` | Get form details |
 | PUT | `/feedback-forms/{id}` | Update form |
 | DELETE | `/feedback-forms/{id}` | Delete form |
-| GET | `/feedback-forms/{id}/config` | Public config endpoint |
+| GET | `/feedback-forms/{id}/config` | Public config endpoint. **Unauthenticated** and fetched cross-origin by the embedded widget, so it returns only the widget-rendering fields, via a separate allowlist (`item_to_widget_config` in `lambda/api/feedback_form_handler.py`) rather than the projection the authenticated routes use. It never returns internal identifiers such as `project_id` / `document_id`. |
 | POST | `/feedback-forms/{id}/submit` | Submit feedback |
 | GET | `/feedback-forms/{id}/iframe` | Embeddable HTML page |
 

@@ -104,6 +104,15 @@ export const FeedbackFormSchema = z.looseObject({
   custom_fields: customFieldsSchema,
   category: z.string().catch(''),
   subcategory: z.string().catch(''),
+  // Optional link to the project/document this form validates. Defaults to ''
+  // like every other absent string field, so a record persisted before the
+  // link existed — or one that deliberately validates nothing — normalizes to
+  // "unlinked" rather than being dropped. Declaring both fields explicitly
+  // (rather than relying on the loose object's passthrough) is what makes a
+  // stored link survive the edit round-trip with a known type: the editor
+  // reads them off a normalized record and writes them straight back.
+  project_id: z.string().catch(''),
+  document_id: z.string().catch(''),
   created_at: z.string().catch(''),
   updated_at: z.string().catch(''),
 })

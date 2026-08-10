@@ -19,6 +19,7 @@ import {
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
+import { projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
 import ConfirmModal from '../../components/ConfirmModal'
 import { useConfigStore } from '../../store/configStore'
@@ -132,7 +133,7 @@ export default function Projects() {
   const {
     data, isLoading,
   } = useQuery({
-    queryKey: ['projects'],
+    queryKey: projectsKey(),
     queryFn: () => projectsApi.getProjects(),
     enabled: config.apiEndpoint.length > 0,
   })
@@ -143,7 +144,7 @@ export default function Projects() {
       description: string
     }) => projectsApi.createProject(projectData),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['projects'] })
+      void queryClient.invalidateQueries({ queryKey: projectsKey() })
       setShowCreate(false)
       setNewProject({
         name: '',
@@ -155,7 +156,7 @@ export default function Projects() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => projectsApi.deleteProject(id),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['projects'] })
+      void queryClient.invalidateQueries({ queryKey: projectsKey() })
     },
   })
 
