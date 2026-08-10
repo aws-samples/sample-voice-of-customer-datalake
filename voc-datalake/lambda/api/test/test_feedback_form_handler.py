@@ -32,12 +32,37 @@ _WIDGET_CONFIG_READ = re.compile(r'(?:this\.config|\bconfig|\bc)\.([a-z_]+)\b')
 # so that spelling flags the one assignment it means to allow.
 _WIDGET_C_ASSIGNMENT = re.compile(r'(?<![.\w])c\s*=(?!=)\s*([^;,\n]+)')
 
-# Comments are stripped before scanning: a `config.x` inside a docblock is not a
-# read, and collecting it would fail the assertion below in the one direction that
-# tempts a reader to widen the public projection. Same approach as
-# `_interface_body` in test_widget_config_type_lockstep.py.
-_JS_BLOCK_COMMENT = re.compile(r'/\*[\s\S]*?\*/')
-_JS_LINE_COMMENT = re.compile(r'//[^\n]*')
+def _widget_code_lines(source: str) -> list[str]:
+    """The widget's lines with comment-ONLY lines dropped, nothing rewritten.
+
+    Comments have to be excluded because a `config.x` inside a docblock is not a
+    read, and collecting it fails the assertion below in the direction that tempts
+    a reader to widen the public projection.
+
+    But this drops whole lines rather than substituting `//[^\\n]*` away, because
+    that pattern also matches inside a string literal — a `https://…` URL, a regex
+    literal — truncating the rest of that line and silently dropping any config
+    read after it. That is an UNDER-collection, i.e. fail-open in the opposite
+    direction: a field genuinely dropped from `item_to_widget_config` would stop
+    failing the test. Dropping only comment-only lines cannot truncate anything.
+
+    Residue, deliberately accepted: a trailing comment on a code line is kept, so a
+    `config.x` mentioned there is collected. That is the loud direction.
+    """
+    kept: list[str] = []
+    in_block = False
+    for line in source.split('\n'):
+        text = line.strip()
+        if in_block:
+            in_block = '*/' not in text
+            continue
+        if text.startswith('/*'):
+            in_block = '*/' not in text
+            continue
+        if text.startswith('//'):
+            continue
+        kept.append(line)
+    return kept
 
 
 def _fields_the_widget_reads() -> set[str]:
@@ -56,7 +81,15 @@ def _fields_the_widget_reads() -> set[str]:
     therefore asserted rather than hoped for.
     """
     raw = WIDGET_SOURCE.read_text(encoding='utf-8')
-    source = _JS_LINE_COMMENT.sub('', _JS_BLOCK_COMMENT.sub('', raw))
+    code_lines = _widget_code_lines(raw)
+    # Sanity bound on the line filter itself: an unterminated block comment would
+    # otherwise swallow the file and leave nothing to scan.
+    assert len(code_lines) > len(raw.split('\n')) // 2, (
+        f'comment filtering kept only {len(code_lines)} of '
+        f'{len(raw.split(chr(10)))} lines in {WIDGET_SOURCE.name} — an '
+        'unterminated block comment, or the file is now mostly prose.'
+    )
+    source = '\n'.join(code_lines)
 
     # `c` must mean the config and nothing else, or `c.style` on a DOM node would
     # be collected as a config field.
