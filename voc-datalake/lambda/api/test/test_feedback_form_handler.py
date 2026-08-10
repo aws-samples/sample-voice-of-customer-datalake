@@ -490,8 +490,8 @@ class TestValidationLink:
         item_to_form allowlist), and a field declared in only one of them is
         silently dropped on the next read.
         """
-        import sys
         import os
+        import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from feedback_form_handler import lambda_handler
 
@@ -520,8 +520,8 @@ class TestValidationLink:
         self, mock_table, api_gateway_event, lambda_context
     ):
         """A form that validates nothing keeps working: link fields default empty."""
-        import sys
         import os
+        import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from feedback_form_handler import lambda_handler
 
@@ -550,8 +550,8 @@ class TestValidationLink:
             }
         }
 
-        import sys
         import os
+        import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from feedback_form_handler import lambda_handler
 
@@ -581,8 +581,8 @@ class TestValidationLink:
             }
         }
 
-        import sys
         import os
+        import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from feedback_form_handler import lambda_handler
 
@@ -611,8 +611,8 @@ class TestValidationLink:
             'Attributes': {'form_id': 'form-123', 'project_id': '', 'document_id': ''}
         }
 
-        import sys
         import os
+        import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from feedback_form_handler import lambda_handler
 
@@ -634,10 +634,14 @@ class TestValidationLink:
         allowlist. build_form_item seeds the record from that dict and
         item_to_form projects it on read, so a field in one and not the other
         persists but is never returned (or vice versa)."""
-        import sys
         import os
+        import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import DEFAULT_FORM_CONFIG, UPDATABLE_FIELDS, item_to_form
+        from feedback_form_handler import (
+            DEFAULT_FORM_CONFIG,
+            UPDATABLE_FIELDS,
+            item_to_form,
+        )
 
         projected = set(item_to_form({}))
 
@@ -667,8 +671,8 @@ class TestPublicConfigDoesNotLeakTheLink:
             }
         }
 
-        import sys
         import os
+        import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from feedback_form_handler import lambda_handler
 
@@ -707,8 +711,8 @@ class TestPublicConfigDoesNotLeakTheLink:
             }
         }
 
-        import sys
         import os
+        import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from feedback_form_handler import lambda_handler
 

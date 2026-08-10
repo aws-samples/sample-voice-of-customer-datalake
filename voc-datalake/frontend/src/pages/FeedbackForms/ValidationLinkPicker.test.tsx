@@ -1,0 +1,248 @@
+/**
+ * Tests for the validation link in the form editor.
+ *
+ * The load-bearing behaviours: a stored link survives an edit round-trip through
+ * the editor (rather than being silently cleared on Save), the link can be
+ * cleared on purpose, and a form that validates nothing keeps saving exactly the
+ * payload it did before these fields existed.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
+import i18n from 'i18next'
+
+const mockGetFeedbackForms = vi.fn()
+const mockUpdateFeedbackForm = vi.fn()
+const mockCreateFeedbackForm = vi.fn()
+const mockGetProjects = vi.fn()
+const mockGetProject = vi.fn()
+
+vi.mock('../../api/client', () => ({
+  api: {
+    getFeedbackForms: () => mockGetFeedbackForms(),
+    createFeedbackForm: (form: unknown) => mockCreateFeedbackForm(form),
+    updateFeedbackForm: (id: string, form: unknown) => mockUpdateFeedbackForm(id, form),
+    deleteFeedbackForm: () => Promise.resolve({ success: true }),
+    getCategoriesConfig: () => Promise.resolve({ categories: [] }),
+  },
+}))
+
+vi.mock('../../api/projectsApi', () => ({
+  projectsApi: {
+    getProjects: () => mockGetProjects(),
+    getProject: (id: string) => mockGetProject(id),
+  },
+}))
+
+vi.mock('../../store/configStore', () => ({
+  useConfigStore: () => ({ config: { apiEndpoint: 'https://api.example.com' } }),
+}))
+
+vi.mock('./TemplateWizard', () => ({
+  default: () => <div data-testid="template-wizard" />,
+}))
+
+vi.mock('./FormCard', () => ({
+  default: ({ form, onEdit }: {
+    form: { form_id: string; name: string }
+    onEdit: (f: unknown) => void
+  }) => (
+    <div data-testid={`form-card-${form.form_id}`}>
+      <button onClick={() => onEdit(form)}>Edit {form.name}</button>
+    </div>
+  ),
+}))
+
+import FeedbackForms from './FeedbackForms'
+
+const { t } = i18n
+
+const linkedForm = {
+  form_id: 'form_1',
+  name: 'PR/FAQ concept test',
+  enabled: true,
+  project_id: 'p1',
+  document_id: 'doc_prfaq',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+}
+
+const unlinkedForm = {
+  form_id: 'form_9',
+  name: 'Website Footer Form',
+  enabled: true,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+}
+
+function createWrapper() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </QueryClientProvider>
+  )
+}
+
+/** Open the editor for one form and switch to the validation tab. */
+async function openValidationTab(formName: string) {
+  const user = userEvent.setup()
+  render(<FeedbackForms />, { wrapper: createWrapper() })
+
+  await waitFor(() => {
+    expect(screen.getByText(`Edit ${formName}`)).toBeInTheDocument()
+  })
+  await user.click(screen.getByText(`Edit ${formName}`))
+  await user.click(screen.getAllByText(t('feedbackForms:editor.tabs.validates'))[0])
+  return user
+}
+
+const projectSelect = () => screen.getByLabelText(t('feedbackForms:editor.validationProjectLabel'))
+const documentSelect = () => screen.getByLabelText(t('feedbackForms:editor.validationDocumentLabel'))
+
+describe('validation link in the form editor', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetFeedbackForms.mockResolvedValue({ forms: [linkedForm, unlinkedForm] })
+    mockUpdateFeedbackForm.mockResolvedValue({ success: true })
+    mockCreateFeedbackForm.mockResolvedValue({ success: true })
+    mockGetProjects.mockResolvedValue({
+      projects: [
+        { project_id: 'p1', name: 'Project One', status: 'active', created_at: '', updated_at: '', persona_count: 0, document_count: 1 },
+        { project_id: 'p2', name: 'Project Two', status: 'active', created_at: '', updated_at: '', persona_count: 0, document_count: 0 },
+      ],
+    })
+    mockGetProject.mockResolvedValue({
+      project_id: 'p1',
+      documents: [
+        { document_id: 'doc_prfaq', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '' },
+        { document_id: 'doc_research', document_type: 'research', title: 'Research Notes', content: '', created_at: '' },
+      ],
+    })
+  })
+
+  it('shows the stored link when the editor opens', async () => {
+    await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(projectSelect()).toHaveValue('p1')
+    })
+    expect(documentSelect()).toHaveValue('doc_prfaq')
+  })
+
+  it('round-trips a stored link through Save untouched', async () => {
+    // The regression this guards: opening the editor and saving without
+    // touching the link must not clear it.
+    const user = await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(projectSelect()).toHaveValue('p1')
+    })
+    await user.click(screen.getByText('Save Changes'))
+
+    await waitFor(() => {
+      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
+    })
+    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({
+      project_id: 'p1',
+      document_id: 'doc_prfaq',
+    })
+  })
+
+  it('lets an admin clear the link, and clears the document with the project', async () => {
+    const user = await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(projectSelect()).toHaveValue('p1')
+    })
+    await user.selectOptions(projectSelect(), '')
+    await user.click(screen.getByText('Save Changes'))
+
+    await waitFor(() => {
+      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
+    })
+    // Empty strings, not undefined: the backend PUT only writes fields present
+    // in the body, so an omitted field would leave the old link in place.
+    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({
+      project_id: '',
+      document_id: '',
+    })
+  })
+
+  it('lets an admin link an unlinked form to a project and document', async () => {
+    const user = await openValidationTab('Website Footer Form')
+
+    await waitFor(() => {
+      expect(projectSelect()).toHaveValue('')
+    })
+    await user.selectOptions(projectSelect(), 'p1')
+    await waitFor(() => {
+      expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+    })
+    await user.selectOptions(documentSelect(), 'doc_prfaq')
+    await user.click(screen.getByText('Save Changes'))
+
+    await waitFor(() => {
+      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
+    })
+    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({
+      project_id: 'p1',
+      document_id: 'doc_prfaq',
+    })
+  })
+
+  it('saves a form that validates nothing as unlinked', async () => {
+    const user = await openValidationTab('Website Footer Form')
+
+    await waitFor(() => {
+      expect(projectSelect()).toHaveValue('')
+    })
+    await user.click(screen.getByText('Save Changes'))
+
+    await waitFor(() => {
+      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
+    })
+    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({
+      project_id: '',
+      document_id: '',
+    })
+  })
+
+  it('offers only scorable document types — a form on research notes shows on no row', async () => {
+    await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Research Notes')).not.toBeInTheDocument()
+  })
+
+  it('keeps a link whose document no longer exists rather than silently clearing it', async () => {
+    mockGetFeedbackForms.mockResolvedValue({
+      forms: [{ ...linkedForm, document_id: 'doc_v1' }],
+    })
+
+    const user = await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(documentSelect()).toHaveValue('doc_v1')
+    })
+    expect(screen.getByText(t('feedbackForms:editor.validationUnknownDocument'))).toBeInTheDocument()
+
+    await user.click(screen.getByText('Save Changes'))
+    await waitFor(() => {
+      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
+    })
+    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({ document_id: 'doc_v1' })
+  })
+
+  it('disables the document select until a project is chosen', async () => {
+    await openValidationTab('Website Footer Form')
+
+    await waitFor(() => {
+      expect(documentSelect()).toBeDisabled()
+    })
+  })
+})
