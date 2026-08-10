@@ -4,7 +4,8 @@
 import { describe, it, expect } from 'vitest';
 import type { z } from 'zod';
 import { chatRequestSchema, attachmentSchema, MAX_MESSAGE_LENGTH } from './schema.js';
-import { MAX_HISTORY_CONTENT_LENGTH, TRUNCATION_MARKER } from './history-budget.js';
+import { SUPPORTED_LANGUAGES } from './context/language.js';
+import { MAX_HISTORY_ARRAY, MAX_HISTORY_CONTENT_LENGTH, TRUNCATION_MARKER } from './history-budget.js';
 
 /** Returns the flattened dot-path of every issue in a failed parse result. */
 function errorPaths(result: z.SafeParseReturnType<unknown, unknown>): string[] {
@@ -280,6 +281,20 @@ describe('chatRequestSchema', () => {
     expect(entry?.content.endsWith(TRUNCATION_MARKER)).toBe(true);
   });
 
+  it('rejects an absurd history array rather than validating every element of it', () => {
+    // The outer bound is an order of magnitude above the window, so this is a
+    // client bug or an attack, not a long conversation.
+    const entry = {
+      role: 'user' as const, content: 'hi',
+    };
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      history: Array.from({ length: MAX_HISTORY_ARRAY + 1 }, () => entry),
+    });
+    expect(result.success).toBe(false);
+    expect(errorPaths(result)).toContain('history');
+  });
+
   it('accepts a conversation past the 50-turn window, keeping the most recent turns', () => {
     const history = Array.from({ length: 60 }, (_, i) => ({
       role: 'user' as const, content: `turn-${i}`,
@@ -333,7 +348,9 @@ describe('chatRequestSchema', () => {
 
 describe('chatRequestSchema response_language allowlist (issue #266)', () => {
   it('accepts every supported locale', () => {
-    for (const lang of ['de', 'en', 'es', 'fr', 'ja', 'ko', 'pt', 'zh']) {
+    // Driven from the source of truth, so adding a locale cannot leave this
+    // assertion silently covering the old set.
+    for (const lang of SUPPORTED_LANGUAGES) {
       const result = chatRequestSchema.safeParse({ message: 'hi', response_language: lang });
       expect(result.success).toBe(true);
       expect(result.success && result.data.response_language).toBe(lang);

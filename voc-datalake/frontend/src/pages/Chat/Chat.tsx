@@ -198,7 +198,7 @@ function MessageTooLongNotice({
   const { t } = useTranslation('chat')
   if (!show) return null
   return (
-    <p id={id} role="status" className="mt-1 text-xs text-red-700">
+    <p id={id} role="alert" className="mt-1 text-xs text-red-700">
       {t('messageTooLong', { max })}
     </p>
   )
@@ -250,7 +250,7 @@ export default function Chat() {
   } = useStreamChat()
 
   // Must sit below useStreamChat: it reads isStreaming, and referencing that
-  // binding earlier is a TDZ error that tsc and eslint both accept.
+  // binding earlier is a TDZ error at runtime that neither tsc nor eslint flags.
   // Mirrors the stream Lambda's own cap so an over-long paste is refused here,
   // with a translated reason, instead of coming back as "Stream error: 400".
   const {

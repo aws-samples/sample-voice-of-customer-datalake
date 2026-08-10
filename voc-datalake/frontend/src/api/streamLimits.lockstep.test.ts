@@ -12,18 +12,33 @@
  *
  * @module api/streamLimits.lockstep.test
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import {
-  MAX_CHAT_MESSAGE_LENGTH, MAX_SELECTED_DOCUMENTS, MAX_SELECTED_PERSONAS,
-} from './streamLimits'
+import { MAX_CHAT_MESSAGE_LENGTH, MAX_SELECTED_PERSONAS } from './streamLimits'
 
 // Relative to the frontend package root, which is where vitest runs. A literal
-// because the security lint rule forbids a computed argument — and because both
-// failure modes are loud: a moved schema or a wrong working directory throws
-// ENOENT while this module is being imported, rather than quietly passing.
+// because the security lint rule forbids a computed argument.
 // (import.meta.url is not usable here: it is not a file: URL under this config.)
-const SCHEMA_SOURCE = readFileSync('../lambda/stream/src/schema.ts', 'utf8')
+const SCHEMA_PATH = '../lambda/stream/src/schema.ts'
+
+/**
+ * Deliberately NOT skipped when the sibling package is absent. A skipped lockstep
+ * is a silent lockstep, and silence is the failure this test exists to prevent —
+ * so an unreachable schema is still a failure, just one that explains itself
+ * instead of surfacing as a bare ENOENT.
+ */
+function readSchemaSource(): string {
+  if (!existsSync(SCHEMA_PATH)) {
+    throw new Error(
+      `Cannot read ${SCHEMA_PATH} from ${process.cwd()}. This test pins the frontend's `
+      + 'copy of the stream request limits against the stream Lambda\'s own schema, so it '
+      + 'needs both packages checked out and must run from the frontend package root.',
+    )
+  }
+  return readFileSync(SCHEMA_PATH, 'utf8')
+}
+
+const SCHEMA_SOURCE = readSchemaSource()
 
 /**
  * Reads `const NAME = 1_234;` out of the schema source, tolerating the numeric
@@ -49,10 +64,8 @@ describe('stream limits lockstep', () => {
     expect(MAX_CHAT_MESSAGE_LENGTH).toBe(serverConstant('MAX_MESSAGE_LENGTH'))
   })
 
-  it('mirrors the server persona and document array caps', () => {
-    const serverArrayCap = serverConstant('MAX_PERSONAS_DOCS_ARRAY')
-    expect(MAX_SELECTED_PERSONAS).toBe(serverArrayCap)
-    expect(MAX_SELECTED_DOCUMENTS).toBe(serverArrayCap)
+  it('mirrors the server persona array cap', () => {
+    expect(MAX_SELECTED_PERSONAS).toBe(serverConstant('MAX_PERSONAS_DOCS_ARRAY'))
   })
 
   it('fails loudly when a server constant is renamed rather than defaulting', () => {

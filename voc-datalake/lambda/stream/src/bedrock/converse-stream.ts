@@ -16,8 +16,6 @@ import { MAX_OUTPUT_TOKENS } from '../history-budget.js';
 // The 'chat' surface default is Sonnet 5 (kept in sync with model_config.py).
 const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'global.anthropic.claude-sonnet-5';
 
-
-
 const clientHolder: { instance: BedrockRuntimeClient | null } = { instance: null };
 
 export function getBedrockClient(): BedrockRuntimeClient {

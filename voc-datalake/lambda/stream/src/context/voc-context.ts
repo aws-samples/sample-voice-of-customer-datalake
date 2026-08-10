@@ -104,7 +104,6 @@ async function getConfiguredCategories(
   return [];
 }
 
-
 async function fetchCategoryCounts(
   docClient: DynamoDBDocumentClient,
   aggregatesTable: string,

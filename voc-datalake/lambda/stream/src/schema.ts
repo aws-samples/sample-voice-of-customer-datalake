@@ -1,17 +1,26 @@
 /**
  * Zod request validation schemas for the streaming chat Lambda.
  *
- * ## Two policies, deliberately
+ * ## Three policies, by who authored the value
  *
- * Bounds on **client-authored** fields REJECT: the caller supplied the value, so
- * telling them is the useful response, and the frontend carries a matching limit
- * (see `frontend/src/api/streamLimits.ts`, pinned by a lockstep test) so a real
- * user is stopped before sending rather than after.
+ * **User-authored** fields REJECT: the caller typed or pasted it, so telling them
+ * is the useful response, and the frontend carries a matching limit (see
+ * `frontend/src/api/streamLimits.ts`, pinned by a lockstep test) so a real user is
+ * stopped before sending rather than after. `message` is the case.
  *
- * Bounds on **service-authored** text CLAMP. `history` replays answers this
- * service generated, so a bound below the model's own output ceiling would turn a
- * normal long answer into a 400 on every later message in that conversation.
- * See history-budget.ts for the reasoning and the derivation.
+ * **Service-authored** text CLAMPS. `history` replays answers this service
+ * generated, so a bound below the model's own output ceiling would turn a normal
+ * long answer into a 400 on every later message in that conversation. See
+ * history-budget.ts for the reasoning and the derivation.
+ *
+ * **Code-authored and bounded by construction** REJECTS, with no client mirror.
+ * `context` is the case: `buildChatContext()` serialises at most four short
+ * clauses from three single-valued filters (`ChatFilters` has no multi-select and
+ * no free-text search), so 500 is unreachable from the UI. Clamping would be
+ * wrong here — exceeding it means OUR code changed shape, and silently truncating
+ * would hide that, whereas a rejection surfaces it. If `context` ever becomes
+ * user-influenced or multi-valued it moves to the first policy and needs a
+ * client-side mirror.
  *
  *   message          8 000 chars  — typed OR pasted; see below
  *   context          500 chars    — filter hints ("Source: x. Category: y.")
@@ -41,7 +50,7 @@
  */
 import { z } from 'zod';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from './context/language.js';
-import { clampHistoryToBudget } from './history-budget.js';
+import { clampHistoryToBudget, MAX_HISTORY_ARRAY } from './history-budget.js';
 
 const ALLOWED_MEDIA_TYPES = [
   'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf',
@@ -104,9 +113,15 @@ export const chatRequestSchema = z.object({
   // Attachments (images, PDFs)
   attachments: z.array(attachmentSchema).max(5).optional(),
   // Conversation history for multi-turn context. Clamped to the budget rather
-  // than capped: the count bound used to reject, which killed a conversation at
-  // turn 51 the same way the content cap killed it after one long answer.
-  history: z.array(historyMessageSchema).transform(clampHistoryToBudget).optional(),
+  // than capped at the product limit: the count bound used to reject, which killed
+  // a conversation at turn 51 the same way the content cap killed it after one long
+  // answer. MAX_HISTORY_ARRAY is an order of magnitude above the window, so no real
+  // conversation meets it — it only stops an absurd array being validated
+  // element-by-element before the window discards almost all of it.
+  history: z.array(historyMessageSchema)
+    .max(MAX_HISTORY_ARRAY)
+    .transform(clampHistoryToBudget)
+    .optional(),
 });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;

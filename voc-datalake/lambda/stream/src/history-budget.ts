@@ -17,11 +17,11 @@
  *
  * ## Where the numbers come from
  *
- * `MAX_HISTORY_CONTENT_LENGTH` is *derived* from the model's output ceiling
- * rather than chosen, so the two cannot drift: it reads
- * `DEFAULT_MAX_OUTPUT_TOKENS` straight off the Converse wrapper, because the
- * longest answer the service can emit is the longest entry it must accept back.
- * `CHARS_PER_TOKEN = 4` is the usual conservative English approximation.
+ * `MAX_HISTORY_CONTENT_LENGTH` is *derived* from `MAX_OUTPUT_TOKENS` below rather
+ * than chosen, so the two cannot drift: the longest answer the service can emit is
+ * the longest entry it must accept back. `converseStream` takes its default
+ * `maxTokens` from that same constant. `CHARS_PER_TOKEN = 4` is the usual
+ * conservative English approximation.
  *
  * `MAX_HISTORY_TOTAL_LENGTH` bounds the aggregate, which is the term that
  * actually costs money once it is resent each tool round. Four full-length
@@ -60,6 +60,16 @@ export const MAX_HISTORY_TOTAL_LENGTH = MAX_HISTORY_CONTENT_LENGTH * 4;
 
 /** Most recent turns kept, regardless of length. */
 export const MAX_HISTORY_ENTRIES = 50;
+
+/**
+ * Outer sanity bound on the array, enforced by the schema as a REJECTION.
+ *
+ * Deliberately an order of magnitude above MAX_HISTORY_ENTRIES: it is not a
+ * product limit, so no real conversation can reach it and the graceful clamp is
+ * what every genuine request meets. Its only job is to stop Zod validating an
+ * absurd array element-by-element before the window throws almost all of it away.
+ */
+export const MAX_HISTORY_ARRAY = MAX_HISTORY_ENTRIES * 10;
 
 /**
  * Appended when a single turn is truncated, so the model can tell that it is

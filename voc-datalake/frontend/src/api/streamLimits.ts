@@ -21,10 +21,13 @@
 export const MAX_CHAT_MESSAGE_LENGTH = 8000
 
 /**
- * Longest `selected_personas` / `selected_documents` arrays the stream Lambda
- * accepts. Reachable in one keystroke: `@all` in project chat expands to every
- * persona on the project, and persona import appends without replacing, so a
- * project can hold more than this.
+ * Longest `selected_personas` array the stream Lambda accepts. Reachable in one
+ * keystroke: `@all` in project chat expands to every persona on the project, and
+ * persona import appends without replacing, so a project can hold more than this.
+ *
+ * There is deliberately no document counterpart. The server caps both arrays, but
+ * documents are only ever chosen one @-mention at a time, and an explicit selection
+ * is not clamped — silently dropping documents someone picked by hand would be
+ * worse than the error. An unused mirror would be a constant with no consumer.
  */
 export const MAX_SELECTED_PERSONAS = 20
-export const MAX_SELECTED_DOCUMENTS = 20
