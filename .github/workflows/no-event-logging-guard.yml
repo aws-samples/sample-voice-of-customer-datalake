@@ -8,8 +8,10 @@
 # here would produce a permanently red, ignored check — which is worse than
 # no check at all.
 #
-# Widening this workflow to the full suite is tracked separately; see the
-# `Gates` section of the repository README before doing so.
+# The repo's real gate is `npm run check` in the root package.json, which chains
+# lint, typecheck:all, the frontend/CDK/stream suites and test:backend.  Widening
+# this workflow towards that would first need the deps missing from
+# requirements-dev.txt and the layer build.
 name: no-event-logging guard
 
 on:
@@ -40,8 +42,17 @@ jobs:
       # one stdlib-only file), and pytest treats the unknown --cov flags as a
       # usage error, so the defaults must be cleared rather than just disabling
       # the plugin with -p no:cov.
+      #
+      # --noconftest: this file uses no fixtures, but pytest would still load
+      # lambda/conftest.py and lambda/api/test/conftest.py.  Those import boto3
+      # and cryptography inside fixture bodies today, so nothing heavy is
+      # imported — an incidental property, not a guarantee.  Hoisting one of
+      # those imports to module scope would turn this check red with a
+      # ModuleNotFoundError that reads like a security-guard failure.  The local
+      # `npm run test:backend` run does load the conftests, so that coupling is
+      # still exercised, just not here.
       - name: Run guard
         working-directory: voc-datalake
         run: >-
           python -m pytest lambda/api/test/test_no_event_logging.py
-          -o addopts="" -p no:cacheprovider --no-header -q
+          -o addopts="" --noconftest -p no:cacheprovider --no-header -q
