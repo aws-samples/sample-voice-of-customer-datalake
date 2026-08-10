@@ -21,6 +21,16 @@
 export const MAX_CHAT_MESSAGE_LENGTH = 8000
 
 /**
+ * Longest `context` the stream Lambda accepts.
+ *
+ * Unlike `message` this is never shown to the user, because `buildChatContext`
+ * keeps its output provably below it. It is mirrored here anyway so the lockstep
+ * test pins it: that proof is arithmetic against this number, and it would become
+ * silently wrong if the server's cap moved.
+ */
+export const MAX_CHAT_CONTEXT_LENGTH = 500
+
+/**
  * Longest `selected_personas` array the stream Lambda accepts. Reachable in one
  * keystroke: `@all` in project chat expands to every persona on the project, and
  * persona import appends without replacing, so a project can hold more than this.

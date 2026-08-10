@@ -12,10 +12,11 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { ChatFilters } from '../../store/chatStore'
-import { buildChatContext } from './chatContext'
+import { MAX_CHAT_CONTEXT_LENGTH } from '../../api/streamLimits'
+import { buildChatContext, MAX_FILTER_VALUE_LENGTH } from './chatContext'
 
-/** Mirrors MAX_CONTEXT_LENGTH in lambda/stream/src/schema.ts. */
-const SERVER_CONTEXT_CAP = 500
+
+
 
 /**
  * Pathological, not merely long. `category` comes from the tenant's configured
@@ -54,7 +55,7 @@ describe('buildChatContext', () => {
       source: ABSURD_VALUE, category: ABSURD_VALUE, sentiment: ABSURD_VALUE, useWebSearch: true,
     }
     const context = buildChatContext(365, filters)
-    expect(context.length).toBeLessThan(SERVER_CONTEXT_CAP)
+    expect(context.length).toBeLessThan(MAX_CHAT_CONTEXT_LENGTH)
   })
 
   it('leaves realistic filter values untouched', () => {
@@ -64,9 +65,24 @@ describe('buildChatContext', () => {
       category: 'delivery and fulfilment experience',
       sentiment: 'negative',
     }
-    const context = buildChatContext(7, filters)
-    expect(context).toContain('Category: delivery and fulfilment experience')
-    expect(context).not.toContain('...')
+    expect(buildChatContext(7, filters)).toContain('Category: delivery and fulfilment experience')
+  })
+
+  // Asserting the boundary rather than the absence of an ellipsis: clause() cuts
+  // with a bare slice and appends no marker, so "does not contain ..." would pass
+  // for a truncated value too — vacuous.
+  it('passes a value at the per-value cap through whole', () => {
+    const atCap = 'c'.repeat(MAX_FILTER_VALUE_LENGTH)
+    expect(buildChatContext(7, { category: atCap })).toBe(
+      `Time range: last 7 days. Category: ${atCap}`,
+    )
+  })
+
+  it('cuts a value one character over the cap to exactly the cap', () => {
+    const overCap = 'c'.repeat(MAX_FILTER_VALUE_LENGTH + 1)
+    const context = buildChatContext(7, { category: overCap })
+    expect(context).toBe(`Time range: last 7 days. Category: ${'c'.repeat(MAX_FILTER_VALUE_LENGTH)}`)
+    expect(context).not.toContain(overCap)
   })
 
   it('emits one clause per filter, so the length cannot grow without a schema change', () => {

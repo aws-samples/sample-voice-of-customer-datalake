@@ -28,7 +28,7 @@ import type { ChatFilters } from '../../store/chatStore'
  * `chatContext.test.ts` asserts it against a pathologically long value. 120 is far
  * above any real category, source or sentiment, so realistic values are untouched.
  */
-const MAX_FILTER_VALUE_LENGTH = 120
+export const MAX_FILTER_VALUE_LENGTH = 120
 
 /**
  * Truncate rather than reject. These clauses are hints for the model, and a

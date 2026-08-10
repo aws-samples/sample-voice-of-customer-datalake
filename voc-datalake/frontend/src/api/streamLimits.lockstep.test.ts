@@ -14,7 +14,9 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { MAX_CHAT_MESSAGE_LENGTH, MAX_SELECTED_PERSONAS } from './streamLimits'
+import {
+  MAX_CHAT_CONTEXT_LENGTH, MAX_CHAT_MESSAGE_LENGTH, MAX_SELECTED_PERSONAS,
+} from './streamLimits'
 
 // Relative to the frontend package root, which is where vitest runs. A literal
 // because the security lint rule forbids a computed argument.
@@ -66,6 +68,12 @@ describe('stream limits lockstep', () => {
 
   it('mirrors the server persona array cap', () => {
     expect(MAX_SELECTED_PERSONAS).toBe(serverConstant('MAX_PERSONAS_DOCS_ARRAY'))
+  })
+
+  // buildChatContext's "provably under the cap" argument is arithmetic against
+  // this number, so a server-side change to it must not pass silently.
+  it('mirrors the server context cap', () => {
+    expect(MAX_CHAT_CONTEXT_LENGTH).toBe(serverConstant('MAX_CONTEXT_LENGTH'))
   })
 
   it('fails loudly when a server constant is renamed rather than defaulting', () => {
