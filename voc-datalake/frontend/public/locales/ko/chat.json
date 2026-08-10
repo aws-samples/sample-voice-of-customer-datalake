@@ -24,6 +24,7 @@
     "reasoning": "추론",
     "relatedFeedback": "관련 피드백:"
   },
+  "messageTooLong": "메시지가 너무 깁니다. {{max}}자 이내로 줄여 주세요.",
   "showHistory": "기록 보기",
   "sidebar": {
     "clearAll": "모든 대화 삭제",

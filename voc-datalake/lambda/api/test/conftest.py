@@ -32,6 +32,20 @@ os.environ['USER_POOL_ID'] = 'us-east-1_testpool'
 
 
 @pytest.fixture
+def feedback_form_handler():
+    """The imported `feedback_form_handler` module.
+
+    `sys.path` already carries `lambda/api` (set at the top of this file), so the
+    import needs no per-test path juggling. A fixture rather than a module-level
+    import so that a test importing it is still what triggers the import, and a
+    handler that cannot be imported fails the tests that use it rather than
+    collection of the whole file.
+    """
+    import feedback_form_handler
+    return feedback_form_handler
+
+
+@pytest.fixture
 def mock_dynamodb_table():
     """Create a mock DynamoDB table with common methods."""
     table = MagicMock()
