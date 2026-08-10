@@ -292,6 +292,59 @@ class TestBaseWebhookHandle:
     @patch('_shared.base_webhook.get_sqs_client')
     @patch('_shared.base_webhook.get_secret')
     @patch('_shared.base_webhook.emit_audit_event')
+    def test_handle_reports_confirmed_count_not_attempted_count(
+        self, mock_audit, mock_get_secret, mock_sqs
+    ):
+        """handle() must report the confirmed-enqueued count returned by
+        send_to_queue in both the HTTP body and the audit event.
+
+        Reverts-to-catch: if handle() reports ``len(normalized_items)`` (the
+        attempted count), the response claims 3 items were processed when
+        send_to_queue confirmed only 2 — the same attempted-vs-confirmed defect
+        this PR fixes on the ingestor path.
+        """
+        from _shared.base_webhook import BaseWebhook
+
+        mock_get_secret.return_value = {}
+        mock_sqs.return_value = MagicMock()
+
+        class TestWebhook(BaseWebhook):
+            def parse_webhook_payload(self, body, headers):
+                return [
+                    {'id': '1', 'text': 'Review 1'},
+                    {'id': '2', 'text': 'Review 2'},
+                    {'id': '3', 'text': 'Review 3'},
+                ]
+
+        webhook = TestWebhook()
+
+        event = {
+            'body': json.dumps({'eventType': 'review-created'}),
+            'headers': {},
+            'isBase64Encoded': False,
+            'requestContext': {'identity': {'sourceIp': '1.2.3.4'}},
+        }
+
+        with patch.object(TestWebhook, 'send_to_queue', return_value=2):
+            result = webhook.handle(event, None)
+
+        assert result['statusCode'] == 200
+        body = json.loads(result['body'])
+        assert body['items_processed'] == 2, (
+            'HTTP body must report the confirmed count (2), not the attempted count (3)'
+        )
+        # The audit event must carry the confirmed count too
+        audit_calls = [
+            c for c in mock_audit.call_args_list
+            if len(c.args) > 3 and isinstance(c.args[3], dict)
+            and 'items_processed' in c.args[3]
+        ]
+        assert audit_calls, 'Expected an audit event carrying items_processed'
+        assert audit_calls[-1].args[3]['items_processed'] == 2
+
+    @patch('_shared.base_webhook.get_sqs_client')
+    @patch('_shared.base_webhook.get_secret')
+    @patch('_shared.base_webhook.emit_audit_event')
     def test_returns_200_when_no_items_to_process(
         self, mock_audit, mock_get_secret, mock_sqs
     ):

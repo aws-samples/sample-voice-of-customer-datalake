@@ -10,6 +10,12 @@ silently discarded.  It distinguishes:
 * ``SenderFault: false`` — throttling or a transient AWS-internal error; these
   are retried up to *max_retries* times (default 3).
 
+Every batch response is also *reconciled* against the entries submitted: the
+``Successful`` and ``Failed`` lists together must account for every entry.  An
+entry that appears in neither is recorded as a permanent failure with the code
+``UnaccountedBySQS`` rather than being silently dropped, so the ``RuntimeError``
+contract stays total even for a truncated or malformed response.
+
 After all processing the metric is emitted with the **actual** successfully
 enqueued count (not the attempted count), and a ``RuntimeError`` is raised if
 any items could not be enqueued so callers cannot silently report success.
@@ -64,7 +70,9 @@ def send_messages_to_queue(
 
     Raises:
         RuntimeError: If one or more items could not be enqueued after all
-                      retries are exhausted, or because the entry is malformed.
+                      retries are exhausted, because the entry is malformed, or
+                      because the response did not account for every submitted
+                      entry.
     """
     if not items:
         return 0
@@ -126,7 +134,7 @@ def send_messages_to_queue(
                     if idx < 0:
                         raise IndexError(f"negative batch index: {idx}")
                     failed_item = batch[idx]
-                except (ValueError, IndexError):
+                except (ValueError, IndexError, TypeError):
                     logger.error(
                         "SQS Failed entry has invalid Id %r (batch size %d); "
                         "entry=%s label=%s",
@@ -166,6 +174,35 @@ def send_messages_to_queue(
                         error_code,
                         log_label,
                     )
+
+            # Reconcile the response against what was submitted.  SQS accounts
+            # for every entry in either Successful or Failed; an entry present
+            # in neither would otherwise be neither counted nor reported —
+            # exactly the silent-loss class this helper exists to close.  Treat
+            # any shortfall as a permanent failure so the RuntimeError contract
+            # stays total for truncated or malformed responses.
+            reported_ids = {
+                str(entry.get("Id"))
+                for entry in list(resp.get("Successful", [])) + list(resp.get("Failed", []))
+            }
+            unaccounted = [
+                (idx, item)
+                for idx, item in enumerate(batch)
+                if str(idx) not in reported_ids
+            ]
+            if unaccounted:
+                logger.error(
+                    "SQS response accounted for %d of %d submitted entries; "
+                    "treating %d unaccounted entry(ies) as failed. label=%s",
+                    len(reported_ids),
+                    len(entries),
+                    len(unaccounted),
+                    log_label,
+                )
+                for idx, item in unaccounted:
+                    # Log the item's own id only — never the message body.
+                    item_id = str(item.get("id", f"idx-{idx}"))
+                    permanent_failures.append((item_id, "UnaccountedBySQS"))
 
         pending = transient_retry
 

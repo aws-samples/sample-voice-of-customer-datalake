@@ -22,6 +22,9 @@ Failed entry missing Id field raises RuntimeError   test_missing_id_field_raises
 Non-numeric Id raises RuntimeError (no ValueError) test_non_numeric_id_raises_without_value_error
 Out-of-range Id raises RuntimeError (no IndexError) test_out_of_range_id_raises_without_index_error
 Negative Id raises RuntimeError (no wrong item)    test_negative_id_raises_without_wrong_item_blamed
+Non-string Id raises RuntimeError (no TypeError)    test_non_string_id_type_raises_runtime_error_not_type_error
+Unaccounted entries raise instead of vanishing      test_unaccounted_entries_raise_rather_than_silently_vanish
+Unaccounted entry named in the RuntimeError         test_unaccounted_entry_is_named_in_the_error
 Full message body not logged (only id field)        test_personal_data_not_logged
 Return value = successfully enqueued count          test_return_value_is_enqueued_count
 """
@@ -475,6 +478,132 @@ class TestSendMessagesToQueueFailureHandling:
         assert any("invalid Id" in c for c in error_calls), (
             "Expected an error log about the invalid (negative) Id field"
         )
+
+    def test_non_string_id_type_raises_runtime_error_not_type_error(self):
+        """A Failed entry whose Id is a non-string, non-numeric object (e.g. a
+        dict) must raise RuntimeError, not an unhandled TypeError.
+
+        Reverts-to-catch: with ``except (ValueError, IndexError)`` only,
+        ``int({})`` raises TypeError which propagates out of
+        send_messages_to_queue, masking the original SQS error code and breaking
+        the documented RuntimeError contract.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "item-0", "text": "x"}]
+        response_with_dict_id = {
+            "Successful": [],
+            "Failed": [
+                {
+                    "Id": {},  # int({}) raises TypeError
+                    "SenderFault": True,
+                    "Code": "InternalError",
+                    "Message": "test error",
+                }
+            ],
+        }
+        sqs = _make_sqs([response_with_dict_id])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            patch("_shared.sqs_utils.logger") as mock_logger,
+            pytest.raises(RuntimeError),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+                initial_delay=0,
+            )
+
+        error_calls = [str(call) for call in mock_logger.error.call_args_list]
+        assert any("invalid Id" in c for c in error_calls), (
+            "Expected an error log about the invalid (non-string) Id field"
+        )
+
+    def test_unaccounted_entries_raise_rather_than_silently_vanish(self):
+        """An entry that appears in neither Successful nor Failed must be
+        recorded as a permanent failure so RuntimeError is raised.
+
+        Reverts-to-catch: without the Successful+Failed reconciliation, a
+        response that accounts for fewer entries than were submitted leaves the
+        missing entry uncounted and unreported — no RuntimeError, no error log,
+        and the caller (BaseIngestor.run) reports success and advances the
+        watermark past an item that never reached SQS.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": f"i{i}", "text": "x"} for i in range(3)]
+        # 3 entries submitted; only 2 accounted for (2 Successful, 0 Failed).
+        sqs = _make_sqs([{"Successful": [{"Id": "0"}, {"Id": "1"}], "Failed": []}])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            patch("_shared.sqs_utils.logger") as mock_logger,
+            pytest.raises(RuntimeError, match="i2"),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                initial_delay=0,
+            )
+
+        error_calls = [str(call) for call in mock_logger.error.call_args_list]
+        assert any("unaccounted" in c for c in error_calls), (
+            "Expected an error log about entries the response did not account for"
+        )
+
+    def test_unaccounted_entry_is_named_in_the_error(self):
+        """The unaccounted item's own id (not its batch index) is what appears in
+        the RuntimeError, so operators can identify the lost feedback.
+
+        Reverts-to-catch: recording the batch index instead of the item id makes
+        the error message useless for recovery.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "keep-me", "text": "x"}, {"id": "lost-item", "text": "y"}]
+        sqs = _make_sqs([{"Successful": [{"Id": "0"}], "Failed": []}])
+
+        with patch("_shared.sqs_utils.metrics"), pytest.raises(RuntimeError) as exc_info:
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                initial_delay=0,
+            )
+
+        assert "lost-item" in str(exc_info.value)
+        # The confirmed item must not be reported as failed
+        assert "keep-me" not in str(exc_info.value)
+
+    def test_fully_accounted_response_does_not_trigger_reconciliation(self):
+        """A response that accounts for every entry (Successful + Failed) must
+        not add spurious UnaccountedBySQS failures.
+
+        Reverts-to-catch: a reconciliation that compares against the wrong list
+        (e.g. Successful only) would wrongly flag legitimately-failed entries
+        twice, or reject a fully-successful batch.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": f"i{i}", "text": "x"} for i in range(3)]
+        sqs = _make_sqs([_success_response(3)])
+
+        with patch("_shared.sqs_utils.metrics"):
+            result = send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                initial_delay=0,
+            )
+        assert result == 3
 
     def test_partial_batch_failure_raises_and_counts_correctly(self):
         """A batch where only some entries fail still raises and the return /

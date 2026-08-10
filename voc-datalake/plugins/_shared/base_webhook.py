@@ -95,7 +95,9 @@ class BaseWebhook(ABC):
         Delegates to the shared helper which checks the ``Failed`` list in every
         batch response, retries transient errors, and raises ``RuntimeError`` if
         any items cannot be enqueued — ensuring callers cannot silently lose
-        feedback.  The ``WebhookItemsIngested`` metric reflects the actual
+        feedback.  It also reconciles ``Successful`` + ``Failed`` against the
+        submitted entries so an unaccounted entry is reported rather than
+        dropped.  The ``WebhookItemsIngested`` metric reflects the actual
         enqueued count, not the attempted count.
 
         Returns:
@@ -164,10 +166,13 @@ class BaseWebhook(ABC):
 
             # Normalize and send to queue
             normalized_items = [self.normalize_item(item) for item in items]
-            self.send_to_queue(normalized_items)
+            # Use the confirmed-enqueued count, not the attempted count, so the
+            # audit event and HTTP response never report items SQS did not
+            # acknowledge (mirrors BaseIngestor.run()).
+            enqueued = self.send_to_queue(normalized_items)
 
             emit_audit_event("webhook.received", self.source_platform, True, {
-                "items_processed": len(normalized_items),
+                "items_processed": enqueued,
                 "ip_address": client_ip,
             })
 
@@ -175,7 +180,7 @@ class BaseWebhook(ABC):
                 "statusCode": 200,
                 "body": json.dumps({
                     "status": "ok",
-                    "items_processed": len(normalized_items),
+                    "items_processed": enqueued,
                 }),
             }
 
