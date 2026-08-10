@@ -22,6 +22,7 @@ import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
 import { projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
 import ConfirmModal from '../../components/ConfirmModal'
+import { usePrototypeLinkRefresh } from '../../components/usePrototypeLinkRefresh'
 import { useConfigStore } from '../../store/configStore'
 import {
   buildLinkedFormsByDocument, collectProjectDocumentIds, normalizeLinkedForms,
@@ -110,6 +111,17 @@ function SortControls({
 }
 
 const NO_LINKED_FORMS: readonly LinkedForm[] = []
+
+/**
+ * Query key root for the fan-out project read.
+ *
+ * A constant rather than two literals because it is now both fetched and
+ * invalidated (see the prototype re-sign below) — spelled twice, a rename would
+ * leave the invalidation matching nothing, and nothing would fail: the page keeps
+ * working and the prototype links quietly stop being refreshed. Stays private to
+ * this page per the rule in api/projectQueryKeys.
+ */
+const ALL_PROJECT_DETAILS_KEY = 'all-project-details'
 
 function PRFAQList({
   isLoading, prfaqs, scores, linkedFormsByDocument, apiEndpoint, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
@@ -213,9 +225,29 @@ export default function Prioritization() {
   const {
     data: allProjectDetails, isLoading: loadingDetails,
   } = useQuery({
-    queryKey: ['all-project-details', projectIds],
+    queryKey: [ALL_PROJECT_DETAILS_KEY, projectIds],
     queryFn: () => Promise.all(projectIds.map((id) => projectsApi.getProject(id))),
     enabled: projectIds.length > 0,
+  })
+
+  /**
+   * Re-sign the prototype links before they lapse.
+   *
+   * This read is where every prototype URL on the page comes from, and the API
+   * mints a fresh signature on every project read — so refetching it IS the
+   * re-sign. Without this the row's "Open in new tab" would 403 for anyone who
+   * parks a pitch on screen past the signature's ~1h life: it is a plain anchor by
+   * necessity, so nothing can fetch a replacement at click time.
+   *
+   * Invalidated by prefix, not with the full `[key, projectIds]`, so it still
+   * matches when the project list has changed underneath.
+   */
+  const allDocuments = useMemo(
+    () => (allProjectDetails ?? []).flatMap((detail) => detail.documents ?? []),
+    [allProjectDetails],
+  )
+  usePrototypeLinkRefresh(allDocuments, () => {
+    void queryClient.invalidateQueries({ queryKey: [ALL_PROJECT_DETAILS_KEY] })
   })
 
   const { data: savedScores } = useQuery({

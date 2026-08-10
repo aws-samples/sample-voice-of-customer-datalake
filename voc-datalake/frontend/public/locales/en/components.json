@@ -126,6 +126,13 @@
     "downloadTXT": "Download as TXT",
     "exportPersona": "Export persona"
   },
+  "prototypeLink": {
+    "downloadHtml": "Download .html",
+    "linkExpired": "Link expired — reopen the project",
+    "linkExpires": "Link valid until {{time}}",
+    "linkExpiryHint": "tied to your session, not a share link",
+    "openNewTab": "Open in new tab"
+  },
   "s3Import": {
     "allSources": "All Sources",
     "bucket": "Bucket:",

@@ -133,6 +133,13 @@
     "downloadTXT": "Descargar como TXT",
     "exportPersona": "Exportar persona"
   },
+  "prototypeLink": {
+    "downloadHtml": "Descargar .html",
+    "linkExpired": "Enlace caducado: vuelve a abrir el proyecto",
+    "linkExpires": "Enlace válido hasta las {{time}}",
+    "linkExpiryHint": "vinculado a tu sesión, no es un enlace para compartir",
+    "openNewTab": "Abrir en una pestaña nueva"
+  },
   "s3Import": {
     "allSources": "Todas las fuentes",
     "bucket": "Depósito:",

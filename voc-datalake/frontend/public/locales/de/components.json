@@ -126,6 +126,13 @@
     "downloadTXT": "Als TXT herunterladen",
     "exportPersona": "Persona exportieren"
   },
+  "prototypeLink": {
+    "downloadHtml": ".html herunterladen",
+    "linkExpired": "Link abgelaufen — Projekt neu öffnen",
+    "linkExpires": "Link gültig bis {{time}}",
+    "linkExpiryHint": "an Ihre Sitzung gebunden, kein Freigabelink",
+    "openNewTab": "In neuem Tab öffnen"
+  },
   "s3Import": {
     "allSources": "Alle Quellen",
     "bucket": "Speicher:",

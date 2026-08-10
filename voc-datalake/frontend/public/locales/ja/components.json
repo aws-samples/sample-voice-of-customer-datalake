@@ -126,6 +126,13 @@
     "downloadTXT": "TXTでダウンロード",
     "exportPersona": "ペルソナをエクスポート"
   },
+  "prototypeLink": {
+    "downloadHtml": ".html をダウンロード",
+    "linkExpired": "リンクの有効期限が切れました — プロジェクトを開き直してください",
+    "linkExpires": "リンクの有効期限は {{time}} まで",
+    "linkExpiryHint": "セッションに紐付いたリンクで、共有用ではありません",
+    "openNewTab": "新しいタブで開く"
+  },
   "s3Import": {
     "allSources": "すべてのソース",
     "bucket": "バケット:",

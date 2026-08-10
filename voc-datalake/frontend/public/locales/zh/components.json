@@ -126,6 +126,13 @@
     "downloadTXT": "下载为 TXT",
     "exportPersona": "导出角色"
   },
+  "prototypeLink": {
+    "downloadHtml": "下载 .html",
+    "linkExpired": "链接已过期 — 请重新打开项目",
+    "linkExpires": "链接有效期至 {{time}}",
+    "linkExpiryHint": "与您的会话绑定，非分享链接",
+    "openNewTab": "在新标签页中打开"
+  },
   "s3Import": {
     "allSources": "所有来源",
     "bucket": "存储桶：",

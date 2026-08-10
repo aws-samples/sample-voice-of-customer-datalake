@@ -126,6 +126,13 @@
     "downloadTXT": "TXT로 다운로드",
     "exportPersona": "페르소나 내보내기"
   },
+  "prototypeLink": {
+    "downloadHtml": "HTML 다운로드",
+    "linkExpired": "링크가 만료되었습니다 — 프로젝트를 다시 열어 주세요",
+    "linkExpires": "링크 유효 시간: {{time}}까지",
+    "linkExpiryHint": "세션에 연결된 링크이며 공유용이 아닙니다",
+    "openNewTab": "새 탭에서 열기"
+  },
   "s3Import": {
     "allSources": "모든 소스",
     "bucket": "버킷:",
