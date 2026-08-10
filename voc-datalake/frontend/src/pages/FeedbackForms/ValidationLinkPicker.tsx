@@ -117,12 +117,18 @@ export default function ValidationLinkPicker({
 
   // Only the selected project's documents are fetched — the picker never needs
   // the whole corpus, and the query is skipped entirely while unlinked.
+  // Held in a const because `storedOptionState` below needs the SAME condition:
+  // if this query cannot run, its list can never resolve, and calling that
+  // "still loading" is the very thing this control stopped doing. A record with
+  // a document_id but no project_id is reachable (`PUT {"document_id": ...}`
+  // validates each field independently), and it disables this query.
+  const detailEnabled = enabled && value.project_id !== ''
   const {
     data: projectDetail, isSuccess: detailResolved, isError: detailFailed,
   } = useQuery({
     queryKey: projectKey(value.project_id),
     queryFn: () => projectsApi.getProject(value.project_id),
-    enabled: enabled && value.project_id !== '',
+    enabled: detailEnabled,
   })
   // `isScorable` rather than a local set of types: it reads SCORABLE_TYPE_META,
   // which documents itself as the single source of truth for which document
@@ -138,7 +144,7 @@ export default function ValidationLinkPicker({
   // the list is empty and every intact link looks missing.
   const storedDocument = storedOptionState(
     value.document_id, documents.map((doc) => doc.document_id),
-    { resolved: detailResolved, canResolve: enabled && !detailFailed },
+    { resolved: detailResolved, canResolve: detailEnabled && !detailFailed },
   )
   const storedProject = storedOptionState(
     value.project_id, projects.map((project) => project.project_id),

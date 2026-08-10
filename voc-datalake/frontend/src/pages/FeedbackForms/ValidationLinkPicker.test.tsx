@@ -420,6 +420,31 @@ describe('validation link in the form editor', () => {
     })
   })
 
+  it('does not claim to be loading a document list it will never request', async () => {
+    // A document_id with no project_id is reachable — the API validates the two
+    // link fields independently, so `PUT {"document_id": "..."}` alone persists
+    // this shape. It disables the detail query, so the list can never resolve and
+    // "Loading link…" would sit there forever: the same defect one level down
+    // from the one this control was fixed for.
+    mockGetFeedbackForms.mockResolvedValue({
+      forms: [{ ...linkedForm, project_id: '', document_id: 'doc_orphan' }],
+    })
+
+    await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(t('feedbackForms:editor.validationUnverifiedDocument')),
+      ).toBeInTheDocument()
+    })
+    expect(documentSelect()).toBeDisabled()
+    expect(documentSelect()).toHaveValue('doc_orphan')
+    expect(mockGetProject).not.toHaveBeenCalled()
+    expect(
+      screen.queryByText(t('feedbackForms:editor.validationLoadingLink')),
+    ).not.toBeInTheDocument()
+  })
+
   it('does not claim to be loading when the project detail request fails', async () => {
     mockGetProject.mockRejectedValue(new Error('detail unavailable'))
 
