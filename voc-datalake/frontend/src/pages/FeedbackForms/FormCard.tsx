@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Trash2, Copy, Check, Code, ExternalLink, ToggleLeft, ToggleRight, Edit2, MessageSquare, Star, BarChart3 } from 'lucide-react'
 import type { FeedbackForm } from '../../api/client'
 import { api } from '../../api/client'
+import { formStatsKey, FORM_STATS_STALE_TIME_MS } from '../../api/feedbackFormQueryKeys'
 import { defaultFormConfig } from './formTemplates'
 import clsx from 'clsx'
 import SubmissionsModal from './SubmissionsModal'
@@ -129,9 +130,9 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
   const theme = form.theme ?? defaultFormConfig.theme
 
   const { data: statsData } = useQuery({
-    queryKey: ['form-stats', form.form_id],
+    queryKey: formStatsKey(form.form_id),
     queryFn: () => api.getFeedbackFormStats(form.form_id),
-    staleTime: 30000,
+    staleTime: FORM_STATS_STALE_TIME_MS,
   })
 
   const copyToClipboard = (text: string, id: string) => {

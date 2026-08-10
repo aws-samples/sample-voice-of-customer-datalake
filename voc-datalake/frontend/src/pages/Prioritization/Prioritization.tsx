@@ -18,9 +18,14 @@ import {
 } from 'react-i18next'
 import { useBlocker } from 'react-router-dom'
 import { api } from '../../api/client'
+import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
+import { projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
 import ConfirmModal from '../../components/ConfirmModal'
 import { useConfigStore } from '../../store/configStore'
+import {
+  buildLinkedFormsByDocument, collectProjectDocumentIds, normalizeLinkedForms,
+} from './formLinkUtils'
 import PRFAQRow from './PRFAQRow'
 import {
   calculatePriorityScore, getScore, collectPRFAQs, comparePRFAQs, isScorable,
@@ -28,6 +33,7 @@ import {
 import type {
   PRFAQWithProject, SortField, SortDirection,
 } from './prioritizationUtils'
+import type { LinkedForm } from './formLinkUtils'
 import type {
   Project, PrioritizationScore,
 } from '../../api/types'
@@ -103,12 +109,15 @@ function SortControls({
   )
 }
 
+const NO_LINKED_FORMS: readonly LinkedForm[] = []
+
 function PRFAQList({
-  isLoading, prfaqs, scores, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
+  isLoading, prfaqs, scores, linkedFormsByDocument, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
 }: {
   readonly isLoading: boolean
   readonly prfaqs: PRFAQWithProject[]
   readonly scores: Record<string, PrioritizationScore>
+  readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
   readonly expandedId: string | null
   readonly onToggleExpand: (id: string) => void
   readonly onUpdateScore: (docId: string, field: keyof PrioritizationScore, value: number | string) => void
@@ -133,6 +142,7 @@ function PRFAQList({
           prfaq={prfaq}
           index={index}
           score={getScore(scores, prfaq.document_id)}
+          linkedForms={linkedFormsByDocument.get(prfaq.document_id) ?? NO_LINKED_FORMS}
           isExpanded={expandedId === prfaq.document_id}
           onToggle={() => onToggleExpand(prfaq.document_id)}
           onUpdateScore={(field, value) => onUpdateScore(prfaq.document_id, field, value)}
@@ -189,7 +199,7 @@ export default function Prioritization() {
   const {
     data: projectsData, isLoading: loadingProjects,
   } = useQuery({
-    queryKey: ['projects'],
+    queryKey: projectsKey(),
     queryFn: () => projectsApi.getProjects(),
     enabled: config.apiEndpoint.length > 0,
   })
@@ -208,6 +218,19 @@ export default function Prioritization() {
   const { data: savedScores } = useQuery({
     queryKey: ['prioritization-scores'],
     queryFn: () => api.getPrioritizationScores(),
+    enabled: config.apiEndpoint.length > 0,
+  })
+
+  // One list read to learn WHICH forms validate which document. The expensive
+  // part — each form's collected ratings — is fetched per form when a row is
+  // expanded (see LinkedFormEvidence), not here.
+  const { data: formsData } = useQuery({
+    queryKey: feedbackFormsKey(),
+    queryFn: () => api.getFeedbackForms(),
+    // Validate at the query boundary, per project convention: stored forms
+    // predate the link fields, so the record on the wire can omit them
+    // entirely — an unlinked form must read as "not linked", not crash the page.
+    select: (data) => normalizeLinkedForms(data.forms ?? []),
     enabled: config.apiEndpoint.length > 0,
   })
 
@@ -233,6 +256,17 @@ export default function Prioritization() {
     const sorted = [...allPRFAQs].sort((a, b) => comparePRFAQs(a, b, scores, sortField))
     return sortDirection === 'desc' ? sorted.reverse() : sorted
   }, [allPRFAQs, scores, sortField, sortDirection])
+
+  // Which forms validate which row. Pure bookkeeping over data already fetched;
+  // no per-row request happens here.
+  const linkedFormsByDocument = useMemo(
+    () => buildLinkedFormsByDocument(
+      formsData ?? [],
+      allPRFAQs,
+      collectProjectDocumentIds(allProjectDetails, projects),
+    ),
+    [formsData, allPRFAQs, allProjectDetails, projects],
+  )
 
   const saveMutation = useMutation({
     mutationFn: () => api.patchPrioritizationScores(localEdits),
@@ -298,6 +332,7 @@ export default function Prioritization() {
         isLoading={isLoading}
         prfaqs={sortedPRFAQs}
         scores={scores}
+        linkedFormsByDocument={linkedFormsByDocument}
         expandedId={expandedId}
         onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
         onUpdateScore={updateScore}

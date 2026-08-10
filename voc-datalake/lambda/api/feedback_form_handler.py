@@ -62,6 +62,14 @@ DEFAULT_FORM_CONFIG = {
     'custom_fields': [],
     'category': '',
     'subcategory': '',
+    # Optional link to the artefact this form validates (issue: prioritization
+    # evidence). Empty string means "validates nothing in particular" — the
+    # standalone website-survey case, which must keep behaving exactly as it
+    # did before these fields existed. `project_id` is the durable half of the
+    # link: regenerating a document mints a new document_id, so readers match
+    # on project first and treat document_id as a refinement.
+    'project_id': '',
+    'document_id': '',
 }
 
 # Fields that can be updated via PUT
@@ -69,12 +77,53 @@ UPDATABLE_FIELDS = [
     'name', 'enabled', 'title', 'description', 'question', 'placeholder',
     'rating_enabled', 'rating_type', 'rating_max', 'submit_button_text',
     'success_message', 'theme', 'collect_email', 'collect_name',
-    'custom_fields', 'category', 'subcategory'
+    'custom_fields', 'category', 'subcategory', 'project_id', 'document_id'
 ]
 
 
+# The link fields hold server-minted identifiers (`proj_20260101120000`,
+# `prfaq_...`), so anything long is not one. A cap keeps a client from writing an
+# arbitrarily large blob into an attribute the Prioritization page then reads
+# back, and keeps the item within DynamoDB's 400 KB limit for reasons a caller
+# cannot argue with.
+LINK_FIELD_MAX_LENGTH = 128
+
+# Fields whose value is an identifier the API mints, not free text the caller
+# composes. Validated on the way in — see validate_link_fields.
+LINK_FIELDS = ('project_id', 'document_id')
+
+
+def validate_link_fields(body: dict) -> None:
+    """Reject a malformed project_id / document_id before it is persisted.
+
+    These two are the only writable fields whose values another surface later
+    matches on (Prioritization pairs a form to a document by them), so a
+    non-string — a dict, a list, a number — would be stored verbatim and then
+    silently match nothing. Failing the request says so instead.
+
+    Absent is always fine: the link is optional, and '' is how "validates
+    nothing" is spelled.
+    """
+    for field in LINK_FIELDS:
+        if field not in body:
+            continue
+        value = body[field]
+        if not isinstance(value, str):
+            raise ValidationError(f'{field} must be a string')
+        if len(value) > LINK_FIELD_MAX_LENGTH:
+            raise ValidationError(
+                f'{field} must be at most {LINK_FIELD_MAX_LENGTH} characters'
+            )
+
+
 def build_form_item(body: dict, form_id: str | None = None) -> dict:
-    """Build DynamoDB item from request body with defaults."""
+    """Build DynamoDB item from request body with defaults.
+
+    Validates the link fields here rather than leaving it to the caller: this is
+    the only way a new record is constructed, so a future second caller cannot
+    reach the table with an unvalidated link by forgetting a line.
+    """
+    validate_link_fields(body)
     now = datetime.now(timezone.utc).isoformat()
     fid = form_id or str(uuid.uuid4())[:8]
     
@@ -115,9 +164,44 @@ def item_to_form(item: dict) -> dict:
         'custom_fields': item.get('custom_fields', []),
         'category': item.get('category', ''),
         'subcategory': item.get('subcategory', ''),
+        # Optional validation link — authenticated callers only. Deliberately
+        # absent from item_to_widget_config below.
+        'project_id': item.get('project_id', ''),
+        'document_id': item.get('document_id', ''),
         'brand_name': item.get('brand_name', ''),
         'created_at': item.get('created_at', ''),
         'updated_at': item.get('updated_at', ''),
+    }
+
+
+def item_to_widget_config(item: dict) -> dict:
+    """Convert DynamoDB item to the PUBLIC widget config response.
+
+    Deliberately a separate, narrower projection from `item_to_form` rather
+    than "item_to_form minus a few keys": `GET /feedback-forms/<id>/config` is
+    unauthenticated and fetched by the widget from the customer's own website,
+    so every field here is one someone chose to publish. Adding a field to
+    `item_to_form` must not leak it; it has to be added here too, on purpose.
+
+    Mirrors `FeedbackFormConfig` in frontend/src/api/types.ts — the rendering
+    fields the widget reads plus `enabled` and `brand_name`.
+    """
+    return {
+        'enabled': item.get('enabled', False),
+        'title': item.get('title', ''),
+        'description': item.get('description', ''),
+        'question': item.get('question', ''),
+        'placeholder': item.get('placeholder', ''),
+        'rating_enabled': item.get('rating_enabled', True),
+        'rating_type': item.get('rating_type', 'stars'),
+        'rating_max': int(item.get('rating_max', 5)),
+        'submit_button_text': item.get('submit_button_text', ''),
+        'success_message': item.get('success_message', ''),
+        'theme': item.get('theme', {}),
+        'collect_email': item.get('collect_email', False),
+        'collect_name': item.get('collect_name', False),
+        'custom_fields': item.get('custom_fields', []),
+        'brand_name': item.get('brand_name', ''),
     }
 
 
@@ -198,6 +282,7 @@ def list_forms():
 def create_form():
     """Create a new feedback form."""
     body = app.current_event.json_body or {}
+    # Link fields are validated inside build_form_item, structurally.
     item = build_form_item(body)
     
     try:
@@ -235,6 +320,7 @@ def get_form(form_id: str):
 def update_form(form_id: str):
     """Update a feedback form."""
     body = app.current_event.json_body or {}
+    validate_link_fields(body)
     now = datetime.now(timezone.utc).isoformat()
     
     # Build update expression dynamically
@@ -299,8 +385,9 @@ def get_form_config_by_id(form_id: str):
         
         if not item:
             raise NotFoundError('Form not found')
-        
-        return {'success': True, 'config': item_to_form(item)}
+
+        # Narrower projection than item_to_form on purpose: this route is public.
+        return {'success': True, 'config': item_to_widget_config(item)}
     except NotFoundError:
         raise
     except Exception as e:
