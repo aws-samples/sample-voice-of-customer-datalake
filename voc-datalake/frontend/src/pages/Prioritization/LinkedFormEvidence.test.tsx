@@ -274,11 +274,11 @@ describe('collected feedback on a prioritization row', () => {
       expect(screen.getByText('PR/FAQ concept test')).toBeInTheDocument()
     })
     // A button, so it is reachable and operable from the keyboard.
-    await user.click(screen.getByRole('button', { name: t('prioritization:qr.show') }))
+    await user.click(screen.getByRole('button', { name: t('components:formQrCode.show') }))
 
     const dialog = screen.getByRole('dialog')
     // Named, not an anonymous overlay — and the QR inside it names its form.
-    expect(dialog).toHaveAccessibleName(t('prioritization:qr.title'))
+    expect(dialog).toHaveAccessibleName(t('components:formQrCode.title'))
     expect(screen.getByRole('img', { name: qrName('PR/FAQ concept test') })).toBeInTheDocument()
 
     await user.keyboard('{Escape}')
@@ -298,7 +298,7 @@ describe('collected feedback on a prioritization row', () => {
     })
     const formsListCalls = mockGetFeedbackForms.mock.calls.length
 
-    await user.click(screen.getByRole('button', { name: t('prioritization:qr.show') }))
+    await user.click(screen.getByRole('button', { name: t('components:formQrCode.show') }))
 
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
@@ -322,7 +322,7 @@ describe('collected feedback on a prioritization row', () => {
     await waitFor(() => {
       expect(screen.getByText('PR/FAQ concept test')).toBeInTheDocument()
     })
-    await user.click(screen.getByRole('button', { name: t('prioritization:qr.show') }))
+    await user.click(screen.getByRole('button', { name: t('components:formQrCode.show') }))
 
     // The dialog opens and explains itself rather than presenting a symbol that
     // scans perfectly and opens nothing.
@@ -342,7 +342,7 @@ describe('collected feedback on a prioritization row', () => {
       expect(screen.getByText(t('prioritization:evidence.unavailable'))).toBeInTheDocument()
     })
     // Its public page is gone too, so a QR would send the room to a 404.
-    expect(screen.queryByRole('button', { name: t('prioritization:qr.show') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('components:formQrCode.show') })).not.toBeInTheDocument()
   })
 
   it('renders the row when the forms list request fails', async () => {

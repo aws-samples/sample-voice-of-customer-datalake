@@ -9,7 +9,7 @@ import type { FeedbackForm } from '../../api/client'
 import { api } from '../../api/client'
 import { formStatsKey, FORM_STATS_STALE_TIME_MS } from '../../api/feedbackFormQueryKeys'
 import { feedbackFormPublicUrl } from '../../api/feedbackFormUrls'
-import FormQrCode from '../../components/FormQrCode'
+import FormQrButton from '../../components/FormQrCode/FormQrButton'
 import { defaultFormConfig } from './formTemplates'
 import clsx from 'clsx'
 import SubmissionsModal from './SubmissionsModal'
@@ -101,13 +101,16 @@ interface EmbedCodeSectionProps {
 function EmbedCodeSection({ formId, formName, apiEndpoint, copied, onCopy }: EmbedCodeSectionProps) {
   const { t } = useTranslation('feedbackForms')
   // Built here, from the one shared builder, because this section is the only
-  // consumer of both spellings — and the QR below encodes the same string, so a
-  // second construction site would let the printed URL and the scanned one drift.
+  // consumer of both spellings — and the card's QR encodes the same string from
+  // the same builder, so a second construction site would let the printed URL
+  // and the scanned one drift.
   const iframeUrl = feedbackFormPublicUrl(apiEndpoint, formId)
   if (iframeUrl === null) {
-    // Without an addressable endpoint the link, the snippet and the QR are all
-    // equally dead, so say the one useful thing once instead of printing three
-    // broken artifacts for a customer to paste into their site.
+    // Without an addressable endpoint both the link and the snippet are dead, so
+    // say the one useful thing once instead of printing two broken artifacts for a
+    // customer to paste into their site. The QR says the same thing in its own
+    // words, inside its dialog, because that is the only place a viewer can be
+    // told before pointing a room at it.
     return <p className="mt-3 text-xs text-gray-500">{t('configureApiFirst')}</p>
   }
   const iframeEmbed = `<iframe 
@@ -144,9 +147,11 @@ function EmbedCodeSection({ formId, formName, apiEndpoint, copied, onCopy }: Emb
           <code>{iframeEmbed}</code>
         </pre>
       </div>
-      {/* Same address as the Direct Link above, as scannable modules — for the
-          room, where nobody is going to type that URL off a slide. */}
-      <FormQrCode apiEndpoint={apiEndpoint} formId={formId} formName={formName} />
+      {/* No QR here. It used to sit under the snippet, which made the room-facing
+          artifact reachable only by opening a developer-facing disclosure about
+          iframes — a facilitator had no reason to look. It is now a first-class
+          affordance on the card itself (see FormQrButton below), and putting one
+          back here would give the card two entry points to the same thing. */}
     </div>
   )
 }
@@ -249,10 +254,21 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
         </div>
 
         <div className="border-t pt-4">
-          <button onClick={() => setShowEmbed(!showEmbed)} className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700">
-            <Code size={16} />
-            {showEmbed ? 'Hide Embed Code' : 'Show Embed Code'}
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            <button onClick={() => setShowEmbed(!showEmbed)} className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700">
+              <Code size={16} />
+              {showEmbed ? 'Hide Embed Code' : 'Show Embed Code'}
+            </button>
+            {/* Beside the embed disclosure rather than inside it: a facilitator
+                wanting a QR for a room is not looking for an iframe snippet. Same
+                trigger the Prioritization row uses. */}
+            <FormQrButton
+              apiEndpoint={apiEndpoint}
+              formId={form.form_id}
+              formName={form.name}
+              className="text-sm"
+            />
+          </div>
           
           {showEmbed && (
             <EmbedCodeSection

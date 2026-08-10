@@ -107,18 +107,58 @@ describe('FormCard (issue #171)', () => {
     expect(screen.queryByRole('button', { name: t('feedbackForms:card.disableForm') })).not.toBeInTheDocument()
   })
 
-  it('offers a scannable QR beside the public URL it already prints', async () => {
+  it('still prints the public URL a customer pastes into their own page', async () => {
     const user = userEvent.setup()
     renderCard(buildForm())
 
     await user.click(screen.getByText('Show Embed Code'))
 
-    // The address a customer pastes into a page and the address a phone scans in
-    // a meeting are the same string, built once — so both appear here together.
     expect(screen.getByText('https://api.example.com/feedback-forms/form_1/iframe')).toBeInTheDocument()
+  })
+
+  it('opens a scannable QR from the card without expanding the embed disclosure', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm())
+
+    // The whole point of the change: a facilitator reaches the QR without going
+    // through a developer-facing disclosure about iframe snippets.
+    await user.click(screen.getByRole('button', { name: i18n.t('components:formQrCode.show') }))
+
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(i18n.t('components:formQrCode.title'))
     expect(screen.getByRole('img', {
       name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
     })).toBeInTheDocument()
+  })
+
+  it('keeps the QR out of the card until it is asked for, then dismisses on Escape', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm())
+
+    const qrName = i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' })
+    expect(screen.queryByRole('img', { name: qrName })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: i18n.t('components:formQrCode.show') }))
+    expect(screen.getByRole('img', { name: qrName })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('offers exactly one QR affordance, not one per disclosure state', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm())
+
+    await user.click(screen.getByText('Show Embed Code'))
+
+    // The embed section used to render its own inline QR. Two entry points to the
+    // same artifact is the state this change exists to end, and it is invisible in
+    // review because both of them work.
+    expect(screen.getAllByRole('button', { name: i18n.t('components:formQrCode.show') })).toHaveLength(1)
+    expect(screen.queryByRole('img', {
+      name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
+    })).not.toBeInTheDocument()
   })
 
   it('escapes a double quote in the form name so the embed snippet stays well formed', async () => {
@@ -134,7 +174,7 @@ describe('FormCard (issue #171)', () => {
     expect(snippet.textContent).not.toContain('title="The "Best"')
   })
 
-  it('offers no link, snippet or QR when the endpoint cannot address the form', async () => {
+  it('offers no link or snippet when the endpoint cannot address the form', async () => {
     const user = userEvent.setup()
     // Reachable with a non-absolute endpoint: the page gate only checks for a
     // non-empty string, so '/api' or a scheme-less paste arrives here.
@@ -144,6 +184,18 @@ describe('FormCard (issue #171)', () => {
 
     expect(screen.getByText(i18n.t('feedbackForms:configureApiFirst'))).toBeInTheDocument()
     expect(screen.queryByText(/feedback-forms\/form_1\/iframe/)).not.toBeInTheDocument()
+  })
+
+  it('says why there is no QR when the endpoint cannot address the form', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm(), '/api')
+
+    await user.click(screen.getByRole('button', { name: i18n.t('components:formQrCode.show') }))
+
+    // The dialog opens and explains itself rather than presenting a symbol that
+    // scans perfectly and opens nothing — a room pointing phones at a dead QR
+    // gets no error message.
+    expect(screen.getByText(i18n.t('components:formQrCode.unavailable'))).toBeInTheDocument()
     expect(screen.queryByRole('img', {
       name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
     })).not.toBeInTheDocument()

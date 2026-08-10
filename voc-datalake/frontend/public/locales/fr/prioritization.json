@@ -46,11 +46,6 @@
     "medium": "Priorité moyenne",
     "none": "Non évalué"
   },
-  "qr": {
-    "close": "Fermer",
-    "show": "Afficher le code QR",
-    "title": "Code QR"
-  },
   "scores": {
     "confidence": "Confiance",
     "confidenceDescription": "Certitude dans les estimations d'impact et de DmM",

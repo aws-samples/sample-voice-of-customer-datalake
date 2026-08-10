@@ -113,6 +113,9 @@
   "formQrCode": {
     "accessibleName": "QR code for the {{formName}} feedback form",
     "caption": "Scan to open this form on a phone",
+    "close": "Close",
+    "show": "Show QR code",
+    "title": "QR code",
     "unavailable": "QR code unavailable until the API endpoint is configured in Settings"
   },
   "personaExport": {

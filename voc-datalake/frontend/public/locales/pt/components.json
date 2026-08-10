@@ -120,6 +120,9 @@
   "formQrCode": {
     "accessibleName": "Código QR do formulário de feedback {{formName}}",
     "caption": "Escaneie para abrir este formulário no celular",
+    "close": "Fechar",
+    "show": "Mostrar código QR",
+    "title": "Código QR",
     "unavailable": "Código QR indisponível até que o endpoint da API seja configurado nas Configurações"
   },
   "personaExport": {

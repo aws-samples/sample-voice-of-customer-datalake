@@ -120,6 +120,9 @@
   "formQrCode": {
     "accessibleName": "Code QR du formulaire de retour {{formName}}",
     "caption": "Scannez pour ouvrir ce formulaire sur un téléphone",
+    "close": "Fermer",
+    "show": "Afficher le code QR",
+    "title": "Code QR",
     "unavailable": "Code QR indisponible jusqu'à la configuration du point de terminaison API dans les Paramètres"
   },
   "personaExport": {

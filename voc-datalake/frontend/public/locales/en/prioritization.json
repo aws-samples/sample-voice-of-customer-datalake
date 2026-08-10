@@ -46,11 +46,6 @@
     "medium": "Medium Priority",
     "none": "Not Scored"
   },
-  "qr": {
-    "close": "Close",
-    "show": "Show QR code",
-    "title": "QR code"
-  },
   "scores": {
     "confidence": "Confidence",
     "confidenceDescription": "Certainty in impact and TTM estimates",

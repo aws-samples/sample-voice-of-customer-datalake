@@ -113,6 +113,9 @@
   "formQrCode": {
     "accessibleName": "{{formName}} 피드백 양식의 QR 코드",
     "caption": "스캔하여 이 양식을 휴대전화에서 열기",
+    "close": "닫기",
+    "show": "QR 코드 표시",
+    "title": "QR 코드",
     "unavailable": "설정에서 API 엔드포인트를 구성할 때까지 QR 코드를 사용할 수 없습니다"
   },
   "personaExport": {

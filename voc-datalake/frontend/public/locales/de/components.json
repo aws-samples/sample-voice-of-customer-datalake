@@ -113,6 +113,9 @@
   "formQrCode": {
     "accessibleName": "QR-Code für das Feedback-Formular {{formName}}",
     "caption": "Scannen, um dieses Formular auf dem Smartphone zu öffnen",
+    "close": "Schließen",
+    "show": "QR-Code anzeigen",
+    "title": "QR-Code",
     "unavailable": "QR-Code nicht verfügbar, bis der API-Endpunkt in den Einstellungen konfiguriert ist"
   },
   "personaExport": {
