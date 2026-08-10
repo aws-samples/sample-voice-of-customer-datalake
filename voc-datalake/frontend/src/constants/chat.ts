@@ -29,9 +29,10 @@ export const MAX_HISTORY_ENTRIES = 50
  *
  * The interview is a different endpoint with a tighter server-side window:
  * `interview_turn` in `voc-datalake/lambda/api/product_context.py` keeps only
- * `history[-12:]`.  Sending more is silently discarded, so cap here instead and
- * keep the number even — {@link buildHistory} relies on an even cap to land its
- * tail slice on a user turn.
+ * `history[-12:]`.  Sending more is silently discarded, so cap here instead.
+ *
+ * It matches the server window exactly; any positive value is safe as far as
+ * {@link buildHistory} is concerned (see its `@param maxEntries`).
  */
 export const MAX_INTERVIEW_HISTORY_ENTRIES = 12
 
@@ -117,19 +118,22 @@ function dropUnansweredUserTurns(messages: readonly HistoryEntry[]): HistoryEntr
  * 4. Drop leading non-user entries.  This guards a conversation whose first
  *    stored entry is an assistant turn — a transcript restored from
  *    `localStorage` whose opening user turn was pruned, or the greeting-first
- *    product interview.  It is deliberately *not* about the cap boundary:
- *    steps 1-2 leave a strictly alternating list ending in an assistant turn,
- *    so `slice` from the tail always lands on a user turn while the cap stays
- *    even.  Keep this step anyway — the guarantee is about the *input* shape,
- *    which callers control and this module does not.
+ *    product interview.  It is deliberately *not* about the cap boundary: with
+ *    an even cap that boundary is unreachable, because steps 1-2 leave a
+ *    strictly alternating list ending in an assistant turn, so `slice` from the
+ *    tail lands on a user turn.  Keep this step anyway — the guarantee it
+ *    provides is about the *input* shape, which callers control and this module
+ *    does not.
  *
  * The result is always ≤ `maxEntries` entries, starts with a user turn (or is
  * empty) and has strictly alternating roles.
  *
  * @param messages Stored conversation messages, oldest first.
  * @param maxEntries Cap for surfaces with a tighter server window than
- *   `/chat/stream` — see {@link MAX_INTERVIEW_HISTORY_ENTRIES}.  Keep it even,
- *   so the tail slice lands on a user turn (see step 4).
+ *   `/chat/stream` — see {@link MAX_INTERVIEW_HISTORY_ENTRIES}.  Any positive
+ *   value is safe: an odd cap can slice onto an assistant turn, but step 4
+ *   trims it unconditionally on the very next line, so evenness is an
+ *   optimisation (step 4 has nothing to do) and not a precondition.
  */
 export function buildHistory(
   messages: readonly HistoryEntry[],

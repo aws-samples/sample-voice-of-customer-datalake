@@ -24,6 +24,7 @@ import userEvent from '@testing-library/user-event'
 import ProductTab from './ProductTab'
 import { emptyProductContext } from './productContextFields'
 import { stubElementScrollTo } from '../../test/stubScrollTo'
+import { readSentHistory } from '../../test/historyPayload'
 import { MAX_INTERVIEW_HISTORY_ENTRIES } from '../../constants/chat'
 
 const mockInterview = vi.fn()
@@ -41,34 +42,8 @@ vi.mock('../../api/projectsApi', () => ({
   },
 }))
 
-interface SentHistoryEntry {
-  role: string
-  content: string
-}
-
-function isHistoryEntry(value: unknown): value is SentHistoryEntry {
-  if (typeof value !== 'object' || value === null) return false
-  const record: Record<string, unknown> = { ...value }
-  return typeof record.role === 'string' && typeof record.content === 'string'
-}
-
-/**
- * Read the history the tab passed to the interview endpoint, validated with a
- * type guard rather than an `as` cast so a payload-shape change fails here.
- */
-function sentHistory(callIndex: number): SentHistoryEntry[] {
-  const call: unknown[] | undefined = mockInterview.mock.calls[callIndex]
-  if (call === undefined) throw new Error(`interview was not called ${callIndex + 1} time(s)`)
-  const body: unknown = call[1]
-  if (typeof body !== 'object' || body === null || !('history' in body)) {
-    throw new Error('interview body did not include a history field')
-  }
-  const { history } = body
-  if (!Array.isArray(history) || !history.every(isHistoryEntry)) {
-    throw new Error('history was not an array of {role, content} entries')
-  }
-  return history
-}
+/** Read the history the tab passed to the interview endpoint, guarded not cast. */
+const sentHistory = (callIndex: number) => readSentHistory(mockInterview, callIndex)
 
 async function askInterview(question: string): Promise<void> {
   const user = userEvent.setup()
@@ -108,6 +83,11 @@ describe('ProductTab interview history', () => {
     // The greeting is the only stored turn and it is an assistant turn, so
     // nothing survives. Sending it would put an assistant turn first; sending
     // the new message would duplicate what the server appends.
+    //
+    // The empty payload is the *intended* outcome, not merely the observed one:
+    // `interview_turn` rebuilds the interview instructions and CURRENT CONTEXT
+    // into its system prompt on every turn, so turn 1 is self-sufficient
+    // without the greeting. See the comment at the call site in ProductTab.tsx.
     expect(sentHistory(0)).toEqual([])
   })
 

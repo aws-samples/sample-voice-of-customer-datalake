@@ -8,21 +8,16 @@
  * of consecutive assistant turns that Bedrock would reject.
  */
 import {
-  describe, it, expect, vi, beforeEach,
+  describe, it, expect, vi, beforeAll, afterAll, beforeEach,
 } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ChatTab from './ChatTab'
 import { useProjectChatStore } from '../../store/projectChatStore'
 import { MAX_HISTORY_ENTRIES } from '../../constants/chat'
+import { stubElementScrollIntoView } from '../../test/stubScrollTo'
+import { readSentHistory, hasAdjacentSameRole } from '../../test/historyPayload'
 import type { ProjectPersona, ProjectDocument } from '../../api/types'
-
-// jsdom doesn't implement scrollIntoView — stub it so the effect in ChatTab works.
-Object.defineProperty(Element.prototype, 'scrollIntoView', {
-  value: vi.fn(),
-  writable: true,
-  configurable: true,
-})
 
 const mockSendMessage = vi.fn()
 
@@ -50,31 +45,8 @@ const defaultProps = {
   onDocumentChanged: vi.fn(),
 }
 
-interface SentHistoryEntry {
-  role: string
-  content: string
-}
-
-function isHistoryEntry(value: unknown): value is SentHistoryEntry {
-  if (typeof value !== 'object' || value === null) return false
-  const record: Record<string, unknown> = { ...value }
-  return typeof record.role === 'string' && typeof record.content === 'string'
-}
-
 /** Read the history array ChatTab passed to sendMessage, guarded not cast. */
-function sentHistory(): SentHistoryEntry[] {
-  const call: unknown[] | undefined = mockSendMessage.mock.calls[0]
-  if (call === undefined) throw new Error('sendMessage was not called')
-  const options: unknown = call[1]
-  if (typeof options !== 'object' || options === null || !('history' in options)) {
-    throw new Error('sendMessage options did not include a history field')
-  }
-  const { history } = options
-  if (!Array.isArray(history) || !history.every(isHistoryEntry)) {
-    throw new Error('history was not an array of {role, content} entries')
-  }
-  return history
-}
+const sentHistory = () => readSentHistory(mockSendMessage)
 
 async function sendAQuestion(): Promise<void> {
   const user = userEvent.setup()
@@ -87,6 +59,17 @@ async function sendAQuestion(): Promise<void> {
 }
 
 describe('ChatTab history payload', () => {
+  // ChatTab scrolls the message list into view in an effect, which jsdom does
+  // not implement.  Installed and torn down here rather than patched at module
+  // scope so the stub cannot leak into the rest of the suite.
+  let restoreScrollIntoView: () => void
+  beforeAll(() => {
+    restoreScrollIntoView = stubElementScrollIntoView()
+  })
+  afterAll(() => {
+    restoreScrollIntoView()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     useProjectChatStore.setState({ messagesByProject: {} })
@@ -152,6 +135,6 @@ describe('ChatTab history payload', () => {
     expect(history.length).toBeLessThanOrEqual(MAX_HISTORY_ENTRIES)
     expect(history.length).toBeGreaterThan(0)
     expect(history[0].role).toBe('user')
-    expect(history.some((m, i) => i > 0 && m.role === history[i - 1].role)).toBe(false)
+    expect(hasAdjacentSameRole(history)).toBe(false)
   })
 })

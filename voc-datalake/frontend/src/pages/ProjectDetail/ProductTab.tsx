@@ -410,6 +410,14 @@ function InterviewChat({
         // nextHistory here would repeat it and produce two user turns in a
         // row.  buildHistory also drops the assistant-only greeting, which
         // Bedrock rejects as a leading non-user turn.
+        //
+        // On turn 1 that leaves this empty, which is intended rather than
+        // incidental: `interview_turn`
+        // (`voc-datalake/lambda/api/product_context.py`) rebuilds the full
+        // interview instructions plus `CURRENT CONTEXT` into its system prompt
+        // on *every* turn, so the model is told what it is interviewing for and
+        // which fields are still empty without needing the greeting in history.
+        // The greeting only ever restated that standing instruction.
         history: buildHistory(history, MAX_INTERVIEW_HISTORY_ENTRIES),
         response_language: language,
       })

@@ -20,14 +20,17 @@ import {
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import type { TFunction } from 'i18next'
 import { getDaysFromRange } from '../../api/baseUrl'
+import type { FeedbackItem, WebSource } from '../../api/client'
 import ChatExportMenu from '../../components/ChatExportMenu'
 import ChatFilters from '../../components/ChatFilters'
 import ChatMessage from '../../components/ChatMessage'
 import ChatSidebar from '../../components/ChatSidebar'
 import { useStreamChat } from '../../hooks/useStreamChat'
 import {
-  useChatStore, type ChatFilters as ChatFiltersType, type Conversation,
+  useChatStore, type ChatFilters as ChatFiltersType, type ChatMessage as StoredChatMessage,
+  type Conversation,
 } from '../../store/chatStore'
 import { useConfigStore } from '../../store/configStore'
 import { buildHistory } from '../../constants/chat'
@@ -190,6 +193,52 @@ function buildChatContext(days: number, filters: ChatFiltersType): string {
   return parts.join('. ')
 }
 
+/** The streaming values the finish-effect needs, as held in `latestRef`. */
+interface FinishedStreamValues {
+  streamingText: string
+  thinkingText: string
+  streamError: string | null
+  sources: FeedbackItem[]
+  webSources: WebSource[]
+  filters: ChatFiltersType
+  addMessage: (conversationId: string, message: Omit<StoredChatMessage, 'id' | 'timestamp'>) => void
+  t: TFunction
+}
+
+/**
+ * Persist the finished stream to the conversation it was *sent from*.
+ *
+ * Extracted from the finish-effect so the effect body stays a plain
+ * edge-detect-then-act, with the message-shaping branches out of the way.
+ *
+ * @param convId The origin conversation, or null when there is nothing to save
+ *   — a cancelled stream (`handleCancel` nulls the ref) or a stream that never
+ *   recorded an origin.
+ */
+function saveFinishedStream(convId: string | null, values: FinishedStreamValues): void {
+  if (convId == null || convId === '') return
+  const {
+    streamingText: text, thinkingText: thinking, streamError: error,
+    sources: src, webSources: webSrc, filters: f, addMessage: add, t: translate,
+  } = values
+
+  if (text !== '') {
+    add(convId, {
+      role: 'assistant',
+      content: text,
+      sources: src.length > 0 ? src : undefined,
+      webSources: webSrc.length > 0 ? webSrc : undefined,
+      thinking: thinking === '' ? undefined : thinking,
+      filters: f,
+    })
+  } else if (error != null && error !== '') {
+    add(convId, {
+      role: 'assistant',
+      content: translate('errorPrefix', { message: error }),
+    })
+  }
+}
+
 export default function Chat() {
   const {
     t, i18n,
@@ -270,41 +319,32 @@ export default function Chat() {
   })
 
   /**
-   * The conversation that *originated* the current stream.  Written in
-   * handleSubmit at send time and read in the finish-effect at completion
-   * time.  Because this never tracks the active conversation it is immune to
-   * the mid-stream switch bug: whatever the user does after pressing Send,
-   * the reply lands in the conversation it was sent from.
+   * The conversation that *originated* the current stream.  Because this never
+   * tracks the active conversation it is immune to the mid-stream switch bug:
+   * whatever the user does after pressing Send, the reply lands in the
+   * conversation it was sent from.
+   *
+   * Ownership: two writers, one reader.  `handleSubmit` sets it at send time;
+   * `handleCancel` nulls it to suppress the save.  The finish-effect reads it
+   * and then clears it unconditionally on every `isStreaming` falling edge —
+   * including the edges where it declines to save — so a stale id can never be
+   * mistaken for a live one.  That matters for a future send path that forgets
+   * to write it (a retry or regenerate button): the reply is then *discarded*
+   * rather than silently misfiled into the previous send's conversation.
    */
   const originConversationIdRef = useRef<string | null>(null)
 
   // When streaming finishes, save the assistant message
   const prevStreamingRef = useRef(false)
   useEffect(() => {
-    const {
-      streamingText: text, thinkingText: thinking, streamError: error, sources: src, webSources: webSrc, filters: f, addMessage: add, t: translate,
-    } = latestRef.current
-    // Use the origin id captured at send time — NOT the current active id.
-    const convId = originConversationIdRef.current
-    if (prevStreamingRef.current && !isStreaming && convId != null && convId !== '') {
-      if (text !== '') {
-        add(convId, {
-          role: 'assistant',
-          content: text,
-          sources: src.length > 0 ? src : undefined,
-          webSources: webSrc.length > 0 ? webSrc : undefined,
-          thinking: thinking === '' ? undefined : thinking,
-          filters: f,
-        })
-      } else if (error != null && error !== '') {
-        add(convId, {
-          role: 'assistant',
-          content: translate('errorPrefix', { message: error }),
-        })
-      }
-      originConversationIdRef.current = null
-    }
+    const streamJustFinished = prevStreamingRef.current && !isStreaming
     prevStreamingRef.current = isStreaming
+    if (!streamJustFinished) return
+
+    saveFinishedStream(originConversationIdRef.current, latestRef.current)
+    // Cleared on every falling edge, not only the ones that saved, so the ref is
+    // always null-or-current at entry.  See its declaration for why.
+    originConversationIdRef.current = null
   }, [isStreaming])
 
   const handleFiltersChange = (newFilters: ChatFiltersType) => {

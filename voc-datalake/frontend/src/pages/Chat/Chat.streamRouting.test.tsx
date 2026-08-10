@@ -15,6 +15,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '../../test/test-utils'
 import { useChatStore } from '../../store/chatStore'
+import { readSentHistory, hasAdjacentSameRole } from '../../test/historyPayload'
 
 // ---------------------------------------------------------------------------
 // Silence DOM warnings that do not affect correctness
@@ -134,40 +135,12 @@ import Chat from './Chat'
 // Test helpers
 // ---------------------------------------------------------------------------
 
-interface SentHistoryEntry {
-  role: string
-  content: string
-}
-
-function isHistoryEntry(value: unknown): value is SentHistoryEntry {
-  if (typeof value !== 'object' || value === null) return false
-  const record: Record<string, unknown> = { ...value }
-  return typeof record.role === 'string' && typeof record.content === 'string'
-}
-
 /**
  * Read the `history` array that the component passed to `sendMessage`.
  * Validated with a type guard rather than an `as` cast so a change to the
- * payload shape fails here instead of being silently asserted away.
+ * payload shape fails there instead of being silently asserted away.
  */
-function sentHistory(callIndex = 0): SentHistoryEntry[] {
-  const call: unknown[] | undefined = mockSendMessageImpl.mock.calls[callIndex]
-  if (call === undefined) throw new Error(`sendMessage was not called ${callIndex + 1} time(s)`)
-  const options: unknown = call[1]
-  if (typeof options !== 'object' || options === null || !('history' in options)) {
-    throw new Error('sendMessage options did not include a history field')
-  }
-  const { history } = options
-  if (!Array.isArray(history) || !history.every(isHistoryEntry)) {
-    throw new Error('history was not an array of {role, content} entries')
-  }
-  return history
-}
-
-/** Role pairs that would make Bedrock Converse reject the request. */
-function hasAdjacentSameRole(history: readonly SentHistoryEntry[]): boolean {
-  return history.some((entry, i) => i > 0 && entry.role === history[i - 1].role)
-}
+const sentHistory = (callIndex = 0) => readSentHistory(mockSendMessageImpl, callIndex)
 
 function createWrapper() {
   const queryClient = new QueryClient({

@@ -13,15 +13,32 @@ import { describe, it, expect } from 'vitest'
 import { MAX_HISTORY_ENTRIES, buildHistory, type HistoryEntry } from './chat'
 
 /**
+ * Matches `history: z.array(<element>).max(N)` and captures N.
+ *
+ * The `z.array(...)` argument is matched with *balanced* parens (two nesting
+ * levels, which covers `z.object({ … z.enum([…]) })`) rather than a lazy
+ * `[\s\S]*?`.  A lazy match stops at the first `.max(` after `z.array(`, which
+ * need not be the array's own: an element schema spelled
+ * `content: z.string().max(4000)` would make the extractor report 4000, and a
+ * `history` that lost its cap entirely would silently borrow a later field's
+ * number.  Either way the coupling assertion below would pass while the real
+ * cap had moved — the exact drift it exists to catch.
+ *
+ * Still tolerant of a formatter wrapping `.max(N)` onto its own line and of a
+ * padded argument, so a backend-only refactor that leaves the cap alone cannot
+ * red this suite.
+ */
+const SERVER_CAP_PATTERN
+  = /history:\s*z\s*\.array\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)\s*\.max\(\s*(\d+)\s*\)/
+
+/**
  * Pull the `history` cap out of the server schema source.
  *
- * Tolerant of nested parens in the element schema and of a formatter wrapping
- * `.max(N)` onto its own line, so a backend-only refactor that leaves the cap
- * unchanged cannot red this suite.  Returns null when the shape is genuinely
- * unrecognisable, which the caller turns into a loud failure.
+ * Returns null when the shape is genuinely unrecognisable, which the caller
+ * turns into a loud failure.
  */
 function extractServerCap(source: string): number | null {
-  const match = /history:\s*z\s*\.array\([\s\S]*?\)\s*\.max\(\s*(\d+)\s*\)/.exec(source)
+  const match = SERVER_CAP_PATTERN.exec(source)
   return match === null ? null : Number(match[1])
 }
 
@@ -35,18 +52,40 @@ function alternating(total: number): HistoryEntry[] {
 
 describe('extractServerCap', () => {
   // The extractor is unit-tested so the coupling assertion below cannot fail
-  // for a spelling change that leaves the cap itself untouched.
+  // for a spelling change that leaves the cap itself untouched — and, just as
+  // importantly, cannot *pass* by reading a `.max()` that is not the array's.
   it.each([
     ['bare identifier element', '  history: z.array(historyMessageSchema).max(50).optional(),'],
-    ['inlined element with nested parens', '  history: z.array(z.object({ role: z.enum(["user", "assistant"]) })).max(50),'],
+    [
+      'inlined element whose own fields carry .max()',
+      '  history: z.array(z.object({ role: z.enum(["user", "assistant"]), '
+      + 'content: z.string().min(1).max(4000) })).max(50),',
+    ],
     ['.max() wrapped onto its own line', '  history: z\n    .array(historyMessageSchema)\n    .max(50)\n    .optional(),'],
     ['padded argument', '  history: z.array(historyMessageSchema).max( 50 ),'],
-  ])('reads the cap from a %s', (_label, source) => {
+  ])('reads the array cap, not an inner one, from a %s', (_label, source) => {
     expect(extractServerCap(source)).toBe(50)
+  })
+
+  it('reads a lowered array cap even when an inner .max() is larger', () => {
+    // The drift case that matters: if the server tightens the cap to 20 while
+    // the element schema still has `.max(4000)`, a lazy pattern reports 4000
+    // and `MAX_HISTORY_ENTRIES (50) <= 4000` passes — green on precisely the
+    // regression this coupling check was added to catch.
+    const source = '  history: z.array(z.object({ content: z.string().min(1).max(4000) })).max(20),'
+    expect(extractServerCap(source)).toBe(20)
   })
 
   it('returns null when there is no history cap to read', () => {
     expect(extractServerCap('history: z.array(historyMessageSchema).optional(),')).toBeNull()
+  })
+
+  it('returns null rather than borrowing a later field\'s cap', () => {
+    // An uncapped `history` is the maximally dangerous state, so it must fail
+    // loudly instead of silently reading an unrelated field's number.
+    const source = '  history: z.array(historyMessageSchema).optional(),\n'
+      + '  budget: z.number().max(8192).optional(),'
+    expect(extractServerCap(source)).toBeNull()
   })
 })
 
@@ -175,6 +214,19 @@ describe('buildHistory', () => {
     const history = buildHistory(alternating(40), 12)
     expect(history.length).toBeLessThanOrEqual(12)
     expect(history[0].role).toBe('user')
+  })
+
+  it('holds every invariant under an odd cap, which step 4 repairs', () => {
+    // Pins that evenness is not a precondition: an odd cap slices onto an
+    // assistant turn and step 4 trims it, so the guarantees still hold.  Kept
+    // so nobody reintroduces an unenforced "keep the cap even" contract.
+    const history = buildHistory(alternating(40), 11)
+    expect(history.length).toBeLessThanOrEqual(11)
+    expect(history.length).toBeGreaterThan(0)
+    expect(history[0].role).toBe('user')
+    history.forEach((entry, i) => {
+      if (i > 0) expect(entry.role).not.toBe(history[i - 1].role)
+    })
   })
 
   it('merges runs of consecutive assistant turns (roundtable personas)', () => {
