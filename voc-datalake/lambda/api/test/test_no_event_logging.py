@@ -65,14 +65,26 @@ The five spellings the rule is enforced against:
      which makes this spelling especially easy to reach for.  Also matched
      against the direct arguments, so nesting inside ``extra=``
      (``extra={"meta": {"x": 1}, "event": event}``) is caught and plain
-     forwarding such as ``handler(event=event)`` is not.
+     forwarding such as ``handler(event=event)`` is not.  A list value
+     (``extra={"a": [event]}``) is caught; a *subscript* keyed by the event
+     (``extra={"a": foo[event]}``) is not, since only the looked-up value
+     reaches the record.
 
-Separately from the five event patterns, ``test_response_log_does_not_include_the_body``
-pins the *egress* side of the same handler: the response log in
-``projects_handler.py`` must record the status code and not the body, which may
-contain user-generated content.  That check reads the line out of the handler
-rather than restating it, so it cannot drift from — or pass despite — the code it
-protects.
+Separately from the five event patterns, ``TestResponseBodyNotLogged`` pins the
+*egress* side of the same handler: the response log in ``projects_handler.py``
+must record the status code and not the body, which may contain user-generated
+content.  Both of its checks read the line out of the handler rather than
+restating it, so neither can drift from — or pass despite — the code it protects.
+
+The same rule applies there, spelled against ``result`` rather than ``event``:
+the whole response must not reach the record, by any of the spellings patterns
+1-5 cover — serialised, interpolated, printf-style, or attached through
+``extra=``.  That last one is the spelling this fix itself makes idiomatic on
+that very line, so it is guarded rather than merely documented.  Because a
+deny-list of spellings can always be outrun by the next serialisation idiom, a
+second check *allow-lists* the record's ``extra=`` keys
+(``_EGRESS_ALLOWED_EXTRA_KEYS``): whatever expression produces it, a field that
+is not ``status_code`` fails.
 
 Spellings the guard does NOT catch (documented to set honest expectations):
 
@@ -112,6 +124,12 @@ Residual imprecisions in the patterns themselves — known and accepted:
   * Pattern 5's bare ``event=event`` alternative is scoped to the logger call's
     own arguments, so ``logger.info("x", extra=f(event=event))`` is not flagged
     while ``logger.append_keys(event=event)`` is.
+  * The egress deny-list inherits both of the above, since it reuses the same
+    shapes against ``result``.  The ``extra=`` key allow-list does not — it reads
+    the field names off the raw line, so it holds regardless of what expression
+    the value is.  It does assume the keys are string literals: a computed key
+    (``extra={key_name: result}``) is invisible to it, though the deny-list still
+    catches the bare ``result`` in that example.
 
 How this guard is executed
 --------------------------
@@ -222,11 +240,14 @@ _PAT_EVENT_LATER_ARG = re.compile(r',\s*event\s*[,)]')
 #   logger.info("msg", extra={"event": event})   — value inside an extra= dict
 #   logger.append_keys(event=event)              — sticky key
 # Both serialise the event into the JSON log record.  The value position accepts
-# a preceding ':' ',' or '[' so the event is found whether it is the dict value
-# itself or an element of a list value (extra={"a": [event]}); `event[` is not a
-# bare event, so selections stay unflagged.
+# a preceding ':' or ',' (the event is the dict value) or a '[' that *opens a
+# collection* (the event is an element of a list value, extra={"a": [event]}).
+# The `(?<![\w\]\)])` lookbehind is what distinguishes a list literal from a
+# subscript: in `extra={"a": foo[event]}` the '[' follows an identifier, so only
+# the looked-up value reaches the record and the line is not flagged.  Likewise
+# `event[` is a selection, not a bare event, so selections stay unflagged.
 _PAT_EVENT_STRUCTURED = re.compile(
-    r'extra\s*=\s*\{[^}]*[:,\[]\s*event\s*[,}\]]'
+    r'extra\s*=\s*\{[^}]*(?:[:,]|(?<![\w\]\)])\[)\s*event\s*[,}\]]'
     r'|\bevent\s*=\s*event\b'
 )
 
@@ -314,6 +335,68 @@ def _logger_call_arg_texts(line: str):
                 out.append(char)
             i += 1
         yield ''.join(out) + ')'
+
+
+# ---------------------------------------------------------------------------
+# Egress side: the same rule, expressed against `result`
+# ---------------------------------------------------------------------------
+#
+# The five patterns above are all keyed on the identifier ``event``, so they are
+# structurally blind to whatever is done to the *response*.  The response log in
+# projects_handler.py gets the same rule — the whole object must not reach the
+# record — spelled against ``result``, because the response carries
+# user-generated content.
+#
+# Deny-listing spellings alone loses a race it cannot win: whichever
+# serialisation idiom the surrounding code makes fashionable next is by
+# definition not on the list.  So the egress check pairs the deny-list with an
+# allow-list on the ``extra=`` keys: that log record may carry ``status_code``
+# and nothing else, whatever expression produces it.
+
+_PAT_RESULT_FIRST_ARG = re.compile(r'^\s*result\s*[,)]')
+_PAT_RESULT_LATER_ARG = re.compile(r',\s*result\s*[,)]')
+_PAT_RESULT_STRUCTURED = re.compile(
+    r'extra\s*=\s*\{[^}]*(?:[:,]|(?<![\w\]\)])\[)\s*result\s*[,}\]]'
+    r'|\bresult\s*=\s*result\b'
+)
+
+# The extra= mapping of the egress log, read off the raw line (the argument
+# extractor drops string contents, so key *names* are only visible here).
+_PAT_EXTRA_MAPPING = re.compile(r'extra\s*=\s*\{([^}]*)\}')
+_PAT_MAPPING_KEY = re.compile(r'''['"](\w+)['"]\s*:''')
+
+# The only field the response log may attach.  The status code is not user
+# content; anything else on that record has to be argued for by widening this
+# set, which is a visible decision rather than an accidental one.
+_EGRESS_ALLOWED_EXTRA_KEYS = frozenset({'status_code'})
+
+
+def _flags_result_reaching_the_record(line: str) -> bool:
+    """True if the whole ``result`` object reaches a log record on `line`.
+
+    The ``result`` counterpart of patterns 3-5: the response as the log message,
+    as a printf-style argument, or attached as a Powertools structured field.
+    """
+    return any(
+        _PAT_RESULT_FIRST_ARG.search(args)
+        or _PAT_RESULT_LATER_ARG.search(args)
+        or _PAT_RESULT_STRUCTURED.search(args)
+        for args in _logger_call_arg_texts(line)
+    )
+
+
+def _extra_keys(line: str) -> set:
+    """Return the literal key names of every ``extra={...}`` mapping on `line`."""
+    return {
+        key
+        for mapping in _PAT_EXTRA_MAPPING.findall(line)
+        for key in _PAT_MAPPING_KEY.findall(mapping)
+    }
+
+
+def _unexpected_extra_keys(line: str) -> set:
+    """Return the ``extra=`` field names on `line` that the egress log may not carry."""
+    return _extra_keys(line) - _EGRESS_ALLOWED_EXTRA_KEYS
 
 
 def _flags_json_dumps_event(line: str) -> bool:
@@ -633,10 +716,97 @@ class TestPatternCalibration:
             for predicate in self._ALL:
                 assert not predicate(line), f'{predicate.__name__}: {line}'
 
+    def test_does_not_flag_a_subscript_keyed_by_the_event(self):
+        """Only the looked-up value reaches the record, not the event.
+
+        Pattern 5's value position accepts a leading '[' so a list value
+        (``extra={"a": [event]}``) is caught; the lookbehind is what keeps that
+        from also matching a subscript, where the '[' follows an identifier.
+        """
+        for line in (
+            'logger.info("m", extra={"a": foo[event]})',
+            'logger.info("m", extra={"k": d[event]})',
+        ):
+            for predicate in self._ALL:
+                assert not predicate(line), f'{predicate.__name__}: {line}'
+
 
 # ---------------------------------------------------------------------------
 # Egress side of the same handler
 # ---------------------------------------------------------------------------
+
+class TestEgressCalibration:
+    """The result-side predicates, pinned the same way as the event patterns.
+
+    ``test_response_log_does_not_include_the_body`` reads one line out of one
+    file, so it passes whenever that line happens to be clean — it cannot tell a
+    working predicate from a no-op one.  These cases pin the boundary directly.
+    """
+
+    def test_flags_the_whole_response_reaching_the_record(self):
+        for line in (
+            # The spelling this PR makes idiomatic on that very line.
+            'logger.info("Returning response", extra={"response": result})',
+            'logger.info("Returning response", extra={"status_code": code, "body": result})',
+            'logger.info("Returning response", extra={"responses": [result]})',
+            'logger.append_keys(result=result)',
+            'logger.info("Returning %s", result)',
+            'logger.info(result)',
+        ):
+            assert _flags_result_reaching_the_record(line), line
+
+    def test_does_not_flag_selecting_a_field_of_the_response(self):
+        for line in (
+            'logger.info("Returning response", extra={"status_code": result.get("statusCode")})',
+            'logger.info("Returning response", extra={"status_code": result["statusCode"]})',
+            'logger.info("Returning %s", result["statusCode"])',
+            # A subscript keyed by the result is a lookup, not a disclosure.
+            'logger.info("m", extra={"a": codes[result]})',
+        ):
+            assert not _flags_result_reaching_the_record(line), line
+
+    def test_extra_keys_reads_the_field_names(self):
+        line = 'logger.info("Returning response", extra={"status_code": result.get("statusCode")})'
+        assert _extra_keys(line) == {'status_code'}
+        assert _extra_keys('logger.info("m", extra={"a": 1, "b": 2})') == {'a', 'b'}
+        # No extra= mapping at all means nothing to allow-list.
+        assert _extra_keys('logger.info("plain message")') == set()
+
+    def test_allow_list_rejects_any_field_but_the_status_code(self):
+        """The allow-list half, pinned independently of the handler's current line.
+
+        Without this, emptying ``_EGRESS_ALLOWED_EXTRA_KEYS`` of its meaning — or
+        adding ``response`` to it — leaves the suite green, because
+        ``test_response_log_attaches_only_the_status_code`` only ever reads the
+        one line that is already clean.
+        """
+        assert _unexpected_extra_keys(
+            'logger.info("Returning response", extra={"status_code": result.get("statusCode")})'
+        ) == set()
+
+        for line, expected in (
+            ('logger.info("Returning response", extra={"response": result})', {'response'}),
+            ('logger.info("Returning response", extra={"status_code": c, "body": b})', {'body'}),
+            ('logger.info("Returning response", extra={"headers": h})', {'headers'}),
+        ):
+            assert _unexpected_extra_keys(line) == expected, line
+
+
+def _egress_log_lines():
+    """Return the egress log line(s) of projects_handler.py, read from source.
+
+    A logger call mentioning "Returning".  Read rather than restated: asserting
+    against a copy of the line can only ever verify the copy, which is how the
+    first version of this check both drifted from the handler and passed while
+    the body was reintroduced.
+    """
+    source = (_lambda_root() / 'api' / 'projects_handler.py').read_text(encoding='utf-8')
+    return [
+        line.strip()
+        for line in source.splitlines()
+        if 'Returning' in line and _PAT_LOGGER_CALL.search(line)
+    ]
+
 
 class TestResponseBodyNotLogged:
     """The response log in projects_handler.py must not carry the body.
@@ -645,30 +815,33 @@ class TestResponseBodyNotLogged:
     ``event`` and so cannot see anything done to ``result``.  The response may
     contain user-generated content (project text, verbatims, persona data), so
     the egress log records the status code only.
+
+    Guarded from both sides, because a deny-list of spellings cannot anticipate
+    the next serialisation idiom:
+
+    * ``test_response_log_does_not_include_the_body`` rejects the whole
+      ``result`` reaching the record by any of the spellings patterns 1-5 cover
+      for ``event`` — serialised, interpolated, printf-style, or attached through
+      ``extra=``.  The last of those is the one this PR itself makes idiomatic on
+      that very line.
+    * ``test_response_log_attaches_only_the_status_code`` allow-lists the
+      ``extra=`` keys, so a new field cannot be added to that record without
+      changing ``_EGRESS_ALLOWED_EXTRA_KEYS`` — a visible decision.
     """
 
+    # Non-vacuity, shared by both tests below: without it either silently
+    # becomes a no-op the moment the line is renamed — the same hole
+    # test_scan_covers_projects_handler closes for the file walk.
+    _NO_EGRESS = (
+        'No egress log line found in projects_handler.py (a logger call '
+        'mentioning "Returning").  If it was renamed, update this test; if it '
+        'was deleted, delete this test.'
+    )
+
     def test_response_log_does_not_include_the_body(self):
-        """Read the real egress log line; do not restate it.
-
-        Asserting against a copy of the line cannot fail when the handler
-        changes — it only pins the copy.  Reading the source means reintroducing
-        the body actually fails this test.
-        """
-        source = (_lambda_root() / 'api' / 'projects_handler.py').read_text(encoding='utf-8')
-        egress = [
-            line.strip()
-            for line in source.splitlines()
-            if 'Returning' in line and _PAT_LOGGER_CALL.search(line)
-        ]
-
-        # Non-vacuity: without this the test silently becomes a no-op the moment
-        # the line is renamed — the same hole test_scan_covers_projects_handler
-        # closes for the file walk.
-        assert egress, (
-            'No egress log line found in projects_handler.py (a logger call '
-            'mentioning "Returning").  If it was renamed, update this test; if it '
-            'was deleted, delete this test.'
-        )
+        """The whole response must not reach the egress log record."""
+        egress = _egress_log_lines()
+        assert egress, self._NO_EGRESS
 
         for line in egress:
             assert 'json.dumps(result' not in line, (
@@ -678,4 +851,29 @@ class TestResponseBodyNotLogged:
             assert '{result' not in line, (
                 f'The response is interpolated into the egress log: {line!r}\n'
                 'It may contain user-generated content; log the status code only.'
+            )
+            assert not _flags_result_reaching_the_record(line), (
+                f'The whole response reaches the egress log record: {line!r}\n'
+                'Powertools serialises extra= values and printf-style arguments '
+                'into the JSON record, so this leaks the body exactly as '
+                'json.dumps(result) did.  Log the status code only.'
+            )
+
+    def test_response_log_attaches_only_the_status_code(self):
+        """The egress record's ``extra=`` may carry the status code and nothing else.
+
+        The allow-list is the half of this guard that cannot be outrun by a new
+        spelling: whatever expression is used, a field that is not
+        ``status_code`` fails here.
+        """
+        egress = _egress_log_lines()
+        assert egress, self._NO_EGRESS
+
+        for line in egress:
+            unexpected = _unexpected_extra_keys(line)
+            assert not unexpected, (
+                f'The egress log attaches unexpected field(s) {sorted(unexpected)}: {line!r}\n'
+                'The response may contain user-generated content, so this record '
+                f'carries only {sorted(_EGRESS_ALLOWED_EXTRA_KEYS)}.  If a new field is '
+                'genuinely safe, add it to _EGRESS_ALLOWED_EXTRA_KEYS deliberately.'
             )
