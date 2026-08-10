@@ -33,6 +33,15 @@ Unmappable Id counted once, not twice               test_invalid_id_is_not_doubl
                                                     test_missing_id_is_not_double_counted
 ids=[] holds feedback ids, not SQS artefacts        test_invalid_id_artefact_not_reported_as_feedback_id
 Unmappable Id still escalates if fully accounted    test_unmappable_failed_id_escalates_when_nothing_unaccounted
+Only failed items retried, distinct-Id case         test_only_failed_items_are_retried_not_successful_ones
+Only failed items retried, duplicate-Id case        test_duplicated_failed_id_does_not_duplicate_retry
+Duplicated Failed Id counted once                   test_duplicated_failed_id_does_not_inflate_failure_count
+Retry batch does not amplify across rounds          test_duplicated_transient_failed_id_does_not_amplify_batch
+Id in both Successful and Failed is not retried     test_id_reported_both_successful_and_failed_is_not_retried
+Unmappable failure + unrelated omission: both       test_unmappable_failure_and_unrelated_omission_both_reported
+  reported (not offset against each other)
+Attribution of an unmappable failure is logged      test_unmappable_failure_attribution_is_logged_with_identities
+Unattributable failure named with its raw Id        test_unattributable_failure_is_named_as_such
 Full message body not logged (only id field)        test_personal_data_not_logged
 Return value = successfully enqueued count          test_return_value_is_enqueued_count
 """
@@ -907,6 +916,151 @@ class TestSendMessagesToQueueFailureCounting:
                 initial_delay=0,
             )
 
+    def test_unmappable_failure_and_unrelated_omission_both_reported(self):
+        """When a response omits one entry *and* reports an unusable-Id failure
+        for a different one, both lost items must be reported.
+
+        Reverts-to-catch: any implementation that treats an unmappable failure as
+        *replacing* an unaccounted entry's record — e.g. skipping
+        ``unaccounted[:len(unmappable)]`` on the assumption the unmappable entry
+        already speaks for it — drops one of the two losses.  Here entry 0 is
+        confirmed while entries 1 and 2 are both lost, one by omission and one by
+        an unusable Id, so a correct implementation names both.
+
+        Note: this test does *not* fail against the previous
+        ``unmappable_failures > len(unaccounted)`` formulation, because that
+        comparison escalates an algebraically identical *count*
+        (``max(0, u - a) == u - min(u, a)``).  What the identity-based pairing
+        changes is the *attribution*, which the two tests below pin.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [
+            {"id": "i0", "text": "x"},
+            {"id": "i1", "text": "y"},
+            {"id": "i2", "text": "z"},
+        ]
+        sqs = _make_sqs([
+            {
+                "Successful": [{"Id": "0"}],
+                "Failed": [
+                    {"Id": "garbage", "SenderFault": True, "Code": "X", "Message": "m"}
+                ],
+            }
+        ])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            pytest.raises(RuntimeError, match=r"^2 test item\(s\)") as exc_info,
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+                initial_delay=0,
+            )
+
+        message = str(exc_info.value)
+        assert "i1" in message and "i2" in message
+        # The confirmed item must not be reported as lost.
+        assert "i0" not in message
+
+    def test_unmappable_failure_attribution_is_logged_with_identities(self):
+        """Pairing an unusable-Id failure with an unaccounted entry must name both
+        identities, so the inference is visible rather than a silent offset.
+
+        Reverts-to-catch: a bare count comparison records the right number of
+        failures but leaves no trace of *which* reported failure was attributed to
+        *which* submitted entry, so an operator cannot tell a correct attribution
+        from a mis-attributed one.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}, {"id": "i1", "text": "y"}]
+        sqs = _make_sqs([
+            {
+                "Successful": [{"Id": "0"}],
+                "Failed": [
+                    {"Id": "garbage", "SenderFault": True, "Code": "X", "Message": "m"}
+                ],
+            }
+        ])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            patch("_shared.sqs_utils.logger") as mock_logger,
+            pytest.raises(RuntimeError, match=r"^1 test item\(s\)"),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+                initial_delay=0,
+            )
+
+        attribution = [
+            c.args
+            for c in mock_logger.error.call_args_list
+            if "attributing" in str(c.args[0])
+        ]
+        assert attribution, "Expected the attribution to be logged"
+        rendered = str(attribution[0])
+        # Both sides of the inference must appear: the unusable Id and the
+        # submitted entry it was attributed to.
+        assert "garbage" in rendered
+        assert "i1" in rendered
+
+    def test_unattributable_failure_is_named_as_such(self):
+        """An unusable-Id failure with no unaccounted entry to explain it must be
+        recorded individually and logged with its raw Id.
+
+        Reverts-to-catch: dropping the per-entry escalation in favour of a count
+        difference loses the raw Id, leaving an operator with a failure count but
+        nothing to correlate against the SQS-side logs.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}]
+        sqs = _make_sqs([
+            {
+                "Successful": [{"Id": "0"}],
+                "Failed": [
+                    {"Id": "abc", "SenderFault": True, "Code": "X", "Message": "m"},
+                    {"Id": "def", "SenderFault": True, "Code": "X", "Message": "m"},
+                ],
+            }
+        ])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            patch("_shared.sqs_utils.logger") as mock_logger,
+            pytest.raises(RuntimeError, match=r"^2 test item\(s\)"),
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=0,
+                initial_delay=0,
+            )
+
+        unattributable = [
+            str(c.args)
+            for c in mock_logger.error.call_args_list
+            if "unattributable" in str(c.args[0])
+        ]
+        assert len(unattributable) == 2, (
+            f"Expected both unusable Ids to be escalated individually, got "
+            f"{len(unattributable)}"
+        )
+        assert any("abc" in c for c in unattributable)
+        assert any("def" in c for c in unattributable)
+
 
 class TestSendMessagesToQueueRetryBehaviour:
     """Tests around the retry logic for transient (SenderFault=false) errors."""
@@ -1042,6 +1196,159 @@ class TestSendMessagesToQueueRetryBehaviour:
         assert len(second_call_entries) == 1
         mock_metrics.add_metric.assert_called_once_with(
             name="ItemsIngested", unit="Count", value=3
+        )
+
+    def test_duplicated_failed_id_does_not_duplicate_retry(self):
+        """A repeated transient Failed Id must be retried once, not once per
+        repetition.
+
+        The sibling test above covers only *distinct* Failed Ids, so it cannot
+        detect duplication arising from a repeated Id.
+
+        Reverts-to-catch: iterating the raw Failed list appends the same item to
+        transient_retry once per repetition, so *pending* grows instead of
+        shrinking (measured 1 -> 3 -> 9 -> 27 at the default max_retries) and the
+        same feedback is delivered to SQS more than once — the duplicate-delivery
+        regression the sibling test's docstring says is prohibited.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}]
+        sqs = _make_sqs([
+            {
+                "Successful": [],
+                "Failed": [
+                    {"Id": "0", "Code": "T", "SenderFault": False},
+                    {"Id": "0", "Code": "T", "SenderFault": False},
+                ],
+            },
+            _success_response(1),
+        ])
+
+        with patch("_shared.sqs_utils.metrics") as mock_metrics:
+            result = send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=1,
+                initial_delay=0,
+            )
+
+        # One item in, one item enqueued — not two.
+        assert result == 1
+        retry_entries = sqs.send_message_batch.call_args_list[1].kwargs["Entries"]
+        assert len(retry_entries) == 1, (
+            f"Retry re-sent {len(retry_entries)} entries for a 1-item input — "
+            "the duplicated Failed Id was retried twice"
+        )
+        mock_metrics.add_metric.assert_called_once_with(
+            name="ItemsIngested", unit="Count", value=1
+        )
+
+    def test_duplicated_failed_id_does_not_inflate_failure_count(self):
+        """A repeated permanent Failed Id must be reported as one lost item.
+
+        Reverts-to-catch: without deduplication the RuntimeError reports one
+        failure per repetition, so a single lost item is counted several times in
+        the number an operator or alarm reasons about.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}]
+        sqs = _make_sqs([
+            {
+                "Successful": [],
+                "Failed": [
+                    {"Id": "0", "Code": "X", "SenderFault": True},
+                    {"Id": "0", "Code": "X", "SenderFault": True},
+                ],
+            }
+        ])
+
+        with (
+            patch("_shared.sqs_utils.metrics"),
+            pytest.raises(RuntimeError, match=r"^1 test item\(s\)") as exc_info,
+        ):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                initial_delay=0,
+            )
+
+        assert "ids=['i0']" in str(exc_info.value)
+
+    def test_duplicated_transient_failed_id_does_not_amplify_batch(self):
+        """Repeating a transient Failed Id must not grow the batch across retry
+        rounds.
+
+        Reverts-to-catch: each round re-appends the duplicate, so the work per
+        round multiplies (1 -> 3 -> 9 -> 27 sends for a single item) — real SQS
+        calls and real duplicate messages, and the reason the uncapped-backoff
+        deferral needed the retry path to be bounded.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}]
+        dup_failure = {
+            "Successful": [],
+            "Failed": [{"Id": "0", "Code": "T", "SenderFault": False}] * 3,
+        }
+        sqs = MagicMock()
+        sqs.send_message_batch.return_value = dup_failure
+
+        with patch("_shared.sqs_utils.metrics"), pytest.raises(RuntimeError):
+            send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=3,
+                initial_delay=0,
+            )
+
+        # Every round must re-send exactly the one pending item.
+        sent_per_round = [
+            len(c.kwargs["Entries"]) for c in sqs.send_message_batch.call_args_list
+        ]
+        assert sent_per_round == [1, 1, 1, 1], (
+            f"Batch amplified across retry rounds: {sent_per_round}"
+        )
+
+    def test_id_reported_both_successful_and_failed_is_not_retried(self):
+        """An Id claimed as both Successful and Failed must not also be retried.
+
+        Reverts-to-catch: acting on both sides counts the entry as enqueued *and*
+        re-sends it, so a self-contradictory response causes duplicate delivery
+        of a message SQS already accepted.
+        """
+        send_messages_to_queue = _import_fn()
+        items = [{"id": "i0", "text": "x"}]
+        sqs = _make_sqs([
+            {
+                "Successful": [{"Id": "0"}],
+                "Failed": [{"Id": "0", "Code": "T", "SenderFault": False}],
+            }
+        ])
+
+        with patch("_shared.sqs_utils.metrics") as mock_metrics:
+            result = send_messages_to_queue(
+                sqs,
+                "https://sqs/test-queue",
+                items,
+                metric_name="ItemsIngested",
+                log_label="test",
+                max_retries=1,
+                initial_delay=0,
+            )
+
+        assert result == 1
+        # No retry round: the entry was already confirmed as enqueued.
+        assert sqs.send_message_batch.call_count == 1
+        mock_metrics.add_metric.assert_called_once_with(
+            name="ItemsIngested", unit="Count", value=1
         )
 
 

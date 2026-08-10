@@ -16,7 +16,11 @@ entry that appears in neither is recorded as a permanent failure with the code
 ``UnaccountedBySQS`` rather than being silently dropped, so the ``RuntimeError``
 contract stays total even for a truncated or malformed response.  Conversely,
 only ``Successful`` entries whose ``Id`` maps back to a distinct submitted entry
-are counted, so a malformed response cannot inflate the metric either.
+are counted, so a malformed response cannot inflate the metric either.  The
+``Failed`` list is deduplicated by submitted entry for the same reason: acting on
+a repeated ``Id`` would retry and report one entry several times, growing the
+retry batch instead of shrinking it and re-delivering feedback SQS may already
+have accepted.
 
 The metric is emitted with the **actual** successfully enqueued count (not the
 attempted count) on *every* exit path — including when ``send_message_batch``
@@ -126,11 +130,17 @@ def send_messages_to_queue(
                 # Used below to reconcile the response against what was
                 # submitted, so an entry can be recorded at most once.
                 accounted_idx: set[int] = set()
-                # Failed entries whose Id could not be mapped to a submitted
-                # entry.  Normally reconciliation names the real item they refer
-                # to; the counter exists only to guarantee that such an entry is
-                # still escalated if it is not explained that way.
-                unmappable_failures = 0
+                # Batch indices already handled from this response's Failed
+                # list.  A response that repeats an Id must not act on it twice:
+                # appending the same item to transient_retry per repetition
+                # grows *pending* instead of shrinking it, which amplifies each
+                # retry round and delivers the same feedback more than once.
+                seen_failed_idx: set[int] = set()
+                # Raw Ids of Failed entries that could not be mapped to a
+                # submitted entry.  Kept as identities rather than a bare count
+                # so reconciliation can pair each one with the specific entry it
+                # is recorded against, and name the unpairable remainder.
+                unmappable_ids: list[str] = []
 
                 # Count only Successful entries whose Id maps back to a
                 # *distinct* submitted entry.  Taking len(Successful) on trust
@@ -147,7 +157,8 @@ def send_messages_to_queue(
                         log_label,
                     )
                 total_sent += len(confirmed_ids)
-                accounted_idx.update(int(sid) for sid in confirmed_ids)
+                confirmed_ids_int = {int(sid) for sid in confirmed_ids}
+                accounted_idx.update(confirmed_ids_int)
 
                 for failed in failed_entries:
                     raw_id = failed.get("Id")
@@ -162,7 +173,7 @@ def send_messages_to_queue(
                             failed,
                             log_label,
                         )
-                        unmappable_failures += 1
+                        unmappable_ids.append("<missing>")
                         continue
                     try:
                         idx = int(raw_id)
@@ -182,8 +193,32 @@ def send_messages_to_queue(
                             failed,
                             log_label,
                         )
-                        unmappable_failures += 1
+                        unmappable_ids.append(repr(raw_id))
                         continue
+
+                    if idx in confirmed_ids_int:
+                        # The same entry is claimed as both enqueued and failed.
+                        # Counting it and retrying it would both credit the
+                        # metric and re-deliver the message; skip the failure
+                        # side and let the (already recorded) success stand.
+                        logger.error(
+                            "SQS reported Id %r as both Successful and Failed; "
+                            "ignoring the Failed entry. label=%s",
+                            raw_id,
+                            log_label,
+                        )
+                        continue
+                    if idx in seen_failed_idx:
+                        # A repeated Failed Id: acting on it again would retry
+                        # and report the same submitted entry more than once.
+                        logger.error(
+                            "SQS repeated Failed Id %r in one response; ignoring "
+                            "the duplicate. label=%s",
+                            raw_id,
+                            log_label,
+                        )
+                        continue
+                    seen_failed_idx.add(idx)
                     accounted_idx.add(idx)
                     # Use the item's own id field for logging only — never log the
                     # full message body because it may contain personal data.
@@ -243,23 +278,47 @@ def send_messages_to_queue(
                         item_id = str(item.get("id", f"idx-{idx}"))
                         permanent_failures.append((item_id, "UnaccountedBySQS"))
 
-                # An unmappable Failed entry is normally explained by an
-                # unaccounted submitted entry, which is recorded above.  If the
-                # response leaves nothing unaccounted (for example because it
-                # also claims every entry as Successful), the reported failure
-                # would otherwise vanish, so escalate it explicitly rather than
-                # trusting a response that contradicts itself.
-                if unmappable_failures > len(unaccounted):
+                # Attribute the unmappable Failed entries.  Such an entry
+                # reports a failure for *some* submitted entry, but its Id does
+                # not say which.  The only entries it can refer to are those the
+                # response did not otherwise account for — the unaccounted set —
+                # and every one of those is already recorded as a failure above.
+                # So each unmappable entry is paired with one unaccounted entry
+                # and adds no second record for the same loss.
+                #
+                # That pairing is an inference, not a fact: if the response is
+                # self-contradictory (it claims an entry as Successful *and*
+                # reports a failure for it with an unusable Id) the pairing
+                # attributes the failure to the wrong entry.  The identities on
+                # both sides are therefore logged explicitly, so the attribution
+                # is visible and reviewable rather than a silent count offset.
+                paired = min(len(unmappable_ids), len(unaccounted))
+                if paired:
                     logger.error(
-                        "SQS reported %d Failed entry(ies) whose Id could not be "
-                        "mapped to a submitted entry, and only %d entry(ies) were "
-                        "unaccounted for; escalating the remainder. label=%s",
-                        unmappable_failures,
-                        len(unaccounted),
+                        "SQS reported %d Failed entry(ies) with unusable Id(s) %s; "
+                        "attributing them to unaccounted submitted entry(ies) %s, "
+                        "already recorded as failed. label=%s",
+                        paired,
+                        unmappable_ids[:paired],
+                        [
+                            str(item.get("id", f"idx-{idx}"))
+                            for idx, item in unaccounted[:paired]
+                        ],
                         log_label,
                     )
-                    for _ in range(unmappable_failures - len(unaccounted)):
-                        permanent_failures.append(("unknown", "UnmappableFailedId"))
+                # Any unmappable entry left over has no unaccounted entry to
+                # refer to, so its failure would vanish entirely.  Record each
+                # one individually — naming the raw Id in the log — rather than
+                # trusting a response that contradicts itself.
+                for raw in unmappable_ids[paired:]:
+                    logger.error(
+                        "SQS reported a Failed entry with unusable Id %s that no "
+                        "unaccounted submitted entry can explain; escalating it as "
+                        "an unattributable failure. label=%s",
+                        raw,
+                        log_label,
+                    )
+                    permanent_failures.append(("unknown", "UnmappableFailedId"))
 
             pending = transient_retry
     finally:
