@@ -96,7 +96,7 @@ export class VocCoreStack extends VocStack {
     // S3 BUCKETS
     // ============================================
     this.accessLogsBucket = new s3.Bucket(this, 'AccessLogsBucket', {
-      bucketName: this.uniqueName('voc-access-logs'),
+      bucketName: this.uniqueDnsName('voc-access-logs'),
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
@@ -108,7 +108,7 @@ export class VocCoreStack extends VocStack {
     });
 
     this.rawDataBucket = new s3.Bucket(this, 'RawDataBucket', {
-      bucketName: this.uniqueName('voc-raw-data'),
+      bucketName: this.uniqueDnsName('voc-raw-data'),
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: this.kmsKey,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -133,7 +133,7 @@ export class VocCoreStack extends VocStack {
 
     // Frontend hosting bucket
     this.websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
-      bucketName: this.uniqueName('voc-frontend'),
+      bucketName: this.uniqueDnsName('voc-frontend'),
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -669,8 +669,9 @@ export class VocCoreStack extends VocStack {
       refreshTokenValidity: cdk.Duration.days(30),
     });
 
-    // User Pool Domain
-    const domainPrefix = this.uniqueName('voc');
+    // User Pool Domain. A hosted-UI domain prefix is a DNS label, so it is held
+    // to 63 characters rather than the 64 most names get.
+    const domainPrefix = this.uniqueDnsName('voc');
     this.userPoolDomain = this.userPool.addDomain('VocUserPoolDomain', {
       cognitoDomain: { domainPrefix },
     });
@@ -895,7 +896,14 @@ export class VocCoreStack extends VocStack {
       resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*${this.prefixed('voc-chat-stream')}*`],
     }));
 
-    // Suppress wildcard warning - necessary to avoid circular dependency
+    // Suppress wildcard warning - necessary to avoid circular dependency.
+    //
+    // No `appliesTo`, so it is blanket over this role and stays matching whatever
+    // the ARN above resolves to — including the prefixed form. That is why it
+    // needs no prefix threading, unlike pluginSystemSuppressions(), whose
+    // `appliesTo` regexes quote the concrete ARN and therefore must be a function
+    // of the prefix. Were that to change here, the zero-warnings assertion over
+    // the PREFIXED synth in lib/app-deployment-prefix.test.ts would catch it.
     NagSuppressions.addResourceSuppressions(
       this.authenticatedRole,
       [

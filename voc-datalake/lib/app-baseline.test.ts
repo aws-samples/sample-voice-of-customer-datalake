@@ -30,7 +30,13 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { nameInventory } from './test-support/name-inventory';
-import { BASELINE_PATH, diagnostics, synthApp, type Baseline } from './test-support/synth-app';
+import {
+  BASELINE_PATH,
+  diagnostics,
+  synthApp,
+  SYNTH_TIMEOUT_MS,
+  type Baseline,
+} from './test-support/synth-app';
 
 const PROJECT_ROOT = join(__dirname, '..');
 
@@ -57,6 +63,17 @@ function loadBaseline(): Baseline {
   const raw: unknown = JSON.parse(readFileSync(join(PROJECT_ROOT, BASELINE_PATH), 'utf8'));
   return BaselineSchema.parse(raw);
 }
+
+/**
+ * A name carrying a deployment prefix ahead of the `voc` stem.
+ *
+ * `[a-z0-9][a-z0-9-]*` rather than `\w+`: `\w` excludes the hyphen, and
+ * `validateDeploymentPrefix` accepts inner hyphens (`team-a`), so `\w` would
+ * have let exactly the prefixes this repo documents slip past. The negative
+ * lookahead keeps the plain `voc-` stem — and `Voc...` in an export name — from
+ * matching itself.
+ */
+const PREFIXED_NAME = /[= :/](?![Vv]oc)[a-z0-9][a-z0-9-]*-voc-/;
 
 // One synth for the whole file: it shells out to bin/voc-datalake.ts and is the
 // expensive part of the suite.
@@ -94,9 +111,28 @@ describe('the default (no deploymentPrefix) synth', () => {
     for (const stackName of synthed.stackNames) {
       const names = nameInventory(synthed.template(stackName));
       for (const name of [...names.physicalNames, ...names.exportNames, ...names.policyResources]) {
-        expect(name).not.toMatch(/[= :/]\w+-voc-/);
+        expect(name).not.toMatch(PREFIXED_NAME);
       }
     }
+  });
+
+  it('detects a hyphenated prefix, which `\\w` would have missed', () => {
+    // Defence in depth on the check above, and a real gap that was there:
+    // `\w` excludes `-`, so `team-a` — which validateDeploymentPrefix explicitly
+    // accepts and naming.test.ts covers — read as unprefixed. The sha equality
+    // earlier in this file would still have caught a genuine leak, but this
+    // assertion exists precisely so the invariant does not depend on reading a
+    // hash, and half-doing that is worse than not doing it.
+    expect('AWS::DynamoDB::Table TableName = team-a-voc-feedback-123456789012-us-east-1').toMatch(PREFIXED_NAME);
+    expect('AWS::Logs::LogGroup LogGroupName = /aws/lambda/team-a-voc-x').toMatch(PREFIXED_NAME);
+    expect('AWS::DynamoDB::Table TableName = stg-voc-feedback-123456789012-us-east-1').toMatch(PREFIXED_NAME);
+
+    // ...and does not fire on the unprefixed names the app really produces,
+    // including the ones whose own base name contains a hyphen.
+    expect('AWS::DynamoDB::Table TableName = voc-feedback-123456789012-us-east-1').not.toMatch(PREFIXED_NAME);
+    expect('AWS::S3::Bucket BucketName = voc-access-logs-123456789012-us-east-1').not.toMatch(PREFIXED_NAME);
+    expect('AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ingestor-webscraper').not.toMatch(PREFIXED_NAME);
+    expect('Outputs Export.Name = VocCoreStack:ExportsOutputRefFeedbackTable').not.toMatch(PREFIXED_NAME);
   });
 
   it('synthesizes with zero warnings', () => {
@@ -109,4 +145,7 @@ describe('the default (no deploymentPrefix) synth', () => {
     const found = diagnostics(synthed);
     expect(found, JSON.stringify(found, null, 2)).toEqual([]);
   });
-});
+// SYNTH_TIMEOUT_MS rather than a global testTimeout: only the suites that
+// synthesize the whole app out of process need longer than vitest's 5s default,
+// and raising it globally would delay every other suite's hung-test report.
+}, SYNTH_TIMEOUT_MS);

@@ -155,7 +155,7 @@ export class VocIngestionStack extends VocStack {
     corsAllowedOrigins: string[]
   ): s3.Bucket {
     return new s3.Bucket(this, 'S3ImportBucket', {
-      bucketName: this.uniqueName('voc-import'),
+      bucketName: this.uniqueDnsName('voc-import'),
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: kmsKey,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,

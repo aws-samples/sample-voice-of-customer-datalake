@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DeploymentNaming,
+  DNS_LABEL_LENGTH_LIMIT,
   NAME_LENGTH_LIMIT,
   PATH_NAME_LENGTH_LIMIT,
   validateDeploymentPrefix,
@@ -66,7 +67,25 @@ describe('validateDeploymentPrefix', () => {
   it('rejects an absurdly long prefix by talking about the prefix, not a resource', () => {
     // A prefix that cannot fit ANY name should not report whichever resource
     // happened to overflow first — that reads as a resource problem.
-    expect(() => validateDeploymentPrefix('a'.repeat(40))).toThrow(/is 40 characters; the maximum is/);
+    expect(() => validateDeploymentPrefix('a'.repeat(40)))
+      .toThrow(/is 40 characters; the absolute maximum is 20/);
+  });
+
+  it('does not present the 20-character ceiling as a workable budget', () => {
+    // 20 is an order of magnitude above the real budget — the app's longest name
+    // leaves ONE character in us-east-1. Reporting only "the maximum is 20"
+    // sends the operator off to try a 19-character prefix that cannot deploy, so
+    // the message has to point at the per-name check that knows the real figure.
+    const message = (() => {
+      try {
+        validateDeploymentPrefix('a'.repeat(21));
+        return '';
+      } catch (error) {
+        return error instanceof Error ? error.message : '';
+      }
+    })();
+    expect(message).toContain('The REAL budget is far smaller');
+    expect(message).toContain('per-name check at synth');
   });
 });
 
@@ -117,9 +136,16 @@ describe('the name-length guard', () => {
   /** Longest base name that still fits unprefixed: 64 - len('-<12>-us-east-1'). */
   const budget = NAME_LENGTH_LIMIT - '-111111111111-us-east-1'.length;
 
-  function overrunsFor(prefix: string | undefined, baseNames: string[]): string[] {
+  function overrunsFor(
+    prefix: string | undefined,
+    baseNames: string[],
+    kind: 'default' | 'dns-label' = 'default',
+  ): string[] {
     const { stack, naming } = namingFor(prefix);
-    for (const baseName of baseNames) naming.uniqueName(baseName);
+    for (const baseName of baseNames) {
+      if (kind === 'dns-label') naming.uniqueDnsName(baseName);
+      else naming.uniqueName(baseName);
+    }
     return stack.node.validate();
   }
 
@@ -174,6 +200,42 @@ describe('the name-length guard', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain(`over the ${PATH_NAME_LENGTH_LIMIT}-character limit`);
     expect(errors[0]).toContain('log group and secret names');
+  });
+
+  it('holds bucket names and Cognito domain prefixes to 63, not 64', () => {
+    // The gap is one character, and it decides whether the name deploys: S3 and
+    // the Cognito hosted UI both want a single DNS label. A name of exactly 64
+    // would clear a 64-character guard at synth and fail at `cdk deploy`, which
+    // is the worst place to find out.
+    const dnsBudget = DNS_LABEL_LENGTH_LIMIT - '-111111111111-us-east-1'.length;
+
+    // Same base name, same prefix: allowed as a Lambda name, rejected as a bucket.
+    const asLambda = overrunsFor('stg', ['x'.repeat(dnsBudget - 3)], 'default');
+    expect(asLambda).toEqual([]);
+    const asBucket = overrunsFor('stg', ['x'.repeat(dnsBudget - 3)], 'dns-label');
+    expect(asBucket).toHaveLength(1);
+    expect(asBucket[0]).toContain(`over the ${DNS_LABEL_LENGTH_LIMIT}-character limit`);
+    expect(asBucket[0]).toContain('S3 bucket names and Cognito domain prefixes');
+  });
+
+  it('rejects a prefix that takes voc-access-logs to exactly 64 in the widest region', () => {
+    // The reachable case, with the app's real numbers:
+    // `voc-access-logs-<12-digit account>-ap-southeast-7` is 43 characters, and
+    // a 20-character prefix — which validateDeploymentPrefix admits — takes it to
+    // 64. One over the bucket limit, and previously accepted.
+    const app = new cdk.App();
+    const stack = new cdk.Stack(app, 'WidestRegionStack', {
+      env: { account: '111111111111', region: 'ap-southeast-7' },
+    });
+    const naming = new DeploymentNaming(stack, 'a'.repeat(20));
+    expect(naming.uniqueDnsName('voc-access-logs')).toContain('voc-access-logs');
+
+    const [error] = stack.node.validate();
+    expect(error).toContain('64 characters');
+    expect(error).toContain(`over the ${DNS_LABEL_LENGTH_LIMIT}-character limit`);
+    expect(error).toContain('S3 bucket names and Cognito domain prefixes');
+    // 63 - 43 - 1 separator = 19.
+    expect(error).toContain('Use a prefix of at most 19 characters');
   });
 
   it('ignores name patterns, which are not resource names', () => {

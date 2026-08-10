@@ -51,6 +51,20 @@ export class VocStack extends cdk.Stack {
   }
 
   /**
+   * Physical name for a resource whose name must be a single DNS label — an S3
+   * bucket, or the Cognito hosted-UI domain prefix. Same shape as
+   * {@link uniqueName}, held to 63 characters rather than 64.
+   *
+   * Distinct from `uniqueName()` because that one character is real and nothing
+   * about the base name reveals which limit applies: `voc-access-logs` reaches
+   * exactly 64 with a 20-character prefix in the widest region, which a
+   * 64-character guard would wave through and S3 would reject at deploy.
+   */
+  protected uniqueDnsName(baseName: string): string {
+    return this.naming.uniqueDnsName(baseName);
+  }
+
+  /**
    * A name pattern handed to a Lambda as an environment variable, e.g.
    * `voc-ingestor-{source}-<account>-<region>`. Not a resource name, so it is
    * excluded from the length check — the concrete resources it describes are

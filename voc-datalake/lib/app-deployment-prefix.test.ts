@@ -15,7 +15,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { nameInventory } from './test-support/name-inventory';
-import { diagnostics, SynthFailure, synthApp, SYNTH_ACCOUNT, SYNTH_REGION } from './test-support/synth-app';
+import {
+  diagnostics,
+  SynthFailure,
+  synthApp,
+  SYNTH_ACCOUNT,
+  SYNTH_REGION,
+  SYNTH_TIMEOUT_MS,
+} from './test-support/synth-app';
 
 /**
  * Short on purpose. The tightest budget in the app is the
@@ -61,6 +68,41 @@ describe('a prefixed deployment', () => {
         .filter((entry) => !isApiScopedName(entry));
       expect(after, baseId).toEqual(before.map((name) => insertPrefix(name)));
     }
+  });
+
+  it('places the prefix exactly here, against a hand-written expectation', () => {
+    // The exhaustive mapping above compares production output against
+    // insertPrefix(), which reimplements DeploymentNaming.prefixed() — so if the
+    // placement rule is wrong, both sides are wrong identically and the
+    // strongest assertion in this file passes anyway. These literals break that
+    // circularity for the one rule that most needs pinning.
+    //
+    // The ingestion stack is the one to pin because it exercises every shape:
+    // flat names, `/aws/lambda/...` log groups where the prefix must land on the
+    // `voc` SEGMENT rather than in front of `/aws`, and a secret name whose own
+    // base contains a slash (`voc-datalake/api-credentials`).
+    expect(nameInventory(prefixed.template(`${PREFIX}-VocIngestionStack`)).physicalNames).toEqual([
+      'AWS::Events::Rule Name = b-voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Events::Rule Name = b-voc-ingest-app_reviews_ios-schedule-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Events::Rule Name = b-voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Lambda::Function FunctionName = b-voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Lambda::Function FunctionName = b-voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Lambda::Function FunctionName = b-voc-ingestor-s3_import-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Lambda::Function FunctionName = b-voc-ingestor-synthetic_reviews-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Lambda::Function FunctionName = b-voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>',
+      // Note `/aws/lambda/b-voc-…`, NOT `b-/aws/lambda/voc-…`.
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-s3_import-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-synthetic_reviews-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>',
+      'AWS::S3::Bucket BucketName = b-voc-import-<AWS::AccountId>-<AWS::Region>',
+      'AWS::SQS::Queue QueueName = b-voc-processing-dlq-<AWS::AccountId>-<AWS::Region>',
+      'AWS::SQS::Queue QueueName = b-voc-processing-queue-<AWS::AccountId>-<AWS::Region>',
+      // The prefix lands on the leading `voc-datalake` segment, not on the
+      // `api-credentials` one after the slash.
+      'AWS::SecretsManager::Secret Name = b-voc-datalake/api-credentials-<AWS::AccountId>-<AWS::Region>',
+    ]);
   });
 
   it('leaves API-Gateway-scoped names alone, since they share no cross-deployment namespace', () => {
@@ -174,8 +216,12 @@ describe('a prefixed deployment', () => {
     const found = diagnostics(prefixed);
     expect(found, JSON.stringify(found, null, 2)).toEqual([]);
   });
-});
+}, SYNTH_TIMEOUT_MS);
 
+// SYNTH_TIMEOUT_MS, not the global default: this describe synthesizes the app
+// inside a test case (the rejection has to observe a synth FAILING, which the
+// module-level synths cannot show). Scoped here rather than in vitest.config.ts
+// so a hung test in an unrelated suite still fails in five seconds.
 describe('the name-length budget', () => {
   it('rejects a prefix that overruns the longest name the app generates', () => {
     // A prefix that silently produces a 70-character rule name is a deploy-time
@@ -204,7 +250,7 @@ describe('the name-length budget', () => {
     // leaves, and it must synthesize.
     expect(prefixed.stackNames).toHaveLength(5);
   });
-});
+}, SYNTH_TIMEOUT_MS);
 
 /**
  * Names scoped to a single RestApi, which is itself per-deployment: an

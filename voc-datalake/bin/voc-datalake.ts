@@ -16,33 +16,25 @@ import { validateDeploymentPrefix } from '../lib/utils/naming';
 
 const app = new cdk.App();
 
-// ============================================
-// Deployment prefix — two independent copies in ONE account and region
-// ============================================
-// Account and region already namespace every physical name ACROSS accounts,
-// but two deployments INSIDE one account and region resolve to identical
-// names, so the second deploy collides. `-c deploymentPrefix=<prefix>` adds
-// the missing dimension to all three collision layers at once:
+// Deployment prefix — lets two independent copies share ONE account and region.
+// See docs/deployment.md ("Two Deployments in One Account and Region") for usage
+// and the length budget.
 //
-//   1. physical resource names   (lib/utils/naming.ts, via VocStack)
-//   2. STACK IDS, below — without this the second deploy UPDATES the first
-//      deployment's stacks instead of creating new ones. CDK derives its
-//      automatic cross-stack export names from the stack name, so prefixing
-//      the id namespaces every one of those for free.
-//   3. the one hand-written export name (`VocFrontendDomainName` in
-//      core-stack.ts) — export names are unique per account and region, so
-//      that collides before resource naming even matters.
-//
-// OPT-IN, and the unset case is byte-identical to the templates this repo
-// synthesized before the flag existed (proved by lib/app-baseline.test.ts):
-// applying a prefix unconditionally would rename tables, buckets and the user
-// pool, which CloudFormation implements as a REPLACEMENT — silent data loss on
-// every existing deployment. For the same reason there is deliberately NO
-// default for this key in cdk.context.json: it is a per-deployment `-c` flag,
-// not project config.
+// OPT-IN, and it must stay that way: applying a prefix unconditionally would
+// rename tables, buckets and the user pool, which CloudFormation implements as a
+// REPLACEMENT — silent data loss on every existing deployment. Hence also no
+// default for this key in cdk.context.json; it is a per-deployment `-c` flag.
+// lib/app-baseline.test.ts proves the unset case is byte-identical.
 const deploymentPrefix = validateDeploymentPrefix(app.node.tryGetContext('deploymentPrefix'));
 
-/** Stack id, namespaced when a deployment prefix is in force. */
+/**
+ * Stack id, namespaced when a deployment prefix is in force.
+ *
+ * Load-bearing beyond the id itself: without it a second deploy UPDATES the
+ * first deployment's stacks rather than creating new ones, and CDK derives its
+ * automatic cross-stack export names from the stack name, so prefixing the id
+ * namespaces all of those too.
+ */
 const stackId = (id: string): string => (deploymentPrefix ? `${deploymentPrefix}-${id}` : id);
 
 // Cost allocation tag helper

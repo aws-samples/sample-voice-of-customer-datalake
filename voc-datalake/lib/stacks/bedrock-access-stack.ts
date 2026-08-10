@@ -275,7 +275,20 @@ export class BedrockModelAccess extends Construct {
       }),
     });
     
-    // Suppress CDK custom resource Lambda runtime warnings for Provider
+    // Suppress CDK custom resource Lambda runtime warnings for Provider.
+    //
+    // pluginSystemSuppressions() takes NO prefix here, deliberately. It is a
+    // function of the deployment prefix because the findings it suppresses quote
+    // a concrete ARN, but the only findings it covers on THIS construct are the
+    // `<...ModelAgreementLambda...Arn>:*` version/alias wildcards — CDK logical-id
+    // references, which carry no VoC physical name and so no prefix. The
+    // ingestor/schedule entries in that set simply do not apply here.
+    //
+    // BedrockModelAccess is a Construct, not a VocStack, so it has no access to
+    // the prefix either; threading one through would be work with no effect. If
+    // that ever stopped being true, the zero-warnings assertion over the
+    // PREFIXED synth in lib/app-deployment-prefix.test.ts would fail, since an
+    // unmatched suppression leaves an AwsSolutions-IAM5 finding behind.
     NagSuppressions.addResourceSuppressions(
       modelAgreementProvider,
       [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions, ...pluginSystemSuppressions()],

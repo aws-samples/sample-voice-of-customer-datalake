@@ -5,11 +5,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['lib/**/*.test.ts'],
-    // The deployment-prefix guards synthesize the whole app out of process
-    // (lib/test-support/synth-app.ts) because stack ids and export names only
-    // exist in bin/voc-datalake.ts. That is ~10s per synth, well past the 5s
-    // default.
-    testTimeout: 120_000,
+    // The default timeout stays put deliberately. Only the two out-of-process
+    // synth suites need longer, and they set it per-`describe` — raising it
+    // globally would make an unrelated hung test in any of the other suites take
+    // two minutes to report instead of five seconds.
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

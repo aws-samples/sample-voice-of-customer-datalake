@@ -288,7 +288,11 @@ Two things to know before using it:
   resource name (e.g. disable the plugin that owns it).
   ```
 
-  Disabling unused plugins in `pluginStatus` widens the budget.
+  Disabling unused plugins in `pluginStatus` widens the budget. S3 bucket names
+  and the Cognito hosted-UI domain prefix are checked against **63** characters
+  rather than 64, since both must be a single DNS label — a difference of one
+  character that decides whether the deploy succeeds, so the check keys off the
+  call site (`uniqueDnsName()`) rather than guessing from the name.
 
 ### Stack Deployment Order
 

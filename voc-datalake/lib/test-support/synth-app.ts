@@ -24,6 +24,15 @@ export const SYNTH_REGION = 'us-east-1';
 /** Committed fingerprint of the no-prefix synth, relative to the project root. */
 export const BASELINE_PATH = 'lib/test-support/baseline.json';
 
+/**
+ * Timeout for a suite that calls {@link synthApp} inside a test case.
+ *
+ * A whole-app synth is ~10s, well past vitest's 5s default. Applied per-suite
+ * (`describe(…, SYNTH_TIMEOUT_MS)`) rather than as a global `testTimeout`, so a
+ * hung test in one of the other suites still reports in five seconds.
+ */
+export const SYNTH_TIMEOUT_MS = 120_000;
+
 /** Shape of {@link BASELINE_PATH}. Written by scripts/generate-baseline.ts. */
 export interface Baseline {
   description: string;

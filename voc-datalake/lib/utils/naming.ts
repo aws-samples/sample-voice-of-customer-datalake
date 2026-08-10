@@ -24,6 +24,21 @@ import { Aws, Stack, Token } from 'aws-cdk-lib';
 export const NAME_LENGTH_LIMIT = 64;
 
 /**
+ * Ceiling for names that have to be a single DNS label: S3 bucket names and the
+ * Cognito hosted-UI domain prefix. 63, not 64 — one character tighter than
+ * {@link NAME_LENGTH_LIMIT}, and not inferable from the string, since a bucket
+ * name looks exactly like a Lambda name. So it is keyed off the CALL SITE:
+ * {@link DeploymentNaming.uniqueDnsName}.
+ *
+ * Reachable, not theoretical. `voc-access-logs` resolves to 43 characters in the
+ * widest region (`voc-access-logs-<12-digit account>-ap-southeast-7`), and a
+ * 20-character prefix — which {@link PREFIX_MAX_LENGTH} permits — takes it to
+ * exactly 64: one over the bucket limit, and a name that would clear a
+ * 64-character guard at synth only to fail at `cdk deploy`.
+ */
+export const DNS_LABEL_LENGTH_LIMIT = 63;
+
+/**
  * Ceiling for the "path-shaped" names (`/aws/lambda/...`,
  * `/aws/stepfunctions/...`, `voc-datalake/api-credentials`), which are
  * CloudWatch log groups and Secrets Manager secrets. Both allow 512, and the
@@ -95,16 +110,37 @@ export function validateDeploymentPrefix(contextValue: unknown): string | undefi
   if (prefix.length > PREFIX_MAX_LENGTH) {
     throw new Error(
       `deploymentPrefix ${JSON.stringify(prefix)} is ${prefix.length} characters; ` +
-      `the maximum is ${PREFIX_MAX_LENGTH}. Every generated name carries the prefix, ` +
-      'so a long one leaves no room for the name itself.',
+      `the absolute maximum is ${PREFIX_MAX_LENGTH}. The REAL budget is far smaller ` +
+      'and depends on the longest name this app generates — typically 1 to a few ' +
+      'characters (stg, dev, qa are the intended shape). The per-name check at synth ' +
+      'reports the exact figure for your region and enabled plugins.',
     );
   }
   return prefix;
 }
 
-/** Length limit that applies to the resolved form of `baseName`. */
+/**
+ * Length limit inferable from a name's SHAPE alone.
+ *
+ * Path-shaped names are log groups and secrets (512); everything else is held to
+ * the 64 that Lambda functions, IAM roles and EventBridge rules share. The
+ * 63-character DNS-label limit is deliberately NOT here: a bucket name is
+ * indistinguishable from a Lambda name by inspection, so it comes from the call
+ * site via {@link DeploymentNaming.uniqueDnsName}.
+ */
 export function nameLengthLimit(baseName: string): number {
   return baseName.includes('/') ? PATH_NAME_LENGTH_LIMIT : NAME_LENGTH_LIMIT;
+}
+
+/** What kind of namespace a name lives in, and so which limit applies. */
+type NameKind = 'default' | 'dns-label';
+
+/** Human-readable description of the resources a limit governs. */
+function limitDescription(baseName: string, kind: NameKind): string {
+  if (kind === 'dns-label') return 'S3 bucket names and Cognito domain prefixes';
+  return baseName.includes('/')
+    ? 'log group and secret names'
+    : 'Lambda function, IAM role and EventBridge rule names';
 }
 
 /**
@@ -119,7 +155,7 @@ export function nameLengthLimit(baseName: string): number {
  * failure on them would be a regression, not a guard.
  */
 export class DeploymentNaming {
-  private readonly baseNames: string[] = [];
+  private readonly registered: Array<{ baseName: string; kind: NameKind }> = [];
 
   constructor(
     private readonly stack: Stack,
@@ -162,7 +198,23 @@ export class DeploymentNaming {
    * remain portable; the prefix (when set) is a literal, resolved at synth.
    */
   uniqueName(baseName: string): string {
-    this.baseNames.push(baseName);
+    this.registered.push({ baseName, kind: 'default' });
+    return `${this.prefixed(baseName)}-${Aws.ACCOUNT_ID}-${Aws.REGION}`;
+  }
+
+  /**
+   * Physical name for a resource whose name must be a single DNS label: an S3
+   * bucket, or the Cognito hosted-UI domain prefix. Identical to
+   * {@link uniqueName} except that it is held to
+   * {@link DNS_LABEL_LENGTH_LIMIT} (63) rather than 64 — a difference of one
+   * character that decides whether the name deploys.
+   *
+   * A separate method rather than a parameter on `uniqueName` so the tighter
+   * limit is visible at the call site: nothing about the string
+   * `voc-access-logs` says it becomes a bucket.
+   */
+  uniqueDnsName(baseName: string): string {
+    this.registered.push({ baseName, kind: 'dns-label' });
     return `${this.prefixed(baseName)}-${Aws.ACCOUNT_ID}-${Aws.REGION}`;
   }
 
@@ -191,14 +243,15 @@ export class DeploymentNaming {
     const prefix = this.prefix;
     if (!prefix) return [];
     const cost = prefix.length + 1; // the prefix plus its "-" separator
-    return this.baseNames
-      .map((baseName) => ({
+    return this.registered
+      .map(({ baseName, kind }) => ({
         baseName,
-        limit: nameLengthLimit(baseName),
+        kind,
+        limit: kind === 'dns-label' ? DNS_LABEL_LENGTH_LIMIT : nameLengthLimit(baseName),
         length: this.unprefixedLength(baseName),
       }))
       .filter(({ limit, length }) => length + cost > limit)
-      .map(({ baseName, limit, length }) => {
+      .map(({ baseName, kind, limit, length }) => {
         const budget = limit - length - 1; // -1 for the separator
         const affordable = budget > 0
           ? `Use a prefix of at most ${budget} character${budget === 1 ? '' : 's'}`
@@ -206,20 +259,18 @@ export class DeploymentNaming {
         return (
           `deploymentPrefix "${prefix}" makes "${this.prefixed(baseName)}-<account>-<region>" ` +
           `${length + cost} characters, over the ${limit}-character limit for ` +
-          `${baseName.includes('/') ? 'log group and secret names' : 'Lambda function, IAM role and EventBridge rule names'}. ` +
+          `${limitDescription(baseName, kind)}. ` +
           `${affordable}, or shorten the resource name (e.g. disable the plugin that owns it).`
         );
       });
   }
 }
 
-/**
- * Creates a unique resource name using CDK tokens, with no deployment prefix.
- *
- * Retained for callers outside a {@link DeploymentNaming}-aware stack. Prefer
- * `this.uniqueName()` on VocStack, which honours `deploymentPrefix`; a name
- * built here can collide when two copies share an account and region.
- */
-export function uniqueName(baseName: string): string {
-  return `${baseName}-${Aws.ACCOUNT_ID}-${Aws.REGION}`;
-}
+// A bare, prefix-blind `uniqueName(base)` used to be exported here. It is gone
+// deliberately: nothing needs it, and its only remaining effect would be to sit
+// one autocomplete away from `this.uniqueName()` and hand a future resource a
+// name that ignores `deploymentPrefix` — one unprefixed name being one shared
+// resource between two deployments that believe they are isolated. Physical
+// names now have exactly one route, `VocStack.uniqueName` /
+// `VocStack.uniqueDnsName`, and lib/utils/naming-single-source.test.ts keeps it
+// that way.
