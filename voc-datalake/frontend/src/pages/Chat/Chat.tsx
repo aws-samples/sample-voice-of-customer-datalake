@@ -22,6 +22,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { getDaysFromRange } from '../../api/baseUrl'
 import { MAX_CHAT_MESSAGE_LENGTH } from '../../api/streamLimits'
+import { buildChatContext } from './chatContext'
 import { composerState } from './composerState'
 import ChatExportMenu from '../../components/ChatExportMenu'
 import ChatFilters from '../../components/ChatFilters'
@@ -183,13 +184,7 @@ function SidebarSection({
   )
 }
 
-function buildChatContext(days: number, filters: ChatFiltersType): string {
-  const parts = [`Time range: last ${days} days`]
-  if (filters.source != null && filters.source !== '') parts.push(`Source: ${filters.source}`)
-  if (filters.category != null && filters.category !== '') parts.push(`Category: ${filters.category}`)
-  if (filters.sentiment != null && filters.sentiment !== '') parts.push(`Sentiment: ${filters.sentiment}`)
-  return parts.join('. ')
-}
+
 
 /** The over-length reason, kept in its own component so Chat carries no branch. */
 function MessageTooLongNotice({
