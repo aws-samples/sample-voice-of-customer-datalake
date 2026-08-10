@@ -481,7 +481,7 @@ class TestValidationLink:
 
     @patch('feedback_form_handler.aggregates_table')
     def test_create_persists_and_returns_the_link(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """A create request carrying the link persists it and echoes it back.
 
@@ -490,11 +490,6 @@ class TestValidationLink:
         item_to_form allowlist), and a field declared in only one of them is
         silently dropped on the next read.
         """
-        import os
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-
         event = api_gateway_event(
             method='POST',
             path='/feedback-forms',
@@ -505,7 +500,7 @@ class TestValidationLink:
             },
         )
 
-        response = lambda_handler(event, lambda_context)
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
 
         assert body['form']['project_id'] == 'proj-1'
@@ -517,19 +512,14 @@ class TestValidationLink:
 
     @patch('feedback_form_handler.aggregates_table')
     def test_create_without_the_link_stores_empty_strings(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """A form that validates nothing keeps working: link fields default empty."""
-        import os
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-
         event = api_gateway_event(
             method='POST', path='/feedback-forms', body={'name': 'Website Footer Form'}
         )
 
-        response = lambda_handler(event, lambda_context)
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
 
         assert body['form']['project_id'] == ''
@@ -537,7 +527,7 @@ class TestValidationLink:
 
     @patch('feedback_form_handler.aggregates_table')
     def test_get_returns_a_stored_link(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """A stored link is readable back through the authenticated get route."""
         mock_table.get_item.return_value = {
@@ -550,18 +540,13 @@ class TestValidationLink:
             }
         }
 
-        import os
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-
         event = api_gateway_event(
             method='GET',
             path='/feedback-forms/form-123',
             path_params={'form_id': 'form-123'},
         )
 
-        response = lambda_handler(event, lambda_context)
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
 
         assert body['form']['project_id'] == 'proj-1'
@@ -569,7 +554,7 @@ class TestValidationLink:
 
     @patch('feedback_form_handler.aggregates_table')
     def test_update_writes_the_link(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """PUT accepts the link fields — they are in UPDATABLE_FIELDS."""
         mock_table.update_item.return_value = {
@@ -581,11 +566,6 @@ class TestValidationLink:
             }
         }
 
-        import os
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-
         event = api_gateway_event(
             method='PUT',
             path='/feedback-forms/form-123',
@@ -593,7 +573,7 @@ class TestValidationLink:
             body={'project_id': 'proj-2', 'document_id': 'doc-7'},
         )
 
-        response = lambda_handler(event, lambda_context)
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
 
         assert body['form']['project_id'] == 'proj-2'
@@ -603,18 +583,13 @@ class TestValidationLink:
 
     @patch('feedback_form_handler.aggregates_table')
     def test_update_can_clear_the_link(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """Clearing the link (empty strings) reaches DynamoDB rather than being
         dropped as falsy — an admin must be able to unlink a form."""
         mock_table.update_item.return_value = {
             'Attributes': {'form_id': 'form-123', 'project_id': '', 'document_id': ''}
         }
-
-        import os
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
 
         event = api_gateway_event(
             method='PUT',
@@ -623,30 +598,21 @@ class TestValidationLink:
             body={'project_id': '', 'document_id': ''},
         )
 
-        lambda_handler(event, lambda_context)
+        feedback_form_handler.lambda_handler(event, lambda_context)
 
         expr_values = mock_table.update_item.call_args.kwargs['ExpressionAttributeValues']
         assert expr_values[':project_id'] == ''
         assert expr_values[':document_id'] == ''
 
-    def test_item_to_form_declares_every_default_config_field(self):
+    def test_item_to_form_declares_every_default_config_field(self, feedback_form_handler):
         """Every DEFAULT_FORM_CONFIG field must also be in the item_to_form
         allowlist. build_form_item seeds the record from that dict and
         item_to_form projects it on read, so a field in one and not the other
         persists but is never returned (or vice versa)."""
-        import os
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import (
-            DEFAULT_FORM_CONFIG,
-            UPDATABLE_FIELDS,
-            item_to_form,
-        )
+        projected = set(feedback_form_handler.item_to_form({}))
 
-        projected = set(item_to_form({}))
-
-        assert set(DEFAULT_FORM_CONFIG) <= projected
-        assert set(UPDATABLE_FIELDS) <= projected
+        assert set(feedback_form_handler.DEFAULT_FORM_CONFIG) <= projected
+        assert set(feedback_form_handler.UPDATABLE_FIELDS) <= projected
 
 
 class TestPublicConfigDoesNotLeakTheLink:
@@ -657,7 +623,7 @@ class TestPublicConfigDoesNotLeakTheLink:
 
     @patch('feedback_form_handler.aggregates_table')
     def test_public_config_omits_project_and_document_ids(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """GET /feedback-forms/<id>/config must not expose the link fields."""
         mock_table.get_item.return_value = {
@@ -671,18 +637,13 @@ class TestPublicConfigDoesNotLeakTheLink:
             }
         }
 
-        import os
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-
         event = api_gateway_event(
             method='GET',
             path='/feedback-forms/form-123/config',
             path_params={'form_id': 'form-123'},
         )
 
-        response = lambda_handler(event, lambda_context)
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
 
         config = body['config']
@@ -698,7 +659,7 @@ class TestPublicConfigDoesNotLeakTheLink:
 
     @patch('feedback_form_handler.aggregates_table')
     def test_public_config_serves_every_field_the_widget_reads(
-        self, mock_table, api_gateway_event, lambda_context
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """The narrower public projection must not have dropped a field the
         embedded widget depends on."""
@@ -711,18 +672,13 @@ class TestPublicConfigDoesNotLeakTheLink:
             }
         }
 
-        import os
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-
         event = api_gateway_event(
             method='GET',
             path='/feedback-forms/form-123/config',
             path_params={'form_id': 'form-123'},
         )
 
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = json.loads(feedback_form_handler.lambda_handler(event, lambda_context)['body'])
 
         # Field names read by lambda/api/static/feedback-widget.js.
         for field in (
@@ -731,3 +687,108 @@ class TestPublicConfigDoesNotLeakTheLink:
             'collect_email', 'success_message', 'theme', 'custom_fields',
         ):
             assert field in body['config'], f'widget reads config.{field}'
+
+
+class TestValidationLinkBoundary:
+    """The link fields are writable, so they are validated on the way in.
+
+    They are the only writable fields whose values another surface later matches
+    on: the Prioritization page pairs a form to a document by them. A non-string
+    would be stored verbatim by DynamoDB and then silently match nothing, which
+    reads on the page as "this form collected no evidence" rather than as the
+    bad request it was.
+    """
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_create_rejects_a_non_string_project_id(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """A structured value is a client error, not something to persist."""
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms',
+            body={'name': 'Bad form', 'project_id': {'nested': 'object'}},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        # Nothing may be written: rejecting after the put would leave the record
+        # behind and only fail the response.
+        mock_table.put_item.assert_not_called()
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_update_rejects_a_non_string_document_id(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """PUT is validated on the same path as POST."""
+        event = api_gateway_event(
+            method='PUT',
+            path='/feedback-forms/form-123',
+            path_params={'form_id': 'form-123'},
+            body={'document_id': ['doc-1', 'doc-2']},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        mock_table.update_item.assert_not_called()
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_create_rejects_an_over_long_link_field(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The values are server-minted identifiers, so anything long is not one."""
+        too_long = 'p' * (feedback_form_handler.LINK_FIELD_MAX_LENGTH + 1)
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms',
+            body={'name': 'Bad form', 'project_id': too_long},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        mock_table.put_item.assert_not_called()
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_accepts_a_link_at_the_length_limit(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The cap is inclusive — an id exactly at the limit is still valid."""
+        at_limit = 'p' * feedback_form_handler.LINK_FIELD_MAX_LENGTH
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms',
+            body={'name': 'Edge form', 'project_id': at_limit},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert mock_table.put_item.call_args.kwargs['Item']['project_id'] == at_limit
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_request_without_the_link_is_untouched_by_validation(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """Absent is always valid: the link is optional and must stay so."""
+        event = api_gateway_event(
+            method='POST', path='/feedback-forms', body={'name': 'Website Footer Form'}
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+
+    def test_every_link_field_is_updatable_and_validated(self, feedback_form_handler):
+        """The validated set must not drift from the writable set.
+
+        A link field added to UPDATABLE_FIELDS but not to LINK_FIELDS would be
+        writable without validation — the exact gap this class closes — so the
+        invariant is asserted over the actual tuples rather than left to review.
+        """
+        link_fields = set(feedback_form_handler.LINK_FIELDS)
+
+        assert link_fields <= set(feedback_form_handler.UPDATABLE_FIELDS)
+        assert link_fields <= set(feedback_form_handler.DEFAULT_FORM_CONFIG)

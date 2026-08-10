@@ -81,6 +81,41 @@ UPDATABLE_FIELDS = [
 ]
 
 
+# The link fields hold server-minted identifiers (`proj_20260101120000`,
+# `prfaq_...`), so anything long is not one. A cap keeps a client from writing an
+# arbitrarily large blob into an attribute the Prioritization page then reads
+# back, and keeps the item within DynamoDB's 400 KB limit for reasons a caller
+# cannot argue with.
+LINK_FIELD_MAX_LENGTH = 128
+
+# Fields whose value is an identifier the API mints, not free text the caller
+# composes. Validated on the way in — see validate_link_fields.
+LINK_FIELDS = ('project_id', 'document_id')
+
+
+def validate_link_fields(body: dict) -> None:
+    """Reject a malformed project_id / document_id before it is persisted.
+
+    These two are the only writable fields whose values another surface later
+    matches on (Prioritization pairs a form to a document by them), so a
+    non-string — a dict, a list, a number — would be stored verbatim and then
+    silently match nothing. Failing the request says so instead.
+
+    Absent is always fine: the link is optional, and '' is how "validates
+    nothing" is spelled.
+    """
+    for field in LINK_FIELDS:
+        if field not in body:
+            continue
+        value = body[field]
+        if not isinstance(value, str):
+            raise ValidationError(f'{field} must be a string')
+        if len(value) > LINK_FIELD_MAX_LENGTH:
+            raise ValidationError(
+                f'{field} must be at most {LINK_FIELD_MAX_LENGTH} characters'
+            )
+
+
 def build_form_item(body: dict, form_id: str | None = None) -> dict:
     """Build DynamoDB item from request body with defaults."""
     now = datetime.now(timezone.utc).isoformat()
@@ -241,6 +276,7 @@ def list_forms():
 def create_form():
     """Create a new feedback form."""
     body = app.current_event.json_body or {}
+    validate_link_fields(body)
     item = build_form_item(body)
     
     try:
@@ -278,6 +314,7 @@ def get_form(form_id: str):
 def update_form(form_id: str):
     """Update a feedback form."""
     body = app.current_event.json_body or {}
+    validate_link_fields(body)
     now = datetime.now(timezone.utc).isoformat()
     
     # Build update expression dynamically
