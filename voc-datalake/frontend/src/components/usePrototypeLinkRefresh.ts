@@ -46,9 +46,20 @@ import type { ProjectDocument } from '../api/types'
  *   so it is held in a ref: the effect must re-arm when the DEADLINE moves and not
  *   when a caller's inline arrow gets a new identity, or a page that re-renders per
  *   keystroke would rebuild the timer on every one.
- * @param refreshScope what `onRefresh` refreshes — the project id on a detail page,
- *   a fixed key for a page that always reads the same set. Required, and required
- *   for correctness rather than tidiness: see the effect below.
+ * @param refreshScope the identity `onRefresh` is scoped to — the project id on a
+ *   detail page, a fixed key for a page that always reads the same set. A CHANGE to
+ *   it re-arms the timer, which is what stops one armed for project A outliving a
+ *   navigation to B whose deadline matches to the second (see the effect below).
+ *
+ *   Positional and unconditional rather than optional, so a caller cannot forget it
+ *   — forgetting it is the bug. `undefined` is admitted deliberately, because a
+ *   detail page's id legitimately is (`useProjectData` gates its query on
+ *   `id != null`), and it cannot hide a collision: the deps array is per hook
+ *   instance, so two scopes only "collapse" within one caller, and there
+ *   `undefined` means no project ⇒ no documents ⇒ no deadline ⇒ `refreshDelayMs`
+ *   returns null and nothing is armed. Tightening this to `string` would only force
+ *   callers to invent a sentinel, which collapses exactly the same way while
+ *   reading as though it does not.
  */
 export function usePrototypeLinkRefresh(
   documents: ReadonlyArray<Pick<ProjectDocument, 'document_type' | 'prototype_url'>> | undefined,
