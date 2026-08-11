@@ -78,24 +78,81 @@ def _leading_literal(node: ast.expr) -> str | None:
     return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
 
 
-def _section_headers() -> list[str | None]:
-    """The leading literal of every `sections.append(...)` in the producer."""
-    source = _read(PRODUCER_SOURCE)
+PRODUCER_FUNCTION = 'build_product_context_block'
+
+#: The list whose members become the returned block. Named once: every helper
+#: below reasons about mutations of this name.
+SECTIONS = 'sections'
+
+
+def _producer_function() -> ast.FunctionDef:
+    """The producer's AST node, with the two conditions its readers depend on.
+
+    Both are asserted here rather than at the call sites: a rename must produce
+    the message that names the rename, not an `IndexError`; and `ast.walk`
+    descends into nested definitions, so a nested function's statements would be
+    collected as the producer's own (the same leak the research handler's test
+    guards against, demonstrated there by mutation).
+    """
     functions = [
-        node for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.FunctionDef) and node.name == 'build_product_context_block'
+        node for node in ast.walk(ast.parse(_read(PRODUCER_SOURCE)))
+        if isinstance(node, ast.FunctionDef) and node.name == PRODUCER_FUNCTION
     ]
-    assert len(functions) == 1, f'Expected one build_product_context_block; found {len(functions)}.'
-    return [
-        _leading_literal(node.args[0])
-        for node in ast.walk(functions[0])
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == 'append'
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == 'sections'
-        and node.args
+    assert len(functions) == 1, (
+        f'Expected exactly one {PRODUCER_FUNCTION} in {PRODUCER_SOURCE}; found '
+        f'{len(functions)}. If it was renamed or duplicated, update '
+        f'PRODUCER_FUNCTION in this test file.'
+    )
+    nested = [
+        node.name for node in ast.walk(functions[0])
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node is not functions[0]
     ]
+    assert nested == [], (
+        f'{PRODUCER_FUNCTION} now defines nested function(s) {nested}, whose '
+        f'statements ast.walk cannot tell from the producer\'s own. Scope the '
+        f'helpers below to the function body before trusting them again.'
+    )
+    return functions[0]
+
+
+def _section_mutations() -> list[tuple[int, str, ast.expr | None]]:
+    """Every statement that changes `sections`, as (line, kind, value).
+
+    `kind` is `'append'`, `'init'` for `sections … = []`, or the shape of whatever
+    else was found: a method name as written (`'extend'`, `'insert'`, …), `'+='`,
+    `'setitem'`, or `'rebind'` for an assignment of anything but an empty list.
+    Every kind in that list is one this function can actually emit — a label it
+    could not produce would be a promise the reader cannot rely on.
+
+    The heading check can only reason about `append`, so collecting every kind
+    rather than only the appends is what stops it passing vacuously over a form it
+    never looks at. Read uses like `'\\n\\n'.join(sections)` are not mutations and
+    are deliberately not collected.
+    """
+    found: list[tuple[int, str, ast.expr | None]] = []
+    for node in ast.walk(_producer_function()):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == SECTIONS
+        ):
+            found.append((node.lineno, node.func.attr, node.args[0] if node.args else None))
+        elif isinstance(node, (ast.AnnAssign, ast.Assign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id == SECTIONS:
+                    if isinstance(node, ast.AugAssign):
+                        kind = '+='
+                    elif isinstance(node.value, ast.List) and not node.value.elts:
+                        kind = 'init'
+                    else:
+                        kind = 'rebind'
+                    found.append((node.lineno, kind, node.value))
+                elif isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name) \
+                        and target.value.id == SECTIONS:
+                    found.append((node.lineno, 'setitem', node.value))
+    return found
 
 
 class TestProductContextPlaceholderLockstep:
@@ -126,36 +183,64 @@ class TestNoBlockCanBeBlankWithoutBeingThePlaceholder:
     its own content list is non-empty.
 
     That is an argument, so it is worth exactly nothing unless something enforces
-    it. These two tests are the enforcement: a future section that could be blank,
-    or a third return, fails here and asks for the guard to be reconsidered. Until
-    then the guard is unreachable, and an unreachable guard is dead code that
-    reads as protection.
+    it. These tests are the enforcement: a third return, a section that could be
+    blank, or a way of adding a section that the heading check cannot read, each
+    fail here and ask for the guard to be reconsidered. Until then the guard is
+    unreachable, and an unreachable guard is dead code that reads as protection.
+
+    The last of the three exists because the check's own failure direction is the
+    dangerous one. A heading check that inspects only `sections.append(...)`
+    passes vacuously the moment a section arrives by `extend`, `+=` or a
+    comprehension — it would stop watching without saying so, which is exactly
+    the fail-open shape it was written to rule out. So the enumeration of HOW
+    sections may be added is asserted first, and the headings second.
     """
 
     def test_the_producer_has_exactly_two_returns(self):
-        source = _read(PRODUCER_SOURCE)
-        functions = [
-            node for node in ast.walk(ast.parse(source))
-            if isinstance(node, ast.FunctionDef) and node.name == 'build_product_context_block'
-        ]
-        returns = [node for node in ast.walk(functions[0]) if isinstance(node, ast.Return)]
+        returns = [node for node in ast.walk(_producer_function()) if isinstance(node, ast.Return)]
         assert len(returns) == 2, (
-            f'build_product_context_block now has {len(returns)} returns, not 2. '
-            f'The generator decides product_context_included by comparing the '
-            f"result against one placeholder literal — check that every new exit "
-            f'either is that placeholder or carries real content.'
+            f'{PRODUCER_FUNCTION} now has {len(returns)} returns, not 2. The '
+            f'generator decides product_context_included by comparing the result '
+            f'against one placeholder literal — check that every new exit either '
+            f'is that placeholder or carries real content.'
+        )
+
+    def test_sections_is_only_ever_built_by_append(self):
+        """Fail CLOSED on an unrecognised mutation, rather than ignoring it.
+
+        Asserted as a closed set, not as "no extend": a form nobody has thought
+        of yet is a finding here instead of a silent gap in the test below.
+        """
+        unreadable = [(line, kind) for line, kind, _ in _section_mutations() if kind not in ('append', 'init')]
+        assert unreadable == [], (
+            f'{SECTIONS} is mutated by something other than append at '
+            f'{unreadable} in {PRODUCER_SOURCE}. The heading check below can only '
+            f'read appends, so it would pass while watching nothing. Either build '
+            f'sections with append, or extend that check to cover this form — and '
+            f'until then treat the missing `bool(block and block.strip())` guard '
+            f'in {CONSUMER_SOURCE}::_product_context as no longer justified.'
+        )
+
+    def test_sections_starts_empty_exactly_once(self):
+        """The `if not sections:` fallback means what it says only if the list
+        begins empty and is never rebound to something non-empty."""
+        inits = [line for line, kind, _ in _section_mutations() if kind == 'init']
+        assert len(inits) == 1, (
+            f'Expected exactly one `{SECTIONS} … = []` in {PRODUCER_FUNCTION}; '
+            f'found {len(inits)} at lines {inits}.'
         )
 
     def test_every_section_starts_with_a_visible_heading(self):
-        headers = _section_headers()
-        assert headers, 'No sections.append(...) found — did the producer change shape?'
-        for header in headers:
+        appends = [(line, value) for line, kind, value in _section_mutations() if kind == 'append']
+        assert appends, f'No {SECTIONS}.append(...) found — did the producer change shape?'
+        for line, value in appends:
+            header = _leading_literal(value) if value is not None else None
             assert header is not None and header.strip().startswith('###'), (
-                f'A section is appended without a leading "###" heading literal '
-                f'({header!r}). A section that can be blank makes a non-placeholder '
-                f'block blank too, and _product_context would then record '
-                f'product_context_included: True for a document with no product '
-                f'context. Either keep the heading, or add the '
+                f'The section appended at {PRODUCER_SOURCE}:{line} has no leading '
+                f'"###" heading literal ({header!r}). A section that can be blank '
+                f'makes a non-placeholder block blank too, and _product_context '
+                f'would then record product_context_included: True for a document '
+                f'with no product context. Either keep the heading, or add the '
                 f'`bool(block and block.strip())` guard in '
                 f'{CONSUMER_SOURCE}::_product_context.'
             )
