@@ -36,7 +36,13 @@ def _frontend_roles() -> tuple[str, ...]:
         f'Expected exactly one DERIVATION_ROLES definition in {FRONTEND_SOURCE}; '
         f'found {len(matches)}.'
     )
-    return tuple(re.findall(r"'([^']+)'", matches[0]))
+    # Anchored to whole entry LINES ("  'reference'," and nothing else) rather
+    # than to every quoted run in the array body. The array is JSDoc-commented
+    # between entries, and an apostrophe in one of those comments ("the model's
+    # input") re-pairs every quote after it: an even number injects a phantom
+    # role, an odd number garbles all four. No comment line ends in "',", so
+    # scanning entry lines only keeps this immune to the prose around them.
+    return tuple(re.findall(r"^\s*'([^']+)',", matches[0], re.MULTILINE))
 
 
 class TestDerivationRolesLockstep:

@@ -68,6 +68,42 @@ describe('a document with a declared derivation', () => {
   })
 })
 
+describe('a declared derivation whose every selected document was dropped', () => {
+  // The generator records the selected count before it reads the documents, so
+  // a request whose selected documents had all been deleted stores "5 selected,
+  // 0 used". That record is the contract working, not an empty one.
+  const noneReached = {
+    document_id: 'prd_3',
+    derivation: {
+      sources: [],
+      selected_document_count: 5,
+      feedback_count: 0,
+      persona_ids: [],
+      product_context_included: false,
+    },
+  }
+
+  it('is not treated as having no derivation', () => {
+    expect(resolveDerivation(noneReached).origin).toBe('declared')
+  })
+
+  it('reports the count it recorded, so a consumer can say none of five was used', () => {
+    const resolved = resolveDerivation(noneReached)
+    expect(resolved.sources).toEqual([])
+    expect(resolved.selected_document_count).toBe(5)
+  })
+
+  it('does not fall back to the legacy fields of the same document', () => {
+    // The decisive case: the fallback would report one merge_input source and
+    // origin 'legacy', silently replacing "none of the five reached the model"
+    // with a lineage this document does not have.
+    const resolved = resolveDerivation({ ...noneReached, source_documents: ['legacy_1'] })
+    expect(resolved.origin).toBe('declared')
+    expect(resolved.sources).toEqual([])
+    expect(resolved.selected_document_count).toBe(5)
+  })
+})
+
 describe('resolving sources against the project documents', () => {
   const doc = {
     derivation: {

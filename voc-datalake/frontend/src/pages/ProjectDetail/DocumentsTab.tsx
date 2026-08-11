@@ -11,13 +11,12 @@ import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
-import { resolveDerivation } from '../../api/derivation'
+import { resolveDerivation, type DerivationRole, type DerivationSource } from '../../api/derivation'
 import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
 import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../components/PrototypeLinkActions'
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
-import type { DerivationRole, DerivationSource } from '../../api/derivation'
 import type {
   ProjectDocument, Project,
 } from '../../api/types'
@@ -545,6 +544,7 @@ function DerivationSourceRow({
   return (
     <span className="flex items-center gap-2 min-w-0">
       <button
+        type="button"
         onClick={() => onSelect(source.document_id)}
         className="flex items-center gap-2 min-w-0 text-left text-blue-600 hover:underline"
       >

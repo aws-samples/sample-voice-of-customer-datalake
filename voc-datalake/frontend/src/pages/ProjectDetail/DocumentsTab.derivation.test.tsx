@@ -86,6 +86,13 @@ const EXACT_PRD = makeDoc({
   }),
 })
 
+/** Five selected, none reached the model — every one had been deleted since. */
+const NONE_REACHED_PRD = makeDoc({
+  document_id: 'prd_none_reached',
+  title: 'PRD whose references all vanished',
+  derivation: derivation({ selected_document_count: 5 }),
+})
+
 /** Pre-`derivation` prototype: only the old fixed-arity lineage fields. */
 const LEGACY_PROTOTYPE = makeDoc({
   document_id: 'proto_legacy',
@@ -176,6 +183,15 @@ describe('the difference between documents selected and documents used', () => {
   it('says nothing at all when the two numbers agree', () => {
     renderTab(EXACT_PRD)
     expect(within(provenance()).queryByText(/selected documents used/)).not.toBeInTheDocument()
+  })
+
+  it('still renders when none of the selected documents reached the model', () => {
+    // The count is recorded before the documents are read, so a request whose
+    // selected documents had all been deleted stores "5 selected, 0 used". That
+    // is the document with the most to explain, so it must not read as
+    // hand-authored.
+    renderTab(NONE_REACHED_PRD)
+    expect(within(provenance()).getByText('0 of 5 selected documents used')).toBeInTheDocument()
   })
 
   it('reads as neutral information: no warning colour and no icon', () => {

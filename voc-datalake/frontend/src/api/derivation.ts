@@ -221,9 +221,22 @@ function derivationFromLegacyFields(document: Record<string, unknown>): Document
   }
 }
 
+/**
+ * True when the derivation can say nothing at all about how the document was
+ * built — every recorded input, not just the sources.
+ *
+ * `selected_document_count` counts even with no sources. "Five selected, none
+ * used" is a real record, not an empty one: the generator sets the count before
+ * it reads the documents, so a request whose every selected document had since
+ * been deleted produces exactly that. Omitting the count here treated such a
+ * document as having no derivation, fell through to the legacy path, and
+ * reported `origin: 'none'` — so the Documents tab rendered nothing for the one
+ * document with the most to explain.
+ */
 function isEmpty(derivation: DocumentDerivation): boolean {
   return (
     derivation.sources.length === 0 &&
+    derivation.selected_document_count === 0 &&
     derivation.feedback_count === 0 &&
     derivation.persona_ids.length === 0 &&
     !derivation.product_context_included
