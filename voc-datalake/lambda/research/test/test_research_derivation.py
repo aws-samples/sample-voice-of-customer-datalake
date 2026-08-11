@@ -9,6 +9,8 @@ The fixture selects FIVE reference documents while the step consumes three, and
 returns them in reverse order, so an implementation that recorded the requested
 ids — or a slice of them — could not pass.
 """
+import ast
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -95,6 +97,65 @@ class TestInitializeRecordsInputs:
             'persona_ids': [],
             'product_context_included': False,
         }
+
+
+class TestEveryExitCarriesTheDerivation:
+    """Structural, not behavioural: EVERY return out of step_initialize must
+    carry the key, not just the ones a test happens to drive.
+
+    The state machine's resultSelector references `$.Payload.derivation`
+    unconditionally, and a JSONPath miss there raises `States.Runtime` — which a
+    `States.ALL` catch does NOT intercept. So a future early return that omits
+    the key would fail OUTSIDE the error handler and leave the job stuck at
+    `running` rather than `failed`: no report, no failure, no diagnosis. Reading
+    the function's returns out of its AST is the only check that covers the paths
+    nobody has written yet.
+    """
+
+    @staticmethod
+    def _step_initialize() -> ast.FunctionDef:
+        # lambda/research/test/ -> lambda/research/
+        source = (Path(__file__).resolve().parents[1] / 'research_step_handler.py').read_text(encoding='utf-8')
+        functions = [
+            node for node in ast.walk(ast.parse(source))
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == 'step_initialize'
+        ]
+        assert len(functions) == 1, f'Expected one step_initialize; found {len(functions)}.'
+        return functions[0]
+
+    def test_it_contains_no_nested_function_whose_returns_this_test_would_miss(self):
+        """Guards the guard: `ast.walk` would collect a nested function's returns
+        as if they were the step's own, so this test only means what it says
+        while there is no nested function."""
+        fn = self._step_initialize()
+        nested = [
+            node.name for node in ast.walk(fn)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node is not fn
+        ]
+        assert nested == [], (
+            f'step_initialize now defines nested function(s) {nested}. Scope the '
+            f'return collection below to the step body before trusting it again.'
+        )
+
+    def test_every_return_is_a_dict_literal_declaring_derivation(self):
+        returns = [node for node in ast.walk(self._step_initialize()) if isinstance(node, ast.Return)]
+        assert returns, 'step_initialize has no return statement at all.'
+
+        for node in returns:
+            assert isinstance(node.value, ast.Dict), (
+                f'The return at research_step_handler.py:{node.lineno} is not a dict '
+                f'literal, so this test can no longer tell whether it declares '
+                f'derivation. Keep the returns literal, or assert the key another way.'
+            )
+            keys = [k.value for k in node.value.keys if isinstance(k, ast.Constant)]
+            assert 'derivation' in keys, (
+                f"The return at research_step_handler.py:{node.lineno} omits "
+                f"'derivation'. The state machine's resultSelector references "
+                f"$.Payload.derivation unconditionally and a JSONPath miss raises "
+                f"States.Runtime, which the States.ALL catch does not intercept — "
+                f"the execution would die outside handleError, leaving the job at "
+                f"'running'. Add the key (build_derivation() is the empty value)."
+            )
 
 
 class TestSaveWritesDerivation:

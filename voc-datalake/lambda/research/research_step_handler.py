@@ -243,6 +243,11 @@ def step_initialize(event: dict) -> dict:
         # travels the state machine like web_search_queries does. ALWAYS
         # present (empty when nothing was selected), because the resultSelector
         # references it unconditionally and an absent key fails the state.
+        # Spelled literally, NOT as DERIVATION_FIELD: this is the Step Functions
+        # payload key, whose counterparts are `event.get('derivation')` in
+        # step_save and 'derivation.$': '$.Payload.derivation' in the CDK.
+        # DERIVATION_FIELD is the DynamoDB attribute name, and coupling the two
+        # would make renaming the stored column silently change the wire.
         'derivation': build_derivation(
             sources=used_sources,
             selected_document_count=len(selected_document_ids),
