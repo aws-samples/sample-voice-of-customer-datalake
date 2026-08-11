@@ -57,6 +57,22 @@
   },
   "documents": {
     "deleteDocument": "Dokument löschen",
+    "derivation": {
+      "builtFrom": "Erstellt aus",
+      "feedbackUsed_one": "{{count}} Feedback-Eintrag verwendet",
+      "feedbackUsed_other": "{{count}} Feedback-Einträge verwendet",
+      "personasUsed_one": "{{count}} Persona verwendet",
+      "personasUsed_other": "{{count}} Personas verwendet",
+      "productContext": "Produktkontext einbezogen",
+      "roles": {
+        "mergeInput": "Zusammengeführt",
+        "prototypePrd": "Prototyp-Quelle PRD",
+        "prototypePrfaq": "Prototyp-Quelle PR/FAQ",
+        "reference": "Referenz"
+      },
+      "selectedUsed": "{{used}} von {{selected}} ausgewählten Dokumenten verwendet",
+      "unavailable": "Nicht mehr verfügbar"
+    },
     "editDocument": "Dokument bearbeiten",
     "newDocument": "Neues Dokument",
     "noDocuments": "Keine Dokumente",

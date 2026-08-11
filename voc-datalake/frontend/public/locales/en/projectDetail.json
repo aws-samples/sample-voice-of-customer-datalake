@@ -57,6 +57,22 @@
   },
   "documents": {
     "deleteDocument": "Delete document",
+    "derivation": {
+      "builtFrom": "Built from",
+      "feedbackUsed_one": "{{count}} feedback item used",
+      "feedbackUsed_other": "{{count}} feedback items used",
+      "personasUsed_one": "{{count}} persona used",
+      "personasUsed_other": "{{count}} personas used",
+      "productContext": "Product context included",
+      "roles": {
+        "mergeInput": "Merged in",
+        "prototypePrd": "Prototype source PRD",
+        "prototypePrfaq": "Prototype source PR/FAQ",
+        "reference": "Reference"
+      },
+      "selectedUsed": "{{used}} of {{selected}} selected documents used",
+      "unavailable": "No longer available"
+    },
     "editDocument": "Edit document",
     "newDocument": "New Document",
     "noDocuments": "No documents",
