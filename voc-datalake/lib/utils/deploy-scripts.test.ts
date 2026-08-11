@@ -40,6 +40,21 @@ function declaredStackIds(): Set<string> {
   return new Set(ids);
 }
 
+/**
+ * A stack name written into a shell script as a literal rather than a variable.
+ *
+ * `[\w-]` rather than `\w`, and either quote style, because the likeliest wrong
+ * edit here is not `VocCoreStack` — it is pasting the OTHER deployment's
+ * `b-VocCoreStack`, which a `\w+` pattern reads as no match at all.
+ *
+ * Declared WITHOUT `/g`, with the global copy made at the `matchAll` call site:
+ * `expect().toMatch()` runs `regex.test()` under the hood, and `test()` on a
+ * global regex advances `lastIndex`, so a shared `/g` pattern would examine the
+ * second and subsequent strings from an offset — quietly turning the self-test
+ * below into nonsense.
+ */
+const LITERAL_STACK_NAME = /--stack-name\s+['"]?([\w-]*Stack)\b/;
+
 /** `deploy:*` scripts whose command is a bare `cdk deploy <SingleStack>`. */
 function stackTargetedScripts(): Array<{ name: string; stack: string }> {
   const pkg = JSON.parse(
@@ -109,14 +124,39 @@ describe.each([
     // which a shell script cannot see, so an environment variable is the only
     // way to point these at the right deployment — and a literal here silently
     // points them at the wrong one.
-    const literals = [...source().matchAll(/--stack-name\s+"?(\w+Stack)\b/g)].map((m) => m[1]);
+    const literals = [...source().matchAll(new RegExp(LITERAL_STACK_NAME, 'g'))].map((m) => m[1]);
     expect(
       literals,
       `${label} hardcodes stack name(s): ${literals.join(', ')}. Use "$CORE_STACK"/"$API_STACK".`,
     ).toEqual([]);
     // ...and it really does query CloudFormation, so the assertion above cannot
-    // pass merely because the script stopped resolving stacks altogether.
+    // pass merely because the script stopped resolving stacks altogether. This
+    // also pins that the variable is QUOTED — an unquoted $CORE_STACK would word-
+    // split, which is a different bug with the same symptom (wrong stack).
     expect(source(), `${label} no longer queries CloudFormation`).toMatch(/--stack-name\s+"\$/);
+  });
+});
+
+describe('the literal-stack-name pattern', () => {
+  it('catches the shapes a prefixed-deployment mistake actually takes', () => {
+    // Every use of this pattern asserts it finds NOTHING, which is what a pattern
+    // that matches nothing at all also reports. Its first version was narrower
+    // than the mistake: `\w` excludes `-`, so the most likely wrong edit of all —
+    // pasting the OTHER deployment's prefixed stack name — went uncaught, and so
+    // did a single-quoted literal.
+    for (const hardcoded of [
+      '  --stack-name VocCoreStack \\',
+      '  --stack-name "VocApiStack" \\',
+      "  --stack-name 'VocCoreStack' \\",
+      '  --stack-name b-VocCoreStack \\', // the other deployment's stack
+    ]) {
+      expect(hardcoded, hardcoded).toMatch(LITERAL_STACK_NAME);
+    }
+
+    // ...and does not fire on the overridable forms both scripts use.
+    for (const parameterised of ['  --stack-name "$CORE_STACK" \\', '  --stack-name "$1" \\']) {
+      expect(parameterised, parameterised).not.toMatch(LITERAL_STACK_NAME);
+    }
   });
 });
 
