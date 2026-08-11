@@ -57,6 +57,22 @@
   },
   "documents": {
     "deleteDocument": "Eliminar documento",
+    "derivation": {
+      "builtFrom": "Creado a partir de",
+      "feedbackUsed_one": "{{count}} comentario utilizado",
+      "feedbackUsed_other": "{{count}} comentarios utilizados",
+      "personasUsed_one": "{{count}} persona utilizada",
+      "personasUsed_other": "{{count}} personas utilizadas",
+      "productContext": "Contexto del producto incluido",
+      "roles": {
+        "mergeInput": "Fusionado",
+        "prototypePrd": "PRD de origen del prototipo",
+        "prototypePrfaq": "PR/FAQ de origen del prototipo",
+        "reference": "Referencia"
+      },
+      "selectedUsed": "{{used}} de {{selected}} documentos seleccionados utilizados",
+      "unavailable": "Ya no está disponible"
+    },
     "editDocument": "Editar documento",
     "newDocument": "Nuevo Documento",
     "noDocuments": "Sin documentos",

@@ -22,6 +22,14 @@ from shared.feedback import query_feedback_by_date
 from shared.api import validate_date_basis
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
 from shared.prototypes import prototype_s3_key
+from shared.derivation import (
+    DERIVATION_FIELD,
+    ROLE_PROTOTYPE_PRD,
+    ROLE_PROTOTYPE_PRFAQ,
+    ROLE_REFERENCE,
+    build_derivation,
+    derivation_source,
+)
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -46,15 +54,23 @@ def _gather_context(
     feedback_table,
     project_id: str,
     doc_config: dict,
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     """Gather feedback, document, and persona context for document generation.
 
     Returns:
-        (feedback_context, personas_context) formatted for LLM prompts.
+        (feedback_context, personas_context, inputs) where the first two are
+        formatted for LLM prompts and `inputs` records what actually reached
+        them — the reference documents used (not the ones requested), how many
+        were selected, the feedback items included, and the personas used. The
+        caller folds `inputs` into the document's `derivation` (shared.derivation).
     """
     data_sources = doc_config.get('data_sources', {})
     feedback_context = ''
     personas_context = ''
+    used_sources: list[dict] = []
+    used_feedback_count = 0
+    used_persona_ids: list[str] = []
+    selected_document_count = 0
 
     # Gather feedback
     if data_sources.get('feedback'):
@@ -77,6 +93,8 @@ def _gather_context(
                     f"{item.get('original_text', '')[:300]}"
                 )
             feedback_context = '\n\n'.join(parts)
+            # Count what went into the prompt, not what the query returned.
+            used_feedback_count = len(parts)
 
     # Query project items once if we need personas or documents
     all_project_items = []
@@ -100,28 +118,68 @@ def _gather_context(
                     f"- Goals: {', '.join(p.get('goals', [])[:3])}\n"
                     f"- Frustrations: {', '.join(p.get('frustrations', [])[:3])}"
                 )
+                pid = p.get('persona_id')
+                if pid:
+                    used_persona_ids.append(pid)
             personas_context = '\n\n'.join(parts)
 
     # Gather reference documents and append to feedback context
     if data_sources.get('documents') or data_sources.get('research'):
         ctx.update_progress(40, 'fetching_documents')
         selected_ids = doc_config.get('selected_document_ids', [])
+        selected_document_count = len(selected_ids)
         docs = [i for i in all_project_items if i.get('sk', '').startswith(('RESEARCH#', 'PRD#', 'PRFAQ#', 'DOC#'))]
         if selected_ids:
             docs = [d for d in docs if d.get('document_id') in selected_ids]
         if docs:
             doc_parts = []
+            # The [:3] cap silently drops the rest of the selection. Recording
+            # each document from THIS loop (rather than from selected_ids) is
+            # what makes the recorded provenance the documents that actually
+            # reached the model; selected_document_count above states how many
+            # were asked for, so the drop is visible. The cap itself is a
+            # separate known issue and is deliberately left alone.
             for d in docs[:3]:
                 doc_parts.append(f"### {d.get('title', 'Untitled')}\n{d.get('content', '')[:3000]}")
+                source = derivation_source(d.get('document_id'), ROLE_REFERENCE)
+                if source:
+                    used_sources.append(source)
             doc_text = "## Reference Documents\n\n" + '\n\n'.join(doc_parts)
             feedback_context = f"{feedback_context}\n\n{doc_text}" if feedback_context else doc_text
 
-    return feedback_context, personas_context
+    inputs = {
+        'sources': used_sources,
+        'selected_document_count': selected_document_count,
+        'feedback_count': used_feedback_count,
+        'persona_ids': used_persona_ids,
+    }
+    return feedback_context, personas_context, inputs
+
+
+NO_PRODUCT_CONTEXT = "(No product context provided.)"
+
+
+def _product_context(project_id: str) -> tuple[str, bool]:
+    """The product-context block for the prompts, plus whether it carries anything.
+
+    The flag is what the document's derivation records: a PRD built from the
+    project's product context and nothing else must not read as "built from
+    nothing". A failure to build the block is not fatal — the prompts fall back
+    to the same placeholder they always did, and the derivation says the block
+    was not included.
+    """
+    try:
+        from api.product_context import build_product_context_block
+        block = build_product_context_block(project_id)
+    except Exception as e:
+        logger.warning(f"Failed to build product context: {e}")
+        return NO_PRODUCT_CONTEXT, False
+    return block, block != NO_PRODUCT_CONTEXT
 
 
 def _generate_prd(ctx: JobContext, feature_idea: str, feedback_context: str,
                   personas_context: str, doc_config: dict,
-                  product_context: str = "(No product context provided.)") -> tuple[str, dict]:
+                  product_context: str = NO_PRODUCT_CONTEXT) -> tuple[str, dict]:
     """Generate PRD using multi-step LLM chain.
 
     Returns:
@@ -153,7 +211,7 @@ def _generate_prd(ctx: JobContext, feature_idea: str, feedback_context: str,
 
 def _generate_prfaq(ctx: JobContext, feature_idea: str, feedback_context: str,
                     personas_context: str, doc_config: dict,
-                    product_context: str = "(No product context provided.)") -> tuple[str, dict]:
+                    product_context: str = NO_PRODUCT_CONTEXT) -> tuple[str, dict]:
     """Generate PR-FAQ using multi-step LLM chain.
 
     Returns:
@@ -501,10 +559,25 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         'job_id': job_id,
         'source_prd_id': (prd or {}).get('document_id'),
         'source_prfaq_id': (prfaq or {}).get('document_id'),
+        # Same relation as source_prd_id/source_prfaq_id above, in the one shape
+        # every document type uses. Those two stay exactly as they are (existing
+        # readers, and pre-change prototypes, depend on them); this is additive.
+        # A prototype built from only one of the two records only that one —
+        # derivation_source drops the None that `(prd or {}).get(...)` yields.
+        DERIVATION_FIELD: build_derivation(
+            sources=[
+                derivation_source((prd or {}).get('document_id'), ROLE_PROTOTYPE_PRD),
+                derivation_source((prfaq or {}).get('document_id'), ROLE_PROTOTYPE_PRFAQ),
+            ],
+            selected_document_count=len([d for d in (prd, prfaq) if d]),
+        ),
         'created_at': now,
     }
     if feedback:
         # Record that this prototype is a feedback-driven revision of a prior one.
+        # Deliberately NOT folded into `derivation`: "this replaces that" is a
+        # different relation from "this was built from that" (a held product
+        # decision), so the revision fields stay as they are.
         item['revised_from_id'] = base_prototype_id or None
         item['revision_feedback'] = feedback[:2000]
     projects_table.put_item(Item=item)
@@ -570,17 +643,12 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
         ctx.update_progress(20, 'loading_source_documents')
         return _generate_prototype(ctx, projects_table, project_id, job_id, doc_config)
 
-    feedback_context, personas_context = _gather_context(
+    feedback_context, personas_context, inputs = _gather_context(
         ctx, projects_table, feedback_table, project_id, doc_config
     )
 
     # Inject the per-project product/service context (structured fields + uploaded internal docs).
-    try:
-        from api.product_context import build_product_context_block
-        product_context_str = build_product_context_block(project_id)
-    except Exception as e:
-        logger.warning(f"Failed to build product context: {e}")
-        product_context_str = "(No product context provided.)"
+    product_context_str, product_context_included = _product_context(project_id)
 
     ctx.update_progress(50, 'generating_document')
 
@@ -605,6 +673,9 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
         'feature_idea': feature_idea,
         'content': content,
         'job_id': job_id,
+        DERIVATION_FIELD: build_derivation(
+            **inputs, product_context_included=product_context_included
+        ),
         'created_at': now,
     }
     if analysis:
@@ -666,6 +737,22 @@ def _get_text(key: str) -> str:
     return _s3().get_object(Bucket=SCRATCH_BUCKET, Key=key)['Body'].read().decode('utf-8')
 
 
+def _read_derivation(job_id: str) -> dict:
+    """Read back the derivation the gather step stashed, or an empty one.
+
+    Never raises: a document that reaches the save step must be saved even if
+    its provenance could not be read back (an execution replayed against a
+    scratch prefix that was already cleaned, say). An empty derivation reads as
+    "no lineage", which is a legitimate answer, not an error.
+    """
+    import json as _json
+    try:
+        return _json.loads(_get_text(_scratch_key(job_id, 'derivation')))
+    except Exception as e:
+        logger.warning(f"Could not read derivation for job {job_id}: {e}")
+        return build_derivation()
+
+
 def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     """gather step: fetch context, build chain steps, stash them in S3.
 
@@ -682,16 +769,11 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     doc_type = doc_config.get('doc_type', 'prd')
     feature_idea = doc_config.get('feature_idea', '')
 
-    feedback_context, personas_context = _gather_context(
+    feedback_context, personas_context, inputs = _gather_context(
         ctx, projects_table, feedback_table, project_id, doc_config
     )
 
-    try:
-        from api.product_context import build_product_context_block
-        product_context_str = build_product_context_block(project_id)
-    except Exception as e:
-        logger.warning(f"Failed to build product context: {e}")
-        product_context_str = "(No product context provided.)"
+    product_context_str, product_context_included = _product_context(project_id)
 
     builder = get_prd_generation_steps if doc_type == 'prd' else get_prfaq_generation_steps
     chain_steps = builder(
@@ -704,6 +786,15 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
 
     import json as _json
     _put_text(_scratch_key(job_id, 'steps'), _json.dumps(chain_steps))
+    # The derivation is decided here (this is where the inputs are read) but
+    # written by the save step several Lambda invocations later. It rides the
+    # same claim-check as the step prompts rather than Step Functions state, so
+    # the state machine definition needs no new field and an in-flight execution
+    # started on the previous definition still saves a derivation.
+    _put_text(
+        _scratch_key(job_id, 'derivation'),
+        _json.dumps(build_derivation(**inputs, product_context_included=product_context_included)),
+    )
 
     ctx.update_progress(15, 'context_ready')
     # S3 keys are deterministic from (job_id, index), so SF state carries only
@@ -806,6 +897,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
         'feature_idea': feature_idea,
         'content': content,
         'job_id': job_id,
+        DERIVATION_FIELD: _read_derivation(job_id),
         'created_at': now,
     }
     if analysis:
@@ -820,7 +912,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
 
     # Best-effort cleanup of the scratch prefix for this job.
     try:
-        keys = [{'Key': _scratch_key(job_id, 'steps')}] + \
+        keys = [{'Key': _scratch_key(job_id, 'steps')}, {'Key': _scratch_key(job_id, 'derivation')}] + \
                [{'Key': _scratch_key(job_id, f'result_{i}')} for i in range(num_steps)]
         _s3().delete_objects(Bucket=SCRATCH_BUCKET, Delete={'Objects': keys})
     except Exception as e:

@@ -57,6 +57,22 @@
   },
   "documents": {
     "deleteDocument": "ドキュメントを削除",
+    "derivation": {
+      "builtFrom": "作成元",
+      "feedbackUsed_one": "フィードバック{{count}}件を使用",
+      "feedbackUsed_other": "フィードバック{{count}}件を使用",
+      "personasUsed_one": "ペルソナ{{count}}件を使用",
+      "personasUsed_other": "ペルソナ{{count}}件を使用",
+      "productContext": "製品コンテキストを含む",
+      "roles": {
+        "mergeInput": "マージ元",
+        "prototypePrd": "プロトタイプの元PRD",
+        "prototypePrfaq": "プロトタイプの元PR/FAQ",
+        "reference": "参照"
+      },
+      "selectedUsed": "選択された{{selected}}件のうち{{used}}件を使用",
+      "unavailable": "現在は利用できません"
+    },
     "editDocument": "ドキュメントを編集",
     "newDocument": "新規ドキュメント",
     "noDocuments": "ドキュメントなし",

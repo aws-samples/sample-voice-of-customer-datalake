@@ -57,6 +57,22 @@
   },
   "documents": {
     "deleteDocument": "문서 삭제",
+    "derivation": {
+      "builtFrom": "생성 출처",
+      "feedbackUsed_one": "피드백 {{count}}건 사용",
+      "feedbackUsed_other": "피드백 {{count}}건 사용",
+      "personasUsed_one": "페르소나 {{count}}개 사용",
+      "personasUsed_other": "페르소나 {{count}}개 사용",
+      "productContext": "제품 컨텍스트 포함",
+      "roles": {
+        "mergeInput": "병합 원본",
+        "prototypePrd": "프로토타입 원본 PRD",
+        "prototypePrfaq": "프로토타입 원본 PR/FAQ",
+        "reference": "참조"
+      },
+      "selectedUsed": "선택한 {{selected}}개 중 {{used}}개 사용",
+      "unavailable": "더 이상 사용할 수 없음"
+    },
     "editDocument": "문서 편집",
     "newDocument": "새 문서",
     "noDocuments": "문서 없음",

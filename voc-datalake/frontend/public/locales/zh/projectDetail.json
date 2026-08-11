@@ -57,6 +57,22 @@
   },
   "documents": {
     "deleteDocument": "删除文档",
+    "derivation": {
+      "builtFrom": "构建来源",
+      "feedbackUsed_one": "已使用 {{count}} 条反馈",
+      "feedbackUsed_other": "已使用 {{count}} 条反馈",
+      "personasUsed_one": "已使用 {{count}} 个用户角色",
+      "personasUsed_other": "已使用 {{count}} 个用户角色",
+      "productContext": "已包含产品上下文",
+      "roles": {
+        "mergeInput": "合并来源",
+        "prototypePrd": "原型来源 PRD",
+        "prototypePrfaq": "原型来源 PR/FAQ",
+        "reference": "参考文档"
+      },
+      "selectedUsed": "已选择 {{selected}} 个文档，使用 {{used}} 个",
+      "unavailable": "已不可用"
+    },
     "editDocument": "编辑文档",
     "newDocument": "新建文档",
     "noDocuments": "无文档",
