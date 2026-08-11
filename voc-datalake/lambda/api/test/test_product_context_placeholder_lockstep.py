@@ -116,18 +116,25 @@ def _producer_function() -> ast.FunctionDef:
 
 
 def _section_mutations() -> list[tuple[int, str, ast.expr | None]]:
-    """Every statement that changes `sections`, as (line, kind, value).
+    """Every statement that writes to `sections` or calls a method on it, as
+    (line, kind, value).
 
-    `kind` is `'append'`, `'init'` for `sections … = []`, or the shape of whatever
-    else was found: a method name as written (`'extend'`, `'insert'`, …), `'+='`,
-    `'setitem'`, or `'rebind'` for an assignment of anything but an empty list.
-    Every kind in that list is one this function can actually emit — a label it
-    could not produce would be a promise the reader cannot rely on.
+    `kind` is `'append'`, `'init'` for `sections … = []`, a method name exactly as
+    written (`'extend'`, `'insert'`, …), `'+='`, `'setitem'`, or `'rebind'` for an
+    assignment of anything but an empty list. Every one of those is a label this
+    function can actually emit; one it could not produce would be a promise the
+    reader cannot rely on.
 
-    The heading check can only reason about `append`, so collecting every kind
-    rather than only the appends is what stops it passing vacuously over a form it
-    never looks at. Read uses like `'\\n\\n'.join(sections)` are not mutations and
-    are deliberately not collected.
+    Deliberately NOT limited to calls that mutate. Classifying `.copy()` or
+    `.index(…)` as harmless would mean keeping a list of method names known to be
+    read-only, which is denylist-shaped and fails OPEN for the next method nobody
+    thought of — the precise failure this helper exists to prevent. So any method
+    call is reported and the reader decides; a read-only call surfaces as a loud
+    question rather than a silent gap. Reads that name no method
+    (`'\\n\\n'.join(sections)`, `if not sections:`) are not collected.
+
+    A bare annotation (`sections: list[str]` with no value) is skipped: it writes
+    nothing, so reporting it would be a false positive with no question behind it.
     """
     found: list[tuple[int, str, ast.expr | None]] = []
     for node in ast.walk(_producer_function()):
@@ -138,6 +145,8 @@ def _section_mutations() -> list[tuple[int, str, ast.expr | None]]:
             and node.func.value.id == SECTIONS
         ):
             found.append((node.lineno, node.func.attr, node.args[0] if node.args else None))
+        elif isinstance(node, ast.AnnAssign) and node.value is None:
+            continue
         elif isinstance(node, (ast.AnnAssign, ast.Assign, ast.AugAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
