@@ -11,7 +11,7 @@ from typing import Any
 
 from shared.logging import logger, tracer
 from shared.aws import invoke_lambda_async
-from shared.api import create_api_resolver, validate_days, validate_int, api_handler, DecimalEncoder, validate_date_basis
+from shared.api import create_api_resolver, validate_days, validate_int, api_handler, validate_date_basis
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
 from shared.jobs import create_job
 from shared.exceptions import NotFoundError, ServiceError, ValidationError
@@ -630,11 +630,18 @@ def api_generate_product_report(project_id: str):
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler for projects API."""
     try:
-        logger.info(f"Received event: {json.dumps(event)}")
-        
-        # Normal API Gateway request
+        # Never log the raw event or the resolved result here (issue #245).
+        # The event carries the caller's Authorization header (Cognito bearer
+        # token) and request body; the result carries user-generated content
+        # (project text, verbatims, persona data).  Powertools'
+        # @logger.inject_lambda_context already attaches request-id, function
+        # name and cold-start, so only the status code is added below.
+        # Status code alone is not sensitive, so this stays at INFO to keep the
+        # per-invocation completion signal that LOG_LEVEL=INFO would drop at
+        # DEBUG — it is the absence of the body, not the log level, that
+        # protects the data.
         result = app.resolve(event, context)
-        logger.info(f"Returning result: {json.dumps(result, cls=DecimalEncoder)}")
+        logger.info("Returning response", extra={"status_code": result.get("statusCode")})
         return result
         
     except Exception as e:
