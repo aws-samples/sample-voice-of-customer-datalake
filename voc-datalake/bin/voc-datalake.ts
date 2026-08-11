@@ -84,8 +84,11 @@ const env = {
 //           model agreements. Skipped entirely when `anthropicUseCase` is
 //           absent, e.g. for an account that already has access.
 //
-// The stack id stays `VocWebSearchStack` deliberately: it determines the
-// CloudFormation export names VocProcessingStack and VocApiStack import.
+// The BASE id stays `VocWebSearchStack` deliberately: it determines the
+// CloudFormation export names VocProcessingStack and VocApiStack import. It goes
+// through stackId() like every other stack, so a prefixed deployment namespaces
+// the exports and both importers in lockstep — which is what keeps two copies
+// from importing each other's gateway.
 const webSearchContextRaw = app.node.tryGetContext('enableWebSearch');
 const deployWebSearch = shouldDeployWebSearch(webSearchContextRaw);
 const webSearchCrossRegion = deployWebSearch && env.region !== 'us-east-1';

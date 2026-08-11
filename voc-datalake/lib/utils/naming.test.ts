@@ -88,12 +88,21 @@ describe('validateDeploymentPrefix', () => {
     expect(message).toMatch(/ONE character/); // ...and the budget it leaves
   });
 
-  it('accepts a purely numeric prefix, which is legal in every namespace it lands in', () => {
-    // The pattern permits a leading digit, so state the intent: `2-voc-raw-data-…`
-    // is a valid bucket name and a valid Cognito domain prefix (only a leading
-    // hyphen or an uppercase letter would not be), so there is nothing to reject.
-    expect(validateDeploymentPrefix('2')).toBe('2');
-    expect(validateDeploymentPrefix('2-a')).toBe('2-a');
+  it('rejects a prefix starting with a digit, which CloudFormation cannot name a stack with', () => {
+    // An earlier version of this suite asserted the OPPOSITE — that a numeric
+    // prefix is "legal in every namespace it lands in" — reasoning only about
+    // the physical names: `2-voc-raw-data-…` really is a valid bucket name and a
+    // valid Cognito domain prefix. But the prefix lands on STACK names too, and
+    // those must match /^[A-Za-z][A-Za-z0-9-]*$/, so `-c deploymentPrefix=9`
+    // reached App.synth() and died with «StackNameInvalidFormat» naming
+    // `9-VocWebSearchStack` — an error that never mentions deploymentPrefix.
+    // Found by synthesizing it; no unit test would have, because the check that
+    // fires lives in the CDK.
+    expect(() => validateDeploymentPrefix('9')).toThrow(/START WITH A LOWERCASE LETTER/);
+    expect(() => validateDeploymentPrefix('2-a')).toThrow(/Invalid deploymentPrefix/);
+    // A digit anywhere else is fine, in every namespace including stack names.
+    expect(validateDeploymentPrefix('d2')).toBe('d2');
+    expect(validateDeploymentPrefix('a-2')).toBe('a-2');
   });
 });
 

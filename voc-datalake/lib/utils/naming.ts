@@ -69,8 +69,19 @@ const WIDEST_REGION_NAME = 'ap-southeast-7';
  */
 export const SOURCE_PLACEHOLDER = '{source}';
 
-/** Characters a prefix may contain, and where a hyphen may sit. */
-const PREFIX_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+/**
+ * Characters a prefix may contain, where a hyphen may sit, and — the part that
+ * is not guessable from the resource names — that it must START WITH A LETTER.
+ *
+ * The prefix lands on CloudFormation STACK names as well as physical resource
+ * names, and a stack name must match `/^[A-Za-z][A-Za-z0-9-]*$/`. So a leading
+ * digit is fine for an S3 bucket and a Cognito domain and still cannot deploy:
+ * `-c deploymentPrefix=9` reaches `App.synth()` and dies with
+ * «StackNameInvalidFormat» naming `9-VocWebSearchStack`, an error that says
+ * nothing about the flag that caused it. Rejecting it here reports the actual
+ * problem instead.
+ */
+const PREFIX_PATTERN = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 
 /**
  * Absolute upper bound on the prefix itself, independent of any single name: a
@@ -109,10 +120,12 @@ export function validateDeploymentPrefix(contextValue: unknown): string | undefi
   if (!PREFIX_PATTERN.test(prefix)) {
     throw new Error(
       `Invalid deploymentPrefix ${JSON.stringify(contextValue)}. ` +
-      'Use lowercase letters, digits and inner hyphens only (e.g. b, d2, team-a): ' +
+      'It must START WITH A LOWERCASE LETTER and may then contain lowercase letters, ' +
+      'digits and inner hyphens (e.g. b, d2, team-a). Two different limits meet here: ' +
       'the prefix becomes part of S3 bucket names and Cognito domain prefixes, which ' +
-      'accept nothing else. Length is checked separately, per name, and is much ' +
-      'tighter — see docs/deployment.md.',
+      'reject uppercase, underscores and dots; and it becomes part of CloudFormation ' +
+      'STACK names, which must begin with a letter. Length is checked separately, per ' +
+      'name, and is much tighter — see docs/deployment.md.',
     );
   }
   if (prefix.length > PREFIX_MAX_LENGTH) {

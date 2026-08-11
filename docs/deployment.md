@@ -279,7 +279,19 @@ cd voc-datalake/frontend
 CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack bash scripts/update-env.sh
 ```
 
-Two things to know before using it:
+There is no limit of two: the prefix is a namespace, so any number of copies can
+coexist. Verified by synthesizing three (`b`, `c`, `e`) and intersecting every
+name they generate — **no shared stack name, physical resource name, export name
+or IAM policy ARN between any pair.** What is shared is listed under
+"Known limitations" below.
+
+Three things to know before using it:
+
+- **The prefix must start with a lowercase letter.** It reaches CloudFormation
+  *stack* names, which must match `/^[A-Za-z][A-Za-z0-9-]*$/`, so a leading digit
+  is rejected at synth even though `9-voc-raw-data-…` would be a perfectly valid
+  bucket name. Combined with the one-character budget below, that makes 26
+  usable prefixes on the committed defaults, plus the unprefixed deployment.
 
 - **It is opt-in, and it must stay that way for an existing deployment.**
   Renaming a DynamoDB table, S3 bucket or Cognito user pool is a
@@ -318,6 +330,23 @@ Two things to know before using it:
   would widen the budget for everyone, but it renames a resource on **every**
   existing deployment, which is exactly what the opt-in design exists to avoid.
   That is a separate change with its own baseline regeneration.
+
+#### Known limitations of a prefixed deployment
+
+Neither is a resource collision — nothing is shared that could cause data loss —
+but both are worth knowing before running several copies:
+
+- **CloudWatch metrics co-mingle.** The Lambdas publish EMF metrics to a
+  hardcoded namespace (`Metrics(namespace="VoC")` in `lambda/shared/logging.py`)
+  with a `service` dimension from `POWERTOOLS_SERVICE_NAME`, and that value is
+  the same literal in every deployment (`voc-metrics-api`, `voc-processor`, …).
+  So two copies' metrics land on the same namespace and dimension, and a
+  dashboard or alarm cannot tell them apart. **Logs are not affected** — log
+  group names carry the prefix, so each deployment's logs stay separate.
+- **API Gateway authorizer names are shared** (`voc-cognito-authorizer`,
+  `voc-mcp-token-authorizer`). Deliberate: those names only have to be unique
+  inside their own RestApi, and each deployment has its own, so prefixing them
+  would add churn without preventing a collision.
 
 ### Stack Deployment Order
 
