@@ -270,9 +270,12 @@ deployment's bucket and CloudFront distribution and syncs this build over that
 site, silently, because every output resolves fine.
 
 ```bash
-# frontend of the prefixed deployment (build + S3 sync + invalidation)
+# frontend of the prefixed deployment (build + S3 sync + invalidation),
+# from the repository root
 CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack npm run deploy:frontend
-# local .env pointed at the prefixed deployment
+
+# local .env pointed at the prefixed deployment, from voc-datalake/frontend/
+cd voc-datalake/frontend
 CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack bash scripts/update-env.sh
 ```
 

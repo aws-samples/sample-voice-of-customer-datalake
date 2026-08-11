@@ -148,6 +148,15 @@ describe('the default (no deploymentPrefix) synth', () => {
         Other: { Type: 'AWS::Service::Thing', Properties: { ThingName: 'unrelated' } },
       },
     })).toEqual([]);
+    // ...and something established NOT to be a physical name can be exempted
+    // without adding it to NAME_PROPERTIES, which would feed a non-name into the
+    // baseline inventory and the prefix mapping. Nothing in the app needs this
+    // today, so the escape hatch is proven here rather than by a standing list.
+    expect(unlistedNameProperties({
+      Resources: {
+        Thing: { Type: 'AWS::Service::Thing', Properties: { Description: 'the voc-feedback table' } },
+      },
+    }, ['Description'])).toEqual([]);
   });
 
   it('carries no deployment prefix anywhere in a name', () => {

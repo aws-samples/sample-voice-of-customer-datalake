@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 
 const PROJECT_ROOT = join(__dirname, '..', '..');
 const UPDATE_ENV_SH = join(PROJECT_ROOT, 'frontend', 'scripts', 'update-env.sh');
+const DEPLOY_SH = join(PROJECT_ROOT, 'frontend', 'scripts', 'deploy.sh');
 const RUNTIME_CONFIG_TS = join(PROJECT_ROOT, 'frontend', 'src', 'runtimeConfig.ts');
 
 /**
@@ -73,23 +74,54 @@ describe('package.json deploy scripts', () => {
   });
 });
 
-describe('frontend/scripts/update-env.sh', () => {
-  const source = () => readFileSync(UPDATE_ENV_SH, 'utf8');
+// Both shell scripts that resolve CloudFormation outputs, held to the same two
+// rules. deploy.sh is here because it had neither: it queried VocCoreStack and
+// VocApiStack as literals, so `npm run deploy:frontend` for a deployment created
+// with `-c deploymentPrefix=<p>` resolved the UNPREFIXED deployment's bucket and
+// CloudFront distribution and synced this build over that site — silently,
+// because every output resolved successfully.
+describe.each([
+  ['frontend/scripts/update-env.sh', UPDATE_ENV_SH],
+  ['frontend/scripts/deploy.sh', DEPLOY_SH],
+])('%s', (label, path) => {
+  const source = () => readFileSync(path, 'utf8');
 
   it('defaults its stack names to stacks the CDK app declares', () => {
-    // Same rot class as the deploy scripts above, and it bit harder here: the
-    // script queried two stacks the merge had removed, so it wrote an empty
-    // env file and local dev looked broken for reasons nothing pointed at.
+    // Same rot class as the deploy scripts above, and it bit harder in
+    // update-env.sh: the script queried two stacks the merge had removed, so it
+    // wrote an empty env file and local dev looked broken for reasons nothing
+    // pointed at.
     const declared = declaredStackIds();
     const defaults = [...source().matchAll(/^\w*STACK="\$\{\w+:-(\w+Stack)\}"/gm)].map((m) => m[1]);
     expect(defaults.length, 'expected STACK="${OVERRIDE:-Default}" declarations').toBeGreaterThan(0);
     const dead = defaults.filter((stack) => !declared.has(stack));
     expect(
       dead,
-      `update-env.sh defaults to non-existent stack(s): ${dead.join(', ')}. ` +
+      `${label} defaults to non-existent stack(s): ${dead.join(', ')}. ` +
         `Known stacks: ${[...declared].sort().join(', ')}`,
     ).toEqual([]);
   });
+
+  it('names no stack literally, so a prefixed deployment can redirect it', () => {
+    // The complement of the case above, and the one that catches the real
+    // defect: the hazard is not a WRONG default, it is a hardcoded name with no
+    // seam at all. `bin/voc-datalake.ts` reads the prefix from CDK context,
+    // which a shell script cannot see, so an environment variable is the only
+    // way to point these at the right deployment — and a literal here silently
+    // points them at the wrong one.
+    const literals = [...source().matchAll(/--stack-name\s+"?(\w+Stack)\b/g)].map((m) => m[1]);
+    expect(
+      literals,
+      `${label} hardcodes stack name(s): ${literals.join(', ')}. Use "$CORE_STACK"/"$API_STACK".`,
+    ).toEqual([]);
+    // ...and it really does query CloudFormation, so the assertion above cannot
+    // pass merely because the script stopped resolving stacks altogether.
+    expect(source(), `${label} no longer queries CloudFormation`).toMatch(/--stack-name\s+"\$/);
+  });
+});
+
+describe('frontend/scripts/update-env.sh', () => {
+  const source = () => readFileSync(UPDATE_ENV_SH, 'utf8');
 
   it('writes every VITE_ var that runtimeConfig.ts requires', () => {
     // RuntimeConfigSchema rejects an empty identityPoolId, and getEnvConfig's

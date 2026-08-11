@@ -27,16 +27,31 @@ const PROJECT_ROOT = join(__dirname, '..', '..');
 const STACKS_DIR = join(PROJECT_ROOT, 'lib', 'stacks');
 
 /**
+ * Every `.ts` file under `dir`, at any depth.
+ *
+ * Hand-rolled rather than `readdirSync(dir, { recursive: true })` because
+ * package.json declares `"node": ">=18.0.0"`, and on Node 18 that option is
+ * simply IGNORED — no error, just a flat listing. So the sturdier-looking
+ * one-liner fails open on a supported runtime, which is the same failure
+ * direction as the guard it is here to power. `Dirent.parentPath` needs 20.12
+ * for the same reason. Five lines, no version floor.
+ */
+function typeScriptFilesIn(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return typeScriptFilesIn(path);
+    return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [path] : [];
+  });
+}
+
+/**
  * Every stack and construct file that could name a physical resource.
  *
- * Recursive: a flat `readdirSync` would drop a stack moved into a subdirectory
- * out of this list silently, leaving the assertions below looping over the
- * remaining files and still passing.
+ * Recursive: a flat listing would drop a stack moved into a subdirectory out of
+ * this list silently, leaving the assertions below looping over the remaining
+ * files and still passing.
  */
-const STACK_FILES = readdirSync(STACKS_DIR, { withFileTypes: true, recursive: true })
-  .filter((entry) => entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts'))
-  .map((entry) => join(entry.parentPath ?? entry.path, entry.name))
-  .sort();
+const STACK_FILES = typeScriptFilesIn(STACKS_DIR).sort();
 
 /**
  * A name assembled from the account/region pair OUTSIDE the helper.
@@ -106,6 +121,18 @@ describe('the single source of physical names', () => {
         ).toBe(false);
       }
     }
+  });
+
+  it('descends into subdirectories, so a stack moved into one cannot slip out', () => {
+    // Aimed at lib/, not lib/stacks/, deliberately. lib/stacks/ is flat, so a
+    // non-recursive walk passes every other assertion in this file — the reason
+    // an earlier version of this guard could lose its recursion without a single
+    // test going red. lib/ has three subdirectories, so descent is observable.
+    const found = typeScriptFilesIn(join(PROJECT_ROOT, 'lib')).map(relative);
+    expect(found).toContain('lib/plugin-loader.ts'); // top level
+    expect(found).toContain('lib/stacks/core-stack.ts'); // one level down
+    expect(found).toContain('lib/utils/naming.ts'); // a sibling subdirectory
+    expect(found).not.toContain('lib/utils/naming.test.ts'); // and still skips tests
   });
 
   it('matches each shape it claims to catch', () => {

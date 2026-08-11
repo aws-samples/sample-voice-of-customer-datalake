@@ -93,6 +93,10 @@ describe('a prefixed deployment', () => {
     // hand in ingestion-stack.ts, not by any shared construct, so "changed the
     // helper" is not evidence that every name moved.
     for (const baseId of BASE_STACK_IDS) {
+      // Presence BEFORE the filter: a stack id missing from the baseline would
+      // otherwise throw "Cannot read properties of undefined (reading 'filter')"
+      // instead of saying which stack the baseline does not know about.
+      expect(Object.keys(UNPREFIXED_NAMES), `${baseId} is absent from ${BASELINE_PATH}`).toContain(baseId);
       const before = UNPREFIXED_NAMES[baseId].filter((entry) => !isApiScopedName(entry));
       expect(before.length, `${baseId} has no baseline names to map`).toBeGreaterThan(0);
       const after = nameInventory(prefixed.template(`${PREFIX}-${baseId}`)).physicalNames

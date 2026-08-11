@@ -77,9 +77,11 @@ describe('validateDeploymentPrefix', () => {
     // only "the maximum is 20" sends the operator off to try a 19-character
     // prefix that cannot deploy.
     //
-    // Asserted on the FIGURES, not on the prose around them: an earlier version
-    // of this case pinned two sentence fragments, which couples the suite to
-    // copy-editing and fails on a reword that keeps every number right.
+    // Asserted on the FIGURES plus ONE short phrase, rather than on the two
+    // sentence fragments an earlier version pinned: those coupled the suite to
+    // copy-editing and failed on a reword that kept every number right. The
+    // phrase survives because "ONE character" IS the claim under test — the
+    // message has to state the real budget, and no bare numeral in it does.
     const message = messageFrom(() => validateDeploymentPrefix('a'.repeat(21)));
     expect(message).toContain('is 21 characters; the absolute maximum is 20');
     expect(message).toContain('64'); // the limit that actually binds

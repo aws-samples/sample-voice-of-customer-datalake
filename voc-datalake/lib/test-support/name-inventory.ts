@@ -161,9 +161,20 @@ export function nameInventory(template: Record<string, unknown>): NameInventory 
  * CloudFormation puts a physical name — always. Nested VoC strings are ARNs in
  * policy documents, Lambda environment values and inline handler source, and
  * the first two have their own inventories above.
+ *
+ * @param exempt properties established NOT to be physical names, even though
+ * their value mentions `voc` — a `Description`, a tag, an inline literal. The
+ * escape hatch matters: without one, the only way to quiet this guard is to add
+ * the property to {@link NAME_PROPERTIES}, which would then feed a non-name into
+ * both the baseline inventory and the exhaustive prefix mapping. It is empty for
+ * the app as it stands, so the parameter is exercised by a unit case rather than
+ * by a standing list nobody can verify.
  */
-export function unlistedNameProperties(template: Record<string, unknown>): string[] {
-  const listed: readonly string[] = NAME_PROPERTIES;
+export function unlistedNameProperties(
+  template: Record<string, unknown>,
+  exempt: readonly string[] = [],
+): string[] {
+  const listed: readonly string[] = [...NAME_PROPERTIES, ...exempt];
   const unlisted = new Set<string>();
   const resources = isRecord(template.Resources) ? template.Resources : {};
   for (const resource of Object.values(resources)) {
