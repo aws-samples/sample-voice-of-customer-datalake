@@ -9,7 +9,7 @@
  * Not a `*.test.ts` file, so vitest's `include` never picks it up as a suite.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -113,11 +113,24 @@ export interface SynthAnnotation {
   data: string;
 }
 
-/** Annotation types a clean synth must not produce. */
-export const DIAGNOSTIC_ANNOTATION_TYPES = ['aws:cdk:warning', 'aws:cdk:error', 'aws:cdk:info'] as const;
+/**
+ * Annotation types a clean synth must not produce.
+ *
+ * `aws:cdk:info` is deliberately NOT one of them. bin/voc-datalake.ts raises an
+ * info annotation ON PURPOSE whenever the app region is not us-east-1 (the
+ * issue #205 web-search bootstrap hint), so including it here would assert
+ * something stricter than both the repo convention this encodes — "a clean
+ * `cdk synth` prints zero warnings" — and than the app can satisfy: the moment
+ * the synth region moved off the pinned us-east-1, or anyone reused this
+ * constant for a parameterised region, both zero-warnings guards would go red
+ * for correct behaviour. Info annotations are still COLLECTED into
+ * {@link SynthResult.annotations}; a suite that wants to assert about one can
+ * do so explicitly.
+ */
+export const DIAGNOSTIC_ANNOTATION_TYPES = ['aws:cdk:warning', 'aws:cdk:error'] as const;
 
-/** The diagnostics (warnings/errors/info) among `annotations`. */
-export function diagnostics(result: SynthResult): SynthAnnotation[] {
+/** The diagnostics (warnings and errors) among `annotations`. */
+export function diagnostics(result: Pick<SynthResult, 'annotations'>): SynthAnnotation[] {
   const types: readonly string[] = DIAGNOSTIC_ANNOTATION_TYPES;
   return result.annotations.filter((annotation) => types.includes(annotation.type));
 }
@@ -130,9 +143,48 @@ export class SynthFailure extends Error {
   }
 }
 
+/** Assembly directories created by this process, removed when it exits. */
+const assemblyDirs: string[] = [];
+let exitHookInstalled = false;
+
+/**
+ * A temporary cloud assembly directory, removed by {@link cleanupAssemblyDirs}.
+ *
+ * A whole-app assembly is ~26 MB — it stages the frontend `dist` and every
+ * Lambda asset — and a full `vitest run` makes several, so without cleanup one
+ * run leaves hundreds of megabytes behind and `vitest --watch` accumulates
+ * without bound. Deletion cannot happen per-call: {@link SynthResult} reads
+ * templates lazily from `outdir`, so the directory has to outlive the synth —
+ * just not the run.
+ *
+ * Every suite that synthesizes therefore calls `afterAll(cleanupAssemblyDirs)`.
+ * The `process.on('exit')` hook below is NOT a substitute for that, and measuring
+ * it is the only reason this comment can say so: vitest terminates its worker
+ * processes rather than letting them exit, so the hook never runs there (22
+ * assemblies survived a run that had it). It earns its place for the non-vitest
+ * callers — scripts/generate-baseline.ts is a plain `ts-node` process.
+ */
+export function createAssemblyDir(prefix: string): string {
+  if (!exitHookInstalled) {
+    exitHookInstalled = true;
+    process.on('exit', cleanupAssemblyDirs);
+  }
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  assemblyDirs.push(dir);
+  return dir;
+}
+
+/** Remove every directory {@link createAssemblyDir} handed out. Idempotent. */
+export function cleanupAssemblyDirs(): void {
+  while (assemblyDirs.length > 0) {
+    const dir = assemblyDirs.pop();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /** Synthesize the app with the given extra context. Throws {@link SynthFailure}. */
 export function synthApp(context: Record<string, unknown> = {}): SynthResult {
-  const outdir = mkdtempSync(join(tmpdir(), 'voc-synth-'));
+  const outdir = createAssemblyDir('voc-synth-');
   try {
     // `ts-node/register` is a documented entry point; `ts-node/dist/bin` is
     // ts-node's internal file layout, and a minor release that reorganizes
@@ -178,9 +230,14 @@ function describeExecError(error: unknown): string {
  *   { "/VocApiStack/Role/DefaultPolicy/Resource": [
  *       { "type": "aws:cdk:error", "data": "AwsSolutions-IAM5[...]: ..." } ] }
  *
- * Both `manifest.json` (v53 and earlier) and these files are read, so the
- * collector survives the manifest version moving in either direction — the
- * failure mode being fixed here is precisely that it silently found nothing.
+ * `manifest.json` (v53 and earlier) is read too, so the collector survives the
+ * manifest version moving in either direction — the failure mode being fixed
+ * here is precisely that it silently found nothing. But the two sources are
+ * ALTERNATIVES, not complements: a per-stack file wins for its own stack, and
+ * the manifest is consulted only for stacks that have none. Reading both
+ * additively would double every annotation on a manifest version that populated
+ * both, which is invisible to the `toEqual([])` assertions and quietly wrong for
+ * `nagFindings()` counts.
  */
 function readAnnotations(outdir: string): SynthAnnotation[] {
   const annotations: SynthAnnotation[] = [];
@@ -197,16 +254,17 @@ function readAnnotations(outdir: string): SynthAnnotation[] {
     }
   };
 
+  const suffix = '.metadata.json';
+  const sideFiles = readdirSync(outdir).filter((file) => file.endsWith(suffix));
+  const covered = new Set(sideFiles.map((file) => file.slice(0, -suffix.length)));
+  for (const entry of sideFiles) {
+    collect(entry.slice(0, -suffix.length), JSON.parse(readFileSync(join(outdir, entry), 'utf8')));
+  }
+
   const manifest: unknown = JSON.parse(readFileSync(join(outdir, 'manifest.json'), 'utf8'));
   const artifacts = isRecord(manifest) && isRecord(manifest.artifacts) ? manifest.artifacts : {};
   for (const [stack, artifact] of Object.entries(artifacts)) {
-    if (isRecord(artifact)) collect(stack, artifact.metadata);
-  }
-
-  const suffix = '.metadata.json';
-  for (const entry of readdirSync(outdir).filter((file) => file.endsWith(suffix))) {
-    const stack = entry.slice(0, -suffix.length);
-    collect(stack, JSON.parse(readFileSync(join(outdir, entry), 'utf8')));
+    if (!covered.has(stack) && isRecord(artifact)) collect(stack, artifact.metadata);
   }
 
   return annotations;

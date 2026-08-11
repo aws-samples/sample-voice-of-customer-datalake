@@ -73,10 +73,17 @@ export const SOURCE_PLACEHOLDER = '{source}';
 const PREFIX_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 
 /**
- * Upper bound on the prefix itself, independent of any single name. S3 bucket
- * names and Cognito domain prefixes are the tightest namespaces the prefix
- * lands in, and a prefix longer than this cannot fit anywhere — reject it with
- * a message about the prefix instead of about an arbitrary resource.
+ * Absolute upper bound on the prefix itself, independent of any single name: a
+ * prefix past this cannot fit anywhere, so it is worth rejecting with a message
+ * about the PREFIX rather than about whichever resource happened to overflow
+ * first.
+ *
+ * It is deliberately NOT the usable budget, and the usable budget is far
+ * smaller. What binds in practice is the 64-character EventBridge rule name:
+ * with the committed `pluginStatus`, `voc-ingest-app_reviews_android-schedule`
+ * plus `-<12-digit account>-us-east-1` is already 62 characters, leaving room
+ * for exactly ONE. {@link DeploymentNaming} computes the real figure per name at
+ * synth and reports it; see docs/deployment.md for how to widen it.
  */
 const PREFIX_MAX_LENGTH = 20;
 
@@ -94,7 +101,7 @@ export function validateDeploymentPrefix(contextValue: unknown): string | undefi
   if (typeof contextValue !== 'string') {
     throw new Error(
       `deploymentPrefix must be a string, got ${JSON.stringify(contextValue)}. ` +
-      'Pass it as -c deploymentPrefix=<prefix>, e.g. -c deploymentPrefix=stg.',
+      'Pass it as -c deploymentPrefix=<prefix>, e.g. -c deploymentPrefix=b.',
     );
   }
   const prefix = contextValue.trim();
@@ -102,18 +109,21 @@ export function validateDeploymentPrefix(contextValue: unknown): string | undefi
   if (!PREFIX_PATTERN.test(prefix)) {
     throw new Error(
       `Invalid deploymentPrefix ${JSON.stringify(contextValue)}. ` +
-      'Use lowercase letters, digits and inner hyphens only (e.g. stg, demo, team-a): ' +
+      'Use lowercase letters, digits and inner hyphens only (e.g. b, d2, team-a): ' +
       'the prefix becomes part of S3 bucket names and Cognito domain prefixes, which ' +
-      'accept nothing else.',
+      'accept nothing else. Length is checked separately, per name, and is much ' +
+      'tighter — see docs/deployment.md.',
     );
   }
   if (prefix.length > PREFIX_MAX_LENGTH) {
     throw new Error(
       `deploymentPrefix ${JSON.stringify(prefix)} is ${prefix.length} characters; ` +
       `the absolute maximum is ${PREFIX_MAX_LENGTH}. The REAL budget is far smaller ` +
-      'and depends on the longest name this app generates — typically 1 to a few ' +
-      'characters (stg, dev, qa are the intended shape). The per-name check at synth ' +
-      'reports the exact figure for your region and enabled plugins.',
+      'and depends on the longest name this app generates: with the committed ' +
+      'pluginStatus in us-east-1 it is ONE character, because the ' +
+      'app_reviews_android schedule rule already spends 62 of the 64 EventBridge ' +
+      'allows. The per-name check at synth reports the exact figure for your region ' +
+      'and enabled plugins; docs/deployment.md explains how to widen it.',
     );
   }
   return prefix;
@@ -183,12 +193,20 @@ export class DeploymentNaming {
    * the api-stack log groups are built as `/aws/lambda/${uniqueName(base)}`,
    * which already puts the prefix there. Prefixing the front instead would give
    * two different shapes for the same kind of resource in the same deployment.
+   *
+   * With NO `voc` segment the prefix goes on the LAST segment, for the same
+   * reason: `stg-/aws/lambda/x` would sit outside the `/aws/...` namespace the
+   * placement rule exists to preserve, while `/aws/lambda/stg-x` stays a valid
+   * path naming the right thing. Every name the app generates today is
+   * `voc`-stemmed, so this branch is what a FUTURE name would take rather than
+   * anything reachable now — a flat name has one segment, where both branches
+   * agree.
    */
   prefixed(name: string): string {
     if (!this.prefix) return name;
     const segments = name.split('/');
-    const target = segments.findIndex((segment) => segment.startsWith('voc'));
-    if (target === -1) return `${this.prefix}-${name}`;
+    const found = segments.findIndex((segment) => segment.startsWith('voc'));
+    const target = found === -1 ? segments.length - 1 : found;
     segments[target] = `${this.prefix}-${segments[target]}`;
     return segments.join('/');
   }

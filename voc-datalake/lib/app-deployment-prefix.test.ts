@@ -12,10 +12,16 @@
  * The companion guard is lib/app-baseline.test.ts, which proves the UNSET case
  * changes nothing.
  */
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { afterAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { nameInventory } from './test-support/name-inventory';
 import {
+  BASELINE_PATH,
+  cleanupAssemblyDirs,
   diagnostics,
   SynthFailure,
   synthApp,
@@ -43,7 +49,32 @@ const BASE_STACK_IDS = [
 ];
 
 const prefixed = synthApp({ deploymentPrefix: PREFIX });
-const unprefixed = synthApp();
+
+// Both this assembly and the one the rejection case below throws away. Vitest
+// kills its workers, so synth-app.ts's `process.on('exit')` hook never runs here.
+afterAll(cleanupAssemblyDirs);
+
+/**
+ * The unprefixed names, read from the committed baseline instead of synthesized
+ * a second time.
+ *
+ * A whole-app synth costs ~10s and a ~23 MB cloud assembly, and
+ * lib/app-baseline.test.ts already proves the live no-prefix synth matches this
+ * file name for name — so re-synthesizing it here would buy nothing and add a
+ * fourth concurrent CDK subprocess to the run. Comparing against the committed
+ * fingerprint is also the stronger statement: it maps the prefixed names onto
+ * the names this repo produced BEFORE the flag existed. If a new resource is
+ * added and the baseline is not regenerated, app-baseline.test.ts is the suite
+ * that says so.
+ */
+const UNPREFIXED_NAMES = ((): Record<string, string[]> => {
+  const parsed = z
+    .object({ stacks: z.record(z.string(), z.object({ names: z.object({ physicalNames: z.array(z.string()) }) })) })
+    .parse(JSON.parse(readFileSync(join(__dirname, '..', BASELINE_PATH), 'utf8')));
+  return Object.fromEntries(
+    Object.entries(parsed.stacks).map(([stack, { names }]) => [stack, names.physicalNames]),
+  );
+})();
 
 describe('a prefixed deployment', () => {
   it('names its stacks distinctly from an unprefixed one, without adding a stack', () => {
@@ -51,19 +82,19 @@ describe('a prefixed deployment', () => {
     // five, and that ceiling is invisible to `cdk synth`.
     expect(prefixed.stackNames).toEqual(BASE_STACK_IDS.map((id) => `${PREFIX}-${id}`).sort());
     expect(prefixed.stackNames).toHaveLength(5);
-    expect(new Set(prefixed.stackNames)).not.toEqual(new Set(unprefixed.stackNames));
+    expect(new Set(prefixed.stackNames)).not.toEqual(new Set(BASE_STACK_IDS));
   });
 
   it('prefixes every physical resource name', () => {
-    // Every name the unprefixed synth produces must appear prefixed here — an
+    // Every name the unprefixed app produces must appear prefixed here — an
     // exhaustive mapping, so a resource that skipped the naming helper fails
     // this rather than going unexamined. That is the point: isolation is
     // all-or-nothing, and EventBridge rule names for instance are assembled by
     // hand in ingestion-stack.ts, not by any shared construct, so "changed the
     // helper" is not evidence that every name moved.
     for (const baseId of BASE_STACK_IDS) {
-      const before = nameInventory(unprefixed.template(baseId)).physicalNames
-        .filter((entry) => !isApiScopedName(entry));
+      const before = UNPREFIXED_NAMES[baseId].filter((entry) => !isApiScopedName(entry));
+      expect(before.length, `${baseId} has no baseline names to map`).toBeGreaterThan(0);
       const after = nameInventory(prefixed.template(`${PREFIX}-${baseId}`)).physicalNames
         .filter((entry) => !isApiScopedName(entry));
       expect(after, baseId).toEqual(before.map((name) => insertPrefix(name)));
@@ -277,8 +308,12 @@ function insertPrefix(inventoryEntry: string): string {
   const head = inventoryEntry.slice(0, at + marker.length);
   const name = inventoryEntry.slice(at + marker.length);
   const segments = name.split('/');
-  const target = segments.findIndex((segment) => segment.startsWith('voc'));
-  if (target === -1) return `${head}${PREFIX}-${name}`;
+  const found = segments.findIndex((segment) => segment.startsWith('voc'));
+  // No `voc` segment: the last one takes the prefix, so a path stays a path.
+  // Unreachable for the names the app generates — every one is `voc`-stemmed —
+  // and kept in step with DeploymentNaming.prefixed() rather than diverging in a
+  // branch nothing exercises. lib/utils/naming.test.ts pins the rule itself.
+  const target = found === -1 ? segments.length - 1 : found;
   segments[target] = `${PREFIX}-${segments[target]}`;
   return `${head}${segments.join('/')}`;
 }

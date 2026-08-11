@@ -8,21 +8,38 @@
  * the failure legible: a name-level diff instead of "the sha changed".
  */
 
-/** A physical-name-bearing property, per CloudFormation resource type. */
+/**
+ * A physical-name-bearing property, spelled AS CLOUDFORMATION EMITS IT.
+ *
+ * The CFN property name and the CDK L2 construct property name differ for four
+ * of the resources here — `AliasName`/`alias`, `ClientName`/`userPoolClientName`,
+ * `Domain`/`domainPrefix`, `Name`/`restApiName` — and this list is matched
+ * against a synthesized template, so an L2 spelling produces an entry that can
+ * never match and silently leaves that name uninventoried. It did: `Alias`,
+ * `DomainPrefix`, `RestApiName` and `UserPoolClientName` were listed while the
+ * KMS alias, the Cognito hosted-UI domain (the name `uniqueDnsName()` exists
+ * for), the user-pool client name and the API usage plan went uncovered by both
+ * the readable half of the byte-identity guard and the exhaustive prefix
+ * mapping.
+ *
+ * `unlistedNameProperties` below is what keeps the list honest from here on: a
+ * resource whose name property is missing fails a test instead of going
+ * unexamined.
+ */
 const NAME_PROPERTIES = [
-  'Alias',
-  'BucketName',
-  'DomainPrefix',
-  'FunctionName',
-  'IdentityPoolName',
-  'LogGroupName',
-  'Name',
-  'QueueName',
-  'RestApiName',
-  'StateMachineName',
-  'TableName',
-  'UserPoolName',
-  'UserPoolClientName',
+  'AliasName', // AWS::KMS::Alias
+  'BucketName', // AWS::S3::Bucket
+  'ClientName', // AWS::Cognito::UserPoolClient
+  'Domain', // AWS::Cognito::UserPoolDomain — the hosted-UI prefix
+  'FunctionName', // AWS::Lambda::Function
+  'IdentityPoolName', // AWS::Cognito::IdentityPool
+  'LogGroupName', // AWS::Logs::LogGroup
+  'Name', // AWS::Events::Rule, AWS::ApiGateway::RestApi, AWS::SecretsManager::Secret, …
+  'QueueName', // AWS::SQS::Queue
+  'StateMachineName', // AWS::StepFunctions::StateMachine
+  'TableName', // AWS::DynamoDB::Table
+  'UsagePlanName', // AWS::ApiGateway::UsagePlan
+  'UserPoolName', // AWS::Cognito::UserPool
 ] as const;
 
 export interface NameInventory {
@@ -128,4 +145,36 @@ export function nameInventory(template: Record<string, unknown>): NameInventory 
     policyResources: sorted(policyResources),
     environmentNames: sorted(environmentNames),
   };
+}
+
+/**
+ * Resource properties that render to a VoC name but are NOT in
+ * {@link NAME_PROPERTIES} — i.e. names the inventory is silently missing.
+ *
+ * The guard on the guard. {@link nameInventory} is only as exhaustive as its
+ * list of property names, and a list that is wrong in the "too narrow"
+ * direction fails OPEN: the missing name simply never appears, so the
+ * byte-identity comparison and the exhaustive prefix mapping both pass while
+ * saying nothing about it. Four names were in that state.
+ *
+ * Only TOP-LEVEL properties are considered, because that is where
+ * CloudFormation puts a physical name — always. Nested VoC strings are ARNs in
+ * policy documents, Lambda environment values and inline handler source, and
+ * the first two have their own inventories above.
+ */
+export function unlistedNameProperties(template: Record<string, unknown>): string[] {
+  const listed: readonly string[] = NAME_PROPERTIES;
+  const unlisted = new Set<string>();
+  const resources = isRecord(template.Resources) ? template.Resources : {};
+  for (const resource of Object.values(resources)) {
+    if (!isRecord(resource)) continue;
+    const type = typeof resource.Type === 'string' ? resource.Type : '?';
+    const props = isRecord(resource.Properties) ? resource.Properties : {};
+    for (const [property, value] of Object.entries(props)) {
+      if (listed.includes(property)) continue;
+      const rendered = renderName(value);
+      if (rendered && rendered.includes('voc')) unlisted.add(`${type} ${property} = ${rendered}`);
+    }
+  }
+  return [...unlisted].sort();
 }

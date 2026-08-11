@@ -73,21 +73,37 @@ describe('validateDeploymentPrefix', () => {
 
   it('does not present the 20-character ceiling as a workable budget', () => {
     // 20 is an order of magnitude above the real budget — the app's longest name
-    // leaves ONE character in us-east-1. Reporting only "the maximum is 20"
-    // sends the operator off to try a 19-character prefix that cannot deploy, so
-    // the message has to point at the per-name check that knows the real figure.
-    const message = (() => {
-      try {
-        validateDeploymentPrefix('a'.repeat(21));
-        return '';
-      } catch (error) {
-        return error instanceof Error ? error.message : '';
-      }
-    })();
-    expect(message).toContain('The REAL budget is far smaller');
-    expect(message).toContain('per-name check at synth');
+    // leaves ONE character in us-east-1 with the committed plugin set. Reporting
+    // only "the maximum is 20" sends the operator off to try a 19-character
+    // prefix that cannot deploy.
+    //
+    // Asserted on the FIGURES, not on the prose around them: an earlier version
+    // of this case pinned two sentence fragments, which couples the suite to
+    // copy-editing and fails on a reword that keeps every number right.
+    const message = messageFrom(() => validateDeploymentPrefix('a'.repeat(21)));
+    expect(message).toContain('is 21 characters; the absolute maximum is 20');
+    expect(message).toContain('64'); // the limit that actually binds
+    expect(message).toMatch(/ONE character/); // ...and the budget it leaves
+  });
+
+  it('accepts a purely numeric prefix, which is legal in every namespace it lands in', () => {
+    // The pattern permits a leading digit, so state the intent: `2-voc-raw-data-…`
+    // is a valid bucket name and a valid Cognito domain prefix (only a leading
+    // hyphen or an uppercase letter would not be), so there is nothing to reject.
+    expect(validateDeploymentPrefix('2')).toBe('2');
+    expect(validateDeploymentPrefix('2-a')).toBe('2-a');
   });
 });
+
+/** The message of the error `run` throws, or `''` when it throws nothing. */
+function messageFrom(run: () => unknown): string {
+  try {
+    run();
+    return '';
+  } catch (error) {
+    return error instanceof Error ? error.message : '';
+  }
+}
 
 describe('uniqueName', () => {
   it('is unchanged with no prefix — the invariant that keeps existing deployments intact', () => {
@@ -123,6 +139,19 @@ describe('prefixed', () => {
     const { naming } = namingFor('stg');
     expect(naming.prefixed('VocFrontendDomainName')).toBe('stg-VocFrontendDomainName');
     expect(naming.prefixed('voc-ingestor')).toBe('stg-voc-ingestor');
+  });
+
+  it('keeps a path shape even when no segment starts with voc', () => {
+    // Unreachable today — every name the app generates is `voc`-stemmed — which
+    // is exactly why it needs pinning: the branch a future name would take was
+    // front-prefixing, giving `stg-/aws/lambda/x`. That breaks the `/aws/...`
+    // namespace this placement rule exists to preserve, so the prefix goes on
+    // the last segment, the one identifying the resource.
+    const { naming } = namingFor('stg');
+    expect(naming.prefixed('/aws/lambda/my-thing')).toBe('/aws/lambda/stg-my-thing');
+    expect(naming.prefixed('/aws/apigateway/access-logs')).toBe('/aws/apigateway/stg-access-logs');
+    // A flat name has one segment, so the two branches agree there.
+    expect(naming.prefixed('my-thing')).toBe('stg-my-thing');
   });
 
   it('is the identity with no prefix', () => {

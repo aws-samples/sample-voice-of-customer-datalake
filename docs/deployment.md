@@ -261,8 +261,20 @@ The prefix reaches stack names (`b-VocCoreStack`), every physical resource name
 (`b-voc-feedback-<account>-<region>`), all CloudFormation exports, and the IAM
 wildcards that would otherwise let one copy invoke the other's ingestors. Pass
 the same flag on **every** command for that deployment — `cdk deploy`,
-`cdk diff`, `cdk destroy` — and to the frontend env script
-(`CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack`).
+`cdk diff`, `cdk destroy`.
+
+The two frontend shell scripts cannot see CDK context, so they take the stack
+names as environment variables instead. **Both** need them, and forgetting them
+on `deploy:frontend` is the expensive one: it resolves the *unprefixed*
+deployment's bucket and CloudFront distribution and syncs this build over that
+site, silently, because every output resolves fine.
+
+```bash
+# frontend of the prefixed deployment (build + S3 sync + invalidation)
+CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack npm run deploy:frontend
+# local .env pointed at the prefixed deployment
+CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack bash scripts/update-env.sh
+```
 
 Two things to know before using it:
 
@@ -274,11 +286,15 @@ Two things to know before using it:
   `cdk.context.json` — it is a per-deployment CLI flag, not project config.
   With no flag the synthesized templates are byte-identical to a build from
   before the flag existed, which `lib/app-baseline.test.ts` enforces.
-- **Keep the prefix short.** Lambda function, IAM role and EventBridge rule
-  names cap at 64 characters, and with all plugins enabled the longest name the
-  app generates (`voc-ingest-app_reviews_android-schedule` plus
-  `-<account>-<region>`) already uses 62 of them. Synth fails immediately with
-  the offending resource and the exact remaining budget:
+- **On the committed defaults the prefix has to be ONE character.** That is why
+  the example above is `b` and not `stg`. Lambda function, IAM role and
+  EventBridge rule names cap at 64 characters, and with the `pluginStatus` in
+  `cdk.context.json` the longest name the app generates
+  (`voc-ingest-app_reviews_android-schedule` plus `-<account>-<region>`) already
+  uses 62 of them in `us-east-1` — so `-c deploymentPrefix=stg` does not
+  synthesize until you widen the budget by disabling a plugin with a long id.
+  A longer region name costs more still. Synth fails immediately, naming the
+  offending resource and the exact remaining budget:
 
   ```
   [staging-VocIngestionStack] deploymentPrefix "staging" makes
@@ -288,11 +304,17 @@ Two things to know before using it:
   resource name (e.g. disable the plugin that owns it).
   ```
 
-  Disabling unused plugins in `pluginStatus` widens the budget. S3 bucket names
+  Disabling unused plugins in `pluginStatus` widens the budget: each character
+  removed from the longest plugin id buys one for the prefix. S3 bucket names
   and the Cognito hosted-UI domain prefix are checked against **63** characters
   rather than 64, since both must be a single DNS label — a difference of one
   character that decides whether the deploy succeeds, so the check keys off the
   call site (`uniqueDnsName()`) rather than guessing from the name.
+
+  Shortening the schedule-rule base name itself (`voc-ingest-<id>-schedule`)
+  would widen the budget for everyone, but it renames a resource on **every**
+  existing deployment, which is exactly what the opt-in design exists to avoid.
+  That is a separate change with its own baseline regeneration.
 
 ### Stack Deployment Order
 

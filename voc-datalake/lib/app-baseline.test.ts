@@ -26,12 +26,13 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { nameInventory } from './test-support/name-inventory';
+import { nameInventory, unlistedNameProperties } from './test-support/name-inventory';
 import {
   BASELINE_PATH,
+  cleanupAssemblyDirs,
   diagnostics,
   synthApp,
   SYNTH_TIMEOUT_MS,
@@ -80,6 +81,11 @@ const PREFIXED_NAME = /[= :/](?![Vv]oc)[a-z0-9][a-z0-9-]*-voc-/;
 const baseline = loadBaseline();
 const synthed = synthApp();
 
+// The assembly is ~26 MB and every template read above comes out of it, so it
+// has to survive the whole file — and be gone afterwards. Vitest kills its
+// workers, so synth-app.ts's `process.on('exit')` hook does not run here.
+afterAll(cleanupAssemblyDirs);
+
 describe('the default (no deploymentPrefix) synth', () => {
   it('produces exactly the stacks the baseline recorded', () => {
     expect(synthed.stackNames).toEqual(Object.keys(baseline.stacks).sort());
@@ -104,6 +110,45 @@ describe('the default (no deploymentPrefix) synth', () => {
       ).toBe(baseline.stacks[stackName].templateSha256);
     },
   );
+
+  it('inventories every property CloudFormation actually carries a name in', () => {
+    // The inventory is only as exhaustive as its list of property names, and a
+    // list that is too narrow fails OPEN: a missed name never appears, so both
+    // the equality above and the exhaustive prefix mapping pass while saying
+    // nothing about it. Four names were in exactly that state — the KMS alias,
+    // the Cognito hosted-UI domain, the user-pool client name and the API usage
+    // plan — because the list held CDK L2 property spellings (`Alias`,
+    // `DomainPrefix`, `UserPoolClientName`, `RestApiName`) that never appear in
+    // a template at all.
+    for (const stackName of synthed.stackNames) {
+      expect(
+        unlistedNameProperties(synthed.template(stackName)),
+        `${stackName}: these render to a VoC name but no inventory watches them. Add the ` +
+          'CloudFormation property name to NAME_PROPERTIES in lib/test-support/name-inventory.ts ' +
+          '(and regenerate the baseline), or establish that it is not a physical name.',
+      ).toEqual([]);
+    }
+  });
+
+  it('would flag a name-bearing property that the inventory does not list', () => {
+    // The complement, so the assertion above cannot pass by never detecting
+    // anything: an empty result has to mean "nothing unlisted", not "the
+    // detector looks in the wrong place".
+    const template = {
+      Resources: {
+        Thing: { Type: 'AWS::Service::Thing', Properties: { ThingName: 'voc-thing-not-in-the-list' } },
+      },
+    };
+    expect(unlistedNameProperties(template))
+      .toEqual(['AWS::Service::Thing ThingName = voc-thing-not-in-the-list']);
+    // ...and a listed property, or a property with no VoC name, is not flagged.
+    expect(unlistedNameProperties({
+      Resources: {
+        Table: { Type: 'AWS::DynamoDB::Table', Properties: { TableName: 'voc-feedback' } },
+        Other: { Type: 'AWS::Service::Thing', Properties: { ThingName: 'unrelated' } },
+      },
+    })).toEqual([]);
+  });
 
   it('carries no deployment prefix anywhere in a name', () => {
     // The inventory equality above already implies this, but state it directly:
