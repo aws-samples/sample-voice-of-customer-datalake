@@ -98,7 +98,9 @@ describe('validateDeploymentPrefix', () => {
     // `9-VocWebSearchStack` — an error that never mentions deploymentPrefix.
     // Found by synthesizing it; no unit test would have, because the check that
     // fires lives in the CDK.
-    expect(() => validateDeploymentPrefix('9')).toThrow(/START WITH A LOWERCASE LETTER/);
+    // Wording-tolerant on purpose, matching the rest of this file: the CLAIM is
+    // that the message names the leading-letter rule, not that it shouts it.
+    expect(() => validateDeploymentPrefix('9')).toThrow(/start with a lowercase letter/i);
     expect(() => validateDeploymentPrefix('2-a')).toThrow(/Invalid deploymentPrefix/);
     // A digit anywhere else is fine, in every namespace including stack names.
     expect(validateDeploymentPrefix('d2')).toBe('d2');

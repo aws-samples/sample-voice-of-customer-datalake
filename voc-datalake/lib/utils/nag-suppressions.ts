@@ -172,8 +172,9 @@ export const bedrockModelSuppressions: NagPackSuppression[] = [
 // regex silently stops matching — leaving a fresh AwsSolutions-IAM5 warning on
 // every prefixed synth. With no prefix the strings are unchanged.
 export function pluginSystemSuppressions(deploymentPrefix?: string): NagPackSuppression[] {
-  // Safe to interpolate into a regex: validateDeploymentPrefix() admits only
-  // [a-z0-9] and inner hyphens, none of which are regex metacharacters.
+  // Safe to interpolate into a regex: validateDeploymentPrefix() admits a
+  // leading lowercase letter followed by lowercase letters, digits and inner
+  // hyphens — none of which are regex metacharacters.
   const p = deploymentPrefix ? `${deploymentPrefix}-` : '';
   return [
   {

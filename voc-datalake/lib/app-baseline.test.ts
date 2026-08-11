@@ -73,6 +73,13 @@ function loadBaseline(): Baseline {
  * have let exactly the prefixes this repo documents slip past. The negative
  * lookahead keeps the plain `voc-` stem — and `Voc...` in an export name — from
  * matching itself.
+ *
+ * Deliberately BROADER than the prefix grammar, which now requires a leading
+ * letter: this detects a leaked prefix, and a detector that tracked the grammar
+ * exactly would stop seeing anything the grammar stopped admitting — including a
+ * name written by hand rather than produced by `prefixed()`. Over-matching here
+ * fails loudly; under-matching fails silently, which is the whole point of the
+ * assertion.
  */
 const PREFIXED_NAME = /[= :/](?![Vv]oc)[a-z0-9][a-z0-9-]*-voc-/;
 
