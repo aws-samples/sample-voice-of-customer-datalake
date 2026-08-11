@@ -335,6 +335,13 @@ export class VocProcessingStack extends VocStack {
         'web_search_queries.$': '$.Payload.web_search_queries',
         // Always returned by step_initialize ('' when unused) — see #157.
         'documents_context.$': '$.Payload.documents_context',
+        // What the report was built from (reference documents actually used,
+        // how many were selected, feedback count, persona ids). step_initialize
+        // is the only step that reads those inputs, and step_save is what
+        // persists them, so it rides the state like web_search_queries does.
+        // ALWAYS returned by step_initialize (empty when nothing was selected)
+        // — an absent key here would fail the state outright.
+        'derivation.$': '$.Payload.derivation',
       },
     });
     initializeStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'], interval: cdk.Duration.seconds(2), maxAttempts: 3, backoffRate: 2 });
@@ -400,6 +407,8 @@ export class VocProcessingStack extends VocStack {
         'feedback_count.$': '$.initialize_result.feedback_count',
         // Executed web-search queries for the report disclosure (#207).
         'web_search_queries.$': '$.initialize_result.web_search_queries',
+        // Provenance decided at initialize, persisted on the document here.
+        'derivation.$': '$.initialize_result.derivation',
         'analysis.$': '$.analysis_result.analysis',
         'synthesis.$': '$.synthesis_result.synthesis',
         'validation.$': '$.validate_result.validation',

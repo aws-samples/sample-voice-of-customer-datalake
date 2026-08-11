@@ -181,7 +181,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "c74c86f3519bbb806c3d02cf5a5ce319293d95c25a0ee4792b78d54707ed5194",
+      "templateSha256": "18fde97c1540237227e2e168b01da842c18d2f50fc95700445096ac83ad94a42",
       "names": {
         "physicalNames": [
           "AWS::Lambda::Function FunctionName = voc-aggregation-processor-<AWS::AccountId>-<AWS::Region>",

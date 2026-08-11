@@ -27,6 +27,12 @@ from shared.feedback import (
 )
 from shared.tables import get_projects_table, get_feedback_table
 from shared.jobs import update_job_status
+from shared.derivation import (
+    DERIVATION_FIELD,
+    ROLE_REFERENCE,
+    build_derivation,
+    derivation_source,
+)
 from shared.agentic_search import run_agentic_web_search
 from shared.web_search import is_web_search_configured
 
@@ -148,6 +154,7 @@ def step_initialize(event: dict) -> dict:
     
     # Optional: Get selected personas context
     personas_context = ""
+    used_persona_ids: list[str] = []
     selected_persona_ids = config.get('selected_persona_ids', [])
     proj_table = _get_projects_table()
     if selected_persona_ids and proj_table:
@@ -163,9 +170,12 @@ def step_initialize(event: dict) -> dict:
                 personas_context += f"- Goals: {', '.join(p.get('goals', [])[:3])}\n"
                 personas_context += f"- Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n"
                 personas_context += f"- Quote: \"{p.get('quote', '')}\"\n\n"
+                if p.get('persona_id'):
+                    used_persona_ids.append(p['persona_id'])
     
     # Optional: Get selected documents context
     documents_context = ""
+    used_sources: list[dict] = []
     selected_document_ids = config.get('selected_document_ids', [])
     if selected_document_ids and proj_table:
         update_job_status(project_id, job_id, 'running', 18, 'fetching_documents')
@@ -175,9 +185,16 @@ def step_initialize(event: dict) -> dict:
         
         if selected_docs:
             documents_context = "## Reference Documents\n\n"
+            # Recorded from THIS loop, so the report's provenance names the
+            # documents that actually reached the model rather than every id the
+            # request selected; selected_document_count keeps the difference
+            # visible. The [:3] cap is left exactly as it is.
             for d in selected_docs[:3]:  # Limit to 3 docs to avoid context overflow
                 content = d.get('content', '')[:5000]  # Truncate long docs
                 documents_context += f"### {d.get('title', 'Untitled')} ({d.get('document_type', 'doc').upper()})\n\n{content}\n\n---\n\n"
+                source = derivation_source(d.get('document_id'), ROLE_REFERENCE)
+                if source:
+                    used_sources.append(source)
     
     # Optional: web search grounding (AgentCore Web Search Tool) via a bounded
     # agentic loop — the model plans several queries, reviews results, and
@@ -220,7 +237,18 @@ def step_initialize(event: dict) -> dict:
         'personas_context': personas_context,
         'documents_context': documents_context,
         'web_context': web_context,
-        'web_search_queries': web_search_queries
+        'web_search_queries': web_search_queries,
+        # What this research report was built from. Decided here — this is the
+        # only step that reads the inputs — and written by step_save, so it
+        # travels the state machine like web_search_queries does. ALWAYS
+        # present (empty when nothing was selected), because the resultSelector
+        # references it unconditionally and an absent key fails the state.
+        'derivation': build_derivation(
+            sources=used_sources,
+            selected_document_count=len(selected_document_ids),
+            feedback_count=len(feedback_items),
+            persona_ids=used_persona_ids,
+        ),
     }
 @tracer.capture_method
 def step_analyze(event: dict) -> dict:
@@ -472,6 +500,12 @@ Public-web grounding for this report came from the following searches:
             'content': full_report,
             'feedback_count': feedback_count,
             'job_id': job_id,
+            # Built by step_initialize and threaded through the state machine.
+            # The .get() default covers the rollout skew where an in-flight
+            # execution is still pinned to a definition that does not forward it
+            # (same pattern as web_search_queries): an empty derivation reads as
+            # "no lineage", which is a legitimate answer rather than an error.
+            DERIVATION_FIELD: event.get('derivation') or build_derivation(),
             'created_at': now,
         }
         proj_table.put_item(Item=item)
