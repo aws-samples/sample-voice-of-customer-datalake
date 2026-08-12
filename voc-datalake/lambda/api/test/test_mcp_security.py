@@ -145,20 +145,40 @@ def _client_error(code: str, operation: str = "Query") -> ClientError:
     )
 
 
+def _make_event(token: str = "voc_testtoken", project_id: str = "proj-1") -> dict:
+    """Build the minimal auth-header event _authenticate reads."""
+    return {
+        "headers": {
+            "authorization": f"Bearer {token}",
+            "x-project-id": project_id,
+        }
+    }
+
+
+def _rpc_event() -> dict:
+    """Build a full JSON-RPC tools/call event for the lambda_handler path."""
+    return {
+        "httpMethod": "POST",
+        "path": "/v1/mcp",
+        "headers": {
+            "authorization": "Bearer voc_testtoken",
+            "x-project-id": "proj-1",
+        },
+        "body": json.dumps({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "get_project", "arguments": {}},
+        }),
+    }
+
+
 # ===========================================================================
 # 1. Constant-time token comparison
 # ===========================================================================
 
 class TestConstantTimeTokenComparison:
     """hmac.compare_digest must be called for every hash comparison in _authenticate."""
-
-    def _make_event(self, token: str, project_id: str = "proj-1") -> dict:
-        return {
-            "headers": {
-                "authorization": f"Bearer {token}",
-                "x-project-id": project_id,
-            }
-        }
 
     # NOTE: `mcp_handler.hmac` is the shared stdlib module object from
     # sys.modules, so this patch replaces `hmac.compare_digest` *process-wide*
@@ -179,7 +199,7 @@ class TestConstantTimeTokenComparison:
         }
 
         from mcp_handler import _authenticate
-        result = _authenticate(self._make_event("voc_testtoken"))
+        result = _authenticate(_make_event("voc_testtoken"))
 
         # compare_digest was called (not ==)
         assert mock_digest.called, "hmac.compare_digest was never called"
@@ -197,7 +217,7 @@ class TestConstantTimeTokenComparison:
         mock_table.update_item.return_value = {}
 
         from mcp_handler import _authenticate
-        result = _authenticate(self._make_event("voc_testtoken", project_id="proj-1"))
+        result = _authenticate(_make_event("voc_testtoken", project_id="proj-1"))
 
         assert result is not None
         assert result["scope"] == "read"
@@ -213,7 +233,7 @@ class TestConstantTimeTokenComparison:
 
         from mcp_handler import _authenticate
         # The real hash won't match "wronghash"
-        result = _authenticate(self._make_event("voc_realtoken"))
+        result = _authenticate(_make_event("voc_realtoken"))
         assert result is None
 
     @patch("mcp_handler.projects_table")
@@ -226,7 +246,7 @@ class TestConstantTimeTokenComparison:
         mock_table.query.side_effect = _client_error('ProvisionedThroughputExceededException')
 
         from mcp_handler import _authenticate
-        result = _authenticate(self._make_event("voc_testtoken"))
+        result = _authenticate(_make_event("voc_testtoken"))
 
         assert result is None, "A retryable DynamoDB error must return None, not raise"
 
@@ -244,7 +264,7 @@ class TestConstantTimeTokenComparison:
         for code in ('ResourceNotFoundException', 'AccessDeniedException'):
             mock_table.query.side_effect = _client_error(code)
             with pytest.raises(mcp_handler.AuthBackendUnavailable):
-                mcp_handler._authenticate(self._make_event("voc_testtoken"))
+                mcp_handler._authenticate(_make_event("voc_testtoken"))
 
     @patch("mcp_handler.projects_table")
     def test_permanent_auth_fault_surfaces_as_500_not_401(self, mock_table, lambda_context):
@@ -939,14 +959,6 @@ class TestPartialResultReporting:
 class TestTokenHashTypeSafety:
     """_authenticate must not raise when a DynamoDB row has a non-str token_hash."""
 
-    def _make_event(self, token: str = "voc_testtoken", project_id: str = "proj-1") -> dict:
-        return {
-            "headers": {
-                "authorization": f"Bearer {token}",
-                "x-project-id": project_id,
-            }
-        }
-
     @patch("mcp_handler.projects_table")
     def test_non_string_token_hash_skipped(self, mock_table):
         """A DynamoDB item with a non-str token_hash is skipped, not raised.
@@ -968,7 +980,7 @@ class TestTokenHashTypeSafety:
 
         from mcp_handler import _authenticate
         # Must return None without raising
-        result = _authenticate(self._make_event("voc_testtoken"))
+        result = _authenticate(_make_event("voc_testtoken"))
         assert result is None, "Non-string token_hash must not raise; should return None"
 
     @patch("mcp_handler.projects_table")
@@ -983,7 +995,7 @@ class TestTokenHashTypeSafety:
 
         from mcp_handler import _authenticate
         with patch("mcp_handler.logger") as mock_logger:
-            _authenticate(self._make_event("voc_testtoken"))
+            _authenticate(_make_event("voc_testtoken"))
             assert mock_logger.warning.called, "A non-str token_hash must trigger a WARNING log"
             # The log must include the type name but NOT the value itself
             call_kwargs = mock_logger.warning.call_args
@@ -1054,30 +1066,6 @@ class TestBotoCoreErrorHandling:
     invalid", which is the misdirection AuthBackendUnavailable exists to remove.
     """
 
-    def _make_event(self, token: str = "voc_testtoken", project_id: str = "proj-1") -> dict:
-        return {
-            "headers": {
-                "authorization": f"Bearer {token}",
-                "x-project-id": project_id,
-            }
-        }
-
-    def _rpc_event(self) -> dict:
-        return {
-            "httpMethod": "POST",
-            "path": "/v1/mcp",
-            "headers": {
-                "authorization": "Bearer voc_testtoken",
-                "x-project-id": "proj-1",
-            },
-            "body": json.dumps({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": "get_project", "arguments": {}},
-            }),
-        }
-
     @pytest.mark.parametrize("exc", _TRANSIENT_BOTOCORE)
     @patch("mcp_handler.projects_table")
     def test_transient_botocore_error_returns_none(self, mock_table, exc):
@@ -1085,7 +1073,7 @@ class TestBotoCoreErrorHandling:
         mock_table.query.side_effect = exc
 
         from mcp_handler import _authenticate
-        assert _authenticate(self._make_event()) is None, (
+        assert _authenticate(_make_event()) is None, (
             f"{type(exc).__name__} must be handled like a throttle, not propagate"
         )
 
@@ -1134,7 +1122,7 @@ class TestBotoCoreErrorHandling:
 
         mock_table.query.side_effect = exc
         with pytest.raises(mcp_handler.AuthBackendUnavailable):
-            mcp_handler._authenticate(self._make_event())
+            mcp_handler._authenticate(_make_event())
 
     @patch("mcp_handler.projects_table")
     def test_permanent_botocore_fault_surfaces_as_500_with_json_rpc_envelope(
@@ -1149,7 +1137,7 @@ class TestBotoCoreErrorHandling:
         mock_table.query.side_effect = NoCredentialsError()
 
         import mcp_handler
-        response = mcp_handler.lambda_handler(self._rpc_event(), lambda_context)
+        response = mcp_handler.lambda_handler(_rpc_event(), lambda_context)
 
         assert response["statusCode"] == 500
         assert response["headers"]["Access-Control-Allow-Origin"] == "*", (
@@ -1169,7 +1157,7 @@ class TestBotoCoreErrorHandling:
         mock_table.query.side_effect = EndpointConnectionError(endpoint_url=_ENDPOINT)
 
         import mcp_handler
-        response = mcp_handler.lambda_handler(self._rpc_event(), lambda_context)
+        response = mcp_handler.lambda_handler(_rpc_event(), lambda_context)
 
         assert response["statusCode"] == 401
         assert response["headers"]["Access-Control-Allow-Origin"] == "*"
@@ -1205,7 +1193,7 @@ class TestBotoCoreErrorHandling:
 
         import mcp_handler
         with patch("mcp_handler.logger") as mock_logger:
-            response = mcp_handler.lambda_handler(self._rpc_event(), lambda_context)
+            response = mcp_handler.lambda_handler(_rpc_event(), lambda_context)
 
             assert response["statusCode"] == 500
             body = response["body"]
@@ -1245,7 +1233,7 @@ class TestBotoCoreErrorHandling:
         import mcp_handler
 
         mock_table.query.side_effect = exc
-        event = self._make_event(token="voc_SENTINELTOKEN")
+        event = _make_event(token="voc_SENTINELTOKEN")
 
         with patch("mcp_handler.logger") as mock_logger:
             try:
@@ -1296,30 +1284,6 @@ class TestUnclassifiedAuthFaultsAreServerErrors:
     other side — the catch-all must not shadow the specific handlers above it.
     """
 
-    def _make_event(self, token: str = "voc_testtoken", project_id: str = "proj-1") -> dict:
-        return {
-            "headers": {
-                "authorization": f"Bearer {token}",
-                "x-project-id": project_id,
-            }
-        }
-
-    def _rpc_event(self) -> dict:
-        return {
-            "httpMethod": "POST",
-            "path": "/v1/mcp",
-            "headers": {
-                "authorization": "Bearer voc_testtoken",
-                "x-project-id": "proj-1",
-            },
-            "body": json.dumps({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": "get_project", "arguments": {}},
-            }),
-        }
-
     @pytest.mark.parametrize("exc", _UNCLASSIFIED_AUTH_FAULTS)
     @patch("mcp_handler.projects_table")
     def test_unclassified_fault_raises_auth_backend_unavailable(self, mock_table, exc):
@@ -1332,7 +1296,7 @@ class TestUnclassifiedAuthFaultsAreServerErrors:
 
         mock_table.query.side_effect = exc
         with pytest.raises(mcp_handler.AuthBackendUnavailable):
-            mcp_handler._authenticate(self._make_event())
+            mcp_handler._authenticate(_make_event())
 
     @pytest.mark.parametrize("exc", _UNCLASSIFIED_AUTH_FAULTS)
     @patch("mcp_handler.projects_table")
@@ -1350,7 +1314,7 @@ class TestUnclassifiedAuthFaultsAreServerErrors:
         mock_table.query.side_effect = exc
 
         import mcp_handler
-        response = mcp_handler.lambda_handler(self._rpc_event(), lambda_context)
+        response = mcp_handler.lambda_handler(_rpc_event(), lambda_context)
 
         assert response["statusCode"] == 500, (
             f"{type(exc).__name__} must not escape as a 502; got {response['statusCode']}"
@@ -1374,7 +1338,7 @@ class TestUnclassifiedAuthFaultsAreServerErrors:
         mock_table.query.side_effect = exc
         with patch("mcp_handler.logger") as mock_logger:
             with pytest.raises(mcp_handler.AuthBackendUnavailable):
-                mcp_handler._authenticate(self._make_event(token="voc_SENTINELTOKEN"))
+                mcp_handler._authenticate(_make_event(token="voc_SENTINELTOKEN"))
 
             calls = mock_logger.exception.call_args_list
             assert calls, f"{type(exc).__name__} must be logged for an operator"
@@ -1400,7 +1364,7 @@ class TestUnclassifiedAuthFaultsAreServerErrors:
         mock_table.query.side_effect = _client_error("ThrottlingException")
 
         from mcp_handler import _authenticate
-        assert _authenticate(self._make_event()) is None, (
+        assert _authenticate(_make_event()) is None, (
             "A retryable ClientError must still be handled as a transient 401, "
             "not swallowed by the trailing except Exception"
         )
@@ -1413,7 +1377,7 @@ class TestUnclassifiedAuthFaultsAreServerErrors:
         )
 
         from mcp_handler import _authenticate
-        assert _authenticate(self._make_event()) is None, (
+        assert _authenticate(_make_event()) is None, (
             "A transient BotoCoreError must still be handled as a 401, not "
             "swallowed by the trailing except Exception"
         )
@@ -1425,7 +1389,7 @@ class TestUnclassifiedAuthFaultsAreServerErrors:
 
         mock_table.query.side_effect = _client_error("AccessDeniedException")
         with pytest.raises(mcp_handler.AuthBackendUnavailable):
-            mcp_handler._authenticate(self._make_event())
+            mcp_handler._authenticate(_make_event())
 
 
 # ===========================================================================
@@ -1442,20 +1406,12 @@ class TestUnconfiguredTableIsAServerFault:
     re-mint tokens for what is a deployment problem.
     """
 
-    def _make_event(self, project_id: str = "proj-1") -> dict:
-        return {
-            "headers": {
-                "authorization": "Bearer voc_testtoken",
-                "x-project-id": project_id,
-            }
-        }
-
     @patch("mcp_handler.projects_table", None)
     def test_authenticate_raises_when_table_unconfigured(self):
         import mcp_handler
 
         with pytest.raises(mcp_handler.AuthBackendUnavailable):
-            mcp_handler._authenticate(self._make_event())
+            mcp_handler._authenticate(_make_event())
 
     @patch("mcp_handler.projects_table", None)
     def test_unconfigured_table_surfaces_as_500_not_401(self, lambda_context):

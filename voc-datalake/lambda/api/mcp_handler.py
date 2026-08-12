@@ -17,10 +17,7 @@ from typing import Any
 
 from aws_lambda_powertools import Logger, Tracer, Metrics
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import BotoCoreError, ClientError
-# Imported as a module, not by name: botocore defines its own `ConnectionError`,
-# which would shadow the builtin of the same name if pulled into this namespace.
-# `botocore_exceptions.ConnectionError` leaves no doubt which one is meant.
+# Imported as a module because botocore's own `ConnectionError` would shadow the builtin.
 from botocore import exceptions as botocore_exceptions
 
 from shared.aws import get_dynamodb_resource
@@ -87,51 +84,26 @@ _RETRYABLE_DYNAMODB_ERRORS: frozenset[str] = frozenset({
     'TransactionConflictException',
 })
 
-# botocore's BotoCoreError family are NOT ClientError subclasses, so without a
-# clause of their own they escape _authenticate entirely: the unhandled
-# exception becomes an API Gateway 502 with no JSON-RPC envelope and no CORS
-# headers, which a browser-based MCP client can only report as an opaque CORS
-# failure.  The family is split the same way as _RETRYABLE_DYNAMODB_ERRORS
-# above, and for the same reason.
-#
-# These are the transient half — a connection or timeout fault behaves exactly
-# like a throttle, so 401 (with a retry) is an acceptable answer.  Everything
-# else in the family (NoCredentialsError, NoRegionError, ParamValidationError,
-# …) is a permanent configuration fault and raises AuthBackendUnavailable.
-#
-# The two *base* classes are named rather than the individual leaves.  Listing
-# leaves (EndpointConnectionError, ConnectTimeoutError, ReadTimeoutError,
-# ConnectionClosedError) enumerated an incomplete set: all four are subclasses of
-# these bases, so nothing is lost, but SSLError, ProxyConnectionError,
-# ResponseStreamingError and the two bases themselves were missed and fell
-# through to the permanent branch — answering 500 for a transient network fault.
-# Naming the bases makes any future transient leaf botocore adds transient here
-# too, by inheritance rather than by remembering to edit this tuple.
-#
-# NOTE: botocore_exceptions.ConnectionError is botocore's own class, NOT the
-# builtin ConnectionError — hence the module-qualified reference.  Neither base
-# is an ancestor of NoCredentialsError, NoRegionError or ParamValidationError, so
-# those still take the permanent branch: this widens the transient set without
-# reclassifying any configuration fault.
-_RETRYABLE_BOTOCORE_ERRORS: tuple[type[BotoCoreError], ...] = (
+# The transient half of the BotoCoreError family: a connection or timeout fault
+# behaves like a throttle, so 401 (with a retry) is an acceptable answer.  The two
+# *base* classes are named rather than their leaves, so a transient leaf botocore
+# adds later is covered by inheritance instead of by an edit here.  Neither base is
+# an ancestor of NoCredentialsError, NoRegionError or ParamValidationError, so no
+# configuration fault is reclassified as transient.
+_RETRYABLE_BOTOCORE_ERRORS: tuple[type[botocore_exceptions.BotoCoreError], ...] = (
     botocore_exceptions.ConnectionError,
     botocore_exceptions.HTTPClientError,
 )
 
 
 class AuthBackendUnavailable(Exception):
-    """The token store could not be consulted because of a server-side fault.
+    """The token store could not be consulted, so the credential was never compared.
 
-    Raised for *permanent* faults — an unset table name, a missing/misnamed
-    table (``ResourceNotFoundException``), an IAM ``AccessDeniedException``,
-    absent credentials (``NoCredentialsError``), … — so the caller can answer
-    with a server error instead of telling the client that its token is
-    invalid.  Retrying cannot fix these, and reporting them as 401 sends
-    operators to re-mint tokens for a configuration problem.
-
-    Also raised for any *unrecognised* fault out of the token lookup, for the
-    same reason: an exception nobody classified means the credential was never
-    compared, so a 401 would be a guess dressed up as an answer.
+    Raised for *permanent* faults — an unset table name, a missing/misnamed table
+    (``ResourceNotFoundException``), an IAM ``AccessDeniedException``, absent
+    credentials (``NoCredentialsError``), … — and for any *unrecognised* fault out
+    of the token lookup.  Callers must answer with a server error: a 401 here says
+    the token is invalid when nothing ever checked it.
     """
 
 
@@ -178,7 +150,7 @@ def _authenticate(event: dict) -> dict | None:
                 Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('TOKEN#')
             ),
         )
-    except ClientError as exc:
+    except botocore_exceptions.ClientError as exc:
         # A throttle or transient service fault: the token may be fine, so a
         # 401 (with a retry) is an acceptable answer.  A permanent fault —
         # missing table, AccessDenied — is a server problem and must not be
@@ -195,7 +167,7 @@ def _authenticate(event: dict) -> dict | None:
             extra={'error_code': error_code},
         )
         raise AuthBackendUnavailable(error_code or 'ClientError') from exc
-    except BotoCoreError as exc:
+    except botocore_exceptions.BotoCoreError as exc:
         # BotoCoreError is a sibling of ClientError, not a subclass, so it needs
         # this clause or it escapes as a 502 with no JSON-RPC envelope and no
         # CORS headers.  Split exactly as above: a connection/timeout fault is
@@ -215,22 +187,12 @@ def _authenticate(event: dict) -> dict | None:
         )
         raise AuthBackendUnavailable(error_type) from exc
     except Exception as exc:
-        # Anything that is neither ClientError nor BotoCoreError still escaped
-        # this function and became the very failure the BotoCoreError clause was
-        # added to prevent: an API Gateway 502 with no JSON-RPC envelope and no
-        # CORS headers, which a browser MCP client can only report as an opaque
-        # CORS error.  Real escapees include botocore.parsers.ResponseParserError
-        # (a malformed service response) and a plain TypeError out of the
-        # DynamoDB serializer on an unserialisable key.  This clause is ordered
-        # last, so the two specific handlers above still win.
-        #
-        # It RAISES rather than `return None`, and that distinction is the whole
-        # point.  This guard has been through `return None` once already and it
-        # was the bug: it reported configuration faults as "your token is
-        # invalid", sending operators off to re-mint perfectly good tokens.  An
-        # unrecognised fault means the credential was never checked, so the only
-        # honest answer is a server error (500 / -32603) — never a 401.  Do not
-        # "simplify" this back into a `return None`.
+        # Catches whatever escaped both clauses above; ordered last so those two
+        # still win.  It RAISES, and must never be "simplified" into `return
+        # None`: this guard was `return None` once and that was the bug —
+        # configuration faults reported to the client as "your token is invalid".
+        # An unrecognised fault means the credential was never compared, so a
+        # server error is the only honest answer.
         error_type = type(exc).__name__
         logger.exception(
             'Token lookup failed with an unexpected error; reporting a server error',
