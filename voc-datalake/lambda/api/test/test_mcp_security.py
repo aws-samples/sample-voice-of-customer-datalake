@@ -1047,6 +1047,65 @@ class TestBotoCoreErrorHandling:
         assert response["headers"]["Access-Control-Allow-Origin"] == "*"
         assert json.loads(response["body"])["error"]["code"] == -32001
 
+    @patch("mcp_handler.projects_table")
+    def test_server_fault_detail_never_reaches_the_client(self, mock_table, lambda_context):
+        """The -32603 body carries a fixed message, never the exception detail.
+
+        Both call sites answer with a literal ("token store unavailable"), and
+        the fault detail goes to the log instead.  That split is a deliberate
+        no-disclosure boundary on an *unauthenticated* path: this request never
+        presented a valid credential, so anything echoed here is readable by
+        anyone who can reach the endpoint.
+
+        There are two layers, and this pins the outer one.  `_authenticate`
+        already sanitises at the raise site — `AuthBackendUnavailable` is
+        constructed with `type(exc).__name__`, so a botocore report never
+        travels with it.  What *can* still travel is the class name
+        ("ParamValidationError", "NoCredentialsError" — which names the
+        credential subsystem), and an `f"Internal error: {exc}"` at either call
+        site would publish it.  This asserts the response body carries neither.
+
+        Unguarded before this test.  The class-name assertion is the load-bearing
+        one: verified by mutating both call sites to interpolate the exception,
+        which fails this test.  The sentinel assertion is defence in depth and
+        would hold even if the raise site stopped sanitising.  The log side is
+        asserted too — "absent from the body" alone would also be satisfied by a
+        fault that was swallowed entirely.
+        """
+        sentinel = "SENTINEL_INTERNAL_DETAIL"
+        mock_table.query.side_effect = ParamValidationError(report=sentinel)
+
+        import mcp_handler
+        with patch("mcp_handler.logger") as mock_logger:
+            response = mcp_handler.lambda_handler(self._rpc_event(), lambda_context)
+
+            assert response["statusCode"] == 500
+            body = response["body"]
+            assert json.loads(body)["error"]["code"] == -32603
+            # The botocore report is dropped at the raise site, so it could not
+            # reach here even via an interpolated message.  The *class name* can,
+            # and is what an f-string on the exception would expose.
+            assert "ParamValidationError" not in body, (
+                "The fault's class name must not reach an unauthenticated caller; "
+                f"body was: {body}"
+            )
+            assert sentinel not in body, (
+                "Defence in depth: the botocore report must not appear either; "
+                f"body was: {body}"
+            )
+
+            # Positive control: the detail must still be recorded server-side,
+            # or "absent from the body" would also hold for a fault that was
+            # swallowed entirely.
+            logged = " ".join(
+                str(c.args) + str((c.kwargs or {}).get("extra", ""))
+                for c in mock_logger.exception.call_args_list
+            )
+            assert "ParamValidationError" in logged, (
+                "The fault must be logged for an operator, not merely hidden from "
+                f"the client; exception() calls were: {logged}"
+            )
+
     @pytest.mark.parametrize("exc", _TRANSIENT_BOTOCORE + _PERMANENT_BOTOCORE)
     @patch("mcp_handler.projects_table")
     def test_botocore_logs_carry_no_token_material(self, mock_table, exc):
