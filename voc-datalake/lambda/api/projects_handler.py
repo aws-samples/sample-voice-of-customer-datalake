@@ -608,6 +608,53 @@ def _validated_source_id(project_id: str, sk_prefix: str, raw: Any, field: str) 
     return document_id
 
 
+# One request must not become an unbounded number of keyed reads. `_validated_source_id`
+# needs no such bound — it checks one id — but a list does, and without it a 200-entry
+# array is 200 round trips paid for by a single unauthenticated-cost request.
+# Ten is well above any real selection (the whole point of the picker is choosing a
+# few reports) and far below a list worth paginating.
+MAX_SELECTED_RESEARCH_IDS = 10
+
+
+def _validated_research_ids(project_id: str, raw: Any, field: str) -> list[str]:
+    """
+    Check that every client-supplied research id names a research report in THIS
+    project, and return them in the order they were sent. Absent or empty means
+    "read no research" and is valid.
+
+    Each id goes through `_validated_source_id` under the `RESEARCH#` prefix, so
+    ownership, type and the length bound are all decided exactly as they are for
+    `source_prd_id` — an id from another project, or a PRD id offered as research,
+    does not resolve. Same trust boundary, same reason: the named document's text
+    goes straight into a Bedrock prompt.
+
+    Scoped to `RESEARCH#` on purpose rather than folded into a general document
+    selection. The prototype build already reads a PRD and a PR/FAQ, and the shared
+    reference-document path keeps only the first three of a selection — so research,
+    which sorts last, is exactly what a general picker would drop. A research-only
+    field cannot be capped out because nothing of another type is in its candidate
+    set.
+
+    The arity bound is checked BEFORE the first read, so an over-long list costs
+    one 400 rather than N reads and then a 400. Duplicates are collapsed: a
+    repeated id would otherwise be read twice and injected into the prompt twice.
+    """
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValidationError(f'{field} must be a list of document ids')
+    if len(raw) > MAX_SELECTED_RESEARCH_IDS:
+        raise ValidationError(
+            f'{field} names more than {MAX_SELECTED_RESEARCH_IDS} documents'
+        )
+    document_ids: list[str] = []
+    for entry in raw:
+        document_id = _validated_source_id(project_id, 'RESEARCH#', entry, field)
+        if document_id and document_id not in document_ids:
+            document_ids.append(document_id)
+    return document_ids
+
+
 @app.post("/projects/<project_id>/build-prototype")
 @tracer.capture_method
 def api_build_prototype(project_id: str):
@@ -646,6 +693,17 @@ def api_build_prototype(project_id: str):
         ),
         'source_prfaq_id': _validated_source_id(
             project_id, 'PRFAQ#', body.get('source_prfaq_id'), 'source_prfaq_id',
+        ),
+        # Optional extra grounding, chosen per build rather than remembered per
+        # project (the same answer #320 took for the source ids). All three absent
+        # means the prompt this endpoint has always produced: the generator adds a
+        # section only for what is asked for, so False/[] changes nothing.
+        'use_product_context': bool(body.get('use_product_context')),
+        'use_research': bool(body.get('use_research')),
+        # Validated whenever ids are sent, regardless of `use_research` — an id
+        # that is sent is an id that is claimed, as with `base_prototype_id`.
+        'selected_research_ids': _validated_research_ids(
+            project_id, body.get('selected_research_ids'), 'selected_research_ids',
         ),
     }
     job_id, _ = create_job(project_id, 'build_prototype', 'doc_config', doc_config, status='pending')

@@ -88,6 +88,7 @@
       "confirmRebuild": "This project already has a prototype. Building again adds a new one and keeps the existing one. Continue?",
       "downloadHtml": "Download .html",
       "downloadJson": "Download .json",
+      "extraSources": "Also read (optional)",
       "feedbackBuilding": "Revising…",
       "feedbackButton": "Revise with feedback",
       "feedbackHeading": "Revise prototype with feedback",
@@ -99,10 +100,13 @@
       "needsDocs": "Create a PRD or a PR-FAQ first to enable prototype build",
       "previewLabel": "Live preview",
       "rawLabel": "Raw output (parse failed — please regenerate)",
+      "researchLimit": "At most {{max}} reports per build",
       "sourceLatest": "latest",
       "sourcePrd": "PRD",
       "sourcePrfaq": "PR/FAQ",
-      "started": "Started — track it in Background Jobs."
+      "started": "Started — track it in Background Jobs.",
+      "useProductContext": "Product / service description",
+      "useResearch": "Research reports ({{total}})"
     },
     "revision": {
       "feedback": "Feedback: {{feedback}}",
@@ -257,7 +261,7 @@
     "productDescription": "Product / Service Description",
     "productDescriptionDesc": "Describe the current product. Feeds PRD and PR/FAQ generation.",
     "prototype": "Clickable Prototype",
-    "prototypeDesc": "Build a clickable HTML prototype from your PRD / PR-FAQ",
+    "prototypeDesc": "Build a clickable HTML prototype from your project's specs, and optionally its product description and research",
     "remixDocuments": "Remix Documents",
     "remixDocumentsDesc": "Combine and revise documents into new versions",
     "runResearch": "Run Research",

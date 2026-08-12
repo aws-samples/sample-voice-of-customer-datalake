@@ -43,9 +43,14 @@ def build_prototype(api_gateway_event, lambda_context):
             (f'PROJECT#{PROJECT}', 'PRD#prd_1'): {'document_id': 'prd_1'},
             (f'PROJECT#{PROJECT}', 'PRFAQ#prfaq_1'): {'document_id': 'prfaq_1'},
             (f'PROJECT#{PROJECT}', 'PROTOTYPE#proto_1'): {'document_id': 'proto_1'},
+            (f'PROJECT#{PROJECT}', 'RESEARCH#research_a'): {'document_id': 'research_a'},
+            (f'PROJECT#{PROJECT}', 'RESEARCH#research_b'): {'document_id': 'research_b'},
             # Real prototype, wrong project. Only reachable by a lookup that
             # dropped `pk`.
             (f'PROJECT#{OTHER_PROJECT}', 'PROTOTYPE#proto_other'): {'document_id': 'proto_other'},
+            # Same, for research: "belongs to another project" is a different
+            # fixture from "does not exist" only while `pk` is part of the key.
+            (f'PROJECT#{OTHER_PROJECT}', 'RESEARCH#research_other'): {'document_id': 'research_other'},
         }
 
         def get_item(Key=None, **kwargs):
@@ -281,4 +286,186 @@ class TestBasePrototypeIdIsCheckedLikeTheOtherTwo:
 
         assert response['statusCode'] == 200, label
         assert config['base_prototype_id'] is None
+        invoke.assert_called_once()
+
+
+class TestOptionalExtraSources:
+    """
+    `use_product_context`, `use_research` and `selected_research_ids` — the
+    per-build tick-boxes.
+
+    The id list is the same trust boundary as the three ids above (its documents'
+    text goes into a Bedrock prompt), with one thing they do not need: a bounded
+    arity. One id is one keyed read; an unbounded list is N reads bought with a
+    single request.
+    """
+
+    def test_all_three_absent_leaves_the_build_unaimed(self, build_prototype):
+        """The pre-existing request shape, which every caller before this feature
+        sends. It must reach the generator as "asked for nothing" — that is what
+        makes the generated prompt identical to the one it produced before."""
+        response, config, _table, _invoke = build_prototype({'title': 'Prototype'})
+
+        assert response['statusCode'] == 200
+        assert config['use_product_context'] is False
+        assert config['use_research'] is False
+        assert config['selected_research_ids'] == []
+
+    def test_the_ticked_sources_reach_the_generator(self, build_prototype):
+        response, config, _table, invoke = build_prototype({
+            'use_product_context': True,
+            'use_research': True,
+            'selected_research_ids': ['research_a', 'research_b'],
+        })
+
+        assert response['statusCode'] == 200
+        assert config['use_product_context'] is True
+        assert config['selected_research_ids'] == ['research_a', 'research_b']
+        # The job row and the generator invocation must say the same thing.
+        assert invoke.call_args.args[1]['doc_config']['selected_research_ids'] == [
+            'research_a', 'research_b',
+        ]
+
+    def test_research_ids_are_read_under_this_project_as_research_only(self, build_prototype):
+        """Ownership and type both come from the key: the supplied string reaches
+        `sk` under the `RESEARCH#` prefix and never touches `pk`."""
+        _response, _config, table, _invoke = build_prototype({
+            'use_research': True, 'selected_research_ids': ['research_a'],
+        })
+
+        keys = [call.kwargs.get('Key', {}) for call in table.get_item.call_args_list]
+        assert {'pk': f'PROJECT#{PROJECT}', 'sk': 'RESEARCH#research_a'} in keys
+        assert {k.get('pk') for k in keys} == {f'PROJECT#{PROJECT}'}
+
+    def test_a_research_id_naming_nothing_in_this_project_is_a_404_before_any_job(
+        self, build_prototype,
+    ):
+        """The criterion this endpoint exists to satisfy, and `config is None` is
+        the load-bearing half of it: the table answers every read from a dict, so
+        an implementation that skipped the unresolvable id — or validated after
+        `create_job` — would run to completion and start a billable build. The
+        assertion is that no job was created at all, not merely that the status
+        code is a 4xx.
+        """
+        response, config, _table, invoke = build_prototype({
+            'use_research': True, 'selected_research_ids': ['research_a', 'research_gone'],
+        })
+
+        assert response['statusCode'] == 404
+        assert 'selected_research_ids' in json.loads(response['body'])['error']
+        assert config is None
+        invoke.assert_not_called()
+
+    def test_another_projects_research_is_a_404(self, build_prototype):
+        """`research_other` is a real research report, in `proj_2`. This is the
+        fixture that fails the moment `pk` is dropped from the lookup."""
+        response, config, _table, invoke = build_prototype({
+            'use_research': True, 'selected_research_ids': ['research_other'],
+        })
+
+        assert response['statusCode'] == 404
+        assert config is None
+        invoke.assert_not_called()
+
+    def test_a_prd_id_offered_as_research_is_a_404(self, build_prototype):
+        """`prd_1` is a real document in this project, just not research."""
+        response, config, _table, invoke = build_prototype({
+            'use_research': True, 'selected_research_ids': ['prd_1'],
+        })
+
+        assert response['statusCode'] == 404
+        assert config is None
+        invoke.assert_not_called()
+
+    def test_an_over_long_research_id_list_is_a_400_naming_the_field(self, build_prototype):
+        """The bound `_validated_source_id` has no equivalent of. Without it a
+        single request becomes one keyed read per entry, so the list length is
+        checked BEFORE the first read — asserted here on `get_item` never having
+        been called, which is what separates "rejected the list" from "read all
+        200 of them and then rejected".
+        """
+        response, config, table, invoke = build_prototype({
+            'use_research': True,
+            'selected_research_ids': [f'research_{i}' for i in range(200)],
+        })
+
+        assert response['statusCode'] == 400
+        assert 'selected_research_ids' in json.loads(response['body'])['error']
+        assert config is None
+        invoke.assert_not_called()
+        table.get_item.assert_not_called()
+
+    def test_a_list_at_the_bound_is_accepted(self, build_prototype):
+        """The bound is a maximum, not a strict limit — a fixture only at 200
+        would pass against an off-by-one that rejected legitimate selections."""
+        from projects_handler import MAX_SELECTED_RESEARCH_IDS
+
+        response, config, _table, _invoke = build_prototype({
+            'use_research': True,
+            'selected_research_ids': ['research_a'] * MAX_SELECTED_RESEARCH_IDS,
+        })
+
+        assert response['statusCode'] == 200
+        # Collapsed: the same report named ten times is one document to read, and
+        # one prompt section rather than ten copies of it.
+        assert config['selected_research_ids'] == ['research_a']
+
+    @pytest.mark.parametrize('value', [
+        pytest.param('research_a', id='bare-string'),
+        pytest.param({'id': 'research_a'}, id='object'),
+        pytest.param(7, id='number'),
+    ])
+    def test_a_non_list_selection_is_a_400(self, build_prototype, value):
+        """A bare string is the dangerous one: it is iterable, so an
+        implementation that skipped the type check would read one key per
+        CHARACTER."""
+        response, config, _table, invoke = build_prototype({
+            'use_research': True, 'selected_research_ids': value,
+        })
+
+        assert response['statusCode'] == 400
+        assert 'selected_research_ids' in json.loads(response['body'])['error']
+        assert config is None
+        invoke.assert_not_called()
+
+    def test_a_non_string_entry_is_a_400(self, build_prototype):
+        response, config, _table, invoke = build_prototype({
+            'use_research': True, 'selected_research_ids': ['research_a', 7],
+        })
+
+        assert response['statusCode'] == 400
+        assert 'selected_research_ids' in json.loads(response['body'])['error']
+        assert config is None
+        invoke.assert_not_called()
+
+    def test_an_absurdly_long_research_id_is_a_400_not_a_500(self, build_prototype):
+        """Per-entry length bound, inherited from `_validated_source_id`: a sort
+        key is capped at 1024 bytes, so unbounded this is a DynamoDB
+        ValidationException surfacing as a 500."""
+        response, config, table, invoke = build_prototype({
+            'use_research': True, 'selected_research_ids': ['x' * 5000],
+        })
+
+        assert response['statusCode'] == 400
+        assert config is None
+        invoke.assert_not_called()
+        assert not any(
+            'x' * 5000 in str(call.kwargs.get('Key', {}))
+            for call in table.get_item.call_args_list
+        )
+
+    @pytest.mark.parametrize('value', [
+        pytest.param([], id='empty'),
+        pytest.param(None, id='null'),
+        pytest.param(['', '   '], id='blank-entries'),
+    ])
+    def test_naming_no_research_is_valid(self, build_prototype, value):
+        """A ticked box with nothing chosen, and a cleared picker, both mean "read
+        no research" rather than "document ''"."""
+        response, config, _table, invoke = build_prototype({
+            'use_research': True, 'selected_research_ids': value,
+        })
+
+        assert response['statusCode'] == 200
+        assert config['selected_research_ids'] == []
         invoke.assert_called_once()

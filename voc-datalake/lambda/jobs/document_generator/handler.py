@@ -341,7 +341,7 @@ Produce a polished, tap-through prototype. Remember: ONE HTML document, output n
 PROTOTYPE_HTML_USER_TEMPLATE = """Build a clickable HTML prototype for the product/feature below. Output ONE complete HTML document only — no prose, no code fences.
 
 PROJECT: {project_name}
-{brand_section}{prd_section}{prfaq_section}
+{brand_section}{product_context_section}{prd_section}{prfaq_section}{research_section}
 
 Requirements:
 - Single self-contained HTML file (inline CSS + vanilla JS), offline-first, no external resources.
@@ -533,6 +533,50 @@ def _source_document(
     return doc
 
 
+#: Per-research-report slice of the prompt, matching the reference-document cap
+#: `_gather_context` applies. The arity is bounded by the API
+#: (`MAX_SELECTED_RESEARCH_IDS`), so this bounds the other dimension.
+RESEARCH_PER_DOC_CAP = 3000
+
+
+def _research_documents(projects_table, project_id: str, research_ids) -> list[dict]:
+    """
+    The research reports a build was told to read, in the order they were asked
+    for, or [] when it named none.
+
+    A narrow reader on purpose, and NOT `_gather_context`: every branch in that
+    function is gated on a `data_sources` map a prototype's `doc_config` does not
+    carry (so it would return nothing), it re-queries feedback, and its progress
+    callbacks overwrite this build's own 40 → 80 → 90 narrative.
+
+    Keyed reads only — one `get_item` per id under `RESEARCH#`, so ownership and
+    document type come from the key exactly as in `_document_by_id`, and no id can
+    address another project's partition. There is no "read all the research"
+    fallback: an empty list means nothing to read, so the callers stay one keyed
+    read per named report rather than a project-wide query, and the recorded
+    provenance is exactly what was asked for.
+
+    An id that does not resolve RAISES, for the same reason `_source_document`
+    does: the alternative is a prototype the user believes was grounded in a
+    report the model never saw, with nothing in the output saying otherwise. The
+    API rejects such an id before a job exists; this is the second line, and it is
+    what keeps the failure loud if a job is ever replayed after the document was
+    deleted.
+    """
+    documents: list[dict] = []
+    for research_id in research_ids or []:
+        document_id = str(research_id or '').strip()
+        if not document_id:
+            continue
+        doc = _document_by_id(projects_table, project_id, 'RESEARCH#', document_id)
+        if not doc:
+            raise RuntimeError(
+                f'selected_research_ids: no RESEARCH document "{document_id}" in this project.'
+            )
+        documents.append(doc)
+    return documents
+
+
 def _base_prototype(projects_table, project_id: str, base_prototype_id: str) -> dict | None:
     """
     The prototype a revision is built on: the one the request named, or None when
@@ -570,6 +614,12 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     PR/FAQ for this project, save it as a ProjectDocument of type 'prototype' with
     prototype_format='html'. The frontend renders the HTML in a sandboxed
     <iframe srcdoc> so inline CSS/JS run in isolation. Opus 5 builds the HTML.
+
+    Two further inputs are read only when the request asks for them:
+    `use_product_context` adds the project's product-context block, and
+    `use_research` + `selected_research_ids` add named research reports. Both
+    absent — every caller before they existed — produces the same prompt this
+    function always produced.
     """
     from shared.converse import converse
 
@@ -607,6 +657,43 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     # absent, the system prompt's neutral defaults apply.
     brand = (doc_config.get('brand') or '').strip()
     brand_section = f'BRAND: {brand}\n' if brand else ''
+
+    # Optional extra grounding, ticked per build on the prototype card. Both
+    # default off, so a request that asks for neither produces the prompt this
+    # path has always produced, byte for byte.
+    #
+    # The section is added only when the block carries something. `_product_context`
+    # returns its placeholder both for "the project described nothing" and for a
+    # failed read, and a prompt section whose body says "(No product context
+    # provided.)" is worse than no section: it spends budget telling the model
+    # nothing. The flag it returns is the same one the derivation records, so what
+    # reached the prompt and what the document claims cannot disagree.
+    product_context_section = ''
+    product_context_included = False
+    if doc_config.get('use_product_context'):
+        product_context_block, product_context_included = _product_context(project_id)
+        if product_context_included:
+            # Capped like every other injected block here (PER_DOC_CAP, PRIOR_CAP).
+            # `build_product_context_block` budgets uploaded document text at
+            # 50k chars, which unbounded would crowd out the PRD this prompt is
+            # actually built from.
+            product_context_section = (
+                f'\n\nPRODUCT CONTEXT (what this product is, who it is for):\n'
+                f'{product_context_block[:PER_DOC_CAP]}'
+            )
+
+    # Research reports, scoped to RESEARCH# only — see `_research_documents` for
+    # why this is not the shared document picker.
+    research_docs = (
+        _research_documents(projects_table, project_id, doc_config.get('selected_research_ids'))
+        if doc_config.get('use_research') else []
+    )
+    research_section = ''
+    if research_docs:
+        research_section = '\n\nRESEARCH FINDINGS:\n' + '\n\n'.join(
+            f"### {d.get('title', 'Untitled')}\n{d.get('content', '')[:RESEARCH_PER_DOC_CAP]}"
+            for d in research_docs
+        )
 
     # Optional feedback-driven regeneration: when the user gives feedback on an
     # existing prototype, we re-generate CENTERED on that feedback while still
@@ -650,8 +737,10 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     user_prompt = PROTOTYPE_HTML_USER_TEMPLATE.format(
         project_name=project_name,
         brand_section=brand_section,
+        product_context_section=product_context_section,
         prd_section=prd_section,
         prfaq_section=prfaq_section,
+        research_section=research_section,
         lang_hint=lang_hint,
     ) + feedback_section
 
@@ -715,8 +804,19 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
             sources=[
                 derivation_source((prd or {}).get('document_id'), ROLE_PROTOTYPE_PRD),
                 derivation_source((prfaq or {}).get('document_id'), ROLE_PROTOTYPE_PRFAQ),
+                # The research reports that reached the prompt, in the reference
+                # role the shared vocabulary already has for "selected and fed to
+                # the model". Recorded from the documents themselves rather than
+                # from the requested ids, so this stays "what was used" — and
+                # `_research_documents` raises rather than dropping, so the two
+                # cannot silently differ.
+                *(derivation_source(_document_id_of(d), ROLE_REFERENCE) for d in research_docs),
             ],
-            selected_document_count=len([d for d in (prd, prfaq) if d]),
+            selected_document_count=len([d for d in (prd, prfaq) if d]) + len(research_docs),
+            # Whether the product-context block actually carried anything, not
+            # whether it was asked for: a build that ticked the box on a project
+            # that describes nothing must not claim it was grounded.
+            product_context_included=product_context_included,
         ),
         'created_at': now,
     }

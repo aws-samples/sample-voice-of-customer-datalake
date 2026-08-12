@@ -88,6 +88,7 @@
       "confirmRebuild": "이 프로젝트에는 이미 프로토타입이 있습니다. 다시 빌드하면 기존 항목을 유지한 채 새 항목이 추가됩니다. 계속하시겠습니까?",
       "downloadHtml": "HTML 다운로드",
       "downloadJson": "JSON 다운로드",
+      "extraSources": "추가로 참고 (선택)",
       "feedbackBuilding": "수정 중…",
       "feedbackButton": "피드백으로 수정",
       "feedbackHeading": "피드백으로 프로토타입 수정",
@@ -99,10 +100,13 @@
       "needsDocs": "프로토타입 생성은 PRD 또는 PR-FAQ가 있어야 활성화됩니다",
       "previewLabel": "미리보기",
       "rawLabel": "원본 출력 (파싱 실패 — 다시 생성해 주세요)",
+      "researchLimit": "한 번의 빌드에 최대 {{max}}개 보고서",
       "sourceLatest": "최신",
       "sourcePrd": "PRD",
       "sourcePrfaq": "PR/FAQ",
-      "started": "시작했습니다 — 백그라운드 작업에서 진행 상황을 확인하세요."
+      "started": "시작했습니다 — 백그라운드 작업에서 진행 상황을 확인하세요.",
+      "useProductContext": "제품/서비스 설명",
+      "useResearch": "리서치 보고서 ({{total}}개)"
     },
     "revision": {
       "feedback": "피드백: {{feedback}}",
@@ -257,7 +261,7 @@
     "productDescription": "제품 / 서비스 설명",
     "productDescriptionDesc": "현재 제품을 설명합니다. PRD 및 PR/FAQ 생성에 사용됩니다.",
     "prototype": "클릭 가능한 프로토타입",
-    "prototypeDesc": "PRD / PR-FAQ에서 클릭 가능한 HTML 프로토타입을 만듭니다",
+    "prototypeDesc": "프로젝트 사양서를 바탕으로, 필요하면 제품 설명과 리서치까지 참고해 클릭 가능한 HTML 프로토타입을 만듭니다",
     "remixDocuments": "문서 리믹스",
     "remixDocumentsDesc": "문서를 결합하고 수정하여 새 버전 생성",
     "runResearch": "리서치 실행",
