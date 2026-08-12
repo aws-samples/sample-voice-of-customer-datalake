@@ -408,23 +408,82 @@ def _get_prototype_html(project_id: str, doc_id: str) -> str:
     return obj['Body'].read().decode('utf-8')
 
 
+def _document_by_id(projects_table, project_id: str, sk_prefix: str, document_id: str) -> dict | None:
+    """
+    Fetch one document of a known type by id, or None if there is no such
+    document in this project.
+
+    Existence, project ownership and document type are all decided by the key
+    itself: `pk` names the project and `sk` is `{TYPE}#{document_id}`. So an id
+    belonging to a different project, or naming a PR/FAQ where a PRD was asked
+    for, simply does not resolve — there is no key this function can build that
+    reaches outside `project_id`. That is what lets a caller pass a
+    client-supplied id here without a separate ownership check.
+    """
+    resp = projects_table.get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'{sk_prefix}{document_id}'},
+    )
+    return resp.get('Item') or None
+
+
 def _latest_doc_by_prefix(projects_table, project_id: str, sk_prefix: str) -> dict | None:
     """
     Return the most recently created document of a given type for the project,
     or None if none exist. We can't use a GSI here because prefixes are encoded
-    in `sk` directly; small project tables make a query+filter cheap enough.
+    in `sk` directly.
+
+    Every page is read and the winner is chosen on `created_at`, so the answer
+    does not depend on ids sorting the same way as creation time. It used to: a
+    `Limit=20` window over `sk` descending was then re-sorted by `created_at`,
+    which is correct only while ids stay timestamp-prefixed. The day one is
+    minted any other way the newest document falls outside the window and is
+    skipped silently — a build against a stale spec, with nothing in the output
+    saying so. Dropping the cap does not change the cost per item, which the
+    capped read already paid; it is the cap that was wrong, not the read.
+
+    Ties break on `document_id` descending, matching what the `sk`-ordered read
+    resolved them to.
     """
-    from boto3.dynamodb.conditions import Key
-    resp = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with(sk_prefix),
-        ScanIndexForward=False,  # newest first by sk
-        Limit=20,
-    )
-    items = resp.get('Items') or []
-    if not items:
-        return None
-    items.sort(key=lambda i: i.get('created_at', ''), reverse=True)
-    return items[0]
+    newest: dict | None = None
+    newest_rank: tuple[str, str] | None = None
+    params: dict = {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with(sk_prefix),
+    }
+    while True:
+        resp = projects_table.query(**params)
+        for item in resp.get('Items') or []:
+            rank = (str(item.get('created_at') or ''), str(item.get('document_id') or ''))
+            if newest_rank is None or rank > newest_rank:
+                newest, newest_rank = item, rank
+        # A real page key is a dict of key attributes. Requiring that, rather
+        # than mere truthiness, is also what stops this loop from spinning
+        # forever against a test double whose `query` returns a bare mock.
+        start_key = resp.get('LastEvaluatedKey')
+        if not isinstance(start_key, dict) or not start_key:
+            return newest
+        params['ExclusiveStartKey'] = start_key
+
+
+def _source_document(
+    projects_table, project_id: str, sk_prefix: str, requested_id: str, field: str,
+) -> dict | None:
+    """
+    The document a prototype build reads for one source slot: exactly the one the
+    request named, or the newest of that type when it named none.
+
+    A named id that does not resolve RAISES instead of falling back to the newest.
+    The fallback is the failure mode that matters: the build would succeed against
+    a document the user did not choose, and neither the prototype nor the job
+    would say which one it actually read.
+    """
+    if not requested_id:
+        return _latest_doc_by_prefix(projects_table, project_id, sk_prefix)
+    doc = _document_by_id(projects_table, project_id, sk_prefix, requested_id)
+    if not doc:
+        raise RuntimeError(
+            f'{field}: no {sk_prefix.rstrip("#")} document "{requested_id}" in this project.'
+        )
+    return doc
 
 
 def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_config: dict) -> dict:
@@ -436,8 +495,17 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     """
     from shared.converse import converse
 
-    prd = _latest_doc_by_prefix(projects_table, project_id, 'PRD#')
-    prfaq = _latest_doc_by_prefix(projects_table, project_id, 'PRFAQ#')
+    # Aimable build: `source_prd_id`/`source_prfaq_id` name the documents to read.
+    # Absent — every caller before this existed, and the Overview card when the
+    # project has one of each — means the newest of that type, as it always did.
+    prd = _source_document(
+        projects_table, project_id, 'PRD#',
+        (doc_config.get('source_prd_id') or '').strip(), 'source_prd_id',
+    )
+    prfaq = _source_document(
+        projects_table, project_id, 'PRFAQ#',
+        (doc_config.get('source_prfaq_id') or '').strip(), 'source_prfaq_id',
+    )
 
     if not prd and not prfaq:
         raise RuntimeError('No PRD or PR/FAQ found for this project. Generate at least one first.')
