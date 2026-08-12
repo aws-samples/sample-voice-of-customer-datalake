@@ -40,12 +40,40 @@ Revert test that catches each defect:
       read tool.  Reverting DEFAULT_TOKEN_SCOPE (back to `.get('scope', '')`)
       makes this fail with -32003, which is the lockout this test guards.
 
+    test_enforcement_default_matches_list_path_default
+    — calls projects_handler.api_list_tokens with a scope-less row and compares
+      its output to mcp_handler.DEFAULT_TOKEN_SCOPE.  Changing either file's
+      default without the other fails this test; reformatting the literal does
+      not (it is behavioural, not a source grep).
+
+    test_empty_scope_string_resolves_to_the_default /
+    test_empty_scope_string_still_rejected_for_write_tool
+    — a present-but-empty scope is resolved like an absent one, and the fallback
+      is still least-privilege.  Narrowing to `.get('scope', DEFAULT)` makes the
+      first fail with the -32003 "token scope ''" it exists to prevent.
+
   auth-backend faults:
     test_authenticate_raises_on_permanent_dynamodb_error /
     test_permanent_auth_fault_surfaces_as_500_not_401
     — assert a permanent DynamoDB fault (missing table, AccessDenied) is a 500,
       not a 401 that blames the caller's token.  Reverting to a blanket
       `except Exception: return None` makes both fail.
+
+    TestBotoCoreErrorHandling
+    — BotoCoreError is a sibling of ClientError, not a subclass, so the family
+      used to escape _authenticate: a 502 with no JSON-RPC envelope and no CORS
+      headers.  Removing the `except BotoCoreError` clause fails these; so does
+      collapsing it to a blanket `return None` (NoCredentialsError would be
+      reported as a bad token).
+
+    TestUnconfiguredTableIsAServerFault
+    — an unset PROJECTS_TABLE answers 500 like a missing table resource, on both
+      _authenticate call sites.  Reverting to `return None` fails these with 401.
+
+  schema agreement:
+    test_resolve_days_rejects_values_the_schema_forbids
+    — `days` must be an integer by the tool's own inputSchema; `int(True) == 1`
+      and `int(2.9) == 2` would answer a window the caller never asked for.
 """
 
 import json
@@ -54,7 +82,16 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import (
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    NoCredentialsError,
+    NoRegionError,
+    ParamValidationError,
+    ReadTimeoutError,
+)
 
 # ---------------------------------------------------------------------------
 # Ensure lambda/ and lambda/api/ are on the path (mirrors conftest.py)
@@ -367,24 +404,95 @@ class TestScopeEnforcement:
         assert result["error"]["code"] == -32003
         write_handler.assert_not_called()
 
+    def test_empty_scope_string_resolves_to_the_default(self):
+        """A present-but-empty `scope` is treated like an absent one, not like a value.
+
+        `token_info.get('scope') or DEFAULT_TOKEN_SCOPE` covers both a missing key
+        and a falsy value ('', None) on purpose: a partial write or a migration
+        that stored '' is the same server-side data problem as a row minted before
+        the field existed.  Resolving it to the default is what keeps the response
+        from being "Forbidden: token scope ''" — a message that blames the caller
+        for a row it can neither see nor fix.
+
+        Reverting to `.get('scope', DEFAULT_TOKEN_SCOPE)` makes this fail with
+        -32003, which is exactly the misdirection it guards.
+        """
+        read_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        result = self._call_tool(
+            tool_name="blank_scope_read_tool",
+            token_scope="",
+            handlers_extra={"blank_scope_read_tool": read_handler},
+            scopes_extra={"blank_scope_read_tool": "read"},
+        )
+
+        assert "result" in result, (
+            f"An empty scope must resolve to the default, not be refused, got: {result}"
+        )
+        read_handler.assert_called_once()
+
+    def test_empty_scope_string_still_rejected_for_write_tool(self):
+        """Resolving '' to the default must not escalate it past least privilege.
+
+        The refusal message names the resolved scope ('read'), not the raw '',
+        so it does not read as a caller error about a value the caller never sent.
+        """
+        write_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        result = self._call_tool(
+            tool_name="blank_scope_write_tool",
+            token_scope="",
+            handlers_extra={"blank_scope_write_tool": write_handler},
+            scopes_extra={"blank_scope_write_tool": "read-write"},
+        )
+
+        assert result["error"]["code"] == -32003
+        assert "scope ''" not in result["error"]["message"], (
+            "The message must report the resolved scope, not the empty raw value; "
+            f"got: {result['error']['message']}"
+        )
+        write_handler.assert_not_called()
+
     def test_enforcement_default_matches_list_path_default(self):
         """mcp_handler and projects_handler must agree on the missing-scope default.
 
-        projects_handler.api_list_tokens renders `item.get('scope', 'read')`.
-        If the two files drift, a token displayed as working in the UI is
-        rejected on every call (or vice-versa).  This pins the agreement to the
-        literal in the list path rather than to a comment.
-        """
-        import inspect
+        The MCP Access tab renders whatever projects_handler.api_list_tokens
+        reports; enforcement uses mcp_handler.DEFAULT_TOKEN_SCOPE.  If the two
+        drift, a token the UI displays as a working read token is refused on
+        every call — or, worse, one displayed as read-only is enforced as
+        something wider.  This is the only mechanical guarantee behind that
+        agreement, so it is asserted on *behaviour*: the list path is called with
+        a scope-less row and its output compared to the constant.
 
+        Deliberately not `inspect.getsource`: matching the literal
+        "'scope', 'read'" fails on a reformat to double quotes (claiming the
+        default changed when it did not) and passes when the real default moves
+        but a stale copy of the literal survives in a comment.
+        """
         import mcp_handler
         import projects_handler
 
-        source = inspect.getsource(projects_handler.api_list_tokens)
-        assert f"'scope', '{mcp_handler.DEFAULT_TOKEN_SCOPE}'" in source, (
-            "projects_handler.api_list_tokens no longer defaults a missing scope to "
-            f"'{mcp_handler.DEFAULT_TOKEN_SCOPE}'. Update mcp_handler.DEFAULT_TOKEN_SCOPE "
-            "so enforcement and presentation still agree."
+        table = MagicMock()
+        # A legacy row: the keys the list path indexes directly, and no 'scope'.
+        table.query.return_value = {
+            "Items": [
+                {
+                    "token_id": "tok_legacy",
+                    "name": "legacy token",
+                    "created_at": "2024-01-01T00:00:00+00:00",
+                }
+            ]
+        }
+
+        with patch("projects_handler.get_projects_table", return_value=table):
+            result = projects_handler.api_list_tokens("some-project")
+
+        tokens = result["tokens"]
+        assert len(tokens) == 1, f"Expected exactly one token in the list output, got: {tokens}"
+        assert tokens[0]["scope"] == mcp_handler.DEFAULT_TOKEN_SCOPE, (
+            "projects_handler.api_list_tokens reports a missing scope as "
+            f"{tokens[0]['scope']!r} while enforcement assumes "
+            f"{mcp_handler.DEFAULT_TOKEN_SCOPE!r}. A token shown as usable in the "
+            "MCP Access tab would be refused on every call (or vice-versa) — bring "
+            "the two back into agreement."
         )
 
     def test_tool_without_scope_declaration_is_rejected(self):
@@ -453,6 +561,13 @@ class TestScopeEnforcement:
 # 3. Partial-result reporting
 # ===========================================================================
 
+# The four sentiment buckets get_metrics_summary reads per day.  Asserted as a
+# set on the response payload rather than as a read count: the payload is the
+# contract, so a batch_get_item rewrite that still returns all four passes,
+# while three of the four reads quietly disappearing does not.
+_ALL_SENTIMENTS = {"positive", "negative", "neutral", "mixed"}
+
+
 class TestPartialResultReporting:
     """get_metrics_summary sets is_partial=True and logs when any read fails."""
 
@@ -463,17 +578,14 @@ class TestPartialResultReporting:
         The sentiment counts (from successful reads) must still appear — the
         readable portion of the answer must not be lost.
 
-        The call count is asserted as ">= 1" rather than pinned to the current
-        5 reads (1 daily_total + 4 sentiments for days=1): the contract is that
-        the failing read was attempted and the successful ones still landed in
-        the payload, not the exact read strategy.  A future batch_get_item
-        optimisation should not fail this test without a behaviour change.
+        The surviving reads are pinned on the *payload* rather than on a read
+        count: every sentiment bucket must be present with the value its read
+        returned, and the failed daily_total must contribute nothing.  That is
+        read-strategy independent (a batch_get_item rewrite returning the same
+        four buckets still passes) but not vacuous — a `>= 1` call-count check
+        held even when three of the four sentiment reads were deleted.
         """
-        call_count = 0
-
         def get_item_side_effect(Key, **kwargs):  # noqa: N803
-            nonlocal call_count
-            call_count += 1
             pk = Key.get("pk", "")
             if pk == "METRIC#daily_total":
                 raise Exception("ProvisionedThroughputExceededException")
@@ -486,14 +598,18 @@ class TestPartialResultReporting:
         from mcp_handler import _tool_get_metrics_summary
         content = _tool_get_metrics_summary({"days": 1}, {})
 
-        assert call_count >= 1, "At least the failing daily_total read must be attempted"
-
         assert len(content) == 1
         payload = json.loads(content[0]["text"])
 
         assert payload["is_partial"] is True, "is_partial must be True when a read fails"
-        # Sentiment counts from the successful reads are still present
-        assert payload["sentiment_breakdown"], "Successful sentiment reads must still be returned"
+        # Every sentiment bucket the tool claims to report is present, with the
+        # value its read returned — not merely "some sentiment key survived".
+        assert payload["sentiment_breakdown"] == dict.fromkeys(_ALL_SENTIMENTS, 2), (
+            "every sentiment bucket must survive a daily_total failure; got "
+            f"{payload['sentiment_breakdown']}"
+        )
+        # The failed read contributes nothing rather than a stale/invented total.
+        assert payload["total_feedback"] == 0
 
     @patch("mcp_handler.aggregates_table")
     def test_all_reads_succeed_is_partial_false(self, mock_table):
@@ -506,6 +622,34 @@ class TestPartialResultReporting:
         payload = json.loads(content[0]["text"])
 
         assert payload["is_partial"] is False
+
+    @patch("mcp_handler.aggregates_table")
+    def test_totals_cover_every_day_in_the_window(self, mock_table):
+        """period_days days of aggregates are summed, not just the latest day.
+
+        Stated on the payload so it holds under any read strategy: with a
+        uniform count of 5 per aggregate row, a 3-day window must report
+        3 x 5 for the total and for each sentiment bucket.  Without this, a
+        window that silently collapsed to a single day (or sentiment buckets
+        that quietly stopped being read) still produced a well-shaped,
+        is_partial=False answer that under-reported the period.
+        """
+        mock_table.get_item.return_value = {"Item": {"count": 5}}
+        mock_table.query.return_value = {"Items": []}
+
+        from mcp_handler import _tool_get_metrics_summary
+        payload = json.loads(_tool_get_metrics_summary({"days": 3}, {})[0]["text"])
+
+        assert payload["period_days"] == 3
+        assert payload["is_partial"] is False
+        assert payload["total_feedback"] == 15, (
+            "a 3-day window must sum all 3 daily_total rows, got "
+            f"{payload['total_feedback']} (1 day would be 5)"
+        )
+        assert payload["sentiment_breakdown"] == dict.fromkeys(_ALL_SENTIMENTS, 15), (
+            "each sentiment bucket must accumulate across the whole window; got "
+            f"{payload['sentiment_breakdown']}"
+        )
 
     @patch("mcp_handler.aggregates_table")
     def test_category_read_failure_sets_is_partial(self, mock_table):
@@ -571,14 +715,11 @@ class TestPartialResultReporting:
         total_feedback, sentiment_breakdown, and top_categories are still
         present so a client that already reads total_feedback does not break.
 
-        As above, the call count is asserted as ">= 1" so the test does not
-        couple to the current per-day read loop.
+        Presence is asserted on the payload, and sentiment_breakdown is checked
+        to still be fully populated: "the field exists" alone would hold for an
+        empty dict, which is a broken answer wearing the right shape.
         """
-        call_count = 0
-
         def get_item_side_effect(Key, **kwargs):  # noqa: N803
-            nonlocal call_count
-            call_count += 1
             pk = Key.get("pk", "")
             if pk == "METRIC#daily_total":
                 raise Exception("Throttled")
@@ -591,12 +732,14 @@ class TestPartialResultReporting:
         content = _tool_get_metrics_summary({"days": 1}, {})
         payload = json.loads(content[0]["text"])
 
-        assert call_count >= 1, "At least the failing daily_total read must be attempted"
-
         assert "total_feedback" in payload
         assert "sentiment_breakdown" in payload
         assert "top_categories" in payload
         assert "period_days" in payload
+        assert set(payload["sentiment_breakdown"]) == _ALL_SENTIMENTS, (
+            "sentiment_breakdown must still carry every bucket when partial; got "
+            f"{sorted(payload['sentiment_breakdown'])}"
+        )
 
     @patch("mcp_handler.aggregates_table", None)
     def test_aggregates_table_not_configured_includes_is_partial(self):
@@ -687,6 +830,34 @@ class TestPartialResultReporting:
         assert _resolve_days("abc") == 7       # non-numeric → default
         assert _resolve_days([1]) == 7         # wrong type → default
 
+    def test_resolve_days_rejects_values_the_schema_forbids(self):
+        """`days` values that are not integers per the tool's own inputSchema.
+
+        `inputSchema` declares "integer", and JSON Schema counts neither a bool
+        nor a fractional number as one — but Python does: `int(True) == 1` and
+        `int(2.9) == 2`.  Coercing those answers a window the caller never asked
+        for, so they fall back to the default instead.  An integral float (2.0)
+        *is* an integer by the schema and is still accepted.
+        """
+        from mcp_handler import _resolve_days
+
+        assert _resolve_days(True) == 7, "days=true is not an integer window of 1"
+        assert _resolve_days(False) == 7
+        assert _resolve_days(2.9) == 7, "a fractional days must not truncate to 2"
+        assert _resolve_days(0.5) == 7
+        assert _resolve_days(2.0) == 2, "an integral float is an integer per JSON Schema"
+        # The tolerated case, kept deliberately: "14" can only mean 14.
+        assert _resolve_days("14") == 14
+
+    @patch("mcp_handler.aggregates_table", None)
+    def test_bool_days_reported_as_the_default_window(self):
+        """The rejection is visible end-to-end: period_days echoes 7, not 1."""
+        from mcp_handler import _tool_get_metrics_summary
+        payload = json.loads(_tool_get_metrics_summary({"days": True}, {})[0]["text"])
+        assert payload["period_days"] == 7, (
+            f"days=true must report the default window, got {payload['period_days']!r}"
+        )
+
 
 # ===========================================================================
 # 4. Non-string token_hash type safety
@@ -745,3 +916,245 @@ class TestTokenHashTypeSafety:
             call_kwargs = mock_logger.warning.call_args
             extra = call_kwargs[1].get("extra", {}) if call_kwargs[1] else {}
             assert "type" in extra, "WARNING extra must include 'type' (the type name)"
+
+
+# ===========================================================================
+# 5. Auth-backend faults that are not ClientError
+# ===========================================================================
+
+_ENDPOINT = "https://dynamodb.us-east-1.amazonaws.com"
+
+# The transient half of the BotoCoreError family: a connection or timeout fault
+# behaves like a throttle, so the token may well be valid.
+_TRANSIENT_BOTOCORE = [
+    pytest.param(EndpointConnectionError(endpoint_url=_ENDPOINT), id="EndpointConnectionError"),
+    pytest.param(ConnectTimeoutError(endpoint_url=_ENDPOINT), id="ConnectTimeoutError"),
+    pytest.param(ReadTimeoutError(endpoint_url=_ENDPOINT), id="ReadTimeoutError"),
+    pytest.param(ConnectionClosedError(endpoint_url=_ENDPOINT), id="ConnectionClosedError"),
+]
+
+# The permanent half: configuration faults.  Re-minting a token cannot fix any
+# of these, so they must not be reported as an authentication failure.
+_PERMANENT_BOTOCORE = [
+    pytest.param(NoCredentialsError(), id="NoCredentialsError"),
+    pytest.param(NoRegionError(), id="NoRegionError"),
+    pytest.param(ParamValidationError(report="bad parameter"), id="ParamValidationError"),
+]
+
+
+class TestBotoCoreErrorHandling:
+    """BotoCoreError is a *sibling* of ClientError, not a subclass.
+
+    Without a clause of its own the whole family escaped _authenticate, so
+    API Gateway answered 502 with no JSON-RPC envelope and no CORS headers —
+    a browser-based MCP client could only see an opaque CORS failure, with
+    nothing parseable to tell it what went wrong.  EndpointConnectionError and
+    ReadTimeoutError are the most common transient DynamoDB faults after
+    throttles, so this was the ordinary failure mode, not an exotic one.
+
+    The family is split the same way ClientError already was, because it spans
+    both fault classes.  A blanket `except BotoCoreError: return None` would
+    report NoCredentialsError — a pure configuration fault — as "your token is
+    invalid", which is the misdirection AuthBackendUnavailable exists to remove.
+    """
+
+    def _make_event(self, token: str = "voc_testtoken", project_id: str = "proj-1") -> dict:
+        return {
+            "headers": {
+                "authorization": f"Bearer {token}",
+                "x-project-id": project_id,
+            }
+        }
+
+    def _rpc_event(self) -> dict:
+        return {
+            "httpMethod": "POST",
+            "path": "/v1/mcp",
+            "headers": {
+                "authorization": "Bearer voc_testtoken",
+                "x-project-id": "proj-1",
+            },
+            "body": json.dumps({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "get_project", "arguments": {}},
+            }),
+        }
+
+    @pytest.mark.parametrize("exc", _TRANSIENT_BOTOCORE)
+    @patch("mcp_handler.projects_table")
+    def test_transient_botocore_error_returns_none(self, mock_table, exc):
+        """A connection/timeout fault returns None (a clean 401), not an escape."""
+        mock_table.query.side_effect = exc
+
+        from mcp_handler import _authenticate
+        assert _authenticate(self._make_event()) is None, (
+            f"{type(exc).__name__} must be handled like a throttle, not propagate"
+        )
+
+    @pytest.mark.parametrize("exc", _PERMANENT_BOTOCORE)
+    @patch("mcp_handler.projects_table")
+    def test_permanent_botocore_error_raises_auth_backend_unavailable(self, mock_table, exc):
+        """A configuration fault raises rather than returning None.
+
+        This is the assertion that rules out a blanket
+        `except BotoCoreError: return None`: absent credentials or a missing
+        region never checked the credential, so 401 is a lie.
+        """
+        import mcp_handler
+
+        mock_table.query.side_effect = exc
+        with pytest.raises(mcp_handler.AuthBackendUnavailable):
+            mcp_handler._authenticate(self._make_event())
+
+    @patch("mcp_handler.projects_table")
+    def test_permanent_botocore_fault_surfaces_as_500_with_json_rpc_envelope(
+        self, mock_table, lambda_context
+    ):
+        """End-to-end: 500/-32603 *with* CORS headers and a parseable body.
+
+        The 502-with-no-envelope outcome is the defect; asserting the status code
+        alone would not catch a response that carried no CORS headers, which is
+        all a browser client can observe.
+        """
+        mock_table.query.side_effect = NoCredentialsError()
+
+        import mcp_handler
+        response = mcp_handler.lambda_handler(self._rpc_event(), lambda_context)
+
+        assert response["statusCode"] == 500
+        assert response["headers"]["Access-Control-Allow-Origin"] == "*", (
+            "A browser MCP client sees only a CORS failure without this header"
+        )
+        body = json.loads(response["body"])
+        assert body["jsonrpc"] == "2.0"
+        assert body["error"]["code"] == -32603, (
+            f"Expected -32603 (internal error), got {body['error']['code']}"
+        )
+
+    @patch("mcp_handler.projects_table")
+    def test_transient_botocore_fault_surfaces_as_401_with_json_rpc_envelope(
+        self, mock_table, lambda_context
+    ):
+        """A transient fault is a 401 the client can retry — still enveloped."""
+        mock_table.query.side_effect = EndpointConnectionError(endpoint_url=_ENDPOINT)
+
+        import mcp_handler
+        response = mcp_handler.lambda_handler(self._rpc_event(), lambda_context)
+
+        assert response["statusCode"] == 401
+        assert response["headers"]["Access-Control-Allow-Origin"] == "*"
+        assert json.loads(response["body"])["error"]["code"] == -32001
+
+    @pytest.mark.parametrize("exc", _TRANSIENT_BOTOCORE + _PERMANENT_BOTOCORE)
+    @patch("mcp_handler.projects_table")
+    def test_botocore_logs_carry_no_token_material(self, mock_table, exc):
+        """Only the exception *type* is logged — never the token or its hash.
+
+        The Bearer token is a recognisable sentinel here, so an f-string or an
+        `extra` field that interpolated it would trip this immediately.
+        """
+        import mcp_handler
+
+        mock_table.query.side_effect = exc
+        event = self._make_event(token="voc_SENTINELTOKEN")
+
+        with patch("mcp_handler.logger") as mock_logger:
+            try:
+                mcp_handler._authenticate(event)
+            except mcp_handler.AuthBackendUnavailable:
+                pass
+
+            calls = mock_logger.warning.call_args_list + mock_logger.exception.call_args_list
+            assert calls, f"{type(exc).__name__} must be logged"
+            for call in calls:
+                extra = (call.kwargs or {}).get("extra", {})
+                rendered = " ".join(str(a) for a in call.args) + " " + str(extra)
+                assert "SENTINELTOKEN" not in rendered, (
+                    f"Log must not contain token material; got: {rendered}"
+                )
+                assert "token_hash" not in extra, f"Log extra must not carry a hash; got: {extra}"
+
+
+# ===========================================================================
+# 6. An unconfigured projects table is a server fault, not a bad credential
+# ===========================================================================
+
+class TestUnconfiguredTableIsAServerFault:
+    """A missing table *env var* must answer the same way as a missing table
+    *resource*.
+
+    `if not projects_table: return None` gave 401 for an unset PROJECTS_TABLE
+    while ResourceNotFoundException gave 500 — the credential was never checked
+    in either case.  The 401 is the expensive one: it sends an operator off to
+    re-mint tokens for what is a deployment problem.
+    """
+
+    def _make_event(self, project_id: str = "proj-1") -> dict:
+        return {
+            "headers": {
+                "authorization": "Bearer voc_testtoken",
+                "x-project-id": project_id,
+            }
+        }
+
+    @patch("mcp_handler.projects_table", None)
+    def test_authenticate_raises_when_table_unconfigured(self):
+        import mcp_handler
+
+        with pytest.raises(mcp_handler.AuthBackendUnavailable):
+            mcp_handler._authenticate(self._make_event())
+
+    @patch("mcp_handler.projects_table", None)
+    def test_unconfigured_table_surfaces_as_500_not_401(self, lambda_context):
+        """The JSON-RPC path answers 500/-32603, matching the missing-resource case."""
+        import mcp_handler
+
+        response = mcp_handler.lambda_handler(
+            {
+                "httpMethod": "POST",
+                "path": "/v1/mcp",
+                "headers": {
+                    "authorization": "Bearer voc_testtoken",
+                    "x-project-id": "proj-1",
+                },
+                "body": json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/list",
+                    "params": {},
+                }),
+            },
+            lambda_context,
+        )
+
+        assert response["statusCode"] == 500, (
+            "An unset PROJECTS_TABLE must not be reported as a bad token; got "
+            f"{response['statusCode']}"
+        )
+        assert json.loads(response["body"])["error"]["code"] == -32603
+
+    @patch("mcp_handler.projects_table", None)
+    def test_autoseed_path_also_answers_500(self, lambda_context):
+        """The second _authenticate call site handles the raise as well.
+
+        A raise that escapes here would be a 502 with no CORS headers, so both
+        call sites are pinned rather than just the JSON-RPC one.
+        """
+        import mcp_handler
+
+        response = mcp_handler.lambda_handler(
+            {
+                "httpMethod": "GET",
+                "path": "/v1/mcp/autoseed/proj-1",
+                "headers": {
+                    "authorization": "Bearer voc_testtoken",
+                    "x-project-id": "proj-1",
+                },
+            },
+            lambda_context,
+        )
+
+        assert response["statusCode"] == 500
+        assert response["headers"]["Access-Control-Allow-Origin"] == "*"

@@ -17,7 +17,14 @@ from typing import Any
 
 from aws_lambda_powertools import Logger, Tracer, Metrics
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+)
 
 from shared.aws import get_dynamodb_resource
 from shared.api import DecimalEncoder, validate_date_basis
@@ -83,15 +90,34 @@ _RETRYABLE_DYNAMODB_ERRORS: frozenset[str] = frozenset({
     'TransactionConflictException',
 })
 
+# botocore's BotoCoreError family are NOT ClientError subclasses, so without a
+# clause of their own they escape _authenticate entirely: the unhandled
+# exception becomes an API Gateway 502 with no JSON-RPC envelope and no CORS
+# headers, which a browser-based MCP client can only report as an opaque CORS
+# failure.  The family is split the same way as _RETRYABLE_DYNAMODB_ERRORS
+# above, and for the same reason.
+#
+# These are the transient half — a connection or timeout fault behaves exactly
+# like a throttle, so 401 (with a retry) is an acceptable answer.  Everything
+# else in the family (NoCredentialsError, NoRegionError, ParamValidationError,
+# …) is a permanent configuration fault and raises AuthBackendUnavailable.
+_RETRYABLE_BOTOCORE_ERRORS: tuple[type[BotoCoreError], ...] = (
+    EndpointConnectionError,
+    ConnectTimeoutError,
+    ReadTimeoutError,
+    ConnectionClosedError,
+)
+
 
 class AuthBackendUnavailable(Exception):
     """The token store could not be consulted because of a server-side fault.
 
-    Raised for *permanent* faults — a missing/misnamed table
-    (``ResourceNotFoundException``), an IAM ``AccessDeniedException``, … — so
-    the caller can answer with a server error instead of telling the client
-    that its token is invalid.  Retrying cannot fix these, and reporting them
-    as 401 sends operators to re-mint tokens for a configuration problem.
+    Raised for *permanent* faults — an unset table name, a missing/misnamed
+    table (``ResourceNotFoundException``), an IAM ``AccessDeniedException``,
+    absent credentials (``NoCredentialsError``), … — so the caller can answer
+    with a server error instead of telling the client that its token is
+    invalid.  Retrying cannot fix these, and reporting them as 401 sends
+    operators to re-mint tokens for a configuration problem.
     """
 
 
@@ -123,8 +149,13 @@ def _authenticate(event: dict) -> dict | None:
     token_hash = hash_token(raw_token)
 
     if not projects_table:
+        # An unset PROJECTS_TABLE is the same class of fault as a missing table
+        # *resource* (ResourceNotFoundException below): the credential was never
+        # checked.  Returning None here would answer 401 for one and 500 for the
+        # other, sending an operator off to re-mint tokens for what is a
+        # deployment problem.
         logger.error("Projects table not configured")
-        return None
+        raise AuthBackendUnavailable('projects table not configured')
 
     # Query all tokens for this project and find matching hash
     try:
@@ -150,6 +181,25 @@ def _authenticate(event: dict) -> dict | None:
             extra={'error_code': error_code},
         )
         raise AuthBackendUnavailable(error_code or 'ClientError') from exc
+    except BotoCoreError as exc:
+        # BotoCoreError is a sibling of ClientError, not a subclass, so it needs
+        # this clause or it escapes as a 502 with no JSON-RPC envelope and no
+        # CORS headers.  Split exactly as above: a connection/timeout fault is
+        # transient, anything else in the family is a configuration fault that
+        # re-minting a token cannot fix.  Only the exception *type* is logged —
+        # never the token or its hash.
+        error_type = type(exc).__name__
+        if isinstance(exc, _RETRYABLE_BOTOCORE_ERRORS):
+            logger.warning(
+                'Token lookup temporarily unavailable',
+                extra={'error_type': error_type},
+            )
+            return None
+        logger.exception(
+            'Token lookup failed with a permanent client-side error; reporting a server error',
+            extra={'error_type': error_type},
+        )
+        raise AuthBackendUnavailable(error_type) from exc
 
     for item in response.get('Items', []):
         stored_hash = item.get('token_hash', '')
@@ -361,12 +411,27 @@ def _resolve_days(raw: Any) -> int:
     Pure helper.  A missing or non-numeric value falls back to the default
     rather than raising, so ``period_days`` is always an ``int`` inside the
     advertised range regardless of what the client sent.
+
+    A value that is not an integer *by the tool's own ``inputSchema``* also
+    falls back rather than being silently reinterpreted: JSON Schema counts
+    neither ``true`` nor ``2.9`` as an integer, but ``int(True) == 1`` and
+    ``int(2.9) == 2`` in Python, so coercing them would answer a window the
+    caller never asked for.  A numeric *string* is still accepted — ``"14"``
+    can only mean 14, and the resolved value is echoed back as ``period_days``.
     """
     if raw is None:
+        return _DEFAULT_METRICS_DAYS
+    # isinstance(True, int) is True in Python, so bools must be excluded before
+    # the int() call or `days: true` quietly becomes a 1-day window.
+    if isinstance(raw, bool):
         return _DEFAULT_METRICS_DAYS
     try:
         days = int(raw)
     except (TypeError, ValueError):
+        return _DEFAULT_METRICS_DAYS
+    # Fractional input: int() truncates, which narrows the window rather than
+    # rejecting it.  Strings are exempt — int("14") is exact, and "14" != 14.
+    if not isinstance(raw, str) and days != raw:
         return _DEFAULT_METRICS_DAYS
     return max(1, min(days, _MAX_METRICS_DAYS))
 
@@ -615,7 +680,8 @@ TOOL_SCOPE_REQUIREMENTS: dict[str, str] = {
 # change instead of three.
 _VALID_REQUIRED_SCOPES: frozenset[str] = frozenset({"read", "read-write"})
 
-# Scope assumed for a token row that has no ``scope`` attribute at all.
+# Scope assumed for a token row with no usable ``scope`` — the attribute absent,
+# or present but falsy ('', None).
 #
 # ``scope`` has been validated to be exactly "read" or "read-write" at mint
 # time (projects_handler.api_create_token) but that only constrains *newly*
@@ -705,9 +771,15 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
         logger.error("Tool has no declared scope requirement", extra={"tool": tool_name})
         return _jsonrpc_error(req_id, -32603, f"Tool {tool_name} has no declared scope requirement")
 
-    # A token row with no `scope` attribute predates the field; treat it as
-    # DEFAULT_TOKEN_SCOPE so enforcement agrees with the list path that the
-    # MCP Access tab renders.  See DEFAULT_TOKEN_SCOPE for the rationale.
+    # A token row with no usable `scope` — the attribute absent (it predates the
+    # field) or present but empty/falsy (a partial write, a migration that wrote
+    # '') — is resolved to DEFAULT_TOKEN_SCOPE.  `or` rather than a two-argument
+    # .get() is deliberate: both cases are the same server-side data problem, and
+    # only the absent one would be covered by .get('scope', DEFAULT_TOKEN_SCOPE).
+    # An empty string would otherwise fall through to a "Forbidden: token scope
+    # ''" that blames the caller for a row it cannot see or fix.  The fallback is
+    # least-privilege, so a falsy value can never grant more than `read`.
+    # See DEFAULT_TOKEN_SCOPE for why `read` specifically.
     token_scope = token_info.get('scope') or DEFAULT_TOKEN_SCOPE
     if not _scope_allows(token_scope, required_scope):
         # An unrecognised required_scope is a server-side misconfiguration in
