@@ -361,6 +361,16 @@ class TestTheResearchSectionIsBoundedInTotal:
     REPORT_BODY = 2450
     REPORT_COUNT = 8
 
+    #: The other dimension of the same overrun: a block costs its heading too, and
+    #: a `title` is bounded nowhere between the UI that writes it and the prompt.
+    #: Ten of these headings cost 10130 characters — five sixths of the budget —
+    #: so unpaid-for they push the body past 22000 and the hard slice drops the
+    #: last five reports ENTIRELY, which is the failure the shared budget exists
+    #: to prevent rather than the harmless tail-trim eight short titles cause.
+    LONG_TITLE_PAD = 1000
+    #: MAX_SELECTED_RESEARCH_IDS — the most the API will pass through.
+    LONG_TITLE_COUNT = 10
+
     @classmethod
     def _reports(cls):
         """Eight reports, each carrying a marker at the START and END of its body,
@@ -416,12 +426,21 @@ class TestTheResearchSectionIsBoundedInTotal:
             selected_research_ids=[f'research_{i}' for i in range(self.REPORT_COUNT)],
         )
 
-        block = self._research_block(_prompt(mock_converse))
+        prompt = _prompt(mock_converse)
+        block = self._research_block(prompt)
         assert len(block) <= RESEARCH_TOTAL_CAP + len('RESEARCH FINDINGS:\n')
+        # A length assertion is satisfied by a body that was truncated INTO the
+        # bound as well as by one that fit, and the two are not the same outcome:
+        # the hard slice takes the overrun off the end, so the last report is what
+        # goes missing. This passed while ~120 characters of report 7 were being
+        # dropped. Assert the last report survived, so a truncation regression is
+        # visible from here and not only from the long-title fixture below.
+        last = self.REPORT_COUNT - 1
+        assert f'HEAD{last}' in prompt, f'report {last} was truncated away to fit'
         # The spec is still there — bounding research must not be achieved by
         # bounding the thing research is supposed to support.
-        assert 'NEW PRD body' in _prompt(mock_converse)
-        assert 'PRFAQ body' in _prompt(mock_converse)
+        assert 'NEW PRD body' in prompt
+        assert 'PRFAQ body' in prompt
 
     def test_every_named_report_still_reaches_the_prompt_truncated(
         self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
@@ -450,6 +469,137 @@ class TestTheResearchSectionIsBoundedInTotal:
             assert f'TAIL{i}' not in prompt, f'report {i} was not truncated'
         # And all eight are still claimed as used, because all eight were.
         assert _saved(mock_dynamodb)['derivation']['selected_document_count'] == 2 + self.REPORT_COUNT
+
+    @classmethod
+    def _long_titles(cls):
+        """Ten titles too long to be headings, each still identifiable by prefix."""
+        return [
+            f'LONGTITLE{i} ' + ('T' * cls.LONG_TITLE_PAD)
+            for i in range(cls.LONG_TITLE_COUNT)
+        ]
+
+    @classmethod
+    def _long_title_reports(cls):
+        """The eight-report fixture's bodies under ten unbounded titles: each body
+        still fits the per-report cap comfortably, so anything that goes missing
+        went missing to the SECTION's bound and not to its own."""
+        return {
+            f'RESEARCH#research_{i}': {
+                'document_id': f'research_{i}',
+                'title': title,
+                'content': f'HEAD{i} ' + ('n' * cls.REPORT_BODY) + f' TAIL{i}',
+            }
+            for i, title in enumerate(cls._long_titles())
+        }
+
+    def test_the_long_title_fixture_would_lose_whole_reports_unpaid_for(self):
+        """Guards the test below from going vacuous, and states what "unpaid for"
+        costs. Dividing the budget without charging each block for its own heading
+        leaves a body whose whole blocks do not fit — so the hard slice is not
+        trimming a tail, it is deleting reports."""
+        from jobs.document_generator.handler import (
+            RESEARCH_PER_DOC_CAP,
+            RESEARCH_TITLE_CAP,
+            RESEARCH_TOTAL_CAP,
+        )
+
+        title = self._long_titles()[0]
+        assert self.REPORT_BODY < RESEARCH_PER_DOC_CAP, 'each body must fit on its own'
+        assert len(title) > RESEARCH_TITLE_CAP, 'the title cap must actually bite'
+
+        unpaid_share = min(RESEARCH_PER_DOC_CAP, RESEARCH_TOTAL_CAP // self.LONG_TITLE_COUNT)
+        stride = len(f'### {title}\n') + unpaid_share + len('\n\n')
+        assert RESEARCH_TOTAL_CAP // stride < self.LONG_TITLE_COUNT - 1, (
+            'the unpaid-for body must overrun by more than one report, or this '
+            'fixture is testing the same harmless tail-trim as the short titles'
+        )
+
+    def test_ten_long_titled_reports_still_all_reach_the_prompt(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """The falsifier for the heading arithmetic. Titles are user-supplied and
+        bounded nowhere on this path, so a block's cost is not its content: unpaid
+        for, ten of these overrun the budget by 10000 characters and the hard slice
+        drops the last five reports outright — each of them still recorded in the
+        derivation as having been used.
+
+        The LAST report's marker is the assertion that matters; the others would
+        survive front-to-back spending too."""
+        from jobs.document_generator.handler import (
+            RESEARCH_TITLE_CAP,
+            RESEARCH_TOTAL_CAP,
+        )
+
+        _wire(
+            mock_dynamodb,
+            prd_pages=[{'Items': [PRD_NEW]}],
+            prfaq_pages=[{'Items': [PRFAQ]}],
+            documents=self._long_title_reports(),
+        )
+        mock_converse.return_value = HTML
+
+        _run(
+            sample_job_event, lambda_context, use_research=True,
+            selected_research_ids=[f'research_{i}' for i in range(self.LONG_TITLE_COUNT)],
+        )
+
+        prompt = _prompt(mock_converse)
+        last = self.LONG_TITLE_COUNT - 1
+        assert f'HEAD{last}' in prompt, f'report {last} reached none of the prompt'
+        for i in range(self.LONG_TITLE_COUNT):
+            assert f'HEAD{i}' in prompt, f'report {i} contributed nothing'
+            assert f'TAIL{i}' not in prompt, f'report {i} was not truncated'
+        # The title is a label, and it is capped. Pinned from BOTH sides, so a cap
+        # one character either way is visible rather than merely "short enough".
+        title = self._long_titles()[last]
+        assert title[:RESEARCH_TITLE_CAP] in prompt, 'title cut before the cap'
+        assert title[:RESEARCH_TITLE_CAP + 1] not in prompt, 'title cut past the cap'
+        assert len(self._research_block(prompt)) <= RESEARCH_TOTAL_CAP + len('RESEARCH FINDINGS:\n')
+        assert (
+            _saved(mock_dynamodb)['derivation']['selected_document_count']
+            == 2 + self.LONG_TITLE_COUNT
+        )
+
+    def test_a_ten_report_share_pays_for_its_own_heading(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """Where the equal share binds, it is the budget's share MINUS what the
+        block costs around the content, pinned from both sides at the cut.
+
+        Without this the overhead subtraction is only observable through whether
+        reports survive, which a share one character out in either direction does
+        not change — the same gap the small-selection test closed for the
+        per-report cap."""
+        from jobs.document_generator.handler import (
+            _RESEARCH_BLOCK_OVERHEAD,
+            RESEARCH_TOTAL_CAP,
+        )
+
+        share = RESEARCH_TOTAL_CAP // self.LONG_TITLE_COUNT - _RESEARCH_BLOCK_OVERHEAD
+        _wire(
+            mock_dynamodb,
+            prd_pages=[{'Items': [PRD_NEW]}],
+            prfaq_pages=[{'Items': [PRFAQ]}],
+            documents={
+                f'RESEARCH#research_{i}': {
+                    'document_id': f'research_{i}',
+                    'title': f'Report {i}',
+                    'content': ('z' * (share - 1)) + 'CUT_HERE' + ('z' * 500),
+                }
+                for i in range(self.LONG_TITLE_COUNT)
+            },
+        )
+        mock_converse.return_value = HTML
+
+        _run(
+            sample_job_event, lambda_context, use_research=True,
+            selected_research_ids=[f'research_{i}' for i in range(self.LONG_TITLE_COUNT)],
+        )
+
+        prompt = _prompt(mock_converse)
+        assert 'z' * (share - 1) + 'C' in prompt, 'cut before the share'
+        assert 'z' * (share - 1) + 'CU' not in prompt, 'cut past the share'
+        assert 'CUT_HERE' not in prompt
 
     def test_a_small_selection_is_sliced_exactly_as_before(
         self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
@@ -482,6 +632,56 @@ class TestTheResearchSectionIsBoundedInTotal:
         assert 'z' * (RESEARCH_PER_DOC_CAP - 1) + 'C' in prompt, 'cut before the cap'
         assert 'z' * (RESEARCH_PER_DOC_CAP - 1) + 'CU' not in prompt, 'cut past the cap'
         assert 'CUT_HERE' not in prompt
+
+
+class TestTheHardCeilingIsStillAGuard:
+    """
+    `body[:RESEARCH_TOTAL_CAP]` no longer bounds the section — the shares pay for
+    their own headings, so at every arity the API can reach (ten) the slice is a
+    no-op. Which would leave it untested, so this is where it is exercised.
+
+    The by-construction argument has a floor: the share is
+    `RESEARCH_TOTAL_CAP // n - overhead`, which reaches zero at about 94 reports,
+    and past that the HEADINGS ALONE exceed the budget however little content each
+    block carries. `_research_section` is called directly because that arity cannot
+    be reached through the route — the guard is what is under test, not the path.
+    """
+
+    ARITY = 200
+
+    @staticmethod
+    def _documents(count):
+        return [
+            {'document_id': f'research_{i}', 'title': 'T' * 200, 'content': 'x' * 500}
+            for i in range(count)
+        ]
+
+    def test_headings_alone_cannot_take_the_section_past_the_total(self):
+        from jobs.document_generator.handler import (
+            RESEARCH_TITLE_CAP,
+            RESEARCH_TOTAL_CAP,
+            _research_section,
+        )
+
+        # Vacuity guard: at this arity the headings must exceed the budget on their
+        # own, or the slice is a no-op here too and this asserts nothing.
+        heading = len('### ') + RESEARCH_TITLE_CAP + len('\n')
+        assert self.ARITY * heading > RESEARCH_TOTAL_CAP
+
+        section = _research_section(self._documents(self.ARITY))
+
+        assert len(section) == len('\n\nRESEARCH FINDINGS:\n') + RESEARCH_TOTAL_CAP
+
+    def test_a_share_that_goes_negative_takes_no_content_rather_than_all_of_it(self):
+        """The share is a subtraction, so at this arity it goes negative, and
+        `content[:-67]` keeps everything BUT the last 67 characters — the opposite
+        of a cap. Clamping at zero is what makes "no room left for content" mean
+        no content."""
+        from jobs.document_generator.handler import _research_section
+
+        section = _research_section(self._documents(self.ARITY))
+
+        assert 'x' not in section, 'content reached the prompt through a negative slice'
 
 
 class TestTheDerivationReportsWhatWasUsed:

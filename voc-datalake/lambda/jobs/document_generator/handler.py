@@ -549,10 +549,36 @@ RESEARCH_PER_DOC_CAP = 3000
 #: The per-report cap alone was not a bound on the section: RESEARCH_PER_DOC_CAP
 #: x MAX_SELECTED_RESEARCH_IDS is 30000, more than the PRD and PR/FAQ combined,
 #: so a ten-report selection could crowd out the spec the prototype is supposed
-#: to implement. It stays the cap for a small selection (12000 // 4 == 3000, so
-#: anything up to four reports is unaffected); this is what makes ten of them
-#: bounded too.
+#: to implement. It stays the cap for a small selection (12000 // 3 is already
+#: over it, so one to three reports are unaffected); this is what makes ten of
+#: them bounded too.
+#:
+#: Four used to be unaffected as well, before the share started paying for the
+#: heading it carries (RESEARCH_TITLE_CAP below): 12000 // 4 == 3000 was the
+#: per-report cap exactly, which left nothing for four headings and put the
+#: assembled body 58 characters past this ceiling — taken off the last report.
 RESEARCH_TOTAL_CAP = 12000
+
+#: Cap on a report's `title` where it is used as the block's heading.
+#:
+#: A title is a label for the block, not content, so it is sized against the
+#: titles this system writes rather than against the content caps: every research
+#: report created on this path gets `f'Research: {research_question[:50]}'` (see
+#: `projects.py` and `research_step_handler.py`) — about 60 characters. 120 leaves
+#: that much room again for a hand-edited title while keeping a heading a heading.
+#:
+#: Needed because the title is otherwise bounded NOWHERE on this path: it comes
+#: back from DynamoDB as stored, and ten 1000-character titles cost more of the
+#: budget than the reports they label.
+RESEARCH_TITLE_CAP = 120
+
+#: What one block costs on top of its content: `'### '` + a capped title + `'\n'`,
+#: plus the `'\n\n'` the blocks are joined with.
+#:
+#: Charged to every block including the last, which is one separator more than is
+#: actually written — deliberately, so the arithmetic needs no special case and the
+#: assembled body lands two characters UNDER the total rather than one over.
+_RESEARCH_BLOCK_OVERHEAD = len('### ') + RESEARCH_TITLE_CAP + len('\n') + len('\n\n')
 
 
 def _research_section(documents: list[dict]) -> str:
@@ -560,25 +586,42 @@ def _research_section(documents: list[dict]) -> str:
     The research block for the reports a build read, or '' when it read none.
 
     Two bounds, because one of them does not hold on its own. Each report is
-    sliced to an equal share of RESEARCH_TOTAL_CAP, never more than
-    RESEARCH_PER_DOC_CAP — so one to four reports are sliced exactly as before
-    and ten get 1200 characters each instead of 3000.
+    sliced to an equal share of RESEARCH_TOTAL_CAP *minus what its heading and
+    separator cost*, never more than RESEARCH_PER_DOC_CAP — so one to three
+    reports are sliced exactly as before, four get 2873 characters instead of
+    3000, and ten get 1073 each.
 
     Shared equally rather than spent front-to-back: a running budget would drop
     the last reports of a long selection entirely, and every named report is
     recorded in the document's `derivation` as having been used, so a report that
     reached none of the prompt would make that record a lie.
 
-    The assembled body is then hard-capped at RESEARCH_TOTAL_CAP as well, because
-    each block carries the report's `title`, which is user-supplied and bounded
-    nowhere in this path — without it the ceiling would be "the budget, plus
-    however long ten titles happen to be".
+    Charging the overhead is what makes that hold. Dividing RESEARCH_TOTAL_CAP
+    alone and then hard-slicing the assembled body re-introduced exactly the
+    front-to-back spending this shares to avoid: with the heading unpaid for, the
+    body overran the cap and the slice took the overrun off the END — ~120
+    characters at eight reports with short titles, but whole reports once titles
+    are long, which is the same lie by a different route.
+
+    The assembled body is still hard-capped at RESEARCH_TOTAL_CAP, and that cap is
+    now belt-and-braces: with the title capped and the overhead paid, the body is
+    within the total by construction (n x (overhead + share) <= total). It only
+    binds where the headings alone exceed the budget — above ~94 reports the share
+    clamps to zero — which the API's MAX_SELECTED_RESEARCH_IDS bound of ten keeps
+    out of reach, so it is a guard rather than the thing doing the work.
     """
     if not documents:
         return ''
-    per_doc = min(RESEARCH_PER_DOC_CAP, RESEARCH_TOTAL_CAP // len(documents))
+    per_doc = min(
+        RESEARCH_PER_DOC_CAP,
+        # max(): a selection long enough for the headings to eat the whole budget
+        # would otherwise make this negative, and `content[:-n]` silently keeps
+        # everything BUT the last n characters instead of nothing.
+        max(0, RESEARCH_TOTAL_CAP // len(documents) - _RESEARCH_BLOCK_OVERHEAD),
+    )
     body = '\n\n'.join(
-        f"### {d.get('title', 'Untitled')}\n{d.get('content', '')[:per_doc]}"
+        f"### {str(d.get('title') or 'Untitled')[:RESEARCH_TITLE_CAP]}\n"
+        f"{d.get('content', '')[:per_doc]}"
         for d in documents
     )
     return '\n\nRESEARCH FINDINGS:\n' + body[:RESEARCH_TOTAL_CAP]
