@@ -9,6 +9,7 @@
  * @module components/ConfirmModal
  */
 
+import type { ReactNode } from 'react'
 import { Loader2, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
 import ModalShell from '../ModalShell'
@@ -17,6 +18,15 @@ interface ConfirmModalProps {
   isOpen: boolean
   title: string
   message: string
+  /**
+   * Optional detail rendered under the message, above the buttons — for a
+   * confirmation that needs the user to inspect or adjust something before
+   * answering, rather than only to read.
+   *
+   * Deliberately additive: `message` stays required, so a dialog cannot end up
+   * with controls and no question. Every existing caller is unaffected.
+   */
+  children?: ReactNode
   confirmLabel?: string
   cancelLabel?: string
   variant?: 'danger' | 'warning' | 'info'
@@ -29,6 +39,7 @@ export default function ConfirmModal({
   isOpen,
   title,
   message,
+  children,
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
   variant = 'danger',
@@ -75,6 +86,7 @@ export default function ConfirmModal({
           <div className="flex-1 min-w-0">
             <h3 className="text-base sm:text-lg font-semibold text-gray-900">{title}</h3>
             <p className="mt-2 text-sm text-gray-600">{message}</p>
+            {children != null ? <div className="mt-3">{children}</div> : null}
           </div>
         </div>
         

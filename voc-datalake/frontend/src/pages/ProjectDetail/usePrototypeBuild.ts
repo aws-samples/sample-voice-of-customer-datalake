@@ -27,6 +27,7 @@ import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
 import { useTransientFlag } from './useTransientFlag'
+import type { PrototypeSourceOption } from './overviewState'
 
 /** Exactly one of the two source documents exists, so the build needs a confirm. */
 function hasOnlyOneDoc(hasPrd: boolean, hasPrfaq: boolean): boolean {
@@ -50,9 +51,16 @@ function confirmKeyFor(
   hasPrd: boolean,
   hasPrfaq: boolean,
   hasExistingPrototype: boolean,
+  hasChoice: boolean,
 ): ConfirmKey | null {
   if (hasExistingPrototype) return CONFIRM_MESSAGE.rebuild
   if (hasOnlyOneDoc(hasPrd, hasPrfaq)) return CONFIRM_MESSAGE[hasPrd ? 'prd' : 'prfaq']
+  // More than one document of a type exists, so "the latest" is a decision rather
+  // than the only option — stop and name what will be read. Deliberately NOT
+  // raised when there is exactly one of each: the dialog would present a choice
+  // that has one possible answer, and the build has always started on the first
+  // click in that case.
+  if (hasChoice) return CONFIRM_MESSAGE.choose
   return null
 }
 
@@ -71,6 +79,11 @@ const CONFIRM_MESSAGE = {
   // build endpoint has no existing-prototype check, so a second click starts
   // another multi-minute billable build and keeps the first.
   rebuild: 'documents.prototype.confirmRebuild',
+  // Several documents of a type exist, so which ones are read is a choice the user
+  // has never been shown. Ranked below the two above because they warn about cost
+  // and missing input; this one only needs to be seen, and the picker is rendered
+  // beside whichever message wins.
+  choose: 'documents.prototype.confirmChooseSources',
 } as const
 
 export interface PrototypeBuildControl {
@@ -93,14 +106,39 @@ export interface PrototypeBuildControl {
     readonly onConfirm: () => void
     readonly onCancel: () => void
   }
+  /**
+   * The documents this build will read, and how to change them. Empty option
+   * lists mean there is nothing to choose, so a caller can render the picker
+   * on `options.length > 1` without a second condition.
+   */
+  readonly sources: {
+    readonly prdOptions: ReadonlyArray<PrototypeSourceOption>
+    readonly prfaqOptions: ReadonlyArray<PrototypeSourceOption>
+    /** '' when the project has none of that type. */
+    readonly prdId: string
+    readonly prfaqId: string
+    readonly onSelectPrd: (documentId: string) => void
+    readonly onSelectPrfaq: (documentId: string) => void
+  }
 }
 
 export function usePrototypeBuild({
-  projectId, hasPrd, hasPrfaq, hasExistingPrototype, onJobStarted,
+  projectId, hasPrd, hasPrfaq, hasExistingPrototype, prdOptions = [], prfaqOptions = [], onJobStarted,
 }: {
   readonly projectId: string
   readonly hasPrd: boolean
   readonly hasPrfaq: boolean
+  /**
+   * The candidate documents of each type, NEWEST FIRST, as `overviewState`
+   * derives them. `[0]` is the default, and it must be the same document the
+   * backend's latest-of-type would pick — see `sourceOptions` there.
+   *
+   * Defaulted to empty so the hook still works for a caller that does not offer a
+   * choice: the request then names no ids and the backend resolves as it always
+   * did.
+   */
+  readonly prdOptions?: ReadonlyArray<PrototypeSourceOption>
+  readonly prfaqOptions?: ReadonlyArray<PrototypeSourceOption>
   /**
    * The project already has a prototype, so this build makes an additional one.
    *
@@ -114,6 +152,13 @@ export function usePrototypeBuild({
   readonly onJobStarted?: () => void
 }): PrototypeBuildControl {
   const { t, i18n } = useTranslation('projectDetail')
+  // The chosen source documents. Held as an OVERRIDE rather than as the selection
+  // itself, so the effective choice below can fall back to the current newest.
+  // Storing the resolved id instead would pin a stale default: the list refetches
+  // when a job completes, and a document generated meanwhile must become the
+  // default rather than leaving the card aimed at yesterday's newest.
+  const [chosenPrdId, setChosenPrdId] = useState('')
+  const [chosenPrfaqId, setChosenPrfaqId] = useState('')
   const [busy, setBusy] = useState(false)
   // Lowers itself: the panel takes over, so the line must not outlive the gap.
   const started = useTransientFlag()
@@ -121,11 +166,24 @@ export function usePrototypeBuild({
   // The question that was asked, not a bare "a dialog is open" flag — see `openKey`.
   const [askedKey, setAskedKey] = useState<ConfirmKey | null>(null)
 
-  // Two reasons to stop and ask, through the ConfirmModal pattern every other
+  // The effective choice: what the user picked if that document is still offered,
+  // otherwise the newest of the type. A selection whose document has been deleted
+  // silently reverts to the default rather than sending an id the API would reject.
+  const prdId = effectiveSourceId(prdOptions, chosenPrdId)
+  const prfaqId = effectiveSourceId(prfaqOptions, chosenPrfaqId)
+
+  // THREE reasons to stop and ask, through the ConfirmModal pattern every other
   // guarded action uses (this began as a window.confirm, which cannot be styled):
-  // only one of PRD/PR-FAQ exists, or a prototype already does. Null means neither
-  // applies and the build starts on the first click, as it always has.
-  const confirmKey = confirmKeyFor(hasPrd, hasPrfaq, hasExistingPrototype)
+  // only one of PRD/PR-FAQ exists, a prototype already does, or a type has several
+  // documents so "the latest" is a decision. Null means none applies and the build
+  // starts on the first click, as it always has for one-of-each.
+  //
+  // Derived from the option COUNTS, never from the selection: a key derived from
+  // what the user picked would change the moment they picked it, and `openKey`
+  // below closes a dialog whose reason no longer applies — so choosing a document
+  // would dismiss the dialog you chose it in.
+  const hasChoice = prdOptions.length > 1 || prfaqOptions.length > 1
+  const confirmKey = confirmKeyFor(hasPrd, hasPrfaq, hasExistingPrototype, hasChoice)
 
   // Only the *start* call is reported here.
   const runBuild = useCallback(async () => {
@@ -142,7 +200,18 @@ export function usePrototypeBuild({
     try {
       // After the await, never before: a request that throws has not started
       // anything, and an acknowledgement raised early would outlive the failure.
-      await projectsApi.buildPrototype(projectId, { response_language: i18n.language })
+      //
+      // The ids are always sent, not only when the user picked one. They name the
+      // documents this card was SHOWING, which removes a whole class of
+      // disagreement: without them the backend re-resolves "the newest" at build
+      // time, so a document saved between render and click would be used instead
+      // of the one just confirmed. Blank means the project has none of that type,
+      // and the API reads blank as "not aimed".
+      await projectsApi.buildPrototype(projectId, {
+        response_language: i18n.language,
+        source_prd_id: prdId,
+        source_prfaq_id: prfaqId,
+      })
       started.set()
       onJobStarted?.()
     } catch (e: unknown) {
@@ -150,7 +219,7 @@ export function usePrototypeBuild({
     } finally {
       setBusy(false)
     }
-  }, [projectId, hasPrd, hasPrfaq, i18n.language, onJobStarted, started])
+  }, [projectId, hasPrd, hasPrfaq, prdId, prfaqId, i18n.language, onJobStarted, started])
 
   const onClick = useCallback(() => {
     if (confirmKey != null) {
@@ -184,5 +253,30 @@ export function usePrototypeBuild({
       onConfirm,
       onCancel,
     },
+    sources: {
+      prdOptions,
+      prfaqOptions,
+      prdId,
+      prfaqId,
+      onSelectPrd: setChosenPrdId,
+      onSelectPrfaq: setChosenPrfaqId,
+    },
   }
+}
+
+/**
+ * The id to build from: the user's choice while it is still on offer, else the
+ * newest of the type, else '' when the project has none.
+ *
+ * Falling back rather than trusting the stored choice is what keeps a stale
+ * selection from outliving its document. The list refetches whenever a job
+ * completes, so a chosen document can be deleted, or a newer one can arrive, under
+ * an open card.
+ */
+function effectiveSourceId(
+  options: ReadonlyArray<PrototypeSourceOption>,
+  chosenId: string,
+): string {
+  if (chosenId !== '' && options.some((option) => option.document_id === chosenId)) return chosenId
+  return options[0]?.document_id ?? ''
 }

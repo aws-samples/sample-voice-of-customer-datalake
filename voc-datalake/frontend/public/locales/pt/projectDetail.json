@@ -76,11 +76,13 @@
     "editDocument": "Editar documento",
     "newDocument": "Novo Documento",
     "noDocuments": "Nenhum documento",
+    "ordinal": "{{ordinal}} de {{total}}",
     "prototype": {
       "building": "Criando…",
       "button": "Criar protótipo",
       "cancel": "Cancelar",
       "confirmBuild": "Criar mesmo assim",
+      "confirmChooseSources": "Este projeto tem mais de um PRD ou PR/FAQ. Verifique a partir de quais o protótipo será criado.",
       "confirmPrdOnly": "Ainda não há PR-FAQ — o protótipo será criado apenas a partir do PRD. Continuar?",
       "confirmPrfaqOnly": "Ainda não há PRD — o protótipo será criado apenas a partir do PR-FAQ. Continuar?",
       "confirmRebuild": "Este projeto já tem um protótipo. Criar novamente adiciona um novo e mantém o existente. Continuar?",
@@ -96,7 +98,14 @@
       "needsDocs": "Crie primeiro um PRD ou um PR-FAQ para habilitar a criação do protótipo",
       "previewLabel": "Prévia ao vivo",
       "rawLabel": "Saída bruta (falha na análise — regenere, por favor)",
+      "sourceLatest": "mais recente",
+      "sourcePrd": "PRD",
+      "sourcePrfaq": "PR/FAQ",
       "started": "Iniciado — acompanhe em Tarefas em Segundo Plano."
+    },
+    "revision": {
+      "feedback": "Comentários: {{feedback}}",
+      "heading": "Revisão de"
     },
     "selectDocument": "Selecione um documento"
   },

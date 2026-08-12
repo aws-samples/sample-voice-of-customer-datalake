@@ -76,11 +76,13 @@
     "editDocument": "ドキュメントを編集",
     "newDocument": "新規ドキュメント",
     "noDocuments": "ドキュメントなし",
+    "ordinal": "{{total}} 件中 {{ordinal}} 件目",
     "prototype": {
       "building": "作成中…",
       "button": "プロトタイプを作成",
       "cancel": "キャンセル",
       "confirmBuild": "それでも作成",
+      "confirmChooseSources": "このプロジェクトには PRD または PR/FAQ が複数あります。どれをもとにプロトタイプを作成するか確認してください。",
       "confirmPrdOnly": "PR-FAQ がまだありません — プロトタイプは PRD のみから作成されます。続行しますか？",
       "confirmPrfaqOnly": "PRD がまだありません — プロトタイプは PR-FAQ のみから作成されます。続行しますか？",
       "confirmRebuild": "このプロジェクトにはすでにプロトタイプがあります。再度ビルドすると既存のものを保持したまま新しいものが追加されます。続行しますか?",
@@ -96,7 +98,14 @@
       "needsDocs": "プロトタイプ作成を有効にするには、まず PRD または PR-FAQ を作成してください",
       "previewLabel": "ライブプレビュー",
       "rawLabel": "生の出力（解析失敗 — 再生成してください）",
+      "sourceLatest": "最新",
+      "sourcePrd": "PRD",
+      "sourcePrfaq": "PR/FAQ",
       "started": "開始しました — バックグラウンドジョブで進行状況を確認できます。"
+    },
+    "revision": {
+      "feedback": "フィードバック: {{feedback}}",
+      "heading": "改訂元"
     },
     "selectDocument": "ドキュメントを選択"
   },

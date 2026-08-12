@@ -76,11 +76,13 @@
     "editDocument": "编辑文档",
     "newDocument": "新建文档",
     "noDocuments": "无文档",
+    "ordinal": "第 {{ordinal}} 个，共 {{total}} 个",
     "prototype": {
       "building": "构建中…",
       "button": "构建原型",
       "cancel": "取消",
       "confirmBuild": "仍然创建",
+      "confirmChooseSources": "该项目有多个 PRD 或 PR/FAQ。请确认将基于哪些文档构建原型。",
       "confirmPrdOnly": "尚无 PR-FAQ — 原型将仅基于 PRD 构建。是否继续？",
       "confirmPrfaqOnly": "尚无 PRD — 原型将仅基于 PR-FAQ 构建。是否继续？",
       "confirmRebuild": "此项目已有原型。再次构建会新增一个并保留现有原型。是否继续？",
@@ -96,7 +98,14 @@
       "needsDocs": "请先创建 PRD 或 PR-FAQ 以启用原型构建",
       "previewLabel": "实时预览",
       "rawLabel": "原始输出（解析失败 — 请重新生成）",
+      "sourceLatest": "最新",
+      "sourcePrd": "PRD",
+      "sourcePrfaq": "PR/FAQ",
       "started": "已开始 — 可在后台任务中查看进度。"
+    },
+    "revision": {
+      "feedback": "反馈：{{feedback}}",
+      "heading": "修订自"
     },
     "selectDocument": "选择文档"
   },

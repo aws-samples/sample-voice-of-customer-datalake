@@ -76,11 +76,13 @@
     "editDocument": "Edit document",
     "newDocument": "New Document",
     "noDocuments": "No documents",
+    "ordinal": "{{ordinal}} of {{total}}",
     "prototype": {
       "building": "Building…",
       "button": "Build Prototype",
       "cancel": "Cancel",
       "confirmBuild": "Build anyway",
+      "confirmChooseSources": "This project has more than one PRD or PR/FAQ. Check which ones the prototype will be built from.",
       "confirmPrdOnly": "No PR-FAQ yet — the prototype will be built from the PRD only. Continue?",
       "confirmPrfaqOnly": "No PRD yet — the prototype will be built from the PR-FAQ only. Continue?",
       "confirmRebuild": "This project already has a prototype. Building again adds a new one and keeps the existing one. Continue?",
@@ -96,7 +98,14 @@
       "needsDocs": "Create a PRD or a PR-FAQ first to enable prototype build",
       "previewLabel": "Live preview",
       "rawLabel": "Raw output (parse failed — please regenerate)",
+      "sourceLatest": "latest",
+      "sourcePrd": "PRD",
+      "sourcePrfaq": "PR/FAQ",
       "started": "Started — track it in Background Jobs."
+    },
+    "revision": {
+      "feedback": "Feedback: {{feedback}}",
+      "heading": "Revision of"
     },
     "selectDocument": "Select a document"
   },

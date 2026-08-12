@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
 import { resolveDerivation, type DerivationRole, type DerivationSource } from '../../api/derivation'
+import { ordinalByType, resolveRevision, type DocumentOrdinal } from '../../api/documentLineage'
 import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
 import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../components/PrototypeLinkActions'
@@ -50,6 +51,9 @@ export default function DocumentsTab({
   isDeleting,
 }: DocumentsTabProps) {
   const { t } = useTranslation('projectDetail')
+  // One pass for the whole list rather than one per row, and memoised because the
+  // list re-renders on every selection change while the documents themselves do not.
+  const ordinals = useMemo(() => ordinalByType(documents), [documents])
 
   return (
     <div className="space-y-4">
@@ -83,6 +87,12 @@ export default function DocumentsTab({
               >
                 <div className="flex items-center gap-2 mb-1">
                   <DocumentTypeBadge type={d.document_type} />
+                  {/* Six prototypes called "Prototype", four sharing a date, is the
+                      real shape of this list — the badge and the date do not tell
+                      them apart, and neither does the title. The ordinal does, and
+                      it is derived from creation order rather than stored, so it
+                      needs no migration and cannot disagree with the records. */}
+                  <DocumentOrdinalLabel ordinal={ordinals.get(d.document_id)} t={t} />
                   <span className="text-xs text-gray-400">{format(new Date(d.created_at), 'MMM d')}</span>
                 </div>
                 <h4 className="font-medium line-clamp-2 text-sm lg:text-base">{d.title}</h4>
@@ -137,6 +147,11 @@ export default function DocumentsTab({
                   url={selectedDoc.prototype_url}
                   title={selectedDoc.title}
                   prototypeFormat={selectedDoc.prototype_format}
+                  // '' rather than the raw field: the backend stores a real null here
+                  // for a prototype built from only one of the two types, and blank is
+                  // what the API reads as "not aimed".
+                  sourcePrdId={selectedDoc.source_prd_id ?? ''}
+                  sourcePrfaqId={selectedDoc.source_prfaq_id ?? ''}
                   onJobStarted={onJobStarted}
                 />
               ) : (
@@ -151,6 +166,7 @@ export default function DocumentsTab({
                   was made from, not what it says. Both branches above own the
                   pane's flexible height, so a footer here stays visible without
                   pushing the preview down the page. */}
+              <RevisionFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
               <DerivationFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
             </div>
           ) : (
@@ -170,11 +186,14 @@ export default function DocumentsTab({
 type TFunc = (key: string, opts?: Record<string, unknown>) => string
 
 function PrototypeFeedbackButton({
-  projectId, basePrototypeId, title, onJobStarted, t,
+  projectId, basePrototypeId, title, sourcePrdId, sourcePrfaqId, onJobStarted, t,
 }: {
   readonly projectId: string
   readonly basePrototypeId: string
   readonly title: string
+  /** The base prototype's own sources, so a revision keeps the spec it revises. */
+  readonly sourcePrdId: string
+  readonly sourcePrfaqId: string
   /** Tells the Background Jobs panel to pick the revision up. */
   readonly onJobStarted?: () => void
   readonly t: TFunc
@@ -202,6 +221,14 @@ function PrototypeFeedbackButton({
         title,
         feedback: fb,
         base_prototype_id: basePrototypeId,
+        // Inherit the base prototype's own sources. Without these the backend
+        // re-resolves "the newest of each type", so revising a prototype built
+        // from June's PRD would quietly re-base it on September's — a revision
+        // that changes the spec as well as the feedback, which is not what
+        // "revise this" means. Blank for a prototype that recorded no source
+        // falls back to today's behaviour.
+        source_prd_id: sourcePrdId,
+        source_prfaq_id: sourcePrfaqId,
       })
       // The form closes but the text is kept: the revision can still fail
       // minutes later, in the jobs panel, and clearing it would mean retyping
@@ -214,7 +241,8 @@ function PrototypeFeedbackButton({
     } finally {
       setBusy(false)
     }
-  }, [feedback, projectId, basePrototypeId, title, i18n.language, onJobStarted, started])
+  }, [feedback, projectId, basePrototypeId, title, sourcePrdId, sourcePrfaqId,
+      i18n.language, onJobStarted, started])
 
   if (!open) {
     return (
@@ -321,7 +349,7 @@ function LegacyHtmlActions({
 // these must stay anchors is documented there rather than rediscovered per page.
 
 function PrototypeView({
-  projectId, documentId, html, url, title, prototypeFormat, onJobStarted,
+  projectId, documentId, html, url, title, prototypeFormat, sourcePrdId, sourcePrfaqId, onJobStarted,
 }: {
   readonly projectId: string
   readonly documentId: string
@@ -329,6 +357,9 @@ function PrototypeView({
   readonly url?: string
   readonly title: string
   readonly prototypeFormat?: string
+  /** Passed through to a revision so it inherits this prototype's sources. */
+  readonly sourcePrdId: string
+  readonly sourcePrfaqId: string
   readonly onJobStarted?: () => void
 }) {
   const { t } = useTranslation('projectDetail')
@@ -367,6 +398,8 @@ function PrototypeView({
               projectId={projectId}
               basePrototypeId={documentId}
               title={title}
+              sourcePrdId={sourcePrdId}
+              sourcePrfaqId={sourcePrfaqId}
               onJobStarted={onJobStarted}
               t={t}
             />
@@ -555,7 +588,93 @@ function DerivationSourceRow({
   )
 }
 
-// ── Badge ───────────────────────────────────────────────────────────────────
+// ── Succession: what this document replaces ──────────────────────────────────
+// A separate section from the derivation footer, and separate on purpose: "this
+// revises that" is a different relation from "this was built from that". A
+// revision is ALSO built from a PRD, so folding the two would show a prototype as
+// though it had been assembled out of its own predecessor.
+//
+// `revised_from_id` and `revision_feedback` have been written on every
+// feedback-driven revision since that feature shipped and have arrived on every
+// project read ever since, read by nothing. This is the first consumer.
+
+function RevisionFooter({
+  doc, documents, onSelectDoc,
+}: {
+  readonly doc: ProjectDocument
+  readonly documents: readonly ProjectDocument[]
+  readonly onSelectDoc: (doc: ProjectDocument) => void
+}) {
+  const { t } = useTranslation('projectDetail')
+  const revision = useMemo(() => resolveRevision(doc, documents), [doc, documents])
+
+  const onSelectBase = useCallback((documentId: string) => {
+    const target = documents.find((d) => d.document_id === documentId)
+    if (target) onSelectDoc(target)
+  }, [documents, onSelectDoc])
+
+  // Not a revision. Most documents are not, so this renders nothing rather than
+  // an empty heading.
+  if (revision === null) return null
+
+  return (
+    <section data-testid="document-revision" className="mt-4 pt-3 border-t text-xs text-gray-500">
+      <h3 className="font-medium text-gray-600 mb-1.5">{t('documents.revision.heading')}</h3>
+      <p className="flex items-center gap-2 min-w-0">
+        {revision.resolved ? (
+          <button
+            type="button"
+            onClick={() => onSelectBase(revision.revisedFromId)}
+            className="truncate text-left text-blue-600 hover:underline"
+          >
+            {revision.title === null || revision.title === '' ? revision.revisedFromId : revision.title}
+          </button>
+        ) : (
+          // The predecessor has been deleted. The relation still happened, so it
+          // is still reported — just not as a control that leads nowhere. Same
+          // rule the derivation footer follows for a deleted source.
+          <>
+            <span className="truncate">{revision.revisedFromId}</span>
+            <span className="flex-shrink-0">{t('documents.derivation.unavailable')}</span>
+          </>
+        )}
+      </p>
+      {/* The feedback IS the reason this revision exists, so it is the one piece
+          of stored text worth surfacing here. Capped by the backend at 2000
+          chars; clamped rather than scrolled so a long note cannot push the
+          preview off the pane. */}
+      {revision.feedback === '' ? null : (
+        <p className="mt-1.5 italic line-clamp-3">
+          {t('documents.revision.feedback', { feedback: revision.feedback })}
+        </p>
+      )}
+    </section>
+  )
+}
+
+// ── Badges ──────────────────────────────────────────────────────────────────
+
+/**
+ * "2 of 3" for a document whose type has more than one.
+ *
+ * Silent for a type with a single document: "1 of 1" is noise on every PRD in
+ * every project that has one, and the number only earns its space once there is
+ * something to confuse it with.
+ */
+function DocumentOrdinalLabel({
+  ordinal, t,
+}: {
+  readonly ordinal: DocumentOrdinal | undefined
+  readonly t: TFunc
+}) {
+  if (ordinal === undefined || ordinal.total < 2) return null
+
+  return (
+    <span className="text-xs font-medium text-gray-500 flex-shrink-0">
+      {t('documents.ordinal', { ordinal: ordinal.ordinal, total: ordinal.total })}
+    </span>
+  )
+}
 
 function DocumentTypeBadge({ type }: { readonly type: string }) {
   const styles: Record<string, string> = {

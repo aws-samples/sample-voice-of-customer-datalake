@@ -26,6 +26,7 @@
  * @module api/derivation
  */
 import { z } from 'zod'
+import { asRecord, displayString } from './wireRecord'
 
 /**
  * The closed role vocabulary, in the order a resolved derivation reports it.
@@ -182,18 +183,6 @@ const LEGACY_SOURCE_BY_ROLE = {
   merge_input: { field: 'source_documents', arity: 'many' },
 } as const satisfies Record<DerivationRole, { field: string; arity: 'one' | 'many' } | null>
 
-/**
- * A wire value as a readable bag of fields, or null when it is not one.
- * Parsed rather than asserted (repo convention: no `as`), which also rejects the
- * array and primitive shapes an API can deliver in place of a document.
- */
-const recordSchema = z.record(z.string(), z.unknown())
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  const parsed = recordSchema.safeParse(value)
-  return parsed.success ? parsed.data : null
-}
-
 /** Reconstruct a derivation from the lineage shapes that predate this contract. */
 function derivationFromLegacyFields(document: Record<string, unknown>): DocumentDerivation {
   const sources: DocumentDerivation['sources'] = []
@@ -245,11 +234,6 @@ function isEmpty(derivation: DocumentDerivation): boolean {
 
 /** What a source carries once its document was found. */
 type ResolvedSourceFields = Pick<DerivationSource, 'title' | 'document_type'>
-
-/** A displayable string, or '' for a field the wire did not supply as one. */
-function displayString(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
 
 /**
  * Index of document_id → the fields a source displays, over whatever the caller
