@@ -426,11 +426,10 @@ def _document_by_id(projects_table, project_id: str, sk_prefix: str, document_id
     return resp.get('Item') or None
 
 
-def _latest_doc_by_prefix(projects_table, project_id: str, sk_prefix: str) -> dict | None:
+def _newest_document_id(projects_table, project_id: str, sk_prefix: str) -> str | None:
     """
-    Return the most recently created document of a given type for the project,
-    or None if none exist. We can't use a GSI here because prefixes are encoded
-    in `sk` directly.
+    The id of the most recently created document of a type, decided over ALL of
+    them, or None if the project has none.
 
     Every page is read and the winner is chosen on `created_at`, so the answer
     does not depend on ids sorting the same way as creation time. It used to: a
@@ -438,30 +437,57 @@ def _latest_doc_by_prefix(projects_table, project_id: str, sk_prefix: str) -> di
     which is correct only while ids stay timestamp-prefixed. The day one is
     minted any other way the newest document falls outside the window and is
     skipped silently — a build against a stale spec, with nothing in the output
-    saying so. Dropping the cap does not change the cost per item, which the
-    capped read already paid; it is the cap that was wrong, not the read.
+    saying so.
+
+    Only the two attributes that decide the winner are read back. Documents carry
+    their whole `content`, so unbounding the page count WITHOUT projecting would
+    trade a 20-document payload for an all-documents one — the cap was wrong, but
+    removing it is what makes the projection necessary rather than optional.
 
     Ties break on `document_id` descending, matching what the `sk`-ordered read
-    resolved them to.
+    resolved them to. `sourceOptions` in the frontend's overviewState.ts mirrors
+    this exact rule, ties included, so the picker's default and this answer name
+    the same document.
     """
-    newest: dict | None = None
-    newest_rank: tuple[str, str] | None = None
+    newest: tuple[str, str] | None = None
     params: dict = {
         'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with(sk_prefix),
+        # Both names contain an underscore, so neither can collide with a
+        # DynamoDB reserved word and no ExpressionAttributeNames are needed.
+        'ProjectionExpression': 'document_id, created_at',
     }
     while True:
         resp = projects_table.query(**params)
         for item in resp.get('Items') or []:
-            rank = (str(item.get('created_at') or ''), str(item.get('document_id') or ''))
-            if newest_rank is None or rank > newest_rank:
-                newest, newest_rank = item, rank
+            document_id = item.get('document_id')
+            if not document_id:
+                continue
+            rank = (str(item.get('created_at') or ''), str(document_id))
+            if newest is None or rank > newest:
+                newest = rank
         # A real page key is a dict of key attributes. Requiring that, rather
         # than mere truthiness, is also what stops this loop from spinning
         # forever against a test double whose `query` returns a bare mock.
         start_key = resp.get('LastEvaluatedKey')
         if not isinstance(start_key, dict) or not start_key:
-            return newest
+            return newest[1] if newest else None
         params['ExclusiveStartKey'] = start_key
+
+
+def _latest_doc_by_prefix(projects_table, project_id: str, sk_prefix: str) -> dict | None:
+    """
+    Return the most recently created document of a given type for the project,
+    or None if none exist. We can't use a GSI here because prefixes are encoded
+    in `sk` directly.
+
+    Two reads by design: rank over a projection, then fetch only the winner in
+    full. One unprojected pass would be a single round trip but would pull every
+    document body in the range to compare two attributes.
+    """
+    document_id = _newest_document_id(projects_table, project_id, sk_prefix)
+    if not document_id:
+        return None
+    return _document_by_id(projects_table, project_id, sk_prefix, document_id)
 
 
 def _source_document(

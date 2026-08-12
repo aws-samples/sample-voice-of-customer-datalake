@@ -440,7 +440,10 @@ function PrototypeSourcePicker({
   if (sources.prdOptions.length === 0 && sources.prfaqOptions.length === 0) return null
 
   return (
-    <div data-testid="prototype-source-picker" className="space-y-2 rounded-lg bg-gray-50 p-3">
+    // `mt-3` lives here rather than on a wrapper in ConfirmModal: this component
+    // returns null when there is nothing to choose, and a wrapper's margin would
+    // leave a gap the modal cannot detect.
+    <div data-testid="prototype-source-picker" className="mt-3 space-y-2 rounded-lg bg-gray-50 p-3">
       <SourceRow
         label={t('documents.prototype.sourcePrd')}
         latestLabel={t('documents.prototype.sourceLatest')}

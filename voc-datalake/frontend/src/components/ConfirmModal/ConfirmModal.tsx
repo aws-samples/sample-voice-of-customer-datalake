@@ -25,6 +25,11 @@ interface ConfirmModalProps {
    *
    * Deliberately additive: `message` stays required, so a dialog cannot end up
    * with controls and no question. Every existing caller is unaffected.
+   *
+   * Rendered with no wrapper element. A wrapper carrying its own margin would
+   * leave a visible gap whenever the child COMPONENT returns null — which
+   * `children != null` cannot detect, since a React element that renders nothing
+   * is still a non-null child. Spacing therefore belongs to the child.
    */
   children?: ReactNode
   confirmLabel?: string
@@ -86,7 +91,7 @@ export default function ConfirmModal({
           <div className="flex-1 min-w-0">
             <h3 className="text-base sm:text-lg font-semibold text-gray-900">{title}</h3>
             <p className="mt-2 text-sm text-gray-600">{message}</p>
-            {children != null ? <div className="mt-3">{children}</div> : null}
+            {children}
           </div>
         </div>
         

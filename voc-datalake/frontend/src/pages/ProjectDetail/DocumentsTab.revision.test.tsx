@@ -9,7 +9,7 @@
  * project read, and were displayed nowhere.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import DocumentsTab from './DocumentsTab'
 import type { Project, ProjectDocument } from '../../api/types'
@@ -120,7 +120,7 @@ describe('a revision says what it revises', () => {
     const user = userEvent.setup()
     const onSelectDoc = renderTab([base, revision], revision)
 
-    await user.click(screen.getByTestId('document-revision').getElementsByTagName('button')[0])
+    await user.click(within(screen.getByTestId('document-revision')).getByRole('button'))
 
     expect(onSelectDoc).toHaveBeenCalledWith(base)
   })
@@ -133,7 +133,7 @@ describe('a revision says what it revises', () => {
     const panel = screen.getByTestId('document-revision')
     expect(panel).toHaveTextContent('proto_1')
     expect(panel).toHaveTextContent(/No longer available/i)
-    expect(panel.getElementsByTagName('button')).toHaveLength(0)
+    expect(within(panel).queryByRole('button')).toBeNull()
   })
 
   it('renders nothing for a document that is not a revision', () => {
@@ -181,10 +181,14 @@ describe('revising a prototype keeps the spec it was built from', () => {
     // revision that changes the spec as well as the feedback. The project holds a
     // newer PRD precisely so a regression has something wrong to pick.
     const user = userEvent.setup()
+    // Both inherited sources must be PRESENT in the project: since review round 1
+    // an id that no longer resolves is dropped to '', so a fixture that omits the
+    // PR/FAQ it claims is inherited would assert the fallback, not the inheritance.
     renderTab([
       built,
       doc({ document_id: 'prd_june', document_type: 'prd', title: 'June spec', created_at: '2026-06-01T00:00:00Z' }),
       doc({ document_id: 'prd_sept', document_type: 'prd', title: 'September spec', created_at: '2026-09-01T00:00:00Z' }),
+      doc({ document_id: 'prfaq_june', document_type: 'prfaq', title: 'June launch', created_at: '2026-06-01T00:00:00Z' }),
     ], built)
 
     await user.click(screen.getByRole('button', { name: /revise with feedback/i }))
@@ -214,5 +218,43 @@ describe('revising a prototype keeps the spec it was built from', () => {
     const body = mockBuildPrototype.mock.calls[0][1]
     expect(body.source_prd_id).toBe('')
     expect(body.source_prfaq_id).toBe('')
+  })
+})
+
+describe('a prototype stays revisable after its source is deleted', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
+  })
+
+  it('drops an inherited source id that is no longer in the project', async () => {
+    // Found in review round 1 on PR #320. Inheriting the base prototype's sources
+    // keeps a revision on the same spec — but the API refuses an id it cannot
+    // resolve, so a prototype whose PRD was deleted afterwards would send a dead
+    // id on every attempt and could never be revised again. Blank instead: the
+    // document whose spec would have been preserved no longer exists, so
+    // newest-of-type is the only thing left, and it is not a silent substitution.
+    const user = userEvent.setup()
+    const orphaned = doc({
+      document_id: 'proto_orphan',
+      prototype_format: 'html',
+      source_prd_id: 'prd_deleted_since',
+      source_prfaq_id: 'prfaq_still_here',
+    })
+    renderTab([
+      orphaned,
+      doc({ document_id: 'prfaq_still_here', document_type: 'prfaq', title: 'Launch note' }),
+    ], orphaned)
+
+    await user.click(screen.getByRole('button', { name: /revise with feedback/i }))
+    await user.type(screen.getByRole('textbox'), 'Any change')
+    await user.click(screen.getByRole('button', { name: /^regenerate$/i }))
+
+    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+    const body = mockBuildPrototype.mock.calls[0][1]
+    expect(body.source_prd_id).toBe('')
+    // The one that DOES still exist is still inherited — the fallback is per slot,
+    // not all-or-nothing, so a deleted PRD does not also discard a live PR/FAQ.
+    expect(body.source_prfaq_id).toBe('prfaq_still_here')
   })
 })

@@ -61,18 +61,13 @@ export interface ResolvedRevision {
  *   is worth rendering.
  */
 export function ordinalByType(documents: readonly unknown[]): Map<string, DocumentOrdinal> {
-  const byType = new Map<string, Array<{ id: string; rank: readonly [string, string] }>>()
+  const byType = new Map<string, NumberableDocument[]>()
 
   for (const raw of documents) {
-    const record = asRecord(raw)
-    if (record === null) continue
-    const id = typeof record.document_id === 'string' ? record.document_id : ''
-    if (id === '') continue
-    const type = typeof record.document_type === 'string' ? record.document_type : ''
-    const createdAt = typeof record.created_at === 'string' ? record.created_at : ''
-    const group = byType.get(type)
-    const entry = { id, rank: [createdAt, id] as const }
-    if (group === undefined) byType.set(type, [entry])
+    const entry = numberable(raw)
+    if (entry === null) continue
+    const group = byType.get(entry.type)
+    if (group === undefined) byType.set(entry.type, [entry])
     else group.push(entry)
   }
 
@@ -86,6 +81,32 @@ export function ordinalByType(documents: readonly unknown[]): Map<string, Docume
     })
   }
   return ordinals
+}
+
+/** A document reduced to what numbering needs. */
+interface NumberableDocument {
+  readonly id: string
+  readonly type: string
+  readonly rank: readonly [string, string]
+}
+
+/**
+ * One wire document as a numbering entry, or null when it cannot be numbered.
+ *
+ * Both an id AND a type are required. An entry missing either is skipped rather
+ * than defaulted, because the `total` is rendered to the user: a junk record
+ * counted in would claim a document that cannot be opened, and grouping every
+ * type-less record under '' would make unrelated documents share one sequence and
+ * inflate each other's totals.
+ */
+function numberable(raw: unknown): NumberableDocument | null {
+  const record = asRecord(raw)
+  if (record === null) return null
+  const id = typeof record.document_id === 'string' ? record.document_id : ''
+  const type = typeof record.document_type === 'string' ? record.document_type : ''
+  if (id === '' || type === '') return null
+  const createdAt = typeof record.created_at === 'string' ? record.created_at : ''
+  return { id, type, rank: [createdAt, id] }
 }
 
 function compareRank(a: readonly [string, string], b: readonly [string, string]): number {

@@ -49,7 +49,18 @@ def _wire(mock_dynamodb, *, queries, documents=None):
     """
     table = mock_dynamodb['table']
     table.query.side_effect = list(queries)
-    by_sk = documents or {}
+
+    # Every document offered to `query` is ALSO reachable by key: the
+    # newest-of-type read ranks over a projection and then fetches the winner via
+    # `_document_by_id`, so a fixture that only answered `query` would resolve
+    # nothing. Explicit `documents` entries win, which is what the aimed tests use.
+    by_sk = {}
+    for page in queries:
+        for item in page.get('Items') or []:
+            document_id = item.get('document_id')
+            if document_id:
+                by_sk[f'PRD#{document_id}'] = item
+    by_sk.update(documents or {})
 
     def get_item(Key=None, **kwargs):
         sk = (Key or {}).get('sk', '')

@@ -147,11 +147,14 @@ export default function DocumentsTab({
                   url={selectedDoc.prototype_url}
                   title={selectedDoc.title}
                   prototypeFormat={selectedDoc.prototype_format}
-                  // '' rather than the raw field: the backend stores a real null here
-                  // for a prototype built from only one of the two types, and blank is
-                  // what the API reads as "not aimed".
-                  sourcePrdId={selectedDoc.source_prd_id ?? ''}
-                  sourcePrfaqId={selectedDoc.source_prfaq_id ?? ''}
+                  // Blank when the inherited source no longer exists, because the
+                  // API rejects an id it cannot resolve — and a prototype whose PRD
+                  // has since been deleted would otherwise become permanently
+                  // unrevisable. Blank reads as "not aimed", so the revision falls
+                  // back to newest-of-type: not a silent substitution, since the
+                  // document it would have preserved is gone.
+                  sourcePrdId={stillPresent(selectedDoc.source_prd_id, documents)}
+                  sourcePrfaqId={stillPresent(selectedDoc.source_prfaq_id, documents)}
                   onJobStarted={onJobStarted}
                 />
               ) : (
@@ -586,6 +589,25 @@ function DerivationSourceRow({
       {role}
     </span>
   )
+}
+
+/**
+ * A source id to send, or '' when that document is no longer in the project.
+ *
+ * The API refuses an id it cannot resolve — deliberately, so a build never runs
+ * against a document the user did not pick. That makes an INHERITED id a
+ * liability: a prototype whose PRD was deleted afterwards would send a dead id on
+ * every revision attempt and could never be revised again. Dropping it to '' is
+ * the same fallback `usePrototypeBuild.effectiveSourceId` applies to a stale
+ * selection, and it is not a silent substitution — the document whose spec would
+ * have been preserved does not exist any more.
+ */
+function stillPresent(
+  documentId: string | null | undefined,
+  documents: readonly ProjectDocument[],
+): string {
+  if (documentId == null || documentId === '') return ''
+  return documents.some((d) => d.document_id === documentId) ? documentId : ''
 }
 
 // ── Succession: what this document replaces ──────────────────────────────────
