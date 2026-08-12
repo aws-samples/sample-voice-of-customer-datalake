@@ -76,11 +76,13 @@
     "editDocument": "문서 편집",
     "newDocument": "새 문서",
     "noDocuments": "문서 없음",
+    "ordinal": "{{total}}개 중 {{ordinal}}번째",
     "prototype": {
       "building": "생성 중…",
       "button": "프로토타입 생성",
       "cancel": "취소",
       "confirmBuild": "그래도 생성",
+      "confirmChooseSources": "이 프로젝트에는 PRD 또는 PR/FAQ가 여러 개 있습니다. 어떤 문서를 기반으로 프로토타입을 만들지 확인하세요.",
       "confirmPrdOnly": "아직 PR-FAQ가 없어 PRD만으로 프로토타입을 생성합니다. 계속할까요?",
       "confirmPrfaqOnly": "아직 PRD가 없어 PR-FAQ만으로 프로토타입을 생성합니다. 계속할까요?",
       "confirmRebuild": "이 프로젝트에는 이미 프로토타입이 있습니다. 다시 빌드하면 기존 항목을 유지한 채 새 항목이 추가됩니다. 계속하시겠습니까?",
@@ -91,12 +93,20 @@
       "feedbackHeading": "피드백으로 프로토타입 수정",
       "feedbackHint": "바꿀 내용을 적으세요. PRD/PR-FAQ는 그대로 반영되며, 피드백을 중심으로 프로토타입이 바뀍니다 (예: “관리자 관점으로 보여줘”).",
       "feedbackPlaceholder": "예: 이걸 관리자 대시보드 화면으로 바꿔줘 — 사용자 화면 대신 승인·사용자관리·지표를 보여줘.",
+      "feedbackRebased": "이 프로토타입의 원본 문서가 더 이상 존재하지 않으므로 수정에는 해당 유형의 최신 문서를 사용합니다.",
       "feedbackSubmit": "재생성",
       "feedbackTitle": "피드백을 주어 프로토타입을 재생성합니다",
       "needsDocs": "프로토타입 생성은 PRD 또는 PR-FAQ가 있어야 활성화됩니다",
       "previewLabel": "미리보기",
       "rawLabel": "원본 출력 (파싱 실패 — 다시 생성해 주세요)",
+      "sourceLatest": "최신",
+      "sourcePrd": "PRD",
+      "sourcePrfaq": "PR/FAQ",
       "started": "시작했습니다 — 백그라운드 작업에서 진행 상황을 확인하세요."
+    },
+    "revision": {
+      "feedback": "피드백: {{feedback}}",
+      "heading": "수정 대상"
     },
     "selectDocument": "문서를 선택하세요"
   },

@@ -567,15 +567,57 @@ def api_suggest_document_brief(project_id: str):
     return suggest_document_brief(project_id, app.current_event.json_body or {})
 
 
+# A DynamoDB sort key is capped at 1024 bytes. Bounding a source id well under
+# that makes an absurd one a 400 naming the field rather than a DynamoDB
+# ValidationException surfacing as a 500.
+MAX_SOURCE_DOCUMENT_ID_LEN = 256
+
+
+def _validated_source_id(project_id: str, sk_prefix: str, raw: Any, field: str) -> str | None:
+    """
+    Check that a client-supplied source document id names a document of the
+    expected type in THIS project, and return it. Absent, null or blank means
+    "not aimed, use the newest of this type" and is valid.
+
+    This is a trust boundary, not a convenience check: the generator reads the
+    named document's text straight into a Bedrock prompt, so an unvalidated id
+    would pull another project's document into this project's generation.
+    Ownership and type need no separate test — `pk` is the project and `sk` is
+    `{TYPE}#{id}`, so an id from elsewhere, or a PR/FAQ id offered as a PRD,
+    cannot resolve.
+
+    Rejecting here as well as in the generator is deliberate: the generator's
+    raise is what makes a build fail loudly instead of silently substituting the
+    newest document, while this check is what keeps an unresolvable id from
+    creating a job that bills a multi-minute Bedrock call in order to fail.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise ValidationError(f'{field} must be a document id string')
+    document_id = raw.strip()
+    if not document_id:
+        return None
+    if len(document_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
+        raise ValidationError(f'{field} is not a valid document id')
+    item = get_projects_table().get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'{sk_prefix}{document_id}'},
+    ).get('Item')
+    if not item:
+        raise NotFoundError(f'{field}: no such document in this project')
+    return document_id
+
+
 @app.post("/projects/<project_id>/build-prototype")
 @tracer.capture_method
 def api_build_prototype(project_id: str):
     """
-    Kick off a build-prototype job. The document-generator lambda reads the
-    latest PRD and/or PR-FAQ for this project and asks Bedrock to produce a
-    self-contained HTML React prototype, saved as a ProjectDocument of type
-    'prototype'. The frontend polls job status, then displays the HTML in an
-    iframe via srcdoc (sandboxed, no parent-page access).
+    Kick off a build-prototype job. The document-generator lambda reads the PRD
+    and/or PR-FAQ this request names — or the newest of each type when it names
+    none — and asks Bedrock to produce a self-contained HTML React prototype,
+    saved as a ProjectDocument of type 'prototype'. The frontend polls job
+    status, then displays the HTML in an iframe via srcdoc (sandboxed, no
+    parent-page access).
     """
     body = app.current_event.json_body or {}
     doc_config = {
@@ -588,6 +630,15 @@ def api_build_prototype(project_id: str):
         # centered on this feedback while still honoring the PRD/PR-FAQ.
         'feedback': body.get('feedback'),
         'base_prototype_id': body.get('base_prototype_id'),
+        # Optional aiming: build from THESE documents instead of the newest of
+        # each type. Validated before the job exists, so a bad id costs a 4xx
+        # rather than a billable build that fails minutes later.
+        'source_prd_id': _validated_source_id(
+            project_id, 'PRD#', body.get('source_prd_id'), 'source_prd_id',
+        ),
+        'source_prfaq_id': _validated_source_id(
+            project_id, 'PRFAQ#', body.get('source_prfaq_id'), 'source_prfaq_id',
+        ),
     }
     job_id, _ = create_job(project_id, 'build_prototype', 'doc_config', doc_config, status='pending')
     invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {

@@ -76,11 +76,13 @@
     "editDocument": "Modifier le document",
     "newDocument": "Nouveau document",
     "noDocuments": "Aucun document",
+    "ordinal": "{{ordinal}} sur {{total}}",
     "prototype": {
       "building": "Création en cours…",
       "button": "Créer le prototype",
       "cancel": "Annuler",
       "confirmBuild": "Créer quand même",
+      "confirmChooseSources": "Ce projet comporte plusieurs PRD ou PR/FAQ. Vérifiez à partir desquels le prototype sera créé.",
       "confirmPrdOnly": "Pas encore de PR-FAQ — le prototype sera créé uniquement à partir du PRD. Continuer ?",
       "confirmPrfaqOnly": "Pas encore de PRD — le prototype sera créé uniquement à partir du PR-FAQ. Continuer ?",
       "confirmRebuild": "Ce projet a déjà un prototype. Une nouvelle génération en ajoute un et conserve l’existant. Continuer ?",
@@ -91,12 +93,20 @@
       "feedbackHeading": "Réviser le prototype avec des retours",
       "feedbackHint": "Décrivez ce qu’il faut changer. Le PRD/PR-FAQ reste en vigueur ; le prototype est recentré sur vos retours (p. ex. « montrer le point de vue de l’administrateur »).",
       "feedbackPlaceholder": "p. ex. Transforme ceci en vue tableau de bord admin — montre les approbations, la gestion des utilisateurs et les métriques au lieu des écrans utilisateur final.",
+      "feedbackRebased": "Un document à partir duquel ce prototype a été créé n’existe plus ; la révision utilisera donc le plus récent de ce type.",
       "feedbackSubmit": "Régénérer",
       "feedbackTitle": "Donnez des retours pour régénérer ce prototype",
       "needsDocs": "Créez d’abord un PRD ou un PR-FAQ pour activer la création de prototype",
       "previewLabel": "Aperçu en direct",
       "rawLabel": "Sortie brute (analyse échouée — veuillez régénérer)",
+      "sourceLatest": "la plus récente",
+      "sourcePrd": "PRD",
+      "sourcePrfaq": "PR/FAQ",
       "started": "Lancé — suivez la progression dans Tâches en arrière-plan."
+    },
+    "revision": {
+      "feedback": "Retour : {{feedback}}",
+      "heading": "Révision de"
     },
     "selectDocument": "Sélectionner un document"
   },

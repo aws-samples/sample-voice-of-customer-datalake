@@ -76,11 +76,13 @@
     "editDocument": "Edit document",
     "newDocument": "New Document",
     "noDocuments": "No documents",
+    "ordinal": "{{ordinal}} of {{total}}",
     "prototype": {
       "building": "Building…",
       "button": "Build Prototype",
       "cancel": "Cancel",
       "confirmBuild": "Build anyway",
+      "confirmChooseSources": "This project has more than one PRD or PR/FAQ. Check which ones the prototype will be built from.",
       "confirmPrdOnly": "No PR-FAQ yet — the prototype will be built from the PRD only. Continue?",
       "confirmPrfaqOnly": "No PRD yet — the prototype will be built from the PR-FAQ only. Continue?",
       "confirmRebuild": "This project already has a prototype. Building again adds a new one and keeps the existing one. Continue?",
@@ -91,12 +93,20 @@
       "feedbackHeading": "Revise prototype with feedback",
       "feedbackHint": "Describe what to change. The PRD/PR-FAQ stays in effect; the prototype is re-centered on your feedback (e.g. “show the admin’s perspective”).",
       "feedbackPlaceholder": "e.g. Change this to the admin dashboard view — show approvals, user management, and metrics instead of the end-user screens.",
+      "feedbackRebased": "A document this prototype was built from no longer exists, so the revision will use the latest of that type instead.",
       "feedbackSubmit": "Regenerate",
       "feedbackTitle": "Give feedback to regenerate this prototype",
       "needsDocs": "Create a PRD or a PR-FAQ first to enable prototype build",
       "previewLabel": "Live preview",
       "rawLabel": "Raw output (parse failed — please regenerate)",
+      "sourceLatest": "latest",
+      "sourcePrd": "PRD",
+      "sourcePrfaq": "PR/FAQ",
       "started": "Started — track it in Background Jobs."
+    },
+    "revision": {
+      "feedback": "Feedback: {{feedback}}",
+      "heading": "Revision of"
     },
     "selectDocument": "Select a document"
   },

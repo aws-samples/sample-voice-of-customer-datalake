@@ -76,11 +76,13 @@
     "editDocument": "Dokument bearbeiten",
     "newDocument": "Neues Dokument",
     "noDocuments": "Keine Dokumente",
+    "ordinal": "{{ordinal}} von {{total}}",
     "prototype": {
       "building": "Wird erstellt…",
       "button": "Prototyp erstellen",
       "cancel": "Abbrechen",
       "confirmBuild": "Trotzdem erstellen",
+      "confirmChooseSources": "Dieses Projekt hat mehr als ein PRD oder PR/FAQ. Prüfen Sie, aus welchen der Prototyp erstellt wird.",
       "confirmPrdOnly": "Noch kein PR-FAQ — der Prototyp wird nur aus dem PRD erstellt. Fortfahren?",
       "confirmPrfaqOnly": "Noch kein PRD — der Prototyp wird nur aus dem PR-FAQ erstellt. Fortfahren?",
       "confirmRebuild": "Dieses Projekt hat bereits einen Prototyp. Ein weiterer Build erstellt einen neuen und behält den vorhandenen. Fortfahren?",
@@ -91,12 +93,20 @@
       "feedbackHeading": "Prototyp mit Feedback überarbeiten",
       "feedbackHint": "Beschreiben Sie, was geändert werden soll. PRD/PR-FAQ bleiben maßgeblich; der Prototyp wird auf Ihr Feedback ausgerichtet (z. B. „aus Admin-Sicht zeigen“).",
       "feedbackPlaceholder": "z. B. Ändere dies zur Admin-Dashboard-Ansicht — zeige Freigaben, Nutzerverwaltung und Kennzahlen statt der Endnutzer-Screens.",
+      "feedbackRebased": "Ein Dokument, aus dem dieser Prototyp erstellt wurde, existiert nicht mehr. Die Überarbeitung verwendet daher das neueste Dokument dieses Typs.",
       "feedbackSubmit": "Neu generieren",
       "feedbackTitle": "Feedback geben, um diesen Prototyp neu zu generieren",
       "needsDocs": "Erstellen Sie zuerst ein PRD oder ein PR-FAQ, um die Prototyp-Erstellung zu aktivieren",
       "previewLabel": "Live-Vorschau",
       "rawLabel": "Rohausgabe (Parsen fehlgeschlagen — bitte neu generieren)",
+      "sourceLatest": "neueste",
+      "sourcePrd": "PRD",
+      "sourcePrfaq": "PR/FAQ",
       "started": "Gestartet — Verfolgen Sie den Fortschritt unter Hintergrundaufgaben."
+    },
+    "revision": {
+      "feedback": "Rückmeldung: {{feedback}}",
+      "heading": "Überarbeitung von"
     },
     "selectDocument": "Dokument auswählen"
   },

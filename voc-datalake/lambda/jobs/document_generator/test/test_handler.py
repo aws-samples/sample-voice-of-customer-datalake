@@ -412,6 +412,10 @@ class TestBuildPrototype:
             if sk.startswith('PROTOTYPE#'):
                 # New-style item: prototype_url present, no inline `content`.
                 return {'Item': {'prototype_url': 'https://cdn.example.com/prototypes/proj_20250101120000/prototype_20260101000000.html'}}
+            if sk == 'PRD#prd_1':
+                # The newest-of-type read ranks over a projection, then fetches the
+                # winner by key — so the double must answer that keyed read too.
+                return {'Item': {'document_id': 'prd_1', 'content': 'PRD body', 'created_at': '2026-01-01'}}
             return {}
         mock_dynamodb['table'].get_item.side_effect = get_item
 
@@ -458,6 +462,9 @@ class TestBuildPrototype:
                 return {'Item': {'name': 'My Project'}}
             if sk.startswith('PROTOTYPE#'):
                 return {'Item': {'content': prior}}  # legacy shape, no prototype_url
+            if sk == 'PRD#prd_1':
+                # See the sibling test: the winner is fetched by key after ranking.
+                return {'Item': {'document_id': 'prd_1', 'content': 'PRD body', 'created_at': '2026-01-01'}}
             return {}
         mock_dynamodb['table'].get_item.side_effect = get_item
         mock_converse.return_value = self.HTML

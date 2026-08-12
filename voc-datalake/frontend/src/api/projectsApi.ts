@@ -254,6 +254,13 @@ export const projectsApi = {
     // this feedback while still honoring the PRD/PR-FAQ.
     feedback?: string;
     base_prototype_id?: string;
+    // Which documents to build from. Omitted or '' means the newest of that type,
+    // which is what every caller did before these existed. An id that does not
+    // name a document of that type IN THIS PROJECT is rejected with a 4xx — the
+    // API deliberately does not fall back to the newest, because a build against
+    // a document the user did not choose is invisible in the result.
+    source_prd_id?: string;
+    source_prfaq_id?: string;
   }) =>
     fetchApi<{
       success: boolean;
