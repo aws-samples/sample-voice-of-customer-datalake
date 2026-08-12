@@ -17,14 +17,11 @@ from typing import Any
 
 from aws_lambda_powertools import Logger, Tracer, Metrics
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import (
-    BotoCoreError,
-    ClientError,
-    ConnectionClosedError,
-    ConnectTimeoutError,
-    EndpointConnectionError,
-    ReadTimeoutError,
-)
+from botocore.exceptions import BotoCoreError, ClientError
+# Imported as a module, not by name: botocore defines its own `ConnectionError`,
+# which would shadow the builtin of the same name if pulled into this namespace.
+# `botocore_exceptions.ConnectionError` leaves no doubt which one is meant.
+from botocore import exceptions as botocore_exceptions
 
 from shared.aws import get_dynamodb_resource
 from shared.api import DecimalEncoder, validate_date_basis
@@ -101,11 +98,24 @@ _RETRYABLE_DYNAMODB_ERRORS: frozenset[str] = frozenset({
 # like a throttle, so 401 (with a retry) is an acceptable answer.  Everything
 # else in the family (NoCredentialsError, NoRegionError, ParamValidationError,
 # …) is a permanent configuration fault and raises AuthBackendUnavailable.
+#
+# The two *base* classes are named rather than the individual leaves.  Listing
+# leaves (EndpointConnectionError, ConnectTimeoutError, ReadTimeoutError,
+# ConnectionClosedError) enumerated an incomplete set: all four are subclasses of
+# these bases, so nothing is lost, but SSLError, ProxyConnectionError,
+# ResponseStreamingError and the two bases themselves were missed and fell
+# through to the permanent branch — answering 500 for a transient network fault.
+# Naming the bases makes any future transient leaf botocore adds transient here
+# too, by inheritance rather than by remembering to edit this tuple.
+#
+# NOTE: botocore_exceptions.ConnectionError is botocore's own class, NOT the
+# builtin ConnectionError — hence the module-qualified reference.  Neither base
+# is an ancestor of NoCredentialsError, NoRegionError or ParamValidationError, so
+# those still take the permanent branch: this widens the transient set without
+# reclassifying any configuration fault.
 _RETRYABLE_BOTOCORE_ERRORS: tuple[type[BotoCoreError], ...] = (
-    EndpointConnectionError,
-    ConnectTimeoutError,
-    ReadTimeoutError,
-    ConnectionClosedError,
+    botocore_exceptions.ConnectionError,
+    botocore_exceptions.HTTPClientError,
 )
 
 
@@ -118,6 +128,10 @@ class AuthBackendUnavailable(Exception):
     with a server error instead of telling the client that its token is
     invalid.  Retrying cannot fix these, and reporting them as 401 sends
     operators to re-mint tokens for a configuration problem.
+
+    Also raised for any *unrecognised* fault out of the token lookup, for the
+    same reason: an exception nobody classified means the credential was never
+    compared, so a 401 would be a guess dressed up as an answer.
     """
 
 
@@ -197,6 +211,29 @@ def _authenticate(event: dict) -> dict | None:
             return None
         logger.exception(
             'Token lookup failed with a permanent client-side error; reporting a server error',
+            extra={'error_type': error_type},
+        )
+        raise AuthBackendUnavailable(error_type) from exc
+    except Exception as exc:
+        # Anything that is neither ClientError nor BotoCoreError still escaped
+        # this function and became the very failure the BotoCoreError clause was
+        # added to prevent: an API Gateway 502 with no JSON-RPC envelope and no
+        # CORS headers, which a browser MCP client can only report as an opaque
+        # CORS error.  Real escapees include botocore.parsers.ResponseParserError
+        # (a malformed service response) and a plain TypeError out of the
+        # DynamoDB serializer on an unserialisable key.  This clause is ordered
+        # last, so the two specific handlers above still win.
+        #
+        # It RAISES rather than `return None`, and that distinction is the whole
+        # point.  This guard has been through `return None` once already and it
+        # was the bug: it reported configuration faults as "your token is
+        # invalid", sending operators off to re-mint perfectly good tokens.  An
+        # unrecognised fault means the credential was never checked, so the only
+        # honest answer is a server error (500 / -32603) — never a 401.  Do not
+        # "simplify" this back into a `return None`.
+        error_type = type(exc).__name__
+        logger.exception(
+            'Token lookup failed with an unexpected error; reporting a server error',
             extra={'error_type': error_type},
         )
         raise AuthBackendUnavailable(error_type) from exc
@@ -410,7 +447,12 @@ def _resolve_days(raw: Any) -> int:
 
     Pure helper.  A missing or non-numeric value falls back to the default
     rather than raising, so ``period_days`` is always an ``int`` inside the
-    advertised range regardless of what the client sent.
+    advertised range regardless of what the client sent.  That includes the
+    infinities: ``json`` parses both ``1e400`` and ``Infinity`` to ``inf``, and
+    ``int(float('inf'))`` raises ``OverflowError`` rather than the ``ValueError``
+    a non-numeric string gives, so ``OverflowError`` is caught alongside them —
+    without it, ``{"days": 1e400}`` bypassed this fallback and surfaced as an
+    opaque error from the ``_handle_tools_call`` catch-all.
 
     A value that is not an integer *by the tool's own ``inputSchema``* also
     falls back rather than being silently reinterpreted: JSON Schema counts
@@ -427,7 +469,10 @@ def _resolve_days(raw: Any) -> int:
         return _DEFAULT_METRICS_DAYS
     try:
         days = int(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError is the infinities: int(float('inf')) raises it, not
+        # ValueError, and json parses 1e400 / Infinity to inf.  int(float('nan'))
+        # does raise ValueError, so NaN is covered by the clause above.
         return _DEFAULT_METRICS_DAYS
     # Fractional input: int() truncates, which narrows the window rather than
     # rejecting it.  Strings are exempt — int("14") is exact, and "14" != 14.

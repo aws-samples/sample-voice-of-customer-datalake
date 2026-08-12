@@ -70,10 +70,36 @@ Revert test that catches each defect:
     — an unset PROJECTS_TABLE answers 500 like a missing table resource, on both
       _authenticate call sites.  Reverting to `return None` fails these with 401.
 
+    test_former_leaf_classes_are_still_transient /
+    test_permanent_faults_are_not_caught_by_the_base_classes
+    — _RETRYABLE_BOTOCORE_ERRORS names botocore's ConnectionError and
+      HTTPClientError instead of four hand-listed leaves.  The first asserts no
+      coverage was lost (every former leaf still matches by inheritance); the
+      second asserts none was wrongly gained (NoCredentialsError and friends stay
+      permanent).  The leaf enumeration missed SSLError, ProxyConnectionError,
+      ResponseStreamingError and the two bases themselves, which answered 500 for
+      a transient network fault — those now ride the transient parametrize list.
+
+    TestUnclassifiedAuthFaultsAreServerErrors
+    — makes the no-502-without-CORS property structural rather than per-family.
+      ResponseParserError and a plain TypeError are neither ClientError nor
+      BotoCoreError, so they escaped as a 502 with no envelope and no CORS
+      headers.  Deleting the trailing `except Exception` fails these; changing it
+      to `return None` fails them too (that is the original bug), and
+      test_retryable_client_error_still_returns_401 fails if the catch-all is
+      ordered ahead of the specific handlers.
+
   schema agreement:
     test_resolve_days_rejects_values_the_schema_forbids
     — `days` must be an integer by the tool's own inputSchema; `int(True) == 1`
       and `int(2.9) == 2` would answer a window the caller never asked for.
+
+    test_resolve_days_falls_back_on_infinity /
+    test_json_parsed_infinity_reports_the_default_window
+    — `int(float('inf'))` raises OverflowError, not ValueError, so an infinite
+      `days` bypassed the fallback and surfaced as an opaque error.  Reachable
+      from plain JSON: both `1e400` and `Infinity` parse to `inf`.  Dropping
+      OverflowError from the except tuple fails both.
 """
 
 import json
@@ -90,8 +116,16 @@ from botocore.exceptions import (
     NoCredentialsError,
     NoRegionError,
     ParamValidationError,
+    ProxyConnectionError,
     ReadTimeoutError,
+    ResponseStreamingError,
+    SSLError,
 )
+# botocore names its own `ConnectionError`/`HTTPClientError`; imported via the
+# module so `botocore_exceptions.ConnectionError` cannot be misread as the
+# builtin, matching how mcp_handler refers to them.
+from botocore import exceptions as botocore_exceptions
+from botocore.parsers import ResponseParserError
 
 # ---------------------------------------------------------------------------
 # Ensure lambda/ and lambda/api/ are on the path (mirrors conftest.py)
@@ -830,6 +864,23 @@ class TestPartialResultReporting:
         assert _resolve_days("abc") == 7       # non-numeric → default
         assert _resolve_days([1]) == 7         # wrong type → default
 
+    def test_resolve_days_falls_back_on_infinity(self):
+        """An infinite `days` falls back rather than raising.
+
+        `int(float('inf'))` raises **OverflowError**, which is neither TypeError
+        nor ValueError, so it was not caught: the documented "falls back rather
+        than raising" contract did not hold for infinities.  This is reachable
+        from a plain JSON body — `json` parses both `1e400` and the non-standard
+        `Infinity` literal to `inf` — so the value arrives without the caller
+        doing anything exotic.  `float('nan')` raises ValueError and was already
+        covered; asserted here so the two stay distinguished.
+        """
+        from mcp_handler import _resolve_days
+
+        assert _resolve_days(float("inf")) == 7, "+inf must fall back, not raise"
+        assert _resolve_days(float("-inf")) == 7, "-inf must fall back, not raise"
+        assert _resolve_days(float("nan")) == 7  # ValueError path, already covered
+
     def test_resolve_days_rejects_values_the_schema_forbids(self):
         """`days` values that are not integers per the tool's own inputSchema.
 
@@ -848,6 +899,28 @@ class TestPartialResultReporting:
         assert _resolve_days(2.0) == 2, "an integral float is an integer per JSON Schema"
         # The tolerated case, kept deliberately: "14" can only mean 14.
         assert _resolve_days("14") == 14
+
+    @patch("mcp_handler.aggregates_table")
+    def test_json_parsed_infinity_reports_the_default_window(self, mock_table):
+        """End-to-end from a real JSON body: `{"days": 1e400}` reports 7.
+
+        Built by parsing JSON rather than passing `float('inf')` directly, so the
+        test pins the path an actual client takes: `json` widens 1e400 to `inf`,
+        `int(inf)` raises OverflowError, and without that in the except tuple the
+        fault reached the _handle_tools_call catch-all and came back as an opaque
+        isError result instead of the documented 7-day default.
+        """
+        mock_table.get_item.return_value = {}
+        mock_table.query.return_value = {"Items": []}
+
+        args = json.loads('{"days": 1e400}')
+        assert args["days"] == float("inf"), "json must widen 1e400 to inf for this test to bite"
+
+        from mcp_handler import _tool_get_metrics_summary
+        payload = json.loads(_tool_get_metrics_summary(args, {})[0]["text"])
+        assert payload["period_days"] == 7, (
+            f"days=1e400 must report the default window, got {payload['period_days']!r}"
+        )
 
     @patch("mcp_handler.aggregates_table", None)
     def test_bool_days_reported_as_the_default_window(self):
@@ -924,14 +997,37 @@ class TestTokenHashTypeSafety:
 
 _ENDPOINT = "https://dynamodb.us-east-1.amazonaws.com"
 
-# The transient half of the BotoCoreError family: a connection or timeout fault
-# behaves like a throttle, so the token may well be valid.
-_TRANSIENT_BOTOCORE = [
+# The four leaves _RETRYABLE_BOTOCORE_ERRORS used to enumerate by name.  Kept as
+# a named list so the no-coverage-lost property is asserted explicitly: the tuple
+# now names the two base classes instead, and every one of these must still be
+# classified transient by inheritance.
+_FORMER_TRANSIENT_LEAVES = [
     pytest.param(EndpointConnectionError(endpoint_url=_ENDPOINT), id="EndpointConnectionError"),
     pytest.param(ConnectTimeoutError(endpoint_url=_ENDPOINT), id="ConnectTimeoutError"),
     pytest.param(ReadTimeoutError(endpoint_url=_ENDPOINT), id="ReadTimeoutError"),
     pytest.param(ConnectionClosedError(endpoint_url=_ENDPOINT), id="ConnectionClosedError"),
 ]
+
+# Transient types the leaf enumeration MISSED.  Each is a subclass of
+# botocore's ConnectionError or HTTPClientError but of none of the four leaves
+# above, so before the tuple named the bases every one of these fell through to
+# the permanent branch and answered 500 for a transient network fault.
+#
+# Constructor signatures differ per class — botocore formats `fmt` from the
+# kwargs, and a missing one raises KeyError at construction — so the arguments
+# here are per-class, not a shared shape.
+_NEWLY_TRANSIENT_BOTOCORE = [
+    pytest.param(SSLError(endpoint_url=_ENDPOINT, error="certificate verify failed"), id="SSLError"),
+    pytest.param(ProxyConnectionError(proxy_url="http://proxy.internal:8080"), id="ProxyConnectionError"),
+    pytest.param(ResponseStreamingError(error="connection reset mid-body"), id="ResponseStreamingError"),
+    # The bases themselves were not covered by an enumeration of their own leaves.
+    pytest.param(botocore_exceptions.ConnectionError(error="could not connect"), id="ConnectionError"),
+    pytest.param(botocore_exceptions.HTTPClientError(error="unhandled client fault"), id="HTTPClientError"),
+]
+
+# The transient half of the BotoCoreError family: a connection or timeout fault
+# behaves like a throttle, so the token may well be valid.
+_TRANSIENT_BOTOCORE = _FORMER_TRANSIENT_LEAVES + _NEWLY_TRANSIENT_BOTOCORE
 
 # The permanent half: configuration faults.  Re-minting a token cannot fix any
 # of these, so they must not be reported as an authentication failure.
@@ -991,6 +1087,38 @@ class TestBotoCoreErrorHandling:
         from mcp_handler import _authenticate
         assert _authenticate(self._make_event()) is None, (
             f"{type(exc).__name__} must be handled like a throttle, not propagate"
+        )
+
+    @pytest.mark.parametrize("exc", _FORMER_TRANSIENT_LEAVES)
+    def test_former_leaf_classes_are_still_transient(self, exc):
+        """No coverage was LOST when the tuple moved from leaves to base classes.
+
+        _RETRYABLE_BOTOCORE_ERRORS used to enumerate these four by name and now
+        names botocore's ConnectionError and HTTPClientError instead.  That is
+        only safe if each former leaf is still matched, by inheritance — asserted
+        here against the tuple directly, so the property holds even if the
+        end-to-end tests above were to change shape.
+        """
+        from mcp_handler import _RETRYABLE_BOTOCORE_ERRORS
+
+        assert isinstance(exc, _RETRYABLE_BOTOCORE_ERRORS), (
+            f"{type(exc).__name__} was transient under the leaf enumeration and "
+            "must remain transient under the base classes"
+        )
+
+    @pytest.mark.parametrize("exc", _PERMANENT_BOTOCORE)
+    def test_permanent_faults_are_not_caught_by_the_base_classes(self, exc):
+        """Widening to the bases must not reclassify a configuration fault.
+
+        The counterpart to the test above: naming two base classes is only safe
+        if it did not quietly swallow NoCredentialsError, NoRegionError or
+        ParamValidationError into the transient branch, which would answer 401
+        ("your token is invalid") for a fault re-minting cannot fix.
+        """
+        from mcp_handler import _RETRYABLE_BOTOCORE_ERRORS
+
+        assert not isinstance(exc, _RETRYABLE_BOTOCORE_ERRORS), (
+            f"{type(exc).__name__} is a configuration fault and must stay permanent"
         )
 
     @pytest.mark.parametrize("exc", _PERMANENT_BOTOCORE)
@@ -1134,6 +1262,170 @@ class TestBotoCoreErrorHandling:
                     f"Log must not contain token material; got: {rendered}"
                 )
                 assert "token_hash" not in extra, f"Log extra must not carry a hash; got: {extra}"
+
+
+# ===========================================================================
+# 5b. Auth-backend faults that are neither ClientError nor BotoCoreError
+# ===========================================================================
+
+# Faults out of projects_table.query that belong to neither handled family, so
+# before the trailing `except Exception` they escaped _authenticate outright.
+_UNCLASSIFIED_AUTH_FAULTS = [
+    # A malformed/truncated service response — botocore.parsers.ResponseParserError
+    # descends from Exception, not BotoCoreError and not ClientError.
+    pytest.param(ResponseParserError("Unable to parse response"), id="ResponseParserError"),
+    # The DynamoDB serializer raises a plain TypeError on a key it cannot encode.
+    pytest.param(TypeError("Float types are not supported"), id="TypeError"),
+]
+
+
+class TestUnclassifiedAuthFaultsAreServerErrors:
+    """The no-502-without-CORS property, made structural rather than per-family.
+
+    Adding `except BotoCoreError` closed one hole by name.  Anything outside both
+    handled families still escaped and produced exactly the defect that clause
+    existed to prevent: an API Gateway 502 with no JSON-RPC envelope and no CORS
+    headers, which a browser MCP client can only surface as an opaque CORS error.
+    A trailing `except Exception` closes the property for good.
+
+    The clause RAISES rather than returning None, and that is the load-bearing
+    part.  This guard was once `except Exception: return None`, and that was the
+    bug being fixed: a configuration fault reported as "your token is invalid".
+    An unrecognised fault means the credential was never compared, so 500 is the
+    only honest answer.  test_retryable_client_error_still_returns_401 pins the
+    other side — the catch-all must not shadow the specific handlers above it.
+    """
+
+    def _make_event(self, token: str = "voc_testtoken", project_id: str = "proj-1") -> dict:
+        return {
+            "headers": {
+                "authorization": f"Bearer {token}",
+                "x-project-id": project_id,
+            }
+        }
+
+    def _rpc_event(self) -> dict:
+        return {
+            "httpMethod": "POST",
+            "path": "/v1/mcp",
+            "headers": {
+                "authorization": "Bearer voc_testtoken",
+                "x-project-id": "proj-1",
+            },
+            "body": json.dumps({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "get_project", "arguments": {}},
+            }),
+        }
+
+    @pytest.mark.parametrize("exc", _UNCLASSIFIED_AUTH_FAULTS)
+    @patch("mcp_handler.projects_table")
+    def test_unclassified_fault_raises_auth_backend_unavailable(self, mock_table, exc):
+        """Neither family matches, so the catch-all must raise — never return None.
+
+        `return None` here would be the reintroduced bug: a 401 telling the
+        caller its token is bad when the token was never even compared.
+        """
+        import mcp_handler
+
+        mock_table.query.side_effect = exc
+        with pytest.raises(mcp_handler.AuthBackendUnavailable):
+            mcp_handler._authenticate(self._make_event())
+
+    @pytest.mark.parametrize("exc", _UNCLASSIFIED_AUTH_FAULTS)
+    @patch("mcp_handler.projects_table")
+    def test_unclassified_fault_answers_500_with_cors_headers(
+        self, mock_table, exc, lambda_context
+    ):
+        """End-to-end: 500/-32603 *with* CORS headers and a parseable envelope.
+
+        The CORS assertion is not decoration.  A 500 carrying no
+        Access-Control-Allow-Origin is indistinguishable from the 502 defect to a
+        browser client — both arrive as an opaque CORS failure with nothing
+        parseable in the body — so asserting the status code alone would let the
+        defect back in.
+        """
+        mock_table.query.side_effect = exc
+
+        import mcp_handler
+        response = mcp_handler.lambda_handler(self._rpc_event(), lambda_context)
+
+        assert response["statusCode"] == 500, (
+            f"{type(exc).__name__} must not escape as a 502; got {response['statusCode']}"
+        )
+        assert response["headers"]["Access-Control-Allow-Origin"] == "*", (
+            "A 500 without this header is indistinguishable from the 502 defect "
+            "to a browser MCP client"
+        )
+        body = json.loads(response["body"])
+        assert body["jsonrpc"] == "2.0"
+        assert body["error"]["code"] == -32603, (
+            f"Expected -32603 (internal error), got {body['error']['code']}"
+        )
+
+    @pytest.mark.parametrize("exc", _UNCLASSIFIED_AUTH_FAULTS)
+    @patch("mcp_handler.projects_table")
+    def test_unclassified_fault_is_logged_with_its_type(self, mock_table, exc):
+        """The fault reaches an operator, and only its type — never token material."""
+        import mcp_handler
+
+        mock_table.query.side_effect = exc
+        with patch("mcp_handler.logger") as mock_logger:
+            with pytest.raises(mcp_handler.AuthBackendUnavailable):
+                mcp_handler._authenticate(self._make_event(token="voc_SENTINELTOKEN"))
+
+            calls = mock_logger.exception.call_args_list
+            assert calls, f"{type(exc).__name__} must be logged for an operator"
+            rendered = " ".join(
+                str(c.args) + str((c.kwargs or {}).get("extra", "")) for c in calls
+            )
+            assert type(exc).__name__ in rendered, (
+                f"The log must name the fault type; got: {rendered}"
+            )
+            assert "SENTINELTOKEN" not in rendered, (
+                f"Log must not contain token material; got: {rendered}"
+            )
+
+    @patch("mcp_handler.projects_table")
+    def test_retryable_client_error_still_returns_401(self, mock_table):
+        """Clause ordering: the specific handlers still win over the catch-all.
+
+        A throttle is a ClientError, which is also an Exception.  If the
+        catch-all were ordered first (or the ClientError clause removed) this
+        would raise AuthBackendUnavailable and a retryable throttle would become
+        a 500 instead of a retryable 401.
+        """
+        mock_table.query.side_effect = _client_error("ThrottlingException")
+
+        from mcp_handler import _authenticate
+        assert _authenticate(self._make_event()) is None, (
+            "A retryable ClientError must still be handled as a transient 401, "
+            "not swallowed by the trailing except Exception"
+        )
+
+    @patch("mcp_handler.projects_table")
+    def test_transient_botocore_error_still_returns_401(self, mock_table):
+        """Same ordering property for the BotoCoreError clause."""
+        mock_table.query.side_effect = SSLError(
+            endpoint_url=_ENDPOINT, error="certificate verify failed"
+        )
+
+        from mcp_handler import _authenticate
+        assert _authenticate(self._make_event()) is None, (
+            "A transient BotoCoreError must still be handled as a 401, not "
+            "swallowed by the trailing except Exception"
+        )
+
+    @patch("mcp_handler.projects_table")
+    def test_permanent_client_error_still_raises(self, mock_table):
+        """And a permanent ClientError keeps its own 500 path."""
+        import mcp_handler
+
+        mock_table.query.side_effect = _client_error("AccessDeniedException")
+        with pytest.raises(mcp_handler.AuthBackendUnavailable):
+            mcp_handler._authenticate(self._make_event())
 
 
 # ===========================================================================
