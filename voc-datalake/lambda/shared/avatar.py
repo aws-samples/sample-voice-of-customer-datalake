@@ -126,7 +126,9 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
     Returns:
         Generated image prompt string
     """
-    from shared.aws import BEDROCK_MODEL_ID
+    from shared.model_config import get_active_model_id
+
+    model_id = get_active_model_id(surface='utility')
     
     name = persona_data.get('name', 'Unknown')
     tagline = persona_data.get('tagline', '')
@@ -160,7 +162,7 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
         }
         
         response = bedrock_client.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
+            modelId=model_id,
             contentType='application/json',
             accept='application/json',
             body=json.dumps(request_body)

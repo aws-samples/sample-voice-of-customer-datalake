@@ -263,6 +263,40 @@ class TestGenerateAvatarPromptWithLlm:
         
         assert 'Professional headshot' in result
 
+
+class TestGeneratePersonasModelMetadata:
+    """Tests for persona generation model metadata."""
+
+    def test_stores_resolved_model_id(self):
+        """Stamps the resolved model, not the global fallback constant."""
+        import projects
+        from unittest.mock import patch
+
+        table = MagicMock()
+        table.query.return_value = {'Items': []}
+        feedback_items = [{'feedback_id': 'f1', 'source_platform': 'web'}]
+
+        with patch('projects.projects_table', table), \
+                patch('projects.get_feedback_context', return_value=feedback_items), \
+                patch('projects.format_feedback_for_llm', return_value='feedback'), \
+                patch('projects.get_feedback_statistics', return_value={'total': 1}), \
+                patch('projects.get_persona_generation_steps', return_value=[{}]), \
+                patch('projects.converse_chain', return_value=[
+                    'unused',
+                    json.dumps([{'name': 'Ada'}]),
+                    'unused',
+                ]), \
+                patch('projects.get_active_model_id', return_value='resolved-model') as mock_model_id:
+            projects.generate_personas(
+                'proj-1',
+                {'persona_count': 1, 'generate_avatars': False},
+            )
+
+        assert table.put_item.called
+        stored = table.put_item.call_args.kwargs['Item']
+        assert stored['llm_metadata']['model'] == 'resolved-model'
+        mock_model_id.assert_called_once_with(surface='documents')
+
     @patch('shared.avatar.get_avatar_prompt_config')
     def test_returns_fallback_on_error(self, mock_config):
         """Returns fallback prompt on LLM error."""
