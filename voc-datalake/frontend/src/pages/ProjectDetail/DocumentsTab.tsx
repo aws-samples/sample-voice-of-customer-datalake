@@ -13,6 +13,7 @@ import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
 import { resolveDerivation, type DerivationRole, type DerivationSource } from '../../api/derivation'
 import { ordinalByType, resolveRevision, type DocumentOrdinal } from '../../api/documentLineage'
+import { MAX_SELECTED_RESEARCH_IDS } from './overviewState'
 import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
 import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../components/PrototypeLinkActions'
@@ -251,9 +252,14 @@ function PrototypeFeedbackButton({
         // whatever research exists NOW, so a report created between the build and
         // the revision would silently join it — or the product-context flag would
         // be dropped — while the user only asked to change the feedback.
+        //
+        // The flag-and-ids pair, in the shape `usePrototypeBuild` sends it: the
+        // flag is the switch and the ids are gated on it. One rule for one API
+        // field — deriving the flag here instead was a second rule for the same
+        // field, and the two could have drifted apart.
         use_product_context: extraSources.useProductContext,
-        use_research: extraSources.researchIds.length > 0,
-        selected_research_ids: [...extraSources.researchIds],
+        use_research: extraSources.useResearch,
+        selected_research_ids: extraSources.useResearch ? [...extraSources.researchIds] : [],
       })
       // The form closes but the text is kept: the revision can still fail
       // minutes later, in the jobs panel, and clearing it would mean retyping
@@ -664,6 +670,15 @@ function hasDroppedSource(
 /** The optional inputs a revision inherits from the prototype it revises. */
 export interface InheritedExtraSources {
   readonly useProductContext: boolean
+  /**
+   * The flag-and-ids pair, in the same shape `usePrototypeBuild` sends: the flag
+   * is the switch and the ids are gated on it, so both paths have ONE rule for
+   * one API field. Derived here rather than at the send site — a revision has no
+   * recorded `use_research` boolean to inherit (the derivation records the reports
+   * it used, not the tick-box), so the flag has to come from the ids, and doing
+   * that at the call site is what made the two paths differ.
+   */
+  readonly useResearch: boolean
   readonly researchIds: ReadonlyArray<string>
 }
 
@@ -695,11 +710,23 @@ function inheritedExtraSources(
   documents: readonly ProjectDocument[],
 ): InheritedExtraSources {
   const derivation = resolveDerivation(doc, documents)
+  const researchIds = derivation.sources
+    .filter((source) => source.role === 'reference' && source.document_type === 'research')
+    .map((source) => source.document_id)
+    // Sliced to the bound the API enforces, exactly as the build path slices the
+    // reports it pre-selects. Today the list cannot exceed it — the API capped the
+    // base build that recorded it — so this is a bound on a bound. It earns its
+    // line for the day the number is LOWERED: without it every prototype built
+    // under the old bound becomes un-revisable, with a 400 naming a list length
+    // the user never chose and cannot shorten from this button.
+    .slice(0, MAX_SELECTED_RESEARCH_IDS)
   return {
     useProductContext: derivation.product_context_included,
-    researchIds: derivation.sources
-      .filter((source) => source.role === 'reference' && source.document_type === 'research')
-      .map((source) => source.document_id),
+    // Inherited research means research: no reports, no flag. Deriving the flag
+    // from the ids here — after the filter that drops deleted reports and after
+    // the slice — is what keeps it true of the list actually being sent.
+    useResearch: researchIds.length > 0,
+    researchIds,
   }
 }
 

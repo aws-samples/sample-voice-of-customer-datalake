@@ -205,6 +205,48 @@ describe('which research reports the build reads', () => {
   })
 })
 
+describe('a card that cannot act offers no choices', () => {
+  it('renders no tick-boxes on a project with no PRD and no PR-FAQ', () => {
+    // The fixture the rest of this suite never had: research and a filled product
+    // context, so there IS something to offer, and no PRD or PR-FAQ, so the card is
+    // disabled and nothing can be built. Choices above a dead button read as an
+    // offer — the user ticks them, then reads that they must create a document
+    // first. Every other fixture here passes whether or not the gate exists.
+    renderTab([RESEARCH_A], FILLED_CONTEXT)
+
+    expect(buildButton()).toBeDisabled()
+    expect(screen.getByText(en.documents.prototype.needsDocs)).toBeInTheDocument()
+    expect(screen.queryByTestId('prototype-extra-sources')).not.toBeInTheDocument()
+    // Asserted on the roles too, not just the container: a gate that kept the
+    // wrapper and hid its contents would leave the box focusable.
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+  })
+
+  it('offers them again as soon as one document exists', () => {
+    // The other half, from the same fixture one document later: the gate must be
+    // the disabled state and not something that hides the controls outright.
+    renderTab([PRD, RESEARCH_A], FILLED_CONTEXT)
+
+    expect(buildButton()).toBeEnabled()
+    expect(screen.getByTestId('prototype-extra-sources')).toBeInTheDocument()
+  })
+})
+
+describe('two similarly-named reports are distinguishable', () => {
+  it('gives each report title a tooltip carrying the full string', async () => {
+    // The titles are `truncate`d in a narrow column, so two reports named
+    // "Churn interviews Q1"/"Q2" render as the same visible string. A screen
+    // reader gets the full label either way; a sighted mouse user has only this.
+    const user = userEvent.setup()
+    renderTab([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
+
+    await user.click(researchBox())
+
+    expect(screen.getByTitle('Churn interviews')).toBeInTheDocument()
+    expect(screen.getByTitle('Pricing survey')).toBeInTheDocument()
+  })
+})
+
 describe('the card no longer presents PRD/PR-FAQ as the whole input list', () => {
   it('states the optional inputs on an enabled card for a project that has them', () => {
     // The fixture matters twice over: with no research there would be nothing to

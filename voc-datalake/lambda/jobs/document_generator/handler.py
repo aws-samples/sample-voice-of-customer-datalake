@@ -538,6 +538,51 @@ def _source_document(
 #: (`MAX_SELECTED_RESEARCH_IDS`), so this bounds the other dimension.
 RESEARCH_PER_DOC_CAP = 3000
 
+#: Ceiling on the whole research section, however many reports were named.
+#:
+#: Sized against the other caps in `_generate_prototype` rather than picked: the
+#: PRD, the PR/FAQ and the product-context block each get PER_DOC_CAP (12000),
+#: and a revision's prior prototype HTML gets PRIOR_CAP (24000). Research is
+#: corroborating evidence, not the thing being built, so the whole selection is
+#: allowed no more than a single spec document gets — one PER_DOC_CAP.
+#:
+#: The per-report cap alone was not a bound on the section: RESEARCH_PER_DOC_CAP
+#: x MAX_SELECTED_RESEARCH_IDS is 30000, more than the PRD and PR/FAQ combined,
+#: so a ten-report selection could crowd out the spec the prototype is supposed
+#: to implement. It stays the cap for a small selection (12000 // 4 == 3000, so
+#: anything up to four reports is unaffected); this is what makes ten of them
+#: bounded too.
+RESEARCH_TOTAL_CAP = 12000
+
+
+def _research_section(documents: list[dict]) -> str:
+    """
+    The research block for the reports a build read, or '' when it read none.
+
+    Two bounds, because one of them does not hold on its own. Each report is
+    sliced to an equal share of RESEARCH_TOTAL_CAP, never more than
+    RESEARCH_PER_DOC_CAP — so one to four reports are sliced exactly as before
+    and ten get 1200 characters each instead of 3000.
+
+    Shared equally rather than spent front-to-back: a running budget would drop
+    the last reports of a long selection entirely, and every named report is
+    recorded in the document's `derivation` as having been used, so a report that
+    reached none of the prompt would make that record a lie.
+
+    The assembled body is then hard-capped at RESEARCH_TOTAL_CAP as well, because
+    each block carries the report's `title`, which is user-supplied and bounded
+    nowhere in this path — without it the ceiling would be "the budget, plus
+    however long ten titles happen to be".
+    """
+    if not documents:
+        return ''
+    per_doc = min(RESEARCH_PER_DOC_CAP, RESEARCH_TOTAL_CAP // len(documents))
+    body = '\n\n'.join(
+        f"### {d.get('title', 'Untitled')}\n{d.get('content', '')[:per_doc]}"
+        for d in documents
+    )
+    return '\n\nRESEARCH FINDINGS:\n' + body[:RESEARCH_TOTAL_CAP]
+
 
 def _research_documents(projects_table, project_id: str, research_ids) -> list[dict]:
     """
@@ -688,12 +733,9 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         _research_documents(projects_table, project_id, doc_config.get('selected_research_ids'))
         if doc_config.get('use_research') else []
     )
-    research_section = ''
-    if research_docs:
-        research_section = '\n\nRESEARCH FINDINGS:\n' + '\n\n'.join(
-            f"### {d.get('title', 'Untitled')}\n{d.get('content', '')[:RESEARCH_PER_DOC_CAP]}"
-            for d in research_docs
-        )
+    # Bounded per report AND in total — see `_research_section`. The per-report cap
+    # alone let ten reports contribute more than the PRD and PR/FAQ combined.
+    research_section = _research_section(research_docs)
 
     # Optional feedback-driven regeneration: when the user gives feedback on an
     # existing prototype, we re-generate CENTERED on that feedback while still
@@ -802,8 +844,15 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         # derivation_source drops the None that `(prd or {}).get(...)` yields.
         DERIVATION_FIELD: build_derivation(
             sources=[
-                derivation_source((prd or {}).get('document_id'), ROLE_PROTOTYPE_PRD),
-                derivation_source((prfaq or {}).get('document_id'), ROLE_PROTOTYPE_PRFAQ),
+                # `_document_id_of` for all three, rather than `.get('document_id')`
+                # for two of them and the helper for the third: one idiom per call
+                # site. It reads the same id and then falls back to the sort key, so
+                # an absent document still yields '' and `derivation_source` drops it
+                # exactly as it dropped the None before. The two `source_*_id`
+                # attributes above keep `.get`, deliberately — a stored None and a
+                # stored '' are different values to their existing readers.
+                derivation_source(_document_id_of(prd or {}), ROLE_PROTOTYPE_PRD),
+                derivation_source(_document_id_of(prfaq or {}), ROLE_PROTOTYPE_PRFAQ),
                 # The research reports that reached the prompt, in the reference
                 # role the shared vocabulary already has for "selected and fed to
                 # the model". Recorded from the documents themselves rather than

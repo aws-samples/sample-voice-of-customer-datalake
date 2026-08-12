@@ -408,8 +408,17 @@ function ActionCard({
       )}
       {/* Above the button, because they change what the button does. Rendered raw
           like `statusLine`: only the caller knows what the choices are, and a
-          wrapper here would put an empty box on the five cards that have none. */}
-      {controls}
+          wrapper here would put an empty box on the five cards that have none.
+
+          Not rendered at all on a disabled card: choices for an action that cannot
+          be taken read as an offer, and a project with no PRD and no PR/FAQ showed
+          tick-boxes stacked above a dead button and the "create a document first"
+          message. That also hides them while `busy` — the prototype card's second
+          disabled reason — which is correct rather than merely tolerable: nothing
+          ticked during the start request can affect the build already in flight,
+          and the window closes when the request returns, not when the build
+          finishes. */}
+      {disabled === true ? null : controls}
       <button
         onClick={onClick}
         disabled={disabled}
@@ -605,8 +614,8 @@ function PrototypeExtraSources({
   )
 }
 
-/** One tick-box with a real label, so the whole row is a hit target and an
-    accessible name exists without a `title` or an aria-label. */
+/** One tick-box with a real label, so the whole row is a hit target and the
+    accessible name comes from the label rather than from an aria-label. */
 function SourceCheckbox({
   label, checked, disabled, onChange,
 }: {
@@ -630,7 +639,13 @@ function SourceCheckbox({
         onChange={(e) => onChange(e.target.checked)}
         className="rounded border-gray-300"
       />
-      <span className="truncate">{label}</span>
+      {/* `title` because of `truncate`, not for the accessible name — that already
+          comes from the label. Report titles are user-supplied and this column is
+          narrow, so two reports named "Churn interviews Q1" and "Churn interviews
+          Q2" render as the same visible string; the tooltip is the only way to tell
+          which box is which. Sighted mouse users are exactly who needs it: a screen
+          reader reads the full label regardless of the CSS clip. */}
+      <span className="truncate" title={label}>{label}</span>
     </label>
   )
 }

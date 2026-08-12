@@ -342,6 +342,148 @@ class TestResearchIsScopedToResearchDocuments:
         assert _saved(mock_dynamodb)['derivation']['selected_document_count'] == 2
 
 
+class TestTheResearchSectionIsBoundedInTotal:
+    """
+    The research section has TWO bounds, and the per-report one is not a bound on
+    the section: `RESEARCH_PER_DOC_CAP` x `MAX_SELECTED_RESEARCH_IDS` is 30000
+    characters, more than the PRD and PR/FAQ combined (12000 each), on top of the
+    product-context block and — on a revision — 24000 of prior prototype HTML. The
+    worst case could crowd out the spec the prototype is supposed to implement.
+
+    Every fixture here is therefore built so that each report fits the per-report
+    cap COMFORTABLY and the reports only exceed the budget together. That is what
+    makes these tests fail against a per-report cap alone: a fixture with one
+    oversized report would pass either way.
+    """
+
+    #: Under RESEARCH_PER_DOC_CAP (3000) individually, over RESEARCH_TOTAL_CAP
+    #: (12000) at eight of them: 8 x 2450 = 19600.
+    REPORT_BODY = 2450
+    REPORT_COUNT = 8
+
+    @classmethod
+    def _reports(cls):
+        """Eight reports, each carrying a marker at the START and END of its body,
+        so "reached the prompt" and "was truncated" are separately observable."""
+        return {
+            f'RESEARCH#research_{i}': {
+                'document_id': f'research_{i}',
+                'title': f'Report {i}',
+                'content': f'HEAD{i} ' + ('n' * cls.REPORT_BODY) + f' TAIL{i}',
+            }
+            for i in range(cls.REPORT_COUNT)
+        }
+
+    @staticmethod
+    def _research_block(prompt: str) -> str:
+        """The research section as it appears in the prompt.
+
+        Sliced out on the template's own boundaries rather than measured on the
+        whole prompt, so the assertion is about the section's size and not about
+        the PRD's. `index` raises if either marker moves, which is the loud
+        failure to want here.
+        """
+        start = prompt.index('RESEARCH FINDINGS:')
+        return prompt[start:prompt.index('\n\nRequirements:', start)]
+
+    def test_the_fixture_would_exceed_the_budget_under_the_per_report_cap_alone(self):
+        """Guards the two tests below from going vacuous. If either cap is ever
+        retuned so that eight of these reports fit anyway, the fixture stops
+        exercising an aggregate bound and this says so instead of passing."""
+        from jobs.document_generator.handler import (
+            RESEARCH_PER_DOC_CAP,
+            RESEARCH_TOTAL_CAP,
+        )
+
+        assert self.REPORT_BODY < RESEARCH_PER_DOC_CAP
+        assert self.REPORT_COUNT * self.REPORT_BODY > RESEARCH_TOTAL_CAP
+
+    def test_eight_reports_that_each_fit_are_bounded_together(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        from jobs.document_generator.handler import RESEARCH_TOTAL_CAP
+
+        _wire(
+            mock_dynamodb,
+            prd_pages=[{'Items': [PRD_NEW]}],
+            prfaq_pages=[{'Items': [PRFAQ]}],
+            documents=self._reports(),
+        )
+        mock_converse.return_value = HTML
+
+        _run(
+            sample_job_event, lambda_context, use_research=True,
+            selected_research_ids=[f'research_{i}' for i in range(self.REPORT_COUNT)],
+        )
+
+        block = self._research_block(_prompt(mock_converse))
+        assert len(block) <= RESEARCH_TOTAL_CAP + len('RESEARCH FINDINGS:\n')
+        # The spec is still there — bounding research must not be achieved by
+        # bounding the thing research is supposed to support.
+        assert 'NEW PRD body' in _prompt(mock_converse)
+        assert 'PRFAQ body' in _prompt(mock_converse)
+
+    def test_every_named_report_still_reaches_the_prompt_truncated(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """The budget is SHARED, not spent front-to-back. A running budget would
+        satisfy the bound above by dropping the last reports entirely — and each
+        one is recorded in the derivation as having been used, so a report that
+        reached none of the prompt would make that record a lie."""
+        _wire(
+            mock_dynamodb,
+            prd_pages=[{'Items': [PRD_NEW]}],
+            prfaq_pages=[{'Items': [PRFAQ]}],
+            documents=self._reports(),
+        )
+        mock_converse.return_value = HTML
+
+        _run(
+            sample_job_event, lambda_context, use_research=True,
+            selected_research_ids=[f'research_{i}' for i in range(self.REPORT_COUNT)],
+        )
+
+        prompt = _prompt(mock_converse)
+        for i in range(self.REPORT_COUNT):
+            assert f'Report {i}' in prompt, f'report {i} lost its heading'
+            assert f'HEAD{i}' in prompt, f'report {i} contributed nothing'
+            assert f'TAIL{i}' not in prompt, f'report {i} was not truncated'
+        # And all eight are still claimed as used, because all eight were.
+        assert _saved(mock_dynamodb)['derivation']['selected_document_count'] == 2 + self.REPORT_COUNT
+
+    def test_a_small_selection_is_sliced_exactly_as_before(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """The aggregate bound must not quietly tighten the common case. At four
+        reports the equal share is 12000 // 4 == 3000, which IS the per-report cap,
+        so nothing up to four is affected — asserted by giving one report a body
+        longer than the per-report cap and seeing it cut at exactly that cap."""
+        from jobs.document_generator.handler import RESEARCH_PER_DOC_CAP
+
+        long_report = {
+            'document_id': 'research_long', 'title': 'Long report',
+            'content': ('z' * (RESEARCH_PER_DOC_CAP - 1)) + 'CUT_HERE' + ('z' * 500),
+        }
+        _wire(
+            mock_dynamodb,
+            prd_pages=[{'Items': [PRD_NEW]}],
+            prfaq_pages=[{'Items': [PRFAQ]}],
+            documents={'RESEARCH#research_long': long_report},
+        )
+        mock_converse.return_value = HTML
+
+        _run(sample_job_event, lambda_context, use_research=True,
+             selected_research_ids=['research_long'])
+
+        prompt = _prompt(mock_converse)
+        # Pinned from BOTH sides, so the cut lands on exactly RESEARCH_PER_DOC_CAP.
+        # `in prompt` alone was satisfied by any cut at or past the cap, which let a
+        # share one character tighter than the cap pass — found by mutation.
+        assert 'z' * (RESEARCH_PER_DOC_CAP - 1) + 'C' in prompt, 'cut before the cap'
+        assert 'z' * (RESEARCH_PER_DOC_CAP - 1) + 'CU' not in prompt, 'cut past the cap'
+        assert 'CUT_HERE' not in prompt
+
+
 class TestTheDerivationReportsWhatWasUsed:
     """
     The real `_product_context` and the real `build_product_context_block`, over a

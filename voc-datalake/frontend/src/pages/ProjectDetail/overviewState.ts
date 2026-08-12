@@ -42,6 +42,14 @@ export const REMIX_MIN_DOCUMENTS = 2
  * that lets a user pick more than the API accepts fails on submit, after the
  * choice was made and with nothing said about which report to give up.
  *
+ * That test reads THIS LINE as source text, matching `^export const
+ * MAX_SELECTED_RESEARCH_IDS = <digits>` — it does not import the module, so that
+ * it needs neither a bundler nor the Python import graph. So the declaration has
+ * to stay one line starting at column 0 with a bare integer literal: fold it into
+ * an object, compute it, or add a second assignment, and the test fails loudly
+ * (it asserts exactly one match) rather than passing vacuously. Changing the
+ * shape here means updating the regex there.
+ *
  * Here rather than beside the request type in `projectsApi.ts` for a mundane
  * reason worth writing down: that module is mocked with explicit partial objects
  * by a dozen test files, so a new named export on it makes every one of them

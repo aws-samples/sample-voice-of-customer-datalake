@@ -38,6 +38,8 @@ def build_prototype(api_gateway_event, lambda_context):
     doc_config handed to the generator, or None when no job was created.
     """
     def _call(body):
+        from projects_handler import MAX_SELECTED_RESEARCH_IDS
+
         table = MagicMock()
         documents = {
             (f'PROJECT#{PROJECT}', 'PRD#prd_1'): {'document_id': 'prd_1'},
@@ -45,6 +47,15 @@ def build_prototype(api_gateway_event, lambda_context):
             (f'PROJECT#{PROJECT}', 'PROTOTYPE#proto_1'): {'document_id': 'proto_1'},
             (f'PROJECT#{PROJECT}', 'RESEARCH#research_a'): {'document_id': 'research_a'},
             (f'PROJECT#{PROJECT}', 'RESEARCH#research_b'): {'document_id': 'research_b'},
+            # Enough DISTINCT research reports to fill a selection at the bound.
+            # `['research_a'] * 10` dedupes to one, so a fixture at the bound built
+            # from repeats would pass against an implementation that never accepted
+            # more than a single id. `research_gone` stays absent from this dict on
+            # purpose — it is the unresolvable fixture.
+            **{
+                (f'PROJECT#{PROJECT}', f'RESEARCH#research_{i}'): {'document_id': f'research_{i}'}
+                for i in range(MAX_SELECTED_RESEARCH_IDS)
+            },
             # Real prototype, wrong project. Only reachable by a lookup that
             # dropped `pk`.
             (f'PROJECT#{OTHER_PROJECT}', 'PROTOTYPE#proto_other'): {'document_id': 'proto_other'},
@@ -395,20 +406,55 @@ class TestOptionalExtraSources:
         invoke.assert_not_called()
         table.get_item.assert_not_called()
 
-    def test_a_list_at_the_bound_is_accepted(self, build_prototype):
-        """The bound is a maximum, not a strict limit — a fixture only at 200
-        would pass against an off-by-one that rejected legitimate selections."""
+    def test_a_list_of_distinct_ids_at_the_bound_is_accepted(self, build_prototype):
+        """The bound is a maximum, not a strict limit — a fixture only at 200 would
+        pass against an off-by-one that rejected legitimate selections.
+
+        Ten DISTINCT ids, which is the whole point: the same id repeated ten times
+        collapses to one, so a fixture built from repeats passes against an
+        implementation that accepts only a single id and against one whose bound is
+        really 1. All ten must survive, in the order they were sent.
+        """
         from projects_handler import MAX_SELECTED_RESEARCH_IDS
 
+        ids = [f'research_{i}' for i in range(MAX_SELECTED_RESEARCH_IDS)]
         response, config, _table, _invoke = build_prototype({
+            'use_research': True, 'selected_research_ids': ids,
+        })
+
+        assert response['statusCode'] == 200
+        assert config['selected_research_ids'] == ids
+
+    def test_duplicates_count_toward_the_bound_and_then_collapse(self, build_prototype):
+        """Both halves of a deliberate asymmetry that looks like an inconsistency.
+
+        The arity check runs on the RAW list, before the first read, so eleven
+        entries that dedupe to one are still a 400. That is intended: the bound
+        exists to cap how many keyed reads one request can buy, and how many
+        entries survive deduplication is not known until they have been read.
+        Collapsing happens after, so the same report named ten times is one
+        document to read and one prompt section rather than ten copies of it.
+        """
+        from projects_handler import MAX_SELECTED_RESEARCH_IDS
+
+        at_bound, config, _table, _invoke = build_prototype({
             'use_research': True,
             'selected_research_ids': ['research_a'] * MAX_SELECTED_RESEARCH_IDS,
         })
 
-        assert response['statusCode'] == 200
-        # Collapsed: the same report named ten times is one document to read, and
-        # one prompt section rather than ten copies of it.
+        assert at_bound['statusCode'] == 200
         assert config['selected_research_ids'] == ['research_a']
+
+        over, over_config, table, invoke = build_prototype({
+            'use_research': True,
+            'selected_research_ids': ['research_a'] * (MAX_SELECTED_RESEARCH_IDS + 1),
+        })
+
+        assert over['statusCode'] == 400
+        assert over_config is None
+        invoke.assert_not_called()
+        # Before the first read, so the cost of an over-long list is one 400.
+        table.get_item.assert_not_called()
 
     @pytest.mark.parametrize('value', [
         pytest.param('research_a', id='bare-string'),
@@ -453,6 +499,46 @@ class TestOptionalExtraSources:
             'x' * 5000 in str(call.kwargs.get('Key', {}))
             for call in table.get_item.call_args_list
         )
+
+    @pytest.mark.parametrize('value', [
+        # Resolvable, so this is the one that fails if the reads are still made:
+        # nothing about the ids themselves would stop them.
+        pytest.param(['research_a', 'research_b'], id='resolvable'),
+        # Each of these would be a 4xx if the list were validated regardless of the
+        # switch. They are the assertion that "ignored" means ignored, and not
+        # "validated a bit more cheaply".
+        pytest.param(['research_gone'], id='unresolvable'),
+        pytest.param(['research_other'], id='another-projects'),
+        pytest.param([f'research_{i}' for i in range(200)], id='over-long'),
+        pytest.param('research_a', id='not-a-list'),
+    ])
+    def test_ids_sent_with_the_switch_off_are_ignored_and_cost_no_reads(
+        self, build_prototype, value,
+    ):
+        """The decision, stated: a list sent with `use_research` off is IGNORED,
+        not rejected. `use_research` is the only thing the generator reads before it
+        opens the list, so ids beside a false flag name nothing any build will look
+        at — there is no claim to check, and a 4xx over a field the build ignores
+        would fail a request for a reason the user cannot see.
+
+        Two halves are asserted. No keyed read under `RESEARCH#`: validating
+        regardless spent one read per id on a result nothing used. And `[]` in the
+        stored config rather than the raw list: every id that reaches `doc_config`
+        resolved under this project's prefix, so a replayed job cannot reach an
+        unvalidated id even if the switch is read differently later.
+        """
+        response, config, table, invoke = build_prototype({
+            'selected_research_ids': value,
+        })
+
+        assert response['statusCode'] == 200
+        assert config['use_research'] is False
+        assert config['selected_research_ids'] == []
+        invoke.assert_called_once()
+        assert not [
+            call.kwargs.get('Key', {}) for call in table.get_item.call_args_list
+            if str(call.kwargs.get('Key', {}).get('sk', '')).startswith('RESEARCH#')
+        ]
 
     @pytest.mark.parametrize('value', [
         pytest.param([], id='empty'),

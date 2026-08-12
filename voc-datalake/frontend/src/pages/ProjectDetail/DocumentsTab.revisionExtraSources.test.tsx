@@ -18,6 +18,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import DocumentsTab from './DocumentsTab'
+import { MAX_SELECTED_RESEARCH_IDS } from './overviewState'
 import type { DocumentDerivation } from '../../api/derivation'
 import type { Project, ProjectDocument } from '../../api/types'
 
@@ -185,6 +186,35 @@ describe('a revision keeps the inputs its base was built with', () => {
     // The rest of the inheritance survives one missing report.
     expect(body.use_product_context).toBe(true)
     expect(body.source_prd_id).toBe('prd_1')
+  })
+
+  it('still revises a base carrying more reports than the current bound allows', async () => {
+    // Today unreachable: the API capped the base build that recorded these, so an
+    // inherited list cannot exceed the bound. It becomes reachable the day the
+    // bound is LOWERED, and then every prototype built under the old one is
+    // un-revisable — a 400 naming a list length the user never chose and cannot
+    // shorten from this button. The fixture is built one over the live bound so it
+    // keeps testing that whatever the number becomes.
+    const extra = Array.from({ length: MAX_SELECTED_RESEARCH_IDS + 1 }, (_, i) => `research_over_${i}`)
+    const overBound = doc({
+      document_id: 'proto_over',
+      prototype_format: 'html',
+      derivation: derivation({
+        sources: extra.map((document_id) => ({ document_id, role: 'reference' as const })),
+        selected_document_count: extra.length,
+      }),
+    })
+    const reports = extra.map((id) => doc({
+      document_id: id, document_type: 'research', title: id, created_at: '2026-03-01T00:00:00Z',
+    }))
+    renderTab([overBound, PRD, ...reports], overBound)
+
+    const body = await revise()
+
+    // Sliced, not truncated arbitrarily: the first N in recorded order, which is
+    // the order the original build read them in.
+    expect(body.selected_research_ids).toEqual(extra.slice(0, MAX_SELECTED_RESEARCH_IDS))
+    expect(body.use_research).toBe(true)
   })
 
   it('inherits only research, never another document type recorded as a reference', async () => {
