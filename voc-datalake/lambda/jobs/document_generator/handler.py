@@ -533,6 +533,37 @@ def _source_document(
     return doc
 
 
+def _base_prototype(projects_table, project_id: str, base_prototype_id: str) -> dict | None:
+    """
+    The prototype a revision is built on: the one the request named, or None when
+    it named none.
+
+    A named id that does not resolve RAISES, in the same shape and for the same
+    reason as `_source_document`. Left silent, the build carried on as a fresh
+    generation with no `EXISTING PROTOTYPE (revise this)` block, then saved a
+    document labelled a revision — it carries `revised_from_id` — that the model
+    produced without ever seeing the prototype it supposedly revises. Nothing in
+    the output said so, and the failure cost a full Bedrock call to reach.
+
+    The error condition is the ABSENT ITEM, not empty HTML. A prototype whose
+    stored content is legitimately empty resolved fine and stays buildable — see
+    the caller, which asks for no prior-HTML block in that case.
+
+    Resolved whenever an id is supplied, regardless of whether `feedback` came
+    with it: an id that is sent is an id that is claimed.
+    """
+    if not base_prototype_id:
+        return None
+    item = projects_table.get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{base_prototype_id}'},
+    ).get('Item')
+    if not item:
+        raise RuntimeError(
+            f'base_prototype_id: no PROTOTYPE document "{base_prototype_id}" in this project.'
+        )
+    return item
+
+
 def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_config: dict) -> dict:
     """
     Build a self-contained, offline-first HTML prototype from the latest PRD and
@@ -583,14 +614,15 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     # revises it (e.g. "switch to an admin-facing view") rather than starting over.
     feedback = (doc_config.get('feedback') or '').strip()
     base_prototype_id = (doc_config.get('base_prototype_id') or '').strip()
+    # Resolved OUTSIDE the `if feedback:` below so an unresolvable id fails the
+    # job whether or not feedback was sent alongside it. Absent, null or blank
+    # still means "this build is not a revision".
+    base = _base_prototype(projects_table, project_id, base_prototype_id)
     feedback_section = ''
     system_prompt = PROTOTYPE_HTML_SYSTEM_PROMPT
     if feedback:
         prior_html = ''
-        if base_prototype_id:
-            base = projects_table.get_item(
-                Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{base_prototype_id}'}
-            ).get('Item') or {}
+        if base is not None:
             # New (S3-only) prototypes have no `content` field — read the HTML
             # back from S3 via prototype_url instead. Old (pre-migration)
             # prototypes still have `content` inline in DynamoDB; fall back to

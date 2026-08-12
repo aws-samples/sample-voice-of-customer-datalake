@@ -629,7 +629,15 @@ def api_build_prototype(project_id: str):
         # Optional feedback-driven regeneration: revise an existing prototype
         # centered on this feedback while still honoring the PRD/PR-FAQ.
         'feedback': body.get('feedback'),
-        'base_prototype_id': body.get('base_prototype_id'),
+        # The prototype being revised is a client-supplied id like the two below,
+        # and it is checked the same way — whenever it is supplied, whether or not
+        # `feedback` came with it. Unchecked, an id naming no prototype produced a
+        # document labelled a revision (it carries `revised_from_id`) that the
+        # model built without ever seeing the prototype it supposedly revises,
+        # after a billed multi-minute Bedrock call.
+        'base_prototype_id': _validated_source_id(
+            project_id, 'PROTOTYPE#', body.get('base_prototype_id'), 'base_prototype_id',
+        ),
         # Optional aiming: build from THESE documents instead of the newest of
         # each type. Validated before the job exists, so a bad id costs a 4xx
         # rather than a billable build that fails minutes later.

@@ -15,6 +15,13 @@ Two properties, both of which were previously unpinned:
    newest would produce a prototype built from a document the user did not
    choose, which no part of the output would reveal.
 
+3. **The same holds for the third client-supplied id, `base_prototype_id`.** It
+   used to be the asymmetry: an id resolving to nothing left the prior HTML
+   empty, dropped the `EXISTING PROTOTYPE (revise this)` block, and completed as
+   a fresh generation — saving a document labelled a revision that the model
+   never saw the base of. One handler failed loudly for one kind of missing
+   source and silently for another.
+
 Every fixture here holds at least TWO documents of a type with different
 `created_at`, because a single-document fixture cannot distinguish "picked the
 right PRD" from "picked the only PRD".
@@ -323,3 +330,162 @@ class TestAimedBuild:
 
         assert 'NEW PRD body' in _prompt(mock_converse)
         assert _saved(mock_dynamodb)['source_prd_id'] == 'aa_prd_new'
+
+
+PROTOTYPE_S3 = {'document_id': 'proto_1', 'prototype_url': 'https://cdn.example.com/prototypes/x.html'}
+
+
+class TestBasePrototypeOfARevision:
+    """
+    `base_prototype_id` — the third client-supplied id, and the one that used to
+    degrade silently.
+
+    An id resolving to nothing left the prior-HTML variable empty, dropped the
+    `EXISTING PROTOTYPE (revise this)` block from the prompt, and completed the
+    job as a FRESH generation — saving a document labelled a revision
+    (`revised_from_id`) that the model produced without ever seeing the prototype
+    it supposedly revises. It must raise, exactly as an unresolvable
+    `source_prd_id` does.
+
+    Every fixture here supplies enough table responses for BOTH source lookups to
+    succeed, so a silent-fallback implementation runs to completion. Without that,
+    a test would pass because the run ended for want of a query response rather
+    than because of the raise — passing under the very behaviour it exists to
+    reject.
+    """
+
+    def test_an_unresolvable_base_prototype_fails_the_job(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        _wire(mock_dynamodb, prd_pages=[{'Items': [PRD_OLD, PRD_NEW]}], prfaq_pages=[NO_DOCUMENTS], documents={})
+        mock_converse.return_value = HTML
+
+        with pytest.raises(Exception, match='Document generation failed'):
+            _run(
+                sample_job_event, lambda_context,
+                feedback='Make it admin-facing', base_prototype_id='proto_does_not_exist',
+            )
+
+        # No prompt built, no document saved: the build did not happen at all,
+        # rather than happening as a fresh generation mislabelled a revision.
+        mock_converse.assert_not_called()
+        mock_dynamodb['table'].put_item.assert_not_called()
+
+    def test_the_failure_names_the_field(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """Asserted on the message the job records, in the same shape
+        `_source_document` uses: without the field name, an operator reading a
+        failed job cannot tell WHICH of the three ids did not resolve."""
+        _wire(mock_dynamodb, prd_pages=[{'Items': [PRD_OLD, PRD_NEW]}], prfaq_pages=[NO_DOCUMENTS], documents={})
+        mock_converse.return_value = HTML
+
+        with pytest.raises(Exception, match='Document generation failed'):
+            _run(
+                sample_job_event, lambda_context,
+                feedback='Make it admin-facing', base_prototype_id='proto_does_not_exist',
+            )
+
+        recorded = str(mock_jobs_table.update_item.call_args_list)
+        assert 'base_prototype_id' in recorded
+        assert 'proto_does_not_exist' in recorded
+
+    def test_it_fails_even_when_no_feedback_was_sent(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """The lookup does not hang off `feedback`: an id that is sent is claimed,
+        so it is resolved whenever it is supplied."""
+        _wire(mock_dynamodb, prd_pages=[{'Items': [PRD_OLD, PRD_NEW]}], prfaq_pages=[NO_DOCUMENTS], documents={})
+        mock_converse.return_value = HTML
+
+        with pytest.raises(Exception, match='Document generation failed'):
+            _run(sample_job_event, lambda_context, base_prototype_id='proto_does_not_exist')
+
+        mock_converse.assert_not_called()
+
+    def test_a_base_prototype_is_only_ever_read_under_this_project(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """The ownership half, asserted on the key that is built: the supplied id
+        reaches `sk` only, under the `PROTOTYPE#` prefix, so neither another
+        project's prototype nor a PRD offered as one can resolve."""
+        _wire(mock_dynamodb, prd_pages=[{'Items': [PRD_NEW]}], prfaq_pages=[NO_DOCUMENTS], documents={})
+        mock_converse.return_value = HTML
+
+        with pytest.raises(Exception, match='Document generation failed'):
+            _run(
+                sample_job_event, lambda_context,
+                feedback='Make it admin-facing', base_prototype_id='../PROJECT#victim/proto_1',
+            )
+
+        keys = [call.kwargs.get('Key', {}) for call in mock_dynamodb['table'].get_item.call_args_list]
+        assert keys, 'expected at least one keyed read'
+        assert {k.get('pk') for k in keys} == {'PROJECT#proj_20250101120000'}
+        assert any(k.get('sk') == 'PROTOTYPE#../PROJECT#victim/proto_1' for k in keys)
+
+    def test_a_resolved_base_with_no_html_anywhere_still_builds(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """An empty prior-HTML string and an id that resolved to nothing are two
+        DIFFERENT conditions, and only the second is an error. Keying the raise on
+        empty HTML would break revising an older prototype whose stored content is
+        legitimately empty — which is exactly this item."""
+        _wire(
+            mock_dynamodb,
+            prd_pages=[{'Items': [PRD_NEW]}],
+            prfaq_pages=[NO_DOCUMENTS],
+            documents={'PROTOTYPE#proto_empty': {'document_id': 'proto_empty'}},
+        )
+        mock_converse.return_value = HTML
+
+        _run(
+            sample_job_event, lambda_context,
+            feedback='Make it admin-facing', base_prototype_id='proto_empty',
+        )
+
+        prompt = _prompt(mock_converse)
+        assert 'Make it admin-facing' in prompt          # the revision still runs
+        assert 'EXISTING PROTOTYPE' not in prompt        # with no prior-HTML block
+        assert _saved(mock_dynamodb)['revised_from_id'] == 'proto_empty'
+
+    def test_a_failed_s3_read_falls_back_to_the_inline_content(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """A failed S3 read is not an unresolvable id. The item resolved, so the
+        job keeps degrading to the pre-migration inline `content` rather than
+        failing."""
+        _wire(
+            mock_dynamodb,
+            prd_pages=[{'Items': [PRD_NEW]}],
+            prfaq_pages=[NO_DOCUMENTS],
+            documents={'PROTOTYPE#proto_1': {**PROTOTYPE_S3, 'content': 'INLINE prior prototype'}},
+        )
+        mock_s3.get_object.side_effect = RuntimeError('AccessDenied')
+        mock_converse.return_value = HTML
+
+        _run(
+            sample_job_event, lambda_context,
+            feedback='Make it admin-facing', base_prototype_id='proto_1',
+        )
+
+        assert 'INLINE prior prototype' in _prompt(mock_converse)
+        assert _saved(mock_dynamodb)['revised_from_id'] == 'proto_1'
+
+    @pytest.mark.parametrize('value', [
+        pytest.param(None, id='null'),
+        pytest.param('', id='blank'),
+        pytest.param('   ', id='whitespace'),
+    ])
+    def test_not_naming_a_base_prototype_still_builds(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context, value,
+    ):
+        """Not a revision, and it must stay buildable — no lookup, no raise."""
+        _wire(mock_dynamodb, prd_pages=[{'Items': [PRD_NEW]}], prfaq_pages=[NO_DOCUMENTS], documents={})
+        mock_converse.return_value = HTML
+
+        _run(sample_job_event, lambda_context, base_prototype_id=value)
+
+        assert 'NEW PRD body' in _prompt(mock_converse)
+        assert 'PROTOTYPE#' not in str([
+            call.kwargs.get('Key', {}) for call in mock_dynamodb['table'].get_item.call_args_list
+        ])
