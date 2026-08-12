@@ -176,6 +176,36 @@ class TestNewestDocumentOfAType:
             assert 'Limit' not in call.kwargs
             assert 'ScanIndexForward' not in call.kwargs
 
+    def test_ranks_a_row_whose_id_lives_only_in_its_sort_key(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """The `sk` fallback in `_document_id_of`, which review round 3 correctly
+        noted was untested.
+
+        The ranking read is PROJECTED, so a row carrying no `document_id` attribute
+        has no `content` to fall back on either — without the fallback it is
+        dropped from the ranking entirely and an OLDER document silently wins. The
+        legacy row here is the newest by `created_at`, so that substitution is
+        exactly what fails this test.
+
+        No live row looks like this (0 of 6 when measured), which is precisely why
+        it needs a test: an unexercised branch rots into unreachable code.
+        """
+        legacy = {'sk': 'PRD#legacy_prd', 'created_at': '2026-09-01T00:00:00Z'}
+        _wire(
+            mock_dynamodb,
+            prd_pages=[{'Items': [PRD_OLD, legacy]}],
+            prfaq_pages=[NO_DOCUMENTS],
+            documents={'PRD#legacy_prd': {'document_id': 'legacy_prd', 'content': 'LEGACY PRD body'}},
+        )
+        mock_converse.return_value = HTML
+
+        _run(sample_job_event, lambda_context)
+
+        assert 'LEGACY PRD body' in _prompt(mock_converse)
+        assert 'OLD PRD body' not in _prompt(mock_converse)
+        assert _saved(mock_dynamodb)['source_prd_id'] == 'legacy_prd'
+
     def test_no_documents_of_either_type_fails_the_job(
         self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
     ):
