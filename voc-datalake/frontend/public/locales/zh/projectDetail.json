@@ -88,6 +88,7 @@
       "confirmRebuild": "此项目已有原型。再次构建会新增一个并保留现有原型。是否继续？",
       "downloadHtml": "下载 .html",
       "downloadJson": "下载 .json",
+      "extraSources": "同时参考（可选）",
       "feedbackBuilding": "修订中…",
       "feedbackButton": "根据反馈修订",
       "feedbackHeading": "根据反馈修订原型",
@@ -99,10 +100,13 @@
       "needsDocs": "请先创建 PRD 或 PR-FAQ 以启用原型构建",
       "previewLabel": "实时预览",
       "rawLabel": "原始输出（解析失败 — 请重新生成）",
+      "researchLimit": "每次构建最多 {{max}} 份报告",
       "sourceLatest": "最新",
       "sourcePrd": "PRD",
       "sourcePrfaq": "PR/FAQ",
-      "started": "已开始 — 可在后台任务中查看进度。"
+      "started": "已开始 — 可在后台任务中查看进度。",
+      "useProductContext": "产品/服务说明",
+      "useResearch": "研究报告（{{total}}）"
     },
     "revision": {
       "feedback": "反馈：{{feedback}}",
@@ -257,7 +261,7 @@
     "productDescription": "产品/服务描述",
     "productDescriptionDesc": "描述当前产品。将用于 PRD 和 PR/FAQ 的生成。",
     "prototype": "可点击原型",
-    "prototypeDesc": "根据您的 PRD / PR-FAQ 创建可点击的 HTML 原型",
+    "prototypeDesc": "根据项目规格文档创建可点击的 HTML 原型，并可选择同时参考产品说明与研究报告",
     "remixDocuments": "重新混合文档",
     "remixDocumentsDesc": "合并和修订文档以创建新版本",
     "runResearch": "运行研究",

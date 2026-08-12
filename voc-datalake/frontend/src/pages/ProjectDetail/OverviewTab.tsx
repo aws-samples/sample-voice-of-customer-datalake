@@ -76,6 +76,7 @@ export default function OverviewTab({
     hasExistingPrototype: steps.prototype.hasOutput,
     prdOptions: prototypeSources.prdOptions,
     prfaqOptions: prototypeSources.prfaqOptions,
+    researchOptions: prototypeSources.researchOptions,
     onJobStarted,
   })
 
@@ -204,6 +205,12 @@ export default function OverviewTab({
           // START (everything after that belongs to the jobs panel) and a brief
           // acknowledgement covering the gap before that panel refetches.
           statusLine={prototypeStatusLine(prototypeBuild, t)}
+          // On the card, NOT in the confirm dialog: `confirmKeyFor` deliberately
+          // opens no dialog for a project with one PRD, one PR-FAQ and no
+          // prototype, so a control placed there would be unreachable for exactly
+          // the simplest project — and moving that project behind a fourth confirm
+          // reason would cost the deliberate one-click path.
+          controls={<PrototypeExtraSources extras={prototypeBuild.extras} t={t} />}
         />
         <ActionCard
           state={steps.remix}
@@ -323,6 +330,12 @@ interface ActionCardProps {
    * others leave this unset.
    */
   readonly statusLine?: ReactNode
+  /**
+   * Choices this card's own action reads, rendered above its button. Only the
+   * prototype card has any: the other five open a wizard that asks for its
+   * configuration, so a control here would duplicate the first wizard step.
+   */
+  readonly controls?: ReactNode
   readonly buttonColor: string
   readonly buttonIcon: ReactNode
   readonly buttonLabel: string
@@ -346,6 +359,7 @@ function ActionCard({
   stateLabel,
   hint,
   statusLine,
+  controls,
   buttonColor,
   buttonIcon,
   buttonLabel,
@@ -392,6 +406,19 @@ function ActionCard({
         // "None yet" is information, not decoration, so it has to be readable.
         <p className={`text-xs mb-3 ${state.hasOutput ? 'text-green-700' : 'text-gray-500'}`}>{stateLabel}</p>
       )}
+      {/* Above the button, because they change what the button does. Rendered raw
+          like `statusLine`: only the caller knows what the choices are, and a
+          wrapper here would put an empty box on the five cards that have none.
+
+          Not rendered at all on a disabled card: choices for an action that cannot
+          be taken read as an offer, and a project with no PRD and no PR/FAQ showed
+          tick-boxes stacked above a dead button and the "create a document first"
+          message. That also hides them while `busy` — the prototype card's second
+          disabled reason — which is correct rather than merely tolerable: nothing
+          ticked during the start request can affect the build already in flight,
+          and the window closes when the request returns, not when the build
+          finishes. */}
+      {disabled === true ? null : controls}
       <button
         onClick={onClick}
         disabled={disabled}
@@ -511,5 +538,114 @@ function SourceRow({
         ))}
       </select>
     </div>
+  )
+}
+
+/**
+ * The two optional inputs a prototype build can be told to read: the project's
+ * product context, and specific research reports.
+ *
+ * On the card rather than inside `ConfirmModal`, and that placement is the whole
+ * design decision: `confirmKeyFor` returns null — no dialog at all — for a project
+ * with one PRD, one PR-FAQ and no prototype, deliberately, so that the build starts
+ * on the first click. A control living in the dialog would be unreachable for
+ * exactly that project.
+ *
+ * Checkboxes rather than the `select` the source picker uses, because these are
+ * independent on/off choices rather than one-of-many, and because the research list
+ * is a multi-selection: the same shape `DataSourceSteps` uses, which is also why the
+ * research ids stay a separate field from the document ids.
+ */
+function PrototypeExtraSources({
+  extras, t,
+}: {
+  readonly extras: PrototypeBuildControl['extras']
+  readonly t: TFunction<'projectDetail'>
+}) {
+  return (
+    <div data-testid="prototype-extra-sources" className="mb-3 space-y-1.5 rounded-lg bg-gray-50 p-2.5">
+      <p className="text-xs font-medium text-gray-600">{t('documents.prototype.extraSources')}</p>
+      <SourceCheckbox
+        label={t('documents.prototype.useProductContext')}
+        checked={extras.useProductContext}
+        onChange={extras.onToggleProductContext}
+      />
+      {/* Nothing to offer, nothing to show — the same reason `SourceRow` renders
+          null for a type the project has none of. A checkbox that can only ever
+          contribute an empty section is an invitation to a no-op. */}
+      {extras.researchOptions.length === 0 ? null : (
+        <>
+          <SourceCheckbox
+            // `total`, not `count`: `count` makes i18next resolve plural
+            // suffixes, which would mean two more keys per catalogue for a
+            // number that is only ever shown in parentheses. `overview.state.research`
+            // already interpolates `total` the same way.
+            label={t('documents.prototype.useResearch', { total: extras.researchOptions.length })}
+            checked={extras.useResearch}
+            onChange={extras.onToggleResearch}
+          />
+          {extras.useResearch ? (
+            <div data-testid="prototype-research-list" className="ml-5 space-y-1 border-l pl-2">
+              {extras.researchOptions.map((option) => {
+                const checked = extras.selectedResearchIds.includes(option.document_id)
+                return (
+                  <SourceCheckbox
+                    key={option.document_id}
+                    label={option.title}
+                    checked={checked}
+                    // At the bound, the unticked boxes stop accepting: the API
+                    // rejects a longer list, and a 400 after the choice is made
+                    // says nothing about which report to give up.
+                    disabled={!checked && extras.researchLimitReached}
+                    onChange={() => extras.onToggleResearchId(option.document_id)}
+                  />
+                )
+              })}
+              {extras.researchLimitReached ? (
+                <p className="text-xs text-amber-700">
+                  {t('documents.prototype.researchLimit', { max: extras.maxResearchIds })}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** One tick-box with a real label, so the whole row is a hit target and the
+    accessible name comes from the label rather than from an aria-label. */
+function SourceCheckbox({
+  label, checked, disabled, onChange,
+}: {
+  readonly label: string
+  readonly checked: boolean
+  readonly disabled?: boolean
+  readonly onChange: (next: boolean) => void
+}) {
+  return (
+    <label className={clsx(
+      'flex items-center gap-2 text-xs',
+      // gray-500, not gray-400: #6b7280 clears 4.5:1 on white where #9ca3af does
+      // not, and the disabled rows are the ones a user most needs to read to
+      // understand why they cannot tick them.
+      disabled === true ? 'text-gray-500' : 'text-gray-700',
+    )}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="rounded border-gray-300"
+      />
+      {/* `title` because of `truncate`, not for the accessible name — that already
+          comes from the label. Report titles are user-supplied and this column is
+          narrow, so two reports named "Churn interviews Q1" and "Churn interviews
+          Q2" render as the same visible string; the tooltip is the only way to tell
+          which box is which. Sighted mouse users are exactly who needs it: a screen
+          reader reads the full label regardless of the CSS clip. */}
+      <span className="truncate" title={label}>{label}</span>
+    </label>
   )
 }

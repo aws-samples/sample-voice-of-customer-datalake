@@ -23,9 +23,10 @@
  * exist, otherwise whichever one does. So one document is enough to build, and
  * when only one is present the user is told which before it runs.
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
+import { MAX_SELECTED_RESEARCH_IDS } from './overviewState'
 import { useTransientFlag } from './useTransientFlag'
 import type { PrototypeSourceOption } from './overviewState'
 
@@ -120,10 +121,38 @@ export interface PrototypeBuildControl {
     readonly onSelectPrd: (documentId: string) => void
     readonly onSelectPrfaq: (documentId: string) => void
   }
+  /**
+   * The two optional inputs, off by default so a build that touches nothing here
+   * sends the request it always did.
+   *
+   * These live on the card rather than in the confirm dialog, and that is a
+   * requirement rather than a preference: `confirmKeyFor` deliberately returns
+   * null for a project with one PRD, one PR-FAQ and no prototype, so a control
+   * placed in the dialog is unreachable for exactly the simplest project.
+   */
+  readonly extras: {
+    readonly useProductContext: boolean
+    readonly onToggleProductContext: (next: boolean) => void
+    readonly useResearch: boolean
+    readonly onToggleResearch: (next: boolean) => void
+    /** Newest first, as `overviewState` derives them. Empty means nothing to offer. */
+    readonly researchOptions: ReadonlyArray<PrototypeSourceOption>
+    /** Only ids still on offer — a report deleted under the card is never sent. */
+    readonly selectedResearchIds: ReadonlyArray<string>
+    readonly onToggleResearchId: (documentId: string) => void
+    /**
+     * True when no further report can be added. The API rejects an over-long
+     * list, so the control refuses at the bound instead of letting the build fail
+     * on submit.
+     */
+    readonly researchLimitReached: boolean
+    readonly maxResearchIds: number
+  }
 }
 
 export function usePrototypeBuild({
-  projectId, hasPrd, hasPrfaq, hasExistingPrototype, prdOptions = [], prfaqOptions = [], onJobStarted,
+  projectId, hasPrd, hasPrfaq, hasExistingPrototype, prdOptions = [], prfaqOptions = [],
+  researchOptions = [], onJobStarted,
 }: {
   readonly projectId: string
   readonly hasPrd: boolean
@@ -139,6 +168,12 @@ export function usePrototypeBuild({
    */
   readonly prdOptions?: ReadonlyArray<PrototypeSourceOption>
   readonly prfaqOptions?: ReadonlyArray<PrototypeSourceOption>
+  /**
+   * The project's research reports, newest first. Optional and empty-defaulted:
+   * a caller that offers no research selection sends no research ids, and the
+   * build reads none — today's behaviour.
+   */
+  readonly researchOptions?: ReadonlyArray<PrototypeSourceOption>
   /**
    * The project already has a prototype, so this build makes an additional one.
    *
@@ -159,6 +194,16 @@ export function usePrototypeBuild({
   // default rather than leaving the card aimed at yesterday's newest.
   const [chosenPrdId, setChosenPrdId] = useState('')
   const [chosenPrfaqId, setChosenPrfaqId] = useState('')
+  // The two optional inputs, per build. Not persisted and not remembered per
+  // project — the same answer #320 took for the source ids, and answering it
+  // differently for the two halves of one control would be worse than either.
+  const [useProductContext, setUseProductContext] = useState(false)
+  const [useResearch, setUseResearch] = useState(false)
+  // The reports the user has ticked. Filtered against the live options below
+  // rather than pruned on change, for the same reason `effectiveSourceId` falls
+  // back: the document list refetches when a job completes, so a chosen report
+  // can be deleted under an open card, and an id the API cannot resolve is a 4xx.
+  const [chosenResearchIds, setChosenResearchIds] = useState<ReadonlyArray<string>>([])
   const [busy, setBusy] = useState(false)
   // Lowers itself: the panel takes over, so the line must not outlive the gap.
   const started = useTransientFlag()
@@ -171,6 +216,37 @@ export function usePrototypeBuild({
   // silently reverts to the default rather than sending an id the API would reject.
   const prdId = effectiveSourceId(prdOptions, chosenPrdId)
   const prfaqId = effectiveSourceId(prfaqOptions, chosenPrfaqId)
+
+  // Only reports still on offer. A stale id would be rejected by the API, which
+  // would turn someone else's deletion into this build's failure.
+  const selectedResearchIds = useMemo(
+    () => chosenResearchIds.filter(
+      (id) => researchOptions.some((option) => option.document_id === id),
+    ),
+    [chosenResearchIds, researchOptions],
+  )
+
+  const onToggleResearch = useCallback((next: boolean) => {
+    setUseResearch(next)
+    // Ticking pre-selects the reports on offer, newest first, up to the bound the
+    // API enforces; unticking clears them rather than remembering a selection the
+    // build will not use. Same shape as `DataSourceSteps`, which sets
+    // `selectedResearchIds: checked ? … : []` on the same toggle.
+    setChosenResearchIds(next
+      ? researchOptions.slice(0, MAX_SELECTED_RESEARCH_IDS).map((option) => option.document_id)
+      : [])
+  }, [researchOptions])
+
+  const onToggleResearchId = useCallback((documentId: string) => {
+    setChosenResearchIds((current) => {
+      if (current.includes(documentId)) return current.filter((id) => id !== documentId)
+      // Refuse at the bound rather than send a list the API rejects: a 400 arrives
+      // after the user has already chosen, and says nothing about which report to
+      // drop.
+      if (current.length >= MAX_SELECTED_RESEARCH_IDS) return current
+      return [...current, documentId]
+    })
+  }, [])
 
   // THREE reasons to stop and ask, through the ConfirmModal pattern every other
   // guarded action uses (this began as a window.confirm, which cannot be styled):
@@ -211,6 +287,13 @@ export function usePrototypeBuild({
         response_language: i18n.language,
         source_prd_id: prdId,
         source_prfaq_id: prfaqId,
+        // The optional inputs, as the card is showing them. Both false and an
+        // empty list is the request this hook sent before they existed.
+        use_product_context: useProductContext,
+        use_research: useResearch,
+        // Never sent while the box is unticked: ids left behind by a box the user
+        // turned off are not a selection.
+        selected_research_ids: useResearch ? [...selectedResearchIds] : [],
       })
       started.set()
       onJobStarted?.()
@@ -219,7 +302,8 @@ export function usePrototypeBuild({
     } finally {
       setBusy(false)
     }
-  }, [projectId, hasPrd, hasPrfaq, prdId, prfaqId, i18n.language, onJobStarted, started])
+  }, [projectId, hasPrd, hasPrfaq, prdId, prfaqId, useProductContext, useResearch,
+      selectedResearchIds, i18n.language, onJobStarted, started])
 
   const onClick = useCallback(() => {
     if (confirmKey != null) {
@@ -260,6 +344,17 @@ export function usePrototypeBuild({
       prfaqId,
       onSelectPrd: setChosenPrdId,
       onSelectPrfaq: setChosenPrfaqId,
+    },
+    extras: {
+      useProductContext,
+      onToggleProductContext: setUseProductContext,
+      useResearch,
+      onToggleResearch,
+      researchOptions,
+      selectedResearchIds,
+      onToggleResearchId,
+      researchLimitReached: selectedResearchIds.length >= MAX_SELECTED_RESEARCH_IDS,
+      maxResearchIds: MAX_SELECTED_RESEARCH_IDS,
     },
   }
 }

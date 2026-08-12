@@ -88,6 +88,7 @@
       "confirmRebuild": "Ce projet a déjà un prototype. Une nouvelle génération en ajoute un et conserve l’existant. Continuer ?",
       "downloadHtml": "Télécharger le .html",
       "downloadJson": "Télécharger le .json",
+      "extraSources": "Lire aussi (facultatif)",
       "feedbackBuilding": "Révision en cours…",
       "feedbackButton": "Réviser avec des retours",
       "feedbackHeading": "Réviser le prototype avec des retours",
@@ -99,10 +100,13 @@
       "needsDocs": "Créez d’abord un PRD ou un PR-FAQ pour activer la création de prototype",
       "previewLabel": "Aperçu en direct",
       "rawLabel": "Sortie brute (analyse échouée — veuillez régénérer)",
+      "researchLimit": "Au maximum {{max}} rapports par génération",
       "sourceLatest": "la plus récente",
       "sourcePrd": "PRD",
       "sourcePrfaq": "PR/FAQ",
-      "started": "Lancé — suivez la progression dans Tâches en arrière-plan."
+      "started": "Lancé — suivez la progression dans Tâches en arrière-plan.",
+      "useProductContext": "Description du produit ou service",
+      "useResearch": "Rapports de recherche ({{total}})"
     },
     "revision": {
       "feedback": "Retour : {{feedback}}",
@@ -260,7 +264,7 @@
     "productDescription": "Description du produit/service",
     "productDescriptionDesc": "Décrivez le produit actuel. Alimente la génération de PRD et de PR/FAQ.",
     "prototype": "Prototype cliquable",
-    "prototypeDesc": "Créez un prototype HTML cliquable à partir de votre PRD / PR-FAQ",
+    "prototypeDesc": "Créez un prototype HTML cliquable à partir des spécifications du projet et, en option, de sa description produit et de ses recherches",
     "remixDocuments": "Remixer les documents",
     "remixDocumentsDesc": "Combiner et réviser les documents pour créer de nouvelles versions",
     "runResearch": "Lancer une recherche",

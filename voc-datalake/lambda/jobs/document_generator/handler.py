@@ -341,7 +341,7 @@ Produce a polished, tap-through prototype. Remember: ONE HTML document, output n
 PROTOTYPE_HTML_USER_TEMPLATE = """Build a clickable HTML prototype for the product/feature below. Output ONE complete HTML document only — no prose, no code fences.
 
 PROJECT: {project_name}
-{brand_section}{prd_section}{prfaq_section}
+{brand_section}{product_context_section}{prd_section}{prfaq_section}{research_section}
 
 Requirements:
 - Single self-contained HTML file (inline CSS + vanilla JS), offline-first, no external resources.
@@ -533,6 +533,138 @@ def _source_document(
     return doc
 
 
+#: Per-research-report slice of the prompt, matching the reference-document cap
+#: `_gather_context` applies. The arity is bounded by the API
+#: (`MAX_SELECTED_RESEARCH_IDS`), so this bounds the other dimension.
+RESEARCH_PER_DOC_CAP = 3000
+
+#: Ceiling on the whole research section, however many reports were named.
+#:
+#: Sized against the other caps in `_generate_prototype` rather than picked: the
+#: PRD, the PR/FAQ and the product-context block each get PER_DOC_CAP (12000),
+#: and a revision's prior prototype HTML gets PRIOR_CAP (24000). Research is
+#: corroborating evidence, not the thing being built, so the whole selection is
+#: allowed no more than a single spec document gets — one PER_DOC_CAP.
+#:
+#: The per-report cap alone was not a bound on the section: RESEARCH_PER_DOC_CAP
+#: x MAX_SELECTED_RESEARCH_IDS is 30000, more than the PRD and PR/FAQ combined,
+#: so a ten-report selection could crowd out the spec the prototype is supposed
+#: to implement. It stays the cap for a small selection (12000 // 3 is already
+#: over it, so one to three reports are unaffected); this is what makes ten of
+#: them bounded too.
+#:
+#: Four used to be unaffected as well, before the share started paying for the
+#: heading it carries (RESEARCH_TITLE_CAP below): 12000 // 4 == 3000 was the
+#: per-report cap exactly, which left nothing for four headings and put the
+#: assembled body 58 characters past this ceiling — taken off the last report.
+RESEARCH_TOTAL_CAP = 12000
+
+#: Cap on a report's `title` where it is used as the block's heading.
+#:
+#: A title is a label for the block, not content, so it is sized against the
+#: titles this system writes rather than against the content caps: every research
+#: report created on this path gets `f'Research: {research_question[:50]}'` (see
+#: `projects.py` and `research_step_handler.py`) — about 60 characters. 120 leaves
+#: that much room again for a hand-edited title while keeping a heading a heading.
+#:
+#: Needed because the title is otherwise bounded NOWHERE on this path: it comes
+#: back from DynamoDB as stored, and ten 1000-character titles cost more of the
+#: budget than the reports they label.
+RESEARCH_TITLE_CAP = 120
+
+#: What one block costs on top of its content: `'### '` + a capped title + `'\n'`,
+#: plus the `'\n\n'` the blocks are joined with.
+#:
+#: Charged to every block including the last, which is one separator more than is
+#: actually written — deliberately, so the arithmetic needs no special case and the
+#: assembled body lands two characters UNDER the total rather than one over.
+_RESEARCH_BLOCK_OVERHEAD = len('### ') + RESEARCH_TITLE_CAP + len('\n') + len('\n\n')
+
+
+def _research_section(documents: list[dict]) -> str:
+    """
+    The research block for the reports a build read, or '' when it read none.
+
+    Two bounds, because one of them does not hold on its own. Each report is
+    sliced to an equal share of RESEARCH_TOTAL_CAP *minus what its heading and
+    separator cost*, never more than RESEARCH_PER_DOC_CAP — so one to three
+    reports are sliced exactly as before, four get 2873 characters instead of
+    3000, and ten get 1073 each.
+
+    Shared equally rather than spent front-to-back: a running budget would drop
+    the last reports of a long selection entirely, and every named report is
+    recorded in the document's `derivation` as having been used, so a report that
+    reached none of the prompt would make that record a lie.
+
+    Charging the overhead is what makes that hold. Dividing RESEARCH_TOTAL_CAP
+    alone and then hard-slicing the assembled body re-introduced exactly the
+    front-to-back spending this shares to avoid: with the heading unpaid for, the
+    body overran the cap and the slice took the overrun off the END — ~120
+    characters at eight reports with short titles, but whole reports once titles
+    are long, which is the same lie by a different route.
+
+    The assembled body is still hard-capped at RESEARCH_TOTAL_CAP, and that cap is
+    now belt-and-braces: with the title capped and the overhead paid, the body is
+    within the total by construction (n x (overhead + share) <= total). It only
+    binds where the headings alone exceed the budget — above ~94 reports the share
+    clamps to zero — which the API's MAX_SELECTED_RESEARCH_IDS bound of ten keeps
+    out of reach, so it is a guard rather than the thing doing the work.
+    """
+    if not documents:
+        return ''
+    per_doc = min(
+        RESEARCH_PER_DOC_CAP,
+        # max(): a selection long enough for the headings to eat the whole budget
+        # would otherwise make this negative, and `content[:-n]` silently keeps
+        # everything BUT the last n characters instead of nothing.
+        max(0, RESEARCH_TOTAL_CAP // len(documents) - _RESEARCH_BLOCK_OVERHEAD),
+    )
+    body = '\n\n'.join(
+        f"### {str(d.get('title') or 'Untitled')[:RESEARCH_TITLE_CAP]}\n"
+        f"{d.get('content', '')[:per_doc]}"
+        for d in documents
+    )
+    return '\n\nRESEARCH FINDINGS:\n' + body[:RESEARCH_TOTAL_CAP]
+
+
+def _research_documents(projects_table, project_id: str, research_ids) -> list[dict]:
+    """
+    The research reports a build was told to read, in the order they were asked
+    for, or [] when it named none.
+
+    A narrow reader on purpose, and NOT `_gather_context`: every branch in that
+    function is gated on a `data_sources` map a prototype's `doc_config` does not
+    carry (so it would return nothing), it re-queries feedback, and its progress
+    callbacks overwrite this build's own 40 → 80 → 90 narrative.
+
+    Keyed reads only — one `get_item` per id under `RESEARCH#`, so ownership and
+    document type come from the key exactly as in `_document_by_id`, and no id can
+    address another project's partition. There is no "read all the research"
+    fallback: an empty list means nothing to read, so the callers stay one keyed
+    read per named report rather than a project-wide query, and the recorded
+    provenance is exactly what was asked for.
+
+    An id that does not resolve RAISES, for the same reason `_source_document`
+    does: the alternative is a prototype the user believes was grounded in a
+    report the model never saw, with nothing in the output saying otherwise. The
+    API rejects such an id before a job exists; this is the second line, and it is
+    what keeps the failure loud if a job is ever replayed after the document was
+    deleted.
+    """
+    documents: list[dict] = []
+    for research_id in research_ids or []:
+        document_id = str(research_id or '').strip()
+        if not document_id:
+            continue
+        doc = _document_by_id(projects_table, project_id, 'RESEARCH#', document_id)
+        if not doc:
+            raise RuntimeError(
+                f'selected_research_ids: no RESEARCH document "{document_id}" in this project.'
+            )
+        documents.append(doc)
+    return documents
+
+
 def _base_prototype(projects_table, project_id: str, base_prototype_id: str) -> dict | None:
     """
     The prototype a revision is built on: the one the request named, or None when
@@ -570,6 +702,12 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     PR/FAQ for this project, save it as a ProjectDocument of type 'prototype' with
     prototype_format='html'. The frontend renders the HTML in a sandboxed
     <iframe srcdoc> so inline CSS/JS run in isolation. Opus 5 builds the HTML.
+
+    Two further inputs are read only when the request asks for them:
+    `use_product_context` adds the project's product-context block, and
+    `use_research` + `selected_research_ids` add named research reports. Both
+    absent — every caller before they existed — produces the same prompt this
+    function always produced.
     """
     from shared.converse import converse
 
@@ -607,6 +745,40 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     # absent, the system prompt's neutral defaults apply.
     brand = (doc_config.get('brand') or '').strip()
     brand_section = f'BRAND: {brand}\n' if brand else ''
+
+    # Optional extra grounding, ticked per build on the prototype card. Both
+    # default off, so a request that asks for neither produces the prompt this
+    # path has always produced, byte for byte.
+    #
+    # The section is added only when the block carries something. `_product_context`
+    # returns its placeholder both for "the project described nothing" and for a
+    # failed read, and a prompt section whose body says "(No product context
+    # provided.)" is worse than no section: it spends budget telling the model
+    # nothing. The flag it returns is the same one the derivation records, so what
+    # reached the prompt and what the document claims cannot disagree.
+    product_context_section = ''
+    product_context_included = False
+    if doc_config.get('use_product_context'):
+        product_context_block, product_context_included = _product_context(project_id)
+        if product_context_included:
+            # Capped like every other injected block here (PER_DOC_CAP, PRIOR_CAP).
+            # `build_product_context_block` budgets uploaded document text at
+            # 50k chars, which unbounded would crowd out the PRD this prompt is
+            # actually built from.
+            product_context_section = (
+                f'\n\nPRODUCT CONTEXT (what this product is, who it is for):\n'
+                f'{product_context_block[:PER_DOC_CAP]}'
+            )
+
+    # Research reports, scoped to RESEARCH# only — see `_research_documents` for
+    # why this is not the shared document picker.
+    research_docs = (
+        _research_documents(projects_table, project_id, doc_config.get('selected_research_ids'))
+        if doc_config.get('use_research') else []
+    )
+    # Bounded per report AND in total — see `_research_section`. The per-report cap
+    # alone let ten reports contribute more than the PRD and PR/FAQ combined.
+    research_section = _research_section(research_docs)
 
     # Optional feedback-driven regeneration: when the user gives feedback on an
     # existing prototype, we re-generate CENTERED on that feedback while still
@@ -650,8 +822,10 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     user_prompt = PROTOTYPE_HTML_USER_TEMPLATE.format(
         project_name=project_name,
         brand_section=brand_section,
+        product_context_section=product_context_section,
         prd_section=prd_section,
         prfaq_section=prfaq_section,
+        research_section=research_section,
         lang_hint=lang_hint,
     ) + feedback_section
 
@@ -713,10 +887,28 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         # derivation_source drops the None that `(prd or {}).get(...)` yields.
         DERIVATION_FIELD: build_derivation(
             sources=[
-                derivation_source((prd or {}).get('document_id'), ROLE_PROTOTYPE_PRD),
-                derivation_source((prfaq or {}).get('document_id'), ROLE_PROTOTYPE_PRFAQ),
+                # `_document_id_of` for all three, rather than `.get('document_id')`
+                # for two of them and the helper for the third: one idiom per call
+                # site. It reads the same id and then falls back to the sort key, so
+                # an absent document still yields '' and `derivation_source` drops it
+                # exactly as it dropped the None before. The two `source_*_id`
+                # attributes above keep `.get`, deliberately — a stored None and a
+                # stored '' are different values to their existing readers.
+                derivation_source(_document_id_of(prd or {}), ROLE_PROTOTYPE_PRD),
+                derivation_source(_document_id_of(prfaq or {}), ROLE_PROTOTYPE_PRFAQ),
+                # The research reports that reached the prompt, in the reference
+                # role the shared vocabulary already has for "selected and fed to
+                # the model". Recorded from the documents themselves rather than
+                # from the requested ids, so this stays "what was used" — and
+                # `_research_documents` raises rather than dropping, so the two
+                # cannot silently differ.
+                *(derivation_source(_document_id_of(d), ROLE_REFERENCE) for d in research_docs),
             ],
-            selected_document_count=len([d for d in (prd, prfaq) if d]),
+            selected_document_count=len([d for d in (prd, prfaq) if d]) + len(research_docs),
+            # Whether the product-context block actually carried anything, not
+            # whether it was asked for: a build that ticked the box on a project
+            # that describes nothing must not claim it was grounded.
+            product_context_included=product_context_included,
         ),
         'created_at': now,
     }

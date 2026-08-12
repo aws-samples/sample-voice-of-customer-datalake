@@ -88,6 +88,7 @@
       "confirmRebuild": "このプロジェクトにはすでにプロトタイプがあります。再度ビルドすると既存のものを保持したまま新しいものが追加されます。続行しますか?",
       "downloadHtml": ".html をダウンロード",
       "downloadJson": ".json をダウンロード",
+      "extraSources": "追加で参照 (任意)",
       "feedbackBuilding": "修正中…",
       "feedbackButton": "フィードバックで修正",
       "feedbackHeading": "フィードバックでプロトタイプを修正",
@@ -99,10 +100,13 @@
       "needsDocs": "プロトタイプ作成を有効にするには、まず PRD または PR-FAQ を作成してください",
       "previewLabel": "ライブプレビュー",
       "rawLabel": "生の出力（解析失敗 — 再生成してください）",
+      "researchLimit": "1 回のビルドで最大 {{max}} 件のレポート",
       "sourceLatest": "最新",
       "sourcePrd": "PRD",
       "sourcePrfaq": "PR/FAQ",
-      "started": "開始しました — バックグラウンドジョブで進行状況を確認できます。"
+      "started": "開始しました — バックグラウンドジョブで進行状況を確認できます。",
+      "useProductContext": "製品・サービスの説明",
+      "useResearch": "リサーチレポート ({{total}})"
     },
     "revision": {
       "feedback": "フィードバック: {{feedback}}",
@@ -257,7 +261,7 @@
     "productDescription": "製品／サービス説明",
     "productDescriptionDesc": "現在の製品を記述してください。PRD と PR/FAQ の生成に反映されます。",
     "prototype": "クリック可能なプロトタイプ",
-    "prototypeDesc": "PRD / PR-FAQ からクリック可能な HTML プロトタイプを作成します",
+    "prototypeDesc": "プロジェクトの仕様書から、必要に応じて製品説明やリサーチも参照して、クリック可能な HTML プロトタイプを作成します",
     "remixDocuments": "ドキュメントをリミックス",
     "remixDocumentsDesc": "ドキュメントを組み合わせて新しいバージョンに修正",
     "runResearch": "リサーチを実行",

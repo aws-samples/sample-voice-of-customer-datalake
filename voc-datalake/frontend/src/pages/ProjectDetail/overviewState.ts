@@ -32,6 +32,31 @@ export type OverviewStep = 'product' | 'personas' | 'research' | 'documents' | '
 /** Remix needs two documents to combine; below that its card stays disabled. */
 export const REMIX_MIN_DOCUMENTS = 2
 
+/**
+ * How many research reports one prototype build may name.
+ *
+ * The same number as `MAX_SELECTED_RESEARCH_IDS` in
+ * `lambda/api/projects_handler.py`, which enforces it — each id costs one keyed
+ * read there, so an unbounded list turns one request into N of them. Kept in
+ * lockstep by `lambda/api/test/test_research_selection_bound_lockstep.py`: a UI
+ * that lets a user pick more than the API accepts fails on submit, after the
+ * choice was made and with nothing said about which report to give up.
+ *
+ * That test reads THIS LINE as source text, matching `^export const
+ * MAX_SELECTED_RESEARCH_IDS = <digits>` — it does not import the module, so that
+ * it needs neither a bundler nor the Python import graph. So the declaration has
+ * to stay one line starting at column 0 with a bare integer literal: fold it into
+ * an object, compute it, or add a second assignment, and the test fails loudly
+ * (it asserts exactly one match) rather than passing vacuously. Changing the
+ * shape here means updating the regex there.
+ *
+ * Here rather than beside the request type in `projectsApi.ts` for a mundane
+ * reason worth writing down: that module is mocked with explicit partial objects
+ * by a dozen test files, so a new named export on it makes every one of them
+ * throw. This module is where the option lists are derived and is mocked nowhere.
+ */
+export const MAX_SELECTED_RESEARCH_IDS = 10
+
 export interface OverviewStepState {
   /** Position in the sequence, 1-based, as shown on the card. */
   readonly position: number
@@ -91,6 +116,17 @@ export interface PrototypeSources {
   readonly hasPrfaq: boolean
   readonly prdOptions: ReadonlyArray<PrototypeSourceOption>
   readonly prfaqOptions: ReadonlyArray<PrototypeSourceOption>
+  /**
+   * The research reports the build can additionally be told to read, newest
+   * first — the optional third input, alongside the two required ones.
+   *
+   * A separate list rather than entries in a combined document selection: the
+   * shared reference-document path keeps only the first three of a selection and
+   * research sorts last, so a general picker drops exactly what this list exists
+   * to offer. Kept distinct here for the same reason `DataSourceSteps` keeps
+   * `selectedResearchIds` apart from `selectedDocumentIds`.
+   */
+  readonly researchOptions: ReadonlyArray<PrototypeSourceOption>
 }
 
 export interface OverviewState {
@@ -120,7 +156,8 @@ export function deriveOverviewState({
   personas, documents, productContext,
 }: DeriveInput): OverviewState {
   const filled = productContext == null ? undefined : countFilledProductContextFields(productContext)
-  const researchCount = documents.filter((d) => d.document_type === 'research').length
+  const researchOptions = sourceOptions(documents, 'research')
+  const researchCount = researchOptions.length
   const prdOptions = sourceOptions(documents, 'prd')
   const prfaqOptions = sourceOptions(documents, 'prfaq')
   const prdCount = prdOptions.length
@@ -182,6 +219,7 @@ export function deriveOverviewState({
       hasPrfaq: prfaqCount > 0,
       prdOptions,
       prfaqOptions,
+      researchOptions,
     },
   }
 }
@@ -230,7 +268,7 @@ function pickNextStep(
  */
 function sourceOptions(
   documents: ReadonlyArray<ProjectDocument>,
-  documentType: 'prd' | 'prfaq',
+  documentType: 'prd' | 'prfaq' | 'research',
 ): ReadonlyArray<PrototypeSourceOption> {
   return documents
     .filter((d) => d.document_type === documentType)

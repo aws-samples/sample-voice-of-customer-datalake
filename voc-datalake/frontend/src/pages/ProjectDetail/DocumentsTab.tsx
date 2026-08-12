@@ -13,6 +13,7 @@ import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
 import { resolveDerivation, type DerivationRole, type DerivationSource } from '../../api/derivation'
 import { ordinalByType, resolveRevision, type DocumentOrdinal } from '../../api/documentLineage'
+import { MAX_SELECTED_RESEARCH_IDS } from './overviewState'
 import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
 import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../components/PrototypeLinkActions'
@@ -156,6 +157,9 @@ export default function DocumentsTab({
                   sourcePrdId={stillPresent(selectedDoc.source_prd_id, documents)}
                   sourcePrfaqId={stillPresent(selectedDoc.source_prfaq_id, documents)}
                   sourcesDropped={hasDroppedSource(selectedDoc, documents)}
+                  // The optional inputs the BASE was built with, not today's
+                  // defaults — see `inheritedExtraSources`.
+                  extraSources={inheritedExtraSources(selectedDoc, documents)}
                   onJobStarted={onJobStarted}
                 />
               ) : (
@@ -190,7 +194,8 @@ export default function DocumentsTab({
 type TFunc = (key: string, opts?: Record<string, unknown>) => string
 
 function PrototypeFeedbackButton({
-  projectId, basePrototypeId, title, sourcePrdId, sourcePrfaqId, sourcesDropped, onJobStarted, t,
+  projectId, basePrototypeId, title, sourcePrdId, sourcePrfaqId, sourcesDropped, extraSources,
+  onJobStarted, t,
 }: {
   readonly projectId: string
   readonly basePrototypeId: string
@@ -198,6 +203,8 @@ function PrototypeFeedbackButton({
   /** The base prototype's own sources, so a revision keeps the spec it revises. */
   readonly sourcePrdId: string
   readonly sourcePrfaqId: string
+  /** The base prototype's optional inputs, for the same reason. */
+  readonly extraSources: InheritedExtraSources
   /**
    * A source this prototype was built from has been deleted, so the revision will
    * read the latest of that type instead. Said out loud rather than left silent:
@@ -240,6 +247,19 @@ function PrototypeFeedbackButton({
         // falls back to today's behaviour.
         source_prd_id: sourcePrdId,
         source_prfaq_id: sourcePrfaqId,
+        // Inherited for the same reason as the two ids above, and it is the same
+        // defect class: re-deriving the defaults would ground the revision in
+        // whatever research exists NOW, so a report created between the build and
+        // the revision would silently join it — or the product-context flag would
+        // be dropped — while the user only asked to change the feedback.
+        //
+        // The flag-and-ids pair, in the shape `usePrototypeBuild` sends it: the
+        // flag is the switch and the ids are gated on it. One rule for one API
+        // field — deriving the flag here instead was a second rule for the same
+        // field, and the two could have drifted apart.
+        use_product_context: extraSources.useProductContext,
+        use_research: extraSources.useResearch,
+        selected_research_ids: extraSources.useResearch ? [...extraSources.researchIds] : [],
       })
       // The form closes but the text is kept: the revision can still fail
       // minutes later, in the jobs panel, and clearing it would mean retyping
@@ -252,7 +272,7 @@ function PrototypeFeedbackButton({
     } finally {
       setBusy(false)
     }
-  }, [feedback, projectId, basePrototypeId, title, sourcePrdId, sourcePrfaqId,
+  }, [feedback, projectId, basePrototypeId, title, sourcePrdId, sourcePrfaqId, extraSources,
       i18n.language, onJobStarted, started])
 
   if (!open) {
@@ -366,7 +386,7 @@ function LegacyHtmlActions({
 
 function PrototypeView({
   projectId, documentId, html, url, title, prototypeFormat, sourcePrdId, sourcePrfaqId,
-  sourcesDropped, onJobStarted,
+  sourcesDropped, extraSources, onJobStarted,
 }: {
   readonly projectId: string
   readonly documentId: string
@@ -379,6 +399,8 @@ function PrototypeView({
   readonly sourcePrfaqId: string
   /** One of those sources has been deleted, so the revision cannot inherit it. */
   readonly sourcesDropped: boolean
+  /** The optional inputs the base was built with, passed through to a revision. */
+  readonly extraSources: InheritedExtraSources
   readonly onJobStarted?: () => void
 }) {
   const { t } = useTranslation('projectDetail')
@@ -420,6 +442,7 @@ function PrototypeView({
               sourcePrdId={sourcePrdId}
               sourcePrfaqId={sourcePrfaqId}
               sourcesDropped={sourcesDropped}
+              extraSources={extraSources}
               onJobStarted={onJobStarted}
               t={t}
             />
@@ -642,6 +665,69 @@ function hasDroppedSource(
   return ([doc.source_prd_id, doc.source_prfaq_id]).some(
     (id) => id != null && id !== '' && stillPresent(id, documents) === '',
   )
+}
+
+/** The optional inputs a revision inherits from the prototype it revises. */
+export interface InheritedExtraSources {
+  readonly useProductContext: boolean
+  /**
+   * The flag-and-ids pair, in the same shape `usePrototypeBuild` sends: the flag
+   * is the switch and the ids are gated on it, so both paths have ONE rule for
+   * one API field. Derived here rather than at the send site — a revision has no
+   * recorded `use_research` boolean to inherit (the derivation records the reports
+   * it used, not the tick-box), so the flag has to come from the ids, and doing
+   * that at the call site is what made the two paths differ.
+   */
+  readonly useResearch: boolean
+  readonly researchIds: ReadonlyArray<string>
+}
+
+/**
+ * What the base prototype was actually built with, read off its own recorded
+ * derivation.
+ *
+ * Inherited rather than re-derived, and for the same reason the source ids are:
+ * re-deriving would ground the revision in whatever exists NOW, so a research
+ * report created between the build and the revision would silently join it, or the
+ * product-context flag would be lost — a revision that changes its inputs as well
+ * as its feedback, which is not what "revise this" means.
+ *
+ * Read through `resolveDerivation`, which is total: a prototype built before this
+ * feature (or one whose derivation is malformed) yields no flag and no reports, so
+ * its revision behaves exactly as it does today.
+ *
+ * Filtered to `document_type === 'research'` — the resolver only knows a type for a
+ * source it FOUND among the project's documents, so this drops both a
+ * reference-role source that is not research and a report that has since been
+ * deleted. Dropping the deleted one is required, not cosmetic: the API rejects an
+ * id it cannot resolve, so keeping it would turn someone else's deletion into this
+ * revision's 4xx. It is dropped without a note, unlike a dropped PRD — the
+ * `feedbackRebased` note says the latest of that type will be used instead, which
+ * would be untrue here: nothing substitutes for a missing research report.
+ */
+function inheritedExtraSources(
+  doc: ProjectDocument,
+  documents: readonly ProjectDocument[],
+): InheritedExtraSources {
+  const derivation = resolveDerivation(doc, documents)
+  const researchIds = derivation.sources
+    .filter((source) => source.role === 'reference' && source.document_type === 'research')
+    .map((source) => source.document_id)
+    // Sliced to the bound the API enforces, exactly as the build path slices the
+    // reports it pre-selects. Today the list cannot exceed it — the API capped the
+    // base build that recorded it — so this is a bound on a bound. It earns its
+    // line for the day the number is LOWERED: without it every prototype built
+    // under the old bound becomes un-revisable, with a 400 naming a list length
+    // the user never chose and cannot shorten from this button.
+    .slice(0, MAX_SELECTED_RESEARCH_IDS)
+  return {
+    useProductContext: derivation.product_context_included,
+    // Inherited research means research: no reports, no flag. Deriving the flag
+    // from the ids here — after the filter that drops deleted reports and after
+    // the slice — is what keeps it true of the list actually being sent.
+    useResearch: researchIds.length > 0,
+    researchIds,
+  }
 }
 
 // ── Succession: what this document replaces ──────────────────────────────────

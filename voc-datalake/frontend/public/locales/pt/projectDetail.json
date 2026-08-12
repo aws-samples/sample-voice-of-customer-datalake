@@ -88,6 +88,7 @@
       "confirmRebuild": "Este projeto já tem um protótipo. Criar novamente adiciona um novo e mantém o existente. Continuar?",
       "downloadHtml": "Baixar .html",
       "downloadJson": "Baixar .json",
+      "extraSources": "Ler também (opcional)",
       "feedbackBuilding": "Revisando…",
       "feedbackButton": "Revisar com feedback",
       "feedbackHeading": "Revisar o protótipo com feedback",
@@ -99,10 +100,13 @@
       "needsDocs": "Crie primeiro um PRD ou um PR-FAQ para habilitar a criação do protótipo",
       "previewLabel": "Prévia ao vivo",
       "rawLabel": "Saída bruta (falha na análise — regenere, por favor)",
+      "researchLimit": "No máximo {{max}} relatórios por build",
       "sourceLatest": "mais recente",
       "sourcePrd": "PRD",
       "sourcePrfaq": "PR/FAQ",
-      "started": "Iniciado — acompanhe em Tarefas em Segundo Plano."
+      "started": "Iniciado — acompanhe em Tarefas em Segundo Plano.",
+      "useProductContext": "Descrição do produto ou serviço",
+      "useResearch": "Relatórios de pesquisa ({{total}})"
     },
     "revision": {
       "feedback": "Comentários: {{feedback}}",
@@ -260,7 +264,7 @@
     "productDescription": "Descrição do produto/serviço",
     "productDescriptionDesc": "Descreva o produto atual. Alimenta a geração de PRD e PR/FAQ.",
     "prototype": "Protótipo clicável",
-    "prototypeDesc": "Crie um protótipo HTML clicável a partir do seu PRD / PR-FAQ",
+    "prototypeDesc": "Crie um protótipo HTML clicável a partir das especificações do projeto e, opcionalmente, da descrição do produto e das pesquisas",
     "remixDocuments": "Remixar Documentos",
     "remixDocumentsDesc": "Combinar e revisar documentos em novas versões",
     "runResearch": "Executar Pesquisa",
