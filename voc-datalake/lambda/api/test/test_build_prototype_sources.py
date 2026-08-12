@@ -1,10 +1,11 @@
 """
 POST /projects/{id}/build-prototype — the source-document trust boundary (U25).
 
-A build can name the PRD and PR/FAQ it should read. Those ids arrive from the
-client and their content is read straight into a Bedrock prompt, so an id that
-resolved outside this project would pull another project's document into this
-project's generation.
+A build can name the PRD and PR/FAQ it should read, and the prototype a
+revision is built on. Those ids arrive from the client and the documents they
+name are read straight into a Bedrock prompt, so an id that resolved outside
+this project would pull another project's document into this project's
+generation.
 
 Ownership and type are enforced by the key rather than by a check: `pk` is the
 project and `sk` is `{TYPE}#{id}`. This file pins that, plus the reason the
@@ -17,23 +18,39 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 PROJECT = 'proj_1'
+OTHER_PROJECT = 'proj_2'
 PATH = f'/projects/{PROJECT}/build-prototype'
 
 
 @pytest.fixture
 def build_prototype(api_gateway_event, lambda_context):
     """
-    Call the endpoint with a projects table holding one PRD and one PR/FAQ.
+    Call the endpoint with a projects table holding one PRD, one PR/FAQ and one
+    prototype in THIS project, plus one prototype in a DIFFERENT project.
 
-    Returns (response, job_config, table) where `job_config` is the doc_config
-    handed to the generator, or None when no job was created.
+    Reads are answered on the whole composite key rather than on `sk` alone.
+    That is what makes "a prototype belonging to another project" a distinct
+    fixture from "no such prototype": keyed on `sk` only, the two would be the
+    same table and the test could not tell a dropped partition key apart from a
+    working one.
+
+    Returns (response, job_config, table, invoke) where `job_config` is the
+    doc_config handed to the generator, or None when no job was created.
     """
     def _call(body):
         table = MagicMock()
-        documents = {'PRD#prd_1': {'document_id': 'prd_1'}, 'PRFAQ#prfaq_1': {'document_id': 'prfaq_1'}}
+        documents = {
+            (f'PROJECT#{PROJECT}', 'PRD#prd_1'): {'document_id': 'prd_1'},
+            (f'PROJECT#{PROJECT}', 'PRFAQ#prfaq_1'): {'document_id': 'prfaq_1'},
+            (f'PROJECT#{PROJECT}', 'PROTOTYPE#proto_1'): {'document_id': 'proto_1'},
+            # Real prototype, wrong project. Only reachable by a lookup that
+            # dropped `pk`.
+            (f'PROJECT#{OTHER_PROJECT}', 'PROTOTYPE#proto_other'): {'document_id': 'proto_other'},
+        }
 
         def get_item(Key=None, **kwargs):
-            item = documents.get((Key or {}).get('sk', ''))
+            key = (Key or {})
+            item = documents.get((key.get('pk', ''), key.get('sk', '')))
             return {'Item': item} if item else {}
 
         table.get_item.side_effect = get_item
@@ -149,3 +166,119 @@ class TestUnresolvableIdIsRejectedBeforeAnyCost:
             'x' * 5000 in str(call.kwargs.get('Key', {}))
             for call in table.get_item.call_args_list
         )
+
+
+class TestBasePrototypeIdIsCheckedLikeTheOtherTwo:
+    """
+    `base_prototype_id` — the prototype a revision is built on.
+
+    It was the one of the three client-supplied ids that reached `doc_config`
+    unchecked. An id naming nothing then produced a build that ran to completion
+    as a FRESH generation — no `EXISTING PROTOTYPE (revise this)` block in the
+    prompt — and saved a document labelled a revision (`revised_from_id`) that the
+    model never saw the base of, after a billed multi-minute Bedrock call.
+    """
+
+    def test_a_named_prototype_reaches_the_generator(self, build_prototype):
+        response, config, _table, invoke = build_prototype(
+            {'feedback': 'Make it admin-facing', 'base_prototype_id': 'proto_1'},
+        )
+
+        assert response['statusCode'] == 200
+        assert config['base_prototype_id'] == 'proto_1'
+        assert invoke.call_args.args[1]['doc_config']['base_prototype_id'] == 'proto_1'
+
+    def test_an_unknown_prototype_is_a_404_and_starts_no_job(self, build_prototype):
+        """The load-bearing assertion is `config is None`: a check that ran AFTER
+        `create_job` would still return 404 here while having created the job row
+        and, with it, the billable build this check exists to prevent."""
+        response, config, _table, invoke = build_prototype(
+            {'feedback': 'Make it admin-facing', 'base_prototype_id': 'proto_nope'},
+        )
+
+        assert response['statusCode'] == 404
+        assert 'base_prototype_id' in json.loads(response['body'])['error']
+        assert config is None
+        invoke.assert_not_called()
+
+    def test_another_projects_prototype_is_a_404(self, build_prototype):
+        """`proto_other` is a real prototype, in `proj_2`. This is the fixture that
+        fails if the partition key is ever dropped from the lookup — without it,
+        "belongs to someone else" and "does not exist" are the same table."""
+        response, config, table, invoke = build_prototype(
+            {'feedback': 'Make it admin-facing', 'base_prototype_id': 'proto_other'},
+        )
+
+        assert response['statusCode'] == 404
+        assert 'base_prototype_id' in json.loads(response['body'])['error']
+        assert config is None
+        invoke.assert_not_called()
+        # Asserted on the key as well: the id never addresses another partition.
+        keys = [call.kwargs.get('Key', {}) for call in table.get_item.call_args_list]
+        assert keys, 'expected at least one keyed read'
+        assert {k.get('pk') for k in keys} == {f'PROJECT#{PROJECT}'}
+
+    def test_a_prd_id_offered_as_a_base_prototype_is_a_404(self, build_prototype):
+        """`prd_1` is a real document in this project, just not a prototype. The
+        `sk` prefix is what separates the two, so this is the fixture that fails if
+        the `PROTOTYPE#` prefix is ever dropped from the lookup."""
+        response, config, _table, invoke = build_prototype(
+            {'feedback': 'Make it admin-facing', 'base_prototype_id': 'prd_1'},
+        )
+
+        assert response['statusCode'] == 404
+        assert 'base_prototype_id' in json.loads(response['body'])['error']
+        assert config is None
+        invoke.assert_not_called()
+
+    def test_an_unknown_prototype_is_a_404_even_without_feedback(self, build_prototype):
+        """The check does not hang off `feedback`. An id that is sent is an id that
+        is claimed, so it is resolved whenever it is supplied."""
+        response, config, _table, invoke = build_prototype({'base_prototype_id': 'proto_nope'})
+
+        assert response['statusCode'] == 404
+        assert 'base_prototype_id' in json.loads(response['body'])['error']
+        assert config is None
+        invoke.assert_not_called()
+
+    @pytest.mark.parametrize('value', [
+        pytest.param(['proto_1'], id='list'),
+        pytest.param({'id': 'proto_1'}, id='object'),
+        pytest.param(7, id='number'),
+        pytest.param(True, id='bool'),
+    ])
+    def test_a_non_string_base_prototype_id_is_a_400(self, build_prototype, value):
+        response, config, _table, invoke = build_prototype({'base_prototype_id': value})
+
+        assert response['statusCode'] == 400
+        assert 'base_prototype_id' in json.loads(response['body'])['error']
+        assert config is None
+        invoke.assert_not_called()
+
+    def test_an_absurdly_long_base_prototype_id_is_a_400_not_a_500(self, build_prototype):
+        response, config, table, invoke = build_prototype({'base_prototype_id': 'x' * 5000})
+
+        assert response['statusCode'] == 400
+        assert 'base_prototype_id' in json.loads(response['body'])['error']
+        assert config is None
+        invoke.assert_not_called()
+        # Rejected before the key was ever built.
+        assert not any(
+            'x' * 5000 in str(call.kwargs.get('Key', {}))
+            for call in table.get_item.call_args_list
+        )
+
+    @pytest.mark.parametrize('body, label', [
+        pytest.param({}, 'absent', id='absent'),
+        pytest.param({'base_prototype_id': None}, 'null', id='null'),
+        pytest.param({'base_prototype_id': ''}, 'blank', id='blank'),
+        pytest.param({'base_prototype_id': '   '}, 'whitespace', id='whitespace'),
+    ])
+    def test_not_naming_a_base_prototype_still_builds(self, build_prototype, body, label):
+        """Every build that is not a revision sends one of these, and all of them
+        must keep meaning "not a revision" rather than "prototype ''"."""
+        response, config, _table, invoke = build_prototype({'title': 'Prototype', **body})
+
+        assert response['statusCode'] == 200, label
+        assert config['base_prototype_id'] is None
+        invoke.assert_called_once()
