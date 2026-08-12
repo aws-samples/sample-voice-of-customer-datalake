@@ -254,6 +254,24 @@ export const projectsApi = {
     // this feedback while still honoring the PRD/PR-FAQ.
     feedback?: string;
     base_prototype_id?: string;
+    // Which documents to build from. Omitted or '' means the newest of that type,
+    // which is what every caller did before these existed. An id that does not
+    // name a document of that type IN THIS PROJECT is rejected with a 4xx — the
+    // API deliberately does not fall back to the newest, because a build against
+    // a document the user did not choose is invisible in the result.
+    source_prd_id?: string;
+    source_prfaq_id?: string;
+    // Optional extra grounding, chosen per build rather than remembered per
+    // project. Omitted means today's behaviour exactly: the generator adds a
+    // prompt section only for what is asked for.
+    use_product_context?: boolean;
+    // `selected_research_ids` is only read when `use_research` is true, and it is
+    // research-only on purpose — the shared reference-document path keeps just the
+    // first three of a selection, and research sorts last, so a general picker
+    // drops exactly the thing this field exists to include. Ids are validated
+    // against `RESEARCH#{id}` in this project; one that names nothing is a 4xx.
+    use_research?: boolean;
+    selected_research_ids?: string[];
   }) =>
     fetchApi<{
       success: boolean;

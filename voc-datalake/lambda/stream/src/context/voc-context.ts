@@ -4,6 +4,8 @@
  */
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
+import { getLanguageInstruction } from './language.js';
+import type { SupportedLanguage } from './language.js';
 
 const SENTIMENT_LABELS = ['positive', 'negative', 'neutral', 'mixed'] as const;
 
@@ -102,18 +104,6 @@ async function getConfiguredCategories(
   return [];
 }
 
-function getLanguageInstruction(lang?: string): string {
-  if (!lang || lang === 'en') return '';
-  const names: Record<string, string> = {
-    es: 'Spanish', fr: 'French', de: 'German', pt: 'Portuguese',
-    ja: 'Japanese', zh: 'Chinese', ko: 'Korean', it: 'Italian',
-    nl: 'Dutch', ru: 'Russian', ar: 'Arabic', hi: 'Hindi',
-    sv: 'Swedish', pl: 'Polish', tr: 'Turkish',
-  };
-  const name = names[lang] ?? lang;
-  return `IMPORTANT: You MUST respond entirely in ${name} (${lang}). All text, headings, labels, and explanations must be in ${name}.`;
-}
-
 async function fetchCategoryCounts(
   docClient: DynamoDBDocumentClient,
   aggregatesTable: string,
@@ -129,7 +119,7 @@ async function fetchCategoryCounts(
   return counts.slice(0, 5);
 }
 
-function buildSystemPrompt(responseLanguage?: string): string {
+function buildSystemPrompt(responseLanguage?: SupportedLanguage): string {
   const base = `You are a Voice of the Customer (VoC) analytics assistant. You help analyze customer feedback data and provide actionable insights.
 
 You have access to two tools:
@@ -200,7 +190,7 @@ export async function buildVocChatContext(
     context?: string;
     days?: number;
     date_basis?: 'imported' | 'review';
-    response_language?: string;
+    response_language?: SupportedLanguage;
   },
 ): Promise<VocChatContext> {
   const message = body.message;

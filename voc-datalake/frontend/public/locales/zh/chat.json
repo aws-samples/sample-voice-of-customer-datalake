@@ -24,6 +24,7 @@
     "reasoning": "推理",
     "relatedFeedback": "相关反馈："
   },
+  "messageTooLong": "消息过长。请缩短至 {{max}} 个字符以内。",
   "showHistory": "显示历史记录",
   "sidebar": {
     "clearAll": "清除所有对话",

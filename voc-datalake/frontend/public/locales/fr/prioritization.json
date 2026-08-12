@@ -17,6 +17,14 @@
     "wrongTypeDescription": "Vos projets contiennent des documents, mais aucun PRD ni PR/FAQ. Ouvrez un projet et générez un PRD ou un PR/FAQ pour l'évaluer ici.",
     "wrongTypeTitle": "Aucun document évaluable"
   },
+  "evidence": {
+    "avgRating": "Note moyenne",
+    "noLinkedForm": "Aucun formulaire de retour n'est lié à ce document.",
+    "noRatings": "Aucune note recueillie",
+    "submissions": "Réponses",
+    "title": "Retours recueillis",
+    "unavailable": "Notes indisponibles"
+  },
   "framework": {
     "description": "Évaluez chaque document sur : <strong>Impact</strong>, <strong>Délai de mise sur le marché</strong>, <strong>Adéquation stratégique</strong> et <strong>Confiance</strong>.",
     "title": "Cadre de priorisation"

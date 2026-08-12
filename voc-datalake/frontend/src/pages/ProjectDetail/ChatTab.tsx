@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStreamChat } from '../../hooks/useStreamChat'
+import { resolvePersonaSelection } from './personaSelection'
 import { useProjectChatStore } from '../../store/projectChatStore'
 import {
   ChatMessageBubble,
@@ -212,17 +213,15 @@ export default function ChatTab({
     onDocumentChanged,
   })
 
-  const resolvePersonaIds = useCallback((input: string) => {
-    const hasAtAll = /(?:^|\s)@all(?:\s|$)/i.test(input)
-    const roundtable = mentions.isRoundtable || (hasAtAll && personas.length >= 2)
-    const ids = roundtable && mentions.selectedPersonaIds.length === 0
-      ? personas.map((p) => p.persona_id)
-      : mentions.selectedPersonaIds
-    return {
-      isRoundtable: roundtable,
-      selectedPersonaIds: ids,
-    }
-  }, [mentions.isRoundtable, mentions.selectedPersonaIds, personas])
+  // The `@all` expansion is clamped to what the stream Lambda accepts — see
+  // resolvePersonaSelection. Known residue: when it clamps, the UI does not say
+  // so, because MentionContextBar renders nothing for the @all case.
+  const resolvePersonaIds = useCallback((input: string) => resolvePersonaSelection(
+    input,
+    personas.map((p) => p.persona_id),
+    mentions.selectedPersonaIds,
+    mentions.isRoundtable,
+  ), [mentions.isRoundtable, mentions.selectedPersonaIds, personas])
 
   const handleSend = useCallback(() => {
     if (chatInput.trim() === '' || isStreaming) return

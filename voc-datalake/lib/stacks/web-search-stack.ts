@@ -2,8 +2,8 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as bedrockagentcore from 'aws-cdk-lib/aws-bedrockagentcore';
 import { Construct } from 'constructs';
-import { uniqueName } from '../utils/naming';
 import { BedrockModelAccess, AnthropicUseCaseConfig } from './bedrock-access-stack';
+import { VocStack, VocStackProps } from '../utils/voc-stack';
 
 /**
  * VocWebSearchStack — the us-east-1 AI-enablement stack. Two independent
@@ -47,7 +47,7 @@ import { BedrockModelAccess, AnthropicUseCaseConfig } from './bedrock-access-sta
  * Cost note: Web Search invocations are billed at $7 per 1,000 queries.
  * The feature is opt-in per request in both UIs.
  */
-export interface VocWebSearchStackProps extends cdk.StackProps {
+export interface VocWebSearchStackProps extends VocStackProps {
   /**
    * Create the AgentCore Gateway half. When false, the gateway, its role and
    * its target are not synthesized at all and the `gateway*` properties are
@@ -76,7 +76,7 @@ export interface VocWebSearchStackProps extends cdk.StackProps {
   skipUseCaseSubmission?: boolean;
 }
 
-export class VocWebSearchStack extends cdk.Stack {
+export class VocWebSearchStack extends VocStack {
   /** Undefined when `deployWebSearch` is false. */
   public readonly gatewayUrl?: string;
   public readonly gatewayArn?: string;
@@ -130,7 +130,7 @@ export class VocWebSearchStack extends cdk.Stack {
     });
 
     const gateway = new bedrockagentcore.CfnGateway(this, 'WebSearchGateway', {
-      name: uniqueName('voc-web-search'),
+      name: this.uniqueName('voc-web-search'),
       protocolType: 'MCP',
       // Inbound auth: callers (chat stream + research Lambdas) sign requests
       // with SigV4 and are authorized via bedrock-agentcore:InvokeGateway.

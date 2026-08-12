@@ -117,6 +117,14 @@
     "viewDetails": "Ver detalles",
     "webScraper": "Recolector web"
   },
+  "formQrCode": {
+    "accessibleName": "Código QR del formulario de opinión {{formName}}",
+    "caption": "Escanea para abrir este formulario en el móvil",
+    "close": "Cerrar",
+    "show": "Mostrar código QR",
+    "title": "Código QR",
+    "unavailable": "Código QR no disponible hasta que se configure el endpoint de la API en Configuración"
+  },
   "personaExport": {
     "copied": "¡Copiado!",
     "copyMarkdown": "Copiar como Markdown",
@@ -124,6 +132,13 @@
     "downloadPDF": "Descargar como PDF",
     "downloadTXT": "Descargar como TXT",
     "exportPersona": "Exportar persona"
+  },
+  "prototypeLink": {
+    "downloadHtml": "Descargar .html",
+    "linkExpired": "Enlace caducado: vuelve a abrir el proyecto",
+    "linkExpires": "Enlace válido hasta las {{time}}",
+    "linkExpiryHint": "vinculado a tu sesión, no es un enlace para compartir",
+    "openNewTab": "Abrir en una pestaña nueva"
   },
   "s3Import": {
     "allSources": "Todas las fuentes",

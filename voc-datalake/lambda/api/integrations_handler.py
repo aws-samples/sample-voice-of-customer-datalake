@@ -21,13 +21,37 @@ SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
 AWS_ACCOUNT_ID = os.environ.get("DEPLOY_ACCOUNT_ID", os.environ.get("AWS_ACCOUNT_ID", ""))
 AWS_REGION = os.environ.get("DEPLOY_REGION", os.environ.get("AWS_REGION", ""))
 
+# Name PATTERNS handed down by CDK, e.g.
+# "stg-voc-ingestor-{source}-123456789012-us-east-1". Both routes below address
+# a PER-PLUGIN resource, so a single fixed name will not do — but resolving the
+# pattern is infrastructure's job (as with WEBSCRAPER_FUNCTION_NAME in
+# scrapers_handler.py), not this handler's. Set only where the derivation below
+# would be wrong, so this handler never needs to know a deployment prefix
+# exists: prefer the pattern when given one, otherwise derive as before.
+INGESTOR_FUNCTION_NAME_PATTERN = os.environ.get("INGESTOR_FUNCTION_NAME_PATTERN", "")
+INGEST_SCHEDULE_RULE_NAME_PATTERN = os.environ.get("INGEST_SCHEDULE_RULE_NAME_PATTERN", "")
+
+SOURCE_PLACEHOLDER = "{source}"
+
 app = create_api_resolver()
 
 
+def _deploy_suffix() -> str:
+    return f"-{AWS_ACCOUNT_ID}-{AWS_REGION}" if AWS_ACCOUNT_ID and AWS_REGION else ""
+
+
 def _build_rule_name(source: str) -> str:
-    """Build EventBridge rule name matching CDK's uniqueName() pattern."""
-    suffix = f"-{AWS_ACCOUNT_ID}-{AWS_REGION}" if AWS_ACCOUNT_ID and AWS_REGION else ""
-    return f"voc-ingest-{source}-schedule{suffix}"
+    """Build the EventBridge rule name for a source's schedule."""
+    if INGEST_SCHEDULE_RULE_NAME_PATTERN:
+        return INGEST_SCHEDULE_RULE_NAME_PATTERN.replace(SOURCE_PLACEHOLDER, source)
+    return f"voc-ingest-{source}-schedule{_deploy_suffix()}"
+
+
+def _build_ingestor_function_name(source: str) -> str:
+    """Build the ingestor Lambda function name for a source."""
+    if INGESTOR_FUNCTION_NAME_PATTERN:
+        return INGESTOR_FUNCTION_NAME_PATTERN.replace(SOURCE_PLACEHOLDER, source)
+    return f"voc-ingestor-{source}{_deploy_suffix()}"
 
 
 @app.get("/integrations/status")
@@ -246,9 +270,7 @@ def run_source(source: str):
     from datetime import datetime, timezone
     from shared.tables import get_aggregates_table
 
-    # Function name follows uniqueName() pattern: voc-ingestor-{id}-{account}-{region}
-    suffix = f"-{AWS_ACCOUNT_ID}-{AWS_REGION}" if AWS_ACCOUNT_ID and AWS_REGION else ""
-    function_name = f"voc-ingestor-{source}{suffix}"
+    function_name = _build_ingestor_function_name(source)
 
     execution_id = f"run_{source}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     payload: dict = {"manual_trigger": True, "execution_id": execution_id}

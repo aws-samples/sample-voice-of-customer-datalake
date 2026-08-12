@@ -32,6 +32,31 @@ export type OverviewStep = 'product' | 'personas' | 'research' | 'documents' | '
 /** Remix needs two documents to combine; below that its card stays disabled. */
 export const REMIX_MIN_DOCUMENTS = 2
 
+/**
+ * How many research reports one prototype build may name.
+ *
+ * The same number as `MAX_SELECTED_RESEARCH_IDS` in
+ * `lambda/api/projects_handler.py`, which enforces it — each id costs one keyed
+ * read there, so an unbounded list turns one request into N of them. Kept in
+ * lockstep by `lambda/api/test/test_research_selection_bound_lockstep.py`: a UI
+ * that lets a user pick more than the API accepts fails on submit, after the
+ * choice was made and with nothing said about which report to give up.
+ *
+ * That test reads THIS LINE as source text, matching `^export const
+ * MAX_SELECTED_RESEARCH_IDS = <digits>` — it does not import the module, so that
+ * it needs neither a bundler nor the Python import graph. So the declaration has
+ * to stay one line starting at column 0 with a bare integer literal: fold it into
+ * an object, compute it, or add a second assignment, and the test fails loudly
+ * (it asserts exactly one match) rather than passing vacuously. Changing the
+ * shape here means updating the regex there.
+ *
+ * Here rather than beside the request type in `projectsApi.ts` for a mundane
+ * reason worth writing down: that module is mocked with explicit partial objects
+ * by a dozen test files, so a new named export on it makes every one of them
+ * throw. This module is where the option lists are derived and is mocked nowhere.
+ */
+export const MAX_SELECTED_RESEARCH_IDS = 10
+
 export interface OverviewStepState {
   /** Position in the sequence, 1-based, as shown on the card. */
   readonly position: number
@@ -64,17 +89,44 @@ export interface OverviewStepState {
   readonly missingUpstream: boolean
 }
 
+/** One document a prototype build could be aimed at. */
+export interface PrototypeSourceOption {
+  readonly document_id: string
+  readonly title: string
+  readonly created_at: string
+}
+
 /**
- * Which of the two prototype source documents exist.
+ * Which of the two prototype source documents exist, and which specific ones the
+ * build could read.
  *
  * `steps.prototype.missingUpstream` answers "can a prototype be built at all",
- * which is all the card needs. This answers "which one is missing", which only the
- * confirm wording needs — derived here rather than recomputed by the component so
- * the two answers cannot drift apart.
+ * which is all the card needs. This answers "which one is missing", which the
+ * confirm wording needs, and "which are the candidates", which the source picker
+ * needs — all derived here rather than recomputed by the component so they cannot
+ * drift apart.
+ *
+ * Both lists are NEWEST FIRST, so `[0]` is the default the backend would pick on
+ * its own. That ordering is load-bearing rather than cosmetic: the picker's
+ * default selection and the backend's latest-of-type must name the same document,
+ * or the dialog would state one thing and the build do another.
  */
 export interface PrototypeSources {
   readonly hasPrd: boolean
   readonly hasPrfaq: boolean
+  readonly prdOptions: ReadonlyArray<PrototypeSourceOption>
+  readonly prfaqOptions: ReadonlyArray<PrototypeSourceOption>
+  /**
+   * The research reports the build can additionally be told to read, newest
+   * first — the optional third input, alongside the two required ones.
+   *
+   * A separate list rather than entries in a combined document selection: the
+   * shared reference-document path keeps only the first three of a selection and
+   * research sorts last, so a general picker drops exactly what this list exists
+   * to offer. Kept distinct here for the same reason `DataSourceSteps` keeps
+   * `selectedResearchIds` apart from `selectedDocumentIds`.
+   */
+  readonly researchOptions: ReadonlyArray<PrototypeSourceOption>
 }
 
 export interface OverviewState {
@@ -104,9 +156,12 @@ export function deriveOverviewState({
   personas, documents, productContext,
 }: DeriveInput): OverviewState {
   const filled = productContext == null ? undefined : countFilledProductContextFields(productContext)
-  const researchCount = documents.filter((d) => d.document_type === 'research').length
-  const prdCount = documents.filter((d) => d.document_type === 'prd').length
-  const prfaqCount = documents.filter((d) => d.document_type === 'prfaq').length
+  const researchOptions = sourceOptions(documents, 'research')
+  const researchCount = researchOptions.length
+  const prdOptions = sourceOptions(documents, 'prd')
+  const prfaqOptions = sourceOptions(documents, 'prfaq')
+  const prdCount = prdOptions.length
+  const prfaqCount = prfaqOptions.length
   const prototypeCount = documents.filter((d) => d.document_type === 'prototype').length
 
   const steps = {
@@ -159,7 +214,13 @@ export function deriveOverviewState({
   return {
     steps,
     nextStep: pickNextStep(steps, filled),
-    prototypeSources: { hasPrd: prdCount > 0, hasPrfaq: prfaqCount > 0 },
+    prototypeSources: {
+      hasPrd: prdCount > 0,
+      hasPrfaq: prfaqCount > 0,
+      prdOptions,
+      prfaqOptions,
+      researchOptions,
+    },
   }
 }
 
@@ -190,4 +251,36 @@ function pickNextStep(
     ? ['personas', 'research', 'documents', 'prototype']
     : ['product', 'personas', 'research', 'documents', 'prototype']
   return candidates.find((step) => !steps[step].hasOutput) ?? null
+}
+
+/**
+ * The documents of one type a prototype build could be aimed at, newest first.
+ *
+ * The sort mirrors the backend's newest-of-type rule exactly — `created_at`
+ * descending, ties broken on `document_id` descending — and that agreement is the
+ * whole point. The picker offers `[0]` as its default and the request then names
+ * it explicitly, so if the two orderings disagreed the dialog would state one
+ * document and the build read another, which is the defect this feature exists to
+ * remove rather than relocate.
+ *
+ * A tie is not hypothetical: the live project this was built against has four
+ * prototypes sharing one date, because ids carry a whole-second timestamp.
+ */
+function sourceOptions(
+  documents: ReadonlyArray<ProjectDocument>,
+  documentType: 'prd' | 'prfaq' | 'research',
+): ReadonlyArray<PrototypeSourceOption> {
+  return documents
+    .filter((d) => d.document_type === documentType)
+    .map((d) => ({ document_id: d.document_id, title: d.title, created_at: d.created_at }))
+    .sort((a, b) => (
+      a.created_at === b.created_at
+        ? compareDescending(a.document_id, b.document_id)
+        : compareDescending(a.created_at, b.created_at)
+    ))
+}
+
+function compareDescending(a: string, b: string): number {
+  if (a === b) return 0
+  return a < b ? 1 : -1
 }
