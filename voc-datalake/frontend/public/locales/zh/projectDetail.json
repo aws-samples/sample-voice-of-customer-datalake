@@ -93,6 +93,7 @@
       "feedbackHeading": "根据反馈修订原型",
       "feedbackHint": "描述要修改的内容。PRD/PR-FAQ 仍然有效；原型将以您的反馈为中心重新调整（例如“展示管理员视角”）。",
       "feedbackPlaceholder": "例如：把这个改成管理员仪表板视图 — 显示审批、用户管理和指标，而不是最终用户界面。",
+      "feedbackRebased": "此原型所基于的文档已不存在，因此修订将使用该类型的最新文档。",
       "feedbackSubmit": "重新生成",
       "feedbackTitle": "提供反馈以重新生成此原型",
       "needsDocs": "请先创建 PRD 或 PR-FAQ 以启用原型构建",

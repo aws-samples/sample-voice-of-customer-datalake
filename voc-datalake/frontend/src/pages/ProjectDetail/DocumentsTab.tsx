@@ -155,6 +155,7 @@ export default function DocumentsTab({
                   // document it would have preserved is gone.
                   sourcePrdId={stillPresent(selectedDoc.source_prd_id, documents)}
                   sourcePrfaqId={stillPresent(selectedDoc.source_prfaq_id, documents)}
+                  sourcesDropped={hasDroppedSource(selectedDoc, documents)}
                   onJobStarted={onJobStarted}
                 />
               ) : (
@@ -189,7 +190,7 @@ export default function DocumentsTab({
 type TFunc = (key: string, opts?: Record<string, unknown>) => string
 
 function PrototypeFeedbackButton({
-  projectId, basePrototypeId, title, sourcePrdId, sourcePrfaqId, onJobStarted, t,
+  projectId, basePrototypeId, title, sourcePrdId, sourcePrfaqId, sourcesDropped, onJobStarted, t,
 }: {
   readonly projectId: string
   readonly basePrototypeId: string
@@ -197,6 +198,13 @@ function PrototypeFeedbackButton({
   /** The base prototype's own sources, so a revision keeps the spec it revises. */
   readonly sourcePrdId: string
   readonly sourcePrfaqId: string
+  /**
+   * A source this prototype was built from has been deleted, so the revision will
+   * read the latest of that type instead. Said out loud rather than left silent:
+   * the fallback is justified, but an unexplained change of spec is the behaviour
+   * this whole flow exists to remove.
+   */
+  readonly sourcesDropped: boolean
   /** Tells the Background Jobs panel to pick the revision up. */
   readonly onJobStarted?: () => void
   readonly t: TFunc
@@ -269,6 +277,11 @@ function PrototypeFeedbackButton({
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-base font-semibold mb-1">{t('documents.prototype.feedbackHeading', { defaultValue: 'Revise prototype with feedback' })}</h3>
         <p className="text-xs text-gray-500 mb-3">{t('documents.prototype.feedbackHint', { defaultValue: 'Describe what to change. The PRD/PR-FAQ stays in effect; the prototype is re-centered on your feedback (e.g. “show the admin’s perspective”).' })}</p>
+        {sourcesDropped ? (
+          <p data-testid="revision-rebased-note" className="text-xs text-amber-700 mb-3">
+            {t('documents.prototype.feedbackRebased')}
+          </p>
+        ) : null}
         <textarea
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
@@ -352,7 +365,8 @@ function LegacyHtmlActions({
 // these must stay anchors is documented there rather than rediscovered per page.
 
 function PrototypeView({
-  projectId, documentId, html, url, title, prototypeFormat, sourcePrdId, sourcePrfaqId, onJobStarted,
+  projectId, documentId, html, url, title, prototypeFormat, sourcePrdId, sourcePrfaqId,
+  sourcesDropped, onJobStarted,
 }: {
   readonly projectId: string
   readonly documentId: string
@@ -363,6 +377,8 @@ function PrototypeView({
   /** Passed through to a revision so it inherits this prototype's sources. */
   readonly sourcePrdId: string
   readonly sourcePrfaqId: string
+  /** One of those sources has been deleted, so the revision cannot inherit it. */
+  readonly sourcesDropped: boolean
   readonly onJobStarted?: () => void
 }) {
   const { t } = useTranslation('projectDetail')
@@ -403,6 +419,7 @@ function PrototypeView({
               title={title}
               sourcePrdId={sourcePrdId}
               sourcePrfaqId={sourcePrfaqId}
+              sourcesDropped={sourcesDropped}
               onJobStarted={onJobStarted}
               t={t}
             />
@@ -608,6 +625,23 @@ function stillPresent(
 ): string {
   if (documentId == null || documentId === '') return ''
   return documents.some((d) => d.document_id === documentId) ? documentId : ''
+}
+
+/**
+ * True when this prototype names a source document that is no longer in the
+ * project, so a revision cannot keep the spec it was built from.
+ *
+ * The fallback is justified — the document is gone — but leaving it unsaid would
+ * make it a silent substitution, which is the exact class of behaviour the source
+ * picker exists to remove. So the revision panel says it out loud.
+ */
+function hasDroppedSource(
+  doc: ProjectDocument,
+  documents: readonly ProjectDocument[],
+): boolean {
+  return ([doc.source_prd_id, doc.source_prfaq_id]).some(
+    (id) => id != null && id !== '' && stillPresent(id, documents) === '',
+  )
 }
 
 // ── Succession: what this document replaces ──────────────────────────────────

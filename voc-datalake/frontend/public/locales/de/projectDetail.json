@@ -93,6 +93,7 @@
       "feedbackHeading": "Prototyp mit Feedback überarbeiten",
       "feedbackHint": "Beschreiben Sie, was geändert werden soll. PRD/PR-FAQ bleiben maßgeblich; der Prototyp wird auf Ihr Feedback ausgerichtet (z. B. „aus Admin-Sicht zeigen“).",
       "feedbackPlaceholder": "z. B. Ändere dies zur Admin-Dashboard-Ansicht — zeige Freigaben, Nutzerverwaltung und Kennzahlen statt der Endnutzer-Screens.",
+      "feedbackRebased": "Ein Dokument, aus dem dieser Prototyp erstellt wurde, existiert nicht mehr. Die Überarbeitung verwendet daher das neueste Dokument dieses Typs.",
       "feedbackSubmit": "Neu generieren",
       "feedbackTitle": "Feedback geben, um diesen Prototyp neu zu generieren",
       "needsDocs": "Erstellen Sie zuerst ein PRD oder ein PR-FAQ, um die Prototyp-Erstellung zu aktivieren",

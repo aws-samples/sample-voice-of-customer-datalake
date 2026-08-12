@@ -257,4 +257,34 @@ describe('a prototype stays revisable after its source is deleted', () => {
     // not all-or-nothing, so a deleted PRD does not also discard a live PR/FAQ.
     expect(body.source_prfaq_id).toBe('prfaq_still_here')
   })
+
+  it('says so, rather than re-basing the revision silently', async () => {
+    // Review round 2: the fallback is justified, but an unexplained change of spec
+    // is the behaviour this whole flow exists to remove. So the panel says it.
+    const user = userEvent.setup()
+    const orphaned = doc({
+      document_id: 'proto_orphan',
+      prototype_format: 'html',
+      source_prd_id: 'prd_deleted_since',
+    })
+    renderTab([orphaned], orphaned)
+
+    await user.click(screen.getByRole('button', { name: /revise with feedback/i }))
+
+    expect(screen.getByTestId('revision-rebased-note')).toHaveTextContent(/no longer exists/i)
+  })
+
+  it('says nothing when every inherited source is still present', async () => {
+    const user = userEvent.setup()
+    const intact = doc({
+      document_id: 'proto_intact',
+      prototype_format: 'html',
+      source_prd_id: 'prd_here',
+    })
+    renderTab([intact, doc({ document_id: 'prd_here', document_type: 'prd', title: 'Spec' })], intact)
+
+    await user.click(screen.getByRole('button', { name: /revise with feedback/i }))
+
+    expect(screen.queryByTestId('revision-rebased-note')).not.toBeInTheDocument()
+  })
 })

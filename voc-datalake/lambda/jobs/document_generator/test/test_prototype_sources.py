@@ -32,34 +32,41 @@ PRD_NEW = {'document_id': 'aa_prd_new', 'content': 'NEW PRD body', 'created_at':
 NO_DOCUMENTS = {'Items': []}
 
 
-def _wire(mock_dynamodb, *, queries, documents=None):
+def _wire(mock_dynamodb, *, prd_pages=(), prfaq_pages=(), documents=None):
     """
     Wire the projects table.
 
-    `queries` are the successive `query` responses **in call order**: the PRD
-    lookup first, then the PR/FAQ lookup, and one extra response per additional
-    page. Order-dependent on purpose. A single shared `return_value` answers the
-    PR/FAQ lookup with PRDs, which lets a test assert "the prompt holds the new
-    PRD" and pass while the prompt is nonsense — that is exactly the mistake this
-    helper exists to prevent. It is also strict: an unexpected extra `query` runs
-    the list out and fails, which is how the aimed tests show they never scan.
+    Pages are supplied PER TYPE, so the helper knows which `sk` prefix each item
+    keys under. A flat list forced it to guess, and it guessed `PRD#` for
+    everything — harmless while every PR/FAQ page was empty, but the first test to
+    give the PR/FAQ query real items would have seen the id resolve and then
+    `_document_by_id('PRFAQ#…')` return nothing: a silently source-less build that
+    reads like a product bug (found in review round 2).
 
-    `documents` maps an `sk` to the item a keyed read returns — what an aimed
-    build uses.
+    `query.side_effect` is assembled PRD-then-PR/FAQ, matching the production call
+    order. Order-dependence is deliberate — one shared `return_value` answers the
+    PR/FAQ lookup with PRDs, which lets a test assert "the prompt holds the new
+    PRD" and pass while the prompt is nonsense. It is also strict: an unexpected
+    extra `query` runs the list out and fails, which is how the aimed tests show
+    they never scan.
+
+    Every document offered to `query` is ALSO reachable by key, because the
+    newest-of-type read ranks over a projection and then fetches the winner via
+    `_document_by_id`. Explicit `documents` entries win, which is what the aimed
+    tests use.
+
+    `documents` maps an `sk` to the item a keyed read returns.
     """
     table = mock_dynamodb['table']
-    table.query.side_effect = list(queries)
+    table.query.side_effect = [*prd_pages, *prfaq_pages]
 
-    # Every document offered to `query` is ALSO reachable by key: the
-    # newest-of-type read ranks over a projection and then fetches the winner via
-    # `_document_by_id`, so a fixture that only answered `query` would resolve
-    # nothing. Explicit `documents` entries win, which is what the aimed tests use.
     by_sk = {}
-    for page in queries:
-        for item in page.get('Items') or []:
-            document_id = item.get('document_id')
-            if document_id:
-                by_sk[f'PRD#{document_id}'] = item
+    for prefix, pages in (('PRD#', prd_pages), ('PRFAQ#', prfaq_pages)):
+        for page in pages:
+            for item in page.get('Items') or []:
+                document_id = item.get('document_id')
+                if document_id:
+                    by_sk[f'{prefix}{document_id}'] = item
     by_sk.update(documents or {})
 
     def get_item(Key=None, **kwargs):
@@ -98,7 +105,7 @@ class TestNewestDocumentOfAType:
         """The regression the old `sk`-ordered window hid: here the newest
         document has the alphabetically LOWEST id, so anything ranking by id or
         by `sk` reads the stale PRD instead."""
-        _wire(mock_dynamodb, queries=[{'Items': [PRD_OLD, PRD_NEW]}, NO_DOCUMENTS])
+        _wire(mock_dynamodb, prd_pages=[{'Items': [PRD_OLD, PRD_NEW]}], prfaq_pages=[NO_DOCUMENTS])
         mock_converse.return_value = HTML
 
         _run(sample_job_event, lambda_context)
@@ -113,11 +120,14 @@ class TestNewestDocumentOfAType:
         """The newest PRD is on page two. The previous `Limit=20` read stopped at
         one page, so this is the direct fail-on-revert for removing the cap: put
         the cap back and the build silently uses the older document."""
-        _wire(mock_dynamodb, queries=[
-            {'Items': [PRD_OLD], 'LastEvaluatedKey': {'pk': 'PROJECT#p', 'sk': 'PRD#zz_prd_old'}},
-            {'Items': [PRD_NEW]},
-            NO_DOCUMENTS,
-        ])
+        _wire(
+            mock_dynamodb,
+            prd_pages=[
+                {'Items': [PRD_OLD], 'LastEvaluatedKey': {'pk': 'PROJECT#p', 'sk': 'PRD#zz_prd_old'}},
+                {'Items': [PRD_NEW]},
+            ],
+            prfaq_pages=[NO_DOCUMENTS],
+        )
         mock_converse.return_value = HTML
 
         _run(sample_job_event, lambda_context)
@@ -131,13 +141,14 @@ class TestNewestDocumentOfAType:
         """Two documents saved in the same second must still resolve to one
         answer, and to the same one the `sk`-ordered read gave: highest id."""
         same_time = '2026-06-01T00:00:00Z'
-        _wire(mock_dynamodb, queries=[
-            {'Items': [
+        _wire(
+            mock_dynamodb,
+            prd_pages=[{'Items': [
                 {'document_id': 'prd_a', 'content': 'A body', 'created_at': same_time},
                 {'document_id': 'prd_b', 'content': 'B body', 'created_at': same_time},
-            ]},
-            NO_DOCUMENTS,
-        ])
+            ]}],
+            prfaq_pages=[NO_DOCUMENTS],
+        )
         mock_converse.return_value = HTML
 
         _run(sample_job_event, lambda_context)
@@ -156,7 +167,7 @@ class TestNewestDocumentOfAType:
         the read, so asking the database to sort by `sk` would only suggest the
         result depends on id format, which is the misreading that produced the bug.
         """
-        _wire(mock_dynamodb, queries=[{'Items': [PRD_OLD, PRD_NEW]}, NO_DOCUMENTS])
+        _wire(mock_dynamodb, prd_pages=[{'Items': [PRD_OLD, PRD_NEW]}], prfaq_pages=[NO_DOCUMENTS])
         mock_converse.return_value = HTML
 
         _run(sample_job_event, lambda_context)
@@ -168,7 +179,7 @@ class TestNewestDocumentOfAType:
     def test_no_documents_of_either_type_fails_the_job(
         self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
     ):
-        _wire(mock_dynamodb, queries=[NO_DOCUMENTS, NO_DOCUMENTS])
+        _wire(mock_dynamodb, prd_pages=[NO_DOCUMENTS], prfaq_pages=[NO_DOCUMENTS])
         mock_converse.return_value = HTML
 
         with pytest.raises(Exception, match='Document generation failed'):
@@ -191,7 +202,7 @@ class TestAimedBuild:
         """
         _wire(
             mock_dynamodb,
-            queries=[NO_DOCUMENTS],
+            prfaq_pages=[NO_DOCUMENTS],
             documents={'PRD#zz_prd_old': PRD_OLD},
         )
         mock_converse.return_value = HTML
@@ -218,7 +229,7 @@ class TestAimedBuild:
         the PR/FAQ lookup then ran the list out, and the job failed for that
         reason instead. The test passed under the mutation it exists to catch.
         """
-        _wire(mock_dynamodb, queries=[{'Items': [PRD_OLD, PRD_NEW]}, NO_DOCUMENTS], documents={})
+        _wire(mock_dynamodb, prd_pages=[{'Items': [PRD_OLD, PRD_NEW]}], prfaq_pages=[NO_DOCUMENTS], documents={})
         mock_converse.return_value = HTML
 
         with pytest.raises(Exception, match='Document generation failed'):
@@ -241,7 +252,7 @@ class TestAimedBuild:
         tautology: one mocked table has no other project to reach, so "another
         project's id" and "no such id" would be the same fixture.
         """
-        _wire(mock_dynamodb, queries=[], documents={'PRD#prd_x': PRD_NEW})
+        _wire(mock_dynamodb, documents={'PRD#prd_x': PRD_NEW})
         mock_converse.return_value = HTML
 
         with pytest.raises(Exception, match='Document generation failed'):
@@ -261,7 +272,6 @@ class TestAimedBuild:
         document, but a PR/FAQ, so asking for it as a PRD finds nothing."""
         _wire(
             mock_dynamodb,
-            queries=[],
             documents={'PRFAQ#prfaq_1': {'document_id': 'prfaq_1', 'content': 'PRFAQ body'}},
         )
         mock_converse.return_value = HTML
@@ -276,7 +286,7 @@ class TestAimedBuild:
     ):
         """Every caller that existed before this parameter sends nothing, and a
         blank field is not a choice, so both must stay exactly latest-of-each."""
-        _wire(mock_dynamodb, queries=[{'Items': [PRD_OLD, PRD_NEW]}, NO_DOCUMENTS], documents={})
+        _wire(mock_dynamodb, prd_pages=[{'Items': [PRD_OLD, PRD_NEW]}], prfaq_pages=[NO_DOCUMENTS], documents={})
         mock_converse.return_value = HTML
 
         _run(sample_job_event, lambda_context, source_prd_id='', source_prfaq_id=None)

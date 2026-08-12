@@ -426,6 +426,25 @@ def _document_by_id(projects_table, project_id: str, sk_prefix: str, document_id
     return resp.get('Item') or None
 
 
+def _document_id_of(item: dict) -> str:
+    """
+    A document's id, from the attribute or else from its sort key.
+
+    Every writer sets `document_id`, and a scan of the live table found 0 of 6
+    `PRD#`/`PRFAQ#` rows without it — so the `sk` fallback is defence in depth
+    rather than a fix for a known row. It earns its two lines because the ranking
+    read is PROJECTED: without `content` to fall back on, an item whose
+    `document_id` were somehow absent would simply be skipped, and the build would
+    quietly use an older document or report having none. `sk` cannot be absent —
+    it is the key.
+    """
+    document_id = item.get('document_id')
+    if document_id:
+        return str(document_id)
+    sk = str(item.get('sk') or '')
+    return sk.split('#', 1)[1] if '#' in sk else ''
+
+
 def _newest_document_id(projects_table, project_id: str, sk_prefix: str) -> str | None:
     """
     The id of the most recently created document of a type, decided over ALL of
@@ -452,14 +471,16 @@ def _newest_document_id(projects_table, project_id: str, sk_prefix: str) -> str 
     newest: tuple[str, str] | None = None
     params: dict = {
         'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with(sk_prefix),
-        # Both names contain an underscore, so neither can collide with a
-        # DynamoDB reserved word and no ExpressionAttributeNames are needed.
-        'ProjectionExpression': 'document_id, created_at',
+        # None of these names can collide with a DynamoDB reserved word (`sk` is
+        # not one, and the others contain an underscore), so no
+        # ExpressionAttributeNames are needed. `sk` is here only as the fallback
+        # source of the id — see `_document_id_of`.
+        'ProjectionExpression': 'sk, document_id, created_at',
     }
     while True:
         resp = projects_table.query(**params)
         for item in resp.get('Items') or []:
-            document_id = item.get('document_id')
+            document_id = _document_id_of(item)
             if not document_id:
                 continue
             rank = (str(item.get('created_at') or ''), str(document_id))

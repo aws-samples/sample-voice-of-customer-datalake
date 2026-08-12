@@ -71,6 +71,21 @@ describe('ordinalByType', () => {
     expect(ordinals.size).toBe(2)
   })
 
+  it('skips an entry with an id but no usable type', () => {
+    // Added in review round 2: the id-less case was covered, this one was not.
+    // Without the type guard such records all group under '', so unrelated
+    // malformed documents would share one sequence and inflate each other.
+    const ordinals = ordinalByType([
+      OLDER, NEWER,
+      { document_id: 'typeless_1', created_at: '2026-03-01T00:00:00Z' },
+      { document_id: 'typeless_2', document_type: 42, created_at: '2026-04-01T00:00:00Z' },
+    ])
+
+    expect(ordinals.size).toBe(2)
+    expect(ordinals.get('typeless_1')).toBeUndefined()
+    expect(ordinals.get('zz_prd_old')?.total).toBe(2)
+  })
+
   it('returns an empty map for no documents', () => {
     expect(ordinalByType([]).size).toBe(0)
   })

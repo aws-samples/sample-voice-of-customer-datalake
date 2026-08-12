@@ -93,6 +93,7 @@
       "feedbackHeading": "Revisar el prototipo con feedback",
       "feedbackHint": "Describe qué cambiar. El PRD/PR-FAQ sigue vigente; el prototipo se recentra en tu feedback (p. ej., «muestra la perspectiva del administrador»).",
       "feedbackPlaceholder": "p. ej., Cámbialo a la vista del panel de administración — muestra aprobaciones, gestión de usuarios y métricas en lugar de las pantallas de usuario final.",
+      "feedbackRebased": "Un documento a partir del cual se creó este prototipo ya no existe, por lo que la revisión usará el más reciente de ese tipo.",
       "feedbackSubmit": "Regenerar",
       "feedbackTitle": "Da feedback para regenerar este prototipo",
       "needsDocs": "Crea primero un PRD o un PR-FAQ para habilitar la creación del prototipo",

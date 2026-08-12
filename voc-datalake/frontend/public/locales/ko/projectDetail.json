@@ -93,6 +93,7 @@
       "feedbackHeading": "피드백으로 프로토타입 수정",
       "feedbackHint": "바꿀 내용을 적으세요. PRD/PR-FAQ는 그대로 반영되며, 피드백을 중심으로 프로토타입이 바뀍니다 (예: “관리자 관점으로 보여줘”).",
       "feedbackPlaceholder": "예: 이걸 관리자 대시보드 화면으로 바꿔줘 — 사용자 화면 대신 승인·사용자관리·지표를 보여줘.",
+      "feedbackRebased": "이 프로토타입의 원본 문서가 더 이상 존재하지 않으므로 수정에는 해당 유형의 최신 문서를 사용합니다.",
       "feedbackSubmit": "재생성",
       "feedbackTitle": "피드백을 주어 프로토타입을 재생성합니다",
       "needsDocs": "프로토타입 생성은 PRD 또는 PR-FAQ가 있어야 활성화됩니다",

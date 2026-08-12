@@ -93,6 +93,7 @@
       "feedbackHeading": "Revisar o protótipo com feedback",
       "feedbackHint": "Descreva o que mudar. O PRD/PR-FAQ continua valendo; o protótipo é recentrado no seu feedback (p. ex., “mostre a perspectiva do administrador”).",
       "feedbackPlaceholder": "p. ex., Mude isto para a visão do painel de administração — mostre aprovações, gestão de usuários e métricas em vez das telas de usuário final.",
+      "feedbackRebased": "Um documento a partir do qual este protótipo foi criado já não existe, por isso a revisão usará o mais recente desse tipo.",
       "feedbackSubmit": "Regenerar",
       "feedbackTitle": "Dê feedback para regenerar este protótipo",
       "needsDocs": "Crie primeiro um PRD ou um PR-FAQ para habilitar a criação do protótipo",
