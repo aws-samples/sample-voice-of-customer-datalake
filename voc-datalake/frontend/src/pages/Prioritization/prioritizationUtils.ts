@@ -74,14 +74,31 @@ export function getScore(scores: Record<string, PrioritizationScore>, docId: str
  * This is the single source of truth for which document types are scorable.
  * Keys are constrained to `ProjectDocument['document_type']`, so a typo or
  * stale entry is a compile error. Adding a new scorable type here automatically
- * propagates to `isScorable` and to the `DocumentTypeBadge` in `PRFAQRow`.
+ * propagates to `isScorable`, to the `DocumentTypeBadge` in `PRFAQRow`, and to
+ * the document select in `pages/FeedbackForms/ValidationLinkPicker`.
+ *
+ * `i18nKey` is namespace-QUALIFIED (`prioritization:…`) rather than relative,
+ * for two reasons. It is read through a `t` bound to another namespace — the
+ * validation-link picker's is `feedbackForms` — and a relative key would resolve
+ * against that namespace and render the raw path. And a bare `'docType.prd'` is
+ * invisible to `scripts/i18n-check.mjs`: keys held in data are only collected
+ * when they carry a namespace (see `extractDataHeldKeys`), so without the prefix
+ * these two are reported unused and become deletion candidates in a cleanup
+ * pass, leaving the badge and the select rendering `docType.prd`.
+ *
+ * The prefix is in the TYPE, not only in the values: as a plain `string` field,
+ * dropping it was a valid compile and only a test stood between that and raw key
+ * paths in the UI. `tsc` now rejects it at the definition, and the resolution
+ * gate in `prioritizationUtils.test.ts` remains the runtime check — vitest runs
+ * through esbuild and does not typecheck, so the type alone would not have
+ * failed a suite.
  */
 export const SCORABLE_TYPE_META: Partial<Record<ProjectDocument['document_type'], {
   readonly badgeColor: string
-  readonly i18nKey: string
+  readonly i18nKey: `prioritization:${string}`
 }>> = {
-  prd: { badgeColor: 'bg-blue-100 text-blue-700', i18nKey: 'docType.prd' },
-  prfaq: { badgeColor: 'bg-purple-100 text-purple-700', i18nKey: 'docType.prfaq' },
+  prd: { badgeColor: 'bg-blue-100 text-blue-700', i18nKey: 'prioritization:docType.prd' },
+  prfaq: { badgeColor: 'bg-purple-100 text-purple-700', i18nKey: 'prioritization:docType.prfaq' },
 }
 
 export function isScorable(doc: ProjectDocument): boolean {

@@ -75,6 +75,7 @@
     "validationDescription": "Indiquez éventuellement à quel projet — et à quel PRD ou PR/FAQ — se rapportent les retours de ce formulaire. Les notes recueillies apparaîtront alors à côté de ce document sur la page Priorisation. Laissez les deux champs vides pour un formulaire autonome, comme une enquête sur un site web.",
     "validationDocumentHint": "Laissez sur l'ensemble du projet pour conserver le lien lorsqu'un document est régénéré.",
     "validationDocumentLabel": "Document (facultatif)",
+    "validationDocumentOption": "{{title}} ({{type}})",
     "validationLoadingLink": "Chargement du lien…",
     "validationNoProject": "-- Non lié --",
     "validationProjectHint": "Effacer le projet délie ce formulaire.",
