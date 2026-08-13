@@ -61,6 +61,12 @@ async function sendAQuestion(): Promise<void> {
 }
 
 describe('ChatTab history payload', () => {
+  // Every store seed in this file is a complete value, not a partial one:
+  // `ProjectChatMessage` in `store/projectChatStore.ts` requires only `role` and
+  // `content` (everything else, `activePersona` included, is optional), and
+  // `activePersona` itself requires only `name`. The seeds go through typed
+  // `setState`, so a genuinely partial literal would not compile.
+
   // ChatTab scrolls the message list into view in an effect, which jsdom does
   // not implement.  Installed and torn down here rather than patched at module
   // scope so the stub cannot leak into the rest of the suite.
@@ -77,10 +83,6 @@ describe('ChatTab history payload', () => {
     useProjectChatStore.setState({ messagesByProject: {} })
   })
 
-  // The seeds below are complete, not partial: `ProjectChatMessage` in
-  // `store/projectChatStore.ts` requires only `role` and `content` (everything
-  // else, `activePersona` included, is optional), and `activePersona` itself
-  // requires only `name`. A genuinely partial literal would not compile.
   it('merges the per-persona assistant turns of a roundtable into one entry', async () => {
     useProjectChatStore.setState({
       messagesByProject: {

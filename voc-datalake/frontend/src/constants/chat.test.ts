@@ -103,42 +103,71 @@ const INTERVIEW_PATH = path.join(__dirname, '../../../lambda/api/product_context
  * therefore yields null — the loud direction — rather than a plausible wrong
  * number.
  *
- * Global, because {@link extractInterviewWindow} has to see *every* slice in the
- * file rather than stopping at the first one. Used only via `matchAll`, which
- * iterates a clone, so there is no `lastIndex` to carry between calls.
+ * Global, because {@link extractInterviewWindow} has to see *every* slice within
+ * `interview_turn`'s body rather than stopping at the first one. Used only via
+ * `matchAll`, which iterates a clone, so there is no `lastIndex` to carry between
+ * calls.
  */
 const SERVER_INTERVIEW_WINDOW_PATTERN = /\bhistory\[\s*-(\d+)\s*:\s*\]/g
 
+/** Start of the `def` whose body owns the window this file pins. */
+const INTERVIEW_DEF_PATTERN = /^def interview_turn\b/m
+
 /**
- * Pull the interview's history window out of `product_context.py`.
+ * Narrow a Python source to one top-level function's body.
  *
- * Returns a window only when the file contains exactly one *distinct* one.
- * This is the one way the coupling assertion could pass *wrongly* that the null
- * cases below do not cover: a regex cannot be scoped to `interview_turn`, so if
- * another function in the file ever slices `history` with a different window,
- * reading the first match pins whichever one happens to sit nearest the top of
- * the file — silently, and possibly not the interview's. Collapsing to null
- * instead makes a second, different window red this suite with the message the
- * caller attaches.
+ * Every `def` in `product_context.py` sits at column 0, so the body runs from the
+ * matched `def` to the next line starting `def ` — no indentation tracking
+ * needed. The search for that terminator is for `\ndef `, which cannot match the
+ * opening `def` itself because the slice starts *at* it with no preceding
+ * newline.
  *
- * Two *identical* windows are tolerated, deliberately. They pin the same number,
- * so the assertion is exactly as sound as with one, while rejecting them would
- * red on a refactor that cannot change what is pinned (a helper extracted, a
- * second loop over the same window). The tolerance is not load-bearing either:
- * the moment those two diverge there are two distinct windows again, and the
- * null path fires.
+ * Returns null when the function is absent, which is the loud direction: a
+ * renamed `interview_turn` must red this suite rather than have its window read
+ * from somewhere else.
+ */
+function sliceTopLevelDef(source: string, defPattern: RegExp): string | null {
+  const start = source.search(defPattern)
+  if (start < 0) return null
+  const body = source.slice(start)
+  const nextDef = body.search(/\ndef \w/)
+  return nextDef < 0 ? body : body.slice(0, nextDef)
+}
+
+/**
+ * Pull the interview's history window out of `interview_turn`'s own body.
  *
- * Residue, pre-existing and not closeable with a regex: were the interview's own
- * slice *deleted* while a single unrelated `history[-N:]` remained, one distinct
- * window would still be found and it would be the wrong function's.
+ * Scoped to the function rather than the file, which is what makes the number
+ * read here the number that endpoint actually uses. Reading the whole file and
+ * taking the first match was the one way this could pass *wrongly* that the null
+ * cases below do not cover — another function slicing `history` with a different
+ * window would have pinned whichever slice sat nearest the top of the file.
+ * Scoping is strictly better than the file-wide distinct-window rule it replaces:
+ * it gives the same protection without turning an *unrelated* backend slice into
+ * a red frontend suite, and it also closes the residue that rule could not — a
+ * deleted interview slice now yields zero windows and a loud failure instead of
+ * silently adopting some other function's.
  *
- * Null also when the slice is absent or respelled beyond recognition, which the
- * caller turns into a loud failure rather than a vacuous pass.
+ * Within that body, two *distinct* windows still collapse to null: if
+ * `interview_turn` itself ever kept two different amounts of history there is no
+ * single number to pin, and guessing is the failure this exists to prevent. Two
+ * *identical* windows are tolerated — they pin the same number, so the assertion
+ * is exactly as sound, while rejecting them would red on a refactor that cannot
+ * change what is pinned (a helper extracted, a second loop over the same
+ * window).
+ *
+ * Null also when the function or the slice is absent, or the slice is respelled
+ * beyond recognition, which the caller turns into a loud failure rather than a
+ * vacuous pass.
  */
 function extractInterviewWindow(source: string): number | null {
-  const windows = [...source.matchAll(SERVER_INTERVIEW_WINDOW_PATTERN)]
+  const body = sliceTopLevelDef(source, INTERVIEW_DEF_PATTERN)
+  if (body === null) return null
+  const windows = [...body.matchAll(SERVER_INTERVIEW_WINDOW_PATTERN)]
     .map((match) => Number(match[1]))
-  return new Set(windows).size === 1 ? windows[0] : null
+  // `?? null` is unreachable while the size check guards it, and is kept so this
+  // stays correct if `noUncheckedIndexedAccess` is ever enabled.
+  return new Set(windows).size === 1 ? windows[0] ?? null : null
 }
 
 /** Alternating user/assistant conversation of the given length, user first. */
@@ -220,6 +249,23 @@ describe('MAX_HISTORY_ENTRIES vs the server window', () => {
   })
 })
 
+/**
+ * A `product_context.py`-shaped module: `interview_turn` between two other
+ * top-level `def`s.
+ *
+ * The neighbours are not decoration — they are what makes these cases exercise
+ * the function scoping at all. A body tested in isolation would pass under a
+ * file-wide extractor too, so every case below carries a `before` and an `after`
+ * for the scope to exclude.
+ */
+function pythonModule(interviewBody: string, before = '', after = ''): string {
+  return 'def _format_context_for_prompt(ctx: dict) -> str:\n'
+    + `    return ''\n${before}\n\n`
+    + 'def interview_turn(project_id: str, body: dict) -> dict:\n'
+    + `    ${interviewBody}\n\n`
+    + `def _doc_pk(project_id: str) -> str:\n    return 'x'\n${after}\n`
+}
+
 describe('extractInterviewWindow', () => {
   // Same reasoning as extractServerWindow's unit tests: the coupling assertion
   // below must not be able to fail for a respelling that leaves the window
@@ -228,47 +274,62 @@ describe('extractInterviewWindow', () => {
     ['the spelling the file actually uses', 'for m in history[-12:]:'],
     ['a whitespace-padded slice', 'for m in history[-12 :]:'],
     ['a bare slice with no loop', 'recent = history[ -12 : ]'],
-  ])('reads the window from %s', (_label, source) => {
-    expect(extractInterviewWindow(source)).toBe(12)
+  ])('reads the window from %s', (_label, body) => {
+    expect(extractInterviewWindow(pythonModule(body))).toBe(12)
   })
 
   it('reads a different number rather than hard-coding the current one', () => {
     // Guards against an extractor that "works" by returning 12 unconditionally.
-    expect(extractInterviewWindow('for m in history[-8:]:')).toBe(8)
+    expect(extractInterviewWindow(pythonModule('for m in history[-8:]:'))).toBe(8)
   })
 
   it('returns null when there is no slice at all', () => {
     // The loud direction: if the window is dropped, or moved to a named
     // constant, this must red rather than pass vacuously forever.
-    expect(extractInterviewWindow('for m in history:')).toBeNull()
+    expect(extractInterviewWindow(pythonModule('for m in history:'))).toBeNull()
   })
 
   it('does not borrow a slice of a differently-named list', () => {
     // A rename must fail loudly, not silently pin against some other list's
     // window. `_` is a word character, so \bhistory cannot match `chat_history`.
-    expect(extractInterviewWindow('for m in chat_history[-4:]:')).toBeNull()
-    expect(extractInterviewWindow('for m in messages[-4:]:')).toBeNull()
+    expect(extractInterviewWindow(pythonModule('for m in chat_history[-4:]:'))).toBeNull()
+    expect(extractInterviewWindow(pythonModule('for m in messages[-4:]:'))).toBeNull()
   })
 
   it('does not match an open-ended or two-sided slice', () => {
     // `history[-12]` is an index, not a window, and `history[-12:-2]` drops the
     // newest turns — neither is the contract the client cap is pinned to.
-    expect(extractInterviewWindow('m = history[-12]')).toBeNull()
-    expect(extractInterviewWindow('for m in history[-12:-2]:')).toBeNull()
+    expect(extractInterviewWindow(pythonModule('m = history[-12]'))).toBeNull()
+    expect(extractInterviewWindow(pythonModule('for m in history[-12:-2]:'))).toBeNull()
   })
 
-  it('returns null when the file holds two different windows', () => {
-    // The one way the coupling assertion could pass *wrongly*: a regex cannot be
-    // scoped to `interview_turn`, so a second function slicing `history` with a
-    // different window would otherwise pin whichever match came first — the
-    // interview's or not, depending only on line order.
+  it('ignores a slice in another function, before or after the interview', () => {
+    // The reason for scoping. A file-wide reader taking the first match would
+    // report 99 for the first case here and 12 for the second — the same file
+    // pinned differently by line order alone. Both must read the interview's own
+    // window, and neither may red: an unrelated backend slice is not drift in
+    // the coupling this test owns.
+    const before = 'def _other(h):\n    return h[-99:]'
+    const after = 'def _later(h):\n    return h[-77:]'
     expect(extractInterviewWindow(
-      'recent = history[-99:]\nfor m in history[-12:]:',
-    )).toBeNull()
+      pythonModule('for m in history[-12:]:', before),
+    )).toBe(12)
+    expect(extractInterviewWindow(
+      pythonModule('for m in history[-12:]:', '', after),
+    )).toBe(12)
+  })
+
+  it('returns null when the interview keeps two different windows', () => {
+    // Scoping cannot resolve an ambiguity *inside* the function: two divergent
+    // windows in one body means there is no single number to pin, so guessing
+    // one is the failure this exists to prevent.
+    expect(extractInterviewWindow(pythonModule(
+      'recent = history[-99:]\n    for m in history[-12:]:',
+    ))).toBeNull()
     // Order-independent: reversing it must not make one of them preferred.
-    expect(extractInterviewWindow(
-      'for m in history[-12:]:\nrecent = history[-99:]',
-    )).toBeNull()
+    expect(extractInterviewWindow(pythonModule(
+      'for m in history[-12:]:\n    recent = history[-99:]',
+    ))).toBeNull()
   })
 
   it('tolerates two identical windows, which pin the same number', () => {
@@ -276,9 +337,31 @@ describe('extractInterviewWindow', () => {
     // duplicates of the same window cannot change what is pinned, so reddening
     // on them would only punish a harmless refactor. Divergence is what fires
     // the null path, and the test above covers that.
+    expect(extractInterviewWindow(pythonModule(
+      'for m in history[-12:]:\n    recent = history[ -12 : ]',
+    ))).toBe(12)
+  })
+
+  it('returns null when interview_turn is renamed away', () => {
+    // Scoping's own loud direction, and it closes what the previous file-wide
+    // rule could not: with the interview's slice gone but an unrelated one still
+    // present, that rule found exactly one distinct window and pinned the wrong
+    // function's. Scoped, there is no body to read and the caller fails loudly.
+    const source = 'def _other(h):\n    return h[-99:]\n\n'
+      + 'def conduct_interview(project_id: str, body: dict) -> dict:\n'
+      + '    for m in history[-12:]:\n        pass\n'
+    expect(extractInterviewWindow(source)).toBeNull()
+  })
+
+  it('does not match a nested or similarly-named def', () => {
+    // `^def` at column 0 is the anchor, and \b stops `interview_turn_v2` from
+    // standing in for the function whose window is pinned.
     expect(extractInterviewWindow(
-      'for m in history[-12:]:\nrecent = history[ -12 : ]',
-    )).toBe(12)
+      '    def interview_turn(self):\n        for m in history[-12:]:\n            pass\n',
+    )).toBeNull()
+    expect(extractInterviewWindow(
+      'def interview_turn_v2(p, b):\n    for m in history[-12:]:\n        pass\n',
+    )).toBeNull()
   })
 })
 
