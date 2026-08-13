@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
@@ -13,9 +14,9 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Construct } from 'constructs';
-import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
+import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, allowlistedModelArns } from '../utils/model-allowlist';
 import { NagSuppressions } from 'cdk-nag';
-import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions } from '../utils/nag-suppressions';
+import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 
 export interface VocCoreStackProps extends VocStackProps {
@@ -552,6 +553,163 @@ export class VocCoreStack extends VocStack {
       timeToLiveAttribute: 'expiration',
     });
     NagSuppressions.addResourceSuppressions(this.idempotencyTable, idempotencyTableSuppressions);
+
+
+    // ============================================
+    // PRODUCT DOC EXTRACTOR (S3-triggered)
+    // ============================================
+    // Turns an uploaded product document (image or .md/.txt) into the plain text
+    // that build_product_context_block injects into PRD/PR-FAQ/prototype prompts,
+    // and moves the DynamoDB record out of `pending` into `ready` or `failed`.
+    //
+    // WHY IT LIVES IN CORE-STACK RATHER THAN PROCESSING: CDK parents the
+    // notification resource under the BUCKET's construct scope, so calling
+    // rawDataBucket.addEventNotification() from the processing stack would put a
+    // Custom::S3BucketNotifications in VocCoreStack that references a
+    // VocProcessingStack Lambda — while processing already depends on core.
+    // CloudFormation rejects that cycle. Keeping the function beside the bucket
+    // it is triggered by is the only placement that has no cycle.
+    //
+    // The `documents` surface default from SURFACE_DEFAULTS in
+    // lambda/shared/model_config.py. Declared here rather than imported because
+    // the model-allowlist module carries the allowlist, not the per-surface
+    // defaults; lambda/product_doc_extractor/test/test_default_model_lockstep.py
+    // reads this line as source text and fails if the two ever disagree.
+    const documentsSurfaceDefaultModelId = 'global.anthropic.claude-sonnet-5';
+
+    const productDocExtractor = new lambda.Function(this, 'ProductDocExtractorLambda', {
+      functionName: this.uniqueName('voc-product-doc-extractor'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      // NO `bundling` block, mirroring CdnSigningKeysLambda: the handler is
+      // stdlib + boto3 only, so there is nothing to pip-install and CoreStack
+      // stays container-free. Depending on lambda/shared/ would need a
+      // LayerVersion, and building that layer would drag Docker/finch bundling
+      // into this stack — see the handler's module docstring.
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/product_doc_extractor'), {
+        exclude: ['test', '__pycache__'],
+      }),
+      // Must stay well under product_context.py's EXTRACTION_STALL_SECONDS (300),
+      // which fails a record that never got extracted: a healthy extraction has
+      // to finish inside that window or the API marks it failed on read.
+      timeout: cdk.Duration.seconds(120),
+      // A Bedrock image description holds one image (<= 3.75MB) plus the reply in
+      // memory; 512MB also buys proportionally more CPU for the wait-heavy call.
+      memorySize: 512,
+      description: 'Extracts text from uploaded project product documents (images via Bedrock)',
+      environment: {
+        RAW_DATA_BUCKET: this.rawDataBucket.bucketName,
+        PROJECTS_TABLE: this.projectsTable.tableName,
+        // Read-only: the model picker's per-surface overrides live here.
+        AGGREGATES_TABLE: this.aggregatesTable.tableName,
+        // Rendered from the one allowlist in lib/utils/model-allowlist.ts, so the
+        // handler validates configured models against the same list the IAM
+        // grants below are built from — no second copy to rot.
+        MODEL_ALLOWLIST: JSON.stringify(ALLOWED_MODEL_IDS),
+        DEFAULT_MODEL_ID: documentsSurfaceDefaultModelId,
+        MAX_IMAGE_BYTES: String(MAX_IMAGE_BYTES),
+        MAX_IMAGE_DIMENSION_PX: String(MAX_IMAGE_DIMENSION_PX),
+        // The handler emits structured JSON from a stdlib Formatter (it cannot
+        // import powertools — see its module docstring), so these are NOT the
+        // POWERTOOLS_* names used by every other function here: a
+        // POWERTOOLS_SERVICE_NAME on a function with no powertools would promise
+        // a library that is absent. The emitted FIELD is still `service`, so an
+        // operator's CloudWatch query is unchanged across functions.
+        //
+        // A LITERAL, not `uniqueName()`: this is a log label, not a physical
+        // resource name, so it must not carry the account/region suffix — every
+        // POWERTOOLS_SERVICE_NAME in this app is a bare literal for the same
+        // reason. Namespacing it also made the value a CloudFormation token,
+        // which is not a string a runtime field can be compared against.
+        SERVICE_NAME: 'voc-product-doc-extractor',
+        // Hardcoded, matching every other function in this app: LOG_LEVEL is a
+        // literal 'INFO' at all 24 definitions across the four stacks, so there is
+        // no context key or stack parameter to follow here. Raising verbosity
+        // during a diagnosis is an environment-variable change on the deployed
+        // function — the handler reads LOG_LEVEL at import (see _log_level), so it
+        // needs no stack edit and no code change.
+        LOG_LEVEL: 'INFO',
+      },
+      logGroup: new logs.LogGroup(this, 'ProductDocExtractorLambdaLogs', {
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+
+    // Prefix-scoped both ways, and asymmetrically: it reads only what users
+    // upload and writes only where its own output goes. Without the narrower
+    // write scope this role could overwrite any raw upload in the bucket.
+    this.rawDataBucket.grantRead(productDocExtractor, 'projects/*/product_docs/raw/*');
+    this.rawDataBucket.grantWrite(productDocExtractor, 'projects/*/product_docs/extracted/*');
+    this.projectsTable.grantReadWriteData(productDocExtractor);
+    this.aggregatesTable.grantReadData(productDocExtractor);
+    this.kmsKey.grantEncryptDecrypt(productDocExtractor);
+    productDocExtractor.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: allowlistedModelArns(this.region, this.account),
+    }));
+
+    // ONE notification rule, filtered on the broad `projects/` prefix. S3 allows
+    // only one prefix per rule and rejects overlapping rules on the same event
+    // type, so narrowing this to `product_docs/raw/` would mean a rule per
+    // project — impossible, the ids are runtime values. The handler's
+    // RAW_KEY_PATTERN guard is what makes the broad prefix safe: it also drops
+    // this function's OWN output under `product_docs/extracted/`, which would
+    // otherwise re-trigger it in a loop.
+    //
+    // First use of a `prefix` filter in this repo — the existing notifications
+    // (S3 import in the ingestion stack) filter by suffix only.
+    this.rawDataBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(productDocExtractor),
+      { prefix: 'projects/' },
+    );
+
+    // bin/voc-datalake.ts gives this stack only the basic-execution and
+    // cdk-assets suppressions, so everything the grants above generate has to be
+    // suppressed HERE rather than by widening the stack-level set: prefix-scoped
+    // S3 object ARNs, the DynamoDB index/* wildcards, the KMS grant wildcards
+    // and the Bedrock cross-region foundation-model ARNs.
+    NagSuppressions.addResourceSuppressions(
+      productDocExtractor,
+      [
+        ...lambdaBasicExecutionRoleSuppressions,
+        ...s3BucketSuppressions,
+        ...dynamoDbGsiSuppressions,
+        ...kmsEncryptionSuppressions,
+        ...bedrockModelSuppressions,
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'Object-level S3 access is already narrowed to the two product-doc prefixes; the trailing wildcard is the object name, and the middle wildcard is the runtime project id.',
+          appliesTo: [
+            { regex: '/Resource::<.*RawDataBucket.*\\.Arn>/projects/\\*/product_docs/.*/' },
+          ],
+        },
+      ],
+      true,
+    );
+    // addEventNotification synthesizes a CDK-managed custom-resource Lambda that
+    // configures the bucket notification. Same treatment as the cr.Provider
+    // frameworks above: CDK owns its runtime and its PutBucketNotification
+    // grant, neither of which this repo can narrow.
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/BucketNotificationsHandler050a0587b7544547bf325f094a3db834`,
+      [
+        ...cdkCustomResourceSuppressions,
+        ...lambdaBasicExecutionRoleSuppressions,
+        {
+          id: 'AwsSolutions-IAM4',
+          reason: 'CDK-managed bucket-notifications handler attaches the AWS-managed Lambda basic execution policy; the construct is not configurable.',
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'CDK-managed bucket-notifications handler needs s3:PutBucketNotification on the buckets it configures; the construct emits a wildcard resource and is not configurable.',
+        },
+      ],
+      true,
+    );
 
 
     // ============================================
