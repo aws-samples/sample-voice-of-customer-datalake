@@ -27,14 +27,28 @@ import { I18N_INIT_OPTIONS } from './options'
 
 const SRC = join(__dirname, '..')
 const FRONTEND = join(SRC, '..')
-const LOCALES_EN = join(FRONTEND, 'public', 'locales', 'en')
+const LOCALES = join(FRONTEND, 'public', 'locales')
+const LOCALES_EN = join(LOCALES, 'en')
 const SCRIPTS = join(FRONTEND, 'scripts')
 
-/** The namespaces actually shipped: one catalogue file each. */
-function shippedNamespaces(): string[] {
-  return readdirSync(LOCALES_EN)
+/** Catalogue names in one locale directory. */
+function cataloguesIn(dir: string): string[] {
+  return readdirSync(dir)
     .filter((f) => extname(f) === '.json')
     .map((f) => basename(f, '.json'))
+    .sort()
+}
+
+/** The namespaces actually shipped: one catalogue file each, per `en`. */
+function shippedNamespaces(): string[] {
+  return cataloguesIn(LOCALES_EN)
+}
+
+/** Every locale directory, `en` included. */
+function localeDirs(): string[] {
+  return readdirSync(LOCALES, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
     .sort()
 }
 
@@ -134,8 +148,14 @@ function scanSource(): { namespaces: Set<string>; filesScanned: number } {
 
     // `t` plus every name `t` was renamed to in this file, so a qualified key
     // reached through an alias is not invisible.
+    //
+    // Scoped to a destructuring pattern on purpose: a bare `/\bt\s*:\s*(\w+)/`
+    // also matches type annotations and parameters (`{ t: TFunction }`,
+    // `(t: number)`), which would add meaningless names to the caller set. The
+    // negated class spans newlines, so a multi-line destructuring still matches —
+    // which it must, because Chat.tsx's rename is in one.
     const callers = new Set(['t'])
-    for (const [, alias] of source.matchAll(/\bt\s*:\s*(\w+)/g)) callers.add(alias)
+    for (const [, alias] of source.matchAll(/\{[^{}]*\bt\s*:\s*(\w+)/g)) callers.add(alias)
     for (const caller of callers) {
       const qualified = new RegExp(`\\b${caller}\\(\\s*['"](\\w+):`, 'g')
       for (const [, ns] of source.matchAll(qualified)) namespaces.add(ns)
@@ -153,7 +173,10 @@ describe('I18N_INIT_OPTIONS', () => {
     // nothing would make the assertion below pass over an empty set. Names are
     // deliberately not pinned here — a legitimately renamed namespace should not
     // fail as though the app were broken.
-    expect(filesScanned, 'the source walk found almost no files').toBeGreaterThan(100)
+    // A floor that says "the walk ran", not an assertion about how much code exists:
+    // a high threshold would fail on a legitimate large deletion. A broken walk
+    // returns 0 or a handful.
+    expect(filesScanned, 'the source walk found almost no files').toBeGreaterThan(20)
     const shipped = shippedNamespaces()
     expect(
       [...namespaces].filter((ns) => shipped.includes(ns)).length,
@@ -181,7 +204,7 @@ describe('I18N_INIT_OPTIONS', () => {
       const source = stripComments(readFileSync(file, 'utf-8'))
       for (const match of source.matchAll(/useTranslation\(\s*([^)]{0,40})/g)) {
         const arg = match[1].trim()
-        if (arg === '' || arg.startsWith(')')) continue      // useTranslation()
+        if (arg === '') continue                             // useTranslation()
         if (/^['"[]/.test(arg)) continue                     // literal or array
         offenders.push(`${file}: useTranslation(${arg.slice(0, 24)}…)`)
       }
@@ -210,6 +233,23 @@ describe('I18N_INIT_OPTIONS', () => {
     // already initialised i18next from it, so read the live value instead of
     // re-parsing the file.
     expect([...(i18n.options.ns as string[])].sort(), 'src/test/setup.ts').toEqual(shipped)
+  })
+
+  it('ships the same catalogue set in every locale', () => {
+    // Because the check above uses `en` as the reference, an orphan catalogue in
+    // another locale (`fr/feedback.json`) would satisfy every list while belonging
+    // to no namespace — and now that `fix-i18n.mjs` iterates the registered list, it
+    // would skip that file forever. The reverse, a locale missing a catalogue `en`
+    // ships, means that whole page falls back to English with no other signal.
+    const shipped = shippedNamespaces()
+    const locales = localeDirs()
+    expect(locales, 'no locale directories found — wrong path').toContain('en')
+    expect(locales.length, 'only one locale found; parity across locales is untested')
+      .toBeGreaterThan(1)
+
+    for (const locale of locales) {
+      expect(cataloguesIn(join(LOCALES, locale)), `locale ${locale}`).toEqual(shipped)
+    }
   })
 
   it('keeps the options that are load-bearing rather than cosmetic', () => {
