@@ -264,8 +264,8 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
           - if the input were nested, `input.click()` would bubble a click event
             back up to this element's own onClick, which would call click() again.
         A div with role="button" has no built-in keyboard activation, so onClick
-        (pointer) and onKeyDown (Enter/Space) are the only two paths and they
-        cannot fire for the same gesture. The div is still focusable, which is
+        (pointer) and the keyboard handlers (Enter on keydown, Space on keyup) are
+        the only paths, and they cannot fire for the same gesture. The div is still focusable, which is
         what lets a keyboard user land here and paste — the input is
         display:none and cannot take focus itself.
 
@@ -282,7 +282,20 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
         }`}
         onClick={openPicker}
         onKeyDown={(e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return
+          // Enter activates on keydown, Space on keyUP — the ARIA APG button
+          // pattern, and not a formality: a held Space repeats keydown, so
+          // activating there opens a file dialog per repeat. preventDefault still
+          // happens on the Space keydown, because that is the event whose default
+          // action scrolls the page.
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            openPicker()
+            return
+          }
+          if (e.key === ' ') e.preventDefault()
+        }}
+        onKeyUp={(e) => {
+          if (e.key !== ' ') return
           e.preventDefault()
           openPicker()
         }}

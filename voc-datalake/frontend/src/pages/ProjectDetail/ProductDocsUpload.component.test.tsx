@@ -335,6 +335,9 @@ describe('DocsUpload', () => {
     // on the control, and a nested input's programmatic click bubbles back into
     // the wrapper's onClick. Either arrangement opens two dialogs. Counted on the
     // input's own click, which is what actually opens the picker.
+    //
+    // Which event activates is the ARIA APG button pattern: Enter on keydown,
+    // Space on keyUP.
     render(<DocsUpload projectId="proj-1" />)
     await screen.findByText(/no documents yet/i)
     const clicks = vi.fn()
@@ -344,8 +347,36 @@ describe('DocsUpload', () => {
     fireEvent.keyDown(zone, { key: 'Enter' })
     expect(clicks).toHaveBeenCalledTimes(1)
 
-    fireEvent.keyDown(zone, { key: ' ' })
+    // Space: nothing on the way down, exactly one picker on the way up. The
+    // keydown still cancels its default — that is the event that scrolls the page
+    // — and fireEvent returns false when a handler called preventDefault.
+    expect(fireEvent.keyDown(zone, { key: ' ' })).toBe(false)
+    expect(clicks).toHaveBeenCalledTimes(1)
+    fireEvent.keyUp(zone, { key: ' ' })
     expect(clicks).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens nothing while Space is held down', async () => {
+    // The reason Space belongs on keyup rather than keydown: holding the key
+    // repeats keydown, so activating there opened a file dialog per repeat. This
+    // is the case that makes the APG rule a real fix and not a formality.
+    render(<DocsUpload projectId="proj-1" />)
+    await screen.findByText(/no documents yet/i)
+    const clicks = vi.fn()
+    getFileInput().addEventListener('click', clicks)
+    const zone = screen.getByRole('button', { name: /drop files here/i })
+
+    fireEvent.keyDown(zone, { key: ' ' })
+    fireEvent.keyDown(zone, { key: ' ', repeat: true })
+    fireEvent.keyDown(zone, { key: ' ', repeat: true })
+    fireEvent.keyDown(zone, { key: ' ', repeat: true })
+
+    expect(clicks).not.toHaveBeenCalled()
+
+    // ...and the release still activates once, so the guard did not simply break
+    // Space.
+    fireEvent.keyUp(zone, { key: ' ' })
+    expect(clicks).toHaveBeenCalledTimes(1)
   })
 
   it('opens the file picker exactly once per pointer activation', async () => {

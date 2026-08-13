@@ -80,6 +80,12 @@ DOC_SK_PREFIX = 'PRODUCT_DOC#'
 # terminal record is worse than losing this extraction's result.
 NON_TERMINAL_STATUSES = ('pending', 'extracting')
 
+# The other half of the vocabulary, named so a refused write can say WHICH cause
+# it hit: a terminal status is the API having failed a stalled record, and that
+# is the one worth alerting on. Anything outside either tuple is a malformed or
+# legacy record — see _log_refused_write.
+TERMINAL_STATUSES = ('ready', 'failed')
+
 # Content types this handler can turn into text, mirroring ALLOWED_CONTENT_TYPES
 # in lambda/api/product_context.py (the upload boundary refuses everything else,
 # so an unlisted type here means the two have drifted).
@@ -389,15 +395,24 @@ def _is_conditional_check_failure(error: Exception) -> bool:
 
 
 def _log_refused_write(project_id: str, doc_id: str, values: dict) -> None:
-    """Say WHICH of the two races refused the write. They mean different things.
+    """Say WHICH of the three causes refused the write. They mean different things.
 
     A record that is simply gone was deleted mid-flight — ordinary housekeeping,
-    logged at INFO. A record that is already terminal is not: the API decided
-    this document had stalled and told the user to upload it again, so the result
-    this invocation just computed is being discarded on purpose. That has to be
-    greppable on its own rather than folded into the benign line, because it is
-    also the signal that extractions are running past
-    EXTRACTION_STALL_SECONDS and the two numbers need looking at.
+    logged at INFO.
+
+    A record that is already TERMINAL is not: the API decided this document had
+    stalled and told the user to upload it again, so the result this invocation
+    just computed is being discarded on purpose. That has to be greppable on its
+    own rather than folded into the benign line, because it is also the signal
+    that extractions are running past EXTRACTION_STALL_SECONDS and the two
+    numbers need looking at.
+
+    A record with NO status attribute, or one nobody recognises, fails the same
+    condition and is neither of the above — it is malformed, or it predates the
+    field. Logging it as the stall case would name stall timing as the cause of
+    something that has nothing to do with timing, and since that line is the
+    signal used to detect late extractions, a false positive there misleads
+    exactly the person reading it during a diagnosis.
 
     Costs one extra get_item, and only on a path that is already exceptional.
     """
@@ -405,10 +420,21 @@ def _log_refused_write(project_id: str, doc_id: str, values: dict) -> None:
     if current is None:
         logger.info(f'Product doc {doc_id} was deleted mid-extraction; write skipped')
         return
+    status = current.get('status')
+    if status in TERMINAL_STATUSES:
+        logger.warning(
+            f'Product doc {doc_id} is already {status}; refusing to overwrite '
+            f'{sorted(values)} onto it - the API already gave this document up as '
+            f'stalled and told the user to upload it again'
+        )
+        return
+    # Deliberately shares no vocabulary with the line above: an operator greps for
+    # the stall wording, so a malformed record must not match that grep, not even
+    # inside a denial.
     logger.warning(
-        f'Product doc {doc_id} is already {current.get("status")}; refusing to '
-        f'overwrite {sorted(values)} onto it - the API already gave this document '
-        f'up as stalled and told the user to upload it again'
+        f'Product doc {doc_id} has no usable status ({status!r}); refusing to '
+        f'overwrite {sorted(values)} onto it - the record is malformed or predates '
+        f'the status field, so no read path put it in this state'
     )
 
 

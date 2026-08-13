@@ -170,6 +170,18 @@ class TestTheReportGateAgreesWithTheInjection:
         # gate is removed: without the stub, a regression here would attempt a real
         # Bedrock call and fail with whatever the local credentials happen to be
         # doing, which is a different failure from the one under test.
+        #
+        # And the patch TARGET is `shared.converse.converse` — the module
+        # attribute — rather than a name on `product_context`, because
+        # generate_report imports it INSIDE the function body
+        # (`from shared.converse import converse`, first line of the function). The
+        # name is therefore looked up on the module every call, so patching the
+        # module attribute intercepts it; there is no import-time binding on
+        # `product_context` to patch. Verified rather than assumed: with the gate
+        # removed, the stub records exactly one call and no socket is opened, while
+        # the same run without the stub reaches botocore and a real Bedrock
+        # endpoint lookup. Do not "fix" this to `patch.object(product_context,
+        # 'converse')` — that attribute does not exist.
         with patch.object(product_context, 'projects_table', table), \
                 patch.object(product_context, 'get_context', return_value=_empty_context()), \
                 patch.object(shared.converse, 'converse', return_value='# Report'), \

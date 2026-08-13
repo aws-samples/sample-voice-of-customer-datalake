@@ -67,6 +67,26 @@ def _recording(table, order: list):
     return recorded
 
 
+def _reread_as(table, first: dict, later: dict | None) -> None:
+    """Make the record read as `first` on the opening read and `later` after it.
+
+    This is the only way to model what a refused write actually looks like. The
+    handler re-reads the record to classify the refusal, so a single-item fake
+    would report whatever the record was when the invocation STARTED — and a fake
+    that returned the post-race state from the beginning would make the handler
+    skip before writing at all, so the test would pass while exercising nothing.
+    """
+    reads = {'n': 0}
+
+    # Capitalised parameter name because it is boto3's own kwarg.
+    def phased_get(Key=None, **_kwargs):
+        reads['n'] += 1
+        item = first if reads['n'] == 1 else later
+        return {'Item': item} if item is not None else {}
+
+    table.get_item = phased_get
+
+
 class TestTextPassThrough:
     """Reading the bytes IS the extraction — nothing may reshape them."""
 
@@ -551,7 +571,11 @@ class TestALateExtractionCannotClobberAStalledFailure:
         """
         source = b'# late but successful'
         doc = pending_doc('text/markdown')
-        wire(body=source, doc=doc, update_error=conditional_check_failed(by=by))
+        mocks = wire(body=source, doc=doc,
+                     update_error=conditional_check_failed(by=by))
+        # `pending` when the invocation starts, `failed` by the time the write is
+        # refused — which IS the race: the API failed it as stalled in between.
+        _reread_as(mocks['projects'], doc, pending_doc('text/markdown', status='failed'))
 
         with caplog.at_level('INFO'):
             extractor.lambda_handler(s3_event(f'{RAW_KEY}.md', size=len(source)))
@@ -560,8 +584,46 @@ class TestALateExtractionCannotClobberAStalledFailure:
         refusals = [m for m in messages if 'refusing to overwrite' in m]
         assert refusals, f'no distinguishable refusal log; got {messages}'
         # It names the status that won, and says why this is not routine.
-        assert doc['status'] in refusals[-1]
+        assert 'failed' in refusals[-1]
         assert 'stalled' in refusals[-1]
+        assert not any('deleted mid-extraction' in m for m in messages)
+
+    @pytest.mark.parametrize('status', [None, 'sideways'])
+    def test_a_record_with_no_usable_status_is_not_blamed_on_stall_timing(
+        self, extractor, wire, pending_doc, s3_event, caplog, status,
+    ):
+        """A record that exists but carries no `status` attribute — or one nobody
+        recognises — fails the same condition, and used to be logged as "the API
+        already gave this document up as stalled". That names stall timing as the
+        cause of something that has nothing to do with timing, and this line is
+        the signal used to detect extractions running past
+        EXTRACTION_STALL_SECONDS: a false positive here misleads exactly the
+        person reading it mid-diagnosis. Malformed or legacy is a different
+        answer, and it has to read as one.
+        """
+        source = b'# late but successful'
+        doc = pending_doc('text/markdown')
+        malformed = pending_doc('text/markdown')
+        if status is None:
+            del malformed['status']
+        else:
+            malformed['status'] = status
+        mocks = wire(body=source, doc=doc,
+                     update_error=conditional_check_failed())
+        _reread_as(mocks['projects'], doc, malformed)
+
+        with caplog.at_level('INFO'):
+            extractor.lambda_handler(s3_event(f'{RAW_KEY}.md', size=len(source)))
+
+        messages = [r.message for r in caplog.records]
+        refusals = [m for m in messages if 'refusing to overwrite' in m]
+        assert refusals, f'no distinguishable refusal log; got {messages}'
+        # Still a refusal, still greppable — but it must not match a grep for the
+        # stall wording AT ALL, not even inside a denial, or the signal an operator
+        # searches for is polluted by records that never stalled.
+        assert not any('stall' in m for m in refusals), refusals
+        assert 'malformed' in refusals[-1]
+        assert repr(status) in refusals[-1]
         assert not any('deleted mid-extraction' in m for m in messages)
 
     def test_a_deleted_record_is_still_logged_as_the_benign_case(
@@ -575,17 +637,8 @@ class TestALateExtractionCannotClobberAStalledFailure:
         mocks = wire(body=source, doc=doc,
                      update_error=conditional_check_failed())
         # Present for the opening read, gone by the time the write is refused —
-        # which is what "deleted mid-extraction" actually means. A table that were
-        # empty from the start would make the handler skip before writing at all,
-        # and this test would pass while exercising nothing.
-        reads = {'n': 0}
-
-        # Capitalised parameter name because it is boto3's own kwarg.
-        def vanishing_get(Key=None, **_kwargs):
-            reads['n'] += 1
-            return {'Item': doc} if reads['n'] == 1 else {}
-
-        mocks['projects'].get_item = vanishing_get
+        # which is what "deleted mid-extraction" actually means.
+        _reread_as(mocks['projects'], doc, None)
 
         with caplog.at_level('INFO'):
             extractor.lambda_handler(s3_event(f'{RAW_KEY}.md', size=len(source)))

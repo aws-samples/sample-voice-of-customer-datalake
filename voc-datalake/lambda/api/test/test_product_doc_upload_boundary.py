@@ -11,6 +11,7 @@ declared size binding on S3 instead of advisory.
 everything here is new.
 """
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -250,6 +251,67 @@ class TestSizeCapsArePerType:
         error, _ = _reject({'filename': 'big.png', 'content_type': 'image/png',
                             'size_bytes': MAX_IMAGE_BYTES + 1})
         assert str(MAX_IMAGE_BYTES) not in error.message
+
+
+class TestADeclaredSizeMustBeAWholeNumberOfBytes:
+    """A size that parses but is not integral used to be TRUNCATED: `int(1000.7)`
+    is 1000, so the presigned URL was signed with ContentLength 1000 and the
+    client then PUT 1001 bytes. S3 refuses that with a signature/length error the
+    caller cannot act on, which is strictly worse than the 400 every other
+    unusable size produces — and the field is signed into the URL, so it is part
+    of a security control and is validated like one.
+
+    `True` is in the rejected list on purpose: bool is a subclass of int, so
+    `int(True)` is 1 and a JSON `true` would otherwise have been accepted as a
+    one-byte file.
+    """
+
+    @pytest.mark.parametrize('size_bytes', [
+        1000.7,
+        '1000.7',
+        0.5,
+        True,
+        float('nan'),
+        float('inf'),
+        float('-inf'),
+        Decimal('1000.7'),
+    ])
+    def test_a_non_integral_size_is_refused_before_any_write(self, size_bytes):
+        error, table = _reject({'filename': 'screen.png', 'content_type': 'image/png',
+                                'size_bytes': size_bytes})
+        assert error.status_code == 400
+        table.put_item.assert_not_called()
+
+    def test_the_non_integral_error_reads_like_every_other_bad_size(self):
+        """The load-bearing half of "no second vocabulary": a fractional size is
+        answered with the SAME message as a zero, not a new one. A distinct string
+        would be another thing to translate and another shape for a caller to
+        handle."""
+        fractional, _ = _reject({'filename': 'screen.png', 'content_type': 'image/png',
+                                 'size_bytes': 1000.7})
+        zero, _ = _reject({'filename': 'screen.png', 'content_type': 'image/png',
+                           'size_bytes': 0})
+        unreadable, _ = _reject({'filename': 'screen.png', 'content_type': 'image/png',
+                                 'size_bytes': 'enormous'})
+        assert fractional.message == zero.message == unreadable.message
+
+    @pytest.mark.parametrize('size_bytes', [
+        1000,        # the ordinary case
+        1000.0,      # integral float — JSON has one number type, so this is common
+        '1000',      # a client that has always worked must keep working
+        Decimal(1000),     # DynamoDB's number type, in case a record reaches here
+        Decimal('1E+3'),   # ...including its exponent form
+    ])
+    def test_an_integral_size_is_accepted_and_signed_as_a_plain_int(self, size_bytes):
+        """Truncation is not the only failure available: signing a float or a str
+        ContentLength would also never match the body's length."""
+        result, table, s3 = _create({'filename': 'screen.png', 'content_type': 'image/png',
+                                     'size_bytes': size_bytes})
+        assert result['doc_id']
+        signed = s3.generate_presigned_url.call_args.kwargs['Params']['ContentLength']
+        assert signed == 1000
+        assert type(signed) is int
+        assert table.put_item.call_args.kwargs['Item']['size_bytes'] == 1000
 
 
 class TestDeclaredSizeIsBindingOnS3:

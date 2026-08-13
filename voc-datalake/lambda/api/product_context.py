@@ -21,6 +21,7 @@ generate_prfaq and substituted into the {product_context} placeholder.
 import os
 import secrets
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from boto3.dynamodb.conditions import Key
@@ -485,7 +486,7 @@ def _human_mb(byte_count: int) -> str:
     return f'{tenths // 10}.{tenths % 10} MB'
 
 
-def _declared_size(value) -> int | None:
+def _declared_size(value: object) -> int | None:
     """The client's declared byte count, or None when it is not usable as one.
 
     A bare ``int(value or 0)`` is not safe on a JSON body: a string, an object, an
@@ -495,14 +496,39 @@ def _declared_size(value) -> int | None:
     now signed into the presigned PUT as ContentLength, so it is part of a
     security control and has to be validated like one.
 
-    None rather than 0 so the caller's single size check answers with exactly the
-    same ValidationError it gives any other unusable size — a caller does not need
-    to learn a second vocabulary for "that is not a size".
+    Which is also why the value has to be INTEGRAL, not merely convertible:
+    ``int(1000.7)`` truncates to 1000, so a client sending a fractional size gets
+    ContentLength 1000 signed into the URL and then PUTs 1001 bytes, which S3
+    refuses with a signature/length error the caller cannot act on. A byte count
+    that is not a whole number of bytes is a bad request, and it is answered here.
+
+    Every unusable shape returns None rather than 0 so the caller's single size
+    check answers with exactly the same ValidationError it gives any other
+    unusable size — a caller does not need to learn a second vocabulary for "that
+    is not a size", and a new message would be a new string to translate.
+
+    ``Decimal`` cannot reach here today — the only caller passes a value straight
+    off a JSON body, and json.loads produces int/float, never Decimal. It is
+    handled anyway, and at no cost, because the parse below stays in the decimal
+    domain: `Decimal('1E+3')` is as integral as `1000`. Worth having for free in a
+    module that also reads DynamoDB items, where every number IS a Decimal.
     """
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError, OverflowError):
+    # bool is a subclass of int, so `int(True)` is 1 and a JSON `true` would
+    # otherwise be accepted as a one-byte file. A boolean is not a size.
+    if isinstance(value, bool):
         return None
+    try:
+        # Via str() and Decimal, not float(): exact for a numeric string, and it
+        # keeps '1000' working (a client that sent one has always worked) while
+        # '1000.7' stays refused.
+        number = Decimal(str(value))
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    # NaN and ±Infinity are finite-check failures, not parse failures — Decimal
+    # accepts both strings happily.
+    if not number.is_finite() or number != number.to_integral_value():
+        return None
+    return int(number)
 
 
 def _list_doc_items(project_id: str) -> list[dict]:
