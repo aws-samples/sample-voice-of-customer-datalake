@@ -22,11 +22,16 @@ export type { SupportedLanguage } from './languages'
 // The init options live in ./options for that same reason: a test can then assert
 // on the REAL config — that `nsSeparator` is still ':', which every
 // namespace-qualified key depends on — without executing this module's init.
+//
+// Spread, not the object itself: the test's assertions are only about the declared
+// config, so init() must not be able to write back into it. Shallow, which covers
+// every top-level option (`nsSeparator` among them); the nested `backend`,
+// `detection`, `interpolation` and `react` objects are still shared.
 void i18n
   .use(HttpBackend)
   .use(LanguageDetector)
   .use(initReactI18next)
-  .init(I18N_INIT_OPTIONS)
+  .init({ ...I18N_INIT_OPTIONS })
   .then(() => {
     // Initial sync once detection has resolved (index.html defaults to "en").
     document.documentElement.lang = i18n.resolvedLanguage ?? 'en'

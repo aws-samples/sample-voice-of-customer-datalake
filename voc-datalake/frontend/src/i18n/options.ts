@@ -21,9 +21,14 @@ import type { InitOptions } from 'i18next'
 import { LOCALE_LOAD_PATH } from './loadPath'
 import { supportedLanguages } from './languages'
 
-export const DEFAULT_NS = 'common'
+// Module-private, as they were in config.ts: I18N_INIT_OPTIONS is the only thing
+// worth importing, and exporting these would add public surface nothing reads.
+// Note this is NOT the only copy of the namespace list — src/test/setup.ts,
+// scripts/i18n-check.mjs and scripts/fix-i18n.mjs each keep their own, as they did
+// before this move. Consolidating them is a separate change.
+const DEFAULT_NS = 'common'
 
-export const NAMESPACES = ['common', 'dashboard', 'dataExplorer', 'feedbackDetail', 'chat', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail'] as const
+const NAMESPACES = ['common', 'dashboard', 'dataExplorer', 'feedbackDetail', 'chat', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail'] as const
 
 export const I18N_INIT_OPTIONS: InitOptions = {
   // No `lng` pin: the language switcher (UserProfileModal) now drives the
