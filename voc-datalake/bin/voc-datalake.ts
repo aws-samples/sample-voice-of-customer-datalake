@@ -12,8 +12,30 @@ import { AnthropicUseCaseSchema, AnthropicUseCaseConfig } from '../lib/stacks/be
 import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, comprehendSuppressions, translateSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
 import { shouldDeployWebSearch } from '../lib/utils/web-search-default';
 import { shouldDeployAiEnablement } from '../lib/utils/ai-enablement-default';
+import { validateDeploymentPrefix } from '../lib/utils/naming';
 
 const app = new cdk.App();
+
+// Deployment prefix — lets two independent copies share ONE account and region.
+// See docs/deployment.md ("Two Deployments in One Account and Region") for usage
+// and the length budget.
+//
+// OPT-IN, and it must stay that way: applying a prefix unconditionally would
+// rename tables, buckets and the user pool, which CloudFormation implements as a
+// REPLACEMENT — silent data loss on every existing deployment. Hence also no
+// default for this key in cdk.context.json; it is a per-deployment `-c` flag.
+// lib/app-baseline.test.ts proves the unset case is byte-identical.
+const deploymentPrefix = validateDeploymentPrefix(app.node.tryGetContext('deploymentPrefix'));
+
+/**
+ * Stack id, namespaced when a deployment prefix is in force.
+ *
+ * Load-bearing beyond the id itself: without it a second deploy UPDATES the
+ * first deployment's stacks rather than creating new ones, and CDK derives its
+ * automatic cross-stack export names from the stack name, so prefixing the id
+ * namespaces all of those too.
+ */
+const stackId = (id: string): string => (deploymentPrefix ? `${deploymentPrefix}-${id}` : id);
 
 // Cost allocation tag helper
 function tagStack(stack: cdk.Stack, feature: string) {
@@ -62,8 +84,11 @@ const env = {
 //           model agreements. Skipped entirely when `anthropicUseCase` is
 //           absent, e.g. for an account that already has access.
 //
-// The stack id stays `VocWebSearchStack` deliberately: it determines the
-// CloudFormation export names VocProcessingStack and VocApiStack import.
+// The BASE id stays `VocWebSearchStack` deliberately: it determines the
+// CloudFormation export names VocProcessingStack and VocApiStack import. It goes
+// through stackId() like every other stack, so a prefixed deployment namespaces
+// the exports and both importers in lockstep — which is what keeps two copies
+// from importing each other's gateway.
 const webSearchContextRaw = app.node.tryGetContext('enableWebSearch');
 const deployWebSearch = shouldDeployWebSearch(webSearchContextRaw);
 const webSearchCrossRegion = deployWebSearch && env.region !== 'us-east-1';
@@ -89,8 +114,9 @@ if (anthropicUseCaseRaw) {
 
 let webSearchStack: VocWebSearchStack | undefined;
 if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
-  webSearchStack = new VocWebSearchStack(app, 'VocWebSearchStack', {
+  webSearchStack = new VocWebSearchStack(app, stackId('VocWebSearchStack'), {
     env: { account: env.account, region: 'us-east-1' },
+    deploymentPrefix,
     // Unconditionally true, matching what the model-access half required when
     // it was its own us-east-1 stack. CDK only emits the SSM cross-region
     // machinery when the regions actually differ, so this only *permits* it.
@@ -118,8 +144,9 @@ if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
 // Stack 1: VocCoreStack
 // Merges: Storage + Auth + FrontendInfra
 // ============================================
-const coreStack = new VocCoreStack(app, 'VocCoreStack', {
+const coreStack = new VocCoreStack(app, stackId('VocCoreStack'), {
   env,
+  deploymentPrefix,
   description: 'VoC Data Lake - Core Infrastructure (Storage, Auth, Frontend Hosting) (uksb-0q2jyqfvlm)(tag:VocCoreStack)',
   brandName: config.brandName,
 });
@@ -129,8 +156,9 @@ tagStack(coreStack, 'Core');
 // Stack 2: VocIngestionStack
 // (unchanged - plugin-based ingestors)
 // ============================================
-const ingestionStack = new VocIngestionStack(app, 'VocIngestionStack', {
+const ingestionStack = new VocIngestionStack(app, stackId('VocIngestionStack'), {
   env,
+  deploymentPrefix,
   description: 'VoC Data Lake - Ingestion Layer (Lambda, EventBridge, SQS) (uksb-0q2jyqfvlm)(tag:VocIngestionStack)',
   feedbackTable: coreStack.feedbackTable,
   watermarksTable: coreStack.watermarksTable,
@@ -148,8 +176,9 @@ tagStack(ingestionStack, 'Ingestion');
 // Stack 3: VocProcessingStack
 // Merges: Processing + Research
 // ============================================
-const processingStack = new VocProcessingStack(app, 'VocProcessingStack', {
+const processingStack = new VocProcessingStack(app, stackId('VocProcessingStack'), {
   env,
+  deploymentPrefix,
   crossRegionReferences: webSearchCrossRegion,
   description: 'VoC Data Lake - Processing Layer (Lambda, Bedrock, Step Functions) (uksb-0q2jyqfvlm)(tag:VocProcessingStack)',
   feedbackTable: coreStack.feedbackTable,
@@ -172,8 +201,9 @@ tagStack(processingStack, 'Processing');
 // Stack 4: VocApiStack
 // Merges: Analytics + Frontend deployment
 // ============================================
-const apiStack = new VocApiStack(app, 'VocApiStack', {
+const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   env,
+  deploymentPrefix,
   crossRegionReferences: webSearchCrossRegion,
   description: 'VoC Data Lake - API & Frontend (API Gateway, Lambda, S3 Deploy) (uksb-0q2jyqfvlm)(tag:VocApiStack)',
   feedbackTable: coreStack.feedbackTable,
@@ -224,7 +254,7 @@ Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
 NagSuppressions.addStackSuppressions(coreStack, [...lambdaBasicExecutionRoleSuppressions, ...cdkAssetsSuppressions], true);
 // Apply stack-level suppressions
 NagSuppressions.addStackSuppressions(ingestionStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions], true);
-NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions, ...comprehendSuppressions, ...translateSuppressions], true);
-NagSuppressions.addStackSuppressions(apiStack, [...lambdaBasicExecutionRoleSuppressions, ...apiGatewayPushToCloudwatchLogsRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions, ...cdkAssetsSuppressions, ...comprehendSuppressions, ...translateSuppressions], true);
+NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(deploymentPrefix), ...comprehendSuppressions, ...translateSuppressions], true);
+NagSuppressions.addStackSuppressions(apiStack, [...lambdaBasicExecutionRoleSuppressions, ...apiGatewayPushToCloudwatchLogsRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(deploymentPrefix), ...cdkAssetsSuppressions, ...comprehendSuppressions, ...translateSuppressions], true);
 
 app.synth();

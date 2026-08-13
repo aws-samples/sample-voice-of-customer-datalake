@@ -12,12 +12,15 @@
  */
 
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
-  Plus, Loader2, Palette, Settings2, Save, X, Eye
+import {
+  Plus, Loader2, Palette, Settings2, Save, X, Eye, Link2
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../api/client'
+import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
+import type { LucideIcon } from 'lucide-react'
 import type { FeedbackForm } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import ConfirmModal from '../../components/ConfirmModal'
@@ -25,10 +28,22 @@ import { defaultFormConfig } from './formTemplates'
 import { normalizeFeedbackForms } from './formSchema'
 import TemplateWizard from './TemplateWizard'
 import FormCard from './FormCard'
+import ValidationLinkPicker from './ValidationLinkPicker'
+import type { ValidationLink } from './ValidationLinkPicker'
 
 
 type FormConfig = Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>
 type FormConfigWithId = FormConfig & { form_id?: string }
+
+type EditorTabId = 'settings' | 'category' | 'validation' | 'theme'
+
+/** One entry in the editor's tab strip. */
+interface EditorTab {
+  readonly id: EditorTabId
+  readonly label: string
+  readonly shortLabel: string
+  readonly icon: LucideIcon
+}
 
 function stripTrailingSlashes(str: string): string {
   if (str.length === 0 || str[str.length - 1] !== '/') return str
@@ -97,6 +112,9 @@ interface FormEditorProps {
   readonly onSave: (form: FormConfigWithId) => void
   readonly onCancel: () => void
   readonly isSaving?: boolean
+  /** False before the API endpoint is configured — the validation-link picker
+   *  reads projects, so it must not fire a request without one. */
+  readonly validationPickerEnabled: boolean
 }
 
 function getInitialFormData(form: FeedbackForm | null, initialConfig: FormConfig | null | undefined): FormConfigWithId {
@@ -105,13 +123,67 @@ function getInitialFormData(form: FeedbackForm | null, initialConfig: FormConfig
   return { ...defaultFormConfig }
 }
 
+/**
+ * The link fields as the picker's controlled selects need them: '' rather than
+ * undefined, so a record persisted before these fields existed still renders.
+ * A module-level helper rather than inline JSX, to keep `FormEditor` under the
+ * repo's complexity ceiling.
+ */
+function toValidationLink(formData: FormConfigWithId): ValidationLink {
+  return {
+    project_id: formData.project_id ?? '',
+    document_id: formData.document_id ?? '',
+  }
+}
+
 function getSaveButtonText(isSaving: boolean, isEditing: boolean): string {
   if (isSaving) return isEditing ? 'Saving...' : 'Creating...'
   return isEditing ? 'Save Changes' : 'Create Form'
 }
 
-function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSaving }: FormEditorProps) {
-  const [activeTab, setActiveTab] = useState<'settings' | 'theme' | 'category'>('settings')
+/**
+ * The editor's tab strip. Extracted from `FormEditor` when the fourth tab
+ * pushed that function past the repo's complexity ceiling.
+ */
+function EditorTabBar({ activeTab, onSelect }: Readonly<{
+  activeTab: EditorTabId
+  onSelect: (tab: EditorTabId) => void
+}>) {
+  const { t } = useTranslation('feedbackForms')
+  // Annotated, not inferred: with `id` typed as EditorTabId, `onSelect(tab.id)`
+  // typechecks directly, so no runtime narrowing guard is needed and a mistyped
+  // id fails to compile instead of rendering a button that silently does
+  // nothing. All four labels come from the catalogues — the keys already exist
+  // in all eight locales, and a half-translated tab strip reads worse than
+  // either extreme.
+  const tabs: readonly EditorTab[] = [
+    { id: 'settings', label: t('editor.tabs.formSettings'), shortLabel: t('editor.tabs.settings'), icon: Settings2 },
+    { id: 'category', label: t('editor.tabs.categoryRouting'), shortLabel: t('editor.tabs.category'), icon: Settings2 },
+    { id: 'validation', label: t('editor.tabs.validates'), shortLabel: t('editor.tabs.validatesShort'), icon: Link2 },
+    { id: 'theme', label: t('editor.tabs.theme'), shortLabel: t('editor.tabs.theme'), icon: Palette },
+  ]
+  return (
+    <div className="flex gap-1 sm:gap-2 px-3 sm:px-4 pt-3 sm:pt-4 border-b border-gray-200 overflow-x-auto">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => onSelect(tab.id)}
+          className={clsx(
+            'flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap text-sm',
+            activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+          )}
+        >
+          <tab.icon size={16} />
+          <span className="hidden sm:inline">{tab.label}</span>
+          <span className="sm:hidden">{tab.shortLabel}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSaving, validationPickerEnabled }: FormEditorProps) {
+  const [activeTab, setActiveTab] = useState<EditorTabId>('settings')
   const [formData, setFormData] = useState<FormConfigWithId>(() => getInitialFormData(form, initialConfig))
 
   const selectedCategory = categories.find(c => c.id === formData.category)
@@ -129,30 +201,7 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 sm:gap-2 px-3 sm:px-4 pt-3 sm:pt-4 border-b border-gray-200 overflow-x-auto">
-          {[
-            { id: 'settings', label: 'Form Settings', shortLabel: 'Settings', icon: Settings2 },
-            { id: 'category', label: 'Category Routing', shortLabel: 'Category', icon: Settings2 },
-            { id: 'theme', label: 'Theme', shortLabel: 'Theme', icon: Palette },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => { 
-                const tabId = tab.id
-                if (tabId === 'settings' || tabId === 'category' || tabId === 'theme') setActiveTab(tabId) 
-              }}
-              className={clsx(
-                'flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap text-sm',
-                activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-              )}
-            >
-              <tab.icon size={16} />
-              <span className="hidden sm:inline">{tab.label}</span>
-              <span className="sm:hidden">{tab.shortLabel}</span>
-            </button>
-          ))}
-        </div>
+        <EditorTabBar activeTab={activeTab} onSelect={setActiveTab} />
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-3 sm:p-4">
@@ -333,6 +382,14 @@ function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSavin
             </div>
           )}
 
+          {activeTab === 'validation' && (
+            <ValidationLinkPicker
+              value={toValidationLink(formData)}
+              onChange={(link) => setFormData({ ...formData, ...link })}
+              enabled={validationPickerEnabled}
+            />
+          )}
+
           {activeTab === 'theme' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <div className="space-y-3 sm:space-y-4">
@@ -459,7 +516,7 @@ export default function FeedbackForms() {
   const [deleteFormId, setDeleteFormId] = useState<string | null>(null)
 
   const { data: formsData, isLoading } = useQuery({
-    queryKey: ['feedback-forms'],
+    queryKey: feedbackFormsKey(),
     queryFn: () => api.getFeedbackForms(),
     // Stored forms can predate newer fields (and fixtures can be sparse):
     // normalize once at the query boundary so FeedbackForm's declared
@@ -478,7 +535,7 @@ export default function FeedbackForms() {
     mutationFn: (form: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> & { form_id?: string }) =>
       form.form_id ? api.updateFeedbackForm(form.form_id, form) : api.createFeedbackForm(form),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['feedback-forms'] })
+      queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
       setEditingForm(null)
       setTemplateConfig(null)
     },
@@ -487,7 +544,7 @@ export default function FeedbackForms() {
   const deleteMutation = useMutation({
     mutationFn: (formId: string) => api.deleteFeedbackForm(formId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['feedback-forms'] })
+      queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
     },
   })
 
@@ -495,7 +552,7 @@ export default function FeedbackForms() {
     mutationFn: ({ formId, enabled }: { formId: string; enabled: boolean }) =>
       api.updateFeedbackForm(formId, { enabled }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['feedback-forms'] })
+      queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
     },
   })
 
@@ -581,6 +638,7 @@ export default function FeedbackForms() {
             setTemplateConfig(null)
           }}
           isSaving={saveMutation.isPending}
+          validationPickerEnabled={!!config.apiEndpoint}
         />
       )}
 

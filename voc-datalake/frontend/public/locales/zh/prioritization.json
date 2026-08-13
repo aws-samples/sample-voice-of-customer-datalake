@@ -17,6 +17,14 @@
     "wrongTypeDescription": "您的项目有文档，但没有 PRD 或 PR/FAQ。请打开项目并生成 PRD 或 PR/FAQ 以在此处评分。",
     "wrongTypeTitle": "没有可评分的文档"
   },
+  "evidence": {
+    "avgRating": "平均评分",
+    "noLinkedForm": "没有反馈表单与此文档关联。",
+    "noRatings": "未收集到评分",
+    "submissions": "提交数",
+    "title": "已收集的反馈",
+    "unavailable": "评分不可用"
+  },
   "framework": {
     "description": "对每个文档进行评分：<strong>影响力</strong>、<strong>上市时间</strong>、<strong>战略契合度</strong>和<strong>置信度</strong>。",
     "title": "优先级排序框架"

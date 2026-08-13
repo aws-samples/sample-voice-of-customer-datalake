@@ -240,6 +240,114 @@ cdk deploy --all --require-approval never
 A clean `cdk synth`/`cdk deploy` prints **zero warnings** — treat any new
 warning as a regression to investigate rather than noise to ignore.
 
+### Two Deployments in One Account and Region
+
+Every physical name is `{base}-{account}-{region}`, which keeps two AWS accounts
+apart but **not** two deployments inside one account and region — those resolve
+to identical names, so a second deploy would update the first deployment's
+stacks. `-c deploymentPrefix=<prefix>` supplies the missing dimension, so a
+staging copy can sit beside a demo copy in one account:
+
+```bash
+# the original deployment — unchanged, no flag, nothing to migrate
+npm run deploy:infra
+
+# a second, fully independent copy
+cd voc-datalake
+cdk deploy --all -c deploymentPrefix=b --require-approval never
+```
+
+The prefix reaches stack names (`b-VocCoreStack`), every physical resource name
+(`b-voc-feedback-<account>-<region>`), all CloudFormation exports, and the IAM
+wildcards that would otherwise let one copy invoke the other's ingestors. Pass
+the same flag on **every** command for that deployment — `cdk deploy`,
+`cdk diff`, `cdk destroy`.
+
+The two frontend shell scripts cannot see CDK context, so they take the stack
+names as environment variables instead. **Both** need them, and forgetting them
+on `deploy:frontend` is the expensive one: it resolves the *unprefixed*
+deployment's bucket and CloudFront distribution and syncs this build over that
+site, silently, because every output resolves fine.
+
+```bash
+# frontend of the prefixed deployment (build + S3 sync + invalidation),
+# from the repository root
+CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack npm run deploy:frontend
+
+# local .env pointed at the prefixed deployment, from voc-datalake/frontend/
+cd voc-datalake/frontend
+CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack bash scripts/update-env.sh
+```
+
+There is no limit of two: the prefix is a namespace, so any number of copies can
+coexist. Verified by synthesizing three (`b`, `c`, `e`) and intersecting every
+name they generate — **no shared stack name, physical resource name, export name
+or IAM policy ARN between any pair.** What is shared is listed under
+"Known limitations" below.
+
+Three things to know before using it:
+
+- **The prefix must start with a lowercase letter.** It reaches CloudFormation
+  *stack* names, which must match `/^[A-Za-z][A-Za-z0-9-]*$/`, so a leading digit
+  is rejected at synth even though `9-voc-raw-data-…` would be a perfectly valid
+  bucket name. Combined with the one-character budget below, that makes 26
+  usable prefixes on the committed defaults, plus the unprefixed deployment.
+
+- **It is opt-in, and it must stay that way for an existing deployment.**
+  Renaming a DynamoDB table, S3 bucket or Cognito user pool is a
+  CloudFormation *replacement*, not a rename: adding the flag to a deployment
+  that was created without it would leave the old data behind in orphaned
+  resources. There is deliberately no `deploymentPrefix` in
+  `cdk.context.json` — it is a per-deployment CLI flag, not project config.
+  With no flag the synthesized templates are byte-identical to a build from
+  before the flag existed, which `lib/app-baseline.test.ts` enforces.
+- **On the committed defaults the prefix has to be ONE character.** That is why
+  the example above is `b` and not `stg`. Lambda function, IAM role and
+  EventBridge rule names cap at 64 characters, and with the `pluginStatus` in
+  `cdk.context.json` the longest name the app generates
+  (`voc-ingest-app_reviews_android-schedule` plus `-<account>-<region>`) already
+  uses 62 of them in `us-east-1` — so `-c deploymentPrefix=stg` does not
+  synthesize until you widen the budget by disabling a plugin with a long id.
+  A longer region name costs more still. Synth fails immediately, naming the
+  offending resource and the exact remaining budget:
+
+  ```
+  [staging-VocIngestionStack] deploymentPrefix "staging" makes
+  "staging-voc-ingest-app_reviews_android-schedule-<account>-<region>" 70
+  characters, over the 64-character limit for Lambda function, IAM role and
+  EventBridge rule names. Use a prefix of at most 1 character, or shorten the
+  resource name (e.g. disable the plugin that owns it).
+  ```
+
+  Disabling unused plugins in `pluginStatus` widens the budget: each character
+  removed from the longest plugin id buys one for the prefix. S3 bucket names
+  and the Cognito hosted-UI domain prefix are checked against **63** characters
+  rather than 64, since both must be a single DNS label — a difference of one
+  character that decides whether the deploy succeeds, so the check keys off the
+  call site (`uniqueDnsName()`) rather than guessing from the name.
+
+  Shortening the schedule-rule base name itself (`voc-ingest-<id>-schedule`)
+  would widen the budget for everyone, but it renames a resource on **every**
+  existing deployment, which is exactly what the opt-in design exists to avoid.
+  That is a separate change with its own baseline regeneration.
+
+#### Known limitations of a prefixed deployment
+
+Neither is a resource collision — nothing is shared that could cause data loss —
+but both are worth knowing before running several copies:
+
+- **CloudWatch metrics co-mingle.** The Lambdas publish EMF metrics to a
+  hardcoded namespace (`Metrics(namespace="VoC")` in `lambda/shared/logging.py`)
+  with a `service` dimension from `POWERTOOLS_SERVICE_NAME`, and that value is
+  the same literal in every deployment (`voc-metrics-api`, `voc-processor`, …).
+  So two copies' metrics land on the same namespace and dimension, and a
+  dashboard or alarm cannot tell them apart. **Logs are not affected** — log
+  group names carry the prefix, so each deployment's logs stay separate.
+- **API Gateway authorizer names are shared** (`voc-cognito-authorizer`,
+  `voc-mcp-token-authorizer`). Deliberate: those names only have to be unique
+  inside their own RestApi, and each deployment has its own, so prefixing them
+  would add churn without preventing a collision.
+
 ### Stack Deployment Order
 
 Due to dependencies, stacks should be deployed in this order:

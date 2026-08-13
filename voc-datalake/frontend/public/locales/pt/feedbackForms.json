@@ -67,9 +67,24 @@
       "categoryRouting": "Roteamento de categoria",
       "formSettings": "Configurações do formulário",
       "settings": "Configurações",
-      "theme": "Tema"
+      "theme": "Tema",
+      "validates": "Valida",
+      "validatesShort": "Valida"
     },
-    "textColor": "Cor do texto"
+    "textColor": "Cor do texto",
+    "validationDescription": "Opcionalmente registre sobre qual projeto — e qual PRD ou PR/FAQ — este formulário coleta feedback. As avaliações reunidas aparecerão ao lado desse documento na página de Priorização. Deixe ambos vazios para um formulário independente, como uma pesquisa de site.",
+    "validationDocumentHint": "Mantenha no projeto inteiro para preservar o vínculo quando um documento for regerado.",
+    "validationDocumentLabel": "Documento (Opcional)",
+    "validationLoadingLink": "Carregando o vínculo…",
+    "validationNoProject": "-- Não vinculado --",
+    "validationProjectHint": "Limpar o projeto desvincula este formulário.",
+    "validationProjectLabel": "Projeto",
+    "validationTitle": "O Que Este Formulário Valida",
+    "validationUnknownDocument": "Documento vinculado (não mais disponível)",
+    "validationUnknownProject": "Projeto vinculado (não mais disponível)",
+    "validationUnverifiedDocument": "Documento vinculado (não foi possível verificar)",
+    "validationUnverifiedProject": "Projeto vinculado (não foi possível verificar)",
+    "validationWholeProject": "-- Projeto inteiro --"
   },
   "empty": {
     "createButton": "Criar seu primeiro formulário",

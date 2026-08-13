@@ -111,6 +111,15 @@ describe('research state machine wiring (issue #157)', () => {
     expect(state.definition).toContain('"web_search_queries.$":"$.Payload.web_search_queries"');
     expect(state.definition).toContain('"web_search_queries.$":"$.initialize_result.web_search_queries"');
   });
+
+  it('flows the derivation to the save step, so the report records its inputs', () => {
+    // step_initialize is the only step that reads the reference documents,
+    // personas and feedback; step_save is what writes the document. Drop
+    // either half of this wiring and every research report silently loses the
+    // answer to "what was this built from".
+    expect(state.definition).toContain('"derivation.$":"$.Payload.derivation"');
+    expect(state.definition).toContain('"derivation.$":"$.initialize_result.derivation"');
+  });
 });
 
 /** Narrow a CloudFormation resource to its Properties without a bare cast. */

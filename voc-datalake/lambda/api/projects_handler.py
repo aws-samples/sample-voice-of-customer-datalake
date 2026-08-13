@@ -11,7 +11,7 @@ from typing import Any
 
 from shared.logging import logger, tracer
 from shared.aws import invoke_lambda_async
-from shared.api import create_api_resolver, validate_days, validate_int, api_handler, DecimalEncoder, validate_date_basis
+from shared.api import create_api_resolver, validate_days, validate_int, api_handler, validate_date_basis
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
 from shared.jobs import create_job
 from shared.exceptions import NotFoundError, ServiceError, ValidationError
@@ -567,17 +567,113 @@ def api_suggest_document_brief(project_id: str):
     return suggest_document_brief(project_id, app.current_event.json_body or {})
 
 
+# A DynamoDB sort key is capped at 1024 bytes. Bounding a source id well under
+# that makes an absurd one a 400 naming the field rather than a DynamoDB
+# ValidationException surfacing as a 500.
+MAX_SOURCE_DOCUMENT_ID_LEN = 256
+
+
+def _validated_source_id(project_id: str, sk_prefix: str, raw: Any, field: str) -> str | None:
+    """
+    Check that a client-supplied source document id names a document of the
+    expected type in THIS project, and return it. Absent, null or blank means
+    "not aimed, use the newest of this type" and is valid.
+
+    This is a trust boundary, not a convenience check: the generator reads the
+    named document's text straight into a Bedrock prompt, so an unvalidated id
+    would pull another project's document into this project's generation.
+    Ownership and type need no separate test — `pk` is the project and `sk` is
+    `{TYPE}#{id}`, so an id from elsewhere, or a PR/FAQ id offered as a PRD,
+    cannot resolve.
+
+    Rejecting here as well as in the generator is deliberate: the generator's
+    raise is what makes a build fail loudly instead of silently substituting the
+    newest document, while this check is what keeps an unresolvable id from
+    creating a job that bills a multi-minute Bedrock call in order to fail.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise ValidationError(f'{field} must be a document id string')
+    document_id = raw.strip()
+    if not document_id:
+        return None
+    if len(document_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
+        raise ValidationError(f'{field} is not a valid document id')
+    item = get_projects_table().get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'{sk_prefix}{document_id}'},
+    ).get('Item')
+    if not item:
+        raise NotFoundError(f'{field}: no such document in this project')
+    return document_id
+
+
+# One request must not become an unbounded number of keyed reads. `_validated_source_id`
+# needs no such bound — it checks one id — but a list does, and without it a 200-entry
+# array is 200 round trips paid for by a single unauthenticated-cost request.
+# Ten is well above any real selection (the whole point of the picker is choosing a
+# few reports) and far below a list worth paginating.
+MAX_SELECTED_RESEARCH_IDS = 10
+
+
+def _validated_research_ids(project_id: str, raw: Any, field: str) -> list[str]:
+    """
+    Check that every client-supplied research id names a research report in THIS
+    project, and return them in the order they were sent. Absent or empty means
+    "read no research" and is valid.
+
+    Reached only when `use_research` is on. A list sent with the switch off is
+    ignored without a read and never stored — see the call site for why that is
+    the honest reading rather than a rejection.
+
+    Each id goes through `_validated_source_id` under the `RESEARCH#` prefix, so
+    ownership, type and the length bound are all decided exactly as they are for
+    `source_prd_id` — an id from another project, or a PRD id offered as research,
+    does not resolve. Same trust boundary, same reason: the named document's text
+    goes straight into a Bedrock prompt.
+
+    Scoped to `RESEARCH#` on purpose rather than folded into a general document
+    selection. The prototype build already reads a PRD and a PR/FAQ, and the shared
+    reference-document path keeps only the first three of a selection — so research,
+    which sorts last, is exactly what a general picker would drop. A research-only
+    field cannot be capped out because nothing of another type is in its candidate
+    set.
+
+    The arity bound is checked BEFORE the first read, so an over-long list costs
+    one 400 rather than N reads and then a 400. Duplicates are collapsed: a
+    repeated id would otherwise be read twice and injected into the prompt twice.
+    """
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValidationError(f'{field} must be a list of document ids')
+    if len(raw) > MAX_SELECTED_RESEARCH_IDS:
+        raise ValidationError(
+            f'{field} names more than {MAX_SELECTED_RESEARCH_IDS} documents'
+        )
+    document_ids: list[str] = []
+    for entry in raw:
+        document_id = _validated_source_id(project_id, 'RESEARCH#', entry, field)
+        if document_id and document_id not in document_ids:
+            document_ids.append(document_id)
+    return document_ids
+
+
 @app.post("/projects/<project_id>/build-prototype")
 @tracer.capture_method
 def api_build_prototype(project_id: str):
     """
-    Kick off a build-prototype job. The document-generator lambda reads the
-    latest PRD and/or PR-FAQ for this project and asks Bedrock to produce a
-    self-contained HTML React prototype, saved as a ProjectDocument of type
-    'prototype'. The frontend polls job status, then displays the HTML in an
-    iframe via srcdoc (sandboxed, no parent-page access).
+    Kick off a build-prototype job. The document-generator lambda reads the PRD
+    and/or PR-FAQ this request names — or the newest of each type when it names
+    none — and asks Bedrock to produce a self-contained HTML React prototype,
+    saved as a ProjectDocument of type 'prototype'. The frontend polls job
+    status, then displays the HTML in an iframe via srcdoc (sandboxed, no
+    parent-page access).
     """
     body = app.current_event.json_body or {}
+    # Read once: it is both a stored field and the switch deciding whether the id
+    # list is looked at at all — see `selected_research_ids` below.
+    use_research = bool(body.get('use_research'))
     doc_config = {
         'doc_type': 'build_prototype',
         'title': body.get('title') or 'Prototype',
@@ -587,7 +683,49 @@ def api_build_prototype(project_id: str):
         # Optional feedback-driven regeneration: revise an existing prototype
         # centered on this feedback while still honoring the PRD/PR-FAQ.
         'feedback': body.get('feedback'),
-        'base_prototype_id': body.get('base_prototype_id'),
+        # The prototype being revised is a client-supplied id like the two below,
+        # and it is checked the same way — whenever it is supplied, whether or not
+        # `feedback` came with it. Unchecked, an id naming no prototype produced a
+        # document labelled a revision (it carries `revised_from_id`) that the
+        # model built without ever seeing the prototype it supposedly revises,
+        # after a billed multi-minute Bedrock call.
+        'base_prototype_id': _validated_source_id(
+            project_id, 'PROTOTYPE#', body.get('base_prototype_id'), 'base_prototype_id',
+        ),
+        # Optional aiming: build from THESE documents instead of the newest of
+        # each type. Validated before the job exists, so a bad id costs a 4xx
+        # rather than a billable build that fails minutes later.
+        'source_prd_id': _validated_source_id(
+            project_id, 'PRD#', body.get('source_prd_id'), 'source_prd_id',
+        ),
+        'source_prfaq_id': _validated_source_id(
+            project_id, 'PRFAQ#', body.get('source_prfaq_id'), 'source_prfaq_id',
+        ),
+        # Optional extra grounding, chosen per build rather than remembered per
+        # project (the same answer #320 took for the source ids). All three absent
+        # means the prompt this endpoint has always produced: the generator adds a
+        # section only for what is asked for, so False/[] changes nothing.
+        'use_product_context': bool(body.get('use_product_context')),
+        'use_research': use_research,
+        # Ids sent with the switch OFF are ignored, not rejected — a deliberate
+        # choice, and the opposite of `base_prototype_id`, which is checked whether
+        # or not `feedback` came with it. The difference is what the field can
+        # still reach: an unchecked `base_prototype_id` reaches `doc_config` and
+        # produces a document labelled a revision, whereas `use_research` is the
+        # only thing the generator reads before it opens this list, so a list sent
+        # beside a false flag names nothing any build will look at. There is no
+        # claim to check, and a 4xx over a field the build ignores would fail a
+        # request for a reason the user cannot see. Ignoring it also drops the N
+        # keyed reads that validating it unconditionally spent on a result nothing
+        # used.
+        #
+        # DROPPED rather than passed through, which is the half that has to be
+        # deliberate: every id in the stored config resolved under this project's
+        # `RESEARCH#` prefix, so a replay of the job cannot reach an unvalidated
+        # id if the switch is ever read differently.
+        'selected_research_ids': _validated_research_ids(
+            project_id, body.get('selected_research_ids'), 'selected_research_ids',
+        ) if use_research else [],
     }
     job_id, _ = create_job(project_id, 'build_prototype', 'doc_config', doc_config, status='pending')
     invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
@@ -630,11 +768,18 @@ def api_generate_product_report(project_id: str):
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler for projects API."""
     try:
-        logger.info(f"Received event: {json.dumps(event)}")
-        
-        # Normal API Gateway request
+        # Never log the raw event or the resolved result here (issue #245).
+        # The event carries the caller's Authorization header (Cognito bearer
+        # token) and request body; the result carries user-generated content
+        # (project text, verbatims, persona data).  Powertools'
+        # @logger.inject_lambda_context already attaches request-id, function
+        # name and cold-start, so only the status code is added below.
+        # Status code alone is not sensitive, so this stays at INFO to keep the
+        # per-invocation completion signal that LOG_LEVEL=INFO would drop at
+        # DEBUG — it is the absence of the body, not the log level, that
+        # protects the data.
         result = app.resolve(event, context)
-        logger.info(f"Returning result: {json.dumps(result, cls=DecimalEncoder)}")
+        logger.info("Returning response", extra={"status_code": result.get("statusCode")})
         return result
         
     except Exception as e:

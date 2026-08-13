@@ -4,19 +4,21 @@
 import clsx from 'clsx'
 import { format } from 'date-fns'
 import {
-  FileText, Pencil, Trash2, Loader2, Wand2, AlertCircle, Clock,
+  FileText, Pencil, Trash2, Loader2, Wand2, AlertCircle,
 } from 'lucide-react'
 import { useCallback, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
+import { resolveDerivation, type DerivationRole, type DerivationSource } from '../../api/derivation'
+import { ordinalByType, resolveRevision, type DocumentOrdinal } from '../../api/documentLineage'
+import { MAX_SELECTED_RESEARCH_IDS } from './overviewState'
 import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
+import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../components/PrototypeLinkActions'
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
-import { signedUrlExpiresAt, formatExpiry } from '../../components/prototypeLinkLifetime'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
-import { useDeadlinePassed } from '../../components/useDeadlinePassed'
 import type {
   ProjectDocument, Project,
 } from '../../api/types'
@@ -50,6 +52,9 @@ export default function DocumentsTab({
   isDeleting,
 }: DocumentsTabProps) {
   const { t } = useTranslation('projectDetail')
+  // One pass for the whole list rather than one per row, and memoised because the
+  // list re-renders on every selection change while the documents themselves do not.
+  const ordinals = useMemo(() => ordinalByType(documents), [documents])
 
   return (
     <div className="space-y-4">
@@ -83,6 +88,12 @@ export default function DocumentsTab({
               >
                 <div className="flex items-center gap-2 mb-1">
                   <DocumentTypeBadge type={d.document_type} />
+                  {/* Six prototypes called "Prototype", four sharing a date, is the
+                      real shape of this list — the badge and the date do not tell
+                      them apart, and neither does the title. The ordinal does, and
+                      it is derived from creation order rather than stored, so it
+                      needs no migration and cannot disagree with the records. */}
+                  <DocumentOrdinalLabel ordinal={ordinals.get(d.document_id)} t={t} />
                   <span className="text-xs text-gray-400">{format(new Date(d.created_at), 'MMM d')}</span>
                 </div>
                 <h4 className="font-medium line-clamp-2 text-sm lg:text-base">{d.title}</h4>
@@ -137,6 +148,18 @@ export default function DocumentsTab({
                   url={selectedDoc.prototype_url}
                   title={selectedDoc.title}
                   prototypeFormat={selectedDoc.prototype_format}
+                  // Blank when the inherited source no longer exists, because the
+                  // API rejects an id it cannot resolve — and a prototype whose PRD
+                  // has since been deleted would otherwise become permanently
+                  // unrevisable. Blank reads as "not aimed", so the revision falls
+                  // back to newest-of-type: not a silent substitution, since the
+                  // document it would have preserved is gone.
+                  sourcePrdId={stillPresent(selectedDoc.source_prd_id, documents)}
+                  sourcePrfaqId={stillPresent(selectedDoc.source_prfaq_id, documents)}
+                  sourcesDropped={hasDroppedSource(selectedDoc, documents)}
+                  // The optional inputs the BASE was built with, not today's
+                  // defaults — see `inheritedExtraSources`.
+                  extraSources={inheritedExtraSources(selectedDoc, documents)}
                   onJobStarted={onJobStarted}
                 />
               ) : (
@@ -147,6 +170,12 @@ export default function DocumentsTab({
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedDoc.content}</ReactMarkdown>
                 </div>
               )}
+              {/* Below the content, not above it: provenance is what the document
+                  was made from, not what it says. Both branches above own the
+                  pane's flexible height, so a footer here stays visible without
+                  pushing the preview down the page. */}
+              <RevisionFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
+              <DerivationFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
             </div>
           ) : (
             <div className="flex items-center justify-center h-full text-gray-400">{t('documents.selectDocument')}</div>
@@ -165,11 +194,24 @@ export default function DocumentsTab({
 type TFunc = (key: string, opts?: Record<string, unknown>) => string
 
 function PrototypeFeedbackButton({
-  projectId, basePrototypeId, title, onJobStarted, t,
+  projectId, basePrototypeId, title, sourcePrdId, sourcePrfaqId, sourcesDropped, extraSources,
+  onJobStarted, t,
 }: {
   readonly projectId: string
   readonly basePrototypeId: string
   readonly title: string
+  /** The base prototype's own sources, so a revision keeps the spec it revises. */
+  readonly sourcePrdId: string
+  readonly sourcePrfaqId: string
+  /** The base prototype's optional inputs, for the same reason. */
+  readonly extraSources: InheritedExtraSources
+  /**
+   * A source this prototype was built from has been deleted, so the revision will
+   * read the latest of that type instead. Said out loud rather than left silent:
+   * the fallback is justified, but an unexplained change of spec is the behaviour
+   * this whole flow exists to remove.
+   */
+  readonly sourcesDropped: boolean
   /** Tells the Background Jobs panel to pick the revision up. */
   readonly onJobStarted?: () => void
   readonly t: TFunc
@@ -197,6 +239,27 @@ function PrototypeFeedbackButton({
         title,
         feedback: fb,
         base_prototype_id: basePrototypeId,
+        // Inherit the base prototype's own sources. Without these the backend
+        // re-resolves "the newest of each type", so revising a prototype built
+        // from June's PRD would quietly re-base it on September's — a revision
+        // that changes the spec as well as the feedback, which is not what
+        // "revise this" means. Blank for a prototype that recorded no source
+        // falls back to today's behaviour.
+        source_prd_id: sourcePrdId,
+        source_prfaq_id: sourcePrfaqId,
+        // Inherited for the same reason as the two ids above, and it is the same
+        // defect class: re-deriving the defaults would ground the revision in
+        // whatever research exists NOW, so a report created between the build and
+        // the revision would silently join it — or the product-context flag would
+        // be dropped — while the user only asked to change the feedback.
+        //
+        // The flag-and-ids pair, in the shape `usePrototypeBuild` sends it: the
+        // flag is the switch and the ids are gated on it. One rule for one API
+        // field — deriving the flag here instead was a second rule for the same
+        // field, and the two could have drifted apart.
+        use_product_context: extraSources.useProductContext,
+        use_research: extraSources.useResearch,
+        selected_research_ids: extraSources.useResearch ? [...extraSources.researchIds] : [],
       })
       // The form closes but the text is kept: the revision can still fail
       // minutes later, in the jobs panel, and clearing it would mean retyping
@@ -209,7 +272,8 @@ function PrototypeFeedbackButton({
     } finally {
       setBusy(false)
     }
-  }, [feedback, projectId, basePrototypeId, title, i18n.language, onJobStarted, started])
+  }, [feedback, projectId, basePrototypeId, title, sourcePrdId, sourcePrfaqId, extraSources,
+      i18n.language, onJobStarted, started])
 
   if (!open) {
     return (
@@ -233,6 +297,11 @@ function PrototypeFeedbackButton({
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-base font-semibold mb-1">{t('documents.prototype.feedbackHeading', { defaultValue: 'Revise prototype with feedback' })}</h3>
         <p className="text-xs text-gray-500 mb-3">{t('documents.prototype.feedbackHint', { defaultValue: 'Describe what to change. The PRD/PR-FAQ stays in effect; the prototype is re-centered on your feedback (e.g. “show the admin’s perspective”).' })}</p>
+        {sourcesDropped ? (
+          <p data-testid="revision-rebased-note" className="text-xs text-amber-700 mb-3">
+            {t('documents.prototype.feedbackRebased')}
+          </p>
+        ) : null}
         <textarea
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
@@ -268,12 +337,17 @@ function PrototypeFeedbackButton({
 // prototypes use plain <a href> links to their stable CDN URL instead.
 
 function LegacyHtmlActions({
-  html, safeName, t,
+  html, safeName,
 }: {
   readonly html: string
   readonly safeName: string
-  readonly t: TFunc
 }) {
+  // Reads `components` rather than taking this page's `projectDetail` `t`, because
+  // the labels below are the SAME two labels `PrototypeLinkActions` renders for the
+  // non-legacy branch a few lines down. They were a `projectDetail` copy of them,
+  // which is how one branch of one control ends up worded differently from the
+  // other in seven translations and nobody notices.
+  const { t } = useTranslation('components')
   const onDownloadHtml = useCallback(() => {
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
     const blobUrl = URL.createObjectURL(blob)
@@ -294,91 +368,25 @@ function LegacyHtmlActions({
   return (
     <>
       <button onClick={onOpenInNewTab} className="text-blue-600 hover:underline">
-        {t('documents.prototype.openNewTab', { defaultValue: 'Open in new tab' })}
+        {t('prototypeLink.openNewTab')}
       </button>
       <button onClick={onDownloadHtml} className="text-blue-600 hover:underline">
-        {t('documents.prototype.downloadHtml', { defaultValue: 'Download .html' })}
+        {t('prototypeLink.downloadHtml')}
       </button>
     </>
   )
 }
 
-// ── How long this prototype link lasts ──────────────────────────────────────
-// The URL is a signed, session-scoped credential, not a durable share link, and
-// until now nothing said so: a reviewer would copy it out of "Open in new tab",
-// pass it on, and it would die inside the hour with no explanation at either end.
-//
-// The deadline is read off the URL's own `Expires` rather than from a TTL constant
-// mirrored on this side. The signer's TTL is a Python-side fallback
-// (CDN_SIGNED_URL_TTL_SECONDS is not set in the stack), so a number hardcoded here
-// would be a guess that silently diverges the day it is configured.
-
-function LinkLifetimeNote({
-  url, t, locale, noteId,
-}: {
-  readonly url: string
-  readonly t: TFunc
-  readonly locale: string
-  /**
-   * Minted with `useId` by the caller, which also puts it on the anchors'
-   * `aria-describedby` — so the warning reaches a screen-reader user at the moment they
-   * are about to activate the link, not only someone who happens to hover it. Generated
-   * rather than a module constant so two prototype panes on one screen cannot collide.
-   */
-  readonly noteId: string
-}) {
-  const expiresAt = signedUrlExpiresAt(url)
-
-  // Flips itself at the deadline via a single timer, so the label cannot keep
-  // promising a window that has already closed. Reading `Date.now()` here instead
-  // would be impure (eslint's react-hooks/purity), and sampling it once in state
-  // would freeze the answer for as long as the pane stays mounted.
-  const expired = useDeadlinePassed(expiresAt)
-
-  // Only decides whether the deadline falls on today's date, which does not change
-  // meaningfully within a one-hour window — and if the page is open across midnight,
-  // a sample from before it errs toward SHOWING the date, which is the safe way to be
-  // wrong. Hooks precede the guard below because they cannot be conditional.
-  const [sampledNow] = useState(() => Date.now())
-
-  // No readable deadline — an unsigned or malformed URL. Say nothing rather than
-  // invent a window: a wrong expiry is worse than none.
-  if (expiresAt == null) return null
-
-  return (
-    <span
-      id={noteId}
-      className={clsx('inline-flex items-start gap-1', expired ? 'text-amber-700' : 'text-gray-400')}
-    >
-      <Clock size={11} className="flex-shrink-0 mt-0.5" />
-      {/* Wraps rather than truncates. Under `truncate` the clipped end was the hint —
-          i.e. the sentence this label exists for — so a narrow pane silently put the
-          warning back out of sight for sighted users. */}
-      <span>
-        {expired
-          ? t('documents.prototype.linkExpired', { defaultValue: 'Link expired — reopen the project' })
-          : t('documents.prototype.linkExpires', {
-            time: formatExpiry(expiresAt, sampledNow, locale),
-            defaultValue: 'Link valid until {{time}}',
-          })}
-        {' · '}
-        {/* Visible rather than a `title`: this warning is the whole point of the
-            label, and a tooltip is hover-only — invisible on touch, and announced
-            inconsistently. */}
-        {t('documents.prototype.linkExpiryHint', {
-          defaultValue: 'tied to your session, not a share link',
-        })}
-      </span>
-    </span>
-  )
-}
-
 // ── Prototype view: render the JSON spec natively (no iframe) ────────────────
 // PrototypeRenderer/parsePrototypeSpec moved to components/PrototypeRenderer
-// so the Prioritization page can reuse it.
+// so the Prioritization page can reuse it. The prototype's open/download anchors
+// and the note saying how long they last moved to components/PrototypeLinkActions
+// for the same reason — that page now offers "Open in new tab" too, and the reason
+// these must stay anchors is documented there rather than rediscovered per page.
 
 function PrototypeView({
-  projectId, documentId, html, url, title, prototypeFormat, onJobStarted,
+  projectId, documentId, html, url, title, prototypeFormat, sourcePrdId, sourcePrfaqId,
+  sourcesDropped, extraSources, onJobStarted,
 }: {
   readonly projectId: string
   readonly documentId: string
@@ -386,17 +394,22 @@ function PrototypeView({
   readonly url?: string
   readonly title: string
   readonly prototypeFormat?: string
+  /** Passed through to a revision so it inherits this prototype's sources. */
+  readonly sourcePrdId: string
+  readonly sourcePrfaqId: string
+  /** One of those sources has been deleted, so the revision cannot inherit it. */
+  readonly sourcesDropped: boolean
+  /** The optional inputs the base was built with, passed through to a revision. */
+  readonly extraSources: InheritedExtraSources
   readonly onJobStarted?: () => void
 }) {
-  const { t, i18n } = useTranslation('projectDetail')
+  const { t } = useTranslation('projectDetail')
+  // Shared by the lifetime note and the anchors that describe themselves with it.
+  // `useId` rather than a constant so two prototype panes cannot collide.
   const lifetimeNoteId = useId()
 
   const isHtml = prototypeFormat === 'html' || Boolean(url) || (prototypeFormat === undefined && looksLikeHtmlDocument(html))
   const spec = useMemo(() => (isHtml ? null : parsePrototypeSpec(html)), [isHtml, html])
-
-  // Whether the lifetime note will actually render, so `aria-describedby` below
-  // points at an element that exists rather than dangling on an id that does not.
-  const hasLifetimeNote = signedUrlExpiresAt(url) != null
 
   const safeName = title.replace(/[^\w\-가-힣]+/g, '_')
   const onDownload = useCallback(() => {
@@ -419,41 +432,30 @@ function PrototypeView({
             <span className="flex-shrink-0">{t('documents.prototype.previewLabel', { defaultValue: 'Live preview' })}</span>
             {/* Only signed CDN prototypes have a lifetime to report; legacy inline
                 ones are rendered from `content` and never expire. */}
-            {url ? <LinkLifetimeNote url={url} t={t} locale={i18n.language} noteId={lifetimeNoteId} /> : null}
+            {url ? <PrototypeLinkLifetimeNote url={url} noteId={lifetimeNoteId} /> : null}
           </span>
           <div className="flex items-center gap-3 flex-shrink-0">
             <PrototypeFeedbackButton
               projectId={projectId}
               basePrototypeId={documentId}
               title={title}
+              sourcePrdId={sourcePrdId}
+              sourcePrfaqId={sourcePrfaqId}
+              sourcesDropped={sourcesDropped}
+              extraSources={extraSources}
               onJobStarted={onJobStarted}
               t={t}
             />
             {url ? (
               // New prototypes are served from a stable, same-origin CDN URL —
-              // plain links, no Blob/createObjectURL indirection needed.
-              <>
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline"
-                  aria-describedby={hasLifetimeNote ? lifetimeNoteId : undefined}
-                >
-                  {t('documents.prototype.openNewTab', { defaultValue: 'Open in new tab' })}
-                </a>
-                <a
-                  href={url}
-                  download={`${safeName}.html`}
-                  className="text-blue-600 hover:underline"
-                  aria-describedby={hasLifetimeNote ? lifetimeNoteId : undefined}
-                >
-                  {t('documents.prototype.downloadHtml', { defaultValue: 'Download .html' })}
-                </a>
-              </>
+              // plain links, no Blob/createObjectURL indirection needed. Shared with
+              // the Prioritization row, which offers the open half of this.
+              <PrototypeLinkActions url={url} noteId={lifetimeNoteId} downloadName={safeName} />
             ) : (
               // Legacy prototypes only have inline `content` — fall back to blobbing it.
-              <LegacyHtmlActions html={html} safeName={safeName} t={t} />
+              // No `t`: it reads the same shared `components` labels the branch above
+              // does, so the two spellings of one control cannot drift apart.
+              <LegacyHtmlActions html={html} safeName={safeName} />
             )}
           </div>
         </div>
@@ -494,7 +496,327 @@ function PrototypeView({
   )
 }
 
-// ── Badge ───────────────────────────────────────────────────────────────────
+// ── Provenance: what the selected document was built from ────────────────────
+// First consumer of api/derivation.ts. `resolveDerivation` is already total —
+// absent, null, empty and malformed records all read as "no lineage", and it
+// reconstructs the answer for documents written before the field existed — so
+// this calls it and trusts it instead of parsing defensively on top.
+//
+// In the detail pane rather than on the list cards: a card is 224px wide and
+// already carries a badge, a date and a two-line title.
+
+function DerivationFooter({
+  doc, documents, onSelectDoc,
+}: {
+  readonly doc: ProjectDocument
+  readonly documents: readonly ProjectDocument[]
+  readonly onSelectDoc: (doc: ProjectDocument) => void
+}) {
+  const { t } = useTranslation('projectDetail')
+  const derivation = useMemo(() => resolveDerivation(doc, documents), [doc, documents])
+
+  // The resolver hands back ids, not documents, and `onSelectDoc` needs the
+  // document — so the list is searched here, once, on click only.
+  const onSelectSource = useCallback((documentId: string) => {
+    const target = documents.find((d) => d.document_id === documentId)
+    if (target) onSelectDoc(target)
+  }, [documents, onSelectDoc])
+
+  // 'none' is a legitimate answer — a hand-authored document, or an old record
+  // with nothing to reconstruct — not a gap to advertise. Nothing renders: no
+  // panel, no "unknown", no invented provenance to fill the space.
+  if (derivation.origin === 'none') return null
+
+  // Literal keys so the i18n extractor still sees them, in a record so that
+  // adding a role to DERIVATION_ROLES is a compile error here rather than a
+  // silently missing label.
+  const roleLabels: Record<DerivationRole, string> = {
+    reference: t('documents.derivation.roles.reference'),
+    prototype_prd: t('documents.derivation.roles.prototypePrd'),
+    prototype_prfaq: t('documents.derivation.roles.prototypePrfaq'),
+    merge_input: t('documents.derivation.roles.mergeInput'),
+  }
+
+  // The non-document inputs. Most PRDs are generated from feedback alone, and
+  // without these such a document would read as built from nothing.
+  const inputs = [
+    derivation.feedback_count > 0
+      ? t('documents.derivation.feedbackUsed', { count: derivation.feedback_count })
+      : null,
+    derivation.persona_ids.length > 0
+      ? t('documents.derivation.personasUsed', { count: derivation.persona_ids.length })
+      : null,
+    derivation.product_context_included ? t('documents.derivation.productContext') : null,
+  ].filter((label): label is string => label !== null)
+
+  return (
+    <section data-testid="document-derivation" className="mt-4 pt-3 border-t text-xs text-gray-500">
+      <h3 className="font-medium text-gray-600 mb-1.5">{t('documents.derivation.builtFrom')}</h3>
+      {derivation.sources.length > 0 ? (
+        <ul className="space-y-1">
+          {derivation.sources.map((source) => (
+            // Role in the key too: the same document can contribute twice under
+            // two roles, and neither entry should be dropped as a duplicate.
+            <li key={`${source.role}:${source.document_id}`}>
+              <DerivationSourceRow
+                source={source}
+                roleLabel={roleLabels[source.role]}
+                unavailableLabel={t('documents.derivation.unavailable')}
+                onSelect={onSelectSource}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {/* The generator feeds the model at most three of the reference documents
+          selected, so a record can say five selected and three used. Said in the
+          same neutral grey as the rest, with no icon and no warning colour: the
+          cap is deliberate, and fixing it is a separate issue from showing it.
+          Nothing is said at all when the two numbers agree. */}
+      {derivation.selected_document_count > derivation.sources.length ? (
+        <p className="mt-1.5">
+          {t('documents.derivation.selectedUsed', {
+            used: derivation.sources.length,
+            selected: derivation.selected_document_count,
+          })}
+        </p>
+      ) : null}
+      {inputs.length > 0 ? <p className="mt-1.5">{inputs.join(' · ')}</p> : null}
+    </section>
+  )
+}
+
+/** One contributing document: navigable while it exists, plain text once it does not. */
+function DerivationSourceRow({
+  source, roleLabel, unavailableLabel, onSelect,
+}: {
+  readonly source: DerivationSource
+  readonly roleLabel: string
+  readonly unavailableLabel: string
+  readonly onSelect: (documentId: string) => void
+}) {
+  const label = (
+    <>
+      {/* The same badge the list cards use, keyed on the document_type the
+          resolver now returns alongside the title. */}
+      {source.document_type ? <DocumentTypeBadge type={source.document_type} /> : null}
+      <span className="truncate">{source.title || source.document_id}</span>
+    </>
+  )
+  const role = <span className="flex-shrink-0 text-gray-400">{roleLabel}</span>
+
+  // A source whose document has been deleted stays visible — the relation
+  // outlived its target — but must not be a control that leads nowhere.
+  if (!source.resolved) {
+    return (
+      <span className="flex items-center gap-2 min-w-0">
+        {label}
+        <span className="flex-shrink-0">{unavailableLabel}</span>
+        {role}
+      </span>
+    )
+  }
+
+  return (
+    <span className="flex items-center gap-2 min-w-0">
+      <button
+        type="button"
+        onClick={() => onSelect(source.document_id)}
+        className="flex items-center gap-2 min-w-0 text-left text-blue-600 hover:underline"
+      >
+        {label}
+      </button>
+      {role}
+    </span>
+  )
+}
+
+/**
+ * A source id to send, or '' when that document is no longer in the project.
+ *
+ * The API refuses an id it cannot resolve — deliberately, so a build never runs
+ * against a document the user did not pick. That makes an INHERITED id a
+ * liability: a prototype whose PRD was deleted afterwards would send a dead id on
+ * every revision attempt and could never be revised again. Dropping it to '' is
+ * the same fallback `usePrototypeBuild.effectiveSourceId` applies to a stale
+ * selection, and it is not a silent substitution — the document whose spec would
+ * have been preserved does not exist any more.
+ */
+function stillPresent(
+  documentId: string | null | undefined,
+  documents: readonly ProjectDocument[],
+): string {
+  if (documentId == null || documentId === '') return ''
+  return documents.some((d) => d.document_id === documentId) ? documentId : ''
+}
+
+/**
+ * True when this prototype names a source document that is no longer in the
+ * project, so a revision cannot keep the spec it was built from.
+ *
+ * The fallback is justified — the document is gone — but leaving it unsaid would
+ * make it a silent substitution, which is the exact class of behaviour the source
+ * picker exists to remove. So the revision panel says it out loud.
+ */
+function hasDroppedSource(
+  doc: ProjectDocument,
+  documents: readonly ProjectDocument[],
+): boolean {
+  return ([doc.source_prd_id, doc.source_prfaq_id]).some(
+    (id) => id != null && id !== '' && stillPresent(id, documents) === '',
+  )
+}
+
+/** The optional inputs a revision inherits from the prototype it revises. */
+export interface InheritedExtraSources {
+  readonly useProductContext: boolean
+  /**
+   * The flag-and-ids pair, in the same shape `usePrototypeBuild` sends: the flag
+   * is the switch and the ids are gated on it, so both paths have ONE rule for
+   * one API field. Derived here rather than at the send site — a revision has no
+   * recorded `use_research` boolean to inherit (the derivation records the reports
+   * it used, not the tick-box), so the flag has to come from the ids, and doing
+   * that at the call site is what made the two paths differ.
+   */
+  readonly useResearch: boolean
+  readonly researchIds: ReadonlyArray<string>
+}
+
+/**
+ * What the base prototype was actually built with, read off its own recorded
+ * derivation.
+ *
+ * Inherited rather than re-derived, and for the same reason the source ids are:
+ * re-deriving would ground the revision in whatever exists NOW, so a research
+ * report created between the build and the revision would silently join it, or the
+ * product-context flag would be lost — a revision that changes its inputs as well
+ * as its feedback, which is not what "revise this" means.
+ *
+ * Read through `resolveDerivation`, which is total: a prototype built before this
+ * feature (or one whose derivation is malformed) yields no flag and no reports, so
+ * its revision behaves exactly as it does today.
+ *
+ * Filtered to `document_type === 'research'` — the resolver only knows a type for a
+ * source it FOUND among the project's documents, so this drops both a
+ * reference-role source that is not research and a report that has since been
+ * deleted. Dropping the deleted one is required, not cosmetic: the API rejects an
+ * id it cannot resolve, so keeping it would turn someone else's deletion into this
+ * revision's 4xx. It is dropped without a note, unlike a dropped PRD — the
+ * `feedbackRebased` note says the latest of that type will be used instead, which
+ * would be untrue here: nothing substitutes for a missing research report.
+ */
+function inheritedExtraSources(
+  doc: ProjectDocument,
+  documents: readonly ProjectDocument[],
+): InheritedExtraSources {
+  const derivation = resolveDerivation(doc, documents)
+  const researchIds = derivation.sources
+    .filter((source) => source.role === 'reference' && source.document_type === 'research')
+    .map((source) => source.document_id)
+    // Sliced to the bound the API enforces, exactly as the build path slices the
+    // reports it pre-selects. Today the list cannot exceed it — the API capped the
+    // base build that recorded it — so this is a bound on a bound. It earns its
+    // line for the day the number is LOWERED: without it every prototype built
+    // under the old bound becomes un-revisable, with a 400 naming a list length
+    // the user never chose and cannot shorten from this button.
+    .slice(0, MAX_SELECTED_RESEARCH_IDS)
+  return {
+    useProductContext: derivation.product_context_included,
+    // Inherited research means research: no reports, no flag. Deriving the flag
+    // from the ids here — after the filter that drops deleted reports and after
+    // the slice — is what keeps it true of the list actually being sent.
+    useResearch: researchIds.length > 0,
+    researchIds,
+  }
+}
+
+// ── Succession: what this document replaces ──────────────────────────────────
+// A separate section from the derivation footer, and separate on purpose: "this
+// revises that" is a different relation from "this was built from that". A
+// revision is ALSO built from a PRD, so folding the two would show a prototype as
+// though it had been assembled out of its own predecessor.
+//
+// `revised_from_id` and `revision_feedback` have been written on every
+// feedback-driven revision since that feature shipped and have arrived on every
+// project read ever since, read by nothing. This is the first consumer.
+
+function RevisionFooter({
+  doc, documents, onSelectDoc,
+}: {
+  readonly doc: ProjectDocument
+  readonly documents: readonly ProjectDocument[]
+  readonly onSelectDoc: (doc: ProjectDocument) => void
+}) {
+  const { t } = useTranslation('projectDetail')
+  const revision = useMemo(() => resolveRevision(doc, documents), [doc, documents])
+
+  const onSelectBase = useCallback((documentId: string) => {
+    const target = documents.find((d) => d.document_id === documentId)
+    if (target) onSelectDoc(target)
+  }, [documents, onSelectDoc])
+
+  // Not a revision. Most documents are not, so this renders nothing rather than
+  // an empty heading.
+  if (revision === null) return null
+
+  return (
+    <section data-testid="document-revision" className="mt-4 pt-3 border-t text-xs text-gray-500">
+      <h3 className="font-medium text-gray-600 mb-1.5">{t('documents.revision.heading')}</h3>
+      <p className="flex items-center gap-2 min-w-0">
+        {revision.resolved ? (
+          <button
+            type="button"
+            onClick={() => onSelectBase(revision.revisedFromId)}
+            className="truncate text-left text-blue-600 hover:underline"
+          >
+            {revision.title === null || revision.title === '' ? revision.revisedFromId : revision.title}
+          </button>
+        ) : (
+          // The predecessor has been deleted. The relation still happened, so it
+          // is still reported — just not as a control that leads nowhere. Same
+          // rule the derivation footer follows for a deleted source.
+          <>
+            <span className="truncate">{revision.revisedFromId}</span>
+            <span className="flex-shrink-0">{t('documents.derivation.unavailable')}</span>
+          </>
+        )}
+      </p>
+      {/* The feedback IS the reason this revision exists, so it is the one piece
+          of stored text worth surfacing here. Capped by the backend at 2000
+          chars; clamped rather than scrolled so a long note cannot push the
+          preview off the pane. */}
+      {revision.feedback === '' ? null : (
+        <p className="mt-1.5 italic line-clamp-3">
+          {t('documents.revision.feedback', { feedback: revision.feedback })}
+        </p>
+      )}
+    </section>
+  )
+}
+
+// ── Badges ──────────────────────────────────────────────────────────────────
+
+/**
+ * "2 of 3" for a document whose type has more than one.
+ *
+ * Silent for a type with a single document: "1 of 1" is noise on every PRD in
+ * every project that has one, and the number only earns its space once there is
+ * something to confuse it with.
+ */
+function DocumentOrdinalLabel({
+  ordinal, t,
+}: {
+  readonly ordinal: DocumentOrdinal | undefined
+  readonly t: TFunc
+}) {
+  if (ordinal === undefined || ordinal.total < 2) return null
+
+  return (
+    <span className="text-xs font-medium text-gray-500 flex-shrink-0">
+      {t('documents.ordinal', { ordinal: ordinal.ordinal, total: ordinal.total })}
+    </span>
+  )
+}
 
 function DocumentTypeBadge({ type }: { readonly type: string }) {
   const styles: Record<string, string> = {
