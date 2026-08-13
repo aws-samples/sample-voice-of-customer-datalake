@@ -4,6 +4,7 @@
   "configureEndpoint": "Configure su endpoint de API en Configuración para usar el chat IA",
   "copyMessage": "Copiar mensaje",
   "emptyState": "Inicie una conversación sobre la retroalimentación de sus clientes",
+  "errorPrefix": "Error: {{message}}",
   "export": {
     "copied": "¡Copiado!",
     "copyConversation": "Copiar conversación",

@@ -4,6 +4,7 @@
   "configureEndpoint": "Veuillez configurer votre point de terminaison API dans les Paramètres pour utiliser le chat IA",
   "copyMessage": "Copier le message",
   "emptyState": "Démarrez une conversation sur vos retours clients",
+  "errorPrefix": "Erreur : {{message}}",
   "export": {
     "copied": "Copié !",
     "copyConversation": "Copier la conversation",

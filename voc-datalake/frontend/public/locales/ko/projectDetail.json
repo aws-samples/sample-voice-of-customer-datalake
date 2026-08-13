@@ -29,6 +29,7 @@
     "mentionHint": "<at>을 입력하여 페르소나, <atAll>을 입력하여 라운드테이블, <hash>을 입력하여 문서를 언급하세요",
     "projectAiChat": "프로젝트 AI 채팅",
     "roundtable": "🎙️ 라운드테이블: 모든 {{count}}개 페르소나",
+    "send": "메시지 보내기",
     "startConversation": "대화 시작",
     "stop": "중지",
     "tryExample": "시도: \"@all 우리의 온보딩 플로우에 대해 어떻게 생각하세요?\"",

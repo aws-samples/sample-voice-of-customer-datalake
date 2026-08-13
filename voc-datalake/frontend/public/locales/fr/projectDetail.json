@@ -29,6 +29,7 @@
     "mentionHint": "Tapez <at> pour les personas, <atAll> pour la table ronde, ou <hash> pour les documents",
     "projectAiChat": "Chat IA du projet",
     "roundtable": "🎙️ Table ronde : {{count}} personas",
+    "send": "Envoyer le message",
     "startConversation": "Démarrer une conversation",
     "stop": "Arrêter",
     "tryExample": "Essayez : « @all Que pensez-vous de notre flux d'intégration ? »",

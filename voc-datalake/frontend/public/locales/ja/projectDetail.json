@@ -29,6 +29,7 @@
     "mentionHint": "<at>でペルソナ、<atAll>でラウンドテーブル、<hash>でドキュメントを入力",
     "projectAiChat": "プロジェクトAIチャット",
     "roundtable": "🎙️ ラウンドテーブル: 全{{count}}個のペルソナ",
+    "send": "メッセージを送信",
     "startConversation": "会話を開始",
     "stop": "停止",
     "tryExample": "試す: \"@all オンボーディングフローについてどう思いますか?\"",

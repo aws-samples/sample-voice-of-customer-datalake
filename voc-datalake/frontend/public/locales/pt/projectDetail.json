@@ -29,6 +29,7 @@
     "mentionHint": "Digite <at> para personas, <atAll> para roundtable, ou <hash> para documentos",
     "projectAiChat": "Chat IA do Projeto",
     "roundtable": "🎙️ Roundtable: todas as {{count}} personas",
+    "send": "Enviar mensagem",
     "startConversation": "Iniciar uma conversa",
     "stop": "Parar",
     "tryExample": "Tente: \"@all O que vocês acham do nosso fluxo de onboarding?\"",
